@@ -205,7 +205,7 @@ impl Simulation {
                 .entities
                 .get(id)
                 .ok_or("a cell list names a retired object")?;
-            if !foot.category.is_foot() {
+            if !foot.category().is_foot() {
                 return Ok(true);
             }
             let direction = if foot.foot_speed.applied_fraction() == SIM_ZERO {
@@ -398,15 +398,13 @@ impl Simulation {
     ) -> Result<FootPathOutcome, String> {
         // A batched request waits for the next frame's batch as if the +640
         // timer still ran (`path_batch`, a proposed deviation): 75AF4B..75AF66
-        // calls the owner's vt+0x548 and returns. The admission retry's
-        // recursion runs at once: its +640 was just expired, and native
-        // searches there with the retry spent.
-        if !request.is_retry_recursion()
-            && self.defer_path_search(
-                request.entity_id,
-                super::path_batch::WaitingRequest::NoQueue,
-            )
-        {
+        // calls the owner's vt+0x548 and returns. So does the admission
+        // retry's recursion, whose +640 the retry just expired, unless it is
+        // the Foot's first request in a frame the batch answered.
+        if self.defer_path_search(
+            request.entity_id,
+            super::path_batch::WaitingRequest::NoQueue,
+        ) {
             self.walk_owner_clear_doing(request.entity_id)?;
             return Ok(FootPathOutcome::Returned);
         }
@@ -526,7 +524,7 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("retired Foot Stop_Driver receiver")?;
-        match actor.category {
+        match actor.category() {
             EntityCategory::Infantry => {
                 self.infantry_stop_driver(id, rules, registry, frame_effects)
             }
@@ -564,41 +562,41 @@ impl Simulation {
                 //The blocker plane must see Mark0, including the actor's
                 //removal: the kept plane follows it through the touch log
                 //instead of a whole-world rebuild per request.
-        let snapshot = self.path_grid_snapshot();
-        let grid = snapshot.as_deref().expect("checked above");
-        self.movement_pass_cache.blocker_plane(
-            &mut self.substrate.entities,
-            grid,
-            self.resolved_terrain.as_ref(),
-            self.overlay_grid.as_ref(),
-            &self.interner,
-            Some(rules),
-        );
-        let counts = self.movement_pass_cache.current_blocker_plane();
+                let snapshot = self.path_grid_snapshot();
+                let grid = snapshot.as_deref().expect("checked above");
+                self.movement_pass_cache.blocker_plane(
+                    &mut self.substrate.entities,
+                    grid,
+                    self.resolved_terrain.as_ref(),
+                    self.overlay_grid.as_ref(),
+                    &self.interner,
+                    Some(rules),
+                );
+                let counts = self.movement_pass_cache.current_blocker_plane();
                 //The track_fresh_response oracle substitutes the whole AStar
                 //core 0x4CBBA0 for a CoreNull row, so no +1AC call happens
                 //inside it; the replay must not run the search that would
                 //consume those answers.
-        #[cfg(test)]
-        let core_null = super::fresh_oracle_seam::take_core_null();
-        #[cfg(not(test))]
-        let core_null = false;
+                #[cfg(test)]
+                let core_null = super::fresh_oracle_seam::take_core_null();
+                #[cfg(not(test))]
+                let core_null = false;
                 if core_null {
-            Err(super::movement_path::MovePathFailure::Search(
+                    Err(super::movement_path::MovePathFailure::Search(
                 crate::sim::pathfinding::zone_search::PathSearchFailure::CellSearchExhausted,
             ))
-        } else {
+                } else {
                     self.foot_core_search(
                         request,
-                goal,
+                        goal,
                         rules,
                         registry,
                         grid,
                         counts,
                         MoverLift::Marked,
-            )
+                    )
                     .0
-        }
+                }
             }
         };
         //4D3EAC restores Mark1 before inspecting the core result.
@@ -1268,11 +1266,11 @@ impl Simulation {
     ) -> Result<(), String> {
         let requested = crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
         self.assign_destination_represented(
-                id,
+            id,
             Some(requested),
             Some(rules),
-                registry,
-                frame_effects,
+            registry,
+            frame_effects,
         )
         .map_err(|cause| format!("Find_Path redirect: {cause}"))
     }

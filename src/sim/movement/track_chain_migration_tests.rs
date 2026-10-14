@@ -51,7 +51,7 @@ fn chain_fixture(passive: bool) -> (Simulation, RuleSet, TrackInvocation) {
     ));
     let head = DriveCoord::cell(10, 9, 0);
     let mut mover = GameEntity::test_default(MOVER, "MTNK", "Americans", 10, 10);
-    mover.category = EntityCategory::Unit;
+    mover.set_category_for_test(EntityCategory::Unit);
     mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     mover.lifecycle.object_alive = true;
     mover.lifecycle.in_limbo = false;
@@ -105,7 +105,7 @@ fn chain_fixture(passive: bool) -> (Simulation, RuleSet, TrackInvocation) {
 
 fn add_blocker(sim: &mut Simulation, moving: bool) {
     let mut blocker = GameEntity::test_default(2, "MTNK", "Americans", CANDIDATE.0, CANDIDATE.1);
-    blocker.category = EntityCategory::Unit;
+    blocker.set_category_for_test(EntityCategory::Unit);
     blocker.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     blocker.lifecycle.object_alive = true;
     blocker.lifecycle.in_limbo = false;
@@ -316,7 +316,7 @@ fn accepted_chain_per_cell_crush_finishes_lifecycle_in_list_order_before_continu
     // Two victims prove the saved list successor survives removal of the first.
     for id in [20, 10] {
         let mut victim = GameEntity::test_default(id, "E1", "Soviets", position.rx, position.ry);
-        victim.category = EntityCategory::Infantry;
+        victim.set_category_for_test(EntityCategory::Infantry);
         victim.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
             EntityCategory::Infantry,
         );

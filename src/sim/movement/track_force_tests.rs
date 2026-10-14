@@ -139,9 +139,9 @@ fn fixture(case: &Value) -> Simulation {
     let before = &case["before"];
     let input = &case["input"];
     let mut entity = GameEntity::test_default(UNIT, "MTNK", "Americans", 9, 10);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("MTNK");
-    entity.category = EntityCategory::Unit;
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("MTNK"));
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.locomotor = Some(super::super::locomotor::LocomotorState::for_test_kind(
         if is_ship(case) {
             LocomotorKind::Ship
@@ -445,8 +445,8 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             10,
             EntityCategory::Structure,
         );
-        building.owner = sim.intern("Americans");
-        building.type_ref = sim.intern("NATBNK");
+        building.set_owner_for_test(sim.intern("Americans"));
+        building.set_type_ref_for_test(sim.intern("NATBNK"));
         crate::sim::movement::ground_pose::put_location(&mut building.position, supplied(case));
         building.bunker_runtime = Some(BunkerRuntime {
             state: BunkerState::TurnToBuilding,

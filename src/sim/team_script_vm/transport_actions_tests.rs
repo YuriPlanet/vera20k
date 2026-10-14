@@ -831,7 +831,7 @@ impl OracleTeam {
             }
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.lifecycle.object_alive = flag(&member["active"]);
-            entity.health.current = int(&member["health"]);
+            entity.health.set_for_test(int(&member["health"]));
             entity.lifecycle.in_limbo = flag(&member["limbo"]);
             let count = usize::try_from(int(&member["count"])).unwrap();
             if count > 0 {
@@ -940,7 +940,7 @@ impl OracleTeam {
             }
             let skip_orders = removed[index]
                 && matches!(
-                    entity.category,
+                    entity.category(),
                     EntityCategory::Infantry | EntityCategory::Aircraft
                 );
             if !skip_orders {

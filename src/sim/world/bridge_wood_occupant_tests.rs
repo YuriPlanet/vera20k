@@ -219,10 +219,10 @@ fn snapshot(
     other_active_units: i32,
 ) -> Value {
     let actor = sim.substrate.entities.get(actors[0]).unwrap();
-    let owner = actor.owner;
+    let owner = actor.owner();
     let second = actors.get(1).map(|&id| {
         let member = sim.substrate.entities.get(id).unwrap();
-        json!({"health":member.health.current,"alive":u8::from(member.lifecycle.object_alive),
+        json!({"health":member.health.current(),"alive":u8::from(member.lifecycle.object_alive),
             "limbo":u8::from(member.lifecycle.in_limbo),"marked":u8::from(member.lifecycle.cell_marked),
             "object_next":object_name(sim.next_cell_object(CellObjectMember::Entity(id)),actors),
             "target":target_name(member.attack_target.as_ref().map(|target| &target.target))})
@@ -239,7 +239,7 @@ fn snapshot(
         .head_to()
         .map_or([0; 3], |head| [head.x, head.y, head.z]);
     json!({
-        "second":second,"health":actor.health.current,"alive":u8::from(actor.lifecycle.object_alive),
+        "second":second,"health":actor.health.current(),"alive":u8::from(actor.lifecycle.object_alive),
         "marked":u8::from(actor.lifecycle.cell_marked),"limbo":u8::from(actor.lifecycle.in_limbo),
         "on_bridge":u8::from(actor.on_bridge),"sink":u8::from(actor.sinking.is_active()),
         "ground_head":object_name(sim.cell_objects(current,MovementLayer::Ground).next(),actors),
@@ -480,9 +480,9 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
         );
         let sim = scene.sim();
         let actor = sim.substrate.entities.get(actors[0]).unwrap();
-        let initial_losses = sim.houses[&actor.owner].stats.units_lost();
+        let initial_losses = sim.houses[&actor.owner()].stats.units_lost();
         let other_active_units =
-            sim.houses[&actor.owner].tracking.active_for_test().0 - actors.len() as i32;
+            sim.houses[&actor.owner()].tracking.active_for_test().0 - actors.len() as i32;
         let effects = EffectBoundary::capture(sim);
         for stage in case["stages"].as_array().unwrap() {
             let context = format!("{name}/{}", stage["stage"].as_str().unwrap());
@@ -599,7 +599,7 @@ fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() 
             &corpus["rng_seed0"],
         );
         let sim = scene.sim();
-        let owner = sim.substrate.entities.get(actors[0]).unwrap().owner;
+        let owner = sim.substrate.entities.get(actors[0]).unwrap().owner();
         let initial_losses = sim.houses[&owner].stats.units_lost();
         let other_units = sim.houses[&owner].tracking.active_for_test().0 - actors.len() as i32;
         let effects = EffectBoundary::capture(sim);

@@ -74,7 +74,9 @@ pub fn apply_fear_from_damage(
     condition_red_ratio: f64,
     condition_yellow_ratio: f64,
 ) {
-    if damage_landed == 0 || entity.health.current == 0 || is_fear_application_blocked(obj, entity)
+    if damage_landed == 0
+        || entity.health.current() == 0
+        || is_fear_application_blocked(obj, entity)
     {
         return;
     }
@@ -143,7 +145,7 @@ impl crate::sim::world::Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(false);
         };
-        if actor.category != crate::map::entities::EntityCategory::Infantry {
+        if actor.category() != crate::map::entities::EntityCategory::Infantry {
             return Ok(false);
         }
         let infantry = actor
@@ -444,7 +446,7 @@ impl crate::sim::world::Simulation {
         // Guard/Hunt/AreaGuard dispatch the class virtual. Non-Infantry
         // receivers inherit the false stub; they never resolve an Infantry
         // type or touch its idle timer (Unit vtable+0x478 is 0x0041C040).
-        if actor.category != crate::map::entities::EntityCategory::Infantry {
+        if actor.category() != crate::map::entities::EntityCategory::Infantry {
             return Ok(false);
         }
         let object = self
@@ -556,7 +558,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::object_type::ObjectCategory;
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::{GameEntity, InfantryRuntime};
     use crate::sim::intern::test_intern;
 
@@ -585,7 +587,7 @@ mod tests {
             0,
             0,
             test_intern("Test"),
-            Health { current: hp },
+            Health::new(hp),
             test_intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -775,7 +777,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             sim.interner.intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -1154,7 +1156,7 @@ mod tests {
                 4,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 sim.interner.intern("E1"),
                 EntityCategory::Infantry,
                 0,

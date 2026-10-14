@@ -517,7 +517,7 @@ fn evaluate_building_placement(
                 .any(|member| {
                     matches!(member, crate::sim::occupancy::CellObjectMember::Entity(id)
                     if sim.substrate.entities.get(id).is_some_and(|e| {
-                        e.category == EntityCategory::Structure
+                        e.category() == EntityCategory::Structure
                     }))
                 })
             });
@@ -535,7 +535,7 @@ fn evaluate_building_placement(
             .entities
             .values()
             .filter(|e| {
-                e.category == EntityCategory::Structure
+                e.category() == EntityCategory::Structure
                     && sim.interner.resolve(e.owner()).eq_ignore_ascii_case(owner)
             })
             .map(|e| {
@@ -605,7 +605,7 @@ fn is_within_build_area(
         if e.dying || e.lifecycle.in_limbo {
             continue;
         }
-        if e.category != EntityCategory::Structure {
+        if e.category() != EntityCategory::Structure {
             continue;
         }
         let provider_owner = sim.interner.resolve(e.owner());

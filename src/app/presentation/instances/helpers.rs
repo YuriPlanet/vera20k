@@ -78,7 +78,8 @@ pub(crate) fn observer_draw_context(
             |r| r.general.cloaking_stages,
         ),
         invisible: object.is_some_and(|obj| {
-            obj.invisible || (entity.category == EntityCategory::Structure && obj.invisible_in_game)
+            obj.invisible
+                || (entity.category() == EntityCategory::Structure && obj.invisible_in_game)
         }),
         is_campaign: !sim.session.game_mode_nonzero,
         owner_is_current_player: sim.house_is_human_player(entity.owner()),
@@ -138,7 +139,7 @@ pub(crate) fn tactical_entity_admission(
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<crate::render::draw_state::DrawDecision> {
     let requires_revealed_anchor = purpose == TacticalEntityPurpose::ScreenSelection;
-    if (entity.category == EntityCategory::Structure && !entity.lifecycle.object_alive)
+    if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive)
         || entity.lifecycle.in_limbo
         || entity.passenger_role.is_inside_transport()
         || (requires_revealed_anchor
@@ -230,7 +231,7 @@ fn compose_tactical_screen_entity_encounter_order(
     // path. Ordinary picking/rendering never scans the unregistered store.
     if bulk_register_live_buildings {
         candidates.extend(sim.entities().values().filter_map(|entity| {
-            (entity.category == EntityCategory::Structure
+            (entity.category() == EntityCategory::Structure
                 && sim.display_layers().layer_of(entity.stable_id()).is_none())
             .then_some(entity.stable_id())
         }));
@@ -241,7 +242,7 @@ fn compose_tactical_screen_entity_encounter_order(
             sim.entities().get(*id).is_some_and(|entity| {
                 let owner = sim.interner.resolve(entity.owner());
                 let admitted = if bulk_register_live_buildings
-                    && entity.category == EntityCategory::Structure
+                    && entity.category() == EntityCategory::Structure
                 {
                     entity.lifecycle.object_alive && !entity.lifecycle.in_limbo
                 } else {
@@ -555,7 +556,7 @@ mod tests {
 
     #[test]
     fn building_hidden_anchor_is_drawn_without_entering_screen_selection() {
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
 
         let mut sim = crate::sim::world::Simulation::new();
         let local_owner = sim.interner.intern("Americans");
@@ -571,7 +572,7 @@ mod tests {
             0,
             0,
             neutral_owner,
-            Health { current: 100 },
+            Health::new(100),
             building_type,
             EntityCategory::Structure,
             0,
@@ -624,7 +625,7 @@ mod tests {
 
     #[test]
     fn ordinary_building_admission_matches_executed_native_controls() {
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
 
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/procedural_drawing_oracle/building_reveal.json",
@@ -662,7 +663,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 type_id,
                 EntityCategory::Structure,
                 0,
@@ -712,7 +713,7 @@ mod tests {
 
     #[test]
     fn shroud_pop_in_mobile_admission_matches_original_class_entries() {
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
 
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/procedural_drawing_oracle/entity_reveal.json",
@@ -746,7 +747,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 type_id,
                 category,
                 0,
@@ -864,7 +865,7 @@ mod tests {
             "Americans",
             false
         ));
-        entity.owner = crate::sim::intern::test_intern("Soviet");
+        entity.set_owner_for_test(crate::sim::intern::test_intern("Soviet"));
         assert!(
             admitted(TacticalEntityPurpose::Drawing, &entity, "Soviet", false),
             "an unrevealed mobile must submit its body for per-pixel masking"
@@ -892,7 +893,7 @@ mod tests {
     #[test]
     fn item83_band_preflight_source_bulk_registers_hidden_live_building_only() {
         use crate::app::input::entity_pick::compute_box_selection_snapshot;
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
 
         let mut sim = crate::sim::world::Simulation::new();
         let local_owner = sim.interner.intern("Americans");
@@ -907,7 +908,7 @@ mod tests {
             0,
             0,
             enemy_owner,
-            Health { current: 100 },
+            Health::new(100),
             mobile_type,
             EntityCategory::Unit,
             0,
@@ -921,7 +922,7 @@ mod tests {
             0,
             0,
             enemy_owner,
-            Health { current: 100 },
+            Health::new(100),
             building_type,
             EntityCategory::Structure,
             0,
@@ -1028,7 +1029,7 @@ mod tests {
 
         let mut sim = Simulation::new();
         let mut aircraft = entity_with_locomotor("BEAG", LocomotorKind::Fly, 900, 40, 40);
-        aircraft.category = EntityCategory::Aircraft;
+        aircraft.set_category_for_test(EntityCategory::Aircraft);
         aircraft.lifecycle.in_limbo = true;
         sim.entities_mut().insert(aircraft);
         sim.reveal(1);
@@ -1095,7 +1096,7 @@ mod tests {
 
         let mut entities = EntityStore::default();
         let mut gi = GameEntity::test_default(1, "E1", "Americans", 20, 20);
-        gi.category = crate::map::entities::EntityCategory::Infantry;
+        gi.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
         gi.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         entities.insert(gi);
         assert!(begin_parachute_descent(

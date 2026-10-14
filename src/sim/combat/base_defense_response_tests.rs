@@ -743,7 +743,7 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             .unwrap()
             .navigation
             .nav_com = Some(crate::sim::components::NavTargetRef::Cell { rx: 9, ry: 5 });
-        let health = sim.substrate.entities.get(victim).unwrap().health.current;
+        let health = sim.substrate.entities.get(victim).unwrap().health.current();
         let warhead = sim.interner.intern("AP");
         let source_house = Some(sim.substrate.entities.get(attacker).unwrap().owner());
         sim.commit_direct_damage_receiver(
@@ -764,7 +764,7 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             crate::sim::world::FrameEffects::default(),
         );
         assert!(
-            sim.substrate.entities.get(victim).unwrap().health.current < health,
+            sim.substrate.entities.get(victim).unwrap().health.current() < health,
             "{name}: real damage commit"
         );
         let selected = sim

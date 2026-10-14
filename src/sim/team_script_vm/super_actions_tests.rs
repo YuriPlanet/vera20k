@@ -163,7 +163,7 @@ fn replay(row: &Value, plant: bool) -> Replay {
         entity.lifecycle.object_alive = flag(&member["live"]);
         // What_Am_I (vt+0x2C) is all the leader test asks of an aircraft.
         if flag(&member["aircraft"]) {
-            entity.category = crate::map::entities::EntityCategory::Aircraft;
+            entity.set_category_for_test(crate::map::entities::EntityCategory::Aircraft);
         }
         members.push(id);
     }

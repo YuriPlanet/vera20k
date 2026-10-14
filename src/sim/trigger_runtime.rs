@@ -2641,7 +2641,7 @@ impl Simulation {
                 while ordinal < self.substrate.entities.techno_registry_len() {
                     let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
-                        entity.category == crate::map::entities::EntityCategory::Structure
+                        entity.category() == crate::map::entities::EntityCategory::Structure
                             && entity.lifecycle.object_alive
                             && entity.lifecycle.cell_marked
                             && !entity.lifecycle.in_limbo
@@ -2682,11 +2682,11 @@ impl Simulation {
                     while ordinal < self.substrate.entities.techno_registry_len() {
                         let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
                         let health = self.substrate.entities.get(id).and_then(|entity| {
-                            (entity.health.current > 0
+                            (entity.health.current() > 0
                                 && entity.lifecycle.object_alive
                                 && entity.lifecycle.cell_marked
                                 && !entity.lifecycle.in_limbo)
-                                .then_some(entity.health.current)
+                                .then_some(entity.health.current())
                         });
                         let Some(health) = health.filter(|_| {
                             self.tag_contains_live_trigger(TagAttachment::Object(id), live)
@@ -2788,7 +2788,7 @@ impl Simulation {
                 while ordinal < self.substrate.entities.techno_registry_len() {
                     let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
                     let eligible = self.substrate.entities.get(id).is_some_and(|e| {
-                        e.category == crate::map::entities::EntityCategory::Structure
+                        e.category() == crate::map::entities::EntityCategory::Structure
                             && e.lifecycle.object_alive
                             && e.lifecycle.cell_marked
                             && !e.lifecycle.in_limbo

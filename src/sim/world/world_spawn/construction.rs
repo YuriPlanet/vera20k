@@ -10,7 +10,8 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::animation::{Animation, SequenceKind};
-use crate::sim::components::{HarvestOverlay, Health, VoxelAnimation};
+use crate::sim::combat::Health;
+use crate::sim::components::{HarvestOverlay, VoxelAnimation};
 use crate::sim::game_entity::{GameEntity, TechnoConstructorInit};
 use crate::sim::miner::{Miner, MinerConfig, miner_kind_for_object};
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
@@ -44,11 +45,9 @@ impl Simulation {
         let Some(obj) = rules.object(type_id) else {
             return Ok(None);
         };
-        let health = Health {
-            // Native class constructors copy signed type Strength unchanged.
-            // Original copy slices: object_health corpus / constructors.
-            current: obj.strength,
-        };
+        // Native class constructors copy signed type Strength unchanged.
+        // Original copy slices: object_health corpus / constructors.
+        let health = Health::new(obj.strength);
         let category = EntityCategory::from(obj.category);
         let uses_voxel = object_uses_voxel(type_id, obj, rules);
         let sight_range = (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE);
@@ -87,7 +86,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
         origin: ComponentOrigin,
     ) {
-        let category = ge.category;
+        let category = ge.category();
         let initial = ge.body_facing.destination();
         let uses_voxel = ge.is_voxel;
         // InitManagers6F3F40 classifies the owner after construction; it does
@@ -229,9 +228,7 @@ impl Simulation {
                 ge.veterancy.rank(),
             )
         {
-            ge.parasite = Some(Box::new(
-                crate::sim::combat::parasite::ParasiteState::constructed(self.session.binary_frame),
-            ));
+            ge.parasite.allocate_class(self.session.binary_frame);
         }
         install_authored_bridge(ge, origin);
 
@@ -325,7 +322,7 @@ fn stamp_scoring_flags(
     rules: Option<&RuleSet>,
 ) {
     ge.dont_score = obj.is_some_and(|o| o.dont_score);
-    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category, obj, rules);
+    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
 }
 
 fn stamp_building_cell_profile(
@@ -337,7 +334,7 @@ fn stamp_building_cell_profile(
     };
     ge.foundation = obj.foundation.clone();
     ge.spotlight_capable = obj.has_spotlight;
-    if ge.category == EntityCategory::Structure {
+    if ge.category() == EntityCategory::Structure {
         ge.building_hidden_occupancy = Some(obj.hidden_occupancy);
         ge.base_reservation_spacing = obj.base_reservation_spacing;
         ge.determines_waypoint_edge = obj.factory == Some(FactoryType::BuildingType);

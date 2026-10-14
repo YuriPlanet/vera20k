@@ -94,7 +94,7 @@ fn gsi_05_10_tesla_arms_without_emission_and_fires_on_visit_28() {
     let first = combat_visit(&mut sim, &rules, &mut main_rng, 1);
     assert!(first.consequences.fire_events().is_empty());
     assert_eq!(
-        sim.substrate.entities.get(target).unwrap().health.current,
+        sim.substrate.entities.get(target).unwrap().health.current(),
         100
     );
     assert_eq!(
@@ -117,7 +117,7 @@ fn gsi_05_10_tesla_arms_without_emission_and_fires_on_visit_28() {
         );
     }
     assert_eq!(
-        sim.substrate.entities.get(target).unwrap().health.current,
+        sim.substrate.entities.get(target).unwrap().health.current(),
         100
     );
 
@@ -128,7 +128,7 @@ fn gsi_05_10_tesla_arms_without_emission_and_fires_on_visit_28() {
         WeaponSlot::Primary
     );
     assert_eq!(
-        sim.substrate.entities.get(target).unwrap().health.current,
+        sim.substrate.entities.get(target).unwrap().health.current(),
         90
     );
     assert!(
@@ -190,9 +190,12 @@ fn gsi_05_10_expiry_reads_live_target_but_keeps_saved_weapon_slot() {
         expiry.consequences.fire_events()[0].weapon_slot,
         WeaponSlot::Secondary
     );
-    assert_eq!(sim.substrate.entities.get(air).unwrap().health.current, 100);
     assert_eq!(
-        sim.substrate.entities.get(ground).unwrap().health.current,
+        sim.substrate.entities.get(air).unwrap().health.current(),
+        100
+    );
+    assert_eq!(
+        sim.substrate.entities.get(ground).unwrap().health.current(),
         70
     );
 }
@@ -235,7 +238,7 @@ fn gsi_05_10_expiry_error_clears_without_retarget_or_shot() {
             .get(alternative)
             .unwrap()
             .health
-            .current,
+            .current(),
         100
     );
 }

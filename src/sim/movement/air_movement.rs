@@ -194,7 +194,7 @@ pub(crate) fn fly_speed_facts(
         &crate::sim::intern::StringInterner,
     )>,
 ) -> FlySpeedFacts {
-    let aircraft = entity.category == EntityCategory::Aircraft;
+    let aircraft = entity.category() == EntityCategory::Aircraft;
     let object = rules_context
         .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())));
     let strafe_or_fighter = aircraft
@@ -209,7 +209,7 @@ pub(crate) fn fly_speed_facts(
                     )
             });
     FlySpeedFacts {
-        health: entity.health.current,
+        health: entity.health.current(),
         height: current_fly_height(entity, terrain),
         distance,
         slow: FlySlowFacts {
@@ -241,8 +241,10 @@ pub(crate) fn ensure_fly_secondary_facing(entity: &mut crate::sim::game_entity::
         .get_or_insert_with(|| super::FacingClass::with_rate_of(initial, body));
 }
 
-/// Shared represented MoveTo/BeginTakeoff refusal gates. EMP and Foot+6A0
-/// still require their missing native owners; do not substitute deploy state.
+/// Shared represented MoveTo/BeginTakeoff refusal gates. EMP still requires
+/// its missing native owner, and Foot+6A0 paralysis
+/// ([`FootParasite::is_paralyzed`](crate::sim::combat::parasite::FootParasite::is_paralyzed))
+/// is not read here yet; do not substitute deploy state.
 pub(crate) fn fly_coordinate_admitted(entity: &crate::sim::game_entity::GameEntity) -> bool {
     !entity.locomotor.as_ref().is_some_and(|l| !l.powered)
         && !super::locomotor_owner::owner_is_warping(entity)
@@ -392,7 +394,7 @@ fn missile_flight_override(
         &crate::sim::intern::StringInterner,
     )>,
 ) -> Option<bool> {
-    if entity.category == EntityCategory::Aircraft
+    if entity.category() == EntityCategory::Aircraft
         && rules_context.is_some_and(|(rules, interner)| {
             let name = interner.resolve(entity.type_ref());
             name.eq_ignore_ascii_case(&rules.missile_spawn.v3.type_name)
@@ -453,7 +455,7 @@ pub(crate) fn update_fly_height(
     let object = rules_context
         .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())));
     let flight_level = type_flight_level(entity, rules_context);
-    let has_passenger = entity.category == crate::map::entities::EntityCategory::Aircraft
+    let has_passenger = entity.category() == crate::map::entities::EntityCategory::Aircraft
         && entity
             .passenger_role
             .cargo()
@@ -471,7 +473,7 @@ pub(crate) fn update_fly_height(
             ground_z,
             on_bridge: entity.on_bridge,
             structural_bridge,
-            health: entity.health.current,
+            health: entity.health.current(),
             has_passenger,
             is_dropship: object.is_some_and(|o| o.is_dropship),
             flight_level,

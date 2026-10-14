@@ -359,7 +359,7 @@ impl HouseTracking {
         if facts.insignificant || entity.dont_score {
             return;
         }
-        match entity.category {
+        match entity.category() {
             EntityCategory::Structure if !facts.unit_like_building => {
                 self.buildings = self.buildings.wrapping_add(delta);
             }
@@ -369,7 +369,7 @@ impl HouseTracking {
             EntityCategory::Infantry => self.infantry = self.infantry.wrapping_add(delta),
             EntityCategory::Aircraft => {}
         }
-        let counts = match entity.category {
+        let counts = match entity.category() {
             EntityCategory::Unit => &mut self.unit_types,
             EntityCategory::Structure => &mut self.building_types,
             EntityCategory::Infantry => &mut self.infantry_types,
@@ -433,7 +433,7 @@ impl HouseTracking {
     /// Both test What_Am_I for a building first (`0x004FF98B`,
     /// `0x004FFA5B`).
     fn count_factory(&mut self, entity: &GameEntity, delta: i32) {
-        if entity.category != EntityCategory::Structure {
+        if entity.category() != EntityCategory::Structure {
             return;
         }
         if let Some(slot) = entity.tracking_facts.factory {
@@ -584,7 +584,7 @@ impl HouseTracking {
             *total = total.wrapping_add(factors.adjust(value.cost, value.factor_slot.into()));
         }
         let dont_score = entity.dont_score;
-        let counts = match entity.category {
+        let counts = match entity.category() {
             // The Unit case (increment at `0x00502CF9`) has no DontScore test.
             EntityCategory::Unit => &mut self.active_unit_types,
             EntityCategory::Aircraft if !dont_score => &mut self.active_aircraft_types,
@@ -615,7 +615,7 @@ impl HouseTracking {
         if entity.dont_score {
             return;
         }
-        let counts = match entity.category {
+        let counts = match entity.category() {
             EntityCategory::Unit => &mut self.active_unit_types,
             EntityCategory::Aircraft => &mut self.active_aircraft_types,
             EntityCategory::Structure => &mut self.active_building_types,

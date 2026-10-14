@@ -101,7 +101,7 @@ fn fixture(case: &Value) -> Simulation {
                 0,
                 0,
                 owner,
-                crate::sim::components::Health { current: 100 },
+                crate::sim::combat::Health::new(100),
                 type_ref,
                 category,
                 0,
@@ -281,7 +281,7 @@ impl<'a> BounceTerrain for RecordingTerrain<'a> {
                                 .sim
                                 .entities()
                                 .get(v.entity_id)
-                                .is_some_and(|e| e.category == EntityCategory::Structure)
+                                .is_some_and(|e| e.category() == EntityCategory::Structure)
                         })
                     });
                 (i32::from(cell.rx), i32::from(cell.ry), false, has)

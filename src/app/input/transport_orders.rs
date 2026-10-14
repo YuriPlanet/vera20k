@@ -19,7 +19,7 @@ pub(crate) fn transport_unload_command(
     obj: Option<&ObjectType>,
 ) -> Option<Command> {
     if !matches!(
-        entity.category,
+        entity.category(),
         EntityCategory::Unit | EntityCategory::Aircraft
     ) {
         return None;
@@ -54,7 +54,7 @@ mod tests {
 
     fn entity(id: u64, type_id: &str, category: EntityCategory, loaded: bool) -> GameEntity {
         let mut e = GameEntity::test_default(id, type_id, "Americans", 10, 10);
-        e.category = category;
+        e.set_category_for_test(category);
         let mut cargo = PassengerCargo::new(5, 0);
         if loaded {
             cargo.board(99, 1);
@@ -86,7 +86,7 @@ mod tests {
         let tank = entity(9, "MTNK", EntityCategory::Unit, true);
         assert_eq!(transport_unload_command(&tank, rules.object("MTNK")), None);
         let mut building = entity(10, "BFRT", EntityCategory::Structure, true);
-        building.category = EntityCategory::Structure;
+        building.set_category_for_test(EntityCategory::Structure);
         assert_eq!(
             transport_unload_command(&building, rules.object("BFRT")),
             None

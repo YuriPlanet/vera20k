@@ -257,8 +257,8 @@ fn simulation_fixture_for_type(
         20,
         EntityCategory::Structure,
     );
-    entity.type_ref = sim.interner.intern(type_name);
-    entity.owner = sim.interner.intern(owner);
+    entity.set_type_ref_for_test(sim.interner.intern(type_name));
+    entity.set_owner_for_test(sim.interner.intern(owner));
     entity.selected = input["selected"].as_bool().unwrap_or(true);
     entity.lifecycle.object_alive = input["alive"].as_bool().unwrap_or(true);
     entity.foundation = foundation.to_owned();
@@ -285,7 +285,7 @@ fn simulation_fixture_for_type(
     );
     for (index, [x, y, z]) in sources.into_iter().enumerate() {
         let mut factory = entity.clone();
-        factory.stable_id = first_id + index as u64;
+        factory.set_stable_id_for_test(first_id + index as u64);
         crate::sim::movement::ground_pose::put_location(
             &mut factory.position,
             DriveCoord { x, y, z },
@@ -795,14 +795,14 @@ fn production_rally_workload_timing() {
         };
         let mut template = sim.entities().get(10).unwrap().clone();
         if mobile {
-            template.category = EntityCategory::Unit;
-            template.type_ref = sim.interner.intern("MTNK");
+            template.set_category_for_test(EntityCategory::Unit);
+            template.set_type_ref_for_test(sim.interner.intern("MTNK"));
         }
         template.selected = !pending;
         let ledger: Vec<_> = (10..10 + count as u64).collect();
         for &id in &ledger {
             let mut entity = template.clone();
-            entity.stable_id = id;
+            entity.set_stable_id_for_test(id);
             entity.position.rx += (id % 8) as u16;
             entity.position.ry += (id % 5) as u16;
             sim.entities_mut().insert(entity);
@@ -884,7 +884,7 @@ fn production_rally_workload_timing() {
         // motion/speed/facing inputs without advancing a gameplay tick.
         for id in 1..=count as u64 {
             let mut entity = template.clone();
-            entity.stable_id = id;
+            entity.set_stable_id_for_test(id);
             entity.selected = selected;
             ground_pose::put_location(
                 &mut entity.position,

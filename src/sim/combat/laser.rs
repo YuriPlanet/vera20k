@@ -58,7 +58,7 @@ pub(crate) fn fired(
     // FireAt6FF4CC gates on the fired weapon above, but its building arm
     // 6FF4EA re-reads GetCurrentWeapon after occupant/burst advancement.
     // Only the payload switches: GetFLH still receives the selected index.
-    let weapon = if source.category == EntityCategory::Structure {
+    let weapon = if source.category() == EntityCategory::Structure {
         let Some(current) = super::combat_weapon::current_weapon(
             source,
             obj,
@@ -86,13 +86,13 @@ pub(crate) fn fired(
         return;
     };
     let z_adjust = super::fire_coord::effect_z_adjust(world, source, from);
-    let prism = source.category == EntityCategory::Structure && rules.is_prism_type(obj);
+    let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
     let supported = prism && prism_support_count > 0;
     // RESIDUAL: other non-building house-color callers use width1 vs native2
     // (6FF571); their stock reachability is unestablished, a cosmetic 1px gap.
     let width = if prism {
         if supported { 5 } else { 3 }
-    } else if source.category == EntityCategory::Unit && weapon.is_house_color {
+    } else if source.category() == EntityCategory::Unit && weapon.is_house_color {
         2
     } else {
         1

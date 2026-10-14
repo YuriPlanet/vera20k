@@ -97,9 +97,9 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
         (at[0] / 256) as u16,
         (at[1] / 256) as u16,
     );
-    entity.type_ref = sim.intern(kind);
-    entity.owner = sim.intern("Americans");
-    entity.category = category;
+    entity.set_type_ref_for_test(sim.intern(kind));
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_category_for_test(category);
     entity.position.sub_x = SimFixed::from_num(at[0] % 256);
     entity.position.sub_y = SimFixed::from_num(at[1] % 256);
     entity.position.exact_z_leptons = Some(at[2]);

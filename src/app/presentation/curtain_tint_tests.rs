@@ -56,7 +56,7 @@ fn curtained(row: &Value) -> GameEntity {
 /// shielded, as the Iron Curtain's 0 does).
 fn shielded(row: &Value) -> GameEntity {
     let mut entity = GameEntity::test_default(1, "GAPOWR", "Americans", 10, 10);
-    entity.category = EntityCategory::Structure;
+    entity.set_category_for_test(EntityCategory::Structure);
     let kind = if int(&row["shielded"]) == 1 {
         InvulnKind::ForceShield
     } else {

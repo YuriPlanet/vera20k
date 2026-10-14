@@ -160,7 +160,7 @@ fn unit_render_slope_state(
     if let Some(slope_state) = locomotor_render_slope_state(entity, display_binary_frame) {
         return slope_state;
     }
-    if entity.category == EntityCategory::Aircraft {
+    if entity.category() == EntityCategory::Aircraft {
         return UnitRenderSlopeState::Stable(0);
     }
     // `JumpjetLocomotionClass` Draw_Matrix (`0x0054DCC0`) is the facing matrix
@@ -295,7 +295,7 @@ pub(crate) fn build_unit_instances(
         let Some(entity) = sim.entities().get(stable_id) else {
             continue;
         };
-        if entity.category != EntityCategory::Unit && !entity.is_voxel {
+        if entity.category() != EntityCategory::Unit && !entity.is_voxel {
             continue;
         }
         let Some(band) = entity_draw_band(sim.display_layers(), stable_id) else {
@@ -359,7 +359,7 @@ pub(crate) fn build_unit_instances(
         // slope during gamemd's 3-frame transition, then falls back to the
         // stable terrain slope path.
         let slope_state = unit_render_slope_state(state, entity, display_binary_frame, band);
-        let viewport = if entity.category == EntityCategory::Unit {
+        let viewport = if entity.category() == EntityCategory::Unit {
             unit_viewport
         } else {
             [sw, sh]
@@ -375,7 +375,7 @@ pub(crate) fn build_unit_instances(
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
             (pos.rx, pos.ry),
-            entity.category,
+            entity.category(),
             extra_light,
         );
         let palette_light = crate::app::presentation::lighting::body_palette_light(
@@ -684,7 +684,7 @@ fn unit_animation_frames(
     turret_index: i32,
     frame_counts: &std::collections::BTreeMap<(String, VxlLayer, i32), u32>,
 ) -> (u32, u32) {
-    let body = if entity.category != EntityCategory::Unit {
+    let body = if entity.category() != EntityCategory::Unit {
         entity
             .voxel_animation
             .map_or(0, |animation| animation.frame)
@@ -729,7 +729,7 @@ pub(crate) fn drawn_model_id<'a>(
 ) -> Cow<'a, str> {
     let base_type = interner.resolve(entity.type_ref());
     let object = rules.and_then(|rules| rules.object(base_type));
-    if entity.category == EntityCategory::Unit
+    if entity.category() == EntityCategory::Unit
         && entity.is_fully_deployed()
         && let Some(unloading_type) = object.and_then(|object| object.unloading_class.as_deref())
     {
@@ -770,7 +770,7 @@ fn unit_body_draw<'a>(
     binary_frame: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<(Cow<'a, str>, BodyDraw)> {
-    if entity.category == EntityCategory::Unit && entity.unit_deploying() {
+    if entity.category() == EntityCategory::Unit && entity.unit_deploying() {
         return None;
     }
     let model = drawn_model_id(entity, interner, rules, binary_frame, observer);
@@ -1162,7 +1162,7 @@ fn unit_shadow_admitted(
     no_shadow: bool,
     band: EntityDrawBand,
 ) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && !entity.sinking.is_active()
         && band == EntityDrawBand::Ground
         && !no_shadow
@@ -1261,7 +1261,7 @@ fn unit_draw_anchor(
     let (x, y) = crate::render::locomotor_visual::screen_position(entity);
     // Unit draw admission precedes stateful +3CA capture. A smaller visual
     // cull delays that first capture and changes later visible clipping.
-    let admitted = if entity.category == EntityCategory::Unit {
+    let admitted = if entity.category() == EntityCategory::Unit {
         projection_admitted([x, y], camera, viewport)
     } else {
         in_view(
@@ -1352,7 +1352,7 @@ fn unit_body_draw_state(
     let mut draw_state = composite_draw_state(state, draw_state, split);
     // The final parent rectangle is known only after all selected voxel parts
     // have been admitted. Never capture from an intermediate/offscreen part.
-    if entity.category == EntityCategory::Unit {
+    if entity.category() == EntityCategory::Unit {
         let mut cache = state
             .match_state
             .match_presentation
@@ -1824,7 +1824,7 @@ mod tests {
     #[test]
     fn vehicle_shadow_active_locomotor_selects_native_or_legacy_companion() {
         let mut entity = GameEntity::test_default(1, "GENERATED", "Americans", 0, 0);
-        entity.category = EntityCategory::Unit;
+        entity.set_category_for_test(EntityCategory::Unit);
         let key = UnitSpriteKey {
             type_id: "GENERATED".into(),
             turret_index: 0,
@@ -1879,7 +1879,7 @@ mod tests {
     #[test]
     fn raw_cloak_shadow_gate_covers_zero_progress_and_type_flag() {
         let mut entity = GameEntity::test_default(1, "SUB", "Russians", 0, 0);
-        entity.category = EntityCategory::Unit;
+        entity.set_category_for_test(EntityCategory::Unit);
         assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
         assert!(!unit_shadow_admitted(&entity, true, EntityDrawBand::Ground));
         for state in [1, 2, 3] {
@@ -1904,7 +1904,7 @@ mod tests {
     #[test]
     fn a_crashing_body_takes_its_pose_before_the_turret_split() {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 0, 0);
-        entity.category = EntityCategory::Aircraft;
+        entity.set_category_for_test(EntityCategory::Aircraft);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
         crate::sim::movement::air_movement::ensure_fly_secondary_facing(&mut entity);
         assert_eq!(
@@ -1966,7 +1966,7 @@ mod tests {
         };
         let launched = |block| {
             let mut entity = GameEntity::test_default(1, "V3ROCKET", "Russians", 0, 0);
-            entity.category = EntityCategory::Aircraft;
+            entity.set_category_for_test(EntityCategory::Aircraft);
             let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Rocket);
             let rocket = locomotor.rocket_runtime_mut().expect("a Rocket payload");
             assert_eq!(rocket.draw_pitch().to_bits(), 0);
@@ -2038,8 +2038,8 @@ mod tests {
     fn drive_ship_slope_unit_extraction_uses_last_processed_frame_without_mutation() {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "DRIVE", "Americans", 0, 0);
-        entity.owner = sim.intern("Americans");
-        entity.type_ref = sim.intern("DRIVE");
+        entity.set_owner_for_test(sim.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern("DRIVE"));
         entity.locomotor = Some(LocomotorState::for_test_kind_at_frame(
             LocomotorKind::Drive,
             39,
@@ -2115,8 +2115,8 @@ mod tests {
         let mut sim = Simulation::with_seed(0);
         sim.session.binary_frame = 51;
         let mut entity = GameEntity::test_default(1, "SHIP", "Americans", 0, 0);
-        entity.owner = sim.intern("Americans");
-        entity.type_ref = sim.intern("SHIP");
+        entity.set_owner_for_test(sim.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern("SHIP"));
         entity.locomotor = Some(LocomotorState::for_test_kind_at_frame(
             LocomotorKind::Ship,
             40,

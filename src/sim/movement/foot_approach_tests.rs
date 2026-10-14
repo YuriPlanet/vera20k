@@ -169,7 +169,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
         let mut completed = false;
         let mut stop = None;
         let mut stop_issued = false;
-        let original_health = sim.substrate.entities.get(target).unwrap().health.current;
+        let original_health = sim.substrate.entities.get(target).unwrap().health.current();
         for frame in 0..2200 {
             let pending = stop.take();
             let commands = if frame == 0 {
@@ -201,7 +201,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
                 let victim = sim.substrate.entities.get(target).unwrap();
                 assert!(victim.lifecycle.object_alive);
                 assert!(!victim.ai_frozen());
-                assert_eq!(victim.health.current, original_health);
+                assert_eq!(victim.health.current(), original_health);
                 assert!(actor.attack_target.is_none());
                 completed = true;
                 break;

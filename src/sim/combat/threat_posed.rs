@@ -23,7 +23,7 @@ pub(crate) fn live_threat_posed(
     let Some(candidate_type) = candidate_type else {
         return 0;
     };
-    if candidate.category == EntityCategory::Structure {
+    if candidate.category() == EntityCategory::Structure {
         let occupants = candidate
             .passenger_role
             .cargo()

@@ -9,7 +9,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cloak_disguise::DisguiseRuntime;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
 use crate::sim::runtime::{SimResources, SimRuntime};
@@ -79,7 +79,7 @@ fn entity(runtime: &mut SimRuntime, name: &str, category: EntityCategory) -> Gam
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         category,
         0,
@@ -369,7 +369,7 @@ fn composite_split_uses_live_raw_bridge_terms_and_native_on_bridge() {
                 .final_tile_index = 0;
         }
     }
-    tank.category = EntityCategory::Infantry;
+    tank.set_category_for_test(EntityCategory::Infantry);
     assert!(!evaluate(&runtime, &tank));
 }
 
@@ -390,12 +390,12 @@ fn direct_shp_bridge_fudge_uses_unit_no_turret_branch_and_excludes_infantry() {
         Some(&runtime),
         &unit
     ));
-    unit.category = EntityCategory::Infantry;
+    unit.set_category_for_test(EntityCategory::Infantry);
     assert!(!super::shp_unit_bridge_fudge_in_runtime(
         Some(&runtime),
         &unit
     ));
-    unit.category = EntityCategory::Unit;
+    unit.set_category_for_test(EntityCategory::Unit);
     runtime.resources.rules = RuleSet::from_ini(&IniFile::from_str(
         &RULES.replace("[TANK]", "[TANK]\nTurret=yes"),
     ))
@@ -449,7 +449,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     let mut runtime = runtime();
     let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
     let mut factory = entity(&mut runtime, "FACTORY", EntityCategory::Structure);
-    factory.stable_id = 17;
+    factory.set_stable_id_for_test(17);
     runtime.simulation.entities_mut().insert(factory);
     let evaluate =
         |rt: &SimRuntime, e: &GameEntity| unit_bridge_split_in_runtime(Some(rt), e, true);
@@ -474,14 +474,14 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
         .entities_mut()
         .get_mut(17)
         .unwrap()
-        .category = EntityCategory::Unit;
+        .set_category_for_test(EntityCategory::Unit);
     assert!(!evaluate(&runtime, &tank));
     runtime
         .simulation
         .entities_mut()
         .get_mut(17)
         .unwrap()
-        .category = EntityCategory::Structure;
+        .set_category_for_test(EntityCategory::Structure);
     runtime.resources.rules = RuleSet::from_ini(&IniFile::from_str(
         &RULES.replace("WeaponsFactory=yes", "WeaponsFactory=no"),
     ))

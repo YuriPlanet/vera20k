@@ -176,7 +176,7 @@ mod tests {
                     )
                     .unwrap();
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
-                actor.health.current /= 2; // Repair admission requires damage.
+                actor.health.set_for_test(actor.health.current() / 2); // Repair admission requires damage.
                 if had_target {
                     represented_assign_target(actor, Some(TargetKind::Cell(6, 4)));
                 }

@@ -69,7 +69,7 @@ fn install_supplied_base_defense_team(sim: &mut Simulation, member: u64) {
 /// auxiliary stack word, which Rust's timer does not consume.
 #[test]
 fn native_base_response_dispatch_matches_14_represented_original_tails() {
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::rng::{SimRng, trace_draws};
     use crate::sim::timer::CdTimer;
     let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
@@ -134,7 +134,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
                 0,
                 0,
                 house,
-                Health { current: 100 },
+                Health::new(100),
                 type_id,
                 category,
                 0,
@@ -548,11 +548,11 @@ fn native_base_response_live_threat_matches_representable_original_rows() {
         };
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!("[General]\nThreatPerOccupant={}\n{header}[OWNER]\nStrength=100\nThreatPosed={}\n[LINK]\nStrength=100\nThreatPosed={}\n", input["threat_per_occupant"].as_i64().unwrap_or(5), signed(&input["own_threat"]), input["linked_threat"].as_i64().unwrap_or(0)))).unwrap();
         let mut owner = GameEntity::test_default(1, "OWNER", "House", 5, 5);
-        owner.category = if structure {
+        owner.set_category_for_test(if structure {
             EntityCategory::Structure
         } else {
             EntityCategory::Unit
-        };
+        });
         if input["linked_threat"].is_number() {
             owner.bunker_occupant = Some(2);
         }

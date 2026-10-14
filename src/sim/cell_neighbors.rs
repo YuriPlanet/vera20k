@@ -65,7 +65,7 @@ impl NeighborCountChanges {
 impl Simulation {
     fn foot_neighbor_position(&self, id: u64) -> Option<(i16, i16)> {
         let entity = self.substrate.entities.get(id)?;
-        (entity.category != EntityCategory::Structure)
+        (entity.category() != EntityCategory::Structure)
             .then_some((entity.position.rx as i16, entity.position.ry as i16))
     }
 
@@ -262,9 +262,9 @@ mod tests {
                 input["cell"][0].as_u64().unwrap() as u16,
                 input["cell"][1].as_u64().unwrap() as u16,
             );
-            entity.category = EntityCategory::Aircraft;
-            entity.type_ref = sim.intern("ORCA");
-            entity.owner = sim.intern("Americans");
+            entity.set_category_for_test(EntityCategory::Aircraft);
+            entity.set_type_ref_for_test(sim.intern("ORCA"));
+            entity.set_owner_for_test(sim.intern("Americans"));
             entity.lifecycle.in_limbo = false;
             entity.lifecycle.cell_marked = input["marked"].as_bool().unwrap_or(true);
             entity.position.exact_z_leptons = Some(input["z"].as_i64().unwrap_or(0) as i32);
@@ -350,8 +350,8 @@ mod tests {
     fn reveal_limbo_and_snapshot_retain_counter_history() {
         let mut sim = fixture(8, 0);
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 3, 3);
-        entity.type_ref = sim.intern("MTNK");
-        entity.owner = sim.intern("Americans");
+        entity.set_type_ref_for_test(sim.intern("MTNK"));
+        entity.set_owner_for_test(sim.intern("Americans"));
         sim.substrate.entities.insert(entity);
         sim.substrate.next_stable_object_id = 2;
         sim.reveal(1);

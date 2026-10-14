@@ -52,7 +52,7 @@ impl SlaveDepositQuery<'_> {
         let Some(owner) = self.entities.get(master) else {
             return false;
         };
-        let building = owner.category == EntityCategory::Structure;
+        let building = owner.category() == EntityCategory::Structure;
         let foundation = self
             .rules
             .object(self.interner.resolve(owner.type_ref()))
@@ -162,9 +162,9 @@ mod tests {
             (3, "OTHER", EntityCategory::Unit),
         ] {
             let mut e = GameEntity::test_default(id, name, "Owner", 4, 4);
-            e.owner = interner.intern("Owner");
-            e.type_ref = interner.intern(name);
-            e.category = category;
+            e.set_owner_for_test(interner.intern("Owner"));
+            e.set_type_ref_for_test(interner.intern(name));
+            e.set_category_for_test(category);
             if id == 1 {
                 e.slave_manager = manager(&mut interner, &[2]);
                 // Construction stamps the type's `Foundation=2x2`.

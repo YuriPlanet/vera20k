@@ -205,7 +205,7 @@ pub fn deselect_all(entities: &mut EntityStore) {
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::StringInterner;
 
@@ -218,7 +218,7 @@ mod tests {
             0,
             0,
             interner.intern(owner),
-            Health { current: 100 },
+            Health::new(100),
             interner.intern("E1"),
             EntityCategory::Unit,
             0,

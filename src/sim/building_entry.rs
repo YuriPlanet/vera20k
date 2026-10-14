@@ -374,7 +374,7 @@ impl Simulation {
         // EntityStore's monotonic construction registry includes dead/limbo
         // objects.457CE0 owns admission; do not add an alive or limbo gate.
         for (building_id, building) in self.substrate.entities.iter_sorted().rev() {
-            if building.category != crate::map::entities::EntityCategory::Structure
+            if building.category() != crate::map::entities::EntityCategory::Structure
                 || !crate::sim::passenger::building_can_be_occupied_by(self, rules, building_id, id)
             {
                 continue;

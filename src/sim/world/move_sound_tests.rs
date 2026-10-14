@@ -69,9 +69,9 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
         (xyz[0] / 256) as u16,
         (xyz[1] / 256) as u16,
     );
-    actor.owner = owner;
-    actor.type_ref = sim.interner.intern("SQD");
-    actor.category = EntityCategory::Unit;
+    actor.set_owner_for_test(owner);
+    actor.set_type_ref_for_test(sim.interner.intern("SQD"));
+    actor.set_category_for_test(EntityCategory::Unit);
     actor.position.sub_x = SimFixed::from_num(xyz[0] % 256);
     actor.position.sub_y = SimFixed::from_num(xyz[1] % 256);
     actor.position.z = (xyz[2] / 104) as u8;

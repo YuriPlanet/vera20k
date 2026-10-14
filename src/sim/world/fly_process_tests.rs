@@ -8,8 +8,9 @@ use crate::map::entities::EntityCategory;
 use crate::map::playfield::PlayfieldBounds;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::sim::combat::Health;
 use crate::sim::combat::{AttackTarget, TargetKind};
-use crate::sim::components::{DriveCoord, Health, NavTargetRef};
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::docking::aircraft_dock::AircraftAmmo;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::state::MissionTestFixture;
@@ -146,7 +147,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     entity.position.sub_x = SimFixed::from_num(128);
     entity.position.sub_y = SimFixed::from_num(128);
     entity.position.exact_z_leptons = Some(int(input, "z", 1500) as i32);
-    entity.health.current = int(input, "health", 150) as i32;
+    entity.health.set_for_test(int(input, "health", 150) as i32);
     let facing = int(input, "facing", 0x4000) as u16;
     let rot = int(input, "rot", 3) as i32;
     entity.body_facing = FacingClass::new(facing, rot);
@@ -223,7 +224,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             0,
             0,
             sim.interner.intern("Russians"),
-            Health { current: 100 },
+            Health::new(100),
             sim.interner.intern("VICTIM"),
             EntityCategory::Unit,
             0,
@@ -247,7 +248,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             0,
             0,
             owner,
-            Health { current: 1000 },
+            Health::new(1000),
             sim.interner.intern("PAD"),
             EntityCategory::Structure,
             0,
@@ -317,7 +318,7 @@ fn stop_fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             } else {
                 owner
             },
-            Health { current: 100 },
+            Health::new(100),
             sim.interner.intern("VICTIM"),
             EntityCategory::Unit,
             0,
@@ -353,7 +354,7 @@ fn stop_fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             } else {
                 owner
             },
-            Health { current: 1000 },
+            Health::new(1000),
             sim.interner.intern(kind),
             EntityCategory::Structure,
             0,
@@ -597,7 +598,7 @@ fn fly_map_edge_gate_matches_native_rows() {
                 0,
                 0,
                 sim.interner.intern("Russians"),
-                Health { current: 100 },
+                Health::new(100),
                 sim.interner.intern("VICTIM"),
                 EntityCategory::Unit,
                 0,
@@ -703,7 +704,7 @@ fn fly_death_stun_matches_native_rows() {
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules) = stop_fixture(input);
         let entity = sim.substrate.entities.get_mut(AIRCRAFT).unwrap();
-        entity.health.current = 0;
+        entity.health.set_for_test(0);
         if let Some(n) = input["target"].as_u64() {
             entity.attack_target = Some(AttackTarget {
                 target: TargetKind::Entity(10 + n),

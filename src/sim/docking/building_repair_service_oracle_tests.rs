@@ -207,7 +207,7 @@ impl Scene {
         json!({
             "frame": self.sim.session.binary_frame,
             "unit_coordinate": [at.x,at.y,at.z],
-            "health": unit.health.current,
+            "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
             "balance": house.economy.credits(),
             "spent": house.economy.spent_credits(),
@@ -499,7 +499,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
                 int(&foot["nav_queue_count"]) as usize
             );
         }
-        unit.health.current = int(&before["health"]);
+        unit.health.set_for_test(int(&before["health"]));
         unit.estimated_health = EstimatedHealth::from_raw(int(&before["estimate"]));
         let at = &before["unit_coordinate"];
         unit.position.rx = (int(&at[0]) / 256) as u16;
@@ -613,12 +613,12 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
             let contact = scene.sim.substrate.entities.get_mut(scene.depot).unwrap();
             contact.lifecycle.object_alive = case["contact_alive"] != false;
             if let Some(health) = case["contact_health"].as_u64() {
-                contact.health.current = health as i32;
+                contact.health.set_for_test(health as i32);
             }
             if case["contact_is_unit"] == true {
                 // Explicit native original-Unit-vtable RTTI prestate. The
                 // shared gate must reject it before reading Building flags.
-                contact.category = crate::map::entities::EntityCategory::Unit;
+                contact.set_category_for_test(crate::map::entities::EntityCategory::Unit);
             }
         }
         if case["two_contacts"] == true {
@@ -972,7 +972,7 @@ fn native_unit_destination_power_tail_uses_raw_cell_and_shared_setters() {
                 "refinery" => scene.depot,
                 other => panic!("unrepresented current-list fixture {other}"),
             };
-            let category = scene.sim.substrate.entities.get(id).unwrap().category;
+            let category = scene.sim.substrate.entities.get(id).unwrap().category();
             scene.sim.substrate.occupancy.add(
                 x,
                 y,

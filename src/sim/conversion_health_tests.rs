@@ -100,13 +100,13 @@ fn with_buildup(mut rules: RuleSet) -> RuleSet {
 
 fn damage(sim: &mut Simulation, id: u64, actual: i32) {
     let entity = sim.substrate.entities.get_mut(id).unwrap();
-    entity.health.current = actual;
+    entity.health.set_for_test(actual);
     entity.estimated_health = EstimatedHealth::from_raw(-73);
 }
 
 fn assert_health(sim: &Simulation, id: u64, actual: i32) {
     let entity = sim.substrate.entities.get(id).unwrap();
-    assert_eq!(entity.health.current, actual);
+    assert_eq!(entity.health.current(), actual);
     assert_eq!(entity.estimated_health.get(), actual);
 }
 
@@ -249,7 +249,7 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
     assert_eq!(pool(&sim, unit), slaves);
     for slave in slaves {
         let child = sim.substrate.entities.get(slave).unwrap();
-        assert_eq!(child.health.current, 100);
+        assert_eq!(child.health.current(), 100);
         assert_eq!(child.estimated_health.get(), -73);
     }
 }
@@ -369,8 +369,8 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
         crate::sim::world::FrameEffects::default()
     ));
     let destination = sim.entities().get(destination_id).unwrap();
-    assert_eq!(destination.health.current, 250);
-    assert_eq!(destination.techno_ctor_random_word, constructor_word);
+    assert_eq!(destination.health.current(), 250);
+    assert_eq!(destination.techno_ctor_random_word(), constructor_word);
     assert!(destination.building_up());
     assert!(!destination.building_art.actually_placed());
     assert!(

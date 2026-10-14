@@ -44,9 +44,9 @@ fn radar_fog_cell_from_leptons(x: i32, y: i32) -> Option<(u16, u16)> {
 }
 
 fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool {
-    if entity.category == EntityCategory::Structure {
+    if entity.category() == EntityCategory::Structure {
         true
-    } else if entity.category == EntityCategory::Aircraft {
+    } else if entity.category() == EntityCategory::Aircraft {
         entity
             .aircraft_ammo
             .as_ref()
@@ -301,7 +301,7 @@ pub(super) fn build_radar_object_update(
         // TechnoClass+0x4A0 passes clamp=0 to FUN_006557F0.
         |surface| surface.world_to_surface_pixel(raw_x, raw_y, false),
     );
-    let foundation = (entity.category == EntityCategory::Structure)
+    let foundation = (entity.category() == EntityCategory::Structure)
         .then(|| parse_foundation_size(&entity.foundation));
     let owner_is_human_player = local_owner.is_none_or(|local_owner| {
         radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero)
@@ -462,7 +462,7 @@ mod tests {
         });
         assert!(!enemy_sensed_prefilter(&entity));
 
-        entity.category = EntityCategory::Aircraft;
+        entity.set_category_for_test(EntityCategory::Aircraft);
         entity.low_bridge_tube_state = None;
         entity.aircraft_ammo = Some(AircraftAmmo::new(3));
         assert!(!enemy_sensed_prefilter(&entity));
@@ -472,7 +472,7 @@ mod tests {
             "Ammo=-1 keeps the signed byte negative"
         );
 
-        entity.category = EntityCategory::Structure;
+        entity.set_category_for_test(EntityCategory::Structure);
         entity.aircraft_ammo = Some(AircraftAmmo::new(3));
         assert!(
             enemy_sensed_prefilter(&entity),
@@ -484,7 +484,7 @@ mod tests {
     fn enemy_sensed_source_uses_raw_building_anchor_not_visibility_center() {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 5);
-        entity.category = EntityCategory::Structure;
+        entity.set_category_for_test(EntityCategory::Structure);
         entity.foundation = "3x2".to_string();
         let raw = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
         let visibility = crate::sim::movement::ground_pose::object_center_xy(&entity);
@@ -541,9 +541,9 @@ mod tests {
         let id = sim.allocate_stable_id();
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(id, "TEST", "Americans", 4, 5);
-        entity.type_ref = sim.interner.intern("TEST");
-        entity.owner = sim.interner.intern("Americans");
-        entity.category = EntityCategory::Unit;
+        entity.set_type_ref_for_test(sim.interner.intern("TEST"));
+        entity.set_owner_for_test(sim.interner.intern("Americans"));
+        entity.set_category_for_test(EntityCategory::Unit);
         entity.lifecycle.in_limbo = false;
         sim.substrate.entities.insert(entity);
         let update = |sim: &crate::sim::world::Simulation| {

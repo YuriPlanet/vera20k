@@ -128,7 +128,7 @@ pub(super) fn candidate_admitted(
     if peek == FireError::Illegal {
         return false;
     }
-    if candidate.category == EntityCategory::Unit
+    if candidate.category() == EntityCategory::Unit
         && (candidate_object.resource_gatherer || candidate.bunker_link.installed_in().is_some())
     {
         return false;

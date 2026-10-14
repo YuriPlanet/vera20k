@@ -355,7 +355,7 @@ pub(crate) fn build_selection_bracket_instances(
     let mut out = SelectionBracketInstances::default();
 
     for e in sim.entities().values() {
-        if e.category != EntityCategory::Structure || !e.selected {
+        if e.category() != EntityCategory::Structure || !e.selected {
             continue;
         }
         let type_str = sim.interner.resolve(e.type_ref());

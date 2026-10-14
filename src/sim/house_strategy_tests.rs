@@ -14,7 +14,7 @@ use super::*;
 use std::collections::BTreeSet;
 
 use crate::rules::ini_parser::IniFile;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::rng::SimRng;
 use crate::sim::timer::CdTimer;
@@ -92,7 +92,7 @@ fn spawn(
         0,
         0,
         owner,
-        Health { current: health },
+        Health::new(health),
         type_ref,
         category,
         0,
@@ -500,7 +500,7 @@ fn all_to_hunt_matches_native() {
         let damaged: Vec<(i32, i32)> = slots
             .iter()
             .filter_map(|&(slot, id, health)| {
-                let now = sim.substrate.entities.get(id).unwrap().health.current;
+                let now = sim.substrate.entities.get(id).unwrap().health.current();
                 (now != health).then_some((slot, health - now))
             })
             .collect();

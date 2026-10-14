@@ -115,7 +115,7 @@ impl Simulation {
         let TargetKind::Entity(target) = actor.attack_target.as_ref()?.target else {
             return None;
         };
-        if actor.category != EntityCategory::Unit || !self.substrate.entities.contains(target) {
+        if actor.category() != EntityCategory::Unit || !self.substrate.entities.contains(target) {
             return None;
         }
         let object = self.object_type(actor.type_ref(), rules)?;
@@ -223,7 +223,7 @@ impl Simulation {
         let actor = self.substrate.entities.get(id)?;
         let target = actor.attack_target.as_ref()?.target;
         let object = self.object_type(actor.type_ref(), rules)?;
-        if actor.category != EntityCategory::Unit || !object.balloon_hover {
+        if actor.category() != EntityCategory::Unit || !object.balloon_hover {
             return None;
         }
         let (_, selected) = self.foot_target_weapon(actor, object, target, rules)?;
@@ -380,7 +380,7 @@ impl Simulation {
             return false;
         };
         matches!(
-            actor.category,
+            actor.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         ) && actor.locomotor.is_some()
             && !actor.infantry_deploy_doing()
@@ -509,7 +509,7 @@ impl Simulation {
             .get(&actor.owner())
             .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero));
         let may_approach = object.can_approach_target
-            && actor.drain_target.is_none()
+            && actor.drain.target().is_none()
             && actor.bunker_link.installed_in().is_none()
             && !actor.passenger_role.in_open_transport();
         if !can_fire
@@ -624,7 +624,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .filter(|t| t.category == EntityCategory::Structure)
+                .filter(|t| t.category() == EntityCategory::Structure)
                 .map(|t| {
                     let (width, height) =
                         crate::rules::foundation::foundation_dimensions(&t.foundation);
@@ -632,7 +632,7 @@ impl Simulation {
                 }),
             TargetKind::Cell(..) => None,
         };
-        let mut radius = approach_search_radius(range, actor.category, foundation);
+        let mut radius = approach_search_radius(range, actor.category(), foundation);
         let own = self.approach_nav_center(target_reference, &cells)?;
         let target_cell = ((own.x / 256) as i16, (own.y / 256) as i16);
         let source = super::ground_pose::position_world_coord(&actor.position);
@@ -643,10 +643,10 @@ impl Simulation {
         let target_bridge = match target {
             TargetKind::Cell(..) => cells.flags(identity.unwrap()) & 0x100 != 0,
             TargetKind::Entity(id) => self.substrate.entities.get(id).is_some_and(|target| {
-                target.category != EntityCategory::Structure && target.on_bridge
+                target.category() != EntityCategory::Structure && target.on_bridge
             }),
         };
-        let category = actor.category;
+        let category = actor.category();
         //4D5909..590D: a mover whose locomotor is Jumpjet flies there, so
         // it takes the first admitted candidate without either path-cost
         // test (4D6764 -> 4D689A). 4D5873 sets the same flag for an

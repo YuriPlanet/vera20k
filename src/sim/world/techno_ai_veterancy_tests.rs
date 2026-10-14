@@ -85,7 +85,7 @@ fn gsi_08_12_promotion_step_announces_each_crossing_once() {
         .veterancy
         .set_veteran();
     veterancy_promotion_step(&mut sim, id, &rules);
-    let owner = sim.substrate.entities.get(id).unwrap().owner;
+    let owner = sim.substrate.entities.get(id).unwrap().owner();
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::UnitPromoted {
@@ -256,11 +256,16 @@ fn gsi_08_12_promotion_mid_move_reaches_the_live_speed() {
 #[test]
 fn gsi_08_12_self_heal_pulses_one_point_on_the_repair_rate_cadence() {
     let (mut sim, rules, id) = spawned_grizzly();
-    sim.substrate.entities.get_mut(id).unwrap().health.current = 100;
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .health
+        .set_for_test(100);
     sim.session.binary_frame = 14;
     self_heal_step(&mut sim, id, &rules);
     assert_eq!(
-        sim.substrate.entities.get(id).unwrap().health.current,
+        sim.substrate.entities.get(id).unwrap().health.current(),
         100,
         "a rookie without SelfHealing= never pulses"
     );
@@ -272,15 +277,21 @@ fn gsi_08_12_self_heal_pulses_one_point_on_the_repair_rate_cadence() {
         .veterancy
         .set_elite();
     self_heal_step(&mut sim, id, &rules);
-    assert_eq!(sim.substrate.entities.get(id).unwrap().health.current, 101);
+    assert_eq!(
+        sim.substrate.entities.get(id).unwrap().health.current(),
+        101
+    );
     sim.session.binary_frame = 15;
     self_heal_step(&mut sim, id, &rules);
     assert_eq!(
-        sim.substrate.entities.get(id).unwrap().health.current,
+        sim.substrate.entities.get(id).unwrap().health.current(),
         101,
         "off-cadence frames do nothing"
     );
     sim.session.binary_frame = 28;
     self_heal_step(&mut sim, id, &rules);
-    assert_eq!(sim.substrate.entities.get(id).unwrap().health.current, 102);
+    assert_eq!(
+        sim.substrate.entities.get(id).unwrap().health.current(),
+        102
+    );
 }

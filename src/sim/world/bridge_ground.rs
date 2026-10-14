@@ -47,7 +47,7 @@ pub(super) fn apply(
                     // see bridge_health_alias.py and the report's open residual.
                     let event = EntityDamageEvent::direct_receiver(
                         stable_id,
-                        entity.health.current,
+                        entity.health.current(),
                         0,
                         RAD_NO_ATTACKER,
                         None,
@@ -291,7 +291,10 @@ mod tests {
         // Two original deaths leave the heavy tank alive. The captured
         // successor's repeated DeathWeapon kills it; its unlinked NextObject
         // cannot pass it a later direct C4 receiver.
-        assert_eq!(sim.substrate.entities.get(tank).unwrap().health.current, 0);
+        assert_eq!(
+            sim.substrate.entities.get(tank).unwrap().health.current(),
+            0
+        );
     }
 
     #[test]
@@ -305,7 +308,7 @@ mod tests {
             .get_mut(building)
             .unwrap()
             .health
-            .current = 0;
+            .set_for_test(0);
         apply(
             &mut sim,
             &rules,
@@ -420,7 +423,7 @@ mod tests {
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
-            sim.substrate.entities.get(bunker).unwrap().health.current,
+            sim.substrate.entities.get(bunker).unwrap().health.current(),
             0
         );
     }
@@ -515,10 +518,16 @@ mod tests {
             4,
             crate::sim::world::FrameEffects::default(),
         );
-        assert_eq!(sim.substrate.entities.get(head).unwrap().health.current, 0);
-        assert_eq!(sim.substrate.entities.get(next).unwrap().health.current, 0);
         assert_eq!(
-            sim.substrate.entities.get(tail).unwrap().health.current,
+            sim.substrate.entities.get(head).unwrap().health.current(),
+            0
+        );
+        assert_eq!(
+            sim.substrate.entities.get(next).unwrap().health.current(),
+            0
+        );
+        assert_eq!(
+            sim.substrate.entities.get(tail).unwrap().health.current(),
             100
         );
         assert_eq!(
@@ -601,12 +610,20 @@ mod tests {
         );
         for id in [older, newer, building] {
             assert_eq!(
-                sim.substrate.entities.get(id).unwrap().health.current,
+                sim.substrate.entities.get(id).unwrap().health.current(),
                 0,
                 "receiver {id}"
             );
         }
-        assert!(sim.substrate.entities.get(unmarked).unwrap().health.current > 0);
+        assert!(
+            sim.substrate
+                .entities
+                .get(unmarked)
+                .unwrap()
+                .health
+                .current()
+                > 0
+        );
         let order: Vec<_> = sim
             .lifecycle_test_events_for_test()
             .iter()

@@ -8,9 +8,9 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::base_plan::{BasePlanNode, pack_base_plan_cell};
+use crate::sim::combat::Health;
 use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::command::Command;
-use crate::sim::components::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseAiActivationLatches;
 use crate::sim::world::{SimSoundEvent, Simulation};
@@ -143,7 +143,7 @@ fn spawn_infantry(sim: &mut Simulation, type_str: &str, owner: &str, rx: u16, ry
         0,
         0,
         owner_id,
-        Health { current: 125 },
+        Health::new(125),
         type_id,
         EntityCategory::Infantry,
         0,
@@ -236,7 +236,7 @@ fn deploy_mcv_uses_gamemd_large_foundation_origin_offset() {
         sim.substrate
             .entities
             .values()
-            .any(|e| { e.type_ref == gacnst_id && e.position.rx == 19 && e.position.ry == 21 })
+            .any(|e| { e.type_ref() == gacnst_id && e.position.rx == 19 && e.position.ry == 21 })
     );
 }
 
@@ -280,8 +280,8 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
         .substrate
         .entities
         .values()
-        .find(|e| e.type_ref == gacnst_id)
-        .map(|e| e.stable_id)
+        .find(|e| e.type_ref() == gacnst_id)
+        .map(|e| e.stable_id())
         .expect("ConYard should exist after deploy");
 
     assert!(
@@ -302,7 +302,7 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
         .substrate
         .entities
         .values()
-        .find(|e| e.type_ref == amcv_id)
+        .find(|e| e.type_ref() == amcv_id)
         .map(|e| (e.position.rx, e.position.ry))
         .expect("MCV should exist again after undeploy");
     assert_eq!(
@@ -344,7 +344,7 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
             crate::sim::world::FrameEffects::default()
         ));
         let yard = deployed_type(&sim, "GACNST");
-        let id = yard.stable_id;
+        let id = yard.stable_id();
         assert!(
             !yard.building_art.actually_placed(),
             "{name}: opened at deploy"
@@ -409,7 +409,7 @@ fn deploy_mcv_accepts_mixed_height_clear_foundation() {
         sim.substrate
             .entities
             .values()
-            .any(|e| { e.type_ref == gacnst_id && e.position.rx == 19 && e.position.ry == 21 }),
+            .any(|e| { e.type_ref() == gacnst_id && e.position.rx == 19 && e.position.ry == 21 }),
         "Construction Yard should spawn at gamemd's deploy foundation origin"
     );
 }
@@ -457,7 +457,7 @@ fn deploy_mcv_rejects_structure_in_rightmost_foundation_column() {
             !sim.substrate
                 .entities
                 .values()
-                .any(|e| e.type_ref == gacnst_id),
+                .any(|e| e.type_ref() == gacnst_id),
             "blocked deploy must not spawn a Construction Yard"
         );
     }
@@ -494,7 +494,7 @@ fn deploy_mcv_waits_for_target_building_deploy_facing() {
             .substrate
             .entities
             .values()
-            .any(|e| e.type_ref == yard)),
+            .any(|e| e.type_ref() == yard)),
         "facing gate must run before ConYard creation"
     );
     assert_eq!(sim.houses[&owner].ai_activation, SPLIT_AI_ACTIVATION);
@@ -671,7 +671,7 @@ fn deployed_type<'a>(sim: &'a Simulation, type_name: &str) -> &'a GameEntity {
     sim.substrate
         .entities
         .values()
-        .find(|entity| entity.type_ref == type_id && !entity.dying)
+        .find(|entity| entity.type_ref() == type_id && !entity.dying)
         .expect("deployed target exists")
 }
 
@@ -735,7 +735,12 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
-    sim.substrate.entities.get_mut(mcv).unwrap().health.current = 225;
+    sim.substrate
+        .entities
+        .get_mut(mcv)
+        .unwrap()
+        .health
+        .set_for_test(225);
     let deployed_at = sim.session.binary_frame;
     assert!(sim.deploy_mcv(
         mcv,
@@ -744,7 +749,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         crate::sim::world::FrameEffects::default()
     ));
     sim.flush_pending_delete();
-    let yard = deployed_type(&sim, "GACNST").stable_id;
+    let yard = deployed_type(&sim, "GACNST").stable_id();
     let mut frames = Vec::new();
     for _ in 0..7 {
         let frame = sim.session.binary_frame - deployed_at;
@@ -1210,7 +1215,9 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
     )
     .unwrap();
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.health.current = input["health"].as_i64().unwrap_or(100) as i32;
+    actor
+        .health
+        .set_for_test(input["health"].as_i64().unwrap_or(100) as i32);
     actor.position.sub_x = SimFixed::from_num(128);
     actor.position.sub_y = SimFixed::from_num(128);
     actor.position.exact_z_leptons = Some(0);

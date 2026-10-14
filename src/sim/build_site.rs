@@ -247,7 +247,7 @@ pub(crate) fn flush_for_placement(
             sim.interner.resolve(object.owner()),
             sim.interner.resolve(house),
         );
-        if object.category == EntityCategory::Structure || !allied {
+        if object.category() == EntityCategory::Structure || !allied {
             return Flush::Blocked;
         }
         scattered = true;
@@ -291,7 +291,7 @@ fn objects_admit(
         NativeCellIdentity::Dummy => Vec::new(),
     };
     let category = |member: &CellObjectMember| match *member {
-        CellObjectMember::Entity(id) => sim.substrate.entities.get(id).map(|e| e.category),
+        CellObjectMember::Entity(id) => sim.substrate.entities.get(id).map(|e| e.category()),
         CellObjectMember::Terrain(_) => None,
     };
     let is_terrain = |member: &CellObjectMember| matches!(member, CellObjectMember::Terrain(_));
@@ -330,7 +330,7 @@ fn objects_admit(
             None => occupation_clear(),
             Some(CellObjectMember::Entity(id)) => {
                 sim.substrate.entities.get(id).is_some_and(|e| {
-                    e.category == EntityCategory::Structure
+                    e.category() == EntityCategory::Structure
                         && sim
                             .object_type(e.type_ref(), rules)
                             .is_some_and(|blocker| blocker.laser_fence)

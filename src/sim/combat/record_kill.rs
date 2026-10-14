@@ -186,7 +186,7 @@ fn record_the_kill(
         .get(&victim_owner)
         .map(crate::sim::house_state::HouseState::cost_factors);
     let victim_type = rules.object(interner.resolve(victim.type_ref()));
-    let insignificant_building = victim.category == EntityCategory::Structure
+    let insignificant_building = victim.category() == EntityCategory::Structure
         && victim_type.is_some_and(|object| object.insignificant);
     // `0x00702E64` asks the killer's house `HouseClass::IsAlly @ 0x004F9A90`,
     // which reads only the asker's own ally bits: a one-way test.
@@ -300,7 +300,7 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(victim) else {
             return;
         };
-        if !entity.lifecycle.object_alive || entity.category == EntityCategory::Unit {
+        if !entity.lifecycle.object_alive || entity.category() == EntityCategory::Unit {
             return;
         }
         for kind in [7, 48, 29] {
@@ -344,7 +344,7 @@ fn record_kill_credit(
 ) {
     victim.killed_by = killer_owner;
     if callback == KillCallback::Terminal
-        || victim.health.current == 0
+        || victim.health.current() == 0
         || killer_owner.is_some()
         || victim.crashing
     {
@@ -358,13 +358,13 @@ fn record_kill_credit(
     }
     if !insignificant_building {
         if let Some(house) = houses.get_mut(&victim.owner()) {
-            house.stats.record_loss(victim.category);
+            house.stats.record_loss(victim.category());
         }
         if count_killer
             && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
-            house.stats.record_kill(victim.category);
+            house.stats.record_kill(victim.category());
         }
     }
 }

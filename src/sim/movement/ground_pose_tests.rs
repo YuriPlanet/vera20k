@@ -24,8 +24,8 @@ fn terrain() -> ResolvedTerrainGrid {
 
 fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
     let mut entity = GameEntity::test_default(1, "MOVER", "Americans", 3, 3);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("MOVER");
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("MOVER"));
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     entity.body_facing.snap(0x0000, 0);
     entity.position.exact_z_leptons = Some(731);
@@ -57,7 +57,7 @@ fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
             )
         }
         LocomotorKind::Walk => {
-            entity.category = EntityCategory::Infantry;
+            entity.set_category_for_test(EntityCategory::Infantry);
             entity.is_voxel = false;
             entity.sub_cell = Some(0);
             // Walk follows its Foot+5E0 route toward its destination.
@@ -177,7 +177,7 @@ fn insert(sim: &mut Simulation, mut entity: GameEntity) {
             MovementLayer::Ground
         },
         entity.sub_cell,
-        crate::sim::occupancy::CellListInsertion::from_category(entity.category),
+        crate::sim::occupancy::CellListInsertion::from_category(entity.category()),
     );
     sim.substrate.entities.insert(entity);
 }
@@ -627,8 +627,8 @@ fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
     entity.position.sub_y = SimFixed::from_num(2);
     insert(&mut sim, entity);
     let mut blocker = GameEntity::test_default(2, "BLOCKER", "Americans", 3, 2);
-    blocker.owner = sim.intern("Americans");
-    blocker.type_ref = sim.intern("BLOCKER");
+    blocker.set_owner_for_test(sim.intern("Americans"));
+    blocker.set_type_ref_for_test(sim.intern("BLOCKER"));
     // Moving: its Foot+5E0 head word steps east from (3,2).
     blocker.navigation.path_replay = crate::sim::movement::fixture_path_replay(&[(3, 2), (4, 2)]);
     sim.substrate.occupancy.add(
@@ -637,7 +637,7 @@ fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
         2,
         MovementLayer::Ground,
         None,
-        crate::sim::occupancy::CellListInsertion::from_category(blocker.category),
+        crate::sim::occupancy::CellListInsertion::from_category(blocker.category()),
     );
     sim.substrate.entities.insert(blocker);
     walk_tick(&mut sim, &terrain, &grid, 0);
@@ -1195,7 +1195,7 @@ fn getcoords_xy_is_the_location_or_a_buildings_foundation_centre() {
         raw,
         "mobile GetCoords is raw"
     );
-    entity.category = crate::map::entities::EntityCategory::Structure;
+    entity.set_category_for_test(crate::map::entities::EntityCategory::Structure);
     for (foundation, expected) in [
         ("1x1", raw),
         ("2x2", [raw[0] + 128, raw[1] + 128]),
@@ -1239,8 +1239,8 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
         2,
         crate::map::entities::EntityCategory::Structure,
     );
-    building.owner = sim.intern("Americans");
-    building.type_ref = sim.intern("TEST");
+    building.set_owner_for_test(sim.intern("Americans"));
+    building.set_type_ref_for_test(sim.intern("TEST"));
     let (sub_x, sub_y) = (building.position.sub_x, building.position.sub_y);
     sim.substrate.entities.insert(building);
     assert!(matches!(

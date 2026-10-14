@@ -59,7 +59,7 @@ impl Simulation {
                     && !entity.lifecycle.in_limbo
                     && entity.lifecycle.cell_marked
                     && !entity.dying
-                    && entity.health.current > 0
+                    && entity.health.current() > 0
             })
             .map(|entity| entity.stable_id())
             .collect();
@@ -83,7 +83,7 @@ impl Simulation {
         let Some(entity) = self.entities().get(id) else {
             return;
         };
-        if entity.category != crate::map::entities::EntityCategory::Structure {
+        if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
         let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {

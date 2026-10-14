@@ -79,9 +79,9 @@ fn wall_fixture() -> (
         (WOODV, "WOODV", EntityCategory::Unit, LocomotorKind::Drive),
     ] {
         let mut mover = GameEntity::test_default(id, name, "Americans", 15, 15);
-        mover.owner = owner;
-        mover.type_ref = sim.intern(name);
-        mover.category = category;
+        mover.set_owner_for_test(owner);
+        mover.set_type_ref_for_test(sim.intern(name));
+        mover.set_category_for_test(category);
         mover.in_playfield = true;
         mover.locomotor = Some(LocomotorState::for_test_kind(kind));
         sim.substrate.entities.insert(mover);

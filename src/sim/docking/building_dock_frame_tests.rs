@@ -81,7 +81,7 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
                 crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
-                sim.substrate.entities.get(tank).unwrap().health.current,
+                sim.substrate.entities.get(tank).unwrap().health.current(),
                 100
             );
         }
@@ -149,7 +149,12 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
             "first tank completes service and releases its contacts"
         );
         assert_eq!(
-            sim.substrate.entities.get(tanks[0]).unwrap().health.current,
+            sim.substrate
+                .entities
+                .get(tanks[0])
+                .unwrap()
+                .health
+                .current(),
             rules.object("MTNK").unwrap().strength
         );
         // Both pending Foot turns preceded this Building release. Their next
@@ -183,7 +188,7 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
             advance(&mut sim, rules);
             if tanks.iter().all(|tank| {
                 let unit = sim.substrate.entities.get(*tank).unwrap();
-                unit.health.current == rules.object("MTNK").unwrap().strength
+                unit.health.current() == rules.object("MTNK").unwrap().strength
                     && unit.pending_entry().is_none()
                     && !linked(&sim, depot, *tank)
                     && !((10..13).contains(&unit.position.rx)

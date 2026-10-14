@@ -176,7 +176,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
         let rhino = spawn(&mut sim, &rules, "HTNK", "Russians", (10, 10));
         let gi = spawn(&mut sim, &rules, "E1", "Americans", (11, 10));
         let source = setup(&mut sim, rhino, gi);
-        let health = |sim: &Simulation| sim.substrate.entities.get(rhino).unwrap().health.current;
+        let health = |sim: &Simulation| sim.substrate.entities.get(rhino).unwrap().health.current();
         let before = health(&sim);
         hit(&mut sim, &rules, rhino, source, damage);
         assert_eq!(damage == 0, health(&sim) == before);
@@ -245,7 +245,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
                 .get_mut(rhino)
                 .unwrap()
                 .health
-                .current = health;
+                .set_for_test(health);
         }
         let source = if source_present {
             gi
@@ -256,7 +256,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
         sim.substrate
             .entities
             .get(rhino)
-            .map(|rhino| (rhino.health.current, rhino.mission.queued()))
+            .map(|rhino| (rhino.health.current(), rhino.mission.queued()))
     };
     let (health, mission) = lone(None, false).unwrap();
     assert!(health < rules.object("HTNK").unwrap().strength);
@@ -288,7 +288,10 @@ fn gassed_computer_fortress_charges_the_chaos_drone() {
     );
     let unit = sim.substrate.entities.get(fortress).unwrap();
     assert!(unit.berserk.active);
-    assert_eq!(unit.health.current, rules.object("BFRT").unwrap().strength);
+    assert_eq!(
+        unit.health.current(),
+        rules.object("BFRT").unwrap().strength
+    );
     assert_eq!(
         nav_com(&sim, fortress),
         Some(NavTargetRef::Entity { id: drone })
@@ -313,7 +316,7 @@ fn damaged_computer_miner_heads_for_its_refinery() {
         let miner = spawn(&mut sim, &rules, "HARV", "Russians", (12, 12));
         let tank = spawn(&mut sim, &rules, "MTNK", "Americans", (12, 14));
         let entity = sim.substrate.entities.get_mut(miner).unwrap();
-        entity.health.current = health;
+        entity.health.set_for_test(health);
         entity.miner.as_mut().unwrap().cargo = vec![
             CargoBale {
                 resource_type: ResourceType::Ore,
@@ -372,9 +375,9 @@ fn vehicle_inside_its_war_factory_takes_no_hit() {
         entity.position.rx = inside.0;
         entity.position.ry = inside.1;
         entity.radio_contacts.insert(factory).unwrap();
-        let before = entity.health.current;
+        let before = entity.health.current();
         hit_with(&mut sim, &rules, rhino, gi, 50, ignore_defenses);
-        before - sim.substrate.entities.get(rhino).unwrap().health.current
+        before - sim.substrate.entities.get(rhino).unwrap().health.current()
     };
     assert_eq!(health_after(false), 0);
     assert!(health_after(true) > 0);

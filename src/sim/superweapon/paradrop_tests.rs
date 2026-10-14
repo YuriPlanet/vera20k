@@ -217,9 +217,9 @@ fn fill_spots(sim: &mut Simulation, cell: (u16, u16)) {
     for spot in [2, 3, 4] {
         let id = sim.allocate_stable_id();
         let mut blocker = GameEntity::test_default(id, "E1", "Americans", cell.0, cell.1);
-        blocker.owner = sim.interner.intern("Americans");
-        blocker.type_ref = sim.interner.intern("E1");
-        blocker.category = EntityCategory::Infantry;
+        blocker.set_owner_for_test(sim.interner.intern("Americans"));
+        blocker.set_type_ref_for_test(sim.interner.intern("E1"));
+        blocker.set_category_for_test(EntityCategory::Infantry);
         blocker.is_voxel = false;
         blocker.sub_cell = Some(spot);
         (blocker.position.sub_x, blocker.position.sub_y) =
@@ -623,7 +623,7 @@ fn send_paradrop_planes_matches_native() {
             .substrate
             .entities
             .values()
-            .filter(|entity| entity.category == EntityCategory::Infantry)
+            .filter(|entity| entity.category() == EntityCategory::Infantry)
             .map(|entity| entity.stable_id())
             .collect();
         infantry.sort_unstable();

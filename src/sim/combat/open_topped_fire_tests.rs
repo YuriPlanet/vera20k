@@ -293,9 +293,9 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
             break;
         };
         if first_volley.is_none() && !output.fire_events.is_empty() {
-            first_volley = Some((output.fire_events.len(), 200 - target.health.current));
+            first_volley = Some((output.fire_events.len(), 200 - target.health.current()));
         }
-        if target.health.current == 0 || !target.lifecycle.object_alive {
+        if target.health.current() == 0 || !target.lifecycle.object_alive {
             break;
         }
     }
@@ -344,7 +344,7 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         sim.substrate
             .entities
             .get(enemy)
-            .is_none_or(|target| !target.lifecycle.object_alive || target.health.current == 0),
+            .is_none_or(|target| !target.lifecycle.object_alive || target.health.current() == 0),
         "the riders kill Tanya"
     );
     // The experience (`+0x150`), not yet a rank: Tanya's 1000 over the
@@ -877,7 +877,7 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
             .get(target)
             .unwrap()
             .health
-            .current;
+            .current();
         let mut frozen = false;
         let mut stop_issued = false;
         let mut stop_observed = false;
@@ -917,7 +917,7 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                     .get(target)
                     .unwrap();
                 assert!(!victim.ai_frozen());
-                assert_eq!(victim.health.current, original_health);
+                assert_eq!(victim.health.current(), original_health);
                 completed = true;
                 break;
             }
@@ -928,7 +928,7 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                 assert!(!actor.is_warping_in());
                 let victim = sim.substrate.entities.get(target).unwrap();
                 assert!(victim.ai_frozen());
-                assert_eq!(victim.health.current, original_health);
+                assert_eq!(victim.health.current(), original_health);
                 frozen = true;
                 if !stop_issued {
                     pending = Some(order(

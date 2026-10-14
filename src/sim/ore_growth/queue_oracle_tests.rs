@@ -4,7 +4,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
@@ -413,9 +413,7 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
                     0,
                     0,
                     owner,
-                    Health {
-                        current: input["building_health"].as_i64().unwrap_or(900) as i32,
-                    },
+                    Health::new(input["building_health"].as_i64().unwrap_or(900) as i32),
                     typ,
                     EntityCategory::Structure,
                     0,
@@ -446,7 +444,7 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
             0,
             0,
             owner,
-            Health { current: 900 },
+            Health::new(900),
             typ,
             EntityCategory::Unit,
             0,

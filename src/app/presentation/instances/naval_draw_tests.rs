@@ -20,7 +20,7 @@ fn native_draw_entity(input: &serde_json::Value) -> crate::sim::game_entity::Gam
         (xyz[0] / 256) as u16,
         (xyz[1] / 256) as u16,
     );
-    entity.category = EntityCategory::Unit;
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.position.sub_x = crate::util::fixed_math::SimFixed::from_num(xyz[0] % 256);
     entity.position.sub_y = crate::util::fixed_math::SimFixed::from_num(xyz[1] % 256);
     entity.position.exact_z_leptons = Some(xyz[2]);

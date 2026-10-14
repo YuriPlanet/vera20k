@@ -252,12 +252,12 @@ fn flash_team_type_matches_original_member_writes_across_houses() {
         let script = sim.interner.intern("SCRIPT");
         for (member, initial) in input["initial"].as_array().unwrap().iter().enumerate() {
             let mut entity = GameEntity::test_default(member as u64 + 1, "TANY", "OWNER0", 64, 64);
-            entity.category = crate::map::entities::EntityCategory::Infantry;
+            entity.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             // The native member-write body reads none of these admission
             // fields; a retained member is still flashed before retirement.
             entity.lifecycle.object_alive = false;
             entity.lifecycle.in_limbo = true;
-            entity.health.current = 0;
+            entity.health.set_for_test(0);
             entity.flashing.start(int(initial));
             sim.substrate.entities.insert(entity);
         }
@@ -600,7 +600,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         let created: Vec<_> = sim
             .entities()
             .values()
-            .map(|entity| entity.native_unique_id)
+            .map(|entity| entity.native_unique_id())
             .collect();
         let expected = |value: &Value| {
             value
@@ -618,7 +618,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         let plane = sim
             .entities()
             .values()
-            .find(|entity| entity.native_unique_id == int(&row["plane"]["native_id"]))
+            .find(|entity| entity.native_unique_id() == int(&row["plane"]["native_id"]))
             .unwrap();
         let xyz = crate::sim::movement::ground_pose::object_location(
             plane,
@@ -661,7 +661,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
             row["plane"]["nav_present"].as_bool().unwrap(),
             "{input}"
         );
-        let native_id = |id| sim.entities().get(id).unwrap().native_unique_id;
+        let native_id = |id| sim.entities().get(id).unwrap().native_unique_id();
         assert_eq!(
             plane.attack_target.as_ref().unwrap().target,
             crate::sim::combat::TargetKind::Cell(
@@ -692,7 +692,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         let limbo: Vec<_> = sim
             .entities()
             .values()
-            .filter(|entity| entity.category == EntityCategory::Infantry)
+            .filter(|entity| entity.category() == EntityCategory::Infantry)
             .map(|entity| entity.lifecycle.in_limbo)
             .collect();
         assert_eq!(
@@ -976,7 +976,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
         let created: Vec<_> = sim
             .entities()
             .values()
-            .map(|entity| (entity.stable_id(), entity.native_unique_id))
+            .map(|entity| (entity.stable_id(), entity.native_unique_id()))
             .collect();
         let native_ids = |ids: &[u64]| {
             ids.iter()
@@ -1159,7 +1159,7 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
         for (member, native) in team.members.iter().zip(expected) {
             let entity = sim.substrate.entities.get(member.id).unwrap();
             assert_eq!(
-                entity.native_unique_id,
+                entity.native_unique_id(),
                 int(&native["native_id"]),
                 "{input}"
             );
@@ -1220,8 +1220,8 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
             assert_eq!(
                 format!(
                     "{:02x}{:02x}",
-                    entity.techno_ctor_random_word as u8,
-                    (entity.techno_ctor_random_word >> 8) as u8
+                    entity.techno_ctor_random_word() as u8,
+                    (entity.techno_ctor_random_word() >> 8) as u8
                 ),
                 constructed["phase"].as_str().unwrap(),
                 "{input}"
@@ -1311,10 +1311,10 @@ fn shared_leader_matches_original_script3_signed_ratings_and_live_joined_gates()
                     )
                     .unwrap();
                 let entity = sim.substrate.entities.get_mut(id).unwrap();
-                entity.native_unique_id = int(&state["native_id"]);
+                entity.set_native_unique_id_for_test(int(&state["native_id"]));
                 entity.lifecycle.object_alive = int(&state["alive"]) != 0;
                 entity.lifecycle.in_limbo = int(&state["limbo"]) != 0;
-                entity.health.current = int(&state["health"]);
+                entity.health.set_for_test(int(&state["health"]));
                 id
             })
             .collect();
@@ -1339,7 +1339,7 @@ fn shared_leader_matches_original_script3_signed_ratings_and_live_joined_gates()
         }
         .unwrap();
         assert_eq!(
-            sim.entities().get(leader).unwrap().native_unique_id,
+            sim.entities().get(leader).unwrap().native_unique_id(),
             int(&row["leader"]),
             "{input}"
         );
@@ -1389,7 +1389,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
         .zip(row["prior_members"].as_array().unwrap())
     {
         let entity = sim.entities().get(member.id).unwrap();
-        assert_eq!(entity.native_unique_id, int(&prior["native_id"]));
+        assert_eq!(entity.native_unique_id(), int(&prior["native_id"]));
         assert_eq!(
             sim.object_type(entity.type_ref(), &rules)
                 .unwrap()
@@ -1449,7 +1449,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
         .zip(row["members_after"].as_array().unwrap())
     {
         let entity = sim.entities().get(member.id).unwrap();
-        assert_eq!(entity.native_unique_id, int(&native["native_id"]));
+        assert_eq!(entity.native_unique_id(), int(&native["native_id"]));
         assert_eq!(entity.mission.current().raw(), int(&native["mission"]));
         assert_eq!(entity.mission.queued().raw(), int(&native["queued"]));
         assert_eq!(

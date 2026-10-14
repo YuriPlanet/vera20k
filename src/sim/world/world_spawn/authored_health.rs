@@ -49,8 +49,8 @@ pub(super) fn authored_health(category: EntityCategory, authored: i32, strength:
 }
 
 fn apply(entity: &mut GameEntity, authored: i32, strength: i32) {
-    let actual = authored_health(entity.category, authored, strength);
-    entity.health.current = actual;
+    let actual = authored_health(entity.category(), authored, strength);
+    entity.health.set(actual);
     entity.estimated_health.reset(actual);
 }
 
@@ -66,7 +66,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> (u64, RevealOutcome) {
-        let building = entity.category == EntityCategory::Structure;
+        let building = entity.category() == EntityCategory::Structure;
         // InitManagers belongs to construction, before the map loader's stores.
         let (id, position) =
             self.store_with_constructor_managers(entity, rules, super::FrameEffects::default());
@@ -77,7 +77,7 @@ impl Simulation {
                 .get(id)
                 .expect("constructed map Techno");
             let strength = map_object_type(
-                entity.category,
+                entity.category(),
                 self.interner.resolve(entity.type_ref()),
                 rules,
             )
@@ -110,7 +110,7 @@ impl Simulation {
                 .get(id)
                 .and_then(|entity| {
                     map_object_type(
-                        entity.category,
+                        entity.category(),
                         self.interner.resolve(entity.type_ref()),
                         rules,
                     )

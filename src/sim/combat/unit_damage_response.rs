@@ -125,7 +125,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return false;
         };
-        if unit.category != EntityCategory::Unit {
+        if unit.category() != EntityCategory::Unit {
             return false;
         }
         let Some(factory) = unit.radio_contacts.slot(0) else {
@@ -135,7 +135,7 @@ impl Simulation {
             .entities
             .get(factory)
             .is_some_and(|building| {
-                building.category == EntityCategory::Structure
+                building.category() == EntityCategory::Structure
                     && rules
                         .object(self.interner.resolve(building.type_ref()))
                         .is_some_and(|object| object.weapons_factory)
@@ -183,7 +183,7 @@ impl Simulation {
             return;
         };
         let owner = unit.owner();
-        if unit.category != EntityCategory::Unit
+        if unit.category() != EntityCategory::Unit
             || self.team_script_vm.team_for_member(id).is_some()
             || unit.dock_entered_with.is_some()
             || crate::sim::combat::combat_weapon::is_ally_by_object(

@@ -471,7 +471,7 @@ impl Simulation {
                 let is_transport =
                     metadata.full
                         && self.substrate.entities.get(member).is_some_and(|entity| {
-                            entity.category
+                            entity.category()
                                 == if air_transports {
                                     EntityCategory::Aircraft
                                 } else {
@@ -590,7 +590,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(member)
-                .is_some_and(|member| member.category == EntityCategory::Aircraft);
+                .is_some_and(|member| member.category() == EntityCategory::Aircraft);
             let heading = if nearby {
                 0
             } else {

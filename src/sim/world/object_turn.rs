@@ -135,7 +135,7 @@ impl Simulation {
         let Some(infantry) = self.substrate.entities.get(stable_id) else {
             return Ok(false);
         };
-        if infantry.category != EntityCategory::Infantry
+        if infantry.category() != EntityCategory::Infantry
             || !infantry.lifecycle.object_alive
             || infantry.lifecycle.in_limbo
             || !matches!(
@@ -306,7 +306,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(stable_id)
-                .is_some_and(|entity| entity.category == EntityCategory::Unit);
+                .is_some_and(|entity| entity.category() == EntityCategory::Unit);
         if air.touched_down && jumpjet_unit_touchdown {
             // Jumpjet54C8F0/54C8FF now run Unit PerCell2 and the class NULL
             // setter synchronously while the installed instance is phase4.
@@ -332,7 +332,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return Ok(process);
         };
-        if entity.category == EntityCategory::Infantry {
+        if entity.category() == EntityCategory::Infantry {
             // The Infantry notice keeps the infantryman: its class AI runs on
             // to the sequencer and locomotion actions.
             if let Some(rules) = rules {
@@ -417,7 +417,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(stable_id)
-                    .and_then(|entity| entity.parasite_eating_me)
+                    .and_then(|entity| entity.parasite.eater())
             {
                 sim.parasite_exit_unit(eater, rules, ctx.effects);
             }
@@ -812,7 +812,7 @@ impl Simulation {
         let tube_active_at_entry = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
             !entity.dying
                 && matches!(
-                    entity.category,
+                    entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 )
                 && entity.low_bridge_tube_state.is_some()
@@ -821,7 +821,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.category == EntityCategory::Structure);
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure);
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
         if let Some(error) = ai.fall_error.take() {
             return Err(error);
@@ -842,7 +842,7 @@ impl Simulation {
             entity.dying
                 || (!tube_active_at_entry
                     && matches!(
-                        entity.category,
+                        entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                     )
                     && !entity.lifecycle.object_alive)
@@ -872,7 +872,7 @@ impl Simulation {
         if !tube_active_at_entry
             && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
             && matches!(
-                entity.category,
+                entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
             )
         {
@@ -942,7 +942,7 @@ impl Simulation {
         // the complete live-object pass.
         if process.admitted && unit_body_counter_admitted(tube_active_at_entry) {
             let unit_body_cadence = sim.substrate.entities.get(stable_id).and_then(|entity| {
-                if entity.category != EntityCategory::Unit {
+                if entity.category() != EntityCategory::Unit {
                     return None;
                 }
                 let object = rules?.object(sim.interner.resolve(entity.type_ref()))?;
@@ -984,7 +984,7 @@ impl Simulation {
         let tube_owns_whole_turn = tube_active_at_entry
             || sim.substrate.entities.get(stable_id).is_some_and(|entity| {
                 matches!(
-                    entity.category,
+                    entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 ) && entity.low_bridge_tube_state.is_some()
             });
@@ -1102,7 +1102,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         if let (Some(rules), true) = (rules, infantry) {
             //51BCA4..51BDCF follows the entire FootAI, including Process and
             // its tails. A successful Scatter invokes Process a second time

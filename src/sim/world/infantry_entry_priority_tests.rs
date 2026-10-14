@@ -87,9 +87,9 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
             },
         });
         let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
-        mover.owner = ours;
-        mover.type_ref = sim.intern("MOVER");
-        mover.category = EntityCategory::Infantry;
+        mover.set_owner_for_test(ours);
+        mover.set_type_ref_for_test(sim.intern("MOVER"));
+        mover.set_category_for_test(EntityCategory::Infantry);
         mover.in_playfield = true;
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         sim.substrate.entities.insert(mover);
@@ -106,9 +106,9 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
             };
             let infantry = category == EntityCategory::Infantry;
             let mut blocker = GameEntity::test_default(91, name, "Russians", 11, 10);
-            blocker.owner = enemy;
-            blocker.type_ref = sim.intern(name);
-            blocker.category = category;
+            blocker.set_owner_for_test(enemy);
+            blocker.set_type_ref_for_test(sim.intern(name));
+            blocker.set_category_for_test(category);
             blocker.position.sub_x = SimFixed::from_num(128);
             blocker.position.sub_y = SimFixed::from_num(128);
             blocker.foot_occupation_enabled = true;
@@ -138,7 +138,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
                         ))
                 );
             }
-            let category = blocker.category;
+            let category = blocker.category();
             sim.substrate.entities.insert(blocker);
             sim.substrate.occupancy.add(
                 11,

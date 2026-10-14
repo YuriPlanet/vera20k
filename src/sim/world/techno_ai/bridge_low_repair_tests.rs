@@ -548,7 +548,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                     head_process["marked"]
                 );
                 assert_eq!(
-                    actor.health.current,
+                    actor.health.current(),
                     native["initial"]["health"].as_i64().unwrap() as i32
                 );
             }
@@ -743,7 +743,7 @@ fn assert_retained_naval_ship(
     use crate::sim::world::display_layers::DisplayLayer;
     let actor = sim.entities().get(id).unwrap();
     assert_eq!(
-        actor.health.current,
+        actor.health.current(),
         native["health"].as_i64().unwrap() as i32
     );
     assert_eq!(actor.lifecycle.object_alive, native["alive"] == 1);

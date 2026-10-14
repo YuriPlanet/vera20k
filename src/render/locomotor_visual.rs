@@ -188,7 +188,7 @@ mod tests {
 
     fn air_unit(kind: LocomotorKind, altitude: i32) -> GameEntity {
         let mut entity = GameEntity::test_default(1, "BEAG", "Americans", 5, 5);
-        entity.category = EntityCategory::Aircraft;
+        entity.set_category_for_test(EntityCategory::Aircraft);
         let mut loco = LocomotorState::for_test_kind(kind);
         loco.layer = MovementLayer::Air;
         entity.locomotor = Some(loco);
@@ -275,7 +275,7 @@ mod tests {
 
         let mut entities = EntityStore::default();
         let mut infantry = GameEntity::test_default(1, "E1", "Americans", 5, 5);
-        infantry.category = EntityCategory::Infantry;
+        infantry.set_category_for_test(EntityCategory::Infantry);
         entities.insert(infantry);
         assert!(begin_parachute_descent(&mut entities, 1, 400));
 
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn gsi_13_02_building_lift_and_adjust_for_z_remain_separate_exact_steps() {
         let mut entity = GameEntity::test_default(1, "GAPOWR", "Americans", 5, 5);
-        entity.category = EntityCategory::Structure;
+        entity.set_category_for_test(EntityCategory::Structure);
         entity.position.exact_z_leptons = Some(728);
 
         let z_free = z_free_screen_position(&entity.position);
@@ -350,7 +350,7 @@ mod tests {
 
         let mut entities = EntityStore::default();
         let mut entity = air_unit(LocomotorKind::Jumpjet, 1500);
-        entity.category = EntityCategory::Infantry;
+        entity.set_category_for_test(EntityCategory::Infantry);
         entities.insert(entity);
         assert!(begin_parachute_descent(&mut entities, 1, 400));
         let entity = entities.get(1).expect("entity");
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn gsi_13_02_grounded_infantry_anchor_is_its_ground_position() {
         let mut entity = GameEntity::test_default(1, "E1", "Americans", 5, 5);
-        entity.category = EntityCategory::Infantry;
+        entity.set_category_for_test(EntityCategory::Infantry);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         // ObjectClass::GetCoords returns exact XYZ.
         assert_eq!(
@@ -464,14 +464,14 @@ mod tests {
     #[test]
     fn a_vehicle_never_bobs() {
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        entity.category = EntityCategory::Unit;
+        entity.set_category_for_test(EntityCategory::Unit);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         assert_eq!(height_lift_px(&entity), 0.0);
     }
     // -- F14 boundary tests: sim-side callers moved here so `sim/` never
     // names `crate::render`. Coverage preserved verbatim. --
     use crate::map::terrain;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
 
     #[test]
     fn test_screen_coords_computed() {
@@ -482,7 +482,7 @@ mod tests {
             2, // z=2 for elevation
             0,
             crate::sim::intern::test_intern("Americans"),
-            Health { current: 100 },
+            Health::new(100),
             crate::sim::intern::test_intern("HTNK"),
             EntityCategory::Unit,
             0,
@@ -511,7 +511,7 @@ mod tests {
             0,
             64,
             crate::sim::intern::test_intern("Americans"),
-            Health { current: 100 },
+            Health::new(100),
             crate::sim::intern::test_intern("HTNK"),
             EntityCategory::Unit,
             0,

@@ -176,7 +176,7 @@ impl Simulation {
             return stats;
         };
         air_movement::ensure_fly_secondary_facing(entity);
-        let living = entity.health.current > 0;
+        let living = entity.health.current() > 0;
         let Some(state) = entity
             .locomotor
             .as_mut()
@@ -211,7 +211,7 @@ impl Simulation {
             return stats;
         }
         let destination = state.destination();
-        if entity.health.current > 0
+        if entity.health.current() > 0
             && destination != NULL_COORD
             && !state.has_phase_callback()
             && air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()) > 0
@@ -222,7 +222,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.health.current > 0)
+            .is_some_and(|entity| entity.health.current() > 0)
         {
             self.complete_fly_phase(id, rules, registry, frame_effects);
         }
@@ -298,7 +298,7 @@ impl Simulation {
             .as_ref()
             .and_then(|locomotor| locomotor.fly_runtime())
             .is_none_or(|state| state.airport_bound());
-        if entity.health.current <= 0
+        if entity.health.current() <= 0
             || entity.navigation.nav_com.is_none()
             || entity.mission.effective() != MissionId::from_known(MissionType::Guard)
             || entity.mission.queued() != MissionId::NONE
@@ -398,7 +398,7 @@ impl Simulation {
             air_movement::write_fly_target_speed(locomotor, &facts);
         }
         if let Some(object) = object.filter(|_| dropship)
-            && entity.health.current > 0
+            && entity.health.current() > 0
             && entity
                 .locomotor
                 .as_ref()
@@ -413,7 +413,7 @@ impl Simulation {
             self.begin_fly_landing(id, rules, registry, frame_effects);
         }
         if let Some(entity) = self.substrate.entities.get_mut(id)
-            && entity.health.current > 0
+            && entity.health.current() > 0
             && let Some(state) = entity
                 .locomotor
                 .as_mut()
@@ -457,7 +457,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.category == EntityCategory::Aircraft);
+            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft);
         let edge = FlyMapEdge {
             width,
             height,
@@ -489,7 +489,7 @@ impl Simulation {
             .as_ref()
             .and_then(|locomotor| locomotor.fly_runtime())
             .map_or(NULL_COORD, |state| state.destination());
-        if entity.health.current <= 0 || destination == NULL_COORD {
+        if entity.health.current() <= 0 || destination == NULL_COORD {
             return;
         }
         let entering_helipad = entity.mission.effective()
@@ -503,7 +503,7 @@ impl Simulation {
                     | NavTargetRef::Object { id }
                     | NavTargetRef::Building { id } => self.substrate.entities.get(id),
                 })
-                .filter(|building| building.category == EntityCategory::Structure)
+                .filter(|building| building.category() == EntityCategory::Structure)
                 .and_then(|building| {
                     rules.and_then(|rules| rules.object(self.interner.resolve(building.type_ref())))
                 })
@@ -549,7 +549,7 @@ impl Simulation {
         };
         let location = ground_pose::object_location(entity, self.resolved_terrain.as_ref());
         !state.cruise_mode()
-            && entity.health.current > 0
+            && entity.health.current() > 0
             && !state.has_phase_callback()
             && coord_cell(state.destination()) == coord_cell(location)
             && state.target_speed == SIM_ZERO
@@ -607,7 +607,7 @@ impl Simulation {
             return 0;
         };
         let object = rules.and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
-        let aircraft = entity.category == EntityCategory::Aircraft;
+        let aircraft = entity.category() == EntityCategory::Aircraft;
         let strafe = aircraft
             && rules.zip(object).is_some_and(|(rules, object)| {
                 crate::sim::combat::combat_weapon::aircraft_strafes(

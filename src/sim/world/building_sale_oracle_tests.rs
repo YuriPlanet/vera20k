@@ -590,9 +590,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             0,
             0,
             owner,
-            crate::sim::components::Health {
-                current: int("health"),
-            },
+            crate::sim::combat::Health::new(int("health")),
             kind,
             crate::map::entities::EntityCategory::Structure,
             0,

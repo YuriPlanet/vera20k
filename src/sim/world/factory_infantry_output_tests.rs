@@ -299,7 +299,7 @@ fn ground_command_fixture(
         let target_actor = sim.substrate.entities.get(target).unwrap();
         assert_ne!(target_actor.owner(), owner);
         assert_eq!(
-            target_actor.health.current,
+            target_actor.health.current(),
             prior["health"].as_i64().unwrap() as i32
         );
         assert_eq!(target_actor.is_object_alive(), prior["alive"] != 0);
@@ -392,7 +392,7 @@ fn ground_command_fixture(
             "stock MTNK has no producer for Foot+6AC"
         );
         assert_eq!(
-            actor.health.current,
+            actor.health.current(),
             state["health"].as_i64().unwrap() as i32
         );
         assert_eq!(actor.lifecycle.object_alive, state["alive"] != 0);
@@ -520,7 +520,7 @@ fn ground_command_fixture(
         assert_eq!(ambient["owner"], ambient["gi_owner"]);
         assert_eq!(target_actor.owner(), owner);
         assert_eq!(
-            target_actor.health.current,
+            target_actor.health.current(),
             ambient["health"].as_i64().unwrap() as i32
         );
         assert_eq!(target_actor.is_object_alive(), ambient["alive"] != 0);
@@ -1768,7 +1768,7 @@ fn local_state(sim: &Simulation, id: u64) -> Value {
     json!({
         "location": [p.x, p.y, p.z],
         "cell": [entity.position.rx, entity.position.ry],
-        "health": entity.health.current,
+        "health": entity.health.current(),
         "mission": entity.mission.current().raw(),
         "queued": entity.mission.queued().raw(),
         "nav_is_set": entity.navigation.nav_com.is_some(),
@@ -1900,7 +1900,14 @@ fn joined_two_paid_gi(route: OutputRoute) {
         ground_pose::position_world_coord(&sim.substrate.entities.get(producer).unwrap().position);
     assert_eq!(json!([p.x, p.y, p.z]), native["producer_prior"]["location"]);
     assert_eq!(
-        json!(sim.substrate.entities.get(producer).unwrap().health.current),
+        json!(
+            sim.substrate
+                .entities
+                .get(producer)
+                .unwrap()
+                .health
+                .current()
+        ),
         native["producer_prior"]["health"]
     );
     assert_eq!(

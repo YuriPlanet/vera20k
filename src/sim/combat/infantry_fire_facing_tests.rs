@@ -279,7 +279,7 @@ fn firing_latch_keeps_start_facing_when_target_moves() {
         result.consequences.fire_events()[0].facing,
         (facing.current(101) >> 8) as u8
     );
-    assert_eq!(store.get(2).unwrap().health.current, 100);
+    assert_eq!(store.get(2).unwrap().health.current(), 100);
 }
 
 fn production_rules(fire_up: u32) -> RuleSet {
@@ -398,7 +398,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
     assert_eq!(event.fire_coord.x, source_x + delta.0);
     assert_eq!(event.fire_coord.y, source_y + delta.1);
     assert_eq!(
-        sim.substrate.entities.get(target).unwrap().health.current,
+        sim.substrate.entities.get(target).unwrap().health.current(),
         100
     );
 
@@ -482,7 +482,7 @@ fn production_firing_latch_restores_heading_and_reaches_emission() {
                     .get(target)
                     .unwrap()
                     .health
-                    .current,
+                    .current(),
                 100
             );
             return;
@@ -643,7 +643,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
                 "face target at accepted fire start"
             );
             assert_eq!(
-                sim.substrate.entities.get(target).unwrap().health.current,
+                sim.substrate.entities.get(target).unwrap().health.current(),
                 100
             );
             return;

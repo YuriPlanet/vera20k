@@ -184,7 +184,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
             // Building455D50 only archives the pointer; it never asks the
             // destination for a coordinate or otherwise dereferences it.
             && sim.substrate.entities.get(receiver).is_some_and(|actor| {
-                actor.category != crate::map::entities::EntityCategory::Structure
+                actor.category() != crate::map::entities::EntityCategory::Structure
             })
         {
             return false;
@@ -198,7 +198,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
             .get(receiver)
             .expect("present receiver");
         if matches!(
-            actor.category,
+            actor.category(),
             crate::map::entities::EntityCategory::Unit
                 | crate::map::entities::EntityCategory::Infantry
         ) && sim.object_type(actor.type_ref(), rules).is_none()
@@ -207,9 +207,9 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
         }
         // The Aircraft setter reads the same +4C (`0x0041AA80` ends in Foot
         // `0x004D94B0`), and its port expects the coordinate.
-        if (actor.category == crate::map::entities::EntityCategory::Unit
+        if (actor.category() == crate::map::entities::EntityCategory::Unit
             && sim.unit_setter_receiver(receiver, Some(rules))
-            || actor.category == crate::map::entities::EntityCategory::Aircraft)
+            || actor.category() == crate::map::entities::EntityCategory::Aircraft)
             && !matches!(destination, NavTargetRef::Cell { .. })
             && crate::sim::movement::nav_target_coordinate(
                 destination,
@@ -241,7 +241,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
         let Some(actor) = sim.substrate.entities.get(receiver) else {
             return false;
         };
-        match actor.category {
+        match actor.category() {
             EntityCategory::Structure => true,
             EntityCategory::Unit => self
                 .rules
@@ -333,7 +333,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .entities
             .get(prepared.receiver)
             .expect("target-change action retains its receiver");
-        let infantry = entity.category == crate::map::entities::EntityCategory::Infantry;
+        let infantry = entity.category() == crate::map::entities::EntityCategory::Infantry;
         //51B273..51B299: even an unchanged target or a Health<=0 receiver
         // takes this gate, using Doing AFTER the requested idle action.
         if infantry
@@ -380,7 +380,9 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .substrate
             .entities
             .get(prepared.receiver)
-            .is_some_and(|actor| actor.category == crate::map::entities::EntityCategory::Structure)
+            .is_some_and(|actor| {
+                actor.category() == crate::map::entities::EntityCategory::Structure
+            })
         {
             sim.set_building_destination(prepared.receiver, requested, self.rules);
             return true;
@@ -402,7 +404,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 .entities
                 .get(prepared.receiver)
                 .expect("preflight guaranteed receiver")
-                .category
+                .category()
             {
                 // `UnitClass::Assign_Destination @ 0x00741970`, the one
                 // setter that reads the mode.
@@ -505,7 +507,7 @@ impl Simulation {
             return;
         };
         debug_assert_eq!(
-            actor.category,
+            actor.category(),
             crate::map::entities::EntityCategory::Structure
         );
         if actor.mission.current().known() == Some(super::MissionType::Selling) {
@@ -542,9 +544,9 @@ pub(crate) fn assign_target_commits(
     match requested {
         Some(TargetKind::Entity(id)) => entities.get(id).is_some_and(|target| {
             target.lifecycle.object_alive
-                && target.health.current != 0
+                && target.health.current() != 0
                 && !target.sinking.is_active()
-                && !(target.category == crate::map::entities::EntityCategory::Infantry
+                && !(target.category() == crate::map::entities::EntityCategory::Infantry
                     && target.mission_leaf.as_infantry().is_some_and(|leaf| {
                         crate::sim::movement::infantry_action::in_death_sequence(leaf.doing())
                     }))
@@ -603,7 +605,7 @@ pub(crate) fn represented_assign_target_admitted(
     // child (`spawn_owner_id`): the other stock Spawned aircraft never attack
     // (PDPLANE, SPYP) or have no VERA producer (BPLN's Airstrike).
     let requested = if requested.is_some()
-        && entity.category == crate::map::entities::EntityCategory::Aircraft
+        && entity.category() == crate::map::entities::EntityCategory::Aircraft
         && entity.spawn_owner_id.is_some()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.aircraft_ammo.as_mut()
@@ -990,7 +992,7 @@ mod tests {
                 without_locomotor.push(type_id.as_str());
                 continue;
             };
-            let represented = match actor.category {
+            let represented = match actor.category() {
                 crate::map::entities::EntityCategory::Unit => {
                     sim.unit_setter_receiver(id, Some(&rules))
                 }
@@ -1002,7 +1004,7 @@ mod tests {
             if !represented {
                 unrepresented.push(format!(
                     "{type_id} {:?} {:?}",
-                    actor.category,
+                    actor.category(),
                     locomotor.active_kind()
                 ));
             }

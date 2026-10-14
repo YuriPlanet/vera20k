@@ -984,7 +984,7 @@ mod tests {
     use crate::map::bridge_facts::{BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_DIRECTION_ZERO};
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_intern;
     use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
@@ -1050,7 +1050,7 @@ mod tests {
             3,
             64,
             test_intern("Americans"),
-            Health { current: 256 },
+            Health::new(256),
             test_intern("MTNK"),
             crate::map::entities::EntityCategory::Unit,
             0,
@@ -1102,7 +1102,7 @@ mod tests {
             e.navigation.nav_com, order,
             "DropAsBomb does not write orders"
         );
-        assert_eq!(e.health.current, 256, "DropIn never harms — no damage");
+        assert_eq!(e.health.current(), 256, "DropIn never harms — no damage");
         let loco = e.locomotor.as_ref().expect("locomotor");
         assert_eq!(
             loco.layer,
@@ -1672,7 +1672,7 @@ mod tests {
             0,
             64,
             test_intern("Americans"),
-            Health { current: 256 },
+            Health::new(256),
             test_intern("MTNK"),
             crate::map::entities::EntityCategory::Unit,
             0,
@@ -1701,7 +1701,7 @@ mod tests {
             .entities
             .get(1)
             .expect("ground entity untouched");
-        assert_eq!(e.health.current, 256);
+        assert_eq!(e.health.current(), 256);
         assert!(!e.on_bridge);
         assert_eq!(e.locomotor.as_ref().unwrap().layer, MovementLayer::Bridge);
         let cell = sim.substrate.occupancy.get(5, 5).expect("ground occupancy");
@@ -1724,7 +1724,7 @@ mod tests {
             0,
             64,
             sim.interner.intern("Americans"),
-            Health { current: 256 },
+            Health::new(256),
             sim.interner.intern("MTNK"),
             crate::map::entities::EntityCategory::Unit,
             0,
@@ -1741,7 +1741,7 @@ mod tests {
             12,
             64,
             sim.interner.intern("Americans"),
-            Health { current: 256 },
+            Health::new(256),
             sim.interner.intern("ORCA"),
             crate::map::entities::EntityCategory::Aircraft,
             0,
@@ -1764,7 +1764,7 @@ mod tests {
             0,
             0,
             sim.interner.intern("Americans"),
-            Health { current: 100 },
+            Health::new(100),
             sim.interner.intern("E1"),
             crate::map::entities::EntityCategory::Infantry,
             0,
@@ -1773,7 +1773,7 @@ mod tests {
         );
         sim.substrate.entities.insert(retired);
         sim.uninit(3);
-        assert!(sim.substrate.entities.get(3).unwrap().health.current > 0);
+        assert!(sim.substrate.entities.get(3).unwrap().health.current() > 0);
 
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=256\nArmor=heavy\n[Warheads]\n0=Super\n[Super]\nInfDeath=1\n",
@@ -1800,7 +1800,8 @@ mod tests {
 
         let retired = sim.substrate.entities.get(3).unwrap();
         assert_eq!(
-            retired.health.current, 100,
+            retired.health.current(),
+            100,
             "unlinked retired object is not a ground receiver"
         );
         assert!(!retired.lifecycle.object_alive);
@@ -1808,12 +1809,13 @@ mod tests {
         assert_eq!(sim.substrate.pending_delete.object_ids(), vec![3, 1]);
 
         let g = sim.substrate.entities.get(1).expect("ground unit present");
-        assert_eq!(g.health.current, 0, "ground occupant is force-killed");
+        assert_eq!(g.health.current(), 0, "ground occupant is force-killed");
         assert!(g.dying, "ground occupant flagged dying");
 
         let a = sim.substrate.entities.get(2).expect("aircraft present");
         assert_eq!(
-            a.health.current, 256,
+            a.health.current(),
+            256,
             "aircraft overflying the collapse cell must NOT be killed"
         );
         assert!(!a.dying, "aircraft not flagged dying");
@@ -1854,7 +1856,7 @@ mod tests {
                 0,
                 64,
                 owner,
-                Health { current: 256 },
+                Health::new(256),
                 mtnk,
                 crate::map::entities::EntityCategory::Unit,
                 0,

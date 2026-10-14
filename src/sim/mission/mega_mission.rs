@@ -156,7 +156,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
     ) -> MissionType {
         let foot = self.substrate.entities.get(id).is_some_and(|entity| {
-            entity.category != crate::map::entities::EntityCategory::Structure
+            entity.category() != crate::map::entities::EntityCategory::Structure
         });
         if !foot {
             return mission;

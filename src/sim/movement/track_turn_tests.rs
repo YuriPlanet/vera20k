@@ -120,8 +120,8 @@ fn set_retained(
 fn fixture(kind: LocomotorKind) -> Simulation {
     let mut sim = Simulation::with_seed(0);
     let mut entity = GameEntity::test_default(1, "TURN", "Americans", 8, 8);
-    entity.type_ref = sim.intern("TURN");
-    entity.owner = sim.intern("Americans");
+    entity.set_type_ref_for_test(sim.intern("TURN"));
+    entity.set_owner_for_test(sim.intern("Americans"));
     entity.lifecycle.object_alive = true;
     entity.lifecycle.in_limbo = false;
     entity.lifecycle.cell_marked = true;
@@ -662,7 +662,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                 let mut sim = fixture(kind);
                 let grid = crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
                 let entity = sim.substrate.entities.get_mut(1).unwrap();
-                entity.category = crate::map::entities::EntityCategory::Unit;
+                entity.set_category_for_test(crate::map::entities::EntityCategory::Unit);
                 // Facing the path's east octant, the refused mover reaches
                 // Can_Enter_Cell; facing north, the other turns first.
                 entity.body_facing = FacingClass::new(if refused { 0x4000 } else { 0 }, 0);
@@ -718,8 +718,8 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                 if refused {
                     // A live vehicle in the head cell's object list.
                     let mut blocker = GameEntity::test_default(99, "TURN", "Americans", 9, 8);
-                    blocker.type_ref = sim.intern("TURN");
-                    blocker.owner = sim.intern("Americans");
+                    blocker.set_type_ref_for_test(sim.intern("TURN"));
+                    blocker.set_owner_for_test(sim.intern("Americans"));
                     blocker.lifecycle.object_alive = true;
                     blocker.lifecycle.in_limbo = false;
                     blocker.lifecycle.cell_marked = true;
@@ -965,9 +965,9 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                     }
                     for (id, age) in [(2, 10), (3, 40)] {
                         let mut victim = GameEntity::test_default(id, "E1", "Soviets", 8, 8);
-                        victim.type_ref = sim.intern("E1");
-                        victim.owner = sim.intern("Soviets");
-                        victim.category = EntityCategory::Infantry;
+                        victim.set_type_ref_for_test(sim.intern("E1"));
+                        victim.set_owner_for_test(sim.intern("Soviets"));
+                        victim.set_category_for_test(EntityCategory::Infantry);
                         victim.mission_leaf =
                             crate::sim::mission::leaf::MissionLeafState::for_entity_category(
                                 EntityCategory::Infantry,

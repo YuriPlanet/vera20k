@@ -239,7 +239,7 @@ fn fully_cloaked_sub_holding_a_target_does_not_surface() {
 
     // Marking the owner's own cell visible must not change the answer either —
     // that was the substituted predicate.
-    let owner = sim.substrate.entities.get(id).unwrap().owner;
+    let owner = sim.substrate.entities.get(id).unwrap().owner();
     let (rx, ry) = sim
         .substrate
         .entities
@@ -376,7 +376,7 @@ fn sensor_deposit_alone_never_force_cloaks_an_eligible_unit() {
         .substrate
         .entities
         .get(cloaker)
-        .map(|entity| ((entity.position.rx, entity.position.ry), entity.owner))
+        .map(|entity| ((entity.position.rx, entity.position.ry), entity.owner()))
         .unwrap();
     sim.fog.mark_visible_for_owner(owner, cell.0, cell.1);
 
@@ -405,7 +405,7 @@ fn sensor_callback_reassigns_admitted_targeters_in_forward_techno_registration_o
         .substrate
         .entities
         .get(cloaker)
-        .map(|entity| ((entity.position.rx, entity.position.ry), entity.owner))
+        .map(|entity| ((entity.position.rx, entity.position.ry), entity.owner()))
         .unwrap();
     arm_cloak_field_for(&mut sim, cloaker_owner, cell);
 
@@ -426,7 +426,7 @@ fn sensor_callback_reassigns_admitted_targeters_in_forward_techno_registration_o
         entity.attack_target = Some(AttackTarget::new(cloaker));
         entity.passively_acquired_target = true;
     }
-    let american_owner = sim.substrate.entities.get(sensor_admitted).unwrap().owner;
+    let american_owner = sim.substrate.entities.get(sensor_admitted).unwrap().owner();
     sim.fog.increment_sensor_at(american_owner, cell.0, cell.1);
 
     // Logic registration is deliberately opposite to prove the callback uses
@@ -497,7 +497,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         .substrate
         .entities
         .get(cloaker)
-        .map(|entity| ((entity.position.rx, entity.position.ry), entity.owner))
+        .map(|entity| ((entity.position.rx, entity.position.ry), entity.owner()))
         .unwrap();
     sim.substrate
         .entities
@@ -769,7 +769,7 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
             .unwrap()
             .attack_target = Some(AttackTarget::new(cloaker));
     }
-    let american = sim.substrate.entities.get(sensing).unwrap().owner;
+    let american = sim.substrate.entities.get(sensing).unwrap().owner();
     sim.fog.increment_sensor_at(american, cell.0, cell.1);
 
     let timers_before: Vec<_> = [sensing, blind, same_owner]
@@ -949,7 +949,7 @@ fn a_sensing_house_keeps_both_target_and_destination_across_a_dive() {
         entity.navigation.nav_com_aux = Some(NavTargetRef::object(cloaker));
         entity.navigation.suspended_nav_com = Some(NavTargetRef::object(cloaker));
     }
-    let american = sim.substrate.entities.get(sensing).unwrap().owner;
+    let american = sim.substrate.entities.get(sensing).unwrap().owner();
     sim.fog.increment_sensor_at(american, cell.0, cell.1);
 
     tick_stock_cloak_producer(

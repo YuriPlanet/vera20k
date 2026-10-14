@@ -6,7 +6,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::particle_system_type::ParticleSystemTypeId;
 use crate::rules::particle_type::ParticleTypeId;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::snapshot::GameSnapshot;
@@ -224,7 +224,7 @@ fn install_system(
                 0,
                 0,
                 house,
-                Health { current: 255 },
+                Health::new(255),
                 ty,
                 EntityCategory::Structure,
                 0,

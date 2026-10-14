@@ -220,7 +220,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         rules.general.blockage_path_delay_ticks = i32_value(&input["blockage"]);
         sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 16, 15);
-        actor.category = EntityCategory::Infantry;
+        actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         actor.lifecycle.object_alive = input["alive"] == 1;
         actor.lifecycle.in_limbo = input["limbo"] == 1;
@@ -384,7 +384,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
         let mut sim = Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 9, 10);
-        actor.category = EntityCategory::Infantry;
+        actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         actor
             .navigation

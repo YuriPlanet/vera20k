@@ -46,7 +46,7 @@ pub(crate) fn observe_area_visit(
                 "no_source": origin.0 == RAD_NO_ATTACKER,
                 "no_source_house": origin.1.is_none(),
                 "health_before": world.substrate.entities.values()
-                    .map(|entity| (entity.stable_id(), entity.health.current))
+                    .map(|entity| (entity.stable_id(), entity.health.current()))
                     .collect::<Vec<_>>(),
             }));
         }
@@ -863,8 +863,8 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 .into_iter()
                 .filter(|&id| {
                     world.substrate.entities.get(id).is_some_and(|entity| {
-                        entity.category == EntityCategory::Structure
-                            && entity.health.current > 0
+                        entity.category() == EntityCategory::Structure
+                            && entity.health.current() > 0
                             && !entity.lifecycle.in_limbo
                     })
                 })

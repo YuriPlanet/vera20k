@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use vera20k::headless_scenario::{self, SIM_TICK_MS};
 use vera20k::map::entities::EntityCategory;
-use vera20k::sim::components::Health;
+use vera20k::sim::combat::Health;
 use vera20k::sim::house_state::HouseState;
 use vera20k::sim::parity_digest::ParityDigestSink;
 use vera20k::sim::world::Simulation;
@@ -105,7 +105,7 @@ fn build_synthetic_simulation(seed: u32) -> Simulation {
                 0,
                 0,
                 owner_id,
-                Health { current: 1000 },
+                Health::new(1000),
                 type_ref,
                 EntityCategory::Structure,
                 0,

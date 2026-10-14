@@ -276,7 +276,7 @@ pub(crate) fn per_cell_release_dock_contact(
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| sim.substrate.entities.get(contact))
-                .filter(|contact| contact.category == EntityCategory::Structure)
+                .filter(|contact| contact.category() == EntityCategory::Structure)
                 .and_then(|contact| sim.object_type(contact.type_ref(), rules))
                 .is_some_and(|building| {
                     if weeder {

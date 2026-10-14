@@ -250,7 +250,7 @@ fn passenger_can_enter(
         // Headless fixtures have no Cell substrate: only the occupancy verdict
         // is available.
         let occupancy = sim.substrate.occupancy.get(cell.0, cell.1);
-        return if passenger.category == EntityCategory::Infantry {
+        return if passenger.category() == EntityCategory::Infantry {
             bump_crush::cell_passable_for_infantry(occupancy, MovementLayer::Ground)
         } else {
             occupancy.is_none_or(|occ| occ.is_empty_on(MovementLayer::Ground))
@@ -366,7 +366,7 @@ fn eject_head_passenger(
                 // native failure shape (re-insert) so the count stays coherent.
                 return Err(DepartureFailure::MissingPassenger);
             };
-            let passenger_is_infantry = passenger_snapshot.category == EntityCategory::Infantry;
+            let passenger_is_infantry = passenger_snapshot.category() == EntityCategory::Infantry;
 
             let start =
                 ((((u32::from(facing16.wrapping_add(0x7FFF))) >> 12) + 1) >> 1) as usize & 7;
@@ -878,7 +878,7 @@ fn eject_from_aircraft(
             let Some(passenger_snapshot) = sim.substrate.entities.get(pax_id) else {
                 return Err(DepartureFailure::MissingPassenger);
             };
-            let is_infantry = passenger_snapshot.category == EntityCategory::Infantry;
+            let is_infantry = passenger_snapshot.category() == EntityCategory::Infantry;
 
             let mut index = 8usize;
             let mut scan_cell: Option<(u16, u16)> = None;

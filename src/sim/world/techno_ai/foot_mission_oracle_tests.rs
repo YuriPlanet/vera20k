@@ -22,13 +22,14 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::Health;
 use crate::sim::combat::combat_targeting::greatest_threat_for_entity;
 use crate::sim::combat::greatest_threat::{
     HOUSE_SELECTS_OWN_COEFFICIENTS, ThreatCoefficients, ThreatReference, calculate_threat_score,
 };
 use crate::sim::combat::threat_range::ScanMission;
 use crate::sim::combat::{AttackTarget, TargetKind};
-use crate::sim::components::{DriveCoord, Health, NavTargetRef};
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::{GameEntity, InfantryRuntime};
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
@@ -613,9 +614,7 @@ impl SuppliedFootFixture {
                 4,
                 0x80,
                 if hostile { enemy } else { friendly },
-                Health {
-                    current: object.strength,
-                },
+                Health::new(object.strength),
                 sim.interner.intern(type_name),
                 if infantry {
                     EntityCategory::Infantry
@@ -832,7 +831,7 @@ impl SuppliedFootFixture {
             .collect();
         for &id in &logic {
             let (rx, ry) = placed_cells[&id];
-            let sub_cell = (sim.substrate.entities.get(id).unwrap().category
+            let sub_cell = (sim.substrate.entities.get(id).unwrap().category()
                 == EntityCategory::Infantry)
                 .then_some(2);
             sim.substrate.occupancy.add(
@@ -2231,7 +2230,7 @@ fn dying_infantry_visits_shared_native_clock() {
         .entities
         .get_mut(fixture.actor)
         .unwrap();
-    actor.health.current = 0;
+    actor.health.set_for_test(0);
     actor.install_native_stage_fixture(native_clock_fixture(&frame["before"]));
     fixture.sim.object_ai_visit_one(
         fixture.actor,

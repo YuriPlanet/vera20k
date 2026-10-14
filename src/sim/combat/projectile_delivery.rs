@@ -11,7 +11,7 @@ pub(super) fn projectile_arm_delay(
     entities: &EntityStore,
 ) -> i32 {
     if matches!(target, ProjectileTarget::Entity(id)
-        if entities.get(id).is_some_and(|entity| entity.category == EntityCategory::Aircraft))
+        if entities.get(id).is_some_and(|entity| entity.category() == EntityCategory::Aircraft))
     {
         0
     } else {

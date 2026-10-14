@@ -139,7 +139,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     let frame = sim.session.binary_frame;
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.exact_z_leptons = Some(xyz[2]);
-    entity.health.current = int(input, "health", 0) as i32;
+    entity.health.set_for_test(int(input, "health", 0) as i32);
     entity.crashing = int(input, "crashing", 1) != 0;
     let mut facing = FacingClass::new(
         int(input, "facing", 0x4000) as u16,
@@ -210,7 +210,7 @@ fn crash_matches_native_rows() {
         assert_eq!(returned, row["returned"].as_bool().unwrap(), "{name}");
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
-            entity.health.current,
+            entity.health.current(),
             row["health"].as_i64().unwrap() as i32,
             "{name}"
         );
@@ -357,7 +357,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                     int(input, "level", 0) as u8,
                     0,
                     owner,
-                    crate::sim::components::Health { current: 1000 },
+                    crate::sim::combat::Health::new(1000),
                     type_ref,
                     EntityCategory::Unit,
                     0,
@@ -407,7 +407,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                     "{name}: UnInit at the impact"
                 );
                 assert_eq!(
-                    sim.substrate.entities.get(victim).unwrap().health.current,
+                    sim.substrate.entities.get(victim).unwrap().health.current(),
                     1000 - 150,
                     "{name}: the death weapon detonates at the impact point"
                 );
@@ -557,7 +557,7 @@ fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
         0,
         0,
         soviets,
-        crate::sim::components::Health { current: 1000 },
+        crate::sim::combat::Health::new(1000),
         shooter_type,
         EntityCategory::Unit,
         0,
@@ -599,7 +599,7 @@ fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
         .get(1)
         .expect("a crashing aircraft stays represented");
     assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
-    assert_eq!(entity.health.current, 0);
+    assert_eq!(entity.health.current(), 0);
     assert_eq!(entity.killed_by, Some(soviets));
     assert!(
         entity
@@ -861,7 +861,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
     sim.remove_entity_occupancy(1);
     {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        entity.health.current = 300;
+        entity.health.set_for_test(300);
         entity.position.exact_z_leptons = Some(500);
         entity.body_facing = FacingClass::new(0x4000, 5);
         let loco = entity.locomotor.as_mut().unwrap();
@@ -929,7 +929,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
             0,
             0,
             owner,
-            crate::sim::components::Health { current: 1000 },
+            crate::sim::combat::Health::new(1000),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -995,7 +995,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
             .count();
         match sim.substrate.entities.get(1) {
             Some(entity) if entity.lifecycle.object_alive => {
-                assert!(entity.crashing && entity.health.current == 0);
+                assert!(entity.crashing && entity.health.current() == 0);
                 fall.heights
                     .push(entity.position.exact_z_leptons.expect("exact Z"));
             }
@@ -1059,7 +1059,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         .get(1)
         .expect("a crashing unit stays");
     assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
-    assert_eq!(entity.health.current, 0);
+    assert_eq!(entity.health.current(), 0);
     assert!(
         entity
             .rocking
@@ -1149,7 +1149,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
     );
     assert_eq!(sim.substrate.air_slots.holder(52, 52), None);
     assert_eq!(
-        sim.substrate.entities.get(victim).unwrap().health.current,
+        sim.substrate.entities.get(victim).unwrap().health.current(),
         1000,
         "an Explosion= anim deals no damage"
     );
@@ -1181,7 +1181,7 @@ fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
     assert_eq!(fall.impact_booms, 0, "no second Explosion= for a balloon");
     assert_eq!(fall.impact_sounds, 0);
     assert_eq!(
-        sim.substrate.entities.get(victim).unwrap().health.current,
+        sim.substrate.entities.get(victim).unwrap().health.current(),
         1000 - 150,
         "the death weapon's CrashGun hit the victim below"
     );
@@ -1340,7 +1340,7 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
             0,
             0,
             soviets,
-            crate::sim::components::Health { current: 1000 },
+            crate::sim::combat::Health::new(1000),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -1600,7 +1600,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         if !entity.crashing && frame % 15 == 0 {
             println!(
                 "frame {frame}: height {height}, health {}, mission {:?}",
-                entity.health.current,
+                entity.health.current(),
                 entity.mission.current().known()
             );
         }
@@ -1608,7 +1608,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
             if crash_frame.is_none() {
                 crash_frame = Some(frame);
                 assert!(height > 0, "shot down in the air");
-                assert_eq!(entity.health.current, 0);
+                assert_eq!(entity.health.current(), 0);
                 assert_eq!(entity.killed_by, Some(russians));
             }
             let rocking = entity.rocking.as_ref().expect("a crash spins");
@@ -1802,7 +1802,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
         .get_mut(kirov)
         .unwrap()
         .health
-        .current = 1;
+        .set_for_test(1);
     sim.resolve_type_handles(&resources.rules);
     let americans = sim.interner.intern("Americans");
     let russians = sim.interner.intern("Russians");
@@ -1923,7 +1923,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
             if wreck.crash_frame.is_none() {
                 wreck.crash_frame = Some(frame);
                 assert!(height > 0, "{id} shot down in the air");
-                assert_eq!(entity.health.current, 0);
+                assert_eq!(entity.health.current(), 0);
                 assert_eq!(entity.killed_by, Some(russians));
                 if id == nighthawk {
                     riders_killed_by_crash = Some(sim.houses[&russians].stats.units_killed());

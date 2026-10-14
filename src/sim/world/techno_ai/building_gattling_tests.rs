@@ -563,7 +563,7 @@ fn gattling_idle_decay_matches_the_original() {
         let entity = sim.substrate.entities.get_mut(building).unwrap();
         entity.last_fire_frame = i64::from(FRAME) - since;
         if input["dead"] == true {
-            entity.health.current = 0;
+            entity.health.set_for_test(0);
         }
         let dead = row["ended"].as_u64().unwrap() == 0x0044_0573;
         assert_eq!(dead, input["dead"] == true, "{name}");

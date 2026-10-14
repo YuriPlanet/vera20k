@@ -26,7 +26,7 @@ fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
             (current.x / 256) as u16,
             (current.y / 256) as u16,
         );
-        entity.category = EntityCategory::Infantry;
+        entity.set_category_for_test(EntityCategory::Infantry);
         entity.position.sub_x = SimFixed::from_num(current.x % 256);
         entity.position.sub_y = SimFixed::from_num(current.y % 256);
         entity.position.exact_z_leptons = Some(current.z);
@@ -105,7 +105,7 @@ fn idle_walk_scold_tails_match_original_through_ordinary_process() {
         let mut sim = crate::sim::world::Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 9, 10);
-        actor.category = EntityCategory::Infantry;
+        actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         if let crate::sim::movement::locomotion::LocomotorRuntimePayload::Walk(state) =
             &mut actor.locomotor.as_mut().unwrap().runtime_payload
@@ -155,7 +155,7 @@ fn same_cell_paid_walk_scold_clear_matches_original_commit_tail() {
             continue;
         }
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 9, 10);
-        actor.category = EntityCategory::Infantry;
+        actor.set_category_for_test(EntityCategory::Infantry);
         actor.position.sub_x = SimFixed::from_num(186);
         actor.position.sub_y = SimFixed::from_num(64);
         actor.position.exact_z_leptons = Some(104);

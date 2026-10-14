@@ -33,8 +33,8 @@ fn output_arrival_fixture() -> (Simulation, RuleSet) {
     ] {
         let mut entity =
             GameEntity::test_default_of_category(id, name, "Americans", cell.0, cell.1, category);
-        entity.owner = sim.intern("Americans");
-        entity.type_ref = sim.intern(name);
+        entity.set_owner_for_test(sim.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern(name));
         entity.lifecycle.in_limbo = false;
         entity.lifecycle.cell_marked = true;
         if category == EntityCategory::Infantry {
@@ -197,8 +197,8 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
         off_108: 200,
     });
     let mut entity = GameEntity::test_default(1, "E1", "Americans", 5, 5);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("E1");
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("E1"));
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
     entity.position.exact_z_leptons = Some(2);
     entity.set_falling_down_for_test(true);

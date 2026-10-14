@@ -126,7 +126,7 @@ pub(crate) fn scan_for_tiberium(
     range: i32,
 ) -> Option<(u16, u16)> {
     let entity = sim.substrate.entities.get(id)?;
-    if entity.category == crate::map::entities::EntityCategory::Structure {
+    if entity.category() == crate::map::entities::EntityCategory::Structure {
         return techno_scan_for_tiberium(sim, rules, overlay_registry, id, range);
     }
     foot_scan_for_tiberium(sim, rules, overlay_registry, id, range)

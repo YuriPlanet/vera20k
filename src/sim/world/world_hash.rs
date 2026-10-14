@@ -124,7 +124,7 @@ mod drive_ship_slope_hash_tests {
     fn hash_with_state(kind: LocomotorKind, stashed: bool, state: SlopeTransitionState) -> u64 {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "SLOPE", "Americans", 2, 2);
-        entity.category = EntityCategory::Unit;
+        entity.set_category_for_test(EntityCategory::Unit);
         let mut locomotor = LocomotorState::for_test_kind(kind);
         *locomotor.active_slope_transition_mut().unwrap() = state;
         if stashed {
@@ -172,7 +172,7 @@ mod locomotor_field_hash_tests {
     fn hash_with(stashed: bool, mutate: Option<fn(&mut LocomotorState)>) -> u64 {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "LOCO", "Americans", 2, 2);
-        entity.category = EntityCategory::Unit;
+        entity.set_category_for_test(EntityCategory::Unit);
         let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Teleport);
         if stashed {
             assert!(locomotor.begin_piggyback(LocomotorKind::Drive, 0));
@@ -945,7 +945,7 @@ impl Simulation {
             .values()
             .filter(|entity| entity.owner() == owner && !entity.destruction_recorded)
             .fold((0, 0), |(buildings, others), entity| {
-                if entity.category == crate::map::entities::EntityCategory::Structure {
+                if entity.category() == crate::map::entities::EntityCategory::Structure {
                     (buildings + 1, others)
                 } else {
                     (buildings, others + 1)
@@ -1515,25 +1515,26 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // timer and the `TechnoClass+0x1CC/+0x1D0` drain link pair.
     // All three drive future wallet writes, so a divergence here
     // desyncs credits; every object carries them.
-    entity.produce_cash_timer.hash(hasher);
-    entity.drain_target.hash(hasher);
-    entity.draining_me.hash(hasher);
+    entity.produce_cash.timer().hash(hasher);
+    entity.drain.target().hash(hasher);
+    entity.drain.draining_me().hash(hasher);
     // ParasiteClass (Foot+69C) of dogs and drones, the victim's
     // Foot+694/+698 links, and Foot+6A0 once it has been armed.
     // `limbo_reselect` (+432) is deliberately absent: it is set
     // only for the local player's selection, so peers differ.
-    if let Some(parasite) = entity.parasite.as_deref() {
+    let parasite = &entity.parasite;
+    if let Some(class) = parasite.class() {
         b"parasite-v193".hash(hasher);
-        parasite.hash(hasher);
+        class.hash(hasher);
     }
-    if entity.parasite_eating_me.is_some() || entity.parasite_launch_lock != 0 {
+    if parasite.eater().is_some() || parasite.launch_lock() != 0 {
         b"parasite-victim-v193".hash(hasher);
-        entity.parasite_eating_me.hash(hasher);
-        entity.parasite_launch_lock.hash(hasher);
+        parasite.eater().hash(hasher);
+        parasite.launch_lock().hash(hasher);
     }
-    if entity.paralysis_timer.duration() != 0 {
+    if parasite.paralysis().duration() != 0 {
         0x6a0_u32.hash(hasher);
-        entity.paralysis_timer.hash(hasher);
+        parasite.paralysis().hash(hasher);
     }
     // Foot+5C4..+5D1, an attack-move order: its scan, resume and
     // pointer expiry (`sim::mission::mega_mission`).
@@ -1546,9 +1547,9 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // survivor roll and skips the engineer roll at death.
         0x6e3_u32.hash(hasher);
     }
-    if entity.techno_ctor_random_word != 0 || entity.structure_upgrade_link.is_some() {
+    if entity.techno_ctor_random_word() != 0 || entity.structure_upgrade_link.is_some() {
         b"techno-constructor-v1".hash(hasher);
-        entity.techno_ctor_random_word.hash(hasher);
+        entity.techno_ctor_random_word().hash(hasher);
         entity.structure_upgrade_link.hash(hasher);
     }
     // One retained native+F8/+FC/+100/+108/+10C/+110 clock, shared
@@ -1567,7 +1568,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"foot-building-entry-68f-690".hash(hasher);
         entity.building_entry.hash(hasher);
     }
-    entity.native_unique_id.hash(hasher);
+    entity.native_unique_id().hash(hasher);
     if let Some(manager) = entity.slave_manager.as_ref() {
         b"slave-manager-v209".hash(hasher);
         manager.hash(hasher);
@@ -1673,7 +1674,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     }
     // Infantry gameplay reads its class-owned Doing/Stage fields.
     // A restored presentation component is not a second state owner.
-    if entity.category != crate::map::entities::EntityCategory::Infantry
+    if entity.category() != crate::map::entities::EntityCategory::Infantry
         && let Some(animation) = entity.animation.as_ref()
     {
         b"entity-animation-v1".hash(hasher);
@@ -1683,10 +1684,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         animation.finished.hash(hasher);
     }
     entity.owner().hash(hasher);
-    entity.health.current.hash(hasher);
+    entity.health.current().hash(hasher);
     entity.estimated_health.get().hash(hasher);
     entity.type_ref().hash(hasher);
-    (entity.category as u8).hash(hasher);
+    (entity.category() as u8).hash(hasher);
     entity.foundation.hash(hasher);
     entity.building_hidden_occupancy.hash(hasher);
     entity.base_reservation_spacing.hash(hasher);
@@ -1719,10 +1720,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     }
     entity.berserk.hash(hasher);
     entity.was_attacked_by_enemy.hash(hasher);
-    if entity.category == crate::map::entities::EntityCategory::Structure {
+    if entity.category() == crate::map::entities::EntityCategory::Structure {
         entity.ai_sellable.hash(hasher);
     }
-    if entity.category == crate::map::entities::EntityCategory::Structure {
+    if entity.category() == crate::map::entities::EntityCategory::Structure {
         entity.repairing.hash(hasher);
         entity.ai_repairable.hash(hasher);
     }
@@ -2334,7 +2335,7 @@ mod teleport_hash_tests {
 
     fn hash_entity(mut entity: GameEntity) -> u64 {
         let mut sim = Simulation::new();
-        entity.stable_id = 1;
+        entity.set_stable_id_for_test(1);
         sim.substrate.entities.insert(entity);
         sim.state_hash()
     }
@@ -3668,7 +3669,8 @@ mod particle_hash_tests {
 mod tube_movement_hash_tests {
     use super::Simulation;
     use crate::map::tube_facts::TubeId;
-    use crate::sim::components::{DriveCoord, Health};
+    use crate::sim::combat::Health;
+    use crate::sim::components::DriveCoord;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
 
@@ -3680,7 +3682,7 @@ mod tube_movement_hash_tests {
             0,
             0,
             crate::sim::intern::test_intern("Allies"),
-            Health { current: 100 },
+            Health::new(100),
             crate::sim::intern::test_intern("MTNK"),
             crate::map::entities::EntityCategory::Unit,
             0,
@@ -3761,7 +3763,7 @@ mod tube_movement_hash_tests {
 mod radio_contact_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
 
     fn vehicle_entity(sim: &mut Simulation, id: u64) -> GameEntity {
@@ -3772,7 +3774,7 @@ mod radio_contact_hash_tests {
             0,
             0,
             sim.interner.intern("Americans"),
-            Health { current: 100 },
+            Health::new(100),
             sim.interner.intern("MTNK"),
             EntityCategory::Unit,
             0,
@@ -3893,7 +3895,7 @@ mod infantry_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
     use crate::sim::animation::{Animation, SequenceKind};
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::{GameEntity, InfantryRuntime};
 
     fn hash_entity(sim: &mut Simulation, category: EntityCategory) -> GameEntity {
@@ -3904,7 +3906,7 @@ mod infantry_hash_tests {
             0,
             0,
             sim.interner.intern("Allies"),
-            Health { current: 100 },
+            Health::new(100),
             sim.interner.intern("E1"),
             category,
             0,
@@ -4123,7 +4125,7 @@ mod infantry_hash_tests {
                     0,
                     0,
                     owner,
-                    Health { current: 100 },
+                    Health::new(100),
                     type_ref,
                     category,
                     0,
@@ -4328,7 +4330,8 @@ mod native_frame_tests {
 mod rocking_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::{Health, RockingState};
+    use crate::sim::combat::Health;
+    use crate::sim::components::RockingState;
     use crate::sim::game_entity::GameEntity;
     use crate::util::fixed_math::SimFixed;
 
@@ -4345,7 +4348,7 @@ mod rocking_hash_tests {
             0,
             0,
             owner,
-            Health { current: 400 },
+            Health::new(400),
             type_id,
             EntityCategory::Unit,
             0,
@@ -4364,7 +4367,7 @@ mod rocking_hash_tests {
 
         // Mutate only the rocking state of one — hashes must diverge.
         let mut a = a;
-        let id = a.substrate.entities.values().next().unwrap().stable_id;
+        let id = a.substrate.entities.values().next().unwrap().stable_id();
         a.substrate.entities.get_mut(id).unwrap().rocking = Some(RockingState {
             angle_sideways: SimFixed::lit("0.1"),
             ..Default::default()
@@ -4376,8 +4379,8 @@ mod rocking_hash_tests {
     fn rocking_velocity_contributes_to_hash() {
         let mut a = make_sim_with_one_vehicle();
         let mut b = make_sim_with_one_vehicle();
-        let id_a = a.substrate.entities.values().next().unwrap().stable_id;
-        let id_b = b.substrate.entities.values().next().unwrap().stable_id;
+        let id_a = a.substrate.entities.values().next().unwrap().stable_id();
+        let id_b = b.substrate.entities.values().next().unwrap().stable_id();
         a.substrate.entities.get_mut(id_a).unwrap().rocking = Some(RockingState {
             vel_sideways: SimFixed::lit("0.01"),
             ..Default::default()
@@ -4393,7 +4396,7 @@ mod rocking_hash_tests {
     fn rocking_none_vs_default_contributes_to_hash() {
         let mut a = make_sim_with_one_vehicle();
         let b = make_sim_with_one_vehicle();
-        let id = a.substrate.entities.values().next().unwrap().stable_id;
+        let id = a.substrate.entities.values().next().unwrap().stable_id();
         a.substrate.entities.get_mut(id).unwrap().rocking = Some(RockingState::default());
         // a has Some(default), b has None — hashes must diverge.
         assert_ne!(a.state_hash(), b.state_hash());
@@ -4404,7 +4407,8 @@ mod rocking_hash_tests {
 mod c4_hash_tests {
     use super::Simulation;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::{Health, PendingC4Detonation};
+    use crate::sim::combat::Health;
+    use crate::sim::components::PendingC4Detonation;
     use crate::sim::game_entity::GameEntity;
 
     #[test]
@@ -4421,7 +4425,7 @@ mod c4_hash_tests {
             0,
             0,
             owner,
-            Health { current: 125 },
+            Health::new(125),
             type_id,
             EntityCategory::Infantry,
             0,
@@ -4526,7 +4530,8 @@ mod bridge161_hash_projection_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::components::{DriveCoord, Health};
+    use crate::sim::combat::Health;
+    use crate::sim::components::DriveCoord;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
     use crate::sim::movement::locomotor::LocomotorState;
@@ -4542,7 +4547,7 @@ mod bridge161_hash_projection_tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             EntityCategory::Infantry,
             0,

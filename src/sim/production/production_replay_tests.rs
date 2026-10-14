@@ -328,8 +328,10 @@ fn delivered_unit_count(sim: &Simulation) -> usize {
         .entities
         .values()
         .filter(|e| {
-            matches!(e.category, EntityCategory::Unit | EntityCategory::Infantry)
-                && !e.lifecycle.in_limbo
+            matches!(
+                e.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            ) && !e.lifecycle.in_limbo
         })
         .count()
 }
@@ -612,7 +614,7 @@ fn revalidate_abandons_active_on_factory_loss_partial_refund() {
         sim.substrate
             .entities
             .get(3)
-            .is_some_and(|e| e.type_ref == gaweap && e.owner == am),
+            .is_some_and(|e| e.type_ref() == gaweap && e.owner() == am),
         "stable_id 3 is Americans' GAWEAP in scenario()"
     );
     sim.substrate.entities.remove(3);
@@ -724,10 +726,10 @@ fn retail_builds_step_at_the_native_frames() {
         for id in 1..=5 {
             let entity = sim.substrate.entities.get_mut(id).expect("structure");
             let strength = rules
-                .object(sim.interner.resolve(entity.type_ref))
+                .object(sim.interner.resolve(entity.type_ref()))
                 .expect("retail building")
                 .strength;
-            entity.health.current = strength;
+            entity.health.set_for_test(strength);
         }
         let type_id = sim.interner.intern(unit);
 

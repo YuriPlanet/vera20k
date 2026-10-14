@@ -514,7 +514,7 @@ impl ProjectileCollisionWorld<'_> {
         // with a building target's foundation term.
         let building = self
             .rules
-            .filter(|_| target.category == EntityCategory::Structure)
+            .filter(|_| target.category() == EntityCategory::Structure)
             .and_then(|rules| rules.object(self.interner.resolve(target.type_ref())))
             .map(|kind| {
                 let (width, height) =
@@ -736,7 +736,11 @@ mod tests {
                     EntityCategory::Unit,
                 );
                 let owner = sim.interner.intern("Russians");
-                sim.substrate.entities.get_mut(2).unwrap().owner = owner;
+                sim.substrate
+                    .entities
+                    .get_mut(2)
+                    .unwrap()
+                    .set_owner_for_test(owner);
             }
             if selected != "none" {
                 sim.substrate.occupancy.add(
@@ -922,7 +926,7 @@ mod tests {
                 };
                 let type_ref = sim.interner.intern(name);
                 let entity = sim.substrate.entities.get_mut(2).unwrap();
-                entity.type_ref = type_ref;
+                entity.set_type_ref_for_test(type_ref);
                 if category == EntityCategory::Structure {
                     // Construction stamps the type's ART `Foundation=`.
                     entity.foundation = dimensions.clone();
@@ -1034,7 +1038,7 @@ mod tests {
             .unwrap();
             // Construction stamps the type's foundation on each building.
             for entity in sim.substrate.entities.values_mut() {
-                if entity.category == EntityCategory::Structure {
+                if entity.category() == EntityCategory::Structure {
                     entity.foundation = foundation.clone();
                 }
             }
@@ -1469,8 +1473,8 @@ mod tests {
                 let type_ref = sim.interner.intern(if aircraft { "AIR" } else { "VICTIM" });
                 let owner = sim.interner.intern("Russians");
                 let victim = sim.substrate.entities.get_mut(target).unwrap();
-                victim.type_ref = type_ref;
-                victim.owner = owner;
+                victim.set_type_ref_for_test(type_ref);
+                victim.set_owner_for_test(owner);
                 if aircraft {
                     // Aircraft object-list membership requires its real Fly
                     // host; a category-only fixture has no valid receiver.
@@ -1568,8 +1572,8 @@ mod tests {
             let target_type = sim.interner.intern("VICTIM");
             let enemy = sim.interner.intern("Russians");
             let victim = sim.substrate.entities.get_mut(target).unwrap();
-            victim.type_ref = target_type;
-            victim.owner = enemy;
+            victim.set_type_ref_for_test(target_type);
+            victim.set_owner_for_test(enemy);
             assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
             assert!(matches!(sim.reveal(target), RevealOutcome::Revealed { .. }));
             // Reveal commits the coarse map coordinate; install the supplied
@@ -1986,7 +1990,11 @@ mod tests {
                     EntityCategory::Structure,
                 );
                 let owner = sim.interner.intern("Russians");
-                sim.substrate.entities.get_mut(2).unwrap().owner = owner;
+                sim.substrate
+                    .entities
+                    .get_mut(2)
+                    .unwrap()
+                    .set_owner_for_test(owner);
                 sim.substrate.occupancy.add(
                     2,
                     2,

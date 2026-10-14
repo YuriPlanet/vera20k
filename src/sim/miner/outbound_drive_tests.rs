@@ -320,7 +320,7 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
         0,
         0,
         owner_id,
-        crate::sim::components::Health { current: 900 },
+        crate::sim::combat::Health::new(900),
         type_id,
         crate::map::entities::EntityCategory::Structure,
         0,

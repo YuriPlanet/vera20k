@@ -94,20 +94,35 @@ fn retail_repair_ifv_scan_takes_only_a_damaged_vehicle() {
         .spawn_object("HTNK", "Russians", 15, 16, 64, rules)
         .unwrap();
     for id in [gi, enemy] {
-        sim.substrate.entities.get_mut(id).unwrap().health.current = 50;
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(50);
     }
     let full = rules.object("MTNK").unwrap().strength;
     for rearming in [false, true] {
         let frame = sim.session.binary_frame as i32;
         sim.substrate.entities.get_mut(ifv).unwrap().rearm_timer =
             crate::sim::timer::CdTimer::started(frame, if rearming { 80 } else { 0 });
-        sim.substrate.entities.get_mut(tank).unwrap().health.current = full;
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .health
+            .set_for_test(full);
         assert_eq!(
             guard_scan(&mut sim, rules, ifv),
             None,
             "rearming {rearming}"
         );
-        sim.substrate.entities.get_mut(tank).unwrap().health.current = 100;
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .health
+            .set_for_test(100);
         assert_eq!(
             guard_scan(&mut sim, rules, ifv),
             Some(tank),
@@ -126,16 +141,21 @@ fn retail_repair_ifv_mends_a_damaged_tank_beside_it() {
     let rules = &retail.rules;
     let (mut sim, ifv) = repair_ifv(rules);
     let tank = sim.spawn_object("MTNK", OWNER, 17, 16, 64, rules).unwrap();
-    sim.substrate.entities.get_mut(tank).unwrap().health.current = 100;
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .health
+        .set_for_test(100);
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..300 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if sim.substrate.entities.get(tank).unwrap().health.current > 100 {
+        if sim.substrate.entities.get(tank).unwrap().health.current() > 100 {
             break;
         }
     }
     assert!(
-        sim.substrate.entities.get(tank).unwrap().health.current > 100,
+        sim.substrate.entities.get(tank).unwrap().health.current() > 100,
         "the IFV ({:?}) mends the tank",
         sim.substrate.entities.get(ifv).unwrap().attack_target
     );
@@ -154,7 +174,7 @@ fn place(
         GameEntity::test_default_of_category(id, type_id, owner, cell.0, cell.1, category);
     entity.lifecycle.in_limbo = false;
     entity.lifecycle.cell_marked = true;
-    entity.health.current = health;
+    entity.health.set_for_test(health);
     if category == EntityCategory::Structure {
         entity.foundation = "1x1".to_string();
     }
@@ -241,9 +261,9 @@ fn a_healing_vehicle_takes_a_damaged_vehicle_or_a_landed_aircraft_off_a_pad() {
     );
     let scan = |entities: &EntityStore| scan_without_world(entities, &rules, FIXER);
     assert_eq!(scan(&entities), None);
-    entities.get_mut(4).unwrap().health.current = 100;
+    entities.get_mut(4).unwrap().health.set_for_test(100);
     assert_eq!(scan(&entities), Some(4), "a damaged tank");
-    entities.get_mut(4).unwrap().health.current = 300;
+    entities.get_mut(4).unwrap().health.set_for_test(300);
     place(
         &mut entities,
         5,

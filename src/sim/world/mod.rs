@@ -2707,7 +2707,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current) else {
+        let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
             return;
         };
         let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
@@ -3934,8 +3934,8 @@ impl Simulation {
                     && entity.lifecycle.object_alive
                     && !entity.lifecycle.in_limbo
                     && !entity.dying
-                    && entity.health.current > 0
-                    && entity.category != EntityCategory::Structure
+                    && entity.health.current() > 0
+                    && entity.category() != EntityCategory::Structure
                     && self
                         .houses
                         .get(&entity.owner())
@@ -4400,7 +4400,7 @@ impl Simulation {
             }
             // A marked Foot sits where its Mark put it: the Mark owner's own
             // list decision, which the Ground answer makes rules-independent.
-            let listed = if entity.category == EntityCategory::Structure {
+            let listed = if entity.category() == EntityCategory::Structure {
                 if crate::sim::occupancy::cell_list_layer_for_entity(
                     entity,
                     self.resolved_terrain.as_ref(),
@@ -4711,7 +4711,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<(InternedId, i32, i32)> {
         let entity = self.substrate.entities.get(stable_id)?;
-        if entity.category != EntityCategory::Structure {
+        if entity.category() != EntityCategory::Structure {
             return None;
         }
         let object = self.object_type(entity.type_ref(), rules)?;
@@ -4753,7 +4753,7 @@ impl Simulation {
             return;
         };
         let owner = entity.owner();
-        let structure = entity.category == EntityCategory::Structure;
+        let structure = entity.category() == EntityCategory::Structure;
         if let Some(house) = self.houses.get_mut(&owner) {
             let factors = house.cost_factors();
             house.tracking.removed_from_game(entity, &factors);
@@ -4851,7 +4851,7 @@ impl Simulation {
     /// gamemd-derived: `BuildingClass::Unlimbo @ 0x004411B6..0x00441223`.
     pub(crate) fn append_live_build_const(&mut self, stable_id: u64) {
         let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
-            (entity.category == EntityCategory::Structure
+            (entity.category() == EntityCategory::Structure
                 && entity.build_const_eligible
                 && entity.lifecycle.object_alive
                 && !entity.lifecycle.in_limbo
@@ -4965,7 +4965,7 @@ impl Simulation {
             self.substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.owner(),
-                    entity.category,
+                    entity.category(),
                     entity.spawn_manager.is_some(),
                     entity.build_const_eligible,
                 )
@@ -5365,7 +5365,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let category = entity.category;
+        let category = entity.category();
         let current = entity.mission.current().known();
         let object = self.object_type(entity.type_ref(), rules);
         let factory_unloading = category == EntityCategory::Structure
@@ -6191,7 +6191,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .filter(|e| e.category == EntityCategory::Structure && !e.dying)
+            .filter(|e| e.category() == EntityCategory::Structure && !e.dying)
             .map(|e| (e.owner(), e.type_ref()))
         else {
             return;

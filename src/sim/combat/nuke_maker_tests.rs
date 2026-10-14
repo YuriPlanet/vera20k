@@ -85,8 +85,8 @@ fn nuke_maker_matches_native() {
             let mut entity = crate::sim::game_entity::GameEntity::test_default(
                 id, "CARRIER", "Russians", cell.0, cell.1,
             );
-            entity.owner = owner;
-            entity.type_ref = sim.interner.intern("CARRIER");
+            entity.set_owner_for_test(owner);
+            entity.set_type_ref_for_test(sim.interner.intern("CARRIER"));
             sim.substrate.entities.insert(entity);
             crate::sim::movement::ground_pose::put_location(
                 &mut sim.substrate.entities.get_mut(id).unwrap().position,

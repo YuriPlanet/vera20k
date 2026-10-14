@@ -13,7 +13,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, Simulation};
 
 pub(crate) fn is_simple_deployer(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {

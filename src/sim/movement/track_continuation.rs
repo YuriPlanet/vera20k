@@ -74,7 +74,7 @@ impl Simulation {
             return Ok(false);
         }
         // 4B05B4..4B05CA: a Unit's +6D1 unload-active latch.
-        if entity.category == EntityCategory::Unit
+        if entity.category() == EntityCategory::Unit
             && entity
                 .miner
                 .as_ref()
@@ -102,14 +102,14 @@ impl Simulation {
             return Ok(());
         };
         let target = entity.navigation.nav_com.filter(|target| {
-            entity.category == EntityCategory::Unit
+            entity.category() == EntityCategory::Unit
                 && match *target {
                     NavTargetRef::Cell { .. } => false,
                     NavTargetRef::Entity { id }
                     | NavTargetRef::Object { id }
                     | NavTargetRef::Building { id } => entities
                         .get(id)
-                        .is_some_and(|object| object.category == EntityCategory::Infantry),
+                        .is_some_and(|object| object.category() == EntityCategory::Infantry),
                 }
         });
         let Some(target) = target else {

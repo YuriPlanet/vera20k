@@ -507,7 +507,7 @@ fn the_genetic_mutator_target_matches_native() {
                 let entity = sim.substrate.entities.get(id).unwrap();
                 let (sub_cell, insertion) = (
                     entity.sub_cell,
-                    crate::sim::occupancy::CellListInsertion::from_category(entity.category),
+                    crate::sim::occupancy::CellListInsertion::from_category(entity.category()),
                 );
                 sim.substrate.occupancy.add(
                     at.0,
@@ -842,7 +842,7 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
             &entity.mission,
             entity.building_online(),
             entity.building_up(),
-            entity.health.current
+            entity.health.current()
         )),
         sim.power_states.get(&americans),
         (
@@ -1030,7 +1030,7 @@ fn the_psychic_dominator_target_matches_native() {
                 let entity = sim.substrate.entities.get(id).unwrap();
                 let (sub_cell, insertion) = (
                     entity.sub_cell,
-                    crate::sim::occupancy::CellListInsertion::from_category(entity.category),
+                    crate::sim::occupancy::CellListInsertion::from_category(entity.category()),
                 );
                 sim.substrate.occupancy.add(
                     at.0,

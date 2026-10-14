@@ -22,7 +22,7 @@ const OTHER: u64 = 3;
 
 fn unit(id: u64, name: &str, cell: (u16, u16), sub: (i32, i32)) -> GameEntity {
     let mut unit = GameEntity::test_default(id, name, "Americans", cell.0, cell.1);
-    unit.category = EntityCategory::Unit;
+    unit.set_category_for_test(EntityCategory::Unit);
     unit.position.sub_x = SimFixed::from_num(sub.0);
     unit.position.sub_y = SimFixed::from_num(sub.1);
     unit.lifecycle.in_limbo = false;

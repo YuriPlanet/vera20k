@@ -561,7 +561,12 @@ fn depot_release_and_pad_entry_route_through_find_path() {
         .spawn_object("DRV", "Americans", 10, 10, 0, &rules)
         .unwrap();
     for (tank, hp) in [(first, 290), (waiter, 150)] {
-        sim.substrate.entities.get_mut(tank).unwrap().health.current = hp;
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .health
+            .set_for_test(hp);
         assert!(sim.apply_command(
             "Americans",
             &crate::sim::command::Command::RepairAtDepot {
@@ -663,7 +668,7 @@ fn a_teleporter_is_repaired_at_a_depot_and_drives_off() {
         .get_mut(miner)
         .unwrap()
         .health
-        .current = 150;
+        .set_for_test(150);
     assert!(sim.apply_command(
         "Americans",
         &crate::sim::command::Command::RepairAtDepot {
@@ -742,7 +747,12 @@ fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
                 let tank = sim
                     .spawn_object("DRV", "Americans", x, y, 0, &rules)
                     .unwrap();
-                sim.substrate.entities.get_mut(tank).unwrap().health.current = 40;
+                sim.substrate
+                    .entities
+                    .get_mut(tank)
+                    .unwrap()
+                    .health
+                    .set_for_test(40);
                 tank
             })
             .collect();
@@ -769,7 +779,7 @@ fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
                 let e = sim.substrate.entities.get(tank).unwrap();
                 assert!(
                     (e.position.rx, e.position.ry) != pad
-                        || e.health.current == 300
+                        || e.health.current() == 300
                         || e.radio_contacts.contains(depot),
                     "{arrival}: tank {tank} on the pad without the slot at frame {}",
                     sim.session.binary_frame
@@ -780,7 +790,7 @@ fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
             }
             if frame > late
                 && tanks.iter().all(|&tank| {
-                    sim.substrate.entities.get(tank).unwrap().health.current == 300
+                    sim.substrate.entities.get(tank).unwrap().health.current() == 300
                         && !sim
                             .substrate
                             .entities
@@ -796,7 +806,7 @@ fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
         for &tank in &tanks {
             let e = sim.substrate.entities.get(tank).unwrap();
             assert_eq!(
-                e.health.current,
+                e.health.current(),
                 300,
                 "{arrival}: tank {tank} at {:?} pending {:?} nav {:?} serviced {serviced:?}",
                 (e.position.rx, e.position.ry),
@@ -1617,7 +1627,12 @@ fn damaged_hover_unit_reaches_a_free_depot_pad() {
     let hov = sim
         .spawn_object("HOV", "Americans", 22, 10, 0, &rules)
         .unwrap();
-    sim.substrate.entities.get_mut(hov).unwrap().health.current = 150;
+    sim.substrate
+        .entities
+        .get_mut(hov)
+        .unwrap()
+        .health
+        .set_for_test(150);
     assert!(sim.apply_command(
         "Americans",
         &crate::sim::command::Command::RepairAtDepot {

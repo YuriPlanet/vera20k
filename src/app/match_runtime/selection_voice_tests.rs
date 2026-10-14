@@ -8,7 +8,7 @@ use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::audio::voice_queue::VoiceQueue;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
@@ -252,7 +252,7 @@ fn simulation(
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             category,
             0,

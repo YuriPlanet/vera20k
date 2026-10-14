@@ -406,7 +406,7 @@ impl Simulation {
             self.object_raw_receiver_at(id, marked, true);
             return true;
         }
-        let owner_infantry = entity.category == EntityCategory::Infantry;
+        let owner_infantry = entity.category() == EntityCategory::Infantry;
         let target = (coord.x / 256, coord.y / 256);
         let mut blocked = false;
         if let Some((cell, layer)) = crate::sim::superweapon::cell_grid::selected_cell_list(
@@ -469,12 +469,12 @@ impl Simulation {
             entity.invulnerability.as_ref(),
             frame,
         );
-        if !iron_curtained && entity.category == EntityCategory::Infantry && owner_infantry {
+        if !iron_curtained && entity.category() == EntityCategory::Infantry && owner_infantry {
             let at = super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref());
             if at == coord {
                 self.chrono_c4_kill(other, rules, registry, effects);
             }
-        } else if !iron_curtained && foot(entity.category) {
+        } else if !iron_curtained && foot(entity.category()) {
             self.chrono_c4_kill(other, rules, registry, effects);
         } else if iron_curtained {
             self.chrono_c4_kill(id, rules, registry, effects);
@@ -641,7 +641,7 @@ impl Simulation {
         let Some((category, naval, hover)) = self.substrate.entities.get(id).and_then(|entity| {
             self.object_type(entity.type_ref(), rules).map(|object| {
                 (
-                    entity.category,
+                    entity.category(),
                     object.naval,
                     object.speed_type == SpeedType::Hover
                         && !(object.powered_unit && !self.has_powered_center(entity.owner())),

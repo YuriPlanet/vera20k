@@ -266,7 +266,7 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
             .substrate
             .entities
             .get(victim)
-            .is_some_and(|unit| unit.health.current > 0);
+            .is_some_and(|unit| unit.health.current() > 0);
         assert_eq!(
             alive,
             index < 3,

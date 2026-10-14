@@ -11,7 +11,7 @@ use super::Simulation;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::estimated_health::EstimatedHealth;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_eva::{self, EVA_LOW_POWER};
@@ -73,7 +73,7 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
         0,
         0,
         owner,
-        Health { current: health },
+        Health::new(health),
         type_ref,
         EntityCategory::Structure,
         0,
@@ -211,7 +211,7 @@ fn assert_power(sim: &Simulation, owner: InternedId, native: &Value, boundary: &
 fn assert_joined(sim: &Simulation, rules: &RuleSet, owner: InternedId, native: &Value) {
     let boundary = format!("{}@{}", native["phase"], native["frame"]);
     let plant = sim.substrate.entities.get(PLANT).unwrap();
-    assert_eq!(plant.health.current, int(&native["health"]), "{boundary}");
+    assert_eq!(plant.health.current(), int(&native["health"]), "{boundary}");
     assert_eq!(
         plant.building_power_health_sample(),
         Some(int(&native["sampled_health"])),

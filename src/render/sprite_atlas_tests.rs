@@ -279,7 +279,7 @@ fn one_object_world(
 ) {
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, type_id, "Americans", 5, 5);
-    entity.category = category;
+    entity.set_category_for_test(category);
     entity.is_voxel = false;
     let mut store = crate::sim::entity_store::EntityStore::new();
     store.insert(entity);

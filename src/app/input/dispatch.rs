@@ -832,8 +832,8 @@ mod item83_click_route_tests {
     use crate::app::input::entity_pick::compute_type_select_click_mutation;
     use crate::app::types::OrderMode;
     use crate::map::entities::EntityCategory;
+    use crate::sim::combat::Health;
     use crate::sim::command::Command;
-    use crate::sim::components::Health;
     use crate::sim::entity_store::EntityStore;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::StringInterner;
@@ -935,7 +935,7 @@ mod item83_click_route_tests {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 type_ref,
                 EntityCategory::Unit,
                 0,
@@ -2344,7 +2344,7 @@ mod item83_selection_order_tests {
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::world::Simulation;
     use std::collections::VecDeque;
@@ -2372,8 +2372,8 @@ mod item83_selection_order_tests {
             (50, "PLAIN", true),
         ] {
             let mut entity = GameEntity::test_default(id, type_name, "Americans", 10, 20);
-            entity.type_ref = sim.interner.intern(type_name);
-            entity.owner = sim.interner.intern("Americans");
+            entity.set_type_ref_for_test(sim.interner.intern(type_name));
+            entity.set_owner_for_test(sim.interner.intern("Americans"));
             entity.selected = selected;
             sim.entities_mut().insert(entity);
         }
@@ -2432,7 +2432,7 @@ mod item83_selection_order_tests {
                     0,
                     0,
                     owner,
-                    Health { current: 100 },
+                    Health::new(100),
                     type_ref,
                     EntityCategory::Infantry,
                     0,
@@ -2752,7 +2752,7 @@ fn deploy_key_commands(
 ) -> Vec<Command> {
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
-        entity.category == EntityCategory::Structure
+        entity.category() == EntityCategory::Structure
             && entity
                 .passenger_role
                 .cargo()
@@ -2803,7 +2803,7 @@ fn deployer_is_deployed(
 ) -> Option<bool> {
     let entity = sim.entities().get(id)?;
     let object = rules?.object(sim.interner.resolve(entity.type_ref()))?;
-    match entity.category {
+    match entity.category() {
         EntityCategory::Infantry if object.deployer => Some(entity.infantry_deploy_doing()),
         EntityCategory::Unit if object.is_simple_deployer => Some(
             entity
@@ -2824,7 +2824,7 @@ fn deploy_key_command(
 ) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
     let obj = rules.and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())));
-    match entity.category {
+    match entity.category() {
         EntityCategory::Structure => {
             // Garrisoned building → evacuate occupants.
             if obj.is_some_and(|object| object.can_be_occupied)
@@ -3166,7 +3166,7 @@ fn jump_camera_to_base(state: &mut AppState) {
             let rules = state.rules();
             // First pass: look for a ConYard (structure with UndeploysInto=).
             let conyard = sim.entities().values().find(|e| {
-                e.category == EntityCategory::Structure
+                e.category() == EntityCategory::Structure
                     && owner_name
                         .is_none_or(|o| sim.interner.resolve(e.owner()).eq_ignore_ascii_case(o))
                     && rules
@@ -3184,7 +3184,7 @@ fn jump_camera_to_base(state: &mut AppState) {
             }
             // Second pass: look for an MCV (unit with DeploysInto=).
             let mcv = sim.entities().values().find(|e| {
-                e.category != EntityCategory::Structure
+                e.category() != EntityCategory::Structure
                     && owner_name
                         .is_none_or(|o| sim.interner.resolve(e.owner()).eq_ignore_ascii_case(o))
                     && rules

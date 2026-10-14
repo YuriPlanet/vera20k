@@ -58,9 +58,9 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
     let (x, y) = (at[0].as_i64().unwrap(), at[1].as_i64().unwrap());
     let mut entity =
         GameEntity::test_default(id, kind, "Americans", (x / 256) as u16, (y / 256) as u16);
-    entity.type_ref = sim.intern(kind);
-    entity.owner = sim.intern("Americans");
-    entity.category = category;
+    entity.set_type_ref_for_test(sim.intern(kind));
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_category_for_test(category);
     entity.position.sub_x = SimFixed::from_num(x % 256);
     entity.position.sub_y = SimFixed::from_num(y % 256);
     sim.substrate.entities.insert(entity);

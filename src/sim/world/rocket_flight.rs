@@ -134,7 +134,7 @@ impl RocketHost for RocketProcessHost<'_> {
         self.owner().is_object_alive()
     }
     fn health(&self) -> i32 {
-        self.owner().health.current
+        self.owner().health.current()
     }
     fn facing(&self) -> u16 {
         self.owner().body_facing_current(self.frame)
@@ -416,7 +416,7 @@ pub(super) mod retail_tests {
                 })
                 .expect("Hills admits a V3 and a tank on open level ground");
             sim.resolve_type_handles(rules);
-            let strength = sim.substrate.entities.get(target).unwrap().health.current;
+            let strength = sim.substrate.entities.get(target).unwrap().health.current();
             let missile = sim
                 .substrate
                 .entities
@@ -507,7 +507,7 @@ pub(super) mod retail_tests {
                 .substrate
                 .entities
                 .get(target)
-                .map_or(0, |e| e.health.current);
+                .map_or(0, |e| e.health.current());
             println!(
                 "V3 at {launcher_cell:?}, MTNK at {target_cell:?}: launch frame {launched}, \
                  states {transitions:?}, missions {moves:?}, highest Z {highest}, \
@@ -720,7 +720,7 @@ pub(super) mod retail_tests {
             })
             .expect("Lost Lake admits a Dreadnought on open water and an MCV ashore");
         sim.resolve_type_handles(rules);
-        let strength = sim.substrate.entities.get(target).unwrap().health.current;
+        let strength = sim.substrate.entities.get(target).unwrap().health.current();
         let dred_start = position_world_coord(&sim.substrate.entities.get(dred).unwrap().position);
         // (launch frame, slot, missile), and each missile's detonation frame
         // and last location.
@@ -786,7 +786,7 @@ pub(super) mod retail_tests {
                 .entities
                 .get(target)
                 .filter(|e| e.is_object_alive())
-                .map_or(0, |e| e.health.current);
+                .map_or(0, |e| e.health.current());
             if health_log.last().is_some_and(|&(_, last)| last != health) {
                 health_log.push((frame, health));
             }
@@ -881,7 +881,7 @@ pub(super) mod retail_tests {
             })
             .expect("Lost Lake admits a Carrier on open water and an MCV ashore");
         sim.resolve_type_handles(rules);
-        let strength = sim.substrate.entities.get(target).unwrap().health.current;
+        let strength = sim.substrate.entities.get(target).unwrap().health.current();
         // Each slot's states in order, and each bomb's Hornet and the speed
         // and heading it was first seen with.
         let mut states: Vec<Vec<SpawnSlotState>> = Vec::new();
@@ -949,7 +949,7 @@ pub(super) mod retail_tests {
             .entities
             .get(target)
             .filter(|e| e.is_object_alive())
-            .map_or(0, |e| e.health.current);
+            .map_or(0, |e| e.health.current());
         println!(
             "CARRIER at {carrier_cell:?}, SMCV at {target_cell:?}: slot states {states:?}, \
              bombs {bombs:?}, MCV {health}/{strength}"
@@ -1079,7 +1079,7 @@ pub(super) mod retail_tests {
             })
             .expect("Hills admits a V3, its target and two Flak Tracks");
         sim.resolve_type_handles(rules);
-        let strength = sim.substrate.entities.get(target).unwrap().health.current;
+        let strength = sim.substrate.entities.get(target).unwrap().health.current();
         let target_z =
             position_world_coord(&sim.substrate.entities.get(target).unwrap().position).z;
         let missile = sim
@@ -1135,7 +1135,7 @@ pub(super) mod retail_tests {
                 .map(|m| m.slots[0].clone())
                 .expect("the V3's slot");
             assert_eq!(
-                sim.substrate.entities.get(target).unwrap().health.current,
+                sim.substrate.entities.get(target).unwrap().health.current(),
                 strength,
                 "the rocket never reaches the target"
             );
@@ -1176,7 +1176,7 @@ pub(super) mod retail_tests {
                 );
                 acquired = Some(frame);
             }
-            if entity.health.current == 0 && killed.is_none() {
+            if entity.health.current() == 0 && killed.is_none() {
                 killed = Some(frame);
                 death_anims = new_anims;
                 assert!(entity.crashing, "Crash keeps the dead rocket alive");

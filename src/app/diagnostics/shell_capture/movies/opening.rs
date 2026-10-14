@@ -419,14 +419,14 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     {
         let name = sim.interner.resolve(entity.type_ref()).to_owned();
         *active_types.entry(name.clone()).or_default() += 1;
-        if entity.category == crate::map::entities::EntityCategory::Structure {
+        if entity.category() == crate::map::entities::EntityCategory::Structure {
             // Observe existing damage/power owners after exact production
             // frames; this must never substitute a receiver or recalculate power.
             building_receivers.push(json!({
                 "id": entity.stable_id(), "type": name,
                 "owner": sim.interner.resolve(entity.owner()),
                 "cell": [entity.position.rx, entity.position.ry],
-                "health": entity.health.current,
+                "health": entity.health.current(),
                 "estimated_health": entity.estimated_health.get(),
                 "sampled_power_health": entity.building_power_health_sample(),
                 "damaged_mode": entity.building_art.damage_state_active(),

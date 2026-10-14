@@ -162,7 +162,10 @@ fn a_spy_takes_the_look_of_the_infantryman_its_makeup_kit_hits() {
         (worn.type_id(), worn.house(), worn.creation_frame()),
         (Some(id(&sim, "E1")), Some(id(&sim, "Americans")), frame)
     );
-    assert_eq!(sim.substrate.entities.get(gi).unwrap().health.current, 125);
+    assert_eq!(
+        sim.substrate.entities.get(gi).unwrap().health.current(),
+        125
+    );
     let spy = sim.substrate.entities.get(spy).unwrap();
     let seen_by = |house: &str| {
         object_disguised_to(

@@ -267,7 +267,7 @@ pub(crate) fn guard_queues_unload(sim: &Simulation, id: u64, rules: &RuleSet) ->
 }
 
 pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|obj| {

@@ -126,7 +126,7 @@ pub(super) fn emit_projectile_shrapnel(
     let admitted = match ground_head(bullet_cell) {
         Some(crate::sim::occupancy::CellObjectMember::Entity(id)) => entities
             .get(id)
-            .is_some_and(|object| object.category != EntityCategory::Structure),
+            .is_some_and(|object| object.category() != EntityCategory::Structure),
         Some(crate::sim::occupancy::CellObjectMember::Terrain(_)) => true,
         None => false,
     };

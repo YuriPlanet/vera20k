@@ -32,7 +32,7 @@ pub(super) fn marked_structure_movement_cells(
     interner: &StringInterner,
     rules: &RuleSet,
 ) -> Vec<(u16, u16)> {
-    if entity.category != EntityCategory::Structure || !entity.lifecycle.cell_marked {
+    if entity.category() != EntityCategory::Structure || !entity.lifecycle.cell_marked {
         return Vec::new();
     }
     let object_type = rules.object(interner.resolve(entity.type_ref()));

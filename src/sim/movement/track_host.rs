@@ -1105,7 +1105,7 @@ impl Simulation {
         // SlaveOwner, not Team (+5D4). The same-cell comparison calls
         // virtual+48 on both owners and truncates signed leptons /256.
         let archived = self.substrate.entities.get(id).and_then(|entity| {
-            if entity.category != EntityCategory::Infantry || entity.slave.owner().is_some() {
+            if entity.category() != EntityCategory::Infantry || entity.slave.owner().is_some() {
                 return None;
             }
             let target = entity.archive_target()?;
@@ -1194,7 +1194,7 @@ impl Simulation {
         let has_destination = entity.navigation.nav_com.is_some();
         let current = entity.mission.current().known();
         let effective = entity.mission.effective().known();
-        let category = entity.category;
+        let category = entity.category();
         let unit_type =
             rules.and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
         let miner = unit_type.is_some_and(|object| object.harvester || object.weeder);

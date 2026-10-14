@@ -110,7 +110,7 @@ fn uninit_garrison_passenger_without_exit(
     context: UninitContext<'_>,
 ) {
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
-        pax.health.current = 0;
+        pax.health.set(0);
         pax.passenger_role.clear_carrier_relation();
     }
     sim.uninit_with_context(passenger_id, context);
@@ -134,7 +134,7 @@ fn sellbuilding_direct_scatter_handoff(
     let Some(pax) = sim.substrate.entities.get(passenger_id) else {
         return;
     };
-    if pax.category != EntityCategory::Infantry
+    if pax.category() != EntityCategory::Infantry
         || !pax.is_alive()
         || pax.dying
         || pax.passenger_role.is_inside_transport()
@@ -608,8 +608,8 @@ pub(crate) mod tests {
             EntityCategory::Infantry,
         );
         pax.sub_cell = sub_cell;
-        pax.owner = sim.interner.intern(owner);
-        pax.type_ref = sim.interner.intern("E1");
+        pax.set_owner_for_test(sim.interner.intern(owner));
+        pax.set_type_ref_for_test(sim.interner.intern("E1"));
         pax.passenger_role.set_inside_transport(transport_id, false);
         sim.substrate.entities.insert(pax);
         stable_id
@@ -690,8 +690,8 @@ pub(crate) mod tests {
             EntityCategory::Structure,
         );
         building.foundation = "2x2".to_string();
-        building.owner = americans;
-        building.type_ref = sim.interner.intern(type_id);
+        building.set_owner_for_test(americans);
+        building.set_type_ref_for_test(sim.interner.intern(type_id));
         building.passenger_role = PassengerRole::Transport {
             cargo: crate::sim::passenger::PassengerCargo::new(5, 1),
         };
@@ -818,7 +818,8 @@ pub(crate) mod tests {
             .get(building_id)
             .expect("helper should not remove building");
         assert_eq!(
-            building.owner, americans,
+            building.owner(),
+            americans,
             "SellBuilding-style helper must not ChangeOwner"
         );
         assert!(
@@ -891,7 +892,8 @@ pub(crate) mod tests {
                 "destroyed garrison should not place passengers inside the foundation"
             );
             assert_eq!(
-                pax.owner, owner,
+                pax.owner(),
+                owner,
                 "destruction keeps death-time building owner"
             );
             assert!(matches!(pax.passenger_role, PassengerRole::None));
@@ -1076,7 +1078,7 @@ pub(crate) mod tests {
             .entities
             .get(passenger_id)
             .expect("UnInit keeps the no-exit occupant resolvable until the drain");
-        assert_eq!(passenger.health.current, 0);
+        assert_eq!(passenger.health.current(), 0);
         assert!(passenger.dying);
         assert!(matches!(passenger.passenger_role, PassengerRole::None));
         assert!(!passenger.lifecycle.object_alive);

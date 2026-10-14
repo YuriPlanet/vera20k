@@ -73,7 +73,7 @@ fn camera_transform_retains_fractional_negative_world_pixels() {
 
 fn commandable_movers() -> (Simulation, crate::sim::intern::InternedId, [u64; 2]) {
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
 
@@ -95,7 +95,7 @@ fn commandable_movers() -> (Simulation, crate::sim::intern::InternedId, [u64; 2]
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             category,
             0,

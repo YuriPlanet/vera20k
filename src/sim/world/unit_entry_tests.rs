@@ -66,17 +66,17 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
     );
     sim.session.binary_frame = 100;
     let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
-    mover.owner = sim.intern("Americans");
-    mover.type_ref = sim.intern("MOVER");
-    mover.category = EntityCategory::Unit;
+    mover.set_owner_for_test(sim.intern("Americans"));
+    mover.set_type_ref_for_test(sim.intern("MOVER"));
+    mover.set_category_for_test(EntityCategory::Unit);
     mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     sim.substrate.entities.insert(mover);
     sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
         .unwrap();
     let mut gate = GameEntity::test_default(91, "GATE", "Russians", 11, 10);
-    gate.owner = sim.intern("Russians");
-    gate.type_ref = sim.intern("GATE");
-    gate.category = EntityCategory::Structure;
+    gate.set_owner_for_test(sim.intern("Russians"));
+    gate.set_type_ref_for_test(sim.intern("GATE"));
+    gate.set_category_for_test(EntityCategory::Structure);
     gate.building_gate = Some(Default::default());
     sim.substrate.entities.insert(gate);
     sim.substrate.occupancy.add(
@@ -249,9 +249,9 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         let ours = sim.intern("Americans");
         let enemy = sim.intern("Russians");
         let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
-        mover.owner = ours;
-        mover.type_ref = sim.intern("MOVER");
-        mover.category = EntityCategory::Unit;
+        mover.set_owner_for_test(ours);
+        mover.set_type_ref_for_test(sim.intern("MOVER"));
+        mover.set_category_for_test(EntityCategory::Unit);
         mover.in_playfield = flag("in_playfield");
         if flag("mission_only") {
             mover.mark_mission_only();
@@ -316,17 +316,17 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 let building = node["building"].as_bool().unwrap_or(false);
                 let name = if building { "BUILDING" } else { "BLOCKER" };
                 let mut blocker = GameEntity::test_default(id, name, "Americans", 11, 10);
-                blocker.type_ref = sim.intern(name);
-                blocker.owner = if node["enemy"].as_bool().unwrap_or(false) {
+                blocker.set_type_ref_for_test(sim.intern(name));
+                blocker.set_owner_for_test(if node["enemy"].as_bool().unwrap_or(false) {
                     enemy
                 } else {
                     ours
-                };
-                blocker.category = if building {
+                });
+                blocker.set_category_for_test(if building {
                     EntityCategory::Structure
                 } else {
                     EntityCategory::Unit
-                };
+                });
                 blocker.crushable = node["crushable"].as_bool().unwrap_or(false);
                 blocker.omni_crush_resistant = node["resistant"].as_bool().unwrap_or(false);
                 blocker.foot_occupation_enabled = node["occupation"].as_bool().unwrap_or(true);
@@ -381,7 +381,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                             );
                         }
                         "walk" => {
-                            blocker.category = EntityCategory::Infantry;
+                            blocker.set_category_for_test(EntityCategory::Infantry);
                             let mut loco = LocomotorState::for_test_kind(LocomotorKind::Walk);
                             let LocomotorRuntimePayload::Walk(walk) = &mut loco.runtime_payload
                             else {
@@ -393,9 +393,9 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                         }
                         "fly" | "jumpjet" => {
                             if state["family"] == "fly" {
-                                blocker.category = EntityCategory::Aircraft;
+                                blocker.set_category_for_test(EntityCategory::Aircraft);
                             } else if node["infantry"] == true {
-                                blocker.category = EntityCategory::Infantry;
+                                blocker.set_category_for_test(EntityCategory::Infantry);
                             }
                             crate::sim::movement::motion_query::tests::apply_air_state(
                                 &mut blocker,

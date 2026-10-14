@@ -6,8 +6,9 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::Health;
 use crate::sim::command::Command;
-use crate::sim::components::{DriveCoord, Health};
+use crate::sim::components::DriveCoord;
 use crate::sim::movement;
 use crate::sim::movement::locomotion::LocomotorRuntimePayload;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -35,7 +36,7 @@ fn fixture() -> (Simulation, RuleSet) {
         0,
         0,
         owner,
-        Health { current: 400 },
+        Health::new(400),
         type_id,
         EntityCategory::Unit,
         0,
@@ -119,7 +120,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
                 0,
                 0,
                 owner,
-                Health { current: 900 },
+                Health::new(900),
                 type_id,
                 EntityCategory::Structure,
                 0,

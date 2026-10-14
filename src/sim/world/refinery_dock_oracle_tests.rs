@@ -350,7 +350,9 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
     // Refinery state.
     {
         let building = s.sim.substrate.entities.get_mut(refinery).unwrap();
-        building.health.current = input["refinery_health"].as_i64().unwrap_or(900) as i32;
+        building
+            .health
+            .set_for_test(input["refinery_health"].as_i64().unwrap_or(900) as i32);
         if input["online"] == false {
             building.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(other);
         }

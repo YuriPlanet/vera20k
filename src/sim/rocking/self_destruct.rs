@@ -54,7 +54,8 @@ pub fn check_and_fire(entity: &mut GameEntity, hook: &mut dyn SelfDestructHook) 
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::{Health, RockingState};
+    use crate::sim::combat::Health;
+    use crate::sim::components::RockingState;
     use crate::sim::intern::test_intern;
 
     struct CountingHook {
@@ -74,7 +75,7 @@ mod tests {
             0,
             0,
             test_intern("Americans"),
-            Health { current: 400 },
+            Health::new(400),
             test_intern("HTNK"),
             EntityCategory::Unit,
             0,

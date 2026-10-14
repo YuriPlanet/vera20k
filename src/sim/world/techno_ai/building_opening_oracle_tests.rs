@@ -89,7 +89,12 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
         row["rng_before"]["scenario"]
     );
     if let Some(health) = input["health"].as_i64() {
-        sim.substrate.entities.get_mut(id).unwrap().health.current = health as i32;
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(health as i32);
     }
     let control = rules.buildup_control(name);
     let entry = match route {

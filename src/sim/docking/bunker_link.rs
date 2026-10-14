@@ -44,7 +44,7 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
         && obj.has_turret
         && crate::sim::combat::combat_weapon::is_armed(unit, obj)
         && obj.speed_type != crate::rules::locomotor_type::SpeedType::Hover
-        && unit.parasite_eating_me.is_none()
+        && unit.parasite.eater().is_none()
 }
 
 /// VERA's tank bunker entry adapter, in place of the native route: the
@@ -120,7 +120,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
         .substrate
         .entities
         .get(unit_id)
-        .is_some_and(|unit| unit.category == EntityCategory::Unit)
+        .is_some_and(|unit| unit.category() == EntityCategory::Unit)
         || sim.substrate.entities.get(building_id).is_none()
     {
         return;
@@ -301,7 +301,7 @@ fn is_release_unit(sim: &Simulation, unit_id: u64) -> bool {
     sim.substrate
         .entities
         .get(unit_id)
-        .is_some_and(|unit| unit.category == EntityCategory::Unit)
+        .is_some_and(|unit| unit.category() == EntityCategory::Unit)
 }
 
 /// `rules` feeds the forced head's crate pickup (`Force_Track` 0x4B0D1B);
@@ -510,7 +510,7 @@ pub(crate) fn emit_bunker_wall_anim(
         return;
     };
     let damaged = at_or_below_condition_yellow(
-        b.health.current,
+        b.health.current(),
         object.strength,
         rules.general.condition_yellow,
     );
@@ -527,7 +527,7 @@ pub(crate) fn emit_bunker_wall_anim(
 fn at_or_below_condition_yellow(current: i32, strength: i32, condition_yellow: f64) -> bool {
     use crate::util::native_x87::MaskedX87Ordering::{Equal, Less, Unordered};
     matches!(
-        crate::sim::components::Health { current }.compare_ratio(strength, condition_yellow),
+        crate::sim::combat::Health::new(current).compare_ratio(strength, condition_yellow),
         Less | Equal | Unordered
     )
 }
@@ -537,7 +537,7 @@ mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::docking::bunker_install::BunkerRuntime;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::mission::MissionId;
@@ -571,7 +571,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 1000 },
+            Health::new(1000),
             type_id,
             EntityCategory::Structure,
             0,
@@ -593,7 +593,12 @@ mod tests {
             rules.general.condition_yellow = row.input.yellow();
             let mut sim = Simulation::new();
             spawn_bunker(&mut sim, 1, "A");
-            sim.substrate.entities.get_mut(1).unwrap().health.current = row.input.current;
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .health
+                .set_for_test(row.input.current);
             for up in [false, true] {
                 emit_bunker_wall_anim(&mut sim, 1, up, &rules);
                 let event = sim.bunker_wall_events.last().unwrap();
@@ -615,7 +620,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 400 },
+            Health::new(400),
             type_id,
             EntityCategory::Unit,
             0,
@@ -672,7 +677,8 @@ mod tests {
                     .entities
                     .get_mut(id)
                     .unwrap()
-                    .parasite_eating_me = Some(99);
+                    .parasite
+                    .set_eater_for_test(Some(99));
             }
             assert_eq!(
                 can_auto_deploy_here(&sim, id, &rules),
@@ -933,7 +939,12 @@ mod tests {
         let mut sim = installed_sim();
         sim.bunker_wall_events.clear();
         // Between native ConditionRed25% and ConditionYellow50%: walls use yellow.
-        sim.substrate.entities.get_mut(2).unwrap().health.current = 400;
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .health
+            .set_for_test(400);
         release_normal(
             &mut sim,
             2,

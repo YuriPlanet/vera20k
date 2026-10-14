@@ -113,7 +113,8 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
                 .expect("physical removal is deferred");
             assert!(entity.lifecycle.in_limbo && !entity.lifecycle.object_alive);
             assert_eq!(
-                entity.health.current, 200,
+                entity.health.current(),
+                200,
                 "Script37 is not a damage/RecordKill caller"
             );
             assert!(!entity.lifecycle.cell_marked);

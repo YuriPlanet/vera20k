@@ -43,7 +43,7 @@
 //! T19 (ObjectClass `+0x8D`, `GameEntity::is_falling_down`) fires during a
 //! paradrop's descent, its one VERA producer; no other fall is represented.
 
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 
 /// The codes, as every producer returns them (`MOV EAX, imm32`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

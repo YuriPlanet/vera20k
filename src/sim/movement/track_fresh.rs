@@ -201,7 +201,7 @@ impl Simulation {
         //death-frame counter +6D8, neither represented; see the residual) and
         //vt+380, FootClass::IsParalyzed 0x4DE770 (the Foot+6A0 timer a
         //parasite arms), return with the out byte clear.
-        if actor.is_paralyzed(self.session.binary_frame) {
+        if actor.parasite.is_paralyzed(self.session.binary_frame) {
             return Ok(false);
         }
         let head = if head.is_some() {
@@ -240,7 +240,7 @@ impl Simulation {
         };
         if !self.substrate.entities.get(object).is_some_and(|nav| {
             matches!(
-                nav.category,
+                nav.category(),
                 EntityCategory::Unit | EntityCategory::Infantry
             )
         }) {
@@ -285,12 +285,11 @@ impl Simulation {
         }
         let destination = track_destination(actor).ok_or("no-queue arm without destination")?;
         // A batched request waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation). A retry recursion
-        // (0x4B397F, 0x4B4480, 0x4B4552) runs at once: its timer was just
-        // expired, and native searches there with the retry spent.
-        if call.args == ProcessMovementArgs::OUTER
-            && self.defer_path_search(id, super::path_batch::WaitingRequest::NoQueue)
-        {
+        // still ran (`path_batch`, a proposed deviation). So does a
+        // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
+        // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
+        // unless it is the Foot's first request in a frame the batch answered.
+        if self.defer_path_search(id, super::path_batch::WaitingRequest::NoQueue) {
             return Ok(false);
         }
         let request = self.track_path_request(call, destination, 0)?;
@@ -1039,7 +1038,7 @@ impl Simulation {
                 self.substrate
                     .entities
                     .get(id)
-                    .is_some_and(|entity| entity.category == EntityCategory::Unit)
+                    .is_some_and(|entity| entity.category() == EntityCategory::Unit)
             })
     }
 
@@ -1362,7 +1361,7 @@ impl Simulation {
                 self.substrate
                     .entities
                     .get(entry.entity_id)
-                    .is_some_and(|entity| entity.category == EntityCategory::Aircraft)
+                    .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
             })
         {
             return Some(BlockingObject::Entity(aircraft.entity_id));

@@ -310,7 +310,7 @@ mod muzzle_anim_tests {
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::anim_class::AnimWorldCoord;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::projectile::ProjectileCoord;
 
@@ -343,7 +343,7 @@ mod muzzle_anim_tests {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 type_ref,
                 category,
                 0,

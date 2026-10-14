@@ -69,7 +69,7 @@ pub(crate) fn air_spatial_tracks_entity(
         return false;
     };
     locomotor.layer == MovementLayer::Air
-        || (entity.category == EntityCategory::Aircraft
+        || (entity.category() == EntityCategory::Aircraft
             && locomotor.kind == LocomotorKind::Fly
             && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0)
 }
@@ -837,7 +837,7 @@ impl CellOccupationGrid {
             self.clear_vehicle_plane(footprint, entity.stable_id());
         }
 
-        if entity.category != EntityCategory::Unit
+        if entity.category() != EntityCategory::Unit
             || !entity.lifecycle.cell_marked
             || entity.passenger_role.is_inside_transport()
         {
@@ -1233,8 +1233,8 @@ impl OccupancyGrid {
                 let entity = entities
                     .get(occupant.entity_id)
                     .expect("validated reference");
-                occupant.is_building = entity.category == EntityCategory::Structure;
-                occupant.sub_cell = if entity.category == EntityCategory::Infantry {
+                occupant.is_building = entity.category() == EntityCategory::Structure;
+                occupant.sub_cell = if entity.category() == EntityCategory::Infantry {
                     entity.sub_cell
                 } else {
                     None
@@ -1300,12 +1300,12 @@ impl OccupancyGrid {
                 continue;
             };
             let sid = entity.stable_id();
-            let sub = if entity.category == EntityCategory::Infantry {
+            let sub = if entity.category() == EntityCategory::Infantry {
                 entity.sub_cell
             } else {
                 None
             };
-            let insertion = CellListInsertion::from_category(entity.category);
+            let insertion = CellListInsertion::from_category(entity.category());
             for (rx, ry) in entity_occupancy_cells(entity) {
                 grid.add(rx, ry, sid, layer, sub, insertion);
             }
@@ -1319,7 +1319,7 @@ impl OccupancyGrid {
 /// (`0x0047E8A0`) walks. The lists are row-major rectangles except
 /// `3x3Refinery`'s, which omits `(2, 1)`.
 pub(crate) fn entity_occupancy_cells(entity: &GameEntity) -> Vec<(u16, u16)> {
-    if entity.category != EntityCategory::Structure {
+    if entity.category() != EntityCategory::Structure {
         return vec![(entity.position.rx, entity.position.ry)];
     }
     crate::rules::foundation::foundation_cell_offsets(&entity.foundation)
@@ -1501,7 +1501,7 @@ impl OccupancyGrid {
         self.get(rx, ry)?.iter_layer(layer).find_map(|occupant| {
             entities
                 .get(occupant.entity_id)
-                .is_some_and(|entity| entity.category == category)
+                .is_some_and(|entity| entity.category() == category)
                 .then_some(occupant.entity_id)
         })
     }
@@ -1987,13 +1987,13 @@ mod tests {
         let mut entities = crate::sim::entity_store::EntityStore::new();
         let mut ground_aircraft =
             crate::sim::game_entity::GameEntity::test_default(10, "ORCA", "Allies", 5, 5);
-        ground_aircraft.category = EntityCategory::Aircraft;
+        ground_aircraft.set_category_for_test(EntityCategory::Aircraft);
         let mut ground_building =
             crate::sim::game_entity::GameEntity::test_default(20, "GAPOWR", "Allies", 5, 5);
-        ground_building.category = EntityCategory::Structure;
+        ground_building.set_category_for_test(EntityCategory::Structure);
         let mut deck_building =
             crate::sim::game_entity::GameEntity::test_default(30, "GAPOWR", "Allies", 5, 5);
-        deck_building.category = EntityCategory::Structure;
+        deck_building.set_category_for_test(EntityCategory::Structure);
         entities.insert(ground_aircraft);
         entities.insert(ground_building);
         entities.insert(deck_building);
@@ -2165,7 +2165,7 @@ mod tests {
     fn saved_memberships_retain_lists_and_derive_only_lookup_metadata() {
         let mut entities = crate::sim::entity_store::EntityStore::new();
         let mut infantry = GameEntity::test_default(1, "JUMPJET", "Americans", 5, 5);
-        infantry.category = EntityCategory::Infantry;
+        infantry.set_category_for_test(EntityCategory::Infantry);
         infantry.sub_cell = Some(3);
         infantry.lifecycle.cell_marked = true;
         infantry.locomotor = Some(
@@ -2344,16 +2344,16 @@ mod tests {
     fn rebuild_uses_category_insertion() {
         let mut entities = crate::sim::entity_store::EntityStore::new();
         let mut first = crate::sim::game_entity::GameEntity::test_default(1, "E1", "Allies", 5, 5);
-        first.category = EntityCategory::Infantry;
+        first.set_category_for_test(EntityCategory::Infantry);
         first.sub_cell = Some(2);
         first.lifecycle.cell_marked = true;
         let mut second =
             crate::sim::game_entity::GameEntity::test_default(2, "HTNK", "Allies", 5, 5);
-        second.category = EntityCategory::Unit;
+        second.set_category_for_test(EntityCategory::Unit);
         second.lifecycle.cell_marked = true;
         let mut structure =
             crate::sim::game_entity::GameEntity::test_default(100, "GAPOWR", "Allies", 5, 5);
-        structure.category = EntityCategory::Structure;
+        structure.set_category_for_test(EntityCategory::Structure);
         structure.lifecycle.cell_marked = true;
         entities.insert(first);
         entities.insert(second);
@@ -2373,7 +2373,7 @@ mod tests {
         let mut entities = crate::sim::entity_store::EntityStore::new();
         let mut structure =
             crate::sim::game_entity::GameEntity::test_default(100, "GAPOWR", "Allies", 5, 5);
-        structure.category = EntityCategory::Structure;
+        structure.set_category_for_test(EntityCategory::Structure);
         structure.foundation = "2x2".to_string();
         structure.lifecycle.cell_marked = true;
         entities.insert(structure);
@@ -2407,7 +2407,7 @@ mod tests {
     fn gsi_04_05_unit(stable_id: u64, rx: u16, ry: u16) -> crate::sim::game_entity::GameEntity {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(stable_id, "MTNK", "Allies", rx, ry);
-        entity.category = EntityCategory::Unit;
+        entity.set_category_for_test(EntityCategory::Unit);
         entity.lifecycle.cell_marked = true;
         entity.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(

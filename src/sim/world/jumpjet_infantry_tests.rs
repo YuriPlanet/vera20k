@@ -281,7 +281,7 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
                 crate::sim::combat::TargetKind::Entity(conscript),
                 "the actual discharge targets the conscript"
             );
-            shots.push((now, target.health.current));
+            shots.push((now, target.health.current()));
         }
     }
     assert!(
@@ -417,7 +417,7 @@ fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
         sim.substrate
             .entities
             .get(conscript)
-            .is_none_or(|entity| entity.health.current < 125),
+            .is_none_or(|entity| entity.health.current() < 125),
         "the conscript is hit"
     );
 }
@@ -661,7 +661,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             .filter(|entity| entity.lifecycle.object_alive);
         frames.push(Fall {
             pose: entity.map(|_| pose(sim, rocketeer)),
-            health: entity.map_or(0, |entity| entity.health.current),
+            health: entity.map_or(0, |entity| entity.health.current()),
             crashing: entity.is_some_and(|entity| entity.crashing),
             rearm: entity.map(|entity| entity.rearm_timer),
             anims,
@@ -857,7 +857,7 @@ fn rocketeer_crash_fixture(
         0,
         0,
         americans,
-        crate::sim::components::Health { current: 125 },
+        crate::sim::combat::Health::new(125),
         jumpjet,
         EntityCategory::Infantry,
         0,
@@ -885,7 +885,7 @@ fn rocketeer_crash_fixture(
     let height = input["height"].as_i64().unwrap_or(500) as i32;
     {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        entity.health.current = 125;
+        entity.health.set_for_test(125);
         entity.position.exact_z_leptons = Some(height);
         entity.body_facing = crate::sim::movement::FacingClass::new(0x4000, 127);
         entity
@@ -936,7 +936,7 @@ fn rocketeer_crash_fixture(
         0,
         0,
         soviets,
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         shooter_type,
         EntityCategory::Unit,
         0,
@@ -958,7 +958,7 @@ fn shoot_the_rocketeer(
 ) {
     let soviets = sim.interner.intern("Soviets");
     let warhead = sim.interner.intern("CrashWH");
-    let health = sim.substrate.entities.get(1).unwrap().health.current;
+    let health = sim.substrate.entities.get(1).unwrap().health.current();
     sim.commit_direct_damage_receiver(
         rules,
         None,
@@ -1052,7 +1052,7 @@ fn a_shot_down_rocketeer_falls_like_the_native_crash() {
         let entity = entity.expect("a crashing Rocketeer stays");
         let crash = output["kills"][0].as_array().unwrap().last().unwrap()["after"].clone();
         assert!(entity.crashing && !entity.dying, "{name}");
-        assert_eq!(entity.health.current, 0, "{name}");
+        assert_eq!(entity.health.current(), 0, "{name}");
         assert_eq!(
             i64::from(entity.mission_leaf.as_infantry().unwrap().doing()),
             crash["doing"].as_i64().unwrap(),
@@ -1110,7 +1110,7 @@ fn a_shot_down_rocketeer_falls_like_the_native_crash() {
                 "{at}: stage"
             );
             assert_eq!(
-                i64::from(entity.health.current),
+                i64::from(entity.health.current()),
                 expected["health"].as_i64().unwrap(),
                 "{at}: Health"
             );

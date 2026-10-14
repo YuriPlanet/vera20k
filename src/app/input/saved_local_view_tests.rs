@@ -6,8 +6,8 @@ use super::{MatchInputState, PreparedSavedLocalView};
 use crate::app::types::TargetingMode;
 use crate::map::entities::EntityCategory;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::sim::combat::Health;
 use crate::sim::command::{Command, CommandEnvelope};
-use crate::sim::components::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::snapshot::saved_local_view::SavedLocalView;
 use crate::sim::world::Simulation;
@@ -30,7 +30,7 @@ fn fixture() -> (Simulation, RuleSet, MatchInputState) {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             EntityCategory::Unit,
             0,

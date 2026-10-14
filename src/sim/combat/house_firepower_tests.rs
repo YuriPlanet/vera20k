@@ -43,8 +43,8 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
     }
     for (id, kind, owner, rx) in [(1, "MTNK", "Americans", 2), (2, "E1", "Russians", 3)] {
         let mut entity = GameEntity::test_default(id, kind, owner, rx, 2);
-        entity.owner = sim.interner.get(owner).unwrap();
-        entity.type_ref = sim.interner.intern(kind);
+        entity.set_owner_for_test(sim.interner.get(owner).unwrap());
+        entity.set_type_ref_for_test(sim.interner.intern(kind));
         // The estimator fixture's retained raw rank is2.0 (40000000).
         entity.veterancy.set_rank_for_test(200);
         entity.firepower_multiplier = NativeF64Bits::from_bits(if id == 1 {

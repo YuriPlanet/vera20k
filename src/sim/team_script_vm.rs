@@ -1441,7 +1441,7 @@ pub(crate) fn member_type_identity(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> TeamMemberTypeIdentity {
     use crate::map::entities::EntityCategory;
-    let category = match entity.category {
+    let category = match entity.category() {
         EntityCategory::Infantry => ObjectCategory::Infantry,
         EntityCategory::Unit => ObjectCategory::Vehicle,
         EntityCategory::Aircraft => ObjectCategory::Aircraft,

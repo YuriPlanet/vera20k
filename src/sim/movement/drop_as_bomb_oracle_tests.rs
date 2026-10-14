@@ -67,7 +67,7 @@ mod tests {
                 entity.finish_fall();
             }
             entity.lifecycle.in_limbo = int(input, "limbo", 0) != 0;
-            entity.health.current = int(input, "health", 100);
+            entity.health.set_for_test(int(input, "health", 100));
             sim.substrate.entities.insert(entity);
             sim.object_ai_fall(1, &rules, None, FrameEffects::default())
                 .expect("production object falling AI");

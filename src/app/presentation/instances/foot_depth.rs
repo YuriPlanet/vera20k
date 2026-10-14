@@ -164,7 +164,7 @@ fn unit_bridge_condition_in_runtime(
     unloading_body: bool,
     allow_factory: bool,
 ) -> bool {
-    if entity.category != EntityCategory::Unit {
+    if entity.category() != EntityCategory::Unit {
         return false;
     }
     let Some(runtime) = runtime else {
@@ -183,7 +183,7 @@ fn unit_bridge_condition_in_runtime(
             .radio_contacts
             .slot(0)
             .and_then(|id| view.entities().get(id))
-            .filter(|contact| contact.category == EntityCategory::Structure)
+            .filter(|contact| contact.category() == EntityCategory::Structure)
             .and_then(|contact| {
                 runtime
                     .resources
@@ -230,7 +230,7 @@ fn shp_z_adjust_in_runtime(
         .wrapping_neg()
         .wrapping_sub(2);
     if !matches!(
-        entity.category,
+        entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry
     ) {
         return height_only as f32;
@@ -291,7 +291,7 @@ fn unit_z_adjust_in_runtime(
 ) -> i32 {
     let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
     if !matches!(
-        entity.category,
+        entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry
     ) {
         return adjust_for_z_standard(world_z).wrapping_neg();
@@ -308,13 +308,13 @@ fn unit_z_adjust_in_runtime(
     let xy = world_xy(entity);
     // ObjectClass cell getter 0x41BEA0 truncates signed coordinates toward zero.
     let coord = [(xy[0] / 256) as i16, (xy[1] / 256) as i16];
-    let special = if entity.category == EntityCategory::Unit {
+    let special = if entity.category() == EntityCategory::Unit {
         let contact = entity
             .dock_entered_with
             .and_then(|_| entity.radio_contacts.slot(0))
             .and_then(|id| view.entities().get(id));
         if contact.is_some_and(|other| {
-            other.category == EntityCategory::Structure && other.mission.effective().raw() == 16
+            other.category() == EntityCategory::Structure && other.mission.effective().raw() == 16
         }) {
             Some(-3)
         } else if object.is_some_and(|o| o.harvester) {

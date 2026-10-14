@@ -2,7 +2,7 @@
 //! seam. Native/producers excluded: spatial_oracle/foot_archive_expiry.md.
 
 use super::*;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::vision::FogState;
@@ -37,7 +37,7 @@ fn native_foot_archive_expiry_matches_all_22_original_class_rows() {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             category,
             0,

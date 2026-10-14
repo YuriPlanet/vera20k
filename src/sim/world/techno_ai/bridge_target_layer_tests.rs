@@ -5,7 +5,7 @@ use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::retail_ini_fixture::retail_rules_and_art;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionId, MissionTimer};
@@ -110,9 +110,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
             6,
             0,
             owner,
-            Health {
-                current: obj.strength,
-            },
+            Health::new(obj.strength),
             sim.intern("FV"),
             EntityCategory::Unit,
             0,
@@ -232,7 +230,12 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
         };
     }
     if let Some(health) = input["health"].as_i64() {
-        sim.substrate.entities.get_mut(2).unwrap().health.current = health as i32;
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .health
+            .set_for_test(health as i32);
     }
 }
 
@@ -493,7 +496,7 @@ fn assert_retail_target_state_restored(live: &Simulation, restored: &Simulation,
                 after.passively_acquired_target
             );
             assert_eq!(before.estimated_health, after.estimated_health);
-            assert_eq!(before.health.current, after.health.current);
+            assert_eq!(before.health.current(), after.health.current());
             assert_eq!(before.lifecycle.object_alive, after.lifecycle.object_alive);
             assert_eq!(before.lifecycle.in_limbo, after.lifecycle.in_limbo);
             assert_eq!(before.dying, after.dying);

@@ -111,7 +111,7 @@ pub fn launch(
         .substrate
         .entities
         .values()
-        .filter(|building| building.category == EntityCategory::Structure)
+        .filter(|building| building.category() == EntityCategory::Structure)
         .map(|building| {
             let allied = is_allied_with(
                 &sim.house_alliances,

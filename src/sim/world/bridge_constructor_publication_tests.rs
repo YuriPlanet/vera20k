@@ -403,9 +403,9 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             (x / 256) as u16,
             (y / 256) as u16,
         );
-        actor.owner = sim.intern("Americans");
-        actor.type_ref = sim.intern("ENGINEER");
-        actor.category = EntityCategory::Infantry;
+        actor.set_owner_for_test(sim.intern("Americans"));
+        actor.set_type_ref_for_test(sim.intern("ENGINEER"));
+        actor.set_category_for_test(EntityCategory::Infantry);
         actor.position.sub_x = SimFixed::from_num(x % 256);
         actor.position.sub_y = SimFixed::from_num(y % 256);
         actor.position.z = (z / 104) as u8;
@@ -471,8 +471,8 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
         let id = 100 + index as u64;
         let mut object =
             crate::sim::game_entity::GameEntity::test_default(id, "E1", "Americans", 16, 16);
-        object.type_ref = sim.interner.intern("E1");
-        object.owner = sim.interner.intern("Americans");
+        object.set_type_ref_for_test(sim.interner.intern("E1"));
+        object.set_owner_for_test(sim.interner.intern("Americans"));
         sim.substrate.entities.insert(object);
         sim.reveal(id);
         if index == 0 {

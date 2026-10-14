@@ -235,7 +235,10 @@ fn footprint_clear_of_others(sim: &Simulation, building_id: u64, unit_id: u64) -
         id != unit_id
             && id != building_id
             && e.in_logic_vector
-            && matches!(e.category, EntityCategory::Unit | EntityCategory::Infantry)
+            && matches!(
+                e.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            )
             && footprint
                 .iter()
                 .any(|&(cx, cy)| cx == e.position.rx && cy == e.position.ry)
@@ -275,7 +278,10 @@ fn shove_footprint_blockers(
             *id != unit_id
                 && *id != building_id
                 && e.in_logic_vector
-                && matches!(e.category, EntityCategory::Unit | EntityCategory::Infantry)
+                && matches!(
+                    e.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry
+                )
                 && footprint
                     .iter()
                     .any(|&(cx, cy)| cx == e.position.rx && cy == e.position.ry)
@@ -347,7 +353,7 @@ fn start_install_force_track(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::world::RevealOutcome;
@@ -381,7 +387,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 1000 },
+            Health::new(1000),
             type_id,
             EntityCategory::Structure,
             0,
@@ -402,7 +408,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 400 },
+            Health::new(400),
             type_id,
             EntityCategory::Unit,
             0,

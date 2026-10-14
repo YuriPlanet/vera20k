@@ -145,7 +145,7 @@ fn first_yard_distance_accepts(
     let Some(yard) = sim.substrate.entities.get(yard_id) else {
         return false;
     };
-    if yard.category != EntityCategory::Structure
+    if yard.category() != EntityCategory::Structure
         || !yard.build_const_eligible
         || !yard.lifecycle.object_alive
         || yard.lifecycle.in_limbo
@@ -190,7 +190,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
     use crate::sim::cell_rect::PlayfieldBounds;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
 
     fn water_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
@@ -569,7 +569,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 1000 },
+            Health::new(1000),
             type_ref,
             EntityCategory::Structure,
             0,

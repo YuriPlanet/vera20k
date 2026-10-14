@@ -180,7 +180,7 @@ fn a_falling_paratrooper_is_marked_again_at_the_head_of_its_cell() {
     ));
     for id in [1, 2] {
         let mut infantry = GameEntity::test_default(id, "E1", "Americans", 10, 10);
-        infantry.category = EntityCategory::Infantry;
+        infantry.set_category_for_test(EntityCategory::Infantry);
         infantry.lifecycle.in_limbo = false;
         infantry.lifecycle.cell_marked = false;
         infantry.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));

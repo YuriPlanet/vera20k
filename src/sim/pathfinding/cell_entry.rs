@@ -542,7 +542,7 @@ pub(crate) fn unit_tail_is_crushable_by(
     mover_considers_target_allied: bool,
     current_frame: u32,
 ) -> bool {
-    debug_assert_eq!(unit.category, EntityCategory::Unit);
+    debug_assert_eq!(unit.category(), EntityCategory::Unit);
     let target = bump_crush::CrushTarget::from_entity(unit, current_frame);
     // Live Unit entities carry Techno abstract flag1. Deploy crush immunity
     // is written only by Infantry deploy; it is always clear on this subset.

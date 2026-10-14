@@ -76,7 +76,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(target)
-                .is_some_and(|e| e.category == EntityCategory::Structure)
+                .is_some_and(|e| e.category() == EntityCategory::Structure)
         });
         let destination = match building.filter(|_| entering) {
             Some(building) => {
@@ -449,7 +449,7 @@ impl Simulation {
                     rules.map(|r| (r, &self.interner)),
                 );
                 state.should_begin_takeoff(
-                    entity.health.current,
+                    entity.health.current(),
                     || air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()),
                     base,
                 )
@@ -460,7 +460,7 @@ impl Simulation {
         //4CCED9 follows ALL BeginTakeoff effects. Its stored-destination ground
         // query must be last, including when both lookups stamp the Cell Dummy.
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        let aircraft = entity.category == crate::map::entities::EntityCategory::Aircraft;
+        let aircraft = entity.category() == crate::map::entities::EntityCategory::Aircraft;
         let ready = aircraft
             && entity
                 .mission_leaf
@@ -548,7 +548,7 @@ impl Simulation {
         {
             return false;
         }
-        let airport_bound = entity.category == crate::map::entities::EntityCategory::Aircraft
+        let airport_bound = entity.category() == crate::map::entities::EntityCategory::Aircraft
             && rules
                 .and_then(|r| r.object(self.interner.resolve(entity.type_ref())))
                 .is_some_and(|o| o.airport_bound);
@@ -598,7 +598,7 @@ impl Simulation {
     ) -> bool {
         let Some(rules) = rules else {
             return !self.substrate.entities.get(id).is_some_and(|entity| {
-                entity.category == crate::map::entities::EntityCategory::Aircraft
+                entity.category() == crate::map::entities::EntityCategory::Aircraft
                     && crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false)
             });
         };
@@ -667,7 +667,7 @@ impl Simulation {
     pub(crate) fn fly_stop_order(&mut self, id: u64, rules: &RuleSet) -> Option<FlyStopOrder> {
         use crate::sim::mission::{MissionId, MissionType};
         let entity = self.substrate.entities.get(id)?;
-        if entity.category != crate::map::entities::EntityCategory::Aircraft
+        if entity.category() != crate::map::entities::EntityCategory::Aircraft
             || !crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false)
         {
             return None;

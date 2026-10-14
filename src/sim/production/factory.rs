@@ -1596,7 +1596,7 @@ mod tests {
     fn house_power_rate_rewrite_matches_native_statuses_clamps_and_armed_timer() {
         use crate::map::entities::EntityCategory;
         use crate::rules::ini_parser::IniFile;
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
         use crate::sim::game_entity::GameEntity;
         use crate::sim::house_state::HouseState;
         use crate::sim::power_system::PowerState;
@@ -1639,7 +1639,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health { current: 500 },
+                Health::new(500),
                 producer_type,
                 EntityCategory::Structure,
                 0,

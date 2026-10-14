@@ -51,7 +51,7 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
         let mut e = actor(input);
         let aircraft = input["entry"] == "aircraft";
         if aircraft {
-            e.category = crate::map::entities::EntityCategory::Aircraft;
+            e.set_category_for_test(crate::map::entities::EntityCategory::Aircraft);
         }
         let current = input["mission"].as_i64().unwrap() as i32;
         e.mission.apply_test_fixture(MissionTestFixture {
@@ -170,7 +170,7 @@ fn terrain(bridge: bool) -> ResolvedTerrainGrid {
 
 fn actor(input: &Value) -> GameEntity {
     let mut e = GameEntity::test_default(1, "MOVER", "Americans", 10, 10);
-    e.category = crate::map::entities::EntityCategory::Unit;
+    e.set_category_for_test(crate::map::entities::EntityCategory::Unit);
     e.position.sub_x = SimFixed::from_num(128);
     e.position.sub_y = SimFixed::from_num(128);
     let kind = if input["family"] == "drive" {
@@ -855,7 +855,7 @@ fn destination_receipt_actor(
     before: &Value,
 ) -> GameEntity {
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId};
 
@@ -877,9 +877,7 @@ fn destination_receipt_actor(
         level,
         0,
         owner,
-        Health {
-            current: object.strength,
-        },
+        Health::new(object.strength),
         sim.interner.intern(family),
         if family == "E1" {
             EntityCategory::Infantry

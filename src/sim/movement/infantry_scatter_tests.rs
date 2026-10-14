@@ -8,7 +8,7 @@ use crate::sim::movement::locomotor::LocomotorState;
 
 fn infantry() -> GameEntity {
     let mut e = GameEntity::test_default(1, "E1", "Allies", 5, 5);
-    e.category = EntityCategory::Infantry;
+    e.set_category_for_test(EntityCategory::Infantry);
     e.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Infantry);
     e

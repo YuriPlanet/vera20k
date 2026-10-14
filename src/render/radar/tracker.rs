@@ -91,13 +91,13 @@ pub(super) fn radar_entity_owner_color(
         Some(_)
             if owner_allied_with_observer
                 && matches!(
-                    entity.category,
+                    entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 ) =>
         {
             Some(entity.owner())
         }
-        Some(disguise) => match entity.category {
+        Some(disguise) => match entity.category() {
             EntityCategory::Unit => disguise.house(),
             // The Spy leaf deliberately differs: NULL disguiseHouse returns
             // CurrentHouse, whereas a Mirage preserves NULL.

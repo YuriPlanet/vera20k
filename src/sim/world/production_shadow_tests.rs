@@ -52,8 +52,8 @@ fn spawn_war_factory(sim: &mut Simulation, owner: InternedId) {
         5,
         EntityCategory::Structure,
     );
-    e.owner = owner;
-    e.type_ref = gaweap;
+    e.set_owner_for_test(owner);
+    e.set_type_ref_for_test(gaweap);
     e.lifecycle.in_limbo = false;
     e.in_playfield = true;
     e.finish_building_construction_for_test();

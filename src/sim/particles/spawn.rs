@@ -518,9 +518,9 @@ mod tests {
             let id = sim.allocate_stable_id();
             let mut entity =
                 GameEntity::test_default(id, "TEST", "A", (x >> 8) as u16, (y >> 8) as u16);
-            entity.type_ref = sim.interner.intern("TEST");
-            entity.owner = sim.interner.intern("A");
-            entity.health.current = 40;
+            entity.set_type_ref_for_test(sim.interner.intern("TEST"));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(40);
             entity.position.sub_x = SimFixed::from_num(x & 255);
             entity.position.sub_y = SimFixed::from_num(y & 255);
             entity.position.exact_z_leptons = Some(z);
@@ -561,7 +561,7 @@ mod tests {
     #[test]
     fn original_health_ratio_corpus_marks_owned_damage_smoke() {
         use crate::map::entities::EntityCategory;
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
         use crate::sim::game_entity::GameEntity;
         for row in crate::sim::health_ratio_fixture::rows() {
             let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
@@ -580,9 +580,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health {
-                    current: row.input.current,
-                },
+                Health::new(row.input.current),
                 type_ref,
                 EntityCategory::Unit,
                 0,
@@ -917,8 +915,8 @@ mod tests {
 mod gsi_05_13_electric_bolt_sparks {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
+    use crate::sim::combat::Health;
     use crate::sim::command::{Command, CommandEnvelope};
-    use crate::sim::components::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::pathfinding::PathGrid;
     use crate::sim::world::{RevealOutcome, Simulation};
@@ -947,7 +945,7 @@ mod gsi_05_13_electric_bolt_sparks {
 
     fn unit(id: u64, type_ref: &str, rx: u16, ry: u16, owner: &str, hp: i32) -> GameEntity {
         let mut entity = GameEntity::test_default(id, type_ref, owner, rx, ry);
-        entity.health = Health { current: hp };
+        entity.health = Health::new(hp);
         entity
     }
 

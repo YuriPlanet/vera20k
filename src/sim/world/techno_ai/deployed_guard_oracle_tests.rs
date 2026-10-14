@@ -236,7 +236,7 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
                 .unwrap();
     }
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.health.current = 100;
+    actor.health.set_for_test(100);
     actor.lifecycle.in_limbo = false;
     actor.lifecycle.object_alive = true;
     // The companion supplies a post-constructor Location at Cell10,10;
@@ -298,7 +298,7 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
         .set_speed_fraction_native_bits(input["speed_fraction"].as_f64().unwrap().to_bits());
     if input["target"] == true && input["target_kind"] == "entity" {
         let mut supplied_target = actor.clone();
-        supplied_target.stable_id = 2;
+        supplied_target.set_stable_id_for_test(2);
         let mut target_coord = ground_pose::position_world_coord(&actor.position);
         target_coord.x = target_coord.x.wrapping_add(signed(&input["delta"]));
         ground_pose::put_location(&mut supplied_target.position, target_coord);

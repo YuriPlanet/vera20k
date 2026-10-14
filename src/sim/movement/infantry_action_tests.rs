@@ -66,7 +66,7 @@ fn cheer_matches_original_admission_and_shared_do_action_clock() {
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor.lifecycle.object_alive = input["alive"].as_i64().unwrap_or(1) != 0;
         actor.lifecycle.in_limbo = input["limbo"].as_i64().unwrap_or(0) != 0;
-        actor.health.current = 100;
+        actor.health.set_for_test(100);
         actor.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_raw(input["mission"].as_i64().unwrap() as i32),
             queued: MissionId::from_raw(input["queued"].as_i64().unwrap_or(-1) as i32),
@@ -212,7 +212,9 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
     // jumpjet_infantry_actions.Actions supplies OWNER+74=1; Do_Action's
     // Object5F6B90 height predicate requires this independently of XYZ.
     entity.lifecycle.cell_marked = true;
-    entity.health.current = input["health"].as_i64().unwrap_or(125) as _;
+    entity
+        .health
+        .set_for_test(input["health"].as_i64().unwrap_or(125) as _);
     entity.on_bridge = input["on_bridge"].as_bool().unwrap_or(false);
     entity.position.exact_z_leptons = Some(height);
     entity
@@ -488,7 +490,7 @@ fn walk_consumer(input: &Value) -> (Simulation, RuleSet, u64) {
         .expect("infantryman");
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     entity.lifecycle.in_limbo = false;
-    entity.health.current = 100;
+    entity.health.set_for_test(100);
     entity.infantry.as_mut().unwrap().is_prone = input["prone"] == true;
     entity
         .mission_leaf
@@ -647,7 +649,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor.lifecycle.in_limbo = false;
         actor.lifecycle.cell_marked = true;
-        actor.health.current = 125;
+        actor.health.set_for_test(125);
         actor.position.exact_z_leptons = Some(0);
         actor.infantry.as_mut().unwrap().is_prone = input["prone"].as_bool().unwrap();
         assert_eq!(

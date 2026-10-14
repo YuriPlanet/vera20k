@@ -1023,7 +1023,7 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
         sim.substrate
             .entities
             .get(target)
-            .is_some_and(|t| t.lifecycle.object_alive && t.health.current == 50),
+            .is_some_and(|t| t.lifecycle.object_alive && t.health.current() == 50),
         "fixture guard: the target is alive before the impact"
     );
 
@@ -1065,7 +1065,7 @@ fn v3_attack_order_damages_the_target_through_the_spawned_rocket() {
         sim.substrate
             .entities
             .get(target)
-            .is_some_and(|t| t.lifecycle.object_alive && t.health.current == 50),
+            .is_some_and(|t| t.lifecycle.object_alive && t.health.current() == 50),
         "fixture guard: the target must start alive at full health"
     );
 
@@ -1481,9 +1481,9 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
     assert!(climbing(&sim), "the tilt ends and the missile climbs");
     let entity = sim.substrate.entities.get_mut(missile).expect("missile");
     assert!(!entity.lifecycle.in_limbo);
-    entity.health.current = 0;
+    entity.health.set_for_test(0);
     entity.crashing = true;
-    let target_health = sim.substrate.entities.get(target).unwrap().health.current;
+    let target_health = sim.substrate.entities.get(target).unwrap().health.current();
 
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
 
@@ -1495,7 +1495,7 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
         "the missile explodes and is UnInit"
     );
     assert_eq!(
-        sim.substrate.entities.get(target).unwrap().health.current,
+        sim.substrate.entities.get(target).unwrap().health.current(),
         target_health,
         "its payload never reaches the target"
     );
@@ -1505,7 +1505,7 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
             .get(bystander)
             .unwrap()
             .health
-            .current
+            .current()
             < 1000,
         "the burst lands beside the launcher"
     );
@@ -1685,7 +1685,7 @@ fn reload_due_restores_actual_and_estimated_health_from_child_type() {
         manager.slots[0].timer = CdTimer::default();
         manager.update_timer = CdTimer::default();
         let aircraft = sim.substrate.entities.get_mut(child).unwrap();
-        aircraft.health.current = 1;
+        aircraft.health.set_for_test(1);
         aircraft.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-123);
         let strength = rules.object("HORNET").unwrap().strength;
 
@@ -1698,7 +1698,7 @@ fn reload_due_restores_actual_and_estimated_health_from_child_type() {
         );
 
         let aircraft = sim.substrate.entities.get(child).unwrap();
-        assert_eq!(aircraft.health.current, strength);
+        assert_eq!(aircraft.health.current(), strength);
         assert_eq!(aircraft.estimated_health.get(), strength);
         let manager = sim
             .substrate
@@ -1842,7 +1842,7 @@ fn a_dead_carriers_airborne_hornet_crashes() {
         .get(hornet)
         .expect("a crashing Hornet stays represented until its impact");
     assert!(hornet.crashing && hornet.lifecycle.object_alive);
-    assert_eq!(hornet.health.current, 0);
+    assert_eq!(hornet.health.current(), 0);
     assert_eq!(hornet.spawn_owner_id, None);
     assert!(
         hornet

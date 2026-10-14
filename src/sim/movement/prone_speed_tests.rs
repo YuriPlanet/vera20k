@@ -8,7 +8,7 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{test_intern, test_interner};
@@ -45,7 +45,7 @@ fn prone_mover() -> GameEntity {
         0,
         64,
         test_intern("Americans"),
-        Health { current: 100 },
+        Health::new(100),
         test_intern("E1"),
         EntityCategory::Infantry,
         0,

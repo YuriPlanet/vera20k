@@ -163,8 +163,8 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
     sim.install_resolved_terrain_for_new_map(terrain);
     let mut structure =
         crate::sim::game_entity::GameEntity::test_default(47, "YARD", "Americans", 6, 6);
-    structure.category = EntityCategory::Structure;
-    structure.type_ref = sim.interner.intern("YARD");
+    structure.set_category_for_test(EntityCategory::Structure);
+    structure.set_type_ref_for_test(sim.interner.intern("YARD"));
     structure.lifecycle.cell_marked = true;
     structure.dying = true; // Dying still owns its marked footprint.
     sim.substrate.entities.insert(structure);
@@ -418,8 +418,8 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
 
     let mut structure =
         crate::sim::game_entity::GameEntity::test_default(9, "YARD", "Americans", 6, 6);
-    structure.category = EntityCategory::Structure;
-    structure.type_ref = sim.interner.intern("YARD");
+    structure.set_category_for_test(EntityCategory::Structure);
+    structure.set_type_ref_for_test(sim.interner.intern("YARD"));
     structure.lifecycle.cell_marked = true;
     sim.substrate.entities.insert(structure);
     assert!(
@@ -469,7 +469,7 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
             6,
             EntityCategory::Structure,
         );
-        structure.type_ref = sim.interner.intern("YARD");
+        structure.set_type_ref_for_test(sim.interner.intern("YARD"));
         structure.foundation = rules.object("YARD").unwrap().foundation.clone();
         sim.substrate.entities.insert(structure);
         assert!(sim.mark_entity_put(id, context));

@@ -390,7 +390,7 @@ impl Simulation {
         let Some(planter_entity) = live(planter) else {
             return;
         };
-        if planter_entity.category != EntityCategory::Infantry {
+        if planter_entity.category() != EntityCategory::Infantry {
             return;
         }
         let planter_house = planter_entity.owner();
@@ -484,7 +484,7 @@ impl Simulation {
             self.session.binary_frame,
             bomb.planter,
         );
-        let bridge_hut = entity.category == EntityCategory::Structure
+        let bridge_hut = entity.category() == EntityCategory::Structure
             && rules
                 .object(self.interner.resolve(entity.type_ref()))
                 .is_some_and(|object| object.bridge_repair_hut);

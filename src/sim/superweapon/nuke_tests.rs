@@ -874,7 +874,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     // It strikes the ground at the tank: the screen flashes, the radar
     // marks the cell, and the warhead waits on NUKEBALL before it
     // detonates.
-    let tank_health = sim.substrate.entities.get(tank).unwrap().health.current;
+    let tank_health = sim.substrate.entities.get(tank).unwrap().health.current();
     sim.sound_events.clear();
     run_until(&mut sim, &rules, 3000, |sim| {
         sim.projectiles
@@ -905,7 +905,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
                 && (radar.rx, radar.ry) == TARGET
     )));
     assert_eq!(
-        sim.substrate.entities.get(tank).unwrap().health.current,
+        sim.substrate.entities.get(tank).unwrap().health.current(),
         tank_health,
         "not yet detonated"
     );
@@ -948,7 +948,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         sim.substrate
             .entities
             .get(tank)
-            .is_none_or(|entity| entity.dying || entity.health.current == 0),
+            .is_none_or(|entity| entity.dying || entity.health.current() == 0),
         "the strike destroys the tank"
     );
     assert!(

@@ -243,7 +243,7 @@ fn refinery_under_construction(sim: &Simulation, rules: &RuleSet, house: &HouseS
     sim.substrate
         .entities
         .values()
-        .filter(|entity| entity.category == EntityCategory::Structure)
+        .filter(|entity| entity.category() == EntityCategory::Structure)
         .take(house.base_projection.buildings().len())
         .any(|building| {
             building.mission.current() == construction && refineries.contains(&building.type_ref())

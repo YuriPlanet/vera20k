@@ -163,7 +163,7 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
         0,
         0,
         test_intern("Americans"),
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         test_intern("ENGI"),
         EntityCategory::Infantry,
         0,

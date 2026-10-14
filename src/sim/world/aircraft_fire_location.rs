@@ -88,7 +88,7 @@ impl Simulation {
                 .get(id)
                 .filter(|e| {
                     matches!(
-                        e.category,
+                        e.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                     )
                 })
@@ -223,7 +223,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(id)
-                    .filter(|e| e.category == EntityCategory::Unit)
+                    .filter(|e| e.category() == EntityCategory::Unit)
                     .map(|e| e.stable_id()),
                 _ => None,
             }
@@ -260,7 +260,7 @@ impl Simulation {
                 || !other.lifecycle.object_alive
                 || other.lifecycle.in_limbo
                 || !matches!(
-                    other.category,
+                    other.category(),
                     EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                 )
             {

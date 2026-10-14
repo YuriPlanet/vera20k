@@ -382,7 +382,7 @@ fn jumpjet_infantry_damage_scatter_takes_the_infantry_setter() {
         Some(&registry),
     );
     let e = sim.substrate.entities.get(victim).unwrap();
-    assert!(e.health.current < 125);
+    assert!(e.health.current() < 125);
     assert!(
         matches!(e.navigation.nav_com, Some(NavTargetRef::Cell { .. })),
         "Scatter published the cell NavCom"
@@ -445,7 +445,7 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
         Some(&registry),
     );
     let e = sim.substrate.entities.get(victim).unwrap();
-    assert_eq!(e.health.current, 65);
+    assert_eq!(e.health.current(), 65);
     assert_eq!(e.body_facing, facing, "Scatter setter does not snap facing");
     assert_eq!(
         position_world_coord(&e.position),

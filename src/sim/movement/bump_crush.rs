@@ -161,7 +161,7 @@ pub(crate) fn blocker_plane_source(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     retained_foot: bool,
 ) -> Option<BlockerPlaneSource> {
-    if retained_foot && entity.category != EntityCategory::Structure {
+    if retained_foot && entity.category() != EntityCategory::Structure {
         return None;
     }
     // Dying corpses are off the occupancy grid: don't let them inflate the
@@ -175,7 +175,7 @@ pub(crate) fn blocker_plane_source(
         return None;
     }
     let pos = (entity.position.rx, entity.position.ry);
-    if entity.category == EntityCategory::Structure {
+    if entity.category() == EntityCategory::Structure {
         let size = rules
             .and_then(|r| r.object(interner.resolve(entity.type_ref())))
             .map(|obj| crate::rules::foundation::foundation_dimensions(&obj.foundation))
@@ -602,7 +602,7 @@ impl CrushTarget {
     /// Read the crush inputs off a live entity at a known sim frame.
     pub fn from_entity(entity: &GameEntity, current_frame: u32) -> Self {
         Self {
-            category: entity.category,
+            category: entity.category(),
             crushable: entity.crushable,
             deploy_crush_immune: deploy_crush_immune(entity),
             omni_crush_resistant: entity.omni_crush_resistant,
@@ -617,7 +617,7 @@ impl CrushTarget {
     /// legality only. See [`IRON_CURTAIN_UNAVAILABLE`].
     fn from_entity_without_frame(entity: &GameEntity) -> Self {
         Self {
-            category: entity.category,
+            category: entity.category(),
             crushable: entity.crushable,
             deploy_crush_immune: deploy_crush_immune(entity),
             omni_crush_resistant: entity.omni_crush_resistant,
@@ -1071,7 +1071,7 @@ mod tests {
 
     fn infantry(id: u64, rx: u16, ry: u16, sub: u8) -> GameEntity {
         let mut e = GameEntity::test_default(id, "E1", "Allies", rx, ry);
-        e.category = EntityCategory::Infantry;
+        e.set_category_for_test(EntityCategory::Infantry);
         e.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
             EntityCategory::Infantry,
         );
@@ -1082,7 +1082,7 @@ mod tests {
 
     fn vehicle(id: u64, rx: u16, ry: u16) -> GameEntity {
         let mut e = GameEntity::test_default(id, "MTNK", "Allies", rx, ry);
-        e.category = EntityCategory::Unit;
+        e.set_category_for_test(EntityCategory::Unit);
         e.crushable = false;
         e
     }
@@ -1466,7 +1466,7 @@ mod tests {
         crusher.regular_crusher = true;
         entities.insert(crusher);
         let mut victim = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
-        victim.category = EntityCategory::Infantry;
+        victim.set_category_for_test(EntityCategory::Infantry);
         victim.crushable = true;
         entities.insert(victim);
         let interner = crate::sim::intern::test_interner();
@@ -1520,7 +1520,7 @@ mod tests {
         crusher.regular_crusher = true;
         entities.insert(crusher);
         let mut victim = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
-        victim.category = EntityCategory::Infantry;
+        victim.set_category_for_test(EntityCategory::Infantry);
         victim.crushable = true;
         victim.infantry = Some(InfantryRuntime {
             is_prone: true,
@@ -1553,13 +1553,13 @@ mod tests {
         crusher.regular_crusher = true;
         entities.insert(crusher);
         let mut gi = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
-        gi.category = EntityCategory::Infantry;
+        gi.set_category_for_test(EntityCategory::Infantry);
         gi.crushable = true;
         gi.deployed_crushable = true;
         gi.set_infantry_deploy_crush_immunity(0);
         entities.insert(gi);
         let mut ggi = GameEntity::test_default(3, "GGI", "Soviet", 5, 5);
-        ggi.category = EntityCategory::Infantry;
+        ggi.set_category_for_test(EntityCategory::Infantry);
         ggi.crushable = true;
         ggi.deployed_crushable = false;
         ggi.set_infantry_deploy_crush_immunity(1);
@@ -1587,7 +1587,7 @@ mod tests {
         crusher.regular_crusher = true;
         entities.insert(crusher);
         let mut victim = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
-        victim.category = EntityCategory::Infantry;
+        victim.set_category_for_test(EntityCategory::Infantry);
         victim.crushable = true;
         victim.invulnerability = Some(
             crate::sim::superweapon::invulnerability::InvulnerabilityState::new(
@@ -2085,7 +2085,7 @@ mod tests {
         ry: u16,
     ) -> GameEntity {
         let mut victim = infantry(1, rx, ry, 2);
-        victim.type_ref = interner.intern("E1");
+        victim.set_type_ref_for_test(interner.intern("E1"));
         victim
     }
 

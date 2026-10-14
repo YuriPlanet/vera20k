@@ -28,8 +28,9 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::Health;
 use crate::sim::combat::{AttackTarget, TargetKind};
-use crate::sim::components::{Health, NavTargetRef};
+use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
@@ -152,7 +153,7 @@ fn fixture(row: &Value, owner_type: &str, unread_mission: Option<i64>) -> Option
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         category,
         0,
@@ -193,7 +194,7 @@ fn fixture(row: &Value, owner_type: &str, unread_mission: Option<i64>) -> Option
                 0,
                 0,
                 enemy,
-                Health { current: 100 },
+                Health::new(100),
                 target_type,
                 EntityCategory::Unit,
                 0,

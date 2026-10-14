@@ -391,7 +391,7 @@ fn retail_voxel_bodies_draw_the_sprites_their_model_is_seeded_with() {
         if !entity.is_voxel {
             continue;
         }
-        let is_aircraft = entity.category == EntityCategory::Aircraft;
+        let is_aircraft = entity.category() == EntityCategory::Aircraft;
         match body_draw_against_seed(&sim, &assets, rules, id) {
             Ok(Some((model, parts))) => {
                 assert_eq!(&model, type_id);

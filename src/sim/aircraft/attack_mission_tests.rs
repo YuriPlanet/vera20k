@@ -495,7 +495,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             sim.append_house_base_building_for_test(2);
             sim.update_house_tracking(2, crate::sim::house_tracking::HouseTracking::add_tracking);
         }
-        plane.category = EntityCategory::Aircraft;
+        plane.set_category_for_test(EntityCategory::Aircraft);
         // The RadioClass constructor's one contact slot (`0x0065A764`).
         plane.radio_contacts.set_capacity(1);
         plane.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1, false);

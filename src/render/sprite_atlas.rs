@@ -1140,7 +1140,7 @@ fn insert_new_object_keys<'a>(
         .map(|entity| {
             (
                 interner.map_or("", |i| i.resolve(entity.type_ref())),
-                entity.category,
+                entity.category(),
             )
         })
         .collect();

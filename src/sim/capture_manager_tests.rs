@@ -333,7 +333,7 @@ fn capture_takes_the_target_and_records_its_house() {
     let mut sim = sim(3);
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
-    let health = sim.substrate.entities.get(gi).unwrap().health.current;
+    let health = sim.substrate.entities.get(gi).unwrap().health.current();
     let mut replay = sim.scenario_rng.clone();
     assert!(sim.capture_unit(
         yuri,
@@ -347,7 +347,7 @@ fn capture_takes_the_target_and_records_its_house() {
     assert_eq!(owner(&sim, gi), "YuriCountry");
     let entity = sim.substrate.entities.get(gi).unwrap();
     assert_eq!(entity.mind_control.controller(), Some(yuri));
-    assert_eq!(entity.health.current, health);
+    assert_eq!(entity.health.current(), health);
     let manager = sim
         .substrate
         .entities
@@ -718,7 +718,7 @@ fn a_tower_going_offline_frees_its_captives() {
         .get_mut(tower)
         .unwrap()
         .health
-        .current = 0;
+        .set_for_test(0);
     sim.visit_building_operational(
         tower,
         &rules,
@@ -793,7 +793,12 @@ fn native_decide_unit_fate_corpus() {
         let human = int("unit_house_human") != 0;
         let unit_house = if human { "Americans" } else { "Russians" };
         let unit = spawn(&mut sim, rules, "E1", unit_house, 12, 10);
-        sim.substrate.entities.get_mut(unit).unwrap().health.current = int("health");
+        sim.substrate
+            .entities
+            .get_mut(unit)
+            .unwrap()
+            .health
+            .set_for_test(int("health"));
         let controller_house = sim.interner.get("YuriCountry").unwrap();
         sim.houses
             .get_mut(&controller_house)
@@ -848,9 +853,7 @@ fn native_decide_unit_fate_corpus() {
             assert!(events.is_empty(), "{input}");
             continue;
         }
-        let health = crate::sim::components::Health {
-            current: int("health"),
-        };
+        let health = crate::sim::combat::Health::new(int("health"));
         let reason = sim.capture_reason(controller_house, health, strength, rules);
         if let Some(table) = events.iter().find_map(|event| event["table"].as_str()) {
             let native = match table {
@@ -1001,7 +1004,7 @@ fn native_overload_update_corpus() {
         entity.capture_manager = Some(manager);
         if input.get("kill").is_some() {
             // Dies to the first damaging row, as the fixture's owner does.
-            entity.health.current = 50;
+            entity.health.set_for_test(50);
         }
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let location = glam::IVec3::new(location.x, location.y, location.z);
@@ -1031,7 +1034,7 @@ fn native_overload_update_corpus() {
                     .unwrap()
                     .nodes = nodes(count.as_i64().unwrap());
             }
-            let health = sim.substrate.entities.get(mind).unwrap().health.current;
+            let health = sim.substrate.entities.get(mind).unwrap().health.current();
             let systems: Vec<u64> = sim.particle_systems().iter().map(|(&id, _)| id).collect();
             sim.sound_events.clear();
 
@@ -1061,7 +1064,7 @@ fn native_overload_update_corpus() {
                     .substrate
                     .entities
                     .get(mind)
-                    .map_or(0, |entity| entity.health.current);
+                    .map_or(0, |entity| entity.health.current());
             assert_eq!(dealt, native_damage, "{name} frame {frame}");
             // The voice plays at the controller's Location on both sides.
             let voices: Vec<glam::IVec3> = sim
@@ -1180,7 +1183,7 @@ fn a_mastermind_overloads_above_three_captives() {
         ));
     }
     // 30 quiet frames, then a free check at three captives.
-    let health = sim.substrate.entities.get(mind).unwrap().health.current;
+    let health = sim.substrate.entities.get(mind).unwrap().health.current();
     let before = sim.scenario_rng.state();
     for _ in 0..31 {
         sim.capture_manager_update(
@@ -1192,7 +1195,7 @@ fn a_mastermind_overloads_above_three_captives() {
     }
     assert_eq!(sim.scenario_rng.state(), before);
     assert_eq!(
-        sim.substrate.entities.get(mind).unwrap().health.current,
+        sim.substrate.entities.get(mind).unwrap().health.current(),
         health
     );
 
@@ -1225,7 +1228,7 @@ fn a_mastermind_overloads_above_three_captives() {
     let _ = replay.next_range_i32_inclusive(0, 100);
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(
-        sim.substrate.entities.get(mind).unwrap().health.current,
+        sim.substrate.entities.get(mind).unwrap().health.current(),
         health - 50
     );
     assert_eq!(voc_sounds(&sim), ["MasterMindOverloadVoice"]);
@@ -1248,7 +1251,7 @@ fn a_mastermind_overloads_above_three_captives() {
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
-        sim.substrate.entities.get(mind).unwrap().health.current,
+        sim.substrate.entities.get(mind).unwrap().health.current(),
         health - 100
     );
     assert!(voc_sounds(&sim).is_empty());
@@ -1351,7 +1354,7 @@ fn an_attack_order_captures_without_damage() {
     let (mut sim, grid) = arena(23, &rules);
     let mind = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
-    let health = sim.substrate.entities.get(gi).unwrap().health.current;
+    let health = sim.substrate.entities.get(gi).unwrap().health.current();
     let owner_id = sim.interner.intern("YuriCountry");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
@@ -1376,7 +1379,7 @@ fn an_attack_order_captures_without_damage() {
     let captive = sim.substrate.entities.get(gi).unwrap();
     assert_eq!(captive.mind_control.controller(), Some(mind), "captured");
     assert_eq!(owner(&sim, gi), "YuriCountry");
-    assert_eq!(captive.health.current, health, "no damage");
+    assert_eq!(captive.health.current(), health, "no damage");
     assert!(
         sim.substrate
             .entities
@@ -1738,7 +1741,7 @@ fn an_iron_curtained_target_refuses_the_capture_at_fire_time() {
         1000,
         crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
     );
-    let health = sim.substrate.entities.get(gi).unwrap().health.current;
+    let health = sim.substrate.entities.get(gi).unwrap().health.current();
     let owner_id = sim.interner.intern("YuriCountry");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
@@ -1770,7 +1773,7 @@ fn an_iron_curtained_target_refuses_the_capture_at_fire_time() {
     let target = sim.substrate.entities.get(gi).unwrap();
     assert!(!target.mind_control.is_mind_controlled());
     assert_eq!(owner(&sim, gi), "Americans");
-    assert_eq!(target.health.current, health);
+    assert_eq!(target.health.current(), health);
 }
 
 /// An overload that kills the Mastermind frees its captives inside the
@@ -1795,7 +1798,12 @@ fn a_killing_overload_frees_the_captives_before_the_sparks() {
         ));
     }
     // Row one (50 damage) at the first check, on a 50-health Mastermind.
-    sim.substrate.entities.get_mut(mind).unwrap().health.current = 50;
+    sim.substrate
+        .entities
+        .get_mut(mind)
+        .unwrap()
+        .health
+        .set_for_test(50);
     for _ in 0..30 {
         sim.capture_manager_update(
             mind,

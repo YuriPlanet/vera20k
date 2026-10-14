@@ -334,7 +334,11 @@ fn empty_slot_zero_does_not_scan_later_contacts() {
 fn nonunit_link_does_not_release_or_reset_bunker() {
     for normal in [false, true] {
         let mut sim = release_fixture();
-        sim.substrate.entities.get_mut(1).unwrap().category = EntityCategory::Infantry;
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .set_category_for_test(EntityCategory::Infantry);
         if normal {
             release_normal(
                 &mut sim,

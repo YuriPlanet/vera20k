@@ -293,7 +293,9 @@ fn patrol_reuses_the_native_leadership_rating_member_selection() {
                 );
                 entity.lifecycle.object_alive = input["active"].as_bool().unwrap();
                 entity.lifecycle.in_limbo = input["limbo"].as_bool().unwrap();
-                entity.health.current = input["health"].as_i64().unwrap() as i32;
+                entity
+                    .health
+                    .set_for_test(input["health"].as_i64().unwrap() as i32);
                 sim.substrate.entities.insert(entity);
                 id
             })

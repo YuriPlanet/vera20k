@@ -165,7 +165,12 @@ mod tests {
     }
 
     fn set_health(sim: &mut Simulation, id: u64, health: i32) {
-        sim.substrate.entities.get_mut(id).unwrap().health.current = health;
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(health);
     }
 
     fn sim_with_house(credits: i32, human: bool) -> (Simulation, InternedId) {

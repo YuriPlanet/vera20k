@@ -485,7 +485,7 @@ fn a_rocketeer_flies_to_a_cell_in_range_of_the_tank_he_attacks() {
     let mut sim = arena(&rules);
     let rocketeer = spawn(&mut sim, &rules, "JUMPJET", "Americans", (4, 10));
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 10));
-    let strength = sim.substrate.entities.get(tank).unwrap().health.current;
+    let strength = sim.substrate.entities.get(tank).unwrap().health.current();
     order(
         &mut sim,
         "Americans",
@@ -504,7 +504,7 @@ fn a_rocketeer_flies_to_a_cell_in_range_of_the_tank_he_attacks() {
             assert_ne!(nav_com, NavTargetRef::cell(24, 10), "{now:?}");
             first.get_or_insert(nav_com);
         }
-        if sim.substrate.entities.get(tank).unwrap().health.current < strength {
+        if sim.substrate.entities.get(tank).unwrap().health.current() < strength {
             shot = Some(now);
             break;
         }
@@ -852,10 +852,10 @@ fn a_brute_beside_a_tank_takes_the_spot_in_his_cell_nearer_it() {
         Some(NavTargetRef::cell(tank_cell.0, tank_cell.1))
     );
     // Through the frame he steps onto that spot and smashes the tank from it.
-    let strength = sim.substrate.entities.get(tank).unwrap().health.current;
+    let strength = sim.substrate.entities.get(tank).unwrap().health.current();
     for _ in 0..120 {
         step(&mut sim, &rules);
-        if sim.substrate.entities.get(tank).unwrap().health.current < strength {
+        if sim.substrate.entities.get(tank).unwrap().health.current() < strength {
             assert_eq!(frame(&sim, brute, tank).cell(), (10, 10));
             assert_eq!(spot(&sim, brute), free);
             return;
@@ -1010,7 +1010,7 @@ fn a_brute_ordered_to_attack_a_tank_walks_beside_it_and_smashes_it() {
     let mut sim = arena(&rules);
     let brute = spawn(&mut sim, &rules, "BRUTE", "Americans", (6, 10));
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (16, 10));
-    let strength = sim.substrate.entities.get(tank).unwrap().health.current;
+    let strength = sim.substrate.entities.get(tank).unwrap().health.current();
     order(
         &mut sim,
         "Americans",
@@ -1028,7 +1028,7 @@ fn a_brute_ordered_to_attack_a_tank_walks_beside_it_and_smashes_it() {
             assert_ne!(nav_com, NavTargetRef::object(tank), "{now:?}");
             first.get_or_insert(nav_com);
         }
-        if sim.substrate.entities.get(tank).unwrap().health.current < strength {
+        if sim.substrate.entities.get(tank).unwrap().health.current() < strength {
             smashed = Some(now);
             break;
         }

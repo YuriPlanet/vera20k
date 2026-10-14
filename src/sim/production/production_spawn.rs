@@ -250,7 +250,7 @@ pub fn mark_war_factory_spawn_contact(
                     .entities
                     .get(produced_id)
                     .is_some_and(|product| {
-                        product.category == crate::map::entities::EntityCategory::Unit
+                        product.category() == crate::map::entities::EntityCategory::Unit
                     })
         });
     if !valid {
@@ -1165,7 +1165,7 @@ mod tests {
             cell.0,
             cell.1,
         );
-        entity.category = category;
+        entity.set_category_for_test(category);
         entity
     }
 
@@ -1174,7 +1174,7 @@ mod tests {
     fn gayard_producer() -> crate::sim::game_entity::GameEntity {
         let mut producer =
             crate::sim::game_entity::GameEntity::test_default(10, "GAYARD", "Americans", 10, 10);
-        producer.category = crate::map::entities::EntityCategory::Structure;
+        producer.set_category_for_test(crate::map::entities::EntityCategory::Structure);
         producer.foundation = "4x4".to_string();
         producer
     }

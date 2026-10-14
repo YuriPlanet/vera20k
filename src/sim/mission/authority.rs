@@ -64,7 +64,7 @@ pub(crate) fn restore_entity_after_target_expiry(
 
     let saved_target = entity.suspended_attack_target;
     let saved_destination = entity.navigation.suspended_nav_com;
-    let category = entity.category;
+    let category = entity.category();
     let restored = verb::restore_base(&mut entity.mission);
     debug_assert!(restored);
     represented_assign_target_admitted(entity, saved_target, saved_target_commits);
@@ -177,7 +177,7 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
             // contact rather than erroring the whole predicate.
             return Ok(Some(UnitReadyContact::Other));
         };
-        if contact.category != EntityCategory::Structure {
+        if contact.category() != EntityCategory::Structure {
             return Ok(Some(UnitReadyContact::Other));
         }
         Ok(Some(UnitReadyContact::Building {
@@ -200,7 +200,7 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
             let Some(entity) = self.sim.substrate.entities.get(occupant.entity_id) else {
                 continue;
             };
-            if entity.category != EntityCategory::Structure {
+            if entity.category() != EntityCategory::Structure {
                 continue;
             }
             // Anchor: the Building's footprint-NW cell as a lepton point whose
@@ -306,7 +306,7 @@ fn evaluate_ready(
         });
         let attack_target_present = entity.attack_target.is_some();
 
-        match entity.category {
+        match entity.category() {
             EntityCategory::Unit => {
                 let leaf = entity
                     .mission_leaf
@@ -956,7 +956,7 @@ impl Simulation {
         if !aircraft_allows(entity, packet.mission) {
             return Ok(false);
         }
-        let request = match entity.category {
+        let request = match entity.category() {
             EntityCategory::Structure => ConcreteSetterRequest::Target {
                 requested: packet.combat_target,
             },
@@ -975,7 +975,7 @@ impl Simulation {
                 .entities
                 .get_mut(receiver)
                 .expect("preflight cannot remove receiver");
-            if entity.category != EntityCategory::Structure {
+            if entity.category() != EntityCategory::Structure {
                 entity.navigation.suspended_nav_com = entity.navigation.nav_com;
             }
             entity.suspended_attack_target =
@@ -987,7 +987,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(receiver)
-                .map(|entity| entity.category),
+                .map(|entity| entity.category()),
             Some(EntityCategory::Structure)
         ) {
             effects.apply_destination(self, &prepared, packet.destination);
@@ -1010,7 +1010,7 @@ impl Simulation {
         }
         let saved_target = entity.suspended_attack_target;
         let saved_destination = entity.navigation.suspended_nav_com;
-        let category = entity.category;
+        let category = entity.category();
         let request = match category {
             EntityCategory::Structure => ConcreteSetterRequest::Target {
                 requested: saved_target,
@@ -1140,7 +1140,7 @@ mod tests {
 
     fn entity(category: EntityCategory, current: MissionId) -> GameEntity {
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        entity.category = category;
+        entity.set_category_for_test(category);
         entity.mission_leaf = MissionLeafState::for_entity_category(category);
         entity.mission.apply_test_fixture(MissionTestFixture {
             current,
@@ -1401,7 +1401,7 @@ mod tests {
     fn native_e1_override_callers_keep_target_action_and_destination_refusal_order() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
         use crate::sim::house_state::HouseState;
         use crate::sim::movement::locomotor::LocomotorState;
         use crate::sim::rng::SimRng;
@@ -1485,7 +1485,7 @@ mod tests {
                     0,
                     0,
                     owner,
-                    Health { current: 100 },
+                    Health::new(100),
                     sim.interner.intern("E1"),
                     EntityCategory::Infantry,
                     0,
@@ -1544,7 +1544,7 @@ mod tests {
                         0,
                         0,
                         owner,
-                        Health { current: 100 },
+                        Health::new(100),
                         sim.interner.intern("MTNK"),
                         EntityCategory::Unit,
                         0,

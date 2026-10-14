@@ -45,8 +45,8 @@ fn spawn(
     at: (u16, u16),
 ) {
     let mut entity = GameEntity::test_default(id, type_name, owner, at.0, at.1);
-    entity.category = category;
-    entity.health.current = 300;
+    entity.set_category_for_test(category);
+    entity.health.set_for_test(300);
     entity.lifecycle.in_limbo = false;
     store.insert(entity);
 }
@@ -89,7 +89,7 @@ fn coil_shot(tank_at: (u16, u16), setup: impl FnOnce(&mut GameEntity)) -> (i32, 
         &mut rng,
     );
     (
-        store.get(2).unwrap().health.current,
+        store.get(2).unwrap().health.current(),
         store.get(1).unwrap().attack_target.is_some(),
     )
 }
@@ -100,7 +100,9 @@ fn coil_shot(tank_at: (u16, u16), setup: impl FnOnce(&mut GameEntity)) -> (i32, 
 #[test]
 fn a_drained_defence_drops_its_target_and_holds_fire() {
     assert_eq!(
-        coil_shot((12, 10), |coil| coil.draining_me = Some(9)),
+        coil_shot((12, 10), |coil| coil
+            .drain
+            .set_draining_me_for_test(Some(9))),
         (300, false)
     );
     let (health, kept) = coil_shot((12, 10), |_| {});
@@ -171,7 +173,7 @@ fn a_warping_in_unit_holds_fire_until_it_lands() {
             &mut rng,
         );
         (
-            store.get(2).unwrap().health.current,
+            store.get(2).unwrap().health.current(),
             store.get(1).unwrap().attack_target.is_some(),
         )
     };
@@ -245,7 +247,7 @@ fn an_unpowered_defence_drops_its_target() {
         power.insert(test_interner().intern("Soviet"), power_state);
         combat_frame(&mut store, &rules, &power);
         (
-            store.get(2).unwrap().health.current,
+            store.get(2).unwrap().health.current(),
             store.get(1).unwrap().attack_target.is_some(),
         )
     };
@@ -278,7 +280,7 @@ fn an_empty_garrison_drops_its_target() {
     );
     store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
     combat_frame(&mut store, &rules, &Default::default());
-    assert_eq!(store.get(2).unwrap().health.current, 300);
+    assert_eq!(store.get(2).unwrap().health.current(), 300);
     assert!(store.get(1).unwrap().attack_target.is_none());
 }
 
@@ -339,7 +341,7 @@ fn a_garrison_fires_its_occupy_weapon_or_nothing() {
         };
         combat_frame(&mut store, &rules, &Default::default());
         (
-            store.get(2).unwrap().health.current,
+            store.get(2).unwrap().health.current(),
             store.get(1).unwrap().attack_target.is_some(),
         )
     };
@@ -386,7 +388,7 @@ fn a_warping_in_unit_holds_fire_and_its_target() {
         10,
     )));
     combat_frame(&mut store, &rules, &Default::default());
-    assert_eq!(store.get(2).unwrap().health.current, 300);
+    assert_eq!(store.get(2).unwrap().health.current(), 300);
     assert!(store.get(1).unwrap().attack_target.is_some());
 }
 
@@ -413,11 +415,11 @@ fn a_repair_weapon_lets_go_of_a_healthy_vehicle() {
             "Americans",
             (12, 10),
         );
-        store.get_mut(2).unwrap().health.current = health;
+        store.get_mut(2).unwrap().health.set_for_test(health);
         store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
         combat_frame(&mut store, &rules, &Default::default());
         (
-            store.get(2).unwrap().health.current,
+            store.get(2).unwrap().health.current(),
             store.get(1).unwrap().attack_target.is_some(),
         )
     };
@@ -578,7 +580,7 @@ fn a_tank_gun_cannot_shoot_an_aircraft_landing() {
     let rules = rules();
     let mut sim = bridge_scene("TANK");
     let target = sim.substrate.entities.get_mut(2).unwrap();
-    target.category = EntityCategory::Aircraft;
+    target.set_category_for_test(EntityCategory::Aircraft);
     target.locomotor = Some(
         crate::sim::movement::locomotor::LocomotorState::for_test_kind(
             crate::rules::locomotor_type::LocomotorKind::Fly,

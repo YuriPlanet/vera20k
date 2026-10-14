@@ -70,13 +70,13 @@ pub(crate) fn in_death_sequence(doing: i32) -> bool {
 
 /// Infantry's Doing/Stage owns its pose and completion for every locomotor.
 pub(crate) fn doing_owns_sequence(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Infantry
+    entity.category() == EntityCategory::Infantry
 }
 
 /// The native Infantry locomotor-class test, independent of which families
 /// have migrated their presentation to Doing/Stage.
 pub(crate) fn uses_jumpjet_locomotor(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Infantry
+    entity.category() == EntityCategory::Infantry
         && entity
             .locomotor
             .as_ref()
@@ -388,7 +388,7 @@ impl Simulation {
         // `0x0051DA96..0x0051DAA1`: an accepted action at Health exactly 0
         // re-enters Stop_Driver, whose own Do_Action finds the action it
         // just wrote. The Can_Enter_Cell it runs reads no overlay here.
-        if actor.health.current == 0
+        if actor.health.current() == 0
             && let Err(cause) = self.infantry_stop_driver(id, rules, None, effects)
         {
             log::debug!("infantry {id} Do_Action Stop_Driver: {cause}");
@@ -418,8 +418,8 @@ impl Simulation {
         let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
             return;
         };
-        if actor.health.current <= 0 && !in_death_sequence(doing) {
-            actor.health.current = 1;
+        if actor.health.current() <= 0 && !in_death_sequence(doing) {
+            actor.health.set(1);
         }
     }
 
@@ -442,7 +442,7 @@ impl Simulation {
         // Original51BCA4/51BCAC and51BF5E/51BF66 test Object+90, not
         // Health or the presentation death flag. Retained death sequences
         // still reach Fear -> Fire -> Sequencer until actual UnInit.
-        if actor.category != EntityCategory::Infantry || !actor.is_object_alive() {
+        if actor.category() != EntityCategory::Infantry || !actor.is_object_alive() {
             return Ok(false);
         }
         //51BDE7..51BE3E precedes the second Ready/Commence and Fear. A
@@ -712,7 +712,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         let stopped_move = self.substrate.entities.get(id).is_some_and(|actor| {
-            actor.category == EntityCategory::Infantry
+            actor.category() == EntityCategory::Infantry
                 && actor.is_ai_alive()
                 && actor.mission.effective().known() == Some(crate::sim::mission::MissionType::Move)
                 && super::motion_query::is_moving(actor) == Some(false)
@@ -801,7 +801,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if actor.category != EntityCategory::Infantry || actor.health.current <= 0 {
+        if actor.category() != EntityCategory::Infantry || actor.health.current() <= 0 {
             return;
         }
         let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {

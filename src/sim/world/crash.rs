@@ -102,8 +102,8 @@ impl Simulation {
         if current_fly_height(entity, self.resolved_terrain.as_ref()) <= 0 {
             return false;
         }
-        let category = entity.category;
-        if entity.health.current > 0 {
+        let category = entity.category();
+        if entity.health.current() > 0 {
             // `0x004DEC4C`: RecordKill(attacker) books the kill and the loss
             // for the killer's house (no attacker: the loss alone), then
             // `0x004DEC72` zeroes Health unless a Magnetron lifted the object
@@ -117,7 +117,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id)
                 && !entity.foot_locomotor_swap_active
             {
-                entity.health.current = 0;
+                entity.health.set(0);
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -192,7 +192,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.health.current != 0 || current_fly_height(entity, terrain) == 0 {
+        if entity.health.current() != 0 || current_fly_height(entity, terrain) == 0 {
             return false;
         }
         let location = crate::sim::movement::ground_pose::object_location(entity, terrain);
@@ -290,7 +290,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        debug_assert_eq!(entity.category, EntityCategory::Unit);
+        debug_assert_eq!(entity.category(), EntityCategory::Unit);
         let (crashable, balloon_hover) = self
             .object_type(entity.type_ref(), rules)
             .map_or((false, false), |object| {
@@ -369,7 +369,7 @@ impl Simulation {
         };
         let combat = &rules.combat_damage;
         let base = if combat.current_strength_damage {
-            entity.health.current
+            entity.health.current()
         } else {
             self.object_type(entity.type_ref(), rules)
                 .map_or(0, |object| object.strength)
@@ -551,7 +551,7 @@ impl Simulation {
             return;
         };
         // `0x00414DAA`: an aircraft its own FootClass::AI removed never gets here.
-        if entity.category != EntityCategory::Aircraft || !entity.lifecycle.object_alive {
+        if entity.category() != EntityCategory::Aircraft || !entity.lifecycle.object_alive {
             return;
         }
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
@@ -566,7 +566,7 @@ impl Simulation {
         if !red || current_fly_height(entity, terrain) <= 0 {
             return;
         }
-        let threshold = if entity.health.current != 0 { 10 } else { 80 };
+        let threshold = if entity.health.current() != 0 { 10 } else { 80 };
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         if self.scenario_rng.next_range_i32_inclusive(0, 99) >= threshold {
             return;
@@ -638,7 +638,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         if let Some(entity) = self.substrate.entities.get_mut(victim) {
-            entity.health.current = 0;
+            entity.health.set(0);
         }
         self.record_the_kill(
             victim,

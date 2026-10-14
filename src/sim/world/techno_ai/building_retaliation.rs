@@ -128,7 +128,7 @@ impl Simulation {
             return ping;
         }
         let human = self.owner_is_human(building.owner());
-        if source_entity.category == EntityCategory::Aircraft
+        if source_entity.category() == EntityCategory::Aircraft
             || (human && !rules.general.player_return_fire)
         {
             let frame = self.session.binary_frame;

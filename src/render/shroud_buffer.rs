@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn shroud_current_sight_keeps_tactical_cell_bright_until_pending_boundary() {
         use crate::map::entities::EntityCategory;
-        use crate::sim::{components::Health, game_entity::GameEntity, vision};
+        use crate::sim::{combat::Health, game_entity::GameEntity, vision};
         let owner = intern::test_intern("Americans");
         let gapper = intern::test_intern("Soviet");
         let interner = intern::test_interner();
@@ -724,7 +724,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             intern::test_intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -772,7 +772,7 @@ mod tests {
     #[test]
     fn shroud_current_sight_nontransitive_allied_view_stays_dark() {
         use crate::map::entities::EntityCategory;
-        use crate::sim::{components::Health, game_entity::GameEntity, vision};
+        use crate::sim::{combat::Health, game_entity::GameEntity, vision};
         let a = intern::test_intern("Americans");
         let b = intern::test_intern("Alliance");
         let c = intern::test_intern("Soviet");
@@ -799,7 +799,7 @@ mod tests {
             0,
             0,
             a,
-            Health { current: 100 },
+            Health::new(100),
             intern::test_intern("E1"),
             EntityCategory::Infantry,
             0,

@@ -126,13 +126,13 @@ fn foot_equivalent(category: EntityCategory) -> bool {
 }
 
 pub(crate) fn state_for_entity(entity: &GameEntity) -> Option<&SlopeTransitionState> {
-    foot_equivalent(entity.category)
+    foot_equivalent(entity.category())
         .then_some(())
         .and_then(|()| entity.locomotor.as_ref()?.active_slope_transition())
 }
 
 fn state_for_entity_mut(entity: &mut GameEntity) -> Option<&mut SlopeTransitionState> {
-    foot_equivalent(entity.category)
+    foot_equivalent(entity.category())
         .then_some(())
         .and_then(|()| entity.locomotor.as_mut()?.active_slope_transition_mut())
 }
@@ -251,7 +251,7 @@ mod tests {
 
     fn entity_with(category: EntityCategory, kind: LocomotorKind) -> GameEntity {
         let mut entity = GameEntity::test_default(1, "SLOPE", "Americans", 2, 2);
-        entity.category = category;
+        entity.set_category_for_test(category);
         entity.locomotor = Some(LocomotorState::for_test_kind(kind));
         entity
     }

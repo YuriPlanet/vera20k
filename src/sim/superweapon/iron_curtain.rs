@@ -152,7 +152,7 @@ pub(crate) fn launch(
                 .entities
                 .get(id)
                 .filter(|entity| !entity.chrono_warp_latch())
-                .map(|entity| entity.category)
+                .map(|entity| entity.category())
             {
                 #[cfg(test)]
                 observe(Observed::Curtain((x, y), id));
@@ -236,7 +236,7 @@ fn foot_iron_curtain(
         .substrate
         .entities
         .get(id)
-        .and_then(|entity| entity.parasite_eating_me)
+        .and_then(|entity| entity.parasite.eater())
     {
         #[cfg(test)]
         observe(Observed::ExitUnit(eater));
@@ -249,7 +249,7 @@ fn foot_iron_curtain(
     }
     let frame = sim.session.binary_frame;
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.paralysis_timer = crate::sim::timer::CdTimer::started(frame as i32, 0);
+        entity.parasite.end_paralysis(frame);
         apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
     }
 }

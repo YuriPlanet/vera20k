@@ -90,7 +90,7 @@ impl Simulation {
                             .get(occupant.entity_id)
                             .is_some_and(|entity| {
                                 matches!(
-                                    entity.category,
+                                    entity.category(),
                                     EntityCategory::Unit
                                         | EntityCategory::Infantry
                                         | EntityCategory::Aircraft
@@ -257,7 +257,7 @@ impl Simulation {
                 Some((
                     entity.owner(),
                     (entity.position.rx, entity.position.ry),
-                    unit_sensor_radius(entity.category, object)?,
+                    unit_sensor_radius(entity.category(), object)?,
                     entity.lifecycle.in_limbo,
                 ))
             })
@@ -296,7 +296,7 @@ impl Simulation {
         let Some((owner, center, sight, remove_radius, detect_radius, powered, in_limbo)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
                 let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-                if entity.category != EntityCategory::Structure
+                if entity.category() != EntityCategory::Structure
                     || object.category != ObjectCategory::Building
                 {
                     return None;
@@ -505,7 +505,7 @@ mod tests {
         let second = sim
             .spawn_object_at_height("DEST", "Americans", 40, 30, 0, 0, &rules)
             .unwrap();
-        let americans = sim.substrate.entities.get(first).unwrap().owner;
+        let americans = sim.substrate.entities.get(first).unwrap().owner();
         let soviet = sim.interner.intern("Soviet");
         assert!(sim.fog.has_sensor_for_house(americans, 33, 30));
         assert!(!sim.fog.has_sensor_for_house(americans, 48, 30));
@@ -535,7 +535,7 @@ mod tests {
         let neutral = sim.interner.intern("Neutral");
         {
             let entity = sim.substrate.entities.get_mut(second).unwrap();
-            entity.owner = neutral;
+            entity.set_owner_for_test(neutral);
             entity.position.rx = 5;
             entity.position.ry = 5;
         }
@@ -560,7 +560,7 @@ mod tests {
         let id = sim
             .spawn_object_limbo_at_height("NAPSIS", "Soviet", 40, 40, 0, 0, &rules)
             .unwrap();
-        let owner = sim.substrate.entities.get(id).unwrap().owner;
+        let owner = sim.substrate.entities.get(id).unwrap().owner();
         assert!(
             sim.substrate
                 .entities
@@ -618,7 +618,7 @@ mod tests {
         let id = sim
             .spawn_object_at_height("NAPSIS", "Soviet", 40, 40, 0, 0, &rules)
             .unwrap();
-        let soviet = sim.substrate.entities.get(id).unwrap().owner;
+        let soviet = sim.substrate.entities.get(id).unwrap().owner();
         sim.substrate
             .entities
             .get_mut(id)
@@ -691,7 +691,7 @@ mod tests {
         let id = sim
             .spawn_object_at_height("NAPSIS", "Soviet", 40, 40, 0, 0, &rules)
             .unwrap();
-        let soviet = sim.substrate.entities.get(id).unwrap().owner;
+        let soviet = sim.substrate.entities.get(id).unwrap().owner();
         sim.substrate
             .entities
             .get_mut(id)
@@ -748,7 +748,7 @@ mod tests {
         let newer = sim
             .spawn_object_at_height("TGT", "Soviet", 40, 30, 0, 0, &rules)
             .unwrap();
-        let soviet = sim.substrate.entities.get(older).unwrap().owner;
+        let soviet = sim.substrate.entities.get(older).unwrap().owner();
         let detector = sim.interner.intern("Americans");
         // CORRECTION: this used to reveal the residents' own cell to their own
         // house, on the reading that `CellClass::IsVisibleToHouse @ 0x004870B0`

@@ -113,7 +113,7 @@ pub(super) fn commit_receiver_health(
         }
         let reached_survivor_postlude = receive_outcome.reached_survivor_postlude;
         let target_type = rules.object(interner.resolve(target.type_ref()))?;
-        if target.category == EntityCategory::Structure {
+        if target.category() == EntityCategory::Structure {
             building_entry_frame = Some(crate::sim::building_art::receiver_body_frame(
                 target,
                 target_type,
@@ -122,7 +122,7 @@ pub(super) fn commit_receiver_health(
         }
         let strength = target_type.strength;
         let mut packet = receive_outcome.hp_delta;
-        let building_no_c4 = target.category == EntityCategory::Structure && !target_type.can_c4;
+        let building_no_c4 = target.category() == EntityCategory::Structure && !target_type.can_c4;
         state = super::object_health::commit(
             target,
             &mut packet,
@@ -218,19 +218,20 @@ pub(super) fn commit_receiver_health(
             && target_type.can_disguise
             && !target_type.perma_disguise
         {
+            let category = target.category();
             target
                 .disguise
                 .get_or_insert_with(|| {
                     crate::sim::cloak_disguise::DisguiseRuntime::new(binary_frame)
                 })
-                .receive_damage_reveal(binary_frame, final_packet, target.category);
+                .receive_damage_reveal(binary_frame, final_packet, category);
         }
         // Techno70202E tests exact0 after Object returns. Negative healed HP
         // remains on its ordinary tail.
         entered_techno_death = became_fatal
-            || (reached_survivor_postlude && !already_dead && target.health.current == 0);
+            || (reached_survivor_postlude && !already_dead && target.health.current() == 0);
         if entered_techno_death {
-            fatal_category = target.category;
+            fatal_category = target.category();
         }
         let survivor_tail = reached_survivor_postlude && !already_dead && !entered_techno_death;
         uncloak_after_damage = survivor_tail;
@@ -246,7 +247,7 @@ pub(super) fn commit_receiver_health(
             ));
         }
         latch_hostile_hit = survivor_tail && hostile_source;
-        smoke_maintenance = survivor_tail.then_some((target.category, state));
+        smoke_maintenance = survivor_tail.then_some((target.category(), state));
         synchronous_retaliation = event.damage >= 0 && survivor_tail;
         healing_only = packet < 0 && !entered_techno_death;
         if packet > 0 {

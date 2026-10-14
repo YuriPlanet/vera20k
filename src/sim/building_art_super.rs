@@ -280,7 +280,12 @@ mod tests {
                 .insert(type_id, instance);
         }
         sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
-        sim.substrate.entities.get_mut(id).unwrap().health.current = int(&row["health"]);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(int(&row["health"]));
         (sim, rules, id)
     }
 

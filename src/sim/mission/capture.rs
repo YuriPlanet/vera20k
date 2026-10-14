@@ -55,11 +55,11 @@ pub(crate) fn mission_capture(
         sim.substrate
             .entities
             .get(target)
-            .is_some_and(|object| object.category == EntityCategory::Structure)
+            .is_some_and(|object| object.category() == EntityCategory::Structure)
     });
     if let Some(building) = building_target
         && entity.navigation.nav_com.is_none()
-        && entity.category == EntityCategory::Infantry
+        && entity.category() == EntityCategory::Infantry
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
@@ -118,7 +118,7 @@ pub(crate) fn mission_capture(
     let hunts = sim.substrate.entities.get(id).is_some_and(|entity| {
         entity.attack_target.is_none()
             && !sim.owner_is_human(entity.owner())
-            && !(entity.category == EntityCategory::Infantry
+            && !(entity.category() == EntityCategory::Infantry
                 && sim
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.occupier))

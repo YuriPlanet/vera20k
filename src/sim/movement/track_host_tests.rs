@@ -6,7 +6,7 @@ use crate::util::fixed_math::SimFixed;
 fn fixture(family: TrackFamily, budget: i32) -> (Simulation, TrackInvocation, i32) {
     let mut sim = Simulation::new();
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
-    entity.category = EntityCategory::Unit;
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.locomotor = Some(super::super::locomotor::LocomotorState::for_test_kind(
         if family == TrackFamily::Drive {
             crate::rules::locomotor_type::LocomotorKind::Drive
@@ -275,7 +275,7 @@ fn terminal_queries_retained_target_after_clearing_own_head_before_per_cell() {
         state.cursor = super::super::drive_track::raw_track_points(1).len() as i32;
         assert!(loco.store_track_progress(family, state));
         let mut target = GameEntity::test_default(2, "E1", "Americans", 20, 20);
-        target.category = EntityCategory::Infantry;
+        target.set_category_for_test(EntityCategory::Infantry);
         target.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         target
             .locomotor
@@ -1100,8 +1100,8 @@ fn factory_per_cell_fixture(
         dispatch_timer: MissionDispatchTimer::from_raw(3, 90),
     };
     let unit = sim.substrate.entities.get_mut(1).unwrap();
-    unit.type_ref = type_ref;
-    unit.owner = owner;
+    unit.set_type_ref_for_test(type_ref);
+    unit.set_owner_for_test(owner);
     unit.mission.apply_test_fixture(guard);
     assert!(unit.locomotor.as_mut().unwrap().store_track_head(
         crate::sim::movement::track_process::TrackFamily::Drive,
@@ -1123,8 +1123,8 @@ fn factory_per_cell_fixture(
         10,
         EntityCategory::Structure,
     );
-    producer.type_ref = sim.intern("GAWEAP");
-    producer.owner = owner;
+    producer.set_type_ref_for_test(sim.intern("GAWEAP"));
+    producer.set_owner_for_test(owner);
     producer.foundation = "1x1".into();
     producer.on_bridge = producer_on_bridge;
     producer.lifecycle.object_alive = true;
@@ -1747,7 +1747,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         json!({
             "frame": sim.session.binary_frame,
             "unit_coordinate": [at.x,at.y,at.z],
-            "health": unit.health.current,
+            "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
             "balance": house.economy.credits(),
             "spent": house.economy.spent_credits(),
@@ -1963,7 +1963,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         unit.position.sub_x = SimFixed::from_num(coordinate.x % 256);
         unit.position.sub_y = SimFixed::from_num(coordinate.y % 256);
         unit.position.exact_z_leptons = Some(coordinate.z);
-        unit.health.current = integer(&before["health"]);
+        unit.health.set_for_test(integer(&before["health"]));
         unit.estimated_health = EstimatedHealth::from_raw(integer(&before["estimate"]));
         unit.navigation.nav_com = before["unit_nav"]
             .is_string()
@@ -2353,7 +2353,7 @@ fn inherited_foot_idle_latch_roundtrips_and_hashes_for_every_foot_category() {
         let bytes = GameSnapshot::save(&sim, 0, 0, "foot-idle-entry-latch", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         let actor = restored.substrate.entities.get(1).unwrap();
-        assert_eq!(actor.category, category);
+        assert_eq!(actor.category(), category);
         assert_eq!(actor.mission_leaf.foot_idle_entry_latch(), 1);
         assert_eq!(restored.state_hash(), entered_hash);
         let rng = restored.rng_state();

@@ -953,7 +953,7 @@ impl Simulation {
         let members: Vec<u64> = team.members().collect();
         let transport = members.iter().copied().find(|&member| {
             self.substrate.entities.get(member).is_some_and(|entity| {
-                entity.category == transport_class
+                entity.category() == transport_class
                     && self
                         .object_type(entity.type_ref(), rules)
                         .is_some_and(|object| {
@@ -1144,7 +1144,7 @@ impl Simulation {
                 .object_type(entity.type_ref(), rules)
                 .map_or(0, |object| object.passengers);
             let transport =
-                passengers != 0 && transport_class.is_none_or(|class| entity.category == class);
+                passengers != 0 && transport_class.is_none_or(|class| entity.category() == class);
             if transport && passengers < 0 {
                 continue;
             }
@@ -1222,12 +1222,12 @@ impl Simulation {
             let Some(object) = self.object_type(entity.type_ref(), rules) else {
                 continue;
             };
-            let unit = entity.category == EntityCategory::Unit;
+            let unit = entity.category() == EntityCategory::Unit;
             let building = unit
                 .then(|| crate::sim::mcv_deploy::deploys_into(self, entity, rules))
                 .flatten();
             let deployer = (unit && object.is_simple_deployer)
-                || (entity.category == EntityCategory::Infantry && object.deployer);
+                || (entity.category() == EntityCategory::Infantry && object.deployer);
             let unloading =
                 entity.mission.effective() == MissionId::from_known(MissionType::Unload);
             let cell = (entity.position.rx as i16, entity.position.ry as i16);
@@ -1797,7 +1797,7 @@ impl Simulation {
                 stray = stray.wrapping_mul(2);
             }
             found = true;
-            let aircraft = entity.category == EntityCategory::Aircraft;
+            let aircraft = entity.category() == EntityCategory::Aircraft;
             let distance = self.team_member_distance(entity, Some(focus));
             let mut near = distance <= stray;
             if near
@@ -2033,7 +2033,7 @@ impl Simulation {
                     self.substrate
                         .entities
                         .get(id)
-                        .filter(|entity| entity.category == EntityCategory::Structure)
+                        .filter(|entity| entity.category() == EntityCategory::Structure)
                         .map(|_| TeamTarget::Object(id))
                 });
             self.team_assign_mission_target(team_id, target, rules, registry, effects);
@@ -2235,7 +2235,7 @@ impl Simulation {
             .entities
             .iter_sorted()
             .filter(|(_, building)| {
-                building.category == EntityCategory::Structure
+                building.category() == EntityCategory::Structure
                     && building.base_plan_type_index == index
             })
             .map(|(id, building)| TargetBuilding {
@@ -2328,7 +2328,7 @@ impl Simulation {
             && has_members
             && leader
                 .and_then(|leader| self.substrate.entities.get(leader))
-                .is_some_and(|entity| entity.category != EntityCategory::Aircraft)
+                .is_some_and(|entity| entity.category() != EntityCategory::Aircraft)
             && let Some(BlockingObject::Entity(object)) =
                 self.find_blocking_object((x as u16, y as u16), MovementLayer::Ground)
             && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
@@ -2384,7 +2384,7 @@ impl Simulation {
                     .is_some_and(|object| object.infiltrate)
             };
             let mission = entity.mission.effective().raw();
-            if action == 15 && entity.category == EntityCategory::Infantry && infiltrates() {
+            if action == 15 && entity.category() == EntityCategory::Infantry && infiltrates() {
                 self.team_member_queue_mission(member, MissionType::Capture, rules);
                 self.team_member_assign_target(member, target, rules, registry, frame_effects);
             } else if ![
@@ -2416,7 +2416,7 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
-            let spent_aircraft = entity.category == EntityCategory::Aircraft
+            let spent_aircraft = entity.category() == EntityCategory::Aircraft
                 && self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| {

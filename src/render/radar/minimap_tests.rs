@@ -868,7 +868,7 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
 fn radar_building_tracker_pixels_use_owner_color_not_khaki() {
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "GAPOWR", "Americans", 0, 0);
-    entity.category = crate::map::entities::EntityCategory::Structure;
+    entity.set_category_for_test(crate::map::entities::EntityCategory::Structure);
     let interner = crate::sim::intern::test_interner();
     let mut colors = HouseColorMap::new();
     colors.insert("Americans".to_string(), HouseColorIndex(1));
@@ -901,7 +901,7 @@ fn radar_tracker_color_uses_active_disguise_house_without_changing_priority_owne
         radar_entity_owner_color(&entity, Some(&interner), &colors, &ramps, None, false),
         owner_dot_color("Soviet", &colors, &ramps)
     );
-    assert_eq!(entity.owner, test_intern("Americans"));
+    assert_eq!(entity.owner(), test_intern("Americans"));
 }
 
 #[test]
@@ -929,7 +929,7 @@ fn radar_disguise_house_preserves_owner_alliance_and_spy_null_fallback() {
         owner_dot_color("Americans", &colors, &ramps),
         "owner considers viewer allied: actual house, independent of shimmer/sensors",
     );
-    entity.category = crate::map::entities::EntityCategory::Infantry;
+    entity.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
     assert_eq!(
         radar_entity_owner_color(
             &entity,

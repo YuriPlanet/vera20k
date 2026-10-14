@@ -582,7 +582,7 @@ impl Simulation {
                         return None;
                     }
                     let own = entity.owner() == owner;
-                    let allied_building = entity.category == EntityCategory::Structure
+                    let allied_building = entity.category() == EntityCategory::Structure
                         && crate::map::houses::is_allied_with(
                             &self.house_alliances,
                             self.interner.resolve(entity.owner()),
@@ -826,7 +826,7 @@ impl Simulation {
         }
         let height_grid = self.sight_height_grid(&config);
         for (id, entity) in self.substrate.entities.iter_sorted() {
-            if entity.category != EntityCategory::Structure
+            if entity.category() != EntityCategory::Structure
                 || !entity.lifecycle.object_alive
                 || entity.lifecycle.in_limbo
                 || self.house_is_human_player(entity.owner())
@@ -863,7 +863,7 @@ impl Simulation {
         if entity.dying
             || entity.lifecycle.in_limbo
             || !matches!(
-                entity.category,
+                entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
             )
             || !crate::sim::movement::motion_query::is_moving_now(

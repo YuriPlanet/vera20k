@@ -51,7 +51,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
         entity.position.exact_z_leptons = Some(xyz[2].as_i64().unwrap() as i32);
     };
     let mut source = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-    source.category = EntityCategory::Aircraft;
+    source.set_category_for_test(EntityCategory::Aircraft);
     source
         .veterancy
         .set_rank_for_test((case["veterancy"].as_u64().unwrap_or(0) * 100) as u16);

@@ -36,8 +36,8 @@ fn fixture(selector: i32) -> Simulation {
     let y = head.y + i32::from(dy);
     let mut entity =
         GameEntity::test_default(1, "MTNK", "Americans", (x / 256) as u16, (y / 256) as u16);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("MTNK");
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("MTNK"));
     entity.position.sub_x = SimFixed::from_num(x % 256);
     entity.position.sub_y = SimFixed::from_num(y % 256);
     entity.position.exact_z_leptons = Some(0);

@@ -81,10 +81,7 @@ pub fn is_at_or_below_condition_yellow(
 ) -> bool {
     use crate::util::native_x87::MaskedX87Ordering::{Equal, Less, Unordered};
     matches!(
-        crate::sim::components::Health {
-            current: current_hp
-        }
-        .compare_ratio(strength, condition_yellow),
+        crate::sim::combat::Health::new(current_hp).compare_ratio(strength, condition_yellow),
         Less | Equal | Unordered
     )
 }

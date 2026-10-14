@@ -44,7 +44,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.category != EntityCategory::Aircraft {
+        if entity.category() != EntityCategory::Aircraft {
             return false;
         }
         let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {

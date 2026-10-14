@@ -141,7 +141,7 @@ pub(crate) fn first_valid_placement(
         .get(anchor_yard_id)
         .is_some_and(|entity| {
             entity.is_active()
-                && entity.category == EntityCategory::Structure
+                && entity.category() == EntityCategory::Structure
                 && sim.interner.resolve(entity.owner()) == owner
                 && (entity.position.rx, entity.position.ry) == anchor_cell
         });

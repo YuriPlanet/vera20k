@@ -106,7 +106,7 @@ pub(crate) fn hover_move_to(
     terrain: Option<&ResolvedTerrainGrid>,
     frame: u32,
 ) -> bool {
-    let paralyzed = entity.is_paralyzed(frame);
+    let paralyzed = entity.parasite.is_paralyzed(frame);
     let airborne = hover_is_powered(entity, terrain);
     let Some(hover) = runtime_mut(entity) else {
         return false;
@@ -1085,7 +1085,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(7);
         };
-        if entity.is_paralyzed(frame) {
+        if entity.parasite.is_paralyzed(frame) {
             return Ok(7);
         }
         let Some(hover) = runtime(entity) else {

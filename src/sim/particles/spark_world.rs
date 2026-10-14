@@ -309,7 +309,7 @@ impl<'a> SparkCollisionWorld<'a> {
                 .entities()
                 .get(occupant.entity_id)
                 .ok_or(SparkWorldError::MissingOccupantEntity(occupant.entity_id))?;
-            if entity.category != EntityCategory::Structure {
+            if entity.category() != EntityCategory::Structure {
                 continue;
             }
 
@@ -443,7 +443,7 @@ pub(super) mod tests {
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::terrain_rules::TerrainClass;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::occupancy::CellListInsertion;
     use crate::sim::overlay_grid::OverlayGrid;
@@ -495,7 +495,7 @@ pub(super) mod tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             EntityCategory::Structure,
             0,

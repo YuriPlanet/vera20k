@@ -85,7 +85,7 @@ impl EnterHost for WorldEnter<'_> {
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|object| object.category == EntityCategory::Structure)
+                    .is_some_and(|object| object.category() == EntityCategory::Structure)
                 {
                     EnterNav::Building(id)
                 } else {

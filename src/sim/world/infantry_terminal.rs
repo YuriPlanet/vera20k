@@ -428,7 +428,7 @@ impl Simulation {
             .entities
             .get(id)
             .expect("fatal Infantry retained for postlude");
-        debug_assert_eq!(entity.category, EntityCategory::Infantry);
+        debug_assert_eq!(entity.category(), EntityCategory::Infantry);
         let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
         let mut location = crate::sim::anim_class::AnimWorldCoord {
             x,
@@ -503,10 +503,10 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if entity.category != EntityCategory::Infantry {
+        if entity.category() != EntityCategory::Infantry {
             return false;
         }
-        entity.health.current = 0;
+        entity.health.set_for_test(0);
         entity.dying = true;
         // Legacy raw coordinate scans can revisit an UnInit'd object before
         // pending deletion drains it. Preserve their HP write, but never give
@@ -540,7 +540,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        debug_assert_eq!(entity.category, EntityCategory::Infantry);
+        debug_assert_eq!(entity.category(), EntityCategory::Infantry);
         entity.dying = true;
         if entity.lifecycle.object_alive {
             entity.infantry_terminal = Some(InfantryTerminal::Sequence(sequence));
@@ -566,7 +566,7 @@ impl Simulation {
         let Some(terminal) = entity.infantry_terminal else {
             return Default::default();
         };
-        debug_assert!(entity.dying && entity.category == EntityCategory::Infantry);
+        debug_assert!(entity.dying && entity.category() == EntityCategory::Infantry);
         let mut outcome = super::techno_ai::ObjectAiOutcome::visited();
         match terminal {
             InfantryTerminal::AwaitingConsequences => return outcome,
@@ -686,8 +686,8 @@ mod dead_body_tests {
             let mut sim = Simulation::with_seed(int("seed") as u64);
             let mut entity =
                 crate::sim::game_entity::GameEntity::test_default(1, "DOOMED", "Americans", 5, 5);
-            entity.type_ref = sim.interner.intern("DOOMED");
-            entity.category = EntityCategory::Infantry;
+            entity.set_type_ref_for_test(sim.interner.intern("DOOMED"));
+            entity.set_category_for_test(EntityCategory::Infantry);
             sim.substrate.entities.insert(entity);
             assert_eq!(
                 sim.scenario_rng.native_state_hex(),

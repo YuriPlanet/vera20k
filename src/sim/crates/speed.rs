@@ -29,7 +29,7 @@ pub(super) fn apply_speed_crate(
         let Some(entity) = sim.substrate.entities.get_mut(id) else {
             continue;
         };
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             continue;
         }
         let position = position_world_coord(&entity.position);
@@ -40,7 +40,7 @@ pub(super) fn apply_speed_crate(
         {
             continue;
         }
-        if entity.category == EntityCategory::Aircraft {
+        if entity.category() == EntityCategory::Aircraft {
             continue;
         }
         if entity.foot_speed.accept_speed_crate(multiplier) {
@@ -57,7 +57,7 @@ pub(super) fn apply_speed_crate(
 mod tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
-    use crate::sim::{components::Health, game_entity::GameEntity, house_state::HouseState};
+    use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
     use crate::util::fixed_math::SimFixed;
 
     #[test]
@@ -75,7 +75,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 type_id,
                 EntityCategory::Infantry,
                 0,
@@ -187,7 +187,7 @@ mod tests {
                     0,
                     0,
                     owner,
-                    Health { current: 100 },
+                    Health::new(100),
                     type_id,
                     category,
                     0,

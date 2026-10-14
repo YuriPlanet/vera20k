@@ -671,7 +671,7 @@ mod tests {
 
     fn entity_position_for_owner(sim: &Simulation, owner: &str) -> Option<(u16, u16)> {
         sim.entities().values().find_map(|entity| {
-            (sim.interner.resolve(entity.owner) == owner)
+            (sim.interner.resolve(entity.owner()) == owner)
                 .then_some((entity.position.rx, entity.position.ry))
         })
     }
@@ -2084,7 +2084,7 @@ mod tests {
             entity.veterancy.rank() == 200 && entity.veterancy.raw().bits() == 0x4000_0000
         }));
         assert!(sim.entities().values().all(|entity| {
-            let expected = if sim.interner.resolve(entity.owner) == "Player" {
+            let expected = if sim.interner.resolve(entity.owner()) == "Player" {
                 MissionType::Guard
             } else {
                 MissionType::AreaGuard
@@ -2415,12 +2415,12 @@ mod tests {
         let player_units = sim
             .entities()
             .values()
-            .filter(|entity| sim.interner.resolve(entity.owner) == "Player")
+            .filter(|entity| sim.interner.resolve(entity.owner()) == "Player")
             .count();
         let ai_units = sim
             .entities()
             .values()
-            .filter(|entity| sim.interner.resolve(entity.owner) == "Computer1")
+            .filter(|entity| sim.interner.resolve(entity.owner()) == "Computer1")
             .count();
         assert_eq!(player_units, 5);
         assert_eq!(ai_units, 4);
@@ -2569,7 +2569,7 @@ mod tests {
             .values()
             .map(|entity| {
                 (
-                    sim.interner.resolve(entity.owner).to_string(),
+                    sim.interner.resolve(entity.owner()).to_string(),
                     (entity.position.rx, entity.position.ry),
                 )
             })

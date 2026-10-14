@@ -908,7 +908,7 @@ fn owned_live_buildings(
         .flat_map(|house| house.base_projection.buildings())
         .filter_map(|&id| sim.substrate.entities.get(id))
         .filter(move |building| {
-            building.category == crate::map::entities::EntityCategory::Structure
+            building.category() == crate::map::entities::EntityCategory::Structure
                 && !building.dying
                 && !building.lifecycle.in_limbo
                 && building.owner() == owner

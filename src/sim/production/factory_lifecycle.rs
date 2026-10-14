@@ -886,7 +886,7 @@ pub(crate) fn validate_restored_factory_state(
             // holding one object and no queue, and counts no completion.
             FactoryHolder::Building(building) => {
                 let held_by_owner = sim.substrate.entities.get(building).is_some_and(|entity| {
-                    entity.category == EntityCategory::Structure && entity.owner() == owner
+                    entity.category() == EntityCategory::Structure && entity.owner() == owner
                 });
                 if !held_by_owner {
                     return Err(fail(
@@ -955,7 +955,7 @@ pub(crate) fn validate_restored_factory_state(
             ));
         }
         let expected_category = EntityCategory::from(object.category);
-        if entity.category != expected_category {
+        if entity.category() != expected_category {
             return Err(fail(
                 owner,
                 "constructed identity has the wrong concrete category",

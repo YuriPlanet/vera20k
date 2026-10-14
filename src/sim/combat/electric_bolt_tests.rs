@@ -412,7 +412,7 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let victim = sim.substrate.entities.get_mut(target).unwrap();
-    victim.health.current = 1;
+    victim.health.set_for_test(1);
     let anchor = (victim.position.rx, victim.position.ry);
     assert!(sim.rebuild_dynamic_navigation(rules));
     let blocked_before = sim.path_grid_snapshot().unwrap();
@@ -595,7 +595,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             < order.iter().position(|&id| id == system.stable_id).unwrap()
     );
     assert!(
-        sim.substrate.entities.get(target).unwrap().health.current
+        sim.substrate.entities.get(target).unwrap().health.current()
             < rules.object("GAPOWR").unwrap().strength
     );
     assert!(
@@ -714,7 +714,9 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
         let source_entity = sim.substrate.entities.get_mut(source).unwrap();
         if damaged {
             // Supplied damaged receiver; the shared slot owner selects its ART.
-            source_entity.health.current = rules.object("TESLA").unwrap().strength / 4;
+            source_entity
+                .health
+                .set_for_test(rules.object("TESLA").unwrap().strength / 4);
         }
         source_entity
             .mission
@@ -781,7 +783,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             fire: DelayedFire::Weapon(WeaponSlot::Primary),
         });
         entity.rearm_timer = CdTimer::started(sim.session.binary_frame as i32, 0);
-        let health_before = sim.substrate.entities.get(target).unwrap().health.current;
+        let health_before = sim.substrate.entities.get(target).unwrap().health.current();
         let mut previous_light_count = 0;
         for (visit_index, key) in ["first_logic_visit", "second_logic_visit"]
             .into_iter()
@@ -808,7 +810,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 "{name} {key} Bullet visit"
             );
             assert_eq!(
-                sim.substrate.entities.get(target).unwrap().health.current == health_before,
+                sim.substrate.entities.get(target).unwrap().health.current() == health_before,
                 bullet_alive,
                 "{name} {key} damage follows the actual Bullet visit"
             );

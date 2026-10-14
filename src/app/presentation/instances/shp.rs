@@ -152,7 +152,7 @@ pub(crate) fn build_shp_instances(
             disguise.is_disguised()
                 && DrawState::draws_disguise(entity, sim.session.binary_frame, observer)
         });
-        let type_name = if entity.category == EntityCategory::Unit {
+        let type_name = if entity.category() == EntityCategory::Unit {
             if entity.unit_deploying() {
                 continue;
             }
@@ -183,7 +183,7 @@ pub(crate) fn build_shp_instances(
         // Wall buildings render as overlays (auto-tiled connectivity frames).
         // Their fixed-cell overlay pass owns the connected wall frame.
         // Skip them here to avoid drawing frame0 (an isolated pillar).
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             let is_wall = state
                 .rules()
                 .and_then(|r| r.object(type_str))
@@ -221,7 +221,7 @@ pub(crate) fn build_shp_instances(
         // lifted anchor. See `locomotor_visual::BUILDING_ART_LIFT_PX`.
         let (sx, sy) = {
             let anchor = crate::render::locomotor_visual::screen_position(entity);
-            if entity.category == EntityCategory::Structure {
+            if entity.category() == EntityCategory::Structure {
                 crate::render::locomotor_visual::building_art_anchor(anchor.0, anchor.1)
             } else {
                 anchor
@@ -237,7 +237,7 @@ pub(crate) fn build_shp_instances(
             continue;
         }
         let draw_state = draw_decision.state;
-        if entity.category == EntityCategory::Unit
+        if entity.category() == EntityCategory::Unit
             && state.rules().is_some_and(|rules| {
                 rules
                     .terrain_object_type_case_insensitive(type_str)
@@ -271,10 +271,10 @@ pub(crate) fn build_shp_instances(
         // placement shows its idle body for one frame before its mission
         // starts, and a pack-up until Sell's stage 1 starts the animation
         // again (`Begin_Mode(0)`).
-        let is_building_up: bool = entity.category == EntityCategory::Structure
+        let is_building_up: bool = entity.category() == EntityCategory::Structure
             && !entity.building_down()
             && entity.in_construction_bstate();
-        let is_building_down: bool = entity.category == EntityCategory::Structure
+        let is_building_down: bool = entity.category() == EntityCategory::Structure
             && entity.building_down()
             && entity.in_construction_bstate();
         // The construction animation's stage is the Buildup frame drawn,
@@ -314,7 +314,7 @@ pub(crate) fn build_shp_instances(
         } else if is_building_down {
             make_frame(true)
         } else {
-            match entity.category {
+            match entity.category() {
                 EntityCategory::Structure => {
                     let obj = state.rules().and_then(|r| r.object(type_str));
                     let frame = if let Some(obj) = obj {
@@ -392,7 +392,7 @@ pub(crate) fn build_shp_instances(
         let entry = match atlas.get(&key) {
             Some(e) => Some(e),
             None if shp_frame != 0
-                && entity.category == EntityCategory::Structure
+                && entity.category() == EntityCategory::Structure
                 && state
                     .rules()
                     .and_then(|r| r.object(type_str))
@@ -415,11 +415,11 @@ pub(crate) fn build_shp_instances(
             // frames are all empty and its SuperAnims are the silo. The body
             // draw paints nothing and the building's bib, anims and turret
             // still draw after it.
-            None if entity.category == EntityCategory::Structure => None,
+            None if entity.category() == EntityCategory::Structure => None,
             None => continue,
         };
 
-        let base_depth: f32 = match entity.category {
+        let base_depth: f32 = match entity.category() {
             EntityCategory::Structure => {
                 // `sy` already carries the render-coordinate lift, so it *is* the
                 // NW footprint cell's tile row — the row gamemd's YSort (X + Y
@@ -450,7 +450,7 @@ pub(crate) fn build_shp_instances(
         let tint = shp_body_tint(
             state.match_state.match_presentation.lighting.grid(),
             (pos.rx, pos.ry),
-            entity.category,
+            entity.category(),
             extra_light,
         );
         let selected_palette_light = crate::app::presentation::lighting::body_palette_light(
@@ -459,7 +459,7 @@ pub(crate) fn build_shp_instances(
             (pos.rx, pos.ry),
             extra_light,
         );
-        let palette_light = if entity.category == EntityCategory::Structure {
+        let palette_light = if entity.category() == EntityCategory::Structure {
             let obj = state.rules().and_then(|r| r.object(type_str));
             let image = obj.map_or(type_str, |o| o.image.as_str());
             let art = state
@@ -487,7 +487,7 @@ pub(crate) fn build_shp_instances(
             sim,
         );
         let colour_word = match state.rules() {
-            Some(rules) if entity.category == EntityCategory::Structure => {
+            Some(rules) if entity.category() == EntityCategory::Structure => {
                 let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
                 crate::app::presentation::lighting::building_colour_word(entity, sim, rules, || {
                     shrouded(((x / 256) as u16, (y / 256) as u16))
@@ -506,7 +506,8 @@ pub(crate) fn build_shp_instances(
         // ordinary sprites walk gradient 2. Infantry (`InfantryClass Draw_It`, flags 0x2E00) walks
         // entry 2 from `Get_Z_Adjust - 2`, whose base term also cancels the
         // lift, and never writes.
-        let (z_adjust, z_gradient, zshape_origin) = if entity.category == EntityCategory::Structure
+        let (z_adjust, z_gradient, zshape_origin) = if entity.category()
+            == EntityCategory::Structure
         {
             let object_type = state.rules().and_then(|r| r.object(type_str));
             let rules_image: String = object_type
@@ -584,7 +585,7 @@ pub(crate) fn build_shp_instances(
         });
 
         let mut building_pieces = Vec::new();
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             if let Some((target, instance)) = body {
                 building_pieces.push(PlannedBuildingPieceInstance {
                     kind: if is_building_up || is_building_down {
@@ -616,7 +617,7 @@ pub(crate) fn build_shp_instances(
         // Emit building animation overlays and bib — but NOT during build-up/down.
         // Bibs and anims use the raw cell position (sy) — their own SHP offsets
         // (baked into the canvas) handle correct placement relative to the cell.
-        if entity.category == EntityCategory::Structure && !is_building_up && !is_building_down {
+        if entity.category() == EntityCategory::Structure && !is_building_up && !is_building_down {
             if let Some(art) = art_reg {
                 // Bib is drawn INSIDE BuildingClass_DrawBody in the original engine,
                 // right after the main body sprite, as part of the same object pass.
@@ -687,7 +688,7 @@ pub(crate) fn build_shp_instances(
             }
         }
 
-        if entity.category == EntityCategory::Structure
+        if entity.category() == EntityCategory::Structure
             && let Some(parent) =
                 ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
         {
@@ -972,7 +973,7 @@ pub(super) fn build_building_anim_instances(
         state.render_height() as f32 / zoom,
     ];
     for building in sim.entities().values() {
-        if building.category != EntityCategory::Structure
+        if building.category() != EntityCategory::Structure
             || building
                 .building_art
                 .anim_slots()
@@ -1411,7 +1412,7 @@ pub(crate) fn resolve_object_shp_frame(
     // Pass raw facing (not canonical) to resolve_shp_frame so the
     // facing-to-index division works correctly for any facing count
     // (6, 8, 10, etc.). The absolute frame index encodes the direction.
-    let type_id = if entity.category == EntityCategory::Unit {
+    let type_id = if entity.category() == EntityCategory::Unit {
         state
             .match_state
             .sim_runtime
@@ -1425,7 +1426,7 @@ pub(crate) fn resolve_object_shp_frame(
     let sequence_set = state
         .rules()
         .and_then(|rules| rules.animation_sequence(type_id));
-    if entity.category == EntityCategory::Unit
+    if entity.category() == EntityCategory::Unit
         && entity.animation.as_ref().is_none_or(|anim_state| {
             matches!(
                 anim_state.sequence,
@@ -1513,9 +1514,7 @@ mod tests {
         for row in crate::sim::health_ratio_fixture::rows() {
             assert_eq!(
                 crate::sim::building_art::requested_damage_state(
-                    crate::sim::components::Health {
-                        current: row.input.current
-                    },
+                    crate::sim::combat::Health::new(row.input.current),
                     row.input.strength,
                     row.input.yellow(),
                 ),

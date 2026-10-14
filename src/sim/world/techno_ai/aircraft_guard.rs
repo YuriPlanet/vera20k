@@ -265,7 +265,7 @@ impl GuardHost for WorldGuard<'_> {
             .substrate
             .entities
             .get(contact)
-            .filter(|building| building.category == EntityCategory::Structure)
+            .filter(|building| building.category() == EntityCategory::Structure)
             .and_then(|building| self.sim.object_type(building.type_ref(), self.rules))
             .is_some_and(|object| object.unit_reload)
     }

@@ -502,7 +502,7 @@ impl crate::sim::world::Simulation {
         {
             return Ok(false);
         }
-        if actor.is_paralyzed(self.session.binary_frame)
+        if actor.parasite.is_paralyzed(self.session.binary_frame)
             || actor.is_warped_out()
             || actor.is_warping_in()
         {
@@ -514,7 +514,7 @@ impl crate::sim::world::Simulation {
                 .nav_com = None;
             return Ok(false);
         }
-        let infantry = actor.category == EntityCategory::Infantry;
+        let infantry = actor.category() == EntityCategory::Infantry;
         let latched = actor.chrono_warp_latch();
         let physical = super::ground_pose::position_world_coord(&actor.position);
         let marked = actor
@@ -644,7 +644,7 @@ impl crate::sim::world::Simulation {
                         return false;
                     };
                     let cell = ((input.x / 256) as u16, (input.y / 256) as u16);
-                    match target.category {
+                    match target.category() {
                         EntityCategory::Unit | EntityCategory::Aircraft => {
                             (target.position.rx, target.position.ry) == cell
                         }
@@ -1178,7 +1178,7 @@ mod tests {
             let input = &row["input"];
             let mut sim = crate::sim::world::Simulation::new();
             let mut actor = teleport_owner(1, "CLEG", 5, 5);
-            actor.category = crate::map::entities::EntityCategory::Infantry;
+            actor.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             actor.lifecycle.in_limbo = input["in_limbo"].as_bool().unwrap();
             if input["in_open_transport"].as_bool().unwrap() {
                 actor.passenger_role = crate::sim::passenger::PassengerRole::Inside {

@@ -258,7 +258,7 @@ pub(crate) fn is_operational_for_output(
 /// House508CB0/508CB8 tests limbo(+81) and cell-marked(+74), not ObjectAlive
 /// (+90) or actual HP. Rust tombstones remain excluded until physical removal.
 fn participates_in_power_accounting(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Structure
+    entity.category() == EntityCategory::Structure
         && !entity.dying
         && !entity.lifecycle.in_limbo
         && entity.lifecycle.cell_marked
@@ -344,7 +344,7 @@ fn recalculate_power_for_owner(
             produced = produced.wrapping_add(output);
             //508D1E calls70FEC0 (DrainingMe != null), then repeats the
             // live GetPowerOutput getter and tests its signed result >0.
-            has_drained_power_source |= entity.draining_me.is_some() && output > 0;
+            has_drained_power_source |= entity.drain.draining_me().is_some() && output > 0;
         }
 
         // Drain branch: always full rated value regardless of health.
@@ -397,7 +397,7 @@ pub fn tick_power_states(
         let buildings: Vec<u64> = entities
             .values()
             .filter(|entity| {
-                entity.owner() == owner_id && entity.category == EntityCategory::Structure
+                entity.owner() == owner_id && entity.category() == EntityCategory::Structure
             })
             .map(|entity| entity.stable_id())
             .collect();
@@ -527,7 +527,7 @@ pub fn is_building_powered(
     entity: &GameEntity,
     interner: &crate::sim::intern::StringInterner,
 ) -> bool {
-    if entity.category != EntityCategory::Structure {
+    if entity.category() != EntityCategory::Structure {
         return true;
     }
     let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
@@ -560,7 +560,7 @@ pub fn has_active_radar(
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern;
 
@@ -599,8 +599,12 @@ mod tests {
         assert_eq!(corpus["assessment_rows"].as_array().unwrap().len(), 32);
         for row in corpus["assessment_rows"].as_array().unwrap() {
             let mut entity = generator.clone();
-            entity.health.current = row["current"].as_i64().unwrap() as i32;
-            entity.draining_me = row["draining"].as_bool().unwrap().then_some(99);
+            entity
+                .health
+                .set_for_test(row["current"].as_i64().unwrap() as i32);
+            entity
+                .drain
+                .set_draining_me_for_test(row["draining"].as_bool().unwrap().then_some(99));
             entity.lifecycle.in_limbo = row["limbo"].as_bool().unwrap();
             entity.lifecycle.cell_marked = row["marked"].as_bool().unwrap();
             let mut entities = EntityStore::default();
@@ -618,7 +622,11 @@ mod tests {
                 "{row}"
             );
             // The next real assessment clears the retained flag on detach.
-            entities.get_mut(1).unwrap().draining_me = None;
+            entities
+                .get_mut(1)
+                .unwrap()
+                .drain
+                .set_draining_me_for_test(None);
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
             assert!(!states[&owner].has_drained_power_source);
         }
@@ -697,7 +705,7 @@ mod tests {
             10,
             EntityCategory::Structure,
         );
-        e.health = Health { current: hp };
+        e.health = Health::new(hp);
         e.lifecycle.in_limbo = false;
         e.lifecycle.cell_marked = true;
         e
@@ -1151,7 +1159,8 @@ BuildSpeed=0.02
 
         let entity = store.get(1).expect("entity should exist");
         assert_eq!(
-            entity.health.current, 100,
+            entity.health.current(),
+            100,
             "low power must not damage buildings (gamemd parity)"
         );
     }

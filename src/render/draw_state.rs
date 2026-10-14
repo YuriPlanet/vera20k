@@ -372,7 +372,7 @@ fn opacity_for_selector_bits(bits: u8) -> f32 {
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::InternedId;
     use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
@@ -385,7 +385,7 @@ mod tests {
             0,
             0,
             InternedId::from_index(0),
-            Health { current: 100 },
+            Health::new(100),
             InternedId::from_index(0),
             EntityCategory::Unit,
             0,

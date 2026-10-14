@@ -224,7 +224,9 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
     entity.setter_force_reassign = input["force_reassign"] == true;
     entity.foot_locomotor_swap_active = input["swap_6ad"] == true;
     if input["locked"] == true {
-        entity.paralysis_timer.start(frame as i32, 30);
+        entity
+            .parasite
+            .set_paralysis_for_test(crate::sim::timer::CdTimer::started(frame as i32, 30));
     }
     if input["warp_out"] == true {
         entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(s.other);

@@ -118,7 +118,7 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("What_Action receiver disappeared")?;
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             return Err("a building answers What_Action through its own class".into());
         }
         if !self.house_is_human_player(entity.owner()) {
@@ -171,7 +171,7 @@ impl Simulation {
                 MoveAction::NoMove
             };
         }
-        match entity.category {
+        match entity.category() {
             EntityCategory::Unit if action == MoveAction::Move && entity.is_deployed() => {
                 action = MoveAction::None;
             }
@@ -254,7 +254,7 @@ impl Simulation {
             .ok_or("Cell click receiver disappeared")?;
         let refused = match action {
             MoveAction::None => true,
-            MoveAction::NoMove => match entity.category {
+            MoveAction::NoMove => match entity.category() {
                 EntityCategory::Unit => entity.is_fully_deployed(),
                 EntityCategory::Infantry => entity.infantry_deploy_doing(),
                 EntityCategory::Aircraft | EntityCategory::Structure => false,
@@ -308,7 +308,7 @@ impl Simulation {
             return action;
         };
         let human = self.house_is_human_player(entity.owner());
-        match (entity.category, action) {
+        match (entity.category(), action) {
             (EntityCategory::Infantry, MoveAction::Move)
                 if human && object.deployer && entity.infantry_deploy_doing() =>
             {
@@ -373,7 +373,7 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("Move click receiver disappeared")?;
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             return Err("a building answers ClickedAction through its own class".into());
         }
         let object = rules
@@ -382,7 +382,7 @@ impl Simulation {
         let action = self.foot_object_class_action(id, action, rules);
         let refused = match action {
             MoveAction::None => true,
-            MoveAction::NoMove => match entity.category {
+            MoveAction::NoMove => match entity.category() {
                 EntityCategory::Aircraft => true,
                 EntityCategory::Unit => target == id,
                 EntityCategory::Infantry | EntityCategory::Structure => false,
@@ -418,7 +418,7 @@ impl Simulation {
             z: coords.z.max(query_ground(&map.cells, coords)?),
             ..coords
         };
-        if entity.category == EntityCategory::Aircraft
+        if entity.category() == EntityCategory::Aircraft
             && crate::sim::vision::coordinate_is_shrouded(&map.cells, raised, &open)?
         {
             return Ok(None);
@@ -433,7 +433,7 @@ impl Simulation {
         let click = FootObjectClick {
             target: ((navigation.x / 256) as i16, (navigation.y / 256) as i16),
             no_move: action == MoveAction::NoMove,
-            infantry: entity.category == EntityCategory::Infantry,
+            infantry: entity.category() == EntityCategory::Infantry,
             force_move_key,
             mover: self.click_mover(id, object)?,
         };
@@ -491,8 +491,8 @@ impl Simulation {
             on_bridge: entity.on_bridge,
             in_tube: entity.low_bridge_tube_state.is_some(),
             special_type: object.movement_zone == MovementZone::Subterranean
-                || entity.category == EntityCategory::Aircraft
-                || (entity.category == EntityCategory::Infantry && object.jumpjet),
+                || entity.category() == EntityCategory::Aircraft
+                || (entity.category() == EntityCategory::Infantry && object.jumpjet),
             movement_zone: object.movement_zone,
             speed_type: object.speed_type,
         })

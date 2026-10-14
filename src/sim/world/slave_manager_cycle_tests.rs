@@ -439,7 +439,7 @@ fn kill(s: &mut SlaveScene, target: u64, attacker: Option<u64>) {
             .substrate
             .entities
             .get(target)
-            .is_some_and(|entity| entity.health.current > 0)
+            .is_some_and(|entity| entity.health.current() > 0)
         {
             return;
         }

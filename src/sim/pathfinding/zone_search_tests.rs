@@ -957,7 +957,7 @@ fn gsi_04_12_completed_ground_unit_clearance_rally_threads_exact_blocker_counts(
         .substrate
         .entities
         .values()
-        .find(|entity| entity.owner == owner && entity.type_ref == produced_type)
+        .find(|entity| entity.owner() == owner && entity.type_ref() == produced_type)
         .expect("completed MTNK should exist");
     assert_eq!((produced.position.rx, produced.position.ry), (1, 0));
     let locomotor = produced.locomotor.as_ref().expect("produced locomotor");

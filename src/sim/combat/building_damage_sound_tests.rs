@@ -214,7 +214,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
     world.resolve_type_handles(rules);
     let target = world.substrate.entities.get_mut(target_id).unwrap();
     assert_eq!(
-        target.health.current,
+        target.health.current(),
         history["building_constructor"]["health"].as_i64().unwrap() as i32
     );
     assert_eq!(
@@ -243,7 +243,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         world.session.binary_frame = row["before"]["frame"].as_u64().unwrap() as u32;
         let target = world.entities().get(target_id).unwrap();
         assert_eq!(
-            target.health.current,
+            target.health.current(),
             row["before"]["building"]["health"].as_i64().unwrap() as i32,
             "{label}: naturally retained health"
         );
@@ -351,7 +351,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         );
         let target = world.entities().get(target_id).unwrap();
         assert_eq!(
-            target.health.current,
+            target.health.current(),
             row["after_receiver"]["building"]["health"]
                 .as_i64()
                 .unwrap() as i32,

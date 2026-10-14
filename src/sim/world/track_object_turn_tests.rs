@@ -19,7 +19,7 @@ fn fixture() -> (Simulation, RuleSet) {
     sim.fog.height = 32;
     sim.session.binary_frame = 10;
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
-    entity.category = EntityCategory::Unit;
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.lifecycle.object_alive = true;
     entity.lifecycle.in_limbo = false;
     entity.lifecycle.cell_marked = true;
@@ -158,7 +158,7 @@ fn post_ai_object_alive_gate_precedes_drive_ship_process_slope_sampling() {
             slope_transition::snap_after_successful_unlimbo(entity, 2, 9);
             let old_slope = *slope_transition::state_for_entity(entity).unwrap();
             entity.lifecycle.object_alive = object_alive;
-            assert!(entity.health.current > 0 && !entity.dying);
+            assert!(entity.health.current() > 0 && !entity.dying);
 
             let outcome = sim
                 .advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())

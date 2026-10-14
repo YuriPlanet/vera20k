@@ -30,7 +30,7 @@ fn insert(
         0,
         0,
         owner,
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         kind,
         category,
         0,
@@ -447,7 +447,7 @@ fn aircraft_reengagement_reserves_in_logic_order_and_ignores_inactive_objects() 
         let (mut sim, rules) = reengagement_fixture(&base["input"]);
         for id in [7, 9] {
             let mut other = sim.substrate.entities.get(1).unwrap().clone();
-            other.stable_id = id;
+            other.set_stable_id_for_test(id);
             sim.substrate.entities.insert(other);
         }
         sim.substrate.next_stable_object_id = 10;

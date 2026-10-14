@@ -544,7 +544,7 @@ impl Simulation {
             }
             //4FC731/4FC7D1/4FC879/4FC929 reads Health before Temporal
             //release; callbacks do not replace that already captured damage.
-            let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current) else {
+            let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
                 ordinal += 1;
                 continue;
             };
@@ -600,7 +600,7 @@ impl Simulation {
             if entity.lifecycle.in_limbo {
                 return false;
             }
-            let building = entity.category == crate::map::entities::EntityCategory::Structure;
+            let building = entity.category() == crate::map::entities::EntityCategory::Structure;
             return match subset {
                 HouseBlowupSubset::Buildings => building,
                 HouseBlowupSubset::Land | HouseBlowupSubset::Naval => {

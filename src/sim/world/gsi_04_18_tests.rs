@@ -4,7 +4,8 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{BuildingUp, Health};
+use crate::sim::combat::Health;
+use crate::sim::components::BuildingUp;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
@@ -55,7 +56,7 @@ fn insert_structure(
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         EntityCategory::Structure,
         0,
@@ -80,7 +81,7 @@ fn insert_sight_unit(sim: &mut Simulation, stable_id: u64, owner: InternedId, rx
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         EntityCategory::Unit,
         0,

@@ -18,7 +18,7 @@ pub(crate) fn landing_base(
     entities: &EntityStore,
     rules_context: Option<(&RuleSet, &StringInterner)>,
 ) -> i32 {
-    if entity.category != EntityCategory::Aircraft {
+    if entity.category() != EntityCategory::Aircraft {
         return 0;
     }
     let Some((rules, interner)) = rules_context else {
@@ -41,7 +41,7 @@ pub(crate) fn landing_base(
             .radio_contacts
             .slot(0)
             .and_then(|id| entities.get(id))
-            .filter(|contact| contact.category == EntityCategory::Structure)
+            .filter(|contact| contact.category() == EntityCategory::Structure)
             .and_then(|contact| rules.object(interner.resolve(contact.type_ref())))
             .is_some_and(|object| object.unit_repair || object.helipad);
         if docking_at_ground {

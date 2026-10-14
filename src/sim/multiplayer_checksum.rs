@@ -266,13 +266,13 @@ impl Simulation {
         // object IDs are monotonic construction IDs, so filtering the ordered
         // store preserves each class array's order without a second registry.
         for entity in self.substrate.entities.values_sorted() {
-            if entity.category == EntityCategory::Infantry {
+            if entity.category() == EntityCategory::Infantry {
                 let (x, y) = entity_world_xy(entity);
                 checksum.fold_infantry(x, y, entity.body_facing_current(frame));
             }
         }
         for entity in self.substrate.entities.values_sorted() {
-            if entity.category == EntityCategory::Unit {
+            if entity.category() == EntityCategory::Unit {
                 let (x, y) = entity_world_xy(entity);
                 checksum.fold_unit(
                     x,
@@ -283,7 +283,7 @@ impl Simulation {
             }
         }
         for entity in self.substrate.entities.values_sorted() {
-            if entity.category == EntityCategory::Structure {
+            if entity.category() == EntityCategory::Structure {
                 let (x, y) = entity_world_xy(entity);
                 checksum.fold_building(x, y, entity.body_facing_current(frame));
             }
@@ -318,7 +318,7 @@ impl Simulation {
             // WhatAmI value in stored LogicClass order.
             let object = if let Some(entity) = self.substrate.entities.get(stable_id) {
                 let (world_x, world_y) = entity_world_xy(entity);
-                ChecksumObject::new(world_x, world_y, entity_rtti(entity.category), 0)
+                ChecksumObject::new(world_x, world_y, entity_rtti(entity.category()), 0)
             } else if let Some(anim) = self.substrate.anims.get(stable_id) {
                 ChecksumObject::new(
                     anim.world_coord.x,
@@ -438,7 +438,7 @@ mod tests {
 
         let entity_id = sim.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "ORCA", "Americans", 3, 4);
-        entity.category = EntityCategory::Aircraft;
+        entity.set_category_for_test(EntityCategory::Aircraft);
         sim.substrate.entities.insert(entity);
 
         let anim_id = sim.allocate_stable_id();

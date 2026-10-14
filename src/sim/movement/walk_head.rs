@@ -332,16 +332,16 @@ mod tests {
             4,
             EntityCategory::Structure,
         );
-        master.owner = owner;
-        master.type_ref = interner.intern("MASTER");
+        master.set_owner_for_test(owner);
+        master.set_type_ref_for_test(interner.intern("MASTER"));
         let slav = interner.intern("SLAV");
         // An existing manager that does not hold the slave refuses it.
         master.slave_manager = Some(SlaveManager::new(slav, [None; 0], 0, 0, 0));
         entities.insert(master);
         let mut slave = GameEntity::test_default(2, "SLAV", "Owner", 3, 4);
-        slave.owner = owner;
-        slave.type_ref = interner.intern("SLAV");
-        slave.category = EntityCategory::Infantry;
+        slave.set_owner_for_test(owner);
+        slave.set_type_ref_for_test(interner.intern("SLAV"));
+        slave.set_category_for_test(EntityCategory::Infantry);
         slave.position.sub_x = SimFixed::from_num(192);
         slave.position.sub_y = SimFixed::from_num(64);
         slave.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
@@ -650,7 +650,7 @@ mod tests {
         for row in corpus["ready_path"].as_array().unwrap() {
             let input = &row["input"];
             let mut entity = GameEntity::test_default(1, "E1", "Owner", 9, 10);
-            entity.category = crate::map::entities::EntityCategory::Infantry;
+            entity.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             if input["infantry_constructor_facing"]
                 .as_bool()
                 .unwrap_or(false)
@@ -661,7 +661,7 @@ mod tests {
                 // Retain the older corpus's explicitly supplied rate0 owner.
                 entity.body_facing = super::super::FacingClass::new(0, 0);
             }
-            entity.owner = InternedId::from_index(41);
+            entity.set_owner_for_test(InternedId::from_index(41));
             entity.position.sub_x = SimFixed::from_num(input["sub"][0].as_i64().unwrap());
             entity.position.sub_y = SimFixed::from_num(input["sub"][1].as_i64().unwrap());
             entity.position.exact_z_leptons = Some(260);
@@ -980,7 +980,7 @@ pub(super) fn select_step_head_at(
             _ => None,
         };
         if let Some(target) = target {
-            priority = match target.category {
+            priority = match target.category() {
                 EntityCategory::Unit | EntityCategory::Aircraft => {
                     let c = super::ground_pose::position_world_coord(&target.position);
                     ((c.x / 256) as i16, (c.y / 256) as i16)

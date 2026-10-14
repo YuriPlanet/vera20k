@@ -95,7 +95,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.category != EntityCategory::Structure {
+        if entity.category() != EntityCategory::Structure {
             return false;
         }
         let Some(object) = self.object_type(entity.type_ref(), rules) else {

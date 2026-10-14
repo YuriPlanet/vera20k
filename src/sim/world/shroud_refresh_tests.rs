@@ -1,7 +1,7 @@
 //! Native cache→Notify→virtual discovery consumers on supplied original cells.
 use super::*;
 use crate::map::entities::EntityCategory;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::{GameEntity, TechnoDiscoveryHistory};
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -59,7 +59,7 @@ fn actor(
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         typ,
         category,
         0,
@@ -86,7 +86,7 @@ fn put(sim: &mut Simulation, id: u64, cell: (u16, u16), upper: bool) {
             MovementLayer::Ground
         },
         None,
-        CellListInsertion::from_category(sim.substrate.entities.get(id).unwrap().category),
+        CellListInsertion::from_category(sim.substrate.entities.get(id).unwrap().category()),
     );
     sim.discover_cell_put_object(id, cell, UninitContext::default());
 }

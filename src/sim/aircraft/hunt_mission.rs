@@ -117,7 +117,7 @@ impl Simulation {
         ctx: ObjectAiCtx<'_>,
     ) -> i32 {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
-        debug_assert_eq!(entity.category, EntityCategory::Aircraft);
+        debug_assert_eq!(entity.category(), EntityCategory::Aircraft);
         let facts = HuntFacts {
             ammo: entity
                 .aircraft_ammo

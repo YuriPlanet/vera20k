@@ -26,7 +26,8 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{BuildingUp, Health};
+use crate::sim::combat::Health;
+use crate::sim::components::BuildingUp;
 use crate::sim::estimated_health::EstimatedHealth;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::{HouseDifficulty, HouseState};
@@ -214,9 +215,7 @@ fn toggle_repair_matches_the_original() {
             0,
             0,
             owner,
-            Health {
-                current: input["health"].as_i64().unwrap() as i32,
-            },
+            Health::new(input["health"].as_i64().unwrap() as i32),
             kind,
             EntityCategory::Structure,
             0,
@@ -310,7 +309,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         0,
         0,
         owner,
-        Health { current: health },
+        Health::new(health),
         kind,
         EntityCategory::Structure,
         0,
@@ -409,7 +408,7 @@ fn update_repair_and_power_matches_the_original() {
         let house = &sim.houses[&owner];
         assert_eq!(
             json!([
-                building.health.current,
+                building.health.current(),
                 building.estimated_health.get(),
                 u8::from(building.repairing),
                 u8::from(building.building_art.damage_state_active()),
@@ -552,7 +551,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
             let house = &sim.houses[&owner];
             assert_eq!(
                 json!([
-                    building.health.current,
+                    building.health.current(),
                     u8::from(building.repairing),
                     house.economy.credits(),
                     u8::from(house.repair_start_latch),
@@ -702,7 +701,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             0,
             0,
             owner,
-            Health { current: actual },
+            Health::new(actual),
             kind,
             EntityCategory::Structure,
             0,
@@ -722,7 +721,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             (
-                building.health.current,
+                building.health.current(),
                 building.estimated_health.get(),
                 building.repairing
             ),
@@ -759,7 +758,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
             .unwrap()
             .strength;
         let entity = s.sim.substrate.entities.get_mut(building).unwrap();
-        entity.health.current = strength / 2;
+        entity.health.set_for_test(strength / 2);
         entity.repairing = repairing;
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),

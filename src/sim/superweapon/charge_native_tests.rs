@@ -335,7 +335,7 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
         .get_mut(reactor)
         .unwrap()
         .health
-        .current = health_before;
+        .set_for_test(health_before);
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_eq!(
         sim.power_states[&owner].total_output,
@@ -360,7 +360,7 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
         .get_mut(reactor)
         .unwrap()
         .health
-        .current = health_after;
+        .set_for_test(health_after);
     assert_eq!(
         sim.power_states[&owner].total_output,
         int(&receiver["power_consumer"]["before_sample"], "house_power")

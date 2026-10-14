@@ -128,9 +128,9 @@ impl crate::sim::world::Simulation {
                 !e.lifecycle.in_limbo
                     && !e.is_falling_down()
                     && e.was_dropped_as_bomb()
-                    && e.health.current > 0
+                    && e.health.current() > 0
             })
-            .map(|e| e.health.current)
+            .map(|e| e.health.current())
         {
             //5F402B copies current Health+6C into a local packet (not Strength).
             let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);

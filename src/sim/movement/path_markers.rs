@@ -367,11 +367,11 @@ fn peer_from_entity(
         .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
         .map_or(0, |object| object.speed);
     let foot_derived = matches!(
-        entity.category,
+        entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     );
     BridgeMarkerPeer {
-        category: entity.category,
+        category: entity.category(),
         foot_derived,
         type_ref: entity.type_ref(),
         speed,
@@ -1098,7 +1098,7 @@ mod tests {
         let mut entities = EntityStore::new();
         let mut peer =
             crate::sim::game_entity::GameEntity::test_default(2, "HOVER", "Americans", 4, 3);
-        peer.type_ref = hover_type;
+        peer.set_type_ref_for_test(hover_type);
         peer.position.z = 7;
         peer.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(LocomotorKind::Hover),
@@ -1177,7 +1177,7 @@ mod tests {
         let mut entities = EntityStore::new();
         let mut peer =
             crate::sim::game_entity::GameEntity::test_default(2, "HOVER", "Americans", 5, 4);
-        peer.type_ref = hover_type;
+        peer.set_type_ref_for_test(hover_type);
         peer.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(LocomotorKind::Hover),
         );

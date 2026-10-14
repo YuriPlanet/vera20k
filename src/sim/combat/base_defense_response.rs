@@ -367,7 +367,7 @@ pub(crate) fn respond_to_base_attack(
         // instead of calling for help.
         || (!world.session.game_mode_nonzero && is_armed(victim, victim_object))
         || !matches!(
-            attacker.category,
+            attacker.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         )
         || victim_object.insignificant
@@ -427,7 +427,7 @@ pub(crate) fn respond_to_base_attack(
             let Some(candidate) = entities.get(candidate_id) else {
                 continue;
             };
-            if candidate.category != expected_category {
+            if candidate.category() != expected_category {
                 continue;
             }
             let Some(candidate_object) = rules.object(sim.interner.resolve(candidate.type_ref()))

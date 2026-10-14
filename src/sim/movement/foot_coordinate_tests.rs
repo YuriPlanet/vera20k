@@ -18,11 +18,11 @@ fn coord(v: &Value) -> DriveCoord {
 
 fn entity(id: u64, kind: LocomotorKind, current: DriveCoord, head: DriveCoord) -> GameEntity {
     let mut e = GameEntity::test_default(id, "E1", "Americans", 0, 0);
-    e.category = if kind == LocomotorKind::Walk {
+    e.set_category_for_test(if kind == LocomotorKind::Walk {
         EntityCategory::Infantry
     } else {
         EntityCategory::Unit
-    };
+    });
     e.position.rx = (current.x / 256).clamp(0, i32::from(u16::MAX)) as u16;
     e.position.ry = (current.y / 256).clamp(0, i32::from(u16::MAX)) as u16;
     e.position.sub_x = SimFixed::from_num(current.x - i32::from(e.position.rx) * 256);

@@ -306,7 +306,7 @@ fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit()
                     .get_mut(victim)
                     .unwrap()
                     .health
-                    .current = 0;
+                    .set_for_test(0);
                 saved.begin_infantry_death_sequence(
                     victim,
                     sequence,

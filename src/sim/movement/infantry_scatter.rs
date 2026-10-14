@@ -17,7 +17,7 @@ use crate::sim::world::Simulation;
 /// infantryman: his active locomotor is Walk, Teleport or Jumpjet, whose
 /// `Move_To` its Foot tail reaches.
 fn represented_infantry_destination(actor: &crate::sim::game_entity::GameEntity) -> bool {
-    actor.category == crate::map::entities::EntityCategory::Infantry
+    actor.category() == crate::map::entities::EntityCategory::Infantry
         && actor
             .locomotor
             .as_ref()

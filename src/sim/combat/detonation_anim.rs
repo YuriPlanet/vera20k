@@ -74,7 +74,7 @@ pub(crate) fn bullet_land(
         };
         if let Some(crate::sim::occupancy::CellObjectMember::Entity(id)) = first
             && let Some(unit) = world.substrate.entities.get(id)
-            && unit.category == crate::map::entities::EntityCategory::Unit
+            && unit.category() == crate::map::entities::EntityCategory::Unit
             && rules
                 .object(world.interner.resolve(unit.type_ref()))
                 .is_some_and(|kind| kind.naval && !kind.underwater)
@@ -304,12 +304,12 @@ mod tests {
             cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
             world.install_resolved_terrain_for_new_map(terrain);
             let mut entity = GameEntity::test_default(1, "FV", "Americans", 10, 20);
-            entity.category = if input["nonbuilding"] == true {
+            entity.set_category_for_test(if input["nonbuilding"] == true {
                 EntityCategory::Structure
             } else {
                 EntityCategory::Unit
-            };
-            let insertion = CellListInsertion::from_category(entity.category);
+            });
+            let insertion = CellListInsertion::from_category(entity.category());
             world.substrate.entities.insert(entity);
             // Original fixture supplies Cell+E4 and the object/type pointer;
             // this uses the production retained-list owner at that boundary.

@@ -23,9 +23,9 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::base_plan::pack_base_plan_cell;
 use crate::sim::base_plan_generation::{preflight_recalc, recalc_base_plan};
+use crate::sim::combat::Health;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
-use crate::sim::components::Health;
 use crate::sim::game_entity::{
     GameEntity, GeneratedTechnoInit, StructureUpgradeLink, TechnoConstructorInit,
 };
@@ -407,15 +407,12 @@ impl Simulation {
                 // Typed production admission has already resolved the class type.
                 // Rules-less construction remains an explicit diagnostic seam, using
                 // the supplied health directly rather than inventing a type maximum.
-                let health = Health {
-                    current: rules
-                        .map(|rules| {
+                let strength = rules.map(|rules| {
                             authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules)
                                 .expect("resolved map type")
                                 .strength
-                        })
-                        .unwrap_or(map_ent.health),
-                };
+                });
+                let health = Health::new(strength.unwrap_or(map_ent.health));
 
                 let uses_voxel_default: bool = match map_ent.category {
                     EntityCategory::Unit | EntityCategory::Aircraft => true,
@@ -737,7 +734,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(stable_id)
-            .filter(|entity| entity.category == EntityCategory::Structure)
+            .filter(|entity| entity.category() == EntityCategory::Structure)
         else {
             return false;
         };
@@ -1150,7 +1147,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         let requested_position = if is_infantry {
             self.infantry_unlimbo_position(requested_position, Some(rules))?
         } else {
@@ -1234,7 +1231,7 @@ impl Simulation {
         use crate::sim::movement::locomotor::MovementLayer;
         use crate::sim::occupancy::CellObjectMember;
         let building = self.substrate.entities.get(stable_id)?;
-        if building.category != EntityCategory::Structure {
+        if building.category() != EntityCategory::Structure {
             return None;
         }
         //458A92 reads Object5F5B90 -> Type45EC20's sentinel list once.
@@ -1287,7 +1284,7 @@ impl Simulation {
                         .get(id)
                         .is_some_and(|entity| {
                             matches!(
-                                entity.category,
+                                entity.category(),
                                 EntityCategory::Unit
                                     | EntityCategory::Infantry
                                     | EntityCategory::Aircraft
@@ -1672,7 +1669,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         let position = if infantry {
             let Some(position) = self.infantry_unlimbo_position(position, rules) else {
                 return (
@@ -1718,7 +1715,7 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .is_some_and(|entity| {
-                    entity.category == EntityCategory::Structure && !entity.building_up()
+                    entity.category() == EntityCategory::Structure && !entity.building_up()
                 })
             {
                 // RESIDUAL: native Begin_Mode applies a new mode at once while
@@ -1776,20 +1773,20 @@ impl Simulation {
         // Other classes' +1AC constructor receivers are separate migrations.
         // Terrain-less diagnostics retain their existing generic Mark seam.
         if !matches!(
-            entity.category,
+            entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Structure
         ) || self.resolved_terrain.is_none()
         {
             return PlacementEvidence::EvaluateMark;
         }
-        if entity.category != EntityCategory::Structure && self.object_placement_scope_active() {
+        if entity.category() != EntityCategory::Structure && self.object_placement_scope_active() {
             return PlacementEvidence::UnitEntryAdmitted;
         }
         let terrain = self.resolved_terrain.as_ref().unwrap();
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&position);
         let cell = cells.lookup_world(x, y);
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             // Building4405A5 performs its own449440 before Techno/Object,
             // even with A8E7AC raised.47C632 supplies the inner scope bypass.
             // Object5F4F22 performs a second +1AC when the scope is clear;
@@ -1869,7 +1866,7 @@ impl Simulation {
         let Some((category, veterancy, in_playfield, type_ref)) =
             self.substrate.entities.get(stable_id).map(|entity| {
                 (
-                    entity.category,
+                    entity.category(),
                     entity.veterancy.rank(),
                     entity.in_playfield,
                     entity.type_ref(),
@@ -1984,7 +1981,7 @@ impl Simulation {
         let stolen_mcv = source.mind_control.controller().is_some()
             && crate::sim::mcv_deploy::deploys_into(self, source, rules)
                 .is_some_and(|yard| yard.construction_yard);
-        if source.parasite_eating_me.is_some() || stolen_mcv {
+        if source.parasite.eater().is_some() || stolen_mcv {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                 entity.mcv_deploy_pending = false;
             }
@@ -2275,7 +2272,7 @@ impl Simulation {
             })
             .map(|(id, entity)| {
                 let drops = hijacker_drops
-                    && entity.category == EntityCategory::Infantry
+                    && entity.category() == EntityCategory::Infantry
                     && self
                         .object_type(entity.type_ref(), rules)
                         .is_some_and(|obj| obj.vehicle_thief);
@@ -2617,7 +2614,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        if entity.category != EntityCategory::Structure
+        if entity.category() != EntityCategory::Structure
             || entity.building_up()
             || entity.building_down()
         {

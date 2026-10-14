@@ -352,7 +352,7 @@ fn bridge_publication_production_nonanchor_collapse_keeps_other_overlay_and_runs
         sim.substrate
             .entities
             .get(tank)
-            .is_none_or(|unit| unit.health.current == 0)
+            .is_none_or(|unit| unit.health.current() == 0)
     );
     let grid = sim.overlay_grid.as_ref().unwrap();
     assert_eq!(

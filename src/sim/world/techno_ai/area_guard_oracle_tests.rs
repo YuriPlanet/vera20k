@@ -103,7 +103,7 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
     f.sim.session.binary_frame = state["frame"].as_u64().unwrap() as u32;
     f.sim.session.tick = state["frame"].as_u64().unwrap();
     f.sim.session.game_mode_nonzero = state["game_mode"] != 0;
-    let friendly = f.sim.substrate.entities.get(f.actor).unwrap().owner;
+    let friendly = f.sim.substrate.entities.get(f.actor).unwrap().owner();
     let enemy = f
         .sim
         .substrate
@@ -113,7 +113,7 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
                 .unwrap(),
         )
         .unwrap()
-        .owner;
+        .owner();
     f.sim.session.current_house = Some(friendly);
     f.sim.session.house_order = vec![friendly, enemy];
     for (name, _) in roles {
@@ -394,7 +394,7 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
             assert_state(&mut f, row, &boundary["before"]);
             if label.starts_with("delivered_original_") {
                 let command = delivered_command(&f, row, boundary);
-                let owner = f.sim.substrate.entities.get(1).unwrap().owner;
+                let owner = f.sim.substrate.entities.get(1).unwrap().owner();
                 let owner = f.sim.interner.resolve(owner).to_owned();
                 assert!(
                     f.sim.apply_command(&owner, &command, Some(&rules)),
@@ -460,7 +460,7 @@ fn area_guard_snapshot_retains_pending_order_post_and_retask_references() {
         .unwrap();
     let mut f = fixture(row, &boundary["before"], &rules);
     let command = delivered_command(&f, row, boundary);
-    let owner = f.sim.substrate.entities.get(1).unwrap().owner;
+    let owner = f.sim.substrate.entities.get(1).unwrap().owner();
     f.sim
         .queue_command(crate::sim::command::CommandEnvelope::new(
             owner,

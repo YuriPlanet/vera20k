@@ -6,7 +6,7 @@
 use crate::rules::art_data::BuildingAnimConfig;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
@@ -199,7 +199,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.category != crate::map::entities::EntityCategory::Structure {
+        if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
         let slots = entity.building_art.anim_slots;
@@ -236,7 +236,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.category != crate::map::entities::EntityCategory::Structure
+        if entity.category() != crate::map::entities::EntityCategory::Structure
             || (entity.building_art.actually_placed && !captured)
         {
             return;
@@ -722,7 +722,7 @@ pub(crate) fn occupied_body_frame(
     yellow: f64,
     red: f64,
 ) -> u16 {
-    let health = Health { current };
+    let health = Health::new(current);
     let mut frame = if occupants > 0 { 2 } else { 0 };
     if health.compare_ratio(strength, red) != Greater
         || (tech_level > 0 && health.compare_ratio(strength, yellow) != Greater)
@@ -779,7 +779,7 @@ pub(crate) fn body_frame(
     if let Some(occupants) = input.occupants {
         return i32::from(occupied_body_frame(
             u32::from(occupants > 0),
-            health.current,
+            health.current(),
             strength,
             input.tech_level,
             yellow,
@@ -924,8 +924,8 @@ mod body_tests {
                 buildup: [i.buildup_start, i.buildup_count],
                 ordinary: i.frame_pairs,
             };
-            let before = body_frame(input, Health { current: i.before }, i.strength, yellow, red);
-            let after = body_frame(input, Health { current: i.after }, i.strength, yellow, red);
+            let before = body_frame(input, Health::new(i.before), i.strength, yellow, red);
+            let after = body_frame(input, Health::new(i.after), i.strength, yellow, red);
             assert_eq!(
                 (before as u32, after as u32),
                 (row.output.before_frame, row.output.after_frame),
@@ -934,7 +934,7 @@ mod body_tests {
             let changed = before != after;
             assert_eq!(u8::from(changed), row.output.dirty, "native row {index}");
             let retained = if changed {
-                requested_damage_state(Health { current: i.after }, i.strength, yellow)
+                requested_damage_state(Health::new(i.after), i.strength, yellow)
             } else {
                 i.old_flag != 0
             };
@@ -975,9 +975,9 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
         2,
         crate::map::entities::EntityCategory::Structure,
     );
-    entity.type_ref = sim.interner.intern("B");
-    entity.owner = sim.interner.intern("A");
-    entity.health.current = 100;
+    entity.set_type_ref_for_test(sim.interner.intern("B"));
+    entity.set_owner_for_test(sim.interner.intern("A"));
+    entity.health.set_for_test(100);
     sim.substrate.entities.insert(entity);
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     (sim, rules, id)
@@ -1044,9 +1044,9 @@ mod slot_tests {
                     60,
                     crate::map::entities::EntityCategory::Structure,
                 );
-                building.type_ref = sim.interner.intern(name);
-                building.owner = sim.interner.intern("A");
-                building.health.current = if damaged { 40 } else { 100 };
+                building.set_type_ref_for_test(sim.interner.intern(name));
+                building.set_owner_for_test(sim.interner.intern("A"));
+                building.health.set_for_test(if damaged { 40 } else { 100 });
                 sim.substrate.entities.insert(building);
                 let slot = row["slot"]["slot"].as_u64().unwrap() as u8;
                 let anim_id = sim
@@ -1427,7 +1427,11 @@ mod slot_tests {
             crate::sim::world::FrameEffects::default(),
         );
         let old = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        sim.entities_mut().get_mut(id).unwrap().health.current = 25;
+        sim.entities_mut()
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(25);
         sim.grand_opening(
             id,
             false,

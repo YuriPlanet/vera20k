@@ -43,9 +43,9 @@ fn fixture(input: &Value, other_flags: &str) -> (Simulation, RuleSet) {
         (OTHER, "OTHER", "Neutral", EntityCategory::Structure),
     ] {
         let mut entity = GameEntity::test_default(id, name, owner, 10, 10);
-        entity.owner = sim.intern(owner);
-        entity.type_ref = sim.intern(name);
-        entity.category = category;
+        entity.set_owner_for_test(sim.intern(owner));
+        entity.set_type_ref_for_test(sim.intern(name));
+        entity.set_category_for_test(category);
         sim.substrate.entities.insert(entity);
     }
     let infantry = sim.substrate.entities.get_mut(INFANTRY).unwrap();

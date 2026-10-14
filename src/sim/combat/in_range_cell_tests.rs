@@ -51,7 +51,7 @@ fn reset_dummy(terrain: &ResolvedTerrainGrid, state: &CellState) {
 fn placed(id: u64, xyz: [i32; 3], marked: bool, on_bridge: bool) -> GameEntity {
     let [x, y, z] = xyz;
     let mut entity = GameEntity::test_default(id, "FV", "Test", (x / 256) as u16, (y / 256) as u16);
-    entity.category = EntityCategory::Unit;
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.position.sub_x = SimFixed::from_num(x % 256);
     entity.position.sub_y = SimFixed::from_num(y % 256);
     entity.position.exact_z_leptons = Some(z);

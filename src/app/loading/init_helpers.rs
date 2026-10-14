@@ -773,7 +773,7 @@ mod tests {
     use crate::rules::process_owner::NativeRulesProcessOwner;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::runtime::spawn_terrain_tile_animations;
     use crate::sim::world::{SimSoundEvent, Simulation};
@@ -920,7 +920,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 type_ref,
                 EntityCategory::Unit,
                 0,

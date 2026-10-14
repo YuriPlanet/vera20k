@@ -262,7 +262,7 @@ fn simulation() -> (Simulation, RuleSet, u64) {
     let id = sim.allocate_stable_id();
     let mut actor =
         crate::sim::game_entity::GameEntity::test_default(id, "FV", "Americans", 87, 48);
-    actor.type_ref = sim.interner.intern("FV");
+    actor.set_type_ref_for_test(sim.interner.intern("FV"));
     sim.substrate.entities.insert(actor);
     (sim, rules, id)
 }

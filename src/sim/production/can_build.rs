@@ -409,7 +409,7 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
     let Some(building) = sim.substrate.entities.get(id) else {
         return;
     };
-    if building.category != EntityCategory::Structure || building.lifecycle.in_limbo {
+    if building.category() != EntityCategory::Structure || building.lifecycle.in_limbo {
         return;
     }
     let Some(ty) = sim.object_type(building.type_ref(), rules) else {

@@ -264,7 +264,7 @@ fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: Mis
         return false;
     };
     let is_foot = matches!(
-        entity.category,
+        entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     );
     if mission == MissionType::Move
@@ -346,7 +346,7 @@ fn parked_on_move(
             return Some(true);
         }
     }
-    (entity.category == EntityCategory::Unit && obj.is_simple_deployer && on_own_cell)
+    (entity.category() == EntityCategory::Unit && obj.is_simple_deployer && on_own_cell)
         .then_some(true)
 }
 
@@ -378,7 +378,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     if !obj.can_passive_acquire {
         return false;
     }
-    if entity.category == EntityCategory::Structure
+    if entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
         && entity
             .passenger_role
@@ -394,7 +394,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     {
         return false;
     }
-    if entity.category == EntityCategory::Infantry
+    if entity.category() == EntityCategory::Infantry
         && obj.engineer
         && sim.owner_is_human(entity.owner())
     {
@@ -1145,14 +1145,14 @@ mod tests {
             sim.houses
                 .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
             let mut entity = GameEntity::test_default(1, "X", "Americans", 10, 10);
-            entity.owner = owner;
-            entity.type_ref = sim.interner.intern(&type_name(input));
-            entity.category = match class(input).as_str() {
+            entity.set_owner_for_test(owner);
+            entity.set_type_ref_for_test(sim.interner.intern(&type_name(input)));
+            entity.set_category_for_test(match class(input).as_str() {
                 "unit" => EntityCategory::Unit,
                 "aircraft" => EntityCategory::Aircraft,
                 "building" => EntityCategory::Structure,
                 _ => EntityCategory::Infantry,
-            };
+            });
             entity.navigation.nav_com = match &input["nav_com"] {
                 Value::Null if input.get("nav_com").is_some() => None,
                 Value::String(other) if other == "other" => Some(NavTargetRef::cell(11, 10)),

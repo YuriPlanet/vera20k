@@ -51,7 +51,7 @@ fn offline_sparks_match_original_execution() {
             [location[0], location[1]],
         );
         entity.position.exact_z_leptons = Some(location[2]);
-        entity.native_unique_id = int(&row["id"]);
+        entity.set_native_unique_id_for_test(int(&row["id"]));
         entity.deactivated = row["deactivated"].as_bool().unwrap();
         let mut sim = Simulation::new();
         sim.substrate.entities.insert(entity);
@@ -222,7 +222,7 @@ fn lines(events: &[SimSoundEvent], house: InternedId, line: &str) -> usize {
 
 /// Destroys `id` as expiring C4 does: no attacker and no survivors.
 fn destroy(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    let health = sim.substrate.entities.get(id).unwrap().health.current;
+    let health = sim.substrate.entities.get(id).unwrap().health.current();
     let c4 = sim.interner.intern(&rules.bridge_warheads.c4_name);
     let hit = EntityDamageEvent::direct_receiver(
         id,
@@ -619,7 +619,7 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
                 .get(water_tank)
                 .expect("powered water hover remains alive");
             assert!(!tank.deactivated && !tank.was_dropped_as_bomb());
-            assert!(tank.health.current > 0);
+            assert!(tank.health.current() > 0);
             false
         });
         assert!(
@@ -683,7 +683,7 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
             .entities
             .get(land_tank)
             .expect("land hover stays represented");
-        assert!(land_tank.deactivated && land_tank.health.current > 0);
+        assert!(land_tank.deactivated && land_tank.health.current() > 0);
         assert!(!land_tank.was_dropped_as_bomb() && !land_tank.is_falling_down());
         assert_eq!(
             crate::sim::movement::air_movement::current_fly_height(

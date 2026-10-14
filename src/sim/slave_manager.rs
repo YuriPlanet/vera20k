@@ -323,7 +323,7 @@ pub(crate) fn deploy_center(
     foundation: Option<(u16, u16)>,
 ) -> Option<(i16, i16)> {
     let cell = owner_cell(owner);
-    if owner.category != EntityCategory::Structure {
+    if owner.category() != EntityCategory::Structure {
         return Some(cell);
     }
     let (width, height) = foundation?;
@@ -611,7 +611,7 @@ impl Simulation {
                     if let (Some(strength), Some(entity)) =
                         (strength, self.substrate.entities.get_mut(slave))
                     {
-                        entity.health.current = strength;
+                        entity.health.set(strength);
                         entity.estimated_health.reset(strength);
                     }
                 }
@@ -685,8 +685,8 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get(master) else {
             return;
         };
-        let building = owner.category == EntityCategory::Structure;
-        let unit = owner.category == EntityCategory::Unit;
+        let building = owner.category() == EntityCategory::Structure;
+        let unit = owner.category() == EntityCategory::Unit;
         let driving = owner.navigation.nav_com.is_some();
         let deploy_pending = owner.mcv_deploy_pending;
         let guarding = owner.mission.current().known() == Some(MissionType::Guard);
@@ -1059,7 +1059,7 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get(master) else {
             return;
         };
-        let field = (owner.category == EntityCategory::Unit)
+        let field = (owner.category() == EntityCategory::Unit)
             .then_some(owner.navigation.nav_com)
             .flatten()
             .and_then(|target| {
@@ -1112,7 +1112,7 @@ impl Simulation {
         };
         let owner = self.substrate.entities.get(master)?;
         let object = self.object_type(owner.type_ref(), rules)?;
-        let foundation = if owner.category == EntityCategory::Structure {
+        let foundation = if owner.category() == EntityCategory::Structure {
             crate::rules::foundation::foundation_dimensions(&object.foundation)
         } else if let Some(into) = object.deploys_into.as_deref().and_then(|n| rules.object(n)) {
             crate::rules::foundation::foundation_dimensions(&into.foundation)
@@ -1559,7 +1559,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(master)
-                .is_some_and(|owner| owner.category == EntityCategory::Structure)
+                .is_some_and(|owner| owner.category() == EntityCategory::Structure)
         {
             crate::sim::world::building_anim::emit_refinery_smoke(self, rules, master);
         }
@@ -1727,7 +1727,7 @@ impl Simulation {
             .substrate
             .entities
             .get(slave)
-            .map(|entity| entity.health.current)
+            .map(|entity| entity.health.current())
         else {
             return;
         };

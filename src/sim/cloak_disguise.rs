@@ -692,14 +692,14 @@ impl crate::sim::world::Simulation {
     pub(crate) fn disguise_as(&mut self, firer: u64, target: Option<u64>, target_present: bool) {
         use crate::map::entities::EntityCategory;
 
-        let Some(category) = self.substrate.entities.get(firer).map(|e| e.category) else {
+        let Some(category) = self.substrate.entities.get(firer).map(|e| e.category()) else {
             return;
         };
         let worn = match category {
             EntityCategory::Infantry => {
                 let Some(target) = target
                     .and_then(|id| self.substrate.entities.get(id))
-                    .filter(|target| target.category == EntityCategory::Infantry)
+                    .filter(|target| target.category() == EntityCategory::Infantry)
                 else {
                     return;
                 };
@@ -750,7 +750,7 @@ impl crate::sim::world::Simulation {
         let Some(object_type) = rules.object(self.interner.resolve(entity.type_ref())) else {
             return Ok(());
         };
-        if entity.category != EntityCategory::Unit
+        if entity.category() != EntityCategory::Unit
             || !object_type.can_disguise
             || object_type.perma_disguise
         {

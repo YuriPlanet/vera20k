@@ -6,7 +6,7 @@
 use super::{AttackTarget, TargetKind, install_cell_attack_target_for_test};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
@@ -28,7 +28,7 @@ fn ff_rules() -> RuleSet {
 
 fn make_unit(id: u64, type_ref: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = GameEntity::test_default(id, type_ref, "Americans", rx, ry);
-    e.health = Health { current: hp };
+    e.health = Health::new(hp);
     e
 }
 

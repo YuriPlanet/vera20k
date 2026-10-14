@@ -306,7 +306,7 @@ impl CaptureVictimFacts {
         // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (`+0x2CC`,
         // no VERA producer); 7: the Iron Curtain; 9: Selling or Construction.
         let refused = target_obj.immune_to_psionics
-            || (target.category == EntityCategory::Unit
+            || (target.category() == EntityCategory::Unit
                 && target.bunker_link.installed_in().is_some())
             || target.mind_control.is_mind_controlled()
             || crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -461,7 +461,7 @@ impl Simulation {
         let Some(object) = self.substrate.entities.get(id) else {
             return false;
         };
-        if object.category == EntityCategory::Structure {
+        if object.category() == EntityCategory::Structure {
             return false;
         }
         let Some(object_type) = self.object_type(object.type_ref(), rules) else {
@@ -574,7 +574,7 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
         };
-        let simple_deployer_unloading = target.category == EntityCategory::Unit
+        let simple_deployer_unloading = target.category() == EntityCategory::Unit
             && target.mission.current().known() == Some(MissionType::Unload)
             && self
                 .object_type(target.type_ref(), rules)
@@ -600,7 +600,7 @@ impl Simulation {
         let Some(object) = self.object_type(target.type_ref(), rules) else {
             return;
         };
-        let building = target.category == EntityCategory::Structure;
+        let building = target.category() == EntityCategory::Structure;
         let offset = if building {
             // Without an art section the BuildingTypeClass constructor's 2
             // stands.
@@ -775,7 +775,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
-        let unit_is_foot = unit.category != EntityCategory::Structure;
+        let unit_is_foot = unit.category() != EntityCategory::Structure;
         if unit_is_foot {
             self.leave_team(unit_id, false, Some(rules), frame_effects);
         }
@@ -872,7 +872,7 @@ impl Simulation {
     fn capture_reason(
         &self,
         controller_owner: InternedId,
-        health: crate::sim::components::Health,
+        health: crate::sim::combat::Health,
         strength: i32,
         rules: &RuleSet,
     ) -> CaptureReason {

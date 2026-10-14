@@ -496,19 +496,19 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         .entities
         .values()
         .find(|entity| {
-            entity.type_ref == gapowr_id
+            entity.type_ref() == gapowr_id
                 && entity.position.rx == fixture.valid.0
                 && entity.position.ry == fixture.valid.1
         })
         .expect("accepted command spawned stock GAPOWR");
-    assert_eq!(placed.category, EntityCategory::Structure);
+    assert_eq!(placed.category(), EntityCategory::Structure);
     assert_eq!(placed.foundation, "2x2");
-    assert_eq!(placed.health.current, 750);
+    assert_eq!(placed.health.current(), 750);
     assert_eq!(rules.object("GAPOWR").unwrap().strength, 750);
     assert!(placed.lifecycle.cell_marked);
     assert!(placed.in_logic_vector);
     assert!(placed.building_up());
-    let placed_id = placed.stable_id;
+    let placed_id = placed.stable_id();
     assert_eq!(
         placed_id, held_id,
         "placement reuses the completed identity"

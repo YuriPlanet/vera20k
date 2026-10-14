@@ -176,7 +176,7 @@ pub(crate) fn launch(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+                .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
             if !infantry {
                 continue;
             }

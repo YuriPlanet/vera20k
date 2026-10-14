@@ -207,7 +207,7 @@ fn fixture(row: &Value) -> Scene {
     }
     {
         let e = s.sim.substrate.entities.get_mut(s.miner).unwrap();
-        e.health.current = int(&before["health"]);
+        e.health.set_for_test(int(&before["health"]));
         e.navigation.nav_com = raw_nav;
         e.set_archive_target(archive);
         e.mission.apply_test_fixture(MissionTestFixture {
@@ -248,14 +248,14 @@ fn fixture(row: &Value) -> Scene {
     }
     {
         let e = s.sim.substrate.entities.get_mut(s.refinery).unwrap();
-        e.health.current =
-            case["refinery_health"]
-                .as_i64()
-                .unwrap_or(if case["unit_repair"] == true {
+        e.health
+            .set_for_test(case["refinery_health"].as_i64().unwrap_or(
+                if case["unit_repair"] == true {
                     1200
                 } else {
                     1000
-                }) as i32;
+                },
+            ) as i32);
         e.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_raw(case["refinery_current"].as_i64().unwrap_or(5) as i32),
             queued: MissionId::from_raw(int(&before["refinery_queued"])),
@@ -289,7 +289,7 @@ fn fixture(row: &Value) -> Scene {
         let e = s.sim.substrate.entities.get_mut(pending).unwrap();
         e.lifecycle.object_alive = case["pending_alive"] != false;
         if let Some(health) = case["pending_health"].as_i64() {
-            e.health.current = health as i32;
+            e.health.set_for_test(health as i32);
         }
     }
     s.sim.scenario_rng = crate::sim::rng::SimRng::new(case["seed"].as_u64().unwrap_or(1));
@@ -339,7 +339,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
         "nav_queue_count":e.navigation.nav_queue.len(), "miner_nav":nav_name(s,e.navigation.nav_com),
         "archive":nav_name(s,archive), "pending_entry":pending,
         "target":e.attack_target.as_ref().map_or(Value::Null, |t| match t.target { TargetKind::Entity(id)=>s.name(id), TargetKind::Cell(rx,ry)=>json!([rx,ry]) }),
-        "health":e.health.current,"strength":s.sim.object_type(e.type_ref(),&s.rules).unwrap().strength,
+        "health":e.health.current(),"strength":s.sim.object_type(e.type_ref(),&s.rules).unwrap().strength,
         "locomotor_powered":u8::from(e.locomotor.as_ref().unwrap().is_powered()),
         "locomotor_kind":if e.locomotor.as_ref().unwrap().active_kind()==crate::rules::locomotor_type::LocomotorKind::Hover {"hover"} else {"drive"},
         "refinery_bstate":[b.building_body_state().unwrap(),b.queued_building_body_state().unwrap()],
@@ -530,7 +530,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
             // original PowerOn prefix. Production depot release is separately
             // checked through the Building repair mission, including exit movement.
             let e = s.sim.substrate.entities.get_mut(s.miner).unwrap();
-            e.health.current = int(&step["after"]["strength"]);
+            e.health.set_for_test(int(&step["after"]["strength"]));
             e.locomotor.as_mut().unwrap().power_on();
         }
         "pending_entry_try" => {
@@ -601,7 +601,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
         }
         "building_now_dead_contacts" => {
             let e = s.sim.substrate.entities.get_mut(s.refinery).unwrap();
-            e.health.current = 0;
+            e.health.set_for_test(0);
             e.lifecycle.object_alive = false;
             s.sim.building_now_dead_contacts(
                 s.refinery,

@@ -160,7 +160,7 @@ impl ReloadHost for WorldReload<'_> {
             .is_some_and(|entity| {
                 self.sim
                     .object_type(entity.type_ref(), self.rules)
-                    .is_some_and(|object| entity.health.current == object.strength)
+                    .is_some_and(|object| entity.health.current() == object.strength)
             })
     }
 

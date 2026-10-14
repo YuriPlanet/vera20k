@@ -71,7 +71,7 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                 let Some(entity) = self.sim.entities().get(occupant.entity_id) else {
                     continue;
                 };
-                if entity.category != EntityCategory::Structure {
+                if entity.category() != EntityCategory::Structure {
                     continue;
                 }
                 // 47C520 first normal-list RTTI6; 457620->465D40 rejects

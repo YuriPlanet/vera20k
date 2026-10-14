@@ -43,9 +43,9 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         ZoneGrid::build_with_native_bridge_geometry(&grid, &terrain, &[], 6, 1, Some((6, 1)));
     let mut sim = Simulation::with_seed(71);
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("MTNK");
-    entity.category = EntityCategory::Unit;
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("MTNK"));
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.body_facing.snap(0x4000, 0);
     entity.locomotor = Some(make_drive_loco_for_test());
     assert!(
@@ -353,9 +353,9 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
     ] {
         let mut sim = Simulation::with_seed(41);
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 10, 10);
-        actor.owner = sim.intern("Americans");
-        actor.type_ref = sim.intern("E1");
-        actor.category = EntityCategory::Infantry;
+        actor.set_owner_for_test(sim.intern("Americans"));
+        actor.set_type_ref_for_test(sim.intern("E1"));
+        actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         sim.substrate.entities.insert(actor);
         assert!(matches!(
@@ -483,8 +483,8 @@ fn drive_ship_slope_process_samples_stationary_retargets_and_keeps_rng() {
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
         let mut sim = Simulation::with_seed(0x510fe);
         let mut entity = GameEntity::test_default(1, "SLOPE", "Americans", 0, 0);
-        entity.owner = sim.intern("Americans");
-        entity.type_ref = sim.intern("SLOPE");
+        entity.set_owner_for_test(sim.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern("SLOPE"));
         entity.locomotor = Some(LocomotorState::for_test_kind_at_frame(kind, 2));
         entity
             .locomotor
@@ -538,8 +538,8 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
     );
     let mut sim = Simulation::with_seed(4);
     let mut entity = GameEntity::test_default(1, "DRIVE", "Americans", 0, 0);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("DRIVE");
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("DRIVE"));
     entity.locomotor = Some(LocomotorState::for_test_kind_at_frame(
         LocomotorKind::Drive,
         0,
@@ -630,9 +630,9 @@ fn drive_ship_slope_process_uses_foot_class_boundary_not_object_speed_or_art() {
     ] {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "MODDED", "Americans", 0, 0);
-        entity.owner = sim.intern("Americans");
-        entity.type_ref = sim.intern("MODDED");
-        entity.category = category;
+        entity.set_owner_for_test(sim.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern("MODDED"));
+        entity.set_category_for_test(category);
         entity.locomotor = Some(LocomotorState::for_test_kind(kind));
         sim.substrate.entities.insert(entity);
 
@@ -657,8 +657,8 @@ fn entry_active_tube_excludes_drive_slope_process_for_the_whole_turn() {
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(1, 1, vec![slope_cell(0, 9)]);
     let mut sim = Simulation::new();
     let mut entity = GameEntity::test_default(1, "DRIVE", "Americans", 0, 0);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("DRIVE");
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("DRIVE"));
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     entity.low_bridge_tube_state = Some(
         crate::sim::movement::tube_movement::LowBridgeTubeMovementState {
@@ -916,9 +916,9 @@ fn forced_track_object_turn_relinks_each_committed_cell() {
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let mut entity = GameEntity::test_default(1, "CMIN", "Americans", 13, 11);
-    entity.owner = sim.intern("Americans");
-    entity.type_ref = sim.intern("CMIN");
-    entity.category = EntityCategory::Unit;
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("CMIN"));
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.locomotor = Some(make_drive_loco_for_test());
     entity.drive_accelerates = false;
     assert!(
@@ -1064,9 +1064,9 @@ fn drive_first_process_route(start: (u16, u16), goal: (u16, u16)) -> RouteAndGoa
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let grid = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());
     let mut e = GameEntity::test_default(1, "HTNK", "Americans", start.0, start.1);
-    e.owner = sim.intern("Americans");
-    e.type_ref = sim.intern("HTNK");
-    e.category = EntityCategory::Unit;
+    e.set_owner_for_test(sim.intern("Americans"));
+    e.set_type_ref_for_test(sim.intern("HTNK"));
+    e.set_category_for_test(EntityCategory::Unit);
     e.locomotor = Some(make_drive_loco_for_test());
     assert!(
         e.locomotor
@@ -1345,7 +1345,7 @@ fn gsi_04_10_crusher_and_omnicrusher_never_enter_or_crush_a_terrain_object_cell(
     for movement_zone in [MovementZone::Crusher, MovementZone::CrusherAll] {
         let mut entities = EntityStore::new();
         let mut tank = GameEntity::test_default(1, "HTNK", "Americans", 0, 0);
-        tank.category = EntityCategory::Unit;
+        tank.set_category_for_test(EntityCategory::Unit);
         tank.lifecycle.in_limbo = false;
         tank.lifecycle.cell_marked = true;
         let mut locomotor = make_drive_loco_for_test();

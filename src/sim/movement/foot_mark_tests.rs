@@ -8,7 +8,7 @@ use crate::util::fixed_math::SimFixed;
 /// An unmarked, grounded object out of Limbo at cell (4, 4).
 fn actor(id: u64, category: EntityCategory, kind: LocomotorKind) -> GameEntity {
     let mut entity = GameEntity::test_default(id, "ACTOR", "Americans", 4, 4);
-    entity.category = category;
+    entity.set_category_for_test(category);
     entity.lifecycle.in_limbo = false;
     entity.lifecycle.cell_marked = false;
     entity.foot_occupation_enabled = true;
@@ -35,7 +35,7 @@ fn tethered_infantry() -> Simulation {
         4,
         EntityCategory::Structure,
     );
-    building.type_ref = sim.intern("GAPILE");
+    building.set_type_ref_for_test(sim.intern("GAPILE"));
     building.lifecycle.in_limbo = false;
     building.lifecycle.cell_marked = true;
     sim.substrate.entities.insert(building);

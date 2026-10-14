@@ -61,7 +61,7 @@ pub(crate) fn mission_enter(
                     | NavTargetRef::Building { id: nav },
                 ) => sim.substrate.entities.get(nav).is_some_and(|other| {
                     matches!(
-                        other.category,
+                        other.category(),
                         EntityCategory::Unit | EntityCategory::Aircraft
                     )
                 }),

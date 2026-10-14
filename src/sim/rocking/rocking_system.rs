@@ -276,5 +276,5 @@ fn balloon_hover_type(
 /// Working assumption per design doc §"Open Questions" #1: vehicles ship-rock,
 /// infantry/aircraft/structures don't. Revisit when RE confirms.
 fn entity_type_supports_ship_rocking(entity: &GameEntity) -> bool {
-    matches!(entity.category, EntityCategory::Unit)
+    matches!(entity.category(), EntityCategory::Unit)
 }

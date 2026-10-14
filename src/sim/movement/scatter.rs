@@ -281,7 +281,7 @@ fn receive_damage_scatter_admitted(
     interner: &StringInterner,
 ) -> Result<bool, String> {
     if !matches!(
-        entity.category,
+        entity.category(),
         EntityCategory::Infantry | EntityCategory::Unit | EntityCategory::Aircraft
     ) {
         return Ok(false);
@@ -299,7 +299,7 @@ fn receive_damage_scatter_admitted(
         return Ok(false);
     }
     if refused {
-        if entity.category == EntityCategory::Aircraft {
+        if entity.category() == EntityCategory::Aircraft {
             return Ok(false);
         }
         if !human {
@@ -381,7 +381,7 @@ impl Simulation {
             return Ok(false);
         };
         let source = source.filter(|coord| *coord != super::foot_coordinate::NULL_COORD);
-        match (entity.category, source) {
+        match (entity.category(), source) {
             (EntityCategory::Unit, None) => {
                 self.unit_scatter_null(id, flags, rules, frame_effects);
                 Ok(false)

@@ -6,8 +6,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::Health;
 use crate::sim::combat::{AttackTarget, TargetKind};
-use crate::sim::components::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionId, MissionType};
@@ -152,9 +152,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
             0,
             0,
             house,
-            Health {
-                current: input["health"].as_i64().unwrap() as i32,
-            },
+            Health::new(input["health"].as_i64().unwrap() as i32),
             sim.interner.intern("E1"),
             EntityCategory::Infantry,
             0,
@@ -202,7 +200,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                 0,
                 0,
                 house,
-                Health { current: 100 },
+                Health::new(100),
                 sim.interner.intern("MTNK"),
                 EntityCategory::Unit,
                 0,
@@ -291,9 +289,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         0,
                         0,
                         house,
-                        Health {
-                            current: object.strength,
-                        },
+                        Health::new(object.strength),
                         sim.interner.intern("BFRT"),
                         EntityCategory::Unit,
                         0,

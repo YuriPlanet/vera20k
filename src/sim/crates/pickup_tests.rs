@@ -10,7 +10,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::crates::CrateSlot;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
@@ -48,7 +48,7 @@ fn place_actor(
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_id,
         category,
         0,
@@ -792,7 +792,12 @@ fn heal_base_crate_restores_the_owners_buildings() {
         .spawn_object("YARD", "Russians", 8, 20, 0, &rules)
         .unwrap();
     for id in [own, theirs] {
-        sim.substrate.entities.get_mut(id).unwrap().health.current = 400;
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(400);
     }
     place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_HEAL_BASE as u8);
 
@@ -806,11 +811,11 @@ fn heal_base_crate_restores_the_owners_buildings() {
     ));
 
     assert_eq!(
-        sim.substrate.entities.get(own).unwrap().health.current,
+        sim.substrate.entities.get(own).unwrap().health.current(),
         1000
     );
     assert_eq!(
-        sim.substrate.entities.get(theirs).unwrap().health.current,
+        sim.substrate.entities.get(theirs).unwrap().health.current(),
         400
     );
     // `[CrateRules]` retains the upper-cased name at its data boundary.

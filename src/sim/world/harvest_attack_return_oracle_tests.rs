@@ -89,7 +89,7 @@ impl Replay {
                 .get_mut(id)
                 .unwrap()
                 .health
-                .current = 1000;
+                .set_for_test(1000);
         }
         let before = &row["before"];
         let entity = scene.sim.substrate.entities.get_mut(scene.miner).unwrap();
@@ -107,7 +107,7 @@ impl Replay {
             ),
         });
         entity.lifecycle.object_alive = before["alive"] == 1;
-        entity.health.current = int(&before["health"]);
+        entity.health.set_for_test(int(&before["health"]));
         // Foot+6B3 is the original constructor's 0: the corpus runs no
         // Unlimbo, whose Enter_Idle_Mode set it here.
         entity.mission_leaf.set_foot_idle_entry_latch(0);
@@ -243,7 +243,7 @@ impl Replay {
             "{context}: alive"
         );
         assert_eq!(
-            e.health.current,
+            e.health.current(),
             int(&native["health"]),
             "{context}: health"
         );
@@ -254,7 +254,7 @@ impl Replay {
             "{context}: target alive"
         );
         assert_eq!(
-            first.health.current,
+            first.health.current(),
             int(&native["target_health"]),
             "{context}: target health"
         );
@@ -401,14 +401,14 @@ impl Replay {
                 };
                 if input["dead"] == true {
                     let e = s.sim.substrate.entities.get_mut(victim).unwrap();
-                    e.health.current = 0;
+                    e.health.set_for_test(0);
                     e.lifecycle.object_alive = false;
                 }
                 let e = s.sim.substrate.entities.get(victim).unwrap();
                 let (at, alive, health, owner) = (
                     (e.position.rx, e.position.ry),
                     e.is_object_alive(),
-                    e.health.current,
+                    e.health.current(),
                     e.owner(),
                 );
                 s.sim.notify_entity_pointer_expired(

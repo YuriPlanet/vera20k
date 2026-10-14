@@ -95,9 +95,9 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     // exact-zero input without claiming a full native fatal-hit execution.
     let (mut sim, owner) = game_speed_command_sim();
     let mut infantry = GameEntity::test_default(1, "E1", "Local", 30, 40);
-    infantry.owner = owner;
-    infantry.type_ref = sim.interner.intern("E1");
-    infantry.category = EntityCategory::Infantry;
+    infantry.set_owner_for_test(owner);
+    infantry.set_type_ref_for_test(sim.interner.intern("E1"));
+    infantry.set_category_for_test(EntityCategory::Infantry);
     infantry.lifecycle.object_alive = true;
     infantry.lifecycle.in_limbo = false;
     infantry.selected = false;
@@ -118,7 +118,12 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         crate::sim::world::FrameEffects::default(),
     );
     let selected_before_logic = sim.entities().get(1).unwrap().selected;
-    sim.substrate.entities.get_mut(1).unwrap().health.current = 0;
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .health
+        .set_for_test(0);
     sim.object_destroy_callback(1, UninitContext::default());
     assert!(!sim.entities().get(1).unwrap().selected);
     let (tail_count, spawned) = sim.apply_due_commands(
@@ -739,7 +744,7 @@ fn advance_tick_finishes_dying_infantry_from_rules_catalog() {
         .get_mut(id)
         .expect("spawned infantry")
         .health
-        .current = 0;
+        .set_for_test(0);
     sim.begin_infantry_death_sequence(
         id,
         super::infantry_terminal::InfantryDeathSequence::Die1,
@@ -1057,7 +1062,7 @@ fn gsi_13_10_art_model_rules() -> RuleSet {
 }
 
 fn assert_gsi_13_10_shp_unit(entity: &GameEntity) {
-    assert_eq!(entity.category, EntityCategory::Unit);
+    assert_eq!(entity.category(), EntityCategory::Unit);
     assert!(
         !entity.is_voxel,
         "SHP Unit must retain its SHP drawing representation"
@@ -1067,7 +1072,7 @@ fn assert_gsi_13_10_shp_unit(entity: &GameEntity) {
 }
 
 fn assert_gsi_13_10_vxl_unit(entity: &GameEntity) {
-    assert_eq!(entity.category, EntityCategory::Unit);
+    assert_eq!(entity.category(), EntityCategory::Unit);
     assert!(entity.is_voxel);
     assert!(entity.animation.is_none());
     assert!(
@@ -1089,8 +1094,8 @@ fn a_flying_aircraft_starts_its_move_sound_on_its_speed() {
     let run = |speed: SimFixed| {
         let mut sim = Simulation::with_seed(0x1020_3040);
         let mut entity = GameEntity::test_default(1, "TESTPLANE", "Americans", 4, 4);
-        entity.type_ref = sim.interner.intern("TESTPLANE");
-        entity.category = EntityCategory::Aircraft;
+        entity.set_type_ref_for_test(sim.interner.intern("TESTPLANE"));
+        entity.set_category_for_test(EntityCategory::Aircraft);
         let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Fly);
         locomotor
             .fly_runtime_mut()
@@ -1122,7 +1127,7 @@ fn idle_squid_body_counter_starts_move_sound() {
     let object = rules.object("SQD").expect("retail SQD");
     let mut sim = Simulation::with_seed(0x1020_3040);
     let mut entity = GameEntity::test_default(1, "SQD", "Americans", 4, 4);
-    entity.type_ref = sim.interner.intern("SQD");
+    entity.set_type_ref_for_test(sim.interner.intern("SQD"));
     entity.lifecycle.in_limbo = false;
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
     sim.substrate.entities.insert(entity);
@@ -1179,7 +1184,7 @@ fn move_sound_test_rules(configured: bool) -> RuleSet {
 fn move_sound_test_sim() -> Simulation {
     let mut sim = Simulation::with_seed(0x1020_3040);
     let mut entity = GameEntity::test_default(1, "TESTUNIT", "Americans", 4, 4);
-    entity.type_ref = sim.interner.intern("TESTUNIT");
+    entity.set_type_ref_for_test(sim.interner.intern("TESTUNIT"));
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     sim.substrate.entities.insert(entity);
     sim
@@ -1421,8 +1426,8 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
 
     for (id, target) in [(10, (4, 4)), (20, (4, 3))] {
         let mut listener = GameEntity::test_default(id, "E1", "Receiver", 2, 2);
-        listener.owner = receiver;
-        listener.type_ref = sim.interner.intern("E1");
+        listener.set_owner_for_test(receiver);
+        listener.set_type_ref_for_test(sim.interner.intern("E1"));
         listener.attack_target = Some(AttackTarget::for_cell(target.0, target.1));
         sim.substrate.entities.insert(listener);
     }
@@ -1976,17 +1981,17 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         let mut cargo = crate::sim::passenger::PassengerCargo::new(2, 1);
         assert!(cargo.board(11, 1));
         let mut carrier = GameEntity::test_default(10, "BOOMER", "Soviet", 8, 5);
-        carrier.owner = enemy;
-        carrier.type_ref = sim.interner.intern("BOOMER");
-        carrier.health.current = carrier_hp;
+        carrier.set_owner_for_test(enemy);
+        carrier.set_type_ref_for_test(sim.interner.intern("BOOMER"));
+        carrier.health.set_for_test(carrier_hp);
         carrier.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
         sim.substrate.entities.insert(carrier);
         let _ = sim.reveal(10);
 
         let mut passenger = GameEntity::test_default(11, "PASSENGER", "Soviet", 8, 5);
-        passenger.owner = enemy;
-        passenger.type_ref = sim.interner.intern("PASSENGER");
-        passenger.category = EntityCategory::Infantry;
+        passenger.set_owner_for_test(enemy);
+        passenger.set_type_ref_for_test(sim.interner.intern("PASSENGER"));
+        passenger.set_category_for_test(EntityCategory::Infantry);
         passenger.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
             EntityCategory::Infantry,
         );
@@ -2005,10 +2010,10 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             5,
             EntityCategory::Structure,
         );
-        listener.owner = owner;
-        listener.type_ref = sim.interner.intern("LISTENER");
+        listener.set_owner_for_test(owner);
+        listener.set_type_ref_for_test(sim.interner.intern("LISTENER"));
         listener.is_voxel = false;
-        listener.health.current = 300;
+        listener.health.set_for_test(300);
         sim.substrate.entities.insert(listener);
         let _ = sim.reveal(30);
 
@@ -2020,16 +2025,16 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             5,
             EntityCategory::Structure,
         );
-        nested_fatal.owner = owner;
-        nested_fatal.type_ref = sim.interner.intern("LISTENER");
+        nested_fatal.set_owner_for_test(owner);
+        nested_fatal.set_type_ref_for_test(sim.interner.intern("LISTENER"));
         nested_fatal.is_voxel = false;
-        nested_fatal.health.current = 107;
+        nested_fatal.health.set_for_test(107);
         sim.substrate.entities.insert(nested_fatal);
         let _ = sim.reveal(31);
 
         let mut attacker = GameEntity::test_default(20, "SHOOTER", "Americans", 6, 5);
-        attacker.owner = owner;
-        attacker.type_ref = sim.interner.intern("SHOOTER");
+        attacker.set_owner_for_test(owner);
+        attacker.set_type_ref_for_test(sim.interner.intern("SHOOTER"));
         sim.substrate.entities.insert(attacker);
         let _ = sim.reveal(20);
         let attacker = sim.substrate.entities.get_mut(20).unwrap();
@@ -2087,13 +2092,14 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     );
     for id in [11, 31, 10] {
         let entity = fatal.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.health.current, 0);
+        assert_eq!(entity.health.current(), 0);
         assert!(!entity.lifecycle.object_alive);
         assert!(!entity.in_logic_vector);
     }
     let listener = fatal.substrate.entities.get(30).unwrap();
     assert_eq!(
-        listener.health.current, 193,
+        listener.health.current(),
+        193,
         "wood Verses scales 214 to 107"
     );
     let nested_fatal = fatal.substrate.entities.get(31).unwrap();
@@ -2161,7 +2167,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     assert!(boundary.substrate.occupancy.contains_entity(8, 5, 10));
     for id in [30, 31] {
         let listener = boundary.substrate.entities.get(id).unwrap();
-        assert_eq!(listener.health.current, if id == 30 { 300 } else { 107 });
+        assert_eq!(listener.health.current(), if id == 30 { 300 } else { 107 });
     }
     assert!(
         boundary_result
@@ -2353,8 +2359,8 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         5,
         EntityCategory::Aircraft,
     );
-    missile.owner = sim.interner.intern("Americans");
-    missile.type_ref = sim.interner.intern("DMISL");
+    missile.set_owner_for_test(sim.interner.intern("Americans"));
+    missile.set_type_ref_for_test(sim.interner.intern("DMISL"));
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Rocket);
     locomotor
         .rocket_runtime_mut()
@@ -2406,8 +2412,8 @@ fn uninit_removes_all_structure_foundation_cells() {
     );
     // Entity ids must come from the Simulation's own interner — test_default interns
     // into the thread-local test interner, which sim code never resolves against.
-    structure.owner = sim.interner.intern("Americans");
-    structure.type_ref = sim.interner.intern("GAPOWR");
+    structure.set_owner_for_test(sim.interner.intern("Americans"));
+    structure.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
     structure.foundation = "2x2".to_string();
     sim.substrate.entities.insert(structure);
     sim.reveal(10);
@@ -2483,9 +2489,9 @@ fn insert_test_entity_for_owner(
 ) {
     let owner_name = sim.interner.resolve(owner).to_string();
     let mut entity = GameEntity::test_default(stable_id, type_id, &owner_name, 10, 10);
-    entity.owner = owner;
-    entity.type_ref = sim.interner.intern(type_id);
-    entity.category = category;
+    entity.set_owner_for_test(owner);
+    entity.set_type_ref_for_test(sim.interner.intern(type_id));
+    entity.set_category_for_test(category);
     sim.substrate.entities.insert(entity);
     // As its construction would: Add_Tracking.
     sim.update_house_tracking(
@@ -2512,8 +2518,8 @@ fn gsi_05_16_change_owner_moves_live_category_counts_once_and_noops() {
 
     assert_eq!(counts(&sim, old_owner), (0, 0));
     assert_eq!(counts(&sim, new_owner), (1, 1));
-    assert_eq!(sim.substrate.entities.get(1).unwrap().owner, new_owner);
-    assert_eq!(sim.substrate.entities.get(2).unwrap().owner, new_owner);
+    assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
+    assert_eq!(sim.substrate.entities.get(2).unwrap().owner(), new_owner);
 
     sim.change_owner(1, new_owner);
     sim.change_owner(999, old_owner);
@@ -2545,11 +2551,11 @@ fn despawn_entity_clears_live_radio_contacts() {
     let mut despawned = GameEntity::test_default(1, "HTNK", "Americans", 10, 10);
     let mut survivor = GameEntity::test_default(2, "MTNK", "Americans", 11, 10);
 
-    despawned.owner = owner;
-    despawned.type_ref = htnk;
+    despawned.set_owner_for_test(owner);
+    despawned.set_type_ref_for_test(htnk);
     despawned.mark_live_contact_with(2);
-    survivor.owner = owner;
-    survivor.type_ref = mtnk;
+    survivor.set_owner_for_test(owner);
+    survivor.set_type_ref_for_test(mtnk);
     survivor.mark_live_contact_with(1);
     sim.substrate.entities.insert(despawned);
     sim.substrate.entities.insert(survivor);
@@ -2649,7 +2655,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             0,
             0,
             owner,
-            crate::sim::components::Health { current: 100 },
+            crate::sim::combat::Health::new(100),
             type_ref,
             category,
             0,
@@ -2705,7 +2711,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             0,
             0,
             original_building_owner,
-            crate::sim::components::Health { current: 100 },
+            crate::sim::combat::Health::new(100),
             sim.interner.intern("TESTBUILD"),
             EntityCategory::Structure,
             0,
@@ -2757,7 +2763,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             assert!(
                 sim.substrate
                     .occupancy
-                    .contains_entity(1, 0, entity.stable_id),
+                    .contains_entity(1, 0, entity.stable_id()),
                 "{category:?} final Tube leaf runs exactly once and restores occupancy"
             );
             if category == EntityCategory::Unit {
@@ -2785,7 +2791,10 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                     "Tube final does not walk into the adjacent building"
                 );
                 assert_eq!(
-                    sim.substrate.entities.get(2).map(|building| building.owner),
+                    sim.substrate
+                        .entities
+                        .get(2)
+                        .map(|building| building.owner()),
                     Some(original_building_owner),
                     "Tube final does not run a building-entry receiver beside the destination"
                 );
@@ -3282,12 +3291,12 @@ fn sonic_constructor_dead_pointer_link_lives_until_deferred_delete_at_239() {
     let firer_type = sim.interner.intern("DLPH");
     let target_type = sim.interner.intern("TARGET");
     let mut firer = GameEntity::test_default(firer_id, "DLPH", "Americans", 0, 0);
-    firer.owner = owner;
-    firer.type_ref = firer_type;
+    firer.set_owner_for_test(owner);
+    firer.set_type_ref_for_test(firer_type);
     firer.position.sub_x = SimFixed::from_num(0);
     firer.position.sub_y = SimFixed::from_num(0);
     let mut target = GameEntity::test_default(target_id, "TARGET", "Russians", 0, 0);
-    target.type_ref = target_type;
+    target.set_type_ref_for_test(target_type);
     target.position.sub_x = SimFixed::from_num(239);
     target.position.sub_y = SimFixed::from_num(0);
     sim.substrate.entities.insert(firer);
@@ -3320,8 +3329,8 @@ fn a_sonic_wave_aims_at_a_buildings_foundation_centre() {
     let firer_id = sim.allocate_stable_id();
     let target_id = sim.allocate_stable_id();
     let mut firer = GameEntity::test_default(firer_id, "DLPH", "Americans", 2, 2);
-    firer.owner = sim.interner.intern("Americans");
-    firer.type_ref = sim.interner.intern("DLPH");
+    firer.set_owner_for_test(sim.interner.intern("Americans"));
+    firer.set_type_ref_for_test(sim.interner.intern("DLPH"));
     let mut target = GameEntity::test_default_of_category(
         target_id,
         "TARGET",
@@ -3330,7 +3339,7 @@ fn a_sonic_wave_aims_at_a_buildings_foundation_centre() {
         10,
         EntityCategory::Structure,
     );
-    target.type_ref = sim.interner.intern("TARGET");
+    target.set_type_ref_for_test(sim.interner.intern("TARGET"));
     target.foundation = "3x3".to_string();
     sim.substrate.entities.insert(firer);
     sim.substrate.entities.insert(target);
@@ -3367,12 +3376,12 @@ fn sonic_constructor_at_240_registers_then_runs_at_same_pass_tail() {
     let firer_type = sim.interner.intern("DLPH");
     let target_type = sim.interner.intern("TARGET");
     let mut firer = GameEntity::test_default(firer_id, "DLPH", "Americans", 0, 0);
-    firer.owner = owner;
-    firer.type_ref = firer_type;
+    firer.set_owner_for_test(owner);
+    firer.set_type_ref_for_test(firer_type);
     firer.position.sub_x = SimFixed::from_num(0);
     firer.position.sub_y = SimFixed::from_num(0);
     let mut target = GameEntity::test_default(target_id, "TARGET", "Russians", 0, 0);
-    target.type_ref = target_type;
+    target.set_type_ref_for_test(target_type);
     target.position.sub_x = SimFixed::from_num(240);
     target.position.sub_y = SimFixed::from_num(0);
     sim.substrate.entities.insert(firer);
@@ -3418,8 +3427,8 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     let owner = sim.interner.intern("Americans");
     let firer_type = sim.interner.intern("DLPH");
     let mut firer = GameEntity::test_default(firer_id, "DLPH", "Americans", 0, 0);
-    firer.owner = owner;
-    firer.type_ref = firer_type;
+    firer.set_owner_for_test(owner);
+    firer.set_type_ref_for_test(firer_type);
     firer.position.sub_x = SimFixed::from_num(0);
     firer.position.sub_y = SimFixed::from_num(0);
     firer.attack_target = Some(AttackTarget::for_cell(u16::MAX, 7));
@@ -3545,7 +3554,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
             if let Some(target) = sim.substrate.entities.get(id)
                 && !target.dying
             {
-                health_history[index].push(target.health.current);
+                health_history[index].push(target.health.current());
                 alive.push(index);
             }
         }
@@ -3575,7 +3584,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
             .get(survivor)
             .unwrap()
             .health
-            .current,
+            .current(),
         25,
         "the survivor received four bullets"
     );
@@ -3684,7 +3693,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
             .get(later_target_id)
             .expect("later target survives")
             .health
-            .current,
+            .current(),
         93,
         "the later pre-existing Techno completed its FireAt effects",
     );
@@ -3694,7 +3703,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
             .get(wave_receiver_id)
             .expect("Wave receiver survives")
             .health
-            .current,
+            .current(),
         90,
         "the appended Wave still damages its first recorded cell this frame",
     );
@@ -3891,7 +3900,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
             .get(receiver_id)
             .expect("bridge receiver survives")
             .health
-            .current,
+            .current(),
         90,
         "Wave Z 674 meets the level-2 equality threshold 624 and walks AltObject",
     );
@@ -4158,7 +4167,8 @@ fn defeated_house_is_flagged_has_lost_and_its_stragglers_die() {
         .get(1)
         .expect("dead objects wait for the drain");
     assert_eq!(
-        straggler.health.current, 0,
+        straggler.health.current(),
+        0,
         "Blowup_All killed the straggler"
     );
     assert!(straggler.killed_by.is_none(), "no house is credited");
@@ -4251,8 +4261,8 @@ fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
         10,
         EntityCategory::Structure,
     );
-    garrison.owner = civilian;
-    garrison.type_ref = sim.interner.intern("CAGAS01");
+    garrison.set_owner_for_test(civilian);
+    garrison.set_type_ref_for_test(sim.interner.intern("CAGAS01"));
     garrison.tracking_facts = crate::sim::house_tracking::TrackingFacts::insignificant_for_test();
     sim.substrate.entities.insert(garrison);
     sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
@@ -4265,7 +4275,7 @@ fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
     assert_eq!(sim.houses[&player].tracking.buildings(), 0);
     assert!(sim.houses[&player].is_defeated);
     assert!(sim.houses[&enemy].has_won());
-    assert_eq!(sim.entities().get(1).unwrap().health.current, 0);
+    assert_eq!(sim.entities().get(1).unwrap().health.current(), 0);
 }
 
 /// Insert a `MultiplayPassive=true` house — the stock `Neutral` (Civilian) and
@@ -4539,7 +4549,7 @@ fn test_spawn_sets_position_and_facing() {
         assert_eq!(e.position.rx, 30);
         assert_eq!(e.position.ry, 40);
         assert_eq!(e.body_facing.destination(), 0x4000);
-        assert_eq!(sim.interner.resolve(e.type_ref), "HTNK");
+        assert_eq!(sim.interner.resolve(e.type_ref()), "HTNK");
         // The diamond-centre screen projection of this spawn is asserted on
         // the render side (`render::locomotor_visual` boundary tests, F14).
     }
@@ -4959,7 +4969,8 @@ fn test_destroyed_bridge_arms_fall_over_water_below() {
         .get(1)
         .expect("deck unit remains until landing");
     assert_eq!(
-        e.health.current, 300,
+        e.health.current(),
+        300,
         "DropIn never harms — authored full health uses MTNK Strength300"
     );
     assert_eq!(e.position.z, 4, "Location remains at deck height");
@@ -5027,7 +5038,7 @@ fn test_destroyed_bridge_arms_fall_over_overlay_blocked() {
         .entities
         .get(1)
         .expect("deck unit remains until landing");
-    assert_eq!(e.health.current, 300, "DropIn never harms");
+    assert_eq!(e.health.current(), 300, "DropIn never harms");
     assert_eq!(e.position.z, 4);
     assert!(e.was_dropped_as_bomb() && e.is_falling_down());
     assert!(!e.on_bridge);
@@ -5086,7 +5097,7 @@ fn test_destroyed_bridge_arms_fall_over_terrain_object_blocked() {
         .entities
         .get(1)
         .expect("deck unit remains until landing");
-    assert_eq!(e.health.current, 300, "DropIn never harms");
+    assert_eq!(e.health.current(), 300, "DropIn never harms");
     assert_eq!(e.position.z, 4);
     assert!(e.was_dropped_as_bomb() && e.is_falling_down());
     assert!(!e.on_bridge);
@@ -5159,7 +5170,7 @@ fn test_destroyed_bridge_fallout_matches_rebuilt_ground_walkability() {
     );
     // This concrete overlay driver has not invoked structural47DD70.
     let e = sim.substrate.entities.get(1).expect("deck unit survives");
-    assert_eq!(e.health.current, 300, "DropIn never harms");
+    assert_eq!(e.health.current(), 300, "DropIn never harms");
     assert!(!e.on_bridge);
 }
 
@@ -5243,7 +5254,7 @@ fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
         .entities
         .get(id)
         .expect("ground unit retained until pending deletion drains");
-    assert_eq!(e.health.current, 0, "kill_ground_occupants_at zeroed HP");
+    assert_eq!(e.health.current(), 0, "kill_ground_occupants_at zeroed HP");
     assert!(e.dying, "direct receiver completed death before returning");
     assert!(e.attack_target.is_none());
     assert!(crate::sim::movement::motion_query::is_moving(&e) != Some(true));
@@ -6154,7 +6165,7 @@ fn test_stable_ids_are_assigned() {
         .substrate
         .entities
         .values()
-        .map(|e| e.stable_id)
+        .map(|e| e.stable_id())
         .collect();
     ids.sort_unstable();
     assert_eq!(ids, vec![1, 2]);
@@ -6468,7 +6479,7 @@ fn test_deploy_mcv_replaces_vehicle_with_conyard() {
         sim.substrate
             .entities
             .values()
-            .any(|e| e.type_ref == gacnst_id && e.position.rx == 19 && e.position.ry == 21),
+            .any(|e| e.type_ref() == gacnst_id && e.position.rx == 19 && e.position.ry == 21),
         "Construction yard should spawn at gamemd's deploy foundation origin"
     );
 }
@@ -7288,8 +7299,12 @@ fn a_paralyzed_or_warping_in_teleport_infantryman_refuses_a_move_order() {
     let mut sim: Simulation = Simulation::new();
     let id = spawn(&mut sim);
     let frame = sim.session.binary_frame as i32;
-    sim.substrate.entities.get_mut(id).unwrap().paralysis_timer =
-        crate::sim::timer::CdTimer::started(frame, 100);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .parasite
+        .set_paralysis_for_test(crate::sim::timer::CdTimer::started(frame, 100));
     tick(&mut sim, &[order(id, 8)]);
     tick(&mut sim, &[]);
     let entity = sim.substrate.entities.get(id).unwrap();
@@ -7569,7 +7584,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
     let rules = driving_combat_test_rules();
     let mut sim = attack_move_fight(&rules);
     if let Some(e) = sim.substrate.entities.get_mut(2) {
-        e.health.current = 50;
+        e.health.set_for_test(50);
     }
     let grid = PathGrid::new(64, 64);
     let cmd = cmd_envelope(
@@ -7588,7 +7603,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
     // that preceded it. It acquires once its targeting timer runs out, and
     // its first hit kills.
     for _ in 0..200 {
-        if sim.substrate.entities.get(2).unwrap().health.current == 0 {
+        if sim.substrate.entities.get(2).unwrap().health.current() == 0 {
             break;
         }
         let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
@@ -7598,7 +7613,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
         .entities
         .get(2)
         .expect("animated victim remains stored through its death sequence");
-    assert_eq!(victim.health.current, 0);
+    assert_eq!(victim.health.current(), 0);
     assert!(victim.dying);
     assert!(victim.lifecycle.object_alive);
 
@@ -7738,7 +7753,12 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
     assert_eq!(attacker.navigation.nav_com, None);
     assert!(attacker.mega_mission.is_attack_move());
 
-    sim.substrate.entities.get_mut(mcv).unwrap().health.current = 0;
+    sim.substrate
+        .entities
+        .get_mut(mcv)
+        .unwrap()
+        .health
+        .set_for_test(0);
     assert!(!attack_move_onto(&mut sim, mcv));
     assert_eq!(
         sim.substrate
@@ -7821,7 +7841,12 @@ fn test_infantry_attack_move_kills_on_the_way_and_walks_on() {
         sim.substrate.entities.get_mut(id).unwrap().in_playfield = true;
     }
     // One M60 burst (25) kills.
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 20;
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(20);
     let grid = PathGrid::new(64, 64);
     let cmd = cmd_envelope(
         &sim,
@@ -7847,7 +7872,7 @@ fn test_infantry_attack_move_kills_on_the_way_and_walks_on() {
             .substrate
             .entities
             .get(2)
-            .is_none_or(|victim| victim.health.current == 0);
+            .is_none_or(|victim| victim.health.current() == 0);
         if victim_dead
             && (attacker.position.rx, attacker.position.ry) == (30, 20)
             && attacker.navigation.nav_com.is_none()
@@ -7920,7 +7945,12 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
         ],
         None,
     );
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 50;
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(50);
     {
         let tank = sim.substrate.entities.get_mut(1).unwrap();
         tank.attack_target = Some(AttackTarget::new(2));
@@ -7944,7 +7974,7 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
             .substrate
             .entities
             .get(2)
-            .is_some_and(|victim| victim.health.current == 0)
+            .is_some_and(|victim| victim.health.current() == 0)
         {
             break;
         }
@@ -7955,7 +7985,7 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
         .entities
         .get(2)
         .expect("the corpse stays stored for its die sequence");
-    assert_eq!(victim.health.current, 0);
+    assert_eq!(victim.health.current(), 0);
     assert!(victim.lifecycle.object_alive);
     let tank = sim.substrate.entities.get(1).expect("the killer survives");
     assert!(
@@ -8047,7 +8077,7 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
         .entities
         .get(1)
         .expect("the corpse stays stored for its die sequence");
-    assert_eq!(gi.health.current, 0);
+    assert_eq!(gi.health.current(), 0);
     assert!(gi.lifecycle.object_alive);
     assert!(
         gi.attack_target.is_none(),
@@ -8137,7 +8167,7 @@ fn test_fog_revealed_persists_after_unit_moves_away() {
         0,
         0,
         americans_id,
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         e1_id,
         EntityCategory::Infantry,
         0,
@@ -8196,8 +8226,8 @@ fn test_undeploy_conyard_spawns_mcv() {
         .substrate
         .entities
         .values()
-        .find(|e| sim.interner.resolve(e.type_ref) == "GACNST")
-        .map(|e| e.stable_id)
+        .find(|e| sim.interner.resolve(e.type_ref()) == "GACNST")
+        .map(|e| e.stable_id())
         .expect("ConYard should exist after deploy");
 
     // Clear building_up so we can undeploy (can't undeploy during construction).
@@ -8250,7 +8280,7 @@ fn test_undeploy_conyard_spawns_mcv() {
         .substrate
         .entities
         .values()
-        .filter(|e| e.type_ref == amcv_id)
+        .filter(|e| e.type_ref() == amcv_id)
         .map(|e| (e.position.rx, e.position.ry, e.selected))
         .collect();
     assert_eq!(mcvs.len(), 1, "Exactly one MCV should exist after undeploy");
@@ -8468,8 +8498,8 @@ fn insert_revealed_structure(sim: &mut Simulation, id: u64, rx: u16, ry: u16) {
         ry,
         EntityCategory::Structure,
     );
-    s.owner = sim.interner.intern("Americans");
-    s.type_ref = sim.interner.intern("GAPOWR");
+    s.set_owner_for_test(sim.interner.intern("Americans"));
+    s.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
     s.foundation = "2x2".to_string();
     sim.substrate.entities.insert(s);
     sim.reveal(id);
@@ -8547,9 +8577,9 @@ fn mutual_same_tick_death_both_dying_then_flushed() {
 fn animated_death_uninit_waits_for_ordinary_tail_drain() {
     let mut sim = Simulation::new();
     let mut inf = GameEntity::test_default(5, "E1", "Americans", 3, 3);
-    inf.owner = sim.interner.intern("Americans");
-    inf.type_ref = sim.interner.intern("E1");
-    inf.category = EntityCategory::Infantry;
+    inf.set_owner_for_test(sim.interner.intern("Americans"));
+    inf.set_type_ref_for_test(sim.interner.intern("E1"));
+    inf.set_category_for_test(EntityCategory::Infantry);
     inf.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Infantry);
     sim.substrate.entities.insert(inf);
@@ -8571,7 +8601,7 @@ fn animated_death_uninit_waits_for_ordinary_tail_drain() {
 /// merely because it is still stored.
 #[test]
 fn sale_death_is_ignored_before_ordinary_tail_drain() {
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
 
     let ini_str: &str = "\
 [VehicleTypes]\n\n\
@@ -8616,7 +8646,7 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
             EntityCategory::Structure,
         );
         bld.foundation = "2x2".to_string();
-        bld.health = Health { current: 750 };
+        bld.health = Health::new(750);
         sim.substrate.entities.insert(bld);
         sim.reveal(id);
     }
@@ -8674,7 +8704,7 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
 /// repair took its step in the building's own visit, before its death, and none after.
 #[test]
 fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::house_state::HouseState;
 
     let ini_str: &str = "\
@@ -8699,12 +8729,12 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     // `+0x388`. Face it east at the building so the death/drain ordering under
     // test happens on the first tick instead of after a turn-to-fire.
     atk.body_facing.snap(0x4000, 0);
-    atk.health = Health { current: 300 };
+    atk.health = Health::new(300);
     // Damaged, auto-repairing enemy building MTNK destroys this tick at Phase 5.
     let mut bld =
         GameEntity::test_default_of_category(2, "TARGB", "Russia", 7, 5, EntityCategory::Structure);
     bld.foundation = "1x1".to_string();
-    bld.health = Health { current: 50 };
+    bld.health = Health::new(50);
     bld.repairing = true;
     sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");

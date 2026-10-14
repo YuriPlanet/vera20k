@@ -234,12 +234,12 @@ impl ParasiteVictimFacts {
         });
         Self {
             infectable: matches!(
-                target.category,
+                target.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
             ) && !target.lifecycle.in_limbo
                 && target.lifecycle.object_alive
-                && target.health.current != 0
-                && target.parasite_eating_me.is_none()
+                && target.health.current() != 0
+                && target.parasite.eater().is_none()
                 && target_obj.parasiteable
                 && target.bunker_link.installed_in().is_none(),
             on_water_set,
@@ -925,12 +925,11 @@ fn open_transport_weapon(in_open_transport: bool, obj: &ObjectType) -> Option<i3
 
 /// Read the attacker facts from live entity state.
 ///
+/// `drain_target_active` reads the live drain link (`TechnoClass+0x1CC`,
+/// [`Drain`](crate::sim::credit_income::Drain)).
+///
 /// RESIDUAL (GSI-08.02, row 122) — inputs whose native state VERA does not
 /// yet represent are pinned at their constructor value:
-/// - `drain_target_active` = false (`TechnoClass+0x1CC`, written by the
-///   drain link @ `0x0070FD70`). Trigger: a Floating Disc already draining
-///   one building being ordered onto a second Drainable one; effect: the
-///   drain beam is selected again instead of the laser; frequency: rare.
 /// - `is_overpowered_building` = false (`BuildingClass+0x661`, writer
 ///   `BuildingClass::Update 0x0044015B`). This is a DEFERRAL, not an
 ///   approximation: false is the genuine constructor state, so VERA behaves as
@@ -945,7 +944,7 @@ fn open_transport_weapon(in_open_transport: bool, obj: &ObjectType) -> Option<i3
 ///   arms C/D return 0 first for a type without both weapons, as every retail
 ///   `MissileSpawn=` type is.
 pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
-    let kind = TechnoKind::from_category(entity.category);
+    let kind = TechnoKind::from_category(entity.category());
     let deploy_fire_active = match kind {
         // Infantry5218F3..52190B reads Doing27..30, as predicate522510. The
         // separate Unit deployment controller has no Infantry writer.
@@ -965,7 +964,7 @@ pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerF
         deploy_fire_active,
         is_occupied_building: is_occupied(entity, obj),
         // `TechnoClass+0x1CC DrainTarget`, the live drain link (GSI-09.01).
-        drain_target_active: entity.drain_target.is_some(),
+        drain_target_active: entity.drain.target().is_some(),
         // `MissionClass::GetCurrentMission @ 0x005B3040`: current, else queued.
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
         is_overpowered_building: false,
@@ -989,7 +988,7 @@ pub(crate) fn techno_target_facts<'a>(
         .unwrap_or(LandType::Clear.as_index());
     TargetFacts::Techno {
         obj: target_obj,
-        kind: TechnoKind::from_category(target.category),
+        kind: TechnoKind::from_category(target.category()),
         flight: TargetFlight::Live {
             entity: target,
             terrain,
@@ -1134,7 +1133,7 @@ pub(crate) fn occupant_weapon<'a>(
 /// `CanBeOccupied=` (`+0x157B`) and `CanOccupyFire=` (`+0x157C`), holding an
 /// occupant (vt+0x408, `+0x694`).
 pub(crate) fn is_occupied(entity: &GameEntity, obj: &ObjectType) -> bool {
-    entity.category == EntityCategory::Structure
+    entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
         && obj.can_occupy_fire
         && entity
@@ -1317,7 +1316,7 @@ mod tests {
             ))).unwrap();
             let obj = rules.object("DOG").unwrap();
             let mut dog = GameEntity::test_default(1, "DOG", "Americans", 5, 5);
-            dog.category = EntityCategory::Infantry;
+            dog.set_category_for_test(EntityCategory::Infantry);
             let entities = EntityStore::new();
             let interner = crate::sim::intern::test_interner();
             assert_eq!(
@@ -3172,7 +3171,7 @@ IsLocomotor=yes
         let rules = stock_rules();
         let ggi_obj = rules.object("GGI").unwrap();
         let mut ggi = GameEntity::test_default(1, "GGI", "Americans", 1, 1);
-        ggi.category = EntityCategory::Infantry;
+        ggi.set_category_for_test(EntityCategory::Infantry);
         ggi.mission_leaf =
             crate::sim::mission::MissionLeafState::for_entity_category(EntityCategory::Infantry);
         // Original522510 accepts precisely Doing27..30, including the
@@ -3194,7 +3193,7 @@ IsLocomotor=yes
         }
         // Vehicles: only the finished Deployed flag.
         let mut siege = GameEntity::test_default(2, "HTNK", "Americans", 1, 1);
-        siege.category = EntityCategory::Unit;
+        siege.set_category_for_test(EntityCategory::Unit);
         siege.set_unit_simple_deploy_for_test(false, true, false);
         assert!(!attacker_facts(&siege, ggi_obj).deploy_fire_active);
         siege.set_unit_simple_deploy_for_test(true, false, false);
@@ -3224,7 +3223,7 @@ IsLocomotor=yes
         let rock_obj = rules.object("ROCK").unwrap();
         let interner = crate::sim::intern::test_interner();
         let mut rock = GameEntity::test_default(3, "ROCK", "Soviet", 2, 2);
-        rock.category = EntityCategory::Infantry;
+        rock.set_category_for_test(EntityCategory::Infantry);
         let TargetFacts::Techno {
             flight,
             kind,

@@ -134,7 +134,9 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         .entities
         .get_mut(plant)
         .unwrap();
-    plant_entity.health.current = before["actual_hp"].as_i64().unwrap() as i32;
+    plant_entity
+        .health
+        .set_for_test(before["actual_hp"].as_i64().unwrap() as i32);
     plant_entity
         .estimated_health
         .reset(before["estimated_hp"].as_i64().unwrap() as i32);
@@ -205,7 +207,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
                 "power": runtime.simulation.power_states.get(&owner),
             }));
         }
-        if plant_entity.health.current == after["actual_hp"].as_i64().unwrap() as i32 {
+        if plant_entity.health.current() == after["actual_hp"].as_i64().unwrap() as i32 {
             healed_frame.get_or_insert(runtime.simulation.session.binary_frame);
         }
         if healed_frame.is_some() && !runtime.simulation.entities().contains(engineer) {

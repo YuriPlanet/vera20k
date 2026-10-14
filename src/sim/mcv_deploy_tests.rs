@@ -95,7 +95,7 @@ fn one_command_turns_and_converts_all_stock_mcv_types() {
                 .substrate
                 .entities
                 .values()
-                .find(|e| !e.dying && e.category == EntityCategory::Structure)
+                .find(|e| !e.dying && e.category() == EntityCategory::Structure)
                 .unwrap();
             assert_eq!((yard.position.rx, yard.position.ry), (19, 21));
         }
@@ -113,7 +113,7 @@ fn the_cell_the_mcv_stood_on_ends_as_a_yard_cell() {
         .substrate
         .entities
         .values()
-        .find(|e| !e.dying && e.category == EntityCategory::Structure)
+        .find(|e| !e.dying && e.category() == EntityCategory::Structure)
         .unwrap()
         .stable_id();
     let bits = |cell: (u16, u16)| {
@@ -146,7 +146,7 @@ fn a_deployed_yard_completes_its_buildup_after_the_conversion_frame() {
             .substrate
             .entities
             .values()
-            .find(|e| !e.dying && e.category == EntityCategory::Structure);
+            .find(|e| !e.dying && e.category() == EntityCategory::Structure);
         if let Some(yard) = yard {
             converted.get_or_insert(frame);
             if !yard.building_up() {
@@ -309,7 +309,7 @@ fn moving_mcv_finishes_committed_segment_then_deploys_once() {
         .substrate
         .entities
         .values()
-        .find(|e| !e.dying && e.category == EntityCategory::Structure)
+        .find(|e| !e.dying && e.category() == EntityCategory::Structure)
         .unwrap();
     assert!(yard.position.rx < 29, "must abandon the old destination");
     assert!(
@@ -973,7 +973,7 @@ fn retail_dustbowl_the_computer_yard_places_its_planned_buildings() {
                     !e.dying
                         && !e.lifecycle.in_limbo
                         && e.owner() == owner
-                        && e.category == crate::map::entities::EntityCategory::Structure
+                        && e.category() == crate::map::entities::EntityCategory::Structure
                         && sim.interner.resolve(e.type_ref()) != "NACNST"
                 })
                 .map(|e| {
@@ -1050,7 +1050,7 @@ fn retail_dustbowl_the_computer_yard_places_a_base_defense() {
                 !e.dying
                     && !e.lifecycle.in_limbo
                     && e.owner() == owner
-                    && e.category == crate::map::entities::EntityCategory::Structure
+                    && e.category() == crate::map::entities::EntityCategory::Structure
             })
             .map(|e| {
                 (
@@ -1246,7 +1246,7 @@ fn retail_dustbowl_a_computer_without_its_yard_sells_off_and_hunts() {
         .entities
         .values()
         .find(|e| !e.dying && e.owner() == owner && sim.interner.resolve(e.type_ref()) == "NACNST")
-        .map(|e| (e.stable_id(), e.health.current))
+        .map(|e| (e.stable_id(), e.health.current()))
         .expect("the yard");
 
     // The yard goes, with no attacker (so no building attack is noted).

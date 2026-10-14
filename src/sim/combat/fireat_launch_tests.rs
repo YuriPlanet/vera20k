@@ -659,7 +659,7 @@ impl Duel {
             .substrate
             .entities
             .get(id)
-            .map_or(0, |entity| entity.health.current)
+            .map_or(0, |entity| entity.health.current())
     }
 
     fn location(&self, id: u64) -> ProjectileCoord {
@@ -681,7 +681,7 @@ impl Duel {
         format!(
             "{id}: location={:?}, health={}, mission={:?}, target={:?}, nav={:?}, moving={:?}, fraction={:?}, last_fire={}",
             self.location(id),
-            actor.health.current,
+            actor.health.current(),
             actor.mission,
             actor.attack_target,
             actor.navigation.nav_com,

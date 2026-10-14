@@ -167,14 +167,16 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     let contact = sim.allocate_stable_id();
     let mut actor =
         GameEntity::test_default_of_category(contact, "HTNK", "A", 10, 10, EntityCategory::Unit);
-    actor.type_ref = sim.interner.intern("HTNK");
-    actor.owner = sim.interner.intern("A");
+    actor.set_type_ref_for_test(sim.interner.intern("HTNK"));
+    actor.set_owner_for_test(sim.interner.intern("A"));
     sim.substrate.entities.insert(actor);
     let mut entity =
         GameEntity::test_default_of_category(id, building, "A", 6, 9, EntityCategory::Structure);
-    entity.type_ref = sim.interner.intern(building);
-    entity.owner = sim.interner.intern("A");
-    entity.health.current = case["health"].as_i64().unwrap_or(1200) as i32;
+    entity.set_type_ref_for_test(sim.interner.intern(building));
+    entity.set_owner_for_test(sim.interner.intern("A"));
+    entity
+        .health
+        .set_for_test(case["health"].as_i64().unwrap_or(1200) as i32);
     entity.install_native_stage_fixture(StageClass::constructed(200));
     entity.mission_leaf = MissionLeafState::constructed(EntityCategory::Structure, 200);
     entity
@@ -231,7 +233,7 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     entity.lifecycle.object_alive = case["alive"].as_i64().unwrap_or(1) != 0;
     if let Some(health) = case["callback_health"].as_i64() {
-        entity.health.current = health as i32;
+        entity.health.set_for_test(health as i32);
     }
     if case["unmatched"] == true {
         entity.building_art.anim_slots[usize::from(slot)] = None;

@@ -391,7 +391,7 @@ fn place_slave(
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     // The oracle writes the row's health to both Strength and EstimatedHealth.
     let health = node["health"].as_i64().unwrap_or(125) as i32;
-    entity.health.current = health;
+    entity.health.set_for_test(health);
     entity.estimated_health.reset(health);
     if let Some(doing) = node["doing"].as_i64() {
         entity
@@ -621,7 +621,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: Storage"
         );
         assert_eq!(
-            i64::from(entity.health.current),
+            i64::from(entity.health.current()),
             expected["health"][0].as_i64().unwrap(),
             "{context}: Strength"
         );

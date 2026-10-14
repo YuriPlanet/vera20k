@@ -449,7 +449,14 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
                 s.sim.session.binary_frame,
             )
             .unwrap();
-        let initial_health = s.sim.substrate.entities.get(victim).unwrap().health.current;
+        let initial_health = s
+            .sim
+            .substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .health
+            .current();
         let miner_id = s.miner;
         retail_order(
             &mut s,
@@ -464,7 +471,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
         for _ in 0..400 {
             step(&mut s);
             if let Some(target) = s.sim.substrate.entities.get(victim) {
-                damaged |= target.health.current < initial_health;
+                damaged |= target.health.current() < initial_health;
             }
             let miner = s.sim.substrate.entities.get(s.miner).unwrap();
             if miner.mission.current().known() == Some(MissionType::Attack) {
@@ -502,7 +509,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
                 e.attack_target.as_ref().map(|t| t.target),
             )),
             s.sim.substrate.entities.get(victim).map(|e| (
-                e.health.current,
+                e.health.current(),
                 e.dying,
                 e.is_object_alive(),
                 e.infantry_sprite_pose(),

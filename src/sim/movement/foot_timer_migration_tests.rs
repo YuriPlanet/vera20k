@@ -8,7 +8,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{DriveCoord, FootPathQueue, Health};
+use crate::sim::combat::Health;
+use crate::sim::components::{DriveCoord, FootPathQueue};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::occupancy::OccupancyGrid;
@@ -44,7 +45,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         if kind == LocomotorKind::Walk {
             EntityCategory::Infantry

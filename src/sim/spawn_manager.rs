@@ -1033,7 +1033,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get(self.owner_id)
-            .map_or(0, |owner| owner.health.current)
+            .map_or(0, |owner| owner.health.current())
     }
 
     fn owner_is_alive(&self) -> bool {
@@ -1101,7 +1101,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get(child)
-            .map_or(0, |child| child.health.current)
+            .map_or(0, |child| child.health.current())
     }
 
     fn child_tracked(&self, child: u64) -> bool {
@@ -1260,7 +1260,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             return;
         };
         if let Some(child) = self.sim.substrate.entities.get_mut(child) {
-            child.health.current = strength;
+            child.health.set(strength);
             child.estimated_health.reset(strength);
             if let Some(ammo) = child.aircraft_ammo.as_mut() {
                 ammo.current = ammo.max;

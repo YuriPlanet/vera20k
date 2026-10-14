@@ -324,7 +324,7 @@ fn candidates(
         .substrate
         .entities
         .values()
-        .filter(|entity| entity.category == class && entity.owner() == owner)
+        .filter(|entity| entity.category() == class && entity.owner() == owner)
         .filter_map(|entity| Some((type_index(entity.type_ref())?, entity)));
     let money = crate::sim::credit_income::available_money(sim, owner);
     let class_type = |index: usize| rules.type_array_at(category, index as i32);

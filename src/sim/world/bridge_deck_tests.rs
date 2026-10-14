@@ -472,7 +472,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
                 crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
-                sim.substrate.entities.get(hut).unwrap().health.current,
+                sim.substrate.entities.get(hut).unwrap().health.current(),
                 1000 - 450,
                 "the hut takes the blast"
             );

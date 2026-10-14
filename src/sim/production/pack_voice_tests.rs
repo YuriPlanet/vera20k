@@ -1,7 +1,7 @@
 //! Stock Slave Miner pack-up through the production Rules and Selling owners.
 
 use super::*;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use serde_json::json;
@@ -35,7 +35,7 @@ fn retail_slave_miner_selling_stage_queues_its_pack_voice_before_deploy_sound() 
             0,
             0,
             owner,
-            Health { current: 2000 },
+            Health::new(2000),
             type_ref,
             EntityCategory::Structure,
             0,

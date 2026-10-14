@@ -104,7 +104,7 @@ impl Simulation {
         let entity = self.entities().get(entity_id)?;
         let human_player = self.house_is_human_player(entity.owner());
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-        if entity.category == EntityCategory::Structure
+        if entity.category() == EntityCategory::Structure
             && object.resource_gatherer
             && object.resource_destination
             && let Some(TargetKind::Cell(x, y)) = entity.archive_target()
@@ -116,7 +116,7 @@ impl Simulation {
         let request = if entity.deploy_voice_suppressed() {
             None
         } else {
-            let sound = if entity.category == EntityCategory::Infantry && entity.is_deployed() {
+            let sound = if entity.category() == EntityCategory::Infantry && entity.is_deployed() {
                 object.voice_undeploy()
             } else {
                 object.voice_deploy()

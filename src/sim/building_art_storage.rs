@@ -99,7 +99,7 @@ impl Simulation {
         let Some(entity) = self.entities().get(id) else {
             return;
         };
-        if entity.category != crate::map::entities::EntityCategory::Structure {
+        if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
@@ -217,9 +217,9 @@ mod tests {
                 2,
                 crate::map::entities::EntityCategory::Structure,
             );
-            entity.type_ref = sim.interner.intern("B");
-            entity.owner = sim.interner.intern("A");
-            entity.health.current = current;
+            entity.set_type_ref_for_test(sim.interner.intern("B"));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(current);
             entity.lifecycle.in_limbo = false;
             entity.building_art.damage_state_active = current <= 50;
             entity.building_art.storage = BuildingStorage {

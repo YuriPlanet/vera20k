@@ -47,7 +47,7 @@ fn insert(sim: &mut Simulation, id: u64, name: &str, category: EntityCategory, p
         0,
         0,
         owner,
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         kind,
         category,
         0,
@@ -431,7 +431,7 @@ fn retail_harrier_sent_onto_a_tank_stops_beside_it_and_crashes_without_an_airfie
         if navs.last().is_none_or(|&(_, last)| last != nav) {
             navs.push((frame, nav));
         }
-        if entity.health.current == 0 {
+        if entity.health.current() == 0 {
             crashed.get_or_insert((frame, (entity.position.rx, entity.position.ry)));
             continue;
         }

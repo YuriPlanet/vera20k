@@ -92,7 +92,7 @@ pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -
         // Log owned structures and their factory status.
         for e in sim.substrate.entities.values() {
             if sim.interner.resolve(e.owner()).eq_ignore_ascii_case(owner)
-                && e.category == crate::map::entities::EntityCategory::Structure
+                && e.category() == crate::map::entities::EntityCategory::Structure
             {
                 let ts = sim.interner.resolve(e.type_ref());
                 log::warn!(

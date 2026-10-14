@@ -7,7 +7,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::sound_ini::SoundRegistry;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::world::TriggerInputs;
@@ -71,7 +71,7 @@ fn insert_structure(sim: &mut Simulation, id: u64, type_name: &str, cell: (u16, 
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         EntityCategory::Structure,
         0,
@@ -310,7 +310,7 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         type_ref,
         EntityCategory::Unit,
         0,

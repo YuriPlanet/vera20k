@@ -81,12 +81,12 @@ fn one_tick_acquisition_latency_first_tick_no_fire() {
         e.attack_target = Some(AttackTarget::new(2));
     }
 
-    let initial_target_health = sim.substrate.entities.get(2).unwrap().health.current;
+    let initial_target_health = sim.substrate.entities.get(2).unwrap().health.current();
     sim.advance_tick(&[], Some(&rules), None, None, 67);
 
     // Target should still be alive — combat ran before turret rotation, so
     // turret was at facing 0 (body), not aligned with target.
-    let target_health_after_one_tick = sim.substrate.entities.get(2).unwrap().health.current;
+    let target_health_after_one_tick = sim.substrate.entities.get(2).unwrap().health.current();
     assert_eq!(
         target_health_after_one_tick, initial_target_health,
         "First tick after acquisition should not fire (1-tick latency)"
@@ -313,14 +313,14 @@ fn unit_authoritative_fire_kills_target_via_advance_tick() {
         .get_mut(2)
         .unwrap()
         .mark_live_contact_with(1);
-    let start_hp = sim.substrate.entities.get(2).unwrap().health.current;
+    let start_hp = sim.substrate.entities.get(2).unwrap().health.current();
     let mut fired = false;
     let mut target_gone = false;
     for _ in 0..400 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
         match sim.substrate.entities.get(2) {
             Some(t) => {
-                if t.health.current < start_hp {
+                if t.health.current() < start_hp {
                     fired = true;
                 }
             }
@@ -429,7 +429,12 @@ fn removed_attacker_returns_to_body_same_tick() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 5);
     spawn_target(&mut sim, 2, 5, 8);
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 0; // dead at resolve
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(0); // dead at resolve
     use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
@@ -462,7 +467,12 @@ fn removed_attacker_holds_its_turret_through_the_dwell() {
         let mut sim = Simulation::new();
         spawn_turreted(&mut sim, 1, 5, 5, 5);
         spawn_target(&mut sim, 2, 5, 8);
-        sim.substrate.entities.get_mut(2).unwrap().health.current = 0;
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .health
+            .set_for_test(0);
         use_test_interner(&mut sim);
         let rules = rules_with_mtnk_rot(5);
         sim.session.binary_frame = 100;
@@ -492,7 +502,12 @@ fn kill_tick_unit_facing_holds_target() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100);
     spawn_target(&mut sim, 2, 5, 8);
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 10; // lethal: Damage=65
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(10); // lethal: Damage=65
     use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
@@ -519,7 +534,7 @@ fn kill_tick_unit_facing_holds_target() {
         .substrate
         .entities
         .get(2)
-        .map(|t| t.health.current == 0 || t.dying)
+        .map(|t| t.health.current() == 0 || t.dying)
         .unwrap_or(true);
     assert!(
         target_dead,
@@ -560,7 +575,12 @@ fn kill_tick_barrel_holds_target_facing() {
     // first shot lethal.
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing =
         Some(FacingClass::new(toward_target, 100));
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 10; // Damage=65
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(10); // Damage=65
 
     sim.advance_tick(&[], Some(&rules), None, None, 67);
 
@@ -569,7 +589,7 @@ fn kill_tick_barrel_holds_target_facing() {
         sim.substrate
             .entities
             .get(2)
-            .map(|t| t.health.current == 0 || t.dying)
+            .map(|t| t.health.current() == 0 || t.dying)
             .unwrap_or(true),
         "precondition: the target died on this tick"
     );
@@ -710,7 +730,12 @@ fn co_attacker_facing_matches_killer() {
     };
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing =
         Some(FacingClass::new(killer_aim, 100));
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 10;
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(10);
 
     sim.advance_tick(&[], Some(&rules), None, None, 67);
 
@@ -718,7 +743,7 @@ fn co_attacker_facing_matches_killer() {
         sim.substrate
             .entities
             .get(2)
-            .map(|t| t.health.current == 0 || t.dying)
+            .map(|t| t.health.current() == 0 || t.dying)
             .unwrap_or(true),
         "precondition: the target died on this tick"
     );
@@ -761,7 +786,12 @@ fn save_load_round_trip_on_kill_tick() {
     };
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing =
         Some(FacingClass::new(toward_target, 100));
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 10;
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .health
+        .set_for_test(10);
 
     sim.advance_tick(&[], Some(&rules), None, None, 67); // kill tick
 
@@ -928,11 +958,11 @@ fn gsi_08_04_turretless_vehicle_turns_its_hull_before_it_fires() {
         "assigning a target must not rotate the hull by itself"
     );
 
-    let start_hp = sim.substrate.entities.get(2).unwrap().health.current;
+    let start_hp = sim.substrate.entities.get(2).unwrap().health.current();
     for tick in 0..8 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
         assert_eq!(
-            sim.substrate.entities.get(2).unwrap().health.current,
+            sim.substrate.entities.get(2).unwrap().health.current(),
             start_hp,
             "tick {tick}: an off-axis turretless firer must be refused"
         );
@@ -956,7 +986,7 @@ fn gsi_08_04_turretless_vehicle_turns_its_hull_before_it_fires() {
             .substrate
             .entities
             .get(2)
-            .is_none_or(|t| t.health.current < start_hp)
+            .is_none_or(|t| t.health.current() < start_hp)
         {
             fired = true;
             break;
@@ -1666,7 +1696,7 @@ fn gsi_08_04_no_shot_lands_while_the_turret_is_still_swinging() {
     let rules = rules_with_mtnk_rot(1);
     sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
 
-    let start_hp = sim.substrate.entities.get(2).unwrap().health.current;
+    let start_hp = sim.substrate.entities.get(2).unwrap().health.current();
     let mut fired_on_tick = None;
     for tick in 0..400u32 {
         let frame = sim.session.binary_frame;
@@ -1683,7 +1713,7 @@ fn gsi_08_04_no_shot_lands_while_the_turret_is_still_swinging() {
             .substrate
             .entities
             .get(2)
-            .map_or(0, |target| target.health.current);
+            .map_or(0, |target| target.health.current());
         if hp < start_hp {
             assert!(
                 !rotating,
@@ -1739,7 +1769,7 @@ fn gsi_08_04_a_two_step_re_aim_is_refused_for_the_whole_arc_not_only_its_first_f
         attacker.barrel_facing = Some(FacingClass::new(desired.wrapping_add(0x0A00), 5));
     }
 
-    let start_hp = sim.substrate.entities.get(2).unwrap().health.current;
+    let start_hp = sim.substrate.entities.get(2).unwrap().health.current();
     let mut fired_on_tick = None;
     let mut aimed_on_tick = None;
     for tick in 0..16u32 {
@@ -1755,7 +1785,7 @@ fn gsi_08_04_a_two_step_re_aim_is_refused_for_the_whole_arc_not_only_its_first_f
             .substrate
             .entities
             .get(2)
-            .map_or(0, |target| target.health.current);
+            .map_or(0, |target| target.health.current());
         if hp < start_hp {
             fired_on_tick = Some(tick);
             break;

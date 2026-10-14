@@ -42,7 +42,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     .unwrap();
     let mut sim = Simulation::with_seed(0);
     let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-    entity.category = EntityCategory::Aircraft;
+    entity.set_category_for_test(EntityCategory::Aircraft);
     entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(0, 1, false);
     entity
         .mission
@@ -86,9 +86,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             off_108: 60,
         });
         let mut infantry = GameEntity::test_default(2, "E1", "Americans", 10, 10);
-        infantry.owner = sim.interner.intern("Americans");
-        infantry.type_ref = sim.interner.intern("E1");
-        infantry.category = EntityCategory::Infantry;
+        infantry.set_owner_for_test(sim.interner.intern("Americans"));
+        infantry.set_type_ref_for_test(sim.interner.intern("E1"));
+        infantry.set_category_for_test(EntityCategory::Infantry);
         infantry.is_voxel = false;
         infantry.sub_cell = Some(2);
         infantry.passenger_role = crate::sim::passenger::PassengerRole::Inside {

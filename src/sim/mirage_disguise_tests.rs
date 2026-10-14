@@ -93,13 +93,13 @@ fn fixture(row: &Value) -> Simulation {
     let [x, y, z] = std::array::from_fn(|i| signed(&before["xyz"][i]));
     let mut entity =
         GameEntity::test_default(1, "MGTK", "Americans", (x / 256) as u16, (y / 256) as u16);
-    entity.owner = owner;
-    entity.type_ref = type_ref;
-    entity.category = EntityCategory::Unit;
+    entity.set_owner_for_test(owner);
+    entity.set_type_ref_for_test(type_ref);
+    entity.set_category_for_test(EntityCategory::Unit);
     entity.position.sub_x = SimFixed::from_num(x % 256);
     entity.position.sub_y = SimFixed::from_num(y % 256);
     entity.position.exact_z_leptons = Some(z);
-    entity.health.current = signed(&before["health"]);
+    entity.health.set_for_test(signed(&before["health"]));
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     entity.disguise = Some(state_from_native(&mut sim, before));
     let origin = (entity.position.rx, entity.position.ry);
@@ -138,9 +138,9 @@ fn add_neighbor(
         "MTNK"
     };
     let mut entity = GameEntity::test_default(id, kind, owner, cell.0, cell.1);
-    entity.owner = sim.interner.intern(owner);
-    entity.type_ref = sim.interner.intern(kind);
-    entity.category = category;
+    entity.set_owner_for_test(sim.interner.intern(owner));
+    entity.set_type_ref_for_test(sim.interner.intern(kind));
+    entity.set_category_for_test(category);
     sim.substrate.entities.insert(entity);
     sim.substrate.occupancy.add(
         cell.0,
@@ -377,9 +377,7 @@ fn native_mirage_constructor_initializes_identity_and_timer_frame() {
         0,
         0,
         owner,
-        crate::sim::components::Health {
-            current: signed(&expected["health"]),
-        },
+        crate::sim::combat::Health::new(signed(&expected["health"])),
         kind,
         EntityCategory::Unit,
         0,

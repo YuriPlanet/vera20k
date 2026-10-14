@@ -50,13 +50,13 @@ pub(crate) fn candidate(input: &Value, id: u64, type_name: &str) -> GameEntity {
         _ => unreachable!(),
     };
     let mut entity = GameEntity::test_default(id, type_name, "Victim", 0, 0);
-    entity.category = if kind == LocomotorKind::Walk {
+    entity.set_category_for_test(if kind == LocomotorKind::Walk {
         EntityCategory::Infantry
     } else {
         EntityCategory::Unit
-    };
+    });
     entity.mission_leaf =
-        crate::sim::mission::MissionLeafState::for_entity_category(entity.category);
+        crate::sim::mission::MissionLeafState::for_entity_category(entity.category());
     entity.position.rx = (current.x / 256).clamp(0, i32::from(u16::MAX)) as u16;
     entity.position.ry = (current.y / 256).clamp(0, i32::from(u16::MAX)) as u16;
     entity.position.sub_x = SimFixed::from_num(current.x - i32::from(entity.position.rx) * 256);

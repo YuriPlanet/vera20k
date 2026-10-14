@@ -78,7 +78,7 @@ fn radar_visibility_consumes_live_stock_cloak_and_sensor_lifecycle() {
             &rules,
         )
         .unwrap();
-    let entering_owner = sim.substrate.entities.get(entering).unwrap().owner;
+    let entering_owner = sim.substrate.entities.get(entering).unwrap().owner();
     sim.fog
         .mark_visible_for_owner(local, entering_cell.0, entering_cell.1);
     sim.fog

@@ -577,7 +577,7 @@ mod tests {
         entities.insert(mobile);
         let mut building =
             crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 60, 60);
-        building.category = crate::map::entities::EntityCategory::Structure;
+        building.set_category_for_test(crate::map::entities::EntityCategory::Structure);
         building.foundation = "4x3".to_string();
         building.position.sub_x = crate::util::fixed_math::SimFixed::from_num(200);
         building.position.sub_y = crate::util::fixed_math::SimFixed::from_num(33);

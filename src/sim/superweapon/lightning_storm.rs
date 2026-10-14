@@ -738,7 +738,7 @@ impl StrikeCell {
             nearest_is_infantry: nearest
                 .and_then(|id| sim.substrate.entities.get(id))
                 .is_some_and(|object| {
-                    object.category == crate::map::entities::EntityCategory::Infantry
+                    object.category() == crate::map::entities::EntityCategory::Infantry
                 }),
             level: cell.level,
             land: crate::sim::combat::detonation_anim::land_at(sim, coordinate),

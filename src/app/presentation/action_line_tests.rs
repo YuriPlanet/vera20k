@@ -95,8 +95,8 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
         let actor_input = actors[actor_index];
         let mut actor =
             GameEntity::test_default(construction_index as u64 + 1, "MTNK", "Americans", 20, 20);
-        actor.owner = owner;
-        actor.type_ref = sim.interner.intern("MTNK");
+        actor.set_owner_for_test(owner);
+        actor.set_type_ref_for_test(sim.interner.intern("MTNK"));
         actor.selected = actor_input["selected"].as_bool().unwrap_or(true);
         actor.on_bridge = actor_input["on_bridge"].as_bool().unwrap_or(false);
         let [x, y, z] = point(&actor_input["source"]);
@@ -271,11 +271,11 @@ fn drawing_fixture(
         .as_bool()
         .unwrap()
         .then(|| AttackTarget::new(2));
-    let owner = actor.owner;
-    let type_ref = actor.type_ref;
+    let owner = actor.owner();
+    let type_ref = actor.type_ref();
     let mut target = GameEntity::test_default(2, "MTNK", "Americans", 20, 20);
-    target.owner = owner;
-    target.type_ref = type_ref;
+    target.set_owner_for_test(owner);
+    target.set_type_ref_for_test(type_ref);
     target.selected = false;
     let [x, y, z] = point(&input["target_xyz"]);
     crate::sim::movement::ground_pose::put_location(&mut target.position, DriveCoord { x, y, z });
@@ -403,7 +403,7 @@ pub(super) fn workload_fixture(
         // This is synthetic load setup, before measurement; no gameplay tick
         // or identity-lifecycle equivalence is claimed for it.
         let mut target = sim.entities_mut().remove(2).unwrap();
-        target.stable_id = 20_001;
+        target.set_stable_id_for_test(20_001);
         sim.entities_mut().insert(target);
         sim.entities_mut().get_mut(1).unwrap().attack_target =
             Some(crate::sim::combat::AttackTarget::new(20_001));

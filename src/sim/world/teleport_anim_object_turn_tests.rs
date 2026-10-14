@@ -85,7 +85,7 @@ fn relocating_owner(category: EntityCategory, type_name: &str, target: (u16, u16
         2,
         0,
         sim.intern("Americans"),
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         sim.intern(type_name),
         category,
         0,

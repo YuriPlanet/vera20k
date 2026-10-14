@@ -219,7 +219,7 @@ pub(crate) fn live_cell_rejects_tiberium(
         let Some(entity) = context.entities.get(occupant.entity_id) else {
             continue;
         };
-        if entity.category != EntityCategory::Structure || !entity.is_alive() {
+        if entity.category() != EntityCategory::Structure || !entity.is_alive() {
             continue;
         }
         let type_name = context.interner.resolve(entity.type_ref());

@@ -135,7 +135,7 @@ fn admit_attacker_fire<'r>(
     let target_data: Option<(u16, u16, SimFixed, SimFixed, i32, InternedId)> = match snap.target {
         TargetKind::Entity(target_id) => world.substrate.entities.get(target_id).map(|t| {
             let (trx, try_, tsx, tsy) = target_coords(t);
-            (trx, try_, tsx, tsy, t.health.current, t.type_ref())
+            (trx, try_, tsx, tsy, t.health.current(), t.type_ref())
         }),
         TargetKind::Cell(rx, ry) => {
             let (trx, try_, tsx, tsy) = cell_center_coords(rx, ry);
@@ -528,7 +528,7 @@ fn admit_attacker_fire<'r>(
 /// `0x007365BB`), so a crashing Unit's wreck still reaches it at Health 0.
 fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
     world.substrate.entities.get(id).is_some_and(|entity| {
-        entity.category == EntityCategory::Unit && entity.is_ai_alive() && !entity.is_warped_out()
+        entity.category() == EntityCategory::Unit && entity.is_ai_alive() && !entity.is_warped_out()
     })
 }
 
@@ -562,7 +562,7 @@ fn heal_weapon_drops_target(
         .substrate
         .entities
         .get(id)
-        .filter(|target| target.category == class)
+        .filter(|target| target.category() == class)
     else {
         return true;
     };
@@ -839,7 +839,7 @@ fn fireat_damage(
         occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
-            .filter(|firer| firer.category != EntityCategory::Structure)
+            .filter(|firer| firer.category() != EntityCategory::Structure)
             .and_then(|firer| firer.bunker_link.installed_in())
             .map(|_| f32_bits(multipliers.bunker_damage_multiplier)),
         open_topped: firer
@@ -888,7 +888,7 @@ fn reveal_on_fire(world: &mut Simulation, rules: &RuleSet, firer_id: u64, target
         || (world.session.current_house == Some(house)
             && firer.discovery.discovered_by_current_house);
     if owned || discovered {
-        if owned && firer.category == EntityCategory::Aircraft {
+        if owned && firer.category() == EntityCategory::Aircraft {
             return;
         }
         // `0x006FF692..0x006FF6B4`: IsShrouded, else `0x005865E0`, which is
@@ -1341,7 +1341,7 @@ pub(super) fn emit_admitted_fire(
                 TargetKind::Entity(id) => world.substrate.entities.get(id),
                 TargetKind::Cell(_, _) => None,
             })
-            .filter(|target| target.category == EntityCategory::Structure)
+            .filter(|target| target.category() == EntityCategory::Structure)
             .and_then(|target| rules.object(world.interner.resolve(target.type_ref())))
             .map(|target_type| {
                 rules
@@ -1432,7 +1432,7 @@ pub(super) fn emit_admitted_fire(
         .substrate
         .entities
         .get(snap.stable_id)
-        .map_or(0, |firer| firer.techno_ctor_random_word);
+        .map_or(0, |firer| firer.techno_ctor_random_word());
     let report_sound_id = per_shot_report(weapon, obj.is_gattling, sequence)
         .map(|report| world.interner.intern(report));
     let in_open_transport = world
@@ -1683,7 +1683,7 @@ fn fireat_estimate_debit(
         return;
     };
     let foot = matches!(
-        firer.category,
+        firer.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     );
     let marked = foot
@@ -2187,7 +2187,7 @@ pub(crate) fn tick_combat(
         // Buildings, Units and Infantry already fired in their live Logic slots.
         // Component fixtures below invoke that same slot without a world pass.
         if matches!(
-            entity.category,
+            entity.category(),
             EntityCategory::Structure | EntityCategory::Unit | EntityCategory::Infantry
         ) {
             continue;
@@ -2202,7 +2202,7 @@ pub(crate) fn tick_combat(
         // Every Infantry already fired at its own51BF59 slot. This also
         // excludes newly born actors that never received an AI visit; the
         // legacy batch cannot grant them an extra end-of-frame firing turn.
-        if entity.category == EntityCategory::Infantry || !attacker_reaches_fire(entity) {
+        if entity.category() == EntityCategory::Infantry || !attacker_reaches_fire(entity) {
             continue;
         }
         // An aircraft fires only in the Mission_Attack strike visit its
@@ -2210,7 +2210,7 @@ pub(crate) fn tick_combat(
         // opens with its own prefix: AircraftClass::AI has no fire slot of
         // its own, and its other missions fire nothing.
         let requested = fire_requests.aircraft.contains(&id);
-        if entity.category == EntityCategory::Aircraft && !requested {
+        if entity.category() == EntityCategory::Aircraft && !requested {
             continue;
         }
         let Some(attack_target) = shot_target(entity, None) else {
@@ -2237,7 +2237,7 @@ pub(crate) fn tick_combat(
             (!fire_suppressed.contains(&id)
                 && world.substrate.entities.get(id).is_some_and(|actor| {
                     matches!(
-                        actor.category,
+                        actor.category(),
                         EntityCategory::Unit | EntityCategory::Infantry
                     ) && actor.is_ai_alive()
                         && !actor.lifecycle.in_limbo
@@ -2261,7 +2261,7 @@ pub(crate) fn tick_combat(
             #[cfg(test)]
             Visit::Foot(id) => {
                 let actor = world.substrate.entities.get_mut(id).unwrap();
-                let visit = if actor.category == EntityCategory::Unit {
+                let visit = if actor.category() == EntityCategory::Unit {
                     FireVisit::UnitTarget(id)
                 } else {
                     if actor.mission_leaf.as_infantry().is_none() {
@@ -2385,7 +2385,7 @@ pub(crate) fn tick_combat(
                 // Buildings never take radiation damage; corpses, limbo
                 // (transported) and objects in the air are exempt.
                 // FootClass::AI asks vt+0x54, IsInAir (`0x004DA588`).
-                if entity.category == EntityCategory::Structure
+                if entity.category() == EntityCategory::Structure
                     || entity.dying
                     || !entity.is_alive()
                     || entity.immune_to_radiation
@@ -2527,8 +2527,8 @@ mod reveal_on_fire_tests {
         }
         for (id, owner, rx) in [(1, "Soviet", 10), (2, "Americans", 12)] {
             let mut entity = GameEntity::test_default(id, "MTNK", owner, rx, 10);
-            entity.owner = sim.interner.intern(owner);
-            entity.type_ref = sim.interner.intern("MTNK");
+            entity.set_owner_for_test(sim.interner.intern(owner));
+            entity.set_type_ref_for_test(sim.interner.intern("MTNK"));
             sim.substrate.entities.insert(entity);
         }
         (sim, rules)

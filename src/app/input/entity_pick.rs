@@ -128,7 +128,7 @@ pub(crate) fn hover_target_at_point(
         if !pick_admits_object(entity, fog, player) {
             continue;
         }
-        let is_structure = entity.category == EntityCategory::Structure;
+        let is_structure = entity.category() == EntityCategory::Structure;
         let type_str = sim.interner.resolve(entity.type_ref());
         let owner_str = sim.interner.resolve(entity.owner());
         let (sx, sy) = if is_structure {
@@ -426,7 +426,7 @@ pub(crate) fn band_rect_contains_drawn_object(
         if !(sx >= min_x && sx <= max_x && sy >= min_y && sy <= max_y) {
             return false;
         }
-        if entity.category == EntityCategory::Structure {
+        if entity.category() == EntityCategory::Structure {
             // Bulk-registered, shroud or no shroud.
             return true;
         }
@@ -775,7 +775,7 @@ fn type_select_candidates(
                 || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
                 || !seeds.contains(&entity.type_ref())
                 || (screen_only
-                    && entity.category != EntityCategory::Structure
+                    && entity.category() != EntityCategory::Structure
                     && !is_drawn_for_local_owner(fog, local_owner, owner, entity, local_owner_id))
             {
                 return None;
@@ -783,7 +783,7 @@ fn type_select_candidates(
             let dynamic = selection_dynamic_prefix(entity, entities, rules, interner)
                 && type_is_selectable(type_id, rules)
                 && (!require_playfield_membership || entity.in_playfield);
-            let undeploying_building_fallback = entity.category == EntityCategory::Structure
+            let undeploying_building_fallback = entity.category() == EntityCategory::Structure
                 && rules
                     .and_then(|r| r.object(type_id))
                     .is_some_and(|object| object.undeploys_into.is_some());
@@ -1101,7 +1101,7 @@ pub(crate) fn selection_dynamic_prefix(
 ) -> bool {
     // BuildingClass answers false on the ordinary dynamic selection virtual.
     // TypeSelect owns the verified UndeploysInto fallback separately.
-    if entity.category == EntityCategory::Structure {
+    if entity.category() == EntityCategory::Structure {
         return false;
     }
     if entity.slave.owner().is_some() || entity.deactivated {
@@ -1132,10 +1132,10 @@ pub(crate) fn is_local_player_selectable_object(
     rules: Option<&RuleSet>,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> bool {
-    entity.health.current > 0
+    entity.health.current() > 0
         && !entity.lifecycle.in_limbo
         && entity.in_playfield
-        && entity.category != EntityCategory::Structure
+        && entity.category() != EntityCategory::Structure
         && entity.discovery.discovered_by_current_house
         && type_is_selectable(sim.interner.resolve(entity.type_ref()), rules)
         && sim.house_is_human_player(entity.owner())
@@ -1164,7 +1164,7 @@ fn building_covers_cell(
     ry: u16,
 ) -> bool {
     entities.values().any(|candidate| {
-        if candidate.category != EntityCategory::Structure
+        if candidate.category() != EntityCategory::Structure
             || candidate.lifecycle.in_limbo
             || !candidate.lifecycle.object_alive
         {
@@ -1249,7 +1249,7 @@ pub(crate) fn pick_entity_at_point(
             continue;
         }
         let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
-        if entity.category != EntityCategory::Structure
+        if entity.category() != EntityCategory::Structure
             && !is_drawn_for_local_owner(fog, local_owner, owner_str, entity, local_owner_id)
         {
             continue;
@@ -1271,7 +1271,7 @@ pub(crate) fn pick_entity_at_point(
     // Cell/foundation occupancy is consulted only when the tracked-anchor pass
     // found nothing. Preserve encounter order when a malformed overlap exists.
     entities.values().find_map(|entity| {
-        if entity.category != EntityCategory::Structure
+        if entity.category() != EntityCategory::Structure
             || !entity.lifecycle.object_alive
             || entity.lifecycle.in_limbo
         {
@@ -1308,7 +1308,7 @@ fn static_selection_gate(
 ) -> bool {
     entity.lifecycle.object_alive
         // `0x006F32D3`: no Health — a crashing aircraft falls alive at 0.
-        && entity.health.current > 0
+        && entity.health.current() > 0
         && !entity.lifecycle.in_limbo
         && !entity.is_warped_out()
         // The mouse/type caller's aggregate admission includes +0x3D5.
@@ -1339,7 +1339,7 @@ fn is_local_band_candidate(
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::StringInterner;
 
@@ -1355,7 +1355,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 1000 },
+            Health::new(1000),
             type_ref,
             EntityCategory::Structure,
             0,
@@ -1436,7 +1436,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             category,
             0,
@@ -2129,7 +2129,7 @@ mod tests {
             "an earlier structure wins an equal global tracked-anchor score"
         );
 
-        entities.get_mut(2).unwrap().type_ref = noselect;
+        entities.get_mut(2).unwrap().set_type_ref_for_test(noselect);
         let rejected = compute_click_selection_snapshot(
             &entities,
             &[2, 1],
@@ -2154,8 +2154,8 @@ mod tests {
         );
 
         let nonlocal = entities.get_mut(2).unwrap();
-        nonlocal.type_ref = building_type;
-        nonlocal.owner = soviet;
+        nonlocal.set_type_ref_for_test(building_type);
+        nonlocal.set_owner_for_test(soviet);
         let nonlocal_click = compute_click_selection_snapshot(
             &entities,
             &[2, 1],
@@ -2265,7 +2265,7 @@ mod tests {
         assert_eq!(added.select, [2]);
 
         // Flip the clicked object to an enemy: the same gesture now drains.
-        entities.get_mut(2).unwrap().owner = soviets;
+        entities.get_mut(2).unwrap().set_owner_for_test(soviets);
         let drained = compute_click_selection_snapshot(
             &entities,
             &[2, 1],
@@ -2484,7 +2484,7 @@ mod tests {
         entity.lifecycle.in_limbo = false;
         entity.in_playfield = true;
         assert!(static_selection_gate(&entity, "ORCA", None, true));
-        entity.health.current = 0;
+        entity.health.set_for_test(0);
         entity.crashing = true;
         assert!(!static_selection_gate(&entity, "ORCA", None, true));
     }

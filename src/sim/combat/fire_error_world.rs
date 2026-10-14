@@ -167,7 +167,7 @@ impl<'a> FireSubject<'a> {
         let firer = self.firer;
         let obj = self.obj;
         let frame = self.frame();
-        let class = match firer.category {
+        let class = match firer.category() {
             EntityCategory::Unit => FirerClass::Unit,
             EntityCategory::Infantry => FirerClass::Infantry,
             EntityCategory::Aircraft => FirerClass::Aircraft,
@@ -240,8 +240,8 @@ impl<'a> FireSubject<'a> {
             ammo: firer.aircraft_ammo.as_ref().map_or(-1, |ammo| ammo.current),
             cloak_state: firer.cloak.as_ref().map_or(0, |cloak| cloak.state),
             current_weapon: combat_weapon::attacker_facts(firer, obj).current_weapon_number,
-            draining_me: firer.draining_me.is_some(),
-            drain_target: link(firer.drain_target),
+            draining_me: firer.drain.draining_me().is_some(),
+            drain_target: link(firer.drain.target()),
             locomotor_target: link(firer.locomotor_target),
             temporal: firer
                 .temporal
@@ -252,7 +252,7 @@ impl<'a> FireSubject<'a> {
                 firer.owner(),
             )
             .is_some_and(|house| house.is_human),
-            paralyzed: firer.is_paralyzed(frame),
+            paralyzed: firer.parasite.is_paralyzed(frame),
             spawns: firer.spawn_manager.as_ref().map(|manager| SpawnCounts {
                 not_regenerating: manager.count_alive_spawns() as i32,
                 launched_missiles: manager.count_launched_missiles(
@@ -275,7 +275,7 @@ impl<'a> FireSubject<'a> {
             tethered: firer.dock_entered_with.is_some(),
             radio_link: match radio_link {
                 None => RadioLink::None,
-                Some(contact) if contact.category == EntityCategory::Structure => {
+                Some(contact) if contact.category() == EntityCategory::Structure => {
                     RadioLink::Building
                 }
                 Some(_) => RadioLink::Other,
@@ -331,7 +331,7 @@ impl<'a> FireSubject<'a> {
             Some(TargetKind::Entity(_)) => match (self.target_entity(), self.target_obj()) {
                 (Some(entity), Some(target_obj)) => (
                     TargetFacts {
-                        kind: match entity.category {
+                        kind: match entity.category() {
                             EntityCategory::Unit => FireTargetKind::Unit,
                             EntityCategory::Infantry => FireTargetKind::Infantry,
                             EntityCategory::Aircraft => FireTargetKind::Aircraft,
@@ -352,12 +352,12 @@ impl<'a> FireSubject<'a> {
                             entity.invulnerability.as_ref(),
                             frame,
                         ),
-                        draining_me: entity.draining_me.is_some(),
+                        draining_me: entity.drain.draining_me().is_some(),
                         warped_out: entity.is_warped_out(),
                         chrono_warp_latch: entity.chrono_warp_latch(),
                         bunkered: entity.bunker_link.installed_in().is_some(),
                         health: entity.health,
-                        parasite_lock_until: entity.parasite_launch_lock as i32,
+                        parasite_lock_until: entity.parasite.launch_lock() as i32,
                         deploying: entity.unit_deploying(),
                         ..TargetFacts::default()
                     },
@@ -571,8 +571,8 @@ impl FireQuery for WorldQuery<'_, '_> {
         let (Some(target), Some(obj)) = (subject.target_entity(), subject.target_obj()) else {
             return 0;
         };
-        let invisible =
-            obj.invisible || target.category == EntityCategory::Structure && obj.invisible_in_game;
+        let invisible = obj.invisible
+            || target.category() == EntityCategory::Structure && obj.invisible_in_game;
         let sensed = subject.fog.is_some_and(|fog| {
             fog.has_sensor_for_house(
                 subject.firer.owner(),
@@ -814,7 +814,7 @@ impl WorldQuery<'_, '_> {
     fn direction(&self) -> u16 {
         let subject = self.subject;
         let firer = subject.firer;
-        if firer.category == EntityCategory::Structure {
+        if firer.category() == EntityCategory::Structure {
             return subject.target.map_or(0, |target| {
                 super::fire_coord::building_direction_to(
                     subject.world,

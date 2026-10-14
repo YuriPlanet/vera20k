@@ -24,13 +24,21 @@
 //! visible cases: Infantry Scatter's immediate Process (0x51D478) waits, so
 //! scattered infantry leave a frame later; a Drive/Ship Foot whose track
 //! ends with no path left loses that frame's movement where native's timer
-//! had run out. The admission retries' recursions (Walk's Process(0),
-//! Drive/Ship's Process_Movement(0, 0)) never wait: their timer was just
-//! expired. Hover's own timer-gated Find_Path is not batched. The batch
-//! draws no random numbers; later draws follow the changed movement. Each
-//! search reads only that frame-start world, so no result depends on the
-//! thread count. Simulations start without batching; real matches and
-//! sim-bench turn it on ([`Simulation::batch_path_searches`]).
+//! had run out. Through these requests a Foot searches at most once a
+//! frame, and only when the pass answered it: its first request that frame
+//! takes the answer, or searches for itself when none fits, and any other
+//! waits. That includes the requests of a refused cell's recursion (Walk's
+//! admission retries, which expire the timer; Drive/Ship's Process_Movement
+//! re-entries, of which the 0x4B4541 tail expires it) and a code-2 re-path
+//! right after a found route, whose timer Find_Path left run out. So a Foot
+//! whose next cell refuses it stands that frame with its head cleared and
+//! re-paths the next, where native re-paths and usually steps at once, and a
+//! Foot whose new route is blocked at its first step by a moving friendly
+//! re-paths a frame later. Hover's own timer-gated Find_Path is not batched.
+//! The batch draws no random numbers; later draws follow the changed
+//! movement. Each search reads only that frame-start world, so no result
+//! depends on the thread count. Simulations start without batching; real
+//! matches and sim-bench turn it on ([`Simulation::batch_path_searches`]).
 //!
 //! The batch runs Find_Path's own steps up to its redirect
 //! ([`Simulation::find_path_target_answer`]) and the core search, without
@@ -79,12 +87,11 @@ use crate::sim::world::Simulation;
 pub(crate) struct PathBatch {
     /// Foots whose request waited this frame, and which request each repeats.
     pending: Vec<(u64, WaitingRequest)>,
-    /// This live object pass's answers by Foot. A Foot with an entry no
-    /// longer waits; Find_Path takes out the answer it uses. Empty outside
-    /// the pass, so a request made between passes waits whether or not the
-    /// game was saved in between.
+    /// This live object pass's answers by Foot. Empty outside the pass, so a
+    /// request made between passes waits whether or not the game was saved
+    /// in between.
     #[serde(skip)]
-    ready: BTreeMap<u64, Option<BatchedSearch>>,
+    ready: BTreeMap<u64, ReadySlot>,
     /// Answers Find_Path used, by [`WaitingRequest`].
     #[cfg(test)]
     #[serde(skip)]
@@ -115,6 +122,17 @@ pub(crate) enum WaitingRequest {
     NoQueue,
     /// A code-2 ladder's re-path, at the ladder's urgency.
     Code2Ladder,
+}
+
+/// A Foot's entry in this pass's answers.
+#[derive(Debug, PartialEq)]
+struct ReadySlot {
+    /// Whether one of the Foot's requests this frame went on to Find_Path;
+    /// any later one waits for the next batch.
+    claimed: bool,
+    /// The search, until Find_Path takes it; `None` when the batch had
+    /// nothing to answer.
+    answer: Option<BatchedSearch>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -176,7 +194,8 @@ impl Simulation {
 
     /// Whether `id`'s `request` waits for the next frame's batch, as if its
     /// movement timer still ran. It does, and registers, when batching is
-    /// on, the batch can search this map, and `id` has no answer this frame.
+    /// on, the batch can search this map, and `id` has no unclaimed answer
+    /// this frame; otherwise this request claims the answer.
     pub(super) fn defer_path_search(&mut self, id: u64, request: WaitingRequest) -> bool {
         if self.overlay_grid.is_none() || self.resolved_terrain.is_none() {
             return false;
@@ -184,7 +203,10 @@ impl Simulation {
         let Some(batch) = self.path_batch.as_mut() else {
             return false;
         };
-        if batch.ready.contains_key(&id) {
+        if let Some(slot) = batch.ready.get_mut(&id)
+            && !slot.claimed
+        {
+            slot.claimed = true;
             return false;
         }
         batch.pending.push((id, request));
@@ -204,13 +226,13 @@ impl Simulation {
             .as_ref()?
             .ready
             .get(&id)
-            .is_some_and(Option::is_some)
+            .is_some_and(|slot| slot.answer.is_some())
         {
             return None;
         }
         let key = self.foot_search_key(request, goal)?;
         let batch = self.path_batch.as_mut()?;
-        let slot = batch.ready.get_mut(&id)?;
+        let slot = &mut batch.ready.get_mut(&id)?.answer;
         if slot.as_ref()?.key != key {
             return None;
         }
@@ -235,13 +257,17 @@ impl Simulation {
         batch.ready.clear();
         #[cfg(test)]
         batch.answered.clear();
-        let mut pending = std::mem::take(&mut batch.pending);
+        let pending = std::mem::take(&mut batch.pending);
         if pending.is_empty() {
             return;
         }
-        // A Foot's first registration this frame stands.
-        pending.sort_by_key(|&(id, _)| id);
-        pending.dedup_by_key(|&mut (id, _)| id);
+        // A Foot's latest registration this frame stands: its latest state
+        // makes the request it repeats.
+        let pending: Vec<(u64, WaitingRequest)> = pending
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .collect();
         let answers = match (rules, self.path_grid_snapshot()) {
             (Some(rules), Some(grid))
                 if self.overlay_grid.is_some() && self.resolved_terrain.is_some() =>
@@ -258,7 +284,16 @@ impl Simulation {
         }
         batch.ready = pending
             .into_iter()
-            .map(|(id, _)| (id, answers.next().flatten()))
+            .map(|(id, _)| {
+                let answer = answers.next().flatten();
+                (
+                    id,
+                    ReadySlot {
+                        claimed: false,
+                        answer,
+                    },
+                )
+            })
             .collect();
     }
 

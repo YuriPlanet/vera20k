@@ -49,7 +49,7 @@ fn consequence_world() -> (Simulation, u64, u64) {
         (victim, "TARGET", "Soviet", 8, 10),
     ] {
         let mut entity = GameEntity::test_default(id, kind, owner, rx, 5);
-        entity.health.current = hp;
+        entity.health.set_for_test(hp);
         sim.substrate.entities.insert(entity);
     }
     sim.interner = crate::sim::intern::test_interner();

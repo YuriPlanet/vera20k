@@ -22,8 +22,9 @@ use crate::app::input::{camera, entity_pick};
 use crate::app::types::{CategoryNavigationKind, TypeSelectInputState, TypeSelectOutcome};
 use crate::map::entities::EntityCategory;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::sim::combat::Health;
 use crate::sim::command::Command;
-use crate::sim::components::{DriveCoord, Health};
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::{BunkerLink, GameEntity};
 use crate::sim::house_state::HouseState;
 use crate::sim::movement::ground_pose;
@@ -807,7 +808,7 @@ fn replay_category_history(
                         "alive" => entity.lifecycle.object_alive = value.as_bool().unwrap(),
                         "limbo" => entity.lifecycle.in_limbo = value.as_bool().unwrap(),
                         "selected" => entity.selected = value.as_bool().unwrap(),
-                        "health" => entity.health.current = value.as_i64().unwrap() as i32,
+                        "health" => entity.health.set_for_test(value.as_i64().unwrap() as i32),
                         other => panic!("unsupported declared actor-state writer {other}"),
                     }
                 }
@@ -1772,9 +1773,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
             0,
             0,
             owner,
-            Health {
-                current: actor.health,
-            },
+            Health::new(actor.health),
             type_ref,
             category,
             0,
@@ -1818,7 +1817,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
                 0,
                 0,
                 owner,
-                Health { current: 100 },
+                Health::new(100),
                 building_type,
                 EntityCategory::Structure,
                 0,

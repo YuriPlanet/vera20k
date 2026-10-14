@@ -209,9 +209,9 @@ mod tests {
             2,
             crate::map::entities::EntityCategory::Structure,
         );
-        entity.type_ref = sim.interner.intern("B");
-        entity.owner = sim.interner.intern("A");
-        entity.health.current = current;
+        entity.set_type_ref_for_test(sim.interner.intern("B"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(current);
         entity.lifecycle.in_limbo = false;
         sim.substrate.entities.insert(entity);
         (sim, id)

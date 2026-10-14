@@ -35,7 +35,9 @@ fn retail_garrison_scene() -> Option<(crate::headless_scenario::HeadlessScenario
     let castle = sim
         .entities()
         .values()
-        .find(|e| e.category == EntityCategory::Structure && sim.resolve(e.type_ref()) == "CASTL03")
+        .find(|e| {
+            e.category() == EntityCategory::Structure && sim.resolve(e.type_ref()) == "CASTL03"
+        })
         .expect("XMP03T4 places one CASTL03");
     assert_eq!((castle.position.rx, castle.position.ry), (82, 112));
     assert_eq!(sim.resolve(castle.owner()), "Neutral");
@@ -198,7 +200,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
         assert!(!sim.live_object_order_snapshot().contains(&gi));
     }
     let castle_entity = sim.entities().get(castle).unwrap();
-    assert_eq!(castle_entity.health.current, castle_strength);
+    assert_eq!(castle_entity.health.current(), castle_strength);
     assert_eq!(sim.resolve(castle_entity.owner()), owner_name);
 }
 
@@ -245,7 +247,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
                     .get_mut(castle)
                     .unwrap()
                     .health
-                    .current = 1;
+                    .set_for_test(1);
                 0
             }
             "full" | "other_owner" => {

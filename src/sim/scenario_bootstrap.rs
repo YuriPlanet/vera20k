@@ -2198,7 +2198,7 @@ fn starting_object_cell_placeable(
                 .occupants
                 .first()
                 .and_then(|occupant| sim.entities().get(occupant.entity_id))
-                .is_some_and(|entity| entity.category == EntityCategory::Infantry)
+                .is_some_and(|entity| entity.category() == EntityCategory::Infantry)
             && occupancy
                 .occupants
                 .iter()
@@ -3078,7 +3078,7 @@ mod tests {
                 .expect("shared staged object construction");
                 assert_eq!(sim.entities().len(), 1, "map object actually constructed");
                 assert_eq!(
-                    sim.entities().values().next().unwrap().native_unique_id,
+                    sim.entities().values().next().unwrap().native_unique_id(),
                     native_before_map.wrapping_add(1) as i32,
                     "production admission retains its concrete native constructor ID",
                 );
@@ -3151,8 +3151,8 @@ mod tests {
                     let hut_owners: Vec<_> = world
                         .entities()
                         .values()
-                        .filter(|entity| world.interner.resolve(entity.type_ref) == "CABHUT")
-                        .map(|entity| entity.owner)
+                        .filter(|entity| world.interner.resolve(entity.type_ref()) == "CABHUT")
+                        .map(|entity| entity.owner())
                         .collect();
                     assert_eq!(
                         hut_owners,
@@ -3162,8 +3162,8 @@ mod tests {
                     let mut mcv_owners: Vec<_> = world
                         .entities()
                         .values()
-                        .filter(|entity| world.interner.resolve(entity.type_ref) == "MTNK")
-                        .map(|entity| entity.owner)
+                        .filter(|entity| world.interner.resolve(entity.type_ref()) == "MTNK")
+                        .map(|entity| entity.owner())
                         .collect();
                     mcv_owners.sort();
                     assert_eq!(
@@ -3254,7 +3254,7 @@ mod tests {
         )
         .expect("exact PostMap placement");
         let exact_entity = exact.substrate.entities.get(exact_id).unwrap();
-        assert_eq!(exact_entity.techno_ctor_random_word, exact_word);
+        assert_eq!(exact_entity.techno_ctor_random_word(), exact_word);
         assert_eq!((exact_entity.position.rx, exact_entity.position.ry), (6, 5));
         assert_eq!(
             exact.scenario_rng.logical_state(),
@@ -3273,7 +3273,7 @@ mod tests {
                 .entities
                 .get(blocker)
                 .unwrap()
-                .techno_ctor_random_word,
+                .techno_ctor_random_word(),
             blocker_word
         );
         let fallback_word = (fallback_expected.next_u32() & 0xFFFF) as u16;
@@ -3293,7 +3293,7 @@ mod tests {
         )
         .expect("fallback PostMap placement");
         let fallback_entity = fallback.substrate.entities.get(fallback_id).unwrap();
-        assert_eq!(fallback_entity.techno_ctor_random_word, fallback_word);
+        assert_eq!(fallback_entity.techno_ctor_random_word(), fallback_word);
         assert_ne!(
             (fallback_entity.position.rx, fallback_entity.position.ry),
             (6, 5)
@@ -3391,7 +3391,7 @@ mod tests {
         .expect("raw-bit rejection must retry the same constructed Unit");
 
         let placed = sim.substrate.entities.get(stable_id).unwrap();
-        assert_eq!(placed.techno_ctor_random_word, expected_word);
+        assert_eq!(placed.techno_ctor_random_word(), expected_word);
         assert_ne!((placed.position.rx, placed.position.ry), base);
         assert_eq!(stable_id, 1, "fallback must retain the first identity");
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -3433,7 +3433,7 @@ mod tests {
                 .entities
                 .get(blocker)
                 .unwrap()
-                .techno_ctor_random_word,
+                .techno_ctor_random_word(),
             blocker_word
         );
         let candidate_index = expected.next_range_u32_inclusive(0, 1) as usize;
@@ -3446,8 +3446,8 @@ mod tests {
             1
         );
         let entity = sim.substrate.entities.get(2).unwrap();
-        assert_eq!(sim.interner.resolve(entity.type_ref), expected_type);
-        assert_eq!(entity.techno_ctor_random_word, expected_word);
+        assert_eq!(sim.interner.resolve(entity.type_ref()), expected_type);
+        assert_eq!(entity.techno_ctor_random_word(), expected_word);
         assert_ne!((entity.position.rx, entity.position.ry), (6, 5));
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }
@@ -4445,9 +4445,9 @@ mod tests {
             let entity = sim
                 .entities()
                 .values()
-                .find(|entity| sim.interner.resolve(entity.type_ref) == type_id)
+                .find(|entity| sim.interner.resolve(entity.type_ref()) == type_id)
                 .unwrap_or_else(|| panic!("generated {type_id} reached Simulation"));
-            assert_eq!(entity.techno_ctor_random_word, expected_word);
+            assert_eq!(entity.techno_ctor_random_word(), expected_word);
         }
 
         let starting_techno_word = (reference.next_u32() & 0xFFFF) as u16;
@@ -4466,10 +4466,11 @@ mod tests {
         let starting_techno = sim
             .entities()
             .values()
-            .find(|entity| sim.interner.resolve(entity.type_ref) == "MTNK")
+            .find(|entity| sim.interner.resolve(entity.type_ref()) == "MTNK")
             .expect("the production launch constructs its starting MCV");
         assert_eq!(
-            starting_techno.techno_ctor_random_word, starting_techno_word,
+            starting_techno.techno_ctor_random_word(),
+            starting_techno_word,
             "the first post-trace Techno constructor continues the same cursor"
         );
 

@@ -95,9 +95,9 @@ fn rules(input: &Value) -> RuleSet {
 fn enemy(sim: &mut Simulation, kind: &str, category: EntityCategory, cell: (u16, u16)) -> u64 {
     let id = sim.allocate_stable_id();
     let mut entity = GameEntity::test_default(id, kind, "Russians", cell.0, cell.1);
-    entity.owner = sim.intern("Russians");
-    entity.type_ref = sim.intern(kind);
-    entity.category = category;
+    entity.set_owner_for_test(sim.intern("Russians"));
+    entity.set_type_ref_for_test(sim.intern(kind));
+    entity.set_category_for_test(category);
     sim.substrate.entities.insert(entity);
     id
 }
@@ -385,7 +385,7 @@ fn a_human_defence_hit_from_out_of_range_turns_its_turret_once() {
         "one Scenario draw"
     );
     let entity = sim.substrate.entities.get(building).unwrap();
-    assert_eq!(entity.health.current, 990);
+    assert_eq!(entity.health.current(), 990);
     assert!(entity.attack_target.is_none());
     let turret = entity.body_facing;
     assert_eq!(turret.destination(), 0xD500);
@@ -490,7 +490,12 @@ fn a_hit_without_a_source_does_nothing() {
     assert!(pings.is_empty());
     assert_eq!(sim.scenario_rng.logical_state(), rng);
     assert_eq!(
-        sim.substrate.entities.get(building).unwrap().health.current,
+        sim.substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .health
+            .current(),
         990
     );
 }

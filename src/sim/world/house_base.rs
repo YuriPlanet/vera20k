@@ -339,7 +339,7 @@ impl Simulation {
     pub(crate) fn house_return_cell(&mut self, actor_id: u64) -> Option<(u16, u16)> {
         let actor = self.substrate.entities.get(actor_id)?;
         if !matches!(
-            actor.category,
+            actor.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         ) {
             return None;
@@ -456,7 +456,7 @@ impl Simulation {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     continue;
                 };
-                if entity.lifecycle.in_limbo || entity.health.current <= 0 {
+                if entity.lifecycle.in_limbo || entity.health.current() <= 0 {
                     continue;
                 }
                 let Some(object) = self.object_type(entity.type_ref(), rules) else {
@@ -573,7 +573,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.category != EntityCategory::Structure {
+        if entity.category() != EntityCategory::Structure {
             return;
         }
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
@@ -594,7 +594,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .filter(|entity| entity.category == EntityCategory::Structure)
+            .filter(|entity| entity.category() == EntityCategory::Structure)
             .map(|entity| entity.owner())
         else {
             return;
@@ -666,7 +666,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.category == EntityCategory::Structure)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
             return;
         }
@@ -689,7 +689,7 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
 
     /// The oracle's supplied physical MapClass: Size8x8, LocalSize0,0,8,8,
@@ -850,7 +850,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             category,
             0,
@@ -1006,7 +1006,11 @@ mod tests {
                     sim.substrate.entities.remove(id);
                 }
                 _ => {
-                    sim.substrate.entities.get_mut(id).unwrap().category = EntityCategory::Structure
+                    sim.substrate
+                        .entities
+                        .get_mut(id)
+                        .unwrap()
+                        .set_category_for_test(EntityCategory::Structure);
                 }
             }
             let before = sim.rng_state();
@@ -1123,7 +1127,7 @@ mod tests {
                     0,
                     0,
                     owner,
-                    Health { current: health },
+                    Health::new(health),
                     type_ref,
                     EntityCategory::Structure,
                     0,

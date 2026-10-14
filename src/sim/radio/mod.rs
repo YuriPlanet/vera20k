@@ -239,7 +239,7 @@ pub(crate) fn transmit_to_contact(
 ///destination RTTI gate. Unit/Aircraft/Building/Infantry are the four accepted
 ///native identities; a Cell or another non-entity registry is not a Techno.
 pub(crate) fn as_techno(sim: &Simulation, id: u64) -> Option<u64> {
-    match sim.substrate.entities.get(id)?.category {
+    match sim.substrate.entities.get(id)?.category() {
         EntityCategory::Unit
         | EntityCategory::Infantry
         | EntityCategory::Structure

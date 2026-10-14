@@ -187,7 +187,8 @@ fn unit(
         occupation.mark_deck(x as u16, y as u16, raw[3].as_u64().unwrap() as u8);
     }
     let e = sim.substrate.entities.get_mut(id).unwrap();
-    e.health.current = input["health"].as_i64().unwrap_or(300) as i32;
+    e.health
+        .set_for_test(input["health"].as_i64().unwrap_or(300) as i32);
     let z = crate::sim::movement::ground_pose::position_world_coord(&e.position).z;
     assert_eq!(z, input["z"].as_i64().unwrap_or(0) as i32, "Foot z");
     (sim, rules, registry, id)
@@ -425,10 +426,11 @@ fn fresh_arm_rows_match_the_original_responses() {
         runtime.retries_left = input["retries"].as_u64().unwrap_or(10) as u32;
         // FootClass ParalysisTimer (+6A0).
         if let Some(paralysis) = input["paralysis"].as_array() {
-            e.paralysis_timer = crate::sim::timer::CdTimer::started(
-                paralysis[0].as_i64().unwrap() as i32,
-                paralysis[1].as_i64().unwrap() as i32,
-            );
+            e.parasite
+                .set_paralysis_for_test(crate::sim::timer::CdTimer::started(
+                    paralysis[0].as_i64().unwrap() as i32,
+                    paralysis[1].as_i64().unwrap() as i32,
+                ));
         }
         // A retained selector with the valid byte clear.
         if let Some(selector) = input["selector"].as_i64() {

@@ -32,7 +32,7 @@ pub(super) fn publish_fresh_track_target(
     };
     let speed_type = loco.speed_type;
     let below_yellow = crate::sim::pathfinding::terrain_speed::is_at_or_below_condition_yellow(
-        entity.health.current,
+        entity.health.current(),
         strength,
         rules.general.condition_yellow,
     );
@@ -156,7 +156,7 @@ pub(super) fn advance(
     let retained_target = loco.track_target_fraction(family);
     let prefix = super::drive_locomotion::TrackSpeedPrefix {
         accelerates: entity.drive_accelerates,
-        unit_passive: entity.category == crate::map::entities::EntityCategory::Unit
+        unit_passive: entity.category() == crate::map::entities::EntityCategory::Unit
             && object.is_some_and(|object| object.passive),
         selector,
         raw_type_speed: object.map_or(0, |o| {

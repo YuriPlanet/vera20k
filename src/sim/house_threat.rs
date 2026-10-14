@@ -227,7 +227,7 @@ impl Simulation {
         {
             return;
         }
-        let cell = if actor.category == EntityCategory::Structure {
+        let cell = if actor.category() == EntityCategory::Structure {
             self.spatial_threat_current_cell(id, terrain)
         } else {
             terrain.or(self.resolved_terrain.as_ref()).map(|terrain| {
@@ -248,7 +248,7 @@ impl Simulation {
         if actor.lifecycle.in_limbo {
             return None;
         }
-        let cell = if actor.category == EntityCategory::Structure {
+        let cell = if actor.category() == EntityCategory::Structure {
             self.spatial_threat_current_cell(id, None)
         } else {
             self.resolved_terrain.as_ref().map(|terrain| {
@@ -280,7 +280,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if actor.category == EntityCategory::Structure {
+        if actor.category() == EntityCategory::Structure {
             return;
         }
         let old = actor.navigation.neighbor_state.cell();
@@ -334,7 +334,7 @@ impl Simulation {
             else {
                 continue;
             };
-            let cell = if actor.category == EntityCategory::Structure {
+            let cell = if actor.category() == EntityCategory::Structure {
                 // Native non-Foot arm intentionally has no house/ally filter.
                 self.spatial_threat_current_cell(id, None)
             } else {

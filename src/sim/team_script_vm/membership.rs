@@ -143,13 +143,13 @@ impl Simulation {
         }
         let entity = self.substrate.entities.get(entity_id)?;
         if !entity.lifecycle.object_alive
-            || entity.health.current == 0
+            || entity.health.current() == 0
             || (entity.lifecycle.in_limbo && !self.object_placement_scope_active())
             || entity.owner() != team.owner
         {
             return None;
         }
-        let aircraft = entity.category == EntityCategory::Aircraft;
+        let aircraft = entity.category() == EntityCategory::Aircraft;
         let object = self.object_type(entity.type_ref(), rules)?;
         if !entity.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
             return None;
@@ -180,7 +180,7 @@ impl Simulation {
         if entity.building_entry.seeking() {
             return None;
         }
-        if entity.drain_target.is_some() || entity.bunker_link.installed_in().is_some() {
+        if entity.drain.target().is_some() || entity.bunker_link.installed_in().is_some() {
             return None;
         }
         if let Some(current) = current_team.and_then(|id| vm.teams.get(&id))
@@ -482,7 +482,7 @@ impl Simulation {
             .substrate
             .entities
             .iter_sorted()
-            .filter(|(_, entity)| entity.category == class)
+            .filter(|(_, entity)| entity.category() == class)
             .map(|(id, entity)| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),

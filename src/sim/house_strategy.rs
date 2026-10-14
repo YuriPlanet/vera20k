@@ -295,7 +295,7 @@ pub(crate) fn fire_sale(
         };
         let sells =
             sim.substrate.entities.get(id).is_some_and(|building| {
-                !building.lifecycle.in_limbo && building.health.current > 0
+                !building.lifecycle.in_limbo && building.health.current() > 0
             });
         if sells {
             sell_back(sim, rules, id, SellOrder::Computer, registry, frame_effects);
@@ -363,7 +363,7 @@ pub(crate) fn all_to_hunt(
             sim.commit_direct_damage_receiver(rules, registry, event, frame_effects);
             continue;
         }
-        if techno.category == EntityCategory::Structure {
+        if techno.category() == EntityCategory::Structure {
             continue;
         }
         sim.leave_team(id, false, Some(rules), frame_effects);

@@ -163,8 +163,13 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
                     .sim
                     .spawn_object("BLOCK", "Americans", at.0, at.1, 0, &s.rules)
                     .unwrap();
-                s.sim.substrate.entities.get_mut(id).unwrap().health.current =
-                    input["building_health"].as_i64().unwrap_or(100) as i32;
+                s.sim
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .health
+                    .set_for_test(input["building_health"].as_i64().unwrap_or(100) as i32);
             }
             other => panic!("unhandled native fixture blocker {other}"),
         }

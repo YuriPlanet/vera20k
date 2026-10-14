@@ -103,7 +103,7 @@ pub fn toggle_repair(
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return false;
     };
-    if entity.category != EntityCategory::Structure {
+    if entity.category() != EntityCategory::Structure {
         return false;
     }
     match control {
@@ -115,7 +115,7 @@ pub fn toggle_repair(
     }
     let owner = entity.owner();
     let position = entity.position;
-    let sound = if entity.repairing && entity.health.current == strength {
+    let sound = if entity.repairing && entity.health.current() == strength {
         rules.general.scold_sound.clone()
     } else {
         if entity.repairing {
@@ -155,9 +155,9 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return false;
     };
-    entity.health.current = strength;
+    entity.health.set(strength);
     entity.estimated_health.reset(strength);
-    if entity.category != EntityCategory::Structure {
+    if entity.category() != EntityCategory::Structure {
         return true;
     }
     toggle_repair(sim, rules, id, RepairControl::Stop);
@@ -188,7 +188,7 @@ pub(crate) fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) ->
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
-    if entity.category != EntityCategory::Structure || entity.health.current == 0 {
+    if entity.category() != EntityCategory::Structure || entity.health.current() == 0 {
         return false;
     }
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
@@ -196,7 +196,7 @@ pub(crate) fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) ->
     };
     object.click_repairable
         && object.repairable
-        && entity.health.current != object.strength
+        && entity.health.current() != object.strength
         && !(foundation_dimensions(&object.foundation) == (1, 1) && undeploys(rules, object))
 }
 
@@ -398,10 +398,10 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
-    entity.health.current = entity.health.current.wrapping_add(step);
+    entity.health.heal(step);
     entity.estimated_health.add_repair(step);
-    if entity.health.current >= strength {
-        entity.health.current = strength;
+    if entity.health.current() >= strength {
+        entity.health.set(strength);
         entity.estimated_health.reset(strength);
         entity.repairing = false;
     }

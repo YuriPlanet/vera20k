@@ -33,7 +33,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     // out of the state/continuation comparison.
     let mut sim = Simulation::with_seed(0);
     let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-    entity.category = EntityCategory::Aircraft;
+    entity.set_category_for_test(EntityCategory::Aircraft);
     entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(
         u8::from(input["latch_6d2"].as_bool().unwrap()),
         1,

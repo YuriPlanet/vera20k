@@ -168,7 +168,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
 
         let mut target = GameEntity::test_default(1, "MGTK", owner_type, 0, 0);
         let mut interner = test_interner();
-        target.health.current = int(&before["health"]);
+        target.health.set_for_test(int(&before["health"]));
         target.lifecycle.object_alive = before["alive"] == 1;
         target.lifecycle.in_limbo = before["limbo"] == 1;
         target
@@ -253,7 +253,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             "{context}: native result"
         );
         assert_eq!(
-            target.health.current,
+            target.health.current(),
             int(&after["health"]),
             "{context}: committed HP"
         );

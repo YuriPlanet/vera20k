@@ -161,7 +161,7 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         .get_mut(victim)
         .unwrap()
         .health
-        .current = 80;
+        .set_for_test(80);
     install_event_ingress_map(
         &mut sim,
         &rules,
@@ -183,7 +183,7 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         FrameEffects::default(),
     );
     assert_eq!(
-        sim.substrate.entities.get(victim).unwrap().health.current,
+        sim.substrate.entities.get(victim).unwrap().health.current(),
         79
     );
     assert_eq!(
@@ -303,7 +303,7 @@ fn fatal_receiver_does_not_raise_surviving_damage_event44() {
         sim.substrate
             .entities
             .get(victim)
-            .is_none_or(|entity| entity.health.current <= 0)
+            .is_none_or(|entity| entity.health.current() <= 0)
     );
 }
 
@@ -487,7 +487,7 @@ fn spawn_type(sim: &mut Simulation, type_id: &str) -> u64 {
         0,
         0,
         owner_id,
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         type_id_interned,
         EntityCategory::Unit,
         0,
@@ -562,7 +562,7 @@ fn create_building_type10_reaches_placement_and_house_publication() {
         .substrate
         .entities
         .values()
-        .find(|entity| entity.category == EntityCategory::Structure && entity.owner() == owner)
+        .find(|entity| entity.category() == EntityCategory::Structure && entity.owner() == owner)
         .expect("CreateBuilding must publish the building, not silently reject an empty type");
     assert_eq!(sim.resolve(building.type_ref()), "GTGCAN");
     assert_eq!((building.position.rx, building.position.ry), (10, 10));
@@ -721,7 +721,7 @@ fn damage_at_waypoint_reaches_the_shared_building_receiver() {
         0,
         0,
         owner,
-        crate::sim::components::Health { current: 769 },
+        crate::sim::combat::Health::new(769),
         type_id,
         EntityCategory::Structure,
         0,
@@ -758,7 +758,7 @@ fn damage_at_waypoint_reaches_the_shared_building_receiver() {
         None,
         FrameEffects::default(),
     ));
-    assert!(sim.substrate.entities.get(1).unwrap().health.current < 769);
+    assert!(sim.substrate.entities.get(1).unwrap().health.current() < 769);
 }
 
 #[test]
@@ -1185,7 +1185,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     use crate::map::playfield::PlayfieldBounds;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::house_state::HouseState;
 
     let header = MapHeader {
@@ -1259,7 +1259,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         mobile_type,
         EntityCategory::Unit,
         100,
@@ -1275,7 +1275,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
         0,
         0,
         owner,
-        Health { current: 100 },
+        Health::new(100),
         building_type,
         EntityCategory::Structure,
         0,

@@ -6,8 +6,9 @@ use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::Health;
 use crate::sim::command::{Command, CommandEnvelope};
-use crate::sim::components::{Health, PendingC4Detonation};
+use crate::sim::components::PendingC4Detonation;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionType;
 use crate::sim::timer::CdTimer;
@@ -89,7 +90,7 @@ fn spawn_infantry(sim: &mut Simulation, type_str: &str, owner: &str, rx: u16, ry
         0,
         0,
         owner_id,
-        Health { current: 125 },
+        Health::new(125),
         type_id,
         EntityCategory::Infantry,
         0,
@@ -113,7 +114,7 @@ fn spawn_building(sim: &mut Simulation, type_str: &str, owner: &str, rx: u16, ry
         0,
         0,
         owner_id,
-        Health { current: 600 },
+        Health::new(600),
         type_id,
         EntityCategory::Structure,
         0,
@@ -163,7 +164,7 @@ fn c4_expiry_ignore_defenses_bypasses_verses_and_kills_building() {
         sim.substrate
             .entities
             .get(bld)
-            .is_none_or(|building| building.dying || building.health.current == 0),
+            .is_none_or(|building| building.dying || building.health.current() == 0),
         "the expiry receiver's ignore_defenses flag must bypass the C4Warhead's 50% Verses"
     );
 }
@@ -180,7 +181,12 @@ fn c4_attacker_death_does_not_abort_detonation() {
     plant_c4(&mut sim, &rules, bld, seal);
 
     // Mid-plant: kill the SEAL outright.
-    sim.substrate.entities.get_mut(seal).unwrap().health.current = 0;
+    sim.substrate
+        .entities
+        .get_mut(seal)
+        .unwrap()
+        .health
+        .set_for_test(0);
     sim.substrate.entities.get_mut(seal).unwrap().dying = true;
     step(&mut sim, &rules);
     assert!(
@@ -199,7 +205,7 @@ fn c4_attacker_death_does_not_abort_detonation() {
         sim.substrate
             .entities
             .get(bld)
-            .is_none_or(|b| b.dying || b.health.current == 0),
+            .is_none_or(|b| b.dying || b.health.current() == 0),
         "PARITY (OQ2): detonation must fire even after attacker death"
     );
 }
@@ -244,7 +250,7 @@ fn c4_iron_curtain_application_cancels_pending_detonation() {
         .get(bld)
         .expect("cancelled C4 must leave the building alive");
     assert!(!building.dying);
-    assert_eq!(building.health.current, 600);
+    assert_eq!(building.health.current(), 600);
 }
 
 // ---------- Test 6: a planted charge survives its planter's Stop ----------
@@ -292,7 +298,7 @@ fn a_planted_charge_survives_its_planters_stop() {
         sim.substrate
             .entities
             .get(bld)
-            .is_none_or(|b| b.dying || b.health.current == 0),
+            .is_none_or(|b| b.dying || b.health.current() == 0),
         "claimed plant detonates on schedule even after Stop on attacker"
     );
 }

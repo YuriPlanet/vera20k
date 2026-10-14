@@ -19,7 +19,7 @@ pub(super) fn infantry_prone_raw_damage(
     ignore_defenses: bool,
 ) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X87;
-    if target.category != EntityCategory::Infantry
+    if target.category() != EntityCategory::Infantry
         || !infantry::is_prone_for_damage(target)
         || damage <= 0
         || ignore_defenses
@@ -41,7 +41,7 @@ fn infantry_spared_mutation(
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> bool {
     const MUTATE_INF_DEATH: u8 = 9;
-    target.category == EntityCategory::Infantry
+    target.category() == EntityCategory::Infantry
         && warhead.inf_death == MUTATE_INF_DEATH
         && crate::sim::movement::air_movement::current_fly_height(target, terrain) > 0
 }
@@ -196,7 +196,7 @@ pub(super) fn apply_building_receive_prelude(
     let Some(target) = entities.get(event.target_id) else {
         return BuildingReceivePrelude::Continue;
     };
-    if target.category != EntityCategory::Structure {
+    if target.category() != EntityCategory::Structure {
         return BuildingReceivePrelude::Continue;
     }
     let Some(target_type) = rules.object(interner.resolve(target.type_ref())) else {
@@ -238,7 +238,7 @@ pub(super) fn resolve_receive_damage(
     // Building442230 returns before Techno for Health0, after its wrapper
     // response (already executed by commit_entities). Infantry/Unit instead
     // delegate and can re-enter Techno's fatal tail at zero Health.
-    if target.category == EntityCategory::Structure && target.health.current == 0 {
+    if target.category() == EntityCategory::Structure && target.health.current() == 0 {
         return None;
     }
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
@@ -273,14 +273,14 @@ pub(super) fn resolve_receive_damage(
     let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
     let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
 
-    let target_is_building = target.category == EntityCategory::Structure;
+    let target_is_building = target.category() == EntityCategory::Structure;
     let target_view = damage::TargetDamageView {
         armor: damage::ArmorClass(
             target_type
                 .map(|object| armor_index(&object.armor))
                 .unwrap_or(0) as u8,
         ),
-        current_hp: target.health.current,
+        current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
     };
     let type_immune = target_type.is_some_and(|object| object.type_immune)
@@ -468,7 +468,7 @@ pub(super) fn postmortem_duration_for_event(
     interner: &StringInterner,
     state: damage::DamageState,
 ) -> Option<i32> {
-    if state != damage::DamageState::Dead || target.category != EntityCategory::Structure {
+    if state != damage::DamageState::Dead || target.category() != EntityCategory::Structure {
         return None;
     }
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;

@@ -275,7 +275,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
             6,
             0,
             owner,
-            crate::sim::components::Health { current: hp },
+            crate::sim::combat::Health::new(hp),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -284,7 +284,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         );
         entity.position.z = 6;
         entity.position.exact_z_leptons = Some(624);
-        entity.health.current = hp;
+        entity.health.set_for_test(hp);
         entity.lifecycle.cell_marked = true;
         entity.lifecycle.in_limbo = false;
         entity.in_playfield = true;

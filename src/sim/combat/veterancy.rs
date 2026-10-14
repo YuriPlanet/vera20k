@@ -550,7 +550,7 @@ pub fn self_heal_eligible(
     if remainder != 0 {
         return false;
     }
-    let health = entity.health.current;
+    let health = entity.health.current();
     health != object.strength && health != 0
 }
 
@@ -634,7 +634,7 @@ mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::object_type::AbilityFlags;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::intern;
 
     /// Stock `[General] VeteranRatio=` and `VeteranCap=`.
@@ -671,7 +671,7 @@ mod tests {
             0,
             0,
             intern::test_intern("Americans"),
-            Health { current: health },
+            Health::new(health),
             intern::test_intern("MTNK"),
             EntityCategory::Unit,
             veterancy,

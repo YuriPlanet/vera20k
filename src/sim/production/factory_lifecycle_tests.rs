@@ -109,8 +109,12 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
                 10 + index as u16 * 5,
                 10,
             );
-            sim.substrate.entities.get_mut(id).unwrap().health.current =
-                rules.object(name).unwrap().strength;
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .health
+                .set_for_test(rules.object(name).unwrap().strength);
             sim.remove_entity_occupancy(id);
             super::tests::stamp_type_foundation(&mut sim, rules, id);
             sim.add_entity_occupancy(id);
@@ -463,8 +467,12 @@ fn retail_superweapon_construction_survives_revalidation() {
                 10 + index as u16 * 5,
                 10,
             );
-            sim.substrate.entities.get_mut(id).unwrap().health.current =
-                rules.object(name).unwrap().strength;
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .health
+                .set_for_test(rules.object(name).unwrap().strength);
             // The compact helper marks one cell. Install the stock foundation
             // through the occupancy boundary before running whole-world ticks.
             sim.remove_entity_occupancy(id);
@@ -701,7 +709,7 @@ pub(super) fn assert_constructor_words(sim: &Simulation, parent: u64, expected: 
                 .entities
                 .get(id)
                 .unwrap()
-                .techno_ctor_random_word,
+                .techno_ctor_random_word(),
             word
         );
     }
@@ -1022,7 +1030,7 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
     assert!(successor > parent);
     assert_eq!(
         sim.interner
-            .resolve(sim.substrate.entities.get(successor).unwrap().type_ref),
+            .resolve(sim.substrate.entities.get(successor).unwrap().type_ref()),
         "GAPOWR"
     );
     assert_constructor_words(&sim, successor, &mut expected);
@@ -1084,7 +1092,7 @@ fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_la
     let successor = held_id(&sim, owner, ProductionCategory::Vehicle);
     assert_eq!(
         sim.interner
-            .resolve(sim.substrate.entities.get(successor).unwrap().type_ref),
+            .resolve(sim.substrate.entities.get(successor).unwrap().type_ref()),
         "MTNK"
     );
     assert_constructor_words(&sim, successor, &mut expected);

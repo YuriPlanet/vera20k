@@ -145,6 +145,7 @@ fn a_batched_answer_is_the_serial_search() {
                     sim.batch_path_searches();
                     assert!(sim.defer_path_search(id, kind));
                     sim.answer_batched_path_searches(Some(&rules), None);
+                    assert!(!sim.defer_path_search(id, kind), "the request claims it");
                 }
                 let request = match kind {
                     WaitingRequest::NoQueue => sim.no_queue_request(id),
@@ -158,7 +159,13 @@ fn a_batched_answer_is_the_serial_search() {
                 if batched {
                     let batch = sim.path_batch.as_ref().unwrap();
                     assert_eq!(batch.used[kind as usize], 1, "Find_Path used the answer");
-                    assert_eq!(batch.ready.get(&id), Some(&None));
+                    assert_eq!(
+                        batch.ready[&id],
+                        ReadySlot {
+                            claimed: true,
+                            answer: None
+                        }
+                    );
                 }
                 let route = sim.substrate.entities.get(id).unwrap();
                 (found, route.navigation.path_replay.directions.clone())
@@ -204,7 +211,7 @@ fn an_answer_for_another_request_is_not_used() {
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.used, [0, 0]);
     assert!(
-        batch.ready[&tank].is_some(),
+        batch.ready[&tank].answer.is_some(),
         "the unused answer is left for the frame"
     );
 }
@@ -230,10 +237,7 @@ fn a_redirected_request_is_left_to_find_path() {
     sim.batch_path_searches();
     assert!(sim.defer_path_search(tank, WaitingRequest::Code2Ladder));
     sim.answer_batched_path_searches(Some(&rules), None);
-    assert_eq!(
-        sim.path_batch.as_ref().unwrap().ready.get(&tank),
-        Some(&None)
-    );
+    assert_eq!(sim.path_batch.as_ref().unwrap().ready[&tank].answer, None);
     let request = sim.code2_ladder_request(tank).unwrap();
     sim.foot_find_path(&request, &rules, None, FrameEffects::default())
         .expect("Find_Path runs");
@@ -273,7 +277,7 @@ fn batched_answers_do_not_depend_on_the_threads() {
     for &(id, request) in &movers {
         let alone = dummy.detached(|| sim.batched_search(id, request, &rules, None, &grid, counts));
         routes += usize::from(alone.as_ref().is_some_and(|answer| answer.found.is_ok()));
-        assert_eq!(ready[&id], alone, "mover {id}");
+        assert_eq!(ready[&id].answer, alone, "mover {id}");
     }
     assert_eq!(routes, movers.len(), "every mover routes");
 }
@@ -365,9 +369,9 @@ fn a_waiting_no_queue_request_routes_as_find_path_would() {
 
 /// A tank, then an infantryman, follows a tank that cannot move down a
 /// corridor and stays blocked behind it with code 2. Each pass answers
-/// exactly the previous frame's registrations, a Foot that waited did not
-/// search that frame, and its code-2 ladder (Drive's, then Walk's) waits and
-/// uses the answer.
+/// exactly the previous frame's registrations, a Foot that waits has its
+/// timer run out, so it asks again the next frame, and its code-2 ladder
+/// (Drive's, then Walk's) waits and uses the answer.
 #[test]
 fn a_waiting_ladder_uses_its_answer_the_next_frame() {
     let rules = rules();
@@ -408,7 +412,7 @@ fn a_waiting_ladder_uses_its_answer_the_next_frame() {
                     .path_runtime;
                 assert!(
                     runtime.movement_timer.expired(frame),
-                    "{follower}: a Foot that waits has not searched"
+                    "{follower}: a Foot that waits asks again"
                 );
                 waited += usize::from(kind == WaitingRequest::Code2Ladder);
             }
@@ -468,12 +472,56 @@ fn answers_expire_with_their_pass() {
     );
 }
 
-/// The Walk admission retry's recursion searches at once even with batching
-/// on: its +640 was just expired and its retry is spent. An ordinary no-queue
-/// request waits, and does what the timer-running branch does: the owner's
-/// vt+0x548 clears the infantryman's walking Doing (0x75AF57..0x75AF5F).
+/// Through its requests a Foot searches at most once a frame, and only when
+/// the pass answered it: its first request claims the answer and any later
+/// one that frame waits, as does every request of a Foot the pass did not
+/// answer. Of a Foot's registrations in a frame, the latest is answered.
 #[test]
-fn a_walk_retry_recursion_searches_at_once_and_an_ordinary_request_waits() {
+fn a_foots_first_request_in_a_frame_claims_its_answer() {
+    let rules = rules();
+    let (mut sim, [tank, infantry]) = jam(&rules);
+    sim.batch_path_searches();
+    assert!(sim.defer_path_search(tank, WaitingRequest::NoQueue));
+    sim.answer_batched_path_searches(Some(&rules), None);
+    assert!(
+        !sim.defer_path_search(tank, WaitingRequest::NoQueue),
+        "the first request searches"
+    );
+    assert!(
+        sim.defer_path_search(tank, WaitingRequest::Code2Ladder),
+        "a later one waits"
+    );
+    assert!(
+        sim.defer_path_search(infantry, WaitingRequest::NoQueue),
+        "an unanswered Foot waits"
+    );
+    assert_eq!(
+        sim.path_batch.as_ref().unwrap().pending,
+        [
+            (tank, WaitingRequest::Code2Ladder),
+            (infantry, WaitingRequest::NoQueue)
+        ]
+    );
+    assert!(sim.defer_path_search(tank, WaitingRequest::NoQueue));
+    sim.answer_batched_path_searches(Some(&rules), None);
+    let answer = sim.path_batch.as_ref().unwrap().ready[&tank]
+        .answer
+        .as_ref();
+    assert_eq!(
+        answer.map(|answer| answer.request),
+        Some(WaitingRequest::NoQueue),
+        "the latest registration stands"
+    );
+}
+
+/// An infantryman's no-queue request waits for the batch and does what the
+/// timer-running branch does: the owner's vt+0x548 clears its walking Doing
+/// (0x75AF57..0x75AF5F). Next frame it routes with the answer, and when its
+/// next cell then refuses it (code 7), the admission retry clears the path
+/// and expires +640, and the retry's recursion waits for the batch after,
+/// whose answer the repeated request takes.
+#[test]
+fn a_refused_walk_retry_waits_for_the_next_batch() {
     let rules = rules();
     let route = |sim: &Simulation, id: u64| {
         let foot = sim.substrate.entities.get(id).unwrap();
@@ -481,22 +529,7 @@ fn a_walk_retry_recursion_searches_at_once_and_an_ordinary_request_waits() {
     };
     let (mut sim, [_, infantry]) = jam(&rules);
     sim.batch_path_searches();
-    let destination = sim.no_queue_request(infantry).unwrap().destination;
-    let recursion = super::super::movement_tick::WalkAdmissionRequest::for_response_test(
-        &sim.substrate.entities,
-        infantry,
-        true,
-    )
-    .unwrap()
-    .into_path_request(destination, 0);
-    assert!(recursion.is_retry_recursion());
-    sim.run_foot_path_request(&recursion, Some(&rules), None, FrameEffects::default())
-        .expect("the recursion runs");
-    assert!(sim.path_batch.as_ref().unwrap().pending.is_empty());
-    assert!(!route(&sim, infantry).is_empty(), "the recursion searched");
-
-    let (mut sim, [_, infantry]) = jam(&rules);
-    sim.batch_path_searches();
+    let run = |sim: &mut Simulation, request: &FootPathRequest| {
     sim.substrate
         .entities
         .get_mut(infantry)
@@ -504,15 +537,91 @@ fn a_walk_retry_recursion_searches_at_once_and_an_ordinary_request_waits() {
         .mission_leaf
         .set_infantry_doing_verified(3)
         .unwrap();
-    let ordinary = sim.no_queue_request(infantry).unwrap();
-    assert!(!ordinary.is_retry_recursion());
-    sim.run_foot_path_request(&ordinary, Some(&rules), None, FrameEffects::default())
+        sim.run_foot_path_request(request, Some(&rules), None, FrameEffects::default())
         .expect("the request runs");
+        let entity = sim.substrate.entities.get(infantry).unwrap();
+        entity.mission_leaf.as_infantry().unwrap().doing()
+    };
+    let request = sim.no_queue_request(infantry).unwrap();
+    assert_eq!(
+        run(&mut sim, &request),
+        -1,
+        "the waiting request clears Doing"
+    );
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending,
         [(infantry, WaitingRequest::NoQueue)]
     );
     assert!(route(&sim, infantry).is_empty(), "the request waited");
-    let entity = sim.substrate.entities.get(infantry).unwrap();
-    assert_eq!(entity.mission_leaf.as_infantry().unwrap().doing(), -1);
+
+    sim.answer_batched_path_searches(Some(&rules), None);
+    run(&mut sim, &request);
+    assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
+    assert!(!route(&sim, infantry).is_empty(), "the answer routes");
+
+    let candidate = request.destination;
+    let recursion = sim
+        .replay_walk_admission_response(infantry, true, candidate, 7, &rules, None)
+        .unwrap()
+        .expect("code 7 retries once");
+    run(&mut sim, &recursion);
+    let batch = sim.path_batch.as_ref().unwrap();
+    assert_eq!(batch.pending, [(infantry, WaitingRequest::NoQueue)]);
+    assert_eq!(batch.used, [1, 0], "the recursion did not search");
+    assert!(
+        route(&sim, infantry).is_empty(),
+        "the retry cleared the path"
+    );
+
+    sim.answer_batched_path_searches(Some(&rules), None);
+    let repeated = sim.no_queue_request(infantry).unwrap();
+    run(&mut sim, &repeated);
+    assert_eq!(sim.path_batch.as_ref().unwrap().used, [2, 0]);
+    assert!(!route(&sim, infantry).is_empty(), "the next answer routes");
+}
+
+/// Drive's no-queue arm in a retry recursion (Process_Movement(0, 0)) waits
+/// the same way: without an answer, and after the outer call took the
+/// frame's.
+#[test]
+fn a_drive_retry_recursion_waits_after_the_frames_answer() {
+    use super::super::track_fresh::ProcessMovementArgs;
+    use super::super::track_process::TrackFamily;
+    let rules = rules();
+    let (mut sim, [tank, _]) = jam(&rules);
+    sim.batch_path_searches();
+    let retry = ProcessMovementArgs {
+        allow_retry: false,
+        force_single: false,
+    };
+    let process = |sim: &mut Simulation, args| {
+        sim.run_track_process_movement(
+            tank,
+            TrackFamily::Drive,
+            args,
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .expect("Process_Movement runs");
+    };
+    process(&mut sim, retry);
+    assert_eq!(
+        sim.path_batch.as_ref().unwrap().pending,
+        [(tank, WaitingRequest::NoQueue)],
+        "without an answer the recursion waits"
+    );
+
+    sim.answer_batched_path_searches(Some(&rules), None);
+    process(&mut sim, ProcessMovementArgs::OUTER);
+    assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
+    // The retry's own preparation: no path left and the timer run out.
+    let frame = sim.session.binary_frame;
+    let foot = sim.substrate.entities.get_mut(tank).unwrap();
+    foot.navigation.path_replay.directions.clear();
+    foot.navigation.path_runtime.start_movement(frame, 0);
+    process(&mut sim, retry);
+    let batch = sim.path_batch.as_ref().unwrap();
+    assert_eq!(batch.pending.last(), Some(&(tank, WaitingRequest::NoQueue)));
+    assert_eq!(batch.used, [1, 0], "the recursion did not search");
 }

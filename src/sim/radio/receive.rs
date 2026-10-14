@@ -67,7 +67,7 @@ pub(crate) fn receive_radio(
     rules: Option<&RuleSet>,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
-    let Some(category) = sim.substrate.entities.get(target_sid).map(|t| t.category) else {
+    let Some(category) = sim.substrate.entities.get(target_sid).map(|t| t.category()) else {
         return RadioResponse::None;
     };
     match category {
@@ -283,7 +283,7 @@ fn building_can_load(
     // Size= and SizeLimit= are native doubles that VERA reads as integers
     // (equal on every retail value).
     if absorbs {
-        let class_refused = match unit.category {
+        let class_refused = match unit.category() {
             EntityCategory::Unit => !building_type.unit_absorb,
             EntityCategory::Infantry => !building_type.infantry_absorb,
             _ => false,
@@ -312,7 +312,7 @@ fn building_can_load(
     }
     if building_type.unit_repair {
         if !matches!(
-            unit.category,
+            unit.category(),
             EntityCategory::Unit | EntityCategory::Aircraft
         ) {
             return RadioResponse::Negatory;
@@ -332,13 +332,13 @@ fn building_can_load(
     }
     // 0x0043C620: a Helipad takes an Aircraft and nothing else.
     if building_type.helipad {
-        return if unit.category == EntityCategory::Aircraft {
+        return if unit.category() == EntityCategory::Aircraft {
             RadioResponse::Roger
         } else {
             RadioResponse::Negatory
         };
     }
-    if unit.category == EntityCategory::Unit
+    if unit.category() == EntityCategory::Unit
         && (building_type.dock_unload && unit_type.harvester
             || building_type.weeder && unit_type.weeder)
     {
@@ -458,7 +458,7 @@ fn building_docking(
     let pad_force = contacted
         && pad_dock
         && sim.substrate.entities.get(from).is_some_and(|foot| {
-            foot.category != EntityCategory::Structure
+            foot.category() != EntityCategory::Structure
                 && foot.navigation.nav_com.is_some()
                 && foot.navigation.nav_com
                     != crate::sim::movement::building_dock_cell(
@@ -756,7 +756,7 @@ pub(crate) fn unit_can_enter_radio(
         })
         .is_some()
         || passenger.mind_control.is_mind_controlled()
-        || passenger.parasite_eating_me.is_some()
+        || passenger.parasite.eater().is_some()
         || passenger
             .capture_manager
             .as_ref()
@@ -819,7 +819,7 @@ fn unit_prepare_to_dock(
         sim.substrate
             .entities
             .get(dock)
-            .is_some_and(|contact| contact.category == EntityCategory::Structure)
+            .is_some_and(|contact| contact.category() == EntityCategory::Structure)
     });
     if let Some(dock) = dock {
         transmit(
@@ -1045,7 +1045,7 @@ fn aircraft_move_here(
             .substrate
             .entities
             .get(id)
-            .filter(|entity| entity.category == EntityCategory::Structure)
+            .filter(|entity| entity.category() == EntityCategory::Structure)
             .map(|_| id),
         NavTargetRef::Cell { .. } => None,
     });
@@ -1473,7 +1473,7 @@ fn techno_repair_tick(
     // InfantryType5247A0/524790 overrides cost0 and Rules+16D8 IRepairStep.
     // That Hospital-family dependency is outside the selected Unit service
     // chain; do not give it the inherited Unit/default getters.
-    if entity.category == EntityCategory::Infantry {
+    if entity.category() == EntityCategory::Infantry {
         return RadioResponse::None;
     }
     let strength = object.strength;
@@ -1489,9 +1489,9 @@ fn techno_repair_tick(
     let Some(entity) = sim.substrate.entities.get_mut(techno) else {
         return RadioResponse::None;
     };
-    entity.health.current = entity.health.current.wrapping_add(heal);
+    entity.health.heal(heal);
     entity.estimated_health.add_repair(heal);
-    let eater = entity.parasite_eating_me;
+    let eater = entity.parasite.eater();
     if let Some(eater) = eater {
         sim.parasite_force_release(
             eater,
@@ -1507,7 +1507,7 @@ fn techno_repair_tick(
         return RadioResponse::None;
     };
     if entity.health.is_full(strength) {
-        entity.health.current = strength;
+        entity.health.set(strength);
         entity.estimated_health.reset(strength);
         RadioResponse::RepairComplete
     } else {
@@ -1573,7 +1573,7 @@ fn techno_tether(
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
     };
-    let airport_bound = entity.category == EntityCategory::Aircraft
+    let airport_bound = entity.category() == EntityCategory::Aircraft
         && rules
             .and_then(|rules| sim.object_type(entity.type_ref(), rules))
             .is_some_and(|object| object.airport_bound);
@@ -1706,7 +1706,7 @@ fn radio_hello(sim: &mut Simulation, receiver: u64, sender: Option<u64>) -> Radi
     ) else {
         return RadioResponse::None;
     };
-    if this.health.current == 0 {
+    if this.health.current() == 0 {
         return RadioResponse::None;
     }
     let ally = |asker, other| {
@@ -1788,14 +1788,14 @@ fn bunker_admits(sim: &Simulation, bld: u64, unit: u64) -> bool {
     };
     // CanEnterBunker 0x0070FBAF..0x0070FBC3, called from this receiver at
     // 0x0043C512: a unit infected on its way in is refused at the door.
-    if unit.parasite_eating_me.is_some() {
+    if unit.parasite.eater().is_some() {
         return false;
     }
     let unit_owner = unit.owner();
     let Some(b) = sim.substrate.entities.get(bld) else {
         return false;
     };
-    if b.dying || b.health.current == 0 {
+    if b.dying || b.health.current() == 0 {
         return false;
     }
     if b.owner() != unit_owner {
@@ -1811,7 +1811,7 @@ fn bunker_admits(sim: &Simulation, bld: u64, unit: u64) -> bool {
 mod tests {
     use super::dock_pad_cell;
     use crate::map::entities::EntityCategory;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::radio::{
         RadioMessage, RadioPayload, RadioResponse, RadioTestEvent, broadcast_break,
@@ -1829,7 +1829,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 900 },
+            Health::new(900),
             type_id,
             EntityCategory::Structure,
             0,
@@ -1850,7 +1850,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 200 },
+            Health::new(200),
             type_id,
             EntityCategory::Unit,
             0,
@@ -1871,7 +1871,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 1000 },
+            Health::new(1000),
             type_id,
             EntityCategory::Structure,
             0,
@@ -1918,7 +1918,7 @@ mod tests {
         spawn_refinery(&mut sim, 2, "Americans", 3);
         let type_ref = sim.intern("GAPILE");
         let building = sim.substrate.entities.get_mut(2).unwrap();
-        building.type_ref = type_ref;
+        building.set_type_ref_for_test(type_ref);
         building.lifecycle.in_limbo = false;
         building.lifecycle.cell_marked = true;
         let owner = sim.intern("Americans");
@@ -1930,7 +1930,7 @@ mod tests {
             0,
             128,
             owner,
-            Health { current: 125 },
+            Health::new(125),
             type_ref,
             EntityCategory::Infantry,
             0,
@@ -2367,12 +2367,16 @@ mod tests {
         .unwrap();
         let mut sim = Simulation::new();
         spawn_refinery(&mut sim, 2, "Americans", 1);
-        sim.substrate.entities.get_mut(2).unwrap().type_ref = sim.interner.intern("GAAIRC");
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_type_ref_for_test(sim.interner.intern("GAAIRC"));
         spawn_miner(&mut sim, 1, "Americans");
         {
             let plane = sim.substrate.entities.get_mut(1).unwrap();
-            plane.category = EntityCategory::Aircraft;
-            plane.type_ref = sim.interner.intern("ORCA");
+            plane.set_category_for_test(EntityCategory::Aircraft);
+            plane.set_type_ref_for_test(sim.interner.intern("ORCA"));
         }
         for (id, partner) in [(1, 2), (2, 1)] {
             sim.substrate
@@ -2588,7 +2592,11 @@ mod tests {
             let mut sim = Simulation::new();
             spawn_miner(&mut sim, 1, "Americans");
             spawn_miner(&mut sim, 2, "Americans");
-            sim.substrate.entities.get_mut(2).unwrap().category = category;
+            sim.substrate
+                .entities
+                .get_mut(2)
+                .unwrap()
+                .set_category_for_test(category);
             sim.substrate
                 .entities
                 .get_mut(1)
@@ -2723,7 +2731,7 @@ mod tests {
                 128,
                 128,
                 own,
-                Health { current: 100 },
+                Health::new(100),
                 carrier_type,
                 EntityCategory::Unit,
                 0,
@@ -2751,7 +2759,7 @@ mod tests {
                 } else {
                     own
                 },
-                Health { current: 100 },
+                Health::new(100),
                 passenger_type,
                 EntityCategory::Infantry,
                 0,
@@ -2762,7 +2770,7 @@ mod tests {
                 passenger.mind_control = MindControlLink::controlled_by_for_test(99);
             }
             if input["parasite"].as_bool().unwrap_or(false) {
-                passenger.parasite_eating_me = Some(99);
+                passenger.parasite.set_eater_for_test(Some(99));
             }
             if input["controlling"].as_bool().unwrap_or(false)
                 || input["empty_controller"].as_bool().unwrap_or(false)

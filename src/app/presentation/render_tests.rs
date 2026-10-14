@@ -6,7 +6,7 @@ use crate::app::input::entity_pick::{
 };
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
-use crate::sim::components::Health;
+use crate::sim::combat::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_intern;
@@ -25,7 +25,7 @@ fn spawn_mobile(store: &mut EntityStore, sid: u64, rx: u16, ry: u16, owner: &str
         0,
         0,
         test_intern(owner),
-        Health { current: 100 },
+        Health::new(100),
         test_intern("E1"),
         EntityCategory::Unit,
         0,
@@ -44,14 +44,14 @@ fn screen_of(store: &EntityStore, sid: u64) -> (f32, f32) {
 }
 
 fn encounter_order(store: &EntityStore) -> Vec<u64> {
-    store.values().map(|entity| entity.stable_id).collect()
+    store.values().map(|entity| entity.stable_id()).collect()
 }
 
 fn selected_order(store: &EntityStore) -> Vec<u64> {
     store
         .values()
         .filter(|entity| entity.selected)
-        .map(|entity| entity.stable_id)
+        .map(|entity| entity.stable_id())
         .collect()
 }
 
@@ -173,7 +173,7 @@ fn test_box_additive_adds_only_and_excludes_structures() {
         0,
         0,
         test_intern("Americans"),
-        Health { current: 100 },
+        Health::new(100),
         test_intern("GAPOWR"),
         EntityCategory::Structure,
         0,
@@ -291,7 +291,7 @@ fn spawn_structure(
         0,
         0,
         test_intern(owner),
-        Health { current: 100 },
+        Health::new(100),
         test_intern(type_id),
         EntityCategory::Structure,
         0,
@@ -432,7 +432,7 @@ fn test_box_selection_excludes_selectable_no_types() {
         0,
         0,
         test_intern("Americans"),
-        Health { current: 100 },
+        Health::new(100),
         test_intern("PDPLANE"),
         EntityCategory::Aircraft,
         0,
@@ -528,7 +528,7 @@ fn test_click_selection_allows_visible_allied_units_for_local_owner() {
         0,
         0,
         test_intern("British"),
-        Health { current: 100 },
+        Health::new(100),
         test_intern("E1"),
         EntityCategory::Unit,
         0,
@@ -576,7 +576,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         0,
         0,
         soviet_id,
-        Health { current: 100 },
+        Health::new(100),
         e1_id,
         EntityCategory::Unit,
         0,
@@ -603,7 +603,7 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
         0,
         0,
         soviet_id,
-        Health { current: 100 },
+        Health::new(100),
         e1_id,
         EntityCategory::Unit,
         0,
@@ -643,7 +643,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         0,
         0,
         americans_id,
-        Health { current: 100 },
+        Health::new(100),
         gapowr_id,
         EntityCategory::Structure,
         0,
@@ -662,7 +662,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         0,
         0,
         soviet_id,
-        Health { current: 100 },
+        Health::new(100),
         e1_id,
         EntityCategory::Unit,
         0,

@@ -112,7 +112,7 @@ impl Simulation {
     ) -> Option<UnitRepairAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
-        if actor.category != EntityCategory::Unit
+        if actor.category() != EntityCategory::Unit
             || actor.owner() != issuing_house
             || !self.house_is_human_player(actor.owner())
             || combat::combat_weapon::weapon_damage_value(
@@ -137,7 +137,7 @@ impl Simulation {
         // Target vt+80: Unit746400, Building457620 ->465D40, and
         // Aircraft41B910 -> Object's grounded predicate. Every GameEntity is
         // a Techno (vt+7C); Infantry's vt+80 answers false.
-        let vehicle = match target.category {
+        let vehicle = match target.category() {
             EntityCategory::Unit => !target_type.non_vehicle,
             EntityCategory::Structure => target_type.is_1x1_with_undeploy(),
             EntityCategory::Aircraft => {
@@ -160,10 +160,10 @@ impl Simulation {
         };
         if !vehicle || target_id == actor_id {
             //73FE2F..73FE43 preserves the base action for a Building.
-            return (target.category != EntityCategory::Structure)
+            return (target.category() != EntityCategory::Structure)
                 .then_some(UnitRepairAction::Select);
         }
-        if target.category == EntityCategory::Aircraft {
+        if target.category() == EntityCategory::Aircraft {
             //73FDE1..73FE06: a grounded aircraft on a building is excluded.
             let coord = crate::sim::movement::ground_pose::position_world_coord(&target.position);
             let cell = self.resolved_terrain.as_ref().and_then(|terrain| {
@@ -222,7 +222,7 @@ impl Simulation {
         let Some(object) = self.object_type(actor.type_ref(), rules) else {
             return false;
         };
-        if actor.category == EntityCategory::Structure {
+        if actor.category() == EntityCategory::Structure {
             // Steam gamemd 3e81a617: Building44F5C0, complete original control
             // vectors in procedural_drawing_oracle/factory_destination.py --control.
             // EMP+504 still has no runtime producer; this is its ctor-zero subset.
@@ -245,7 +245,7 @@ impl Simulation {
             return false;
         }
         if object.spawned
-            || actor.is_paralyzed(self.session.binary_frame)
+            || actor.parasite.is_paralyzed(self.session.binary_frame)
             || actor.is_warped_out()
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
@@ -292,14 +292,14 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<EngineerBuildingAction> {
         let actor = self.substrate.entities.get(actor_id)?;
-        if actor.category != EntityCategory::Infantry
+        if actor.category() != EntityCategory::Infantry
             || !self.object_type(actor.type_ref(), rules)?.engineer
             || !self.house_is_human_player(actor.owner())
         {
             return None;
         }
         let target = self.substrate.entities.get(target_id)?;
-        if target.category != EntityCategory::Structure {
+        if target.category() != EntityCategory::Structure {
             return None;
         }
         let object = self.object_type(target.type_ref(), rules)?;
@@ -397,8 +397,8 @@ impl Simulation {
         ) else {
             return false;
         };
-        if actor.category != EntityCategory::Infantry
-            || target.category != EntityCategory::Structure
+        if actor.category() != EntityCategory::Infantry
+            || target.category() != EntityCategory::Structure
             || !self.house_is_human_player(actor.owner())
         {
             return false;
@@ -436,9 +436,9 @@ impl Simulation {
         };
         let actor = self.substrate.entities.get(actor_id)?;
         let building = self.substrate.entities.get(building_id)?;
-        if actor.category != EntityCategory::Infantry
+        if actor.category() != EntityCategory::Infantry
             || actor.navigation.nav_com.is_some()
-            || building.category != EntityCategory::Structure
+            || building.category() != EntityCategory::Structure
         {
             return None;
         }
@@ -568,7 +568,7 @@ impl Simulation {
         //has no UndeploysInto. One-cell building conversion remains a separate mechanism; ordinary
         //Engineer entry below shares this admitted ground-building identity.
         if let Some(target) = nav_object.and_then(|id| self.substrate.entities.get(id))
-            && target.category == EntityCategory::Structure
+            && target.category() == EntityCategory::Structure
             && self
                 .object_type(target.type_ref(), rules)
                 .is_some_and(|object| object.is_1x1_with_undeploy())
@@ -608,7 +608,7 @@ impl Simulation {
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
         };
-        if engineer.category != EntityCategory::Infantry {
+        if engineer.category() != EntityCategory::Infantry {
             return Ok(BuildingEntryResult::default());
         }
         let InfantryPerCellBuildingAdmission::GroundBuilding(building_id) =
@@ -658,7 +658,7 @@ impl Simulation {
                         .houses
                         .get(&building.owner())
                         .is_some_and(|house| house.multiplay_passive));
-            let full = building.health.current == object.strength;
+            let full = building.health.current() == object.strength;
             let refused_capture = building.mission.current().known() == Some(MissionType::Selling)
                 || building.is_warped_out();
             let capturable = object.capturable;
@@ -895,7 +895,7 @@ impl Simulation {
                 let object = rules.object(self.interner.resolve(building.type_ref()))?;
                 Some((
                     pending,
-                    building.health.current,
+                    building.health.current(),
                     object.bridge_repair_hut,
                     (building.position.rx, building.position.ry),
                 ))

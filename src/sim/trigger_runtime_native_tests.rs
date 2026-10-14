@@ -129,7 +129,7 @@ fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
             .get_mut(victim)
             .unwrap()
             .health
-            .current = integer(&case["input"]["current"]);
+            .set_for_test(integer(&case["input"]["current"]));
         let detach = case["name"] == "tag_detach";
         install_event_ingress_map(
             &mut sim,
@@ -159,7 +159,7 @@ fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
             FrameEffects::default(),
         );
         assert_eq!(
-            json!(sim.substrate.entities.get(victim).unwrap().health.current),
+            json!(sim.substrate.entities.get(victim).unwrap().health.current()),
             case["output"]["actual"],
             "{case}"
         );
@@ -708,7 +708,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         .unwrap();
     }
     assert_eq!(sim.session.binary_frame, 15);
-    assert_eq!(sim.entities().get(reactor).unwrap().health.current, 769);
+    assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
     assert_eq!(
         (
             sim.power_states[&owner].total_output,
@@ -736,7 +736,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     let reactor = sim.entities().get(reactor).unwrap();
     assert_eq!(
         (
-            reactor.health.current,
+            reactor.health.current(),
             reactor.building_power_health_sample()
         ),
         (269, Some(269))
@@ -1129,7 +1129,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         ruleset::RuleSet,
     };
     use crate::sim::{
-        building_construction::BuildingBodyMode, components::Health, game_entity::GameEntity,
+        building_construction::BuildingBodyMode, combat::Health, game_entity::GameEntity,
         house_state::HouseState, native_identity::NativeUniqueIdCursor, rng::SimRng,
     };
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
@@ -1236,14 +1236,14 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         0,
         0,
         owner,
-        Health { current: initial },
+        Health::new(initial),
         type_id,
         EntityCategory::Structure,
         0,
         0,
         false,
     );
-    entity.native_unique_id = integer(&native["reactor_native_unique_id"]);
+    entity.set_native_unique_id_for_test(integer(&native["reactor_native_unique_id"]));
     entity.foundation = object.foundation.clone();
     entity.begin_building_body(BuildingBodyMode::Idle, 0);
     sim.substrate.entities.insert(entity);
@@ -1318,7 +1318,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     }
     let last = rows.last().unwrap();
     let reactor = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(json!(reactor.health.current), last["health"]);
+    assert_eq!(json!(reactor.health.current()), last["health"]);
     assert_eq!(json!(reactor.estimated_health.get()), last["estimated"]);
     assert_eq!(
         u8::from(reactor.building_art.damage_state_active()),
@@ -1916,7 +1916,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         0,
         0,
         house,
-        crate::sim::components::Health { current: 100 },
+        crate::sim::combat::Health::new(100),
         type_id,
         crate::map::entities::EntityCategory::Unit,
         0,
@@ -2997,7 +2997,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
                                     0,
                                     0,
                                     house,
-                                    crate::sim::components::Health { current: 100 },
+                                    crate::sim::combat::Health::new(100),
                                     type_id,
                                     crate::map::entities::EntityCategory::Unit,
                                     0,
@@ -3254,7 +3254,7 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
             4,
             0,
             owner,
-            crate::sim::components::Health { current: 100 },
+            crate::sim::combat::Health::new(100),
             typ,
             crate::map::entities::EntityCategory::Structure,
             0,

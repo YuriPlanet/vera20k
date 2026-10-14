@@ -421,7 +421,7 @@ fn what_action_on_cell(
     if sim
         .entities()
         .get(id)
-        .is_none_or(|entity| entity.category == crate::map::entities::EntityCategory::Structure)
+        .is_none_or(|entity| entity.category() == crate::map::entities::EntityCategory::Structure)
             {
         return MoveAction::Move;
     }
@@ -510,7 +510,7 @@ pub(super) fn capability_cursor_for_hover(
         }
         // 1b. Garrisoned building self-hover — show deploy cursor to unload occupants.
         if let Some(entity) = entity
-            && entity.category == EntityCategory::Structure
+            && entity.category() == EntityCategory::Structure
         {
             if let Some(obj) = obj
                 && obj.can_be_occupied
@@ -554,7 +554,7 @@ pub(super) fn capability_cursor_for_hover(
         // the base action (0x0051E462..0x0051E49B): an Engineer of the
         // local player over any object carrying a bomb that player sees
         // (`+0x38`, `+0x68`) — own, allied or enemy — offers DisarmBomb.
-        if sel_entity.category == EntityCategory::Infantry
+        if sel_entity.category() == EntityCategory::Infantry
             && sel_obj.engineer
             && hovered_entity.is_some_and(|e| e.bomb.is_some())
             && sim.bomb_seen_by(hover.stable_id, sel_entity.owner())
@@ -617,7 +617,7 @@ pub(super) fn capability_cursor_for_hover(
             return CursorFeedbackKind::Demolish;
         }
 
-        let is_infantry = sel_entity.category == EntityCategory::Infantry;
+        let is_infantry = sel_entity.category() == EntityCategory::Infantry;
 
         // 5. Infantry boarding a friendly transport (Passengers > 0).
         if is_infantry
@@ -705,8 +705,8 @@ pub(super) fn capability_cursor_for_hover(
         // Service depot — a damaged own vehicle over an own UnitRepair
         // building shows the enter/dock cursor (the click issues
         // RepairAtDepot; see `input::context_order`).
-        if sel_entity.category == EntityCategory::Unit
-            && sel_entity.health.current < sel_obj.strength
+        if sel_entity.category() == EntityCategory::Unit
+            && sel_entity.health.current() < sel_obj.strength
             && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
             && hovered_obj.is_some_and(|o| o.unit_repair)
         {
@@ -890,7 +890,7 @@ fn forced_bomb_feedback(
     let best = best_id.and_then(|id| sim.entities().get(id))?;
     let best_obj = rules.object(sim.interner.resolve(best.type_ref()))?;
     let target = sim.entities().get(hover.stable_id)?;
-    if best.category == EntityCategory::Infantry
+    if best.category() == EntityCategory::Infantry
         && best_obj.engineer
         && target.bomb.is_some()
         && sim.bomb_seen_by(hover.stable_id, best.owner())
@@ -1035,7 +1035,7 @@ pub(crate) fn select_best_for_action(
             0
         } else if !obj.is_some_and(|obj| is_armed(entity, obj)) {
             2
-        } else if entity.category == EntityCategory::Structure {
+        } else if entity.category() == EntityCategory::Structure {
             3
         } else if obj.zip(rules).is_some_and(|(obj, rules)| {
             weapon_damage_value(entity, obj, sim.entities(), rules, &sim.interner) > 0
@@ -2048,7 +2048,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     actor.lifecycle.object_alive,
                     actor.lifecycle.in_limbo,
                     actor.in_logic_vector,
-                    actor.health.current,
+                    actor.health.current(),
                     sim.building_operational_state(house, &rules),
                 )
             };
@@ -2467,7 +2467,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     .unwrap();
                 // A damaged friendly hut and a capturable hostile hut must
                 // still terminate this branch instead of taking those fallbacks.
-                sim.entities_mut().get_mut(hut).unwrap().health.current = 150;
+                sim.entities_mut()
+                    .get_mut(hut)
+                    .unwrap()
+                    .health
+                    .set_for_test(150);
                 if relation == "allied" {
                     sim.house_alliances
                         .entry("AMERICANS".into())

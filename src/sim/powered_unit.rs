@@ -124,7 +124,7 @@ impl Simulation {
         let Some(building) = self.substrate.entities.get(id) else {
             return;
         };
-        if building.category != EntityCategory::Structure || !building.building_powered_center {
+        if building.category() != EntityCategory::Structure || !building.building_powered_center {
             return;
         }
         let owner = building.owner();
@@ -210,7 +210,7 @@ impl Simulation {
                 continue;
             };
             if entity.owner() != owner
-                || entity.category != EntityCategory::Unit
+                || entity.category() != EntityCategory::Unit
                 || !self
                     .interner
                     .resolve(entity.type_ref())
@@ -257,7 +257,7 @@ impl Simulation {
         {
             return;
         }
-        let foot = entity.category.is_foot();
+        let foot = entity.category().is_foot();
         self.reset_orders_to_guard(id, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.selected = false;
@@ -283,7 +283,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .map(|entity| entity.category.is_foot())
+            .map(|entity| entity.category().is_foot())
         else {
             return;
         };
@@ -373,7 +373,7 @@ impl Simulation {
         let phase = (location.x / 10)
             .wrapping_add((location.y / 10) << 16)
             .wrapping_add(self.session.binary_frame as i32)
-            .wrapping_add(entity.native_unique_id);
+            .wrapping_add(entity.native_unique_id());
         if phase % 30 != 0 {
             return;
         }

@@ -347,7 +347,7 @@ fn a_walk_damages_only_the_infantry_of_the_block() {
     assert_eq!(damaged, vec![infantry]);
     for id in [tank, building] {
         let object = sim.substrate.entities.get(id).unwrap();
-        assert!(!object.dying && object.health.current > 0);
+        assert!(!object.dying && object.health.current() > 0);
     }
 }
 
@@ -908,7 +908,7 @@ fn an_infantryman_above_the_ground_is_not_mutated() {
 
     let entity = sim.substrate.entities.get(raised).unwrap();
     assert!(entity.lifecycle.object_alive && !entity.dying);
-    assert_eq!(entity.health.current, 125);
+    assert_eq!(entity.health.current(), 125);
     assert!(
         sim.substrate
             .entities

@@ -2984,7 +2984,7 @@ SpreadPercentage=.06
             3,
             EntityCategory::Structure,
         );
-        building.type_ref = interner.intern("GAPOWR");
+        building.set_type_ref_for_test(interner.intern("GAPOWR"));
         entities.insert(building);
         let mut occupancy = OccupancyGrid::new();
         occupancy.add(

@@ -332,7 +332,7 @@ pub(crate) fn desired_turret_facing(
     binary_frame: u32,
 ) -> Option<u16> {
     entity.barrel_facing.as_ref()?;
-    match entity.category {
+    match entity.category() {
         crate::map::entities::EntityCategory::Unit => {
             facing_update(entity, entities, rules, interner, binary_frame).turret_destination
         }
@@ -376,7 +376,7 @@ pub fn tick_turret_rotation(
             None => continue,
         };
         // Unit barrels are committed by their own live Fire -> Facing slot.
-        if entity.category == crate::map::entities::EntityCategory::Unit {
+        if entity.category() == crate::map::entities::EntityCategory::Unit {
             continue;
         }
         // A warped object's AI sets no facing; its barrel finishes the turn it

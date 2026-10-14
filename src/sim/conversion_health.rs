@@ -55,7 +55,7 @@ impl ConversionHealth {
         kind: ConversionKind,
     ) -> Self {
         Self(native_health(
-            source.health.current,
+            source.health.current(),
             source_type.strength,
             destination_type.strength,
             kind,
@@ -63,7 +63,7 @@ impl ConversionHealth {
     }
 
     pub(crate) fn apply(self, destination: &mut GameEntity) {
-        destination.health.current = self.0;
+        destination.health.set(self.0);
         destination.estimated_health.reset(self.0);
     }
 }

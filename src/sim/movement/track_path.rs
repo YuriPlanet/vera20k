@@ -57,7 +57,7 @@ const FOUND_ROUTE_RETRIES: u32 = 10;
 
 /// A Unit on Drive or Ship, whose class setter is Unit 0x741970.
 fn track_unit(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && entity.locomotor.as_ref().is_some_and(|loco| {
             matches!(
                 loco.active_kind(),
@@ -69,7 +69,7 @@ fn track_unit(entity: &GameEntity) -> bool {
 /// A Unit on a Hover locomotor: the Unit setter's Foot tail reaches Hover
 /// Move_To (0x00514D90) and Stop_Moving (0x00516320).
 fn hover_unit(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && entity
             .locomotor
             .as_ref()
@@ -79,7 +79,7 @@ fn hover_unit(entity: &GameEntity) -> bool {
 /// A Unit on a Walk locomotor (no retail VehicleType; a map may assign one):
 /// the Unit setter's Foot tail reaches Walk Move_To (0x0075ACB0).
 fn walk_unit(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && entity
             .locomotor
             .as_ref()
@@ -90,7 +90,7 @@ fn walk_unit(entity: &GameEntity) -> bool {
 /// is the Chrono Warp's (`SuperClass::Launch @ 0x006CCB4A`): the Unit
 /// setter's Foot tail reaches Teleport Move_To (`0x00718100`).
 fn teleport_unit(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && entity
             .locomotor
             .as_ref()
@@ -100,7 +100,7 @@ fn teleport_unit(entity: &GameEntity) -> bool {
 /// A Unit on a Jumpjet locomotor: its null destination reaches the Jumpjet's
 /// `Stop_Moving` through the same Unit setter.
 fn jumpjet_unit(entity: &GameEntity) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && entity
             .locomotor
             .as_ref()
@@ -112,7 +112,7 @@ fn jumpjet_unit(entity: &GameEntity) -> bool {
 /// Teleporter arm, which swaps a Drive in over the Teleport primary or ends
 /// it, before the Foot tail.
 fn teleporter_unit(sim: &Simulation, entity: &GameEntity, rules: Option<&RuleSet>) -> bool {
-    entity.category == EntityCategory::Unit
+    entity.category() == EntityCategory::Unit
         && rules
             .and_then(|rules| sim.object_type(entity.type_ref(), rules))
             .is_some_and(|object| object.teleporter)
@@ -702,7 +702,12 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(category) = self.substrate.entities.get(id).map(|actor| actor.category) else {
+        let Some(category) = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|actor| actor.category())
+        else {
             return;
         };
         match category {
@@ -829,7 +834,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .filter(|building| building.category == EntityCategory::Structure)
+                .filter(|building| building.category() == EntityCategory::Structure)
                 .filter(|building| {
                     self.object_type(building.type_ref(), rules)
                         .is_some_and(|object| object.unit_repair)
@@ -1117,7 +1122,7 @@ impl Simulation {
                         .entities
                         .get(candidate)
                         .is_some_and(|building| {
-                            building.category == EntityCategory::Structure
+                            building.category() == EntityCategory::Structure
                                 && rules
                                     .and_then(|rules| self.object_type(building.type_ref(), rules))
                                     .is_some_and(|object| object.unit_repair || object.bunker)
@@ -1190,7 +1195,7 @@ impl Simulation {
             .radio_contacts
             .slot(0)
             .and_then(|contact| self.substrate.entities.get(contact))
-            .filter(|contact| contact.category == EntityCategory::Structure)
+            .filter(|contact| contact.category() == EntityCategory::Structure)
             .and_then(|contact| self.object_type(contact.type_ref(), rules))
             .is_some_and(|object| object.dock_unload);
         // 0x007424D7: CellClass::Get_Unit(0) on the ground object list.
@@ -1302,7 +1307,7 @@ impl Simulation {
             .slot(0)
             .and_then(|contact| self.substrate.entities.get(contact))
             .is_some_and(|contact| {
-                contact.category == EntityCategory::Structure
+                contact.category() == EntityCategory::Structure
                     && rules
                         .and_then(|rules| self.object_type(contact.type_ref(), rules))
                         .is_some_and(|kind| kind.weapons_factory)

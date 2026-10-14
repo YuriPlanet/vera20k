@@ -149,7 +149,11 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
         }
     }
     let sim = &runtime.simulation;
-    let miner_health = sim.substrate.entities.get(miner).map(|e| e.health.current);
+    let miner_health = sim
+        .substrate
+        .entities
+        .get(miner)
+        .map(|e| e.health.current());
     assert!(
         miner_health.is_some_and(|health| health < 1000),
         "the strikes hurt the miner: {miner_health:?}"

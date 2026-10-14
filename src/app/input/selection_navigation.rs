@@ -182,7 +182,7 @@ fn combatant_selection(
     // offline latch +1C8) and Object138 owner.
     let combatant = |id: &u64| {
         sim.entities().get(*id).is_some_and(|entity| {
-            entity.category != EntityCategory::Structure
+            entity.category() != EntityCategory::Structure
                 && rules
                     .object(sim.interner.resolve(entity.type_ref()))
                     .is_some_and(|object| object.is_selectable_combatant)
@@ -377,7 +377,7 @@ pub(crate) fn reset_for_world_replacement(input: &mut crate::app::input::state::
 /// 5F5DD0 uses inclusive red/yellow thresholds and live type Strength.
 fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8 {
     use crate::util::native_x87::MaskedX87Ordering::Greater;
-    let health = crate::sim::components::Health { current };
+    let health = crate::sim::combat::Health::new(current);
     // Object5F5DD0: all three TEST AH,41 comparisons include unordered;
     // only the first red branch also requires signed actual > 0.
     // Original whole-function outputs: health_ratio_predicates.json.
@@ -413,7 +413,7 @@ fn entity_navigation_category(
         CategoryNavigationKind::Health => {
             let object = rules.object(sim.interner.resolve(entity.type_ref()))?;
             Some(health_category(
-                entity.health.current,
+                entity.health.current(),
                 object.strength,
                 rules.general.condition_red,
                 rules.general.condition_yellow,
@@ -460,7 +460,7 @@ fn category_selection(
             .filter(|id| {
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive
-                        && entity.category != EntityCategory::Structure
+                        && entity.category() != EntityCategory::Structure
                         && navigation_owner_controlled(sim, entity.owner())
                 })
             })
@@ -757,7 +757,7 @@ mod tests {
     fn veterancy_lifecycle_frame_handoff_expires_surviving_objects() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::ruleset::RuleSet;
-        use crate::sim::components::Health;
+        use crate::sim::combat::Health;
         use crate::sim::game_entity::GameEntity;
         use crate::sim::world::{
             ConcealOutcome, FrameEffects, LifecycleOutput, Simulation, TickLane,
@@ -781,7 +781,7 @@ mod tests {
                         0,
                         0,
                         owner,
-                        Health { current: 100 },
+                        Health::new(100),
                         type_id,
                         EntityCategory::Unit,
                         0,

@@ -593,7 +593,13 @@ fn retail_dominator_strike_captures_the_block() {
     ];
     // A 1x1 concrete building in the block.
     let dumpster = spawn(&mut sim, &rules, "CAMISC03", "Russians", (39, 39));
-    let dumpster_strength = sim.substrate.entities.get(dumpster).unwrap().health.current;
+    let dumpster_strength = sim
+        .substrate
+        .entities
+        .get(dumpster)
+        .unwrap()
+        .health
+        .current();
     let normal_ambient = sim.session.lighting.normal.ambient_percent;
     let dominator_ambient = sim.session.lighting.dominator.ambient_percent;
     let sw_type = charge_super(&mut sim, americans, DOMINATOR);
@@ -654,11 +660,17 @@ fn retail_dominator_strike_captures_the_block() {
                 .is_mind_controlled()
         );
     }
-    let dumpster_health = sim.substrate.entities.get(dumpster).unwrap().health.current;
+    let dumpster_health = sim
+        .substrate
+        .entities
+        .get(dumpster)
+        .unwrap()
+        .health
+        .current();
     assert!(dumpster_health < dumpster_strength);
     assert_eq!(owner_name(&sim, dumpster), "Russians");
     assert_eq!(
-        sim.substrate.entities.get(tank).unwrap().health.current,
+        sim.substrate.entities.get(tank).unwrap().health.current(),
         400
     );
     // The player's captives take no Hunt.

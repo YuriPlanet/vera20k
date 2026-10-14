@@ -262,7 +262,7 @@ pub(crate) fn tick_unit_body_frame_counter(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) {
-    if entity.category != crate::map::entities::EntityCategory::Unit
+    if entity.category() != crate::map::entities::EntityCategory::Unit
         || entity.dying
         || !entity.lifecycle.object_alive
         || entity.lifecycle.in_limbo
@@ -425,6 +425,7 @@ fn tick_animations_impl(
             .get_mut(id)
             .expect("an animated entity was just read");
         let type_ref = entity.type_ref();
+        let category = entity.category();
         let anim = entity
             .animation
             .as_mut()
@@ -469,7 +470,7 @@ fn tick_animations_impl(
         // UnitClass SHP Stand/Walk images are selected from Foot's persistent
         // body counter at draw time. Do not advance a second relative clock or
         // reset cadence when the generic visual sequence changes.
-        if entity.category == crate::map::entities::EntityCategory::Unit
+        if category == crate::map::entities::EntityCategory::Unit
             && set.shp_vehicle_cadence().is_some()
             && matches!(anim.sequence, SequenceKind::Stand | SequenceKind::Walk)
         {
@@ -605,7 +606,7 @@ pub fn tick_voxel_animations(entities: &mut crate::sim::entity_store::EntityStor
     let advancing: Vec<u64> = entities
         .values()
         .filter(|entity| {
-            entity.category != crate::map::entities::EntityCategory::Unit
+            entity.category() != crate::map::entities::EntityCategory::Unit
                 && entity.voxel_animation.as_ref().is_some_and(|anim| {
                     anim.playing && anim.frame_count > 1 && anim.frame_delay != 0
                 })

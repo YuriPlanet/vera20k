@@ -1118,7 +1118,7 @@ fn prism_supporter(
                 .pending_building_fire
                 .map_or(0, |pending| pending.remaining_ticks)
                 == 0
-            && candidate.draining_me.is_none()
+            && candidate.drain.draining_me().is_none()
             && candidate.mission.effective() != attack
             && candidate_id != id;
         if !admitted {
@@ -1170,7 +1170,7 @@ pub(super) fn process_delayed_fire(
         return;
     };
     // Health 0 returned before the call (`0x00440072`).
-    if entity.dying || entity.health.current == 0 {
+    if entity.dying || entity.health.current() == 0 {
         return;
     }
     let Some(pending) = entity.pending_building_fire.as_mut() else {
@@ -1303,7 +1303,7 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
         return;
     };
     // Health 0 returned before it (`0x00440072`).
-    if entity.dying || entity.health.current == 0 {
+    if entity.dying || entity.health.current() == 0 {
         return;
     }
     let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
@@ -1315,7 +1315,7 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
     }
     if let TargetKind::Entity(target_id) = target
         && sim.substrate.entities.get(target_id).is_some_and(|target| {
-            target.category == EntityCategory::Aircraft
+            target.category() == EntityCategory::Aircraft
                 && !crate::sim::movement::air_movement::is_low_flying(
                     target,
                     sim.resolved_terrain.as_ref(),
@@ -1381,7 +1381,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
         };
-        if entity.category != EntityCategory::Structure {
+        if entity.category() != EntityCategory::Structure {
             return true;
         }
         if entity.mission.current().known() == Some(MissionType::Selling)

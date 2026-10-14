@@ -73,8 +73,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         20,
         EntityCategory::Structure,
     );
-    actor.owner = owner;
-    actor.type_ref = sim.intern("BUILDING");
+    actor.set_owner_for_test(owner);
+    actor.set_type_ref_for_test(sim.intern("BUILDING"));
     // Match the oracle's prepared Object+81 byte. The constructor leaves
     // Rust objects in limbo; this comparison starts after that lifecycle.
     actor.lifecycle.in_limbo = input["limbo"].as_bool().unwrap_or(false);

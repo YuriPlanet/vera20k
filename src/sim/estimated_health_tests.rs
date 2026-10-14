@@ -35,9 +35,9 @@ fn actual_object_ai_recovers_each_category_on_binary_frame_mask() {
     ] {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "ESTIMATE", "Americans", 2, 2);
-        entity.category = category;
+        entity.set_category_for_test(category);
         entity.lifecycle.in_limbo = false;
-        entity.health.current = 100;
+        entity.health.set_for_test(100);
         entity.estimated_health = EstimatedHealth::from_raw(-100);
         sim.substrate.entities.insert(entity);
         sim.set_logic_order_for_test(vec![1]);
@@ -83,7 +83,7 @@ fn actual_object_ai_recovers_each_category_on_binary_frame_mask() {
 fn reservations_are_initialized_and_hash_independently_of_actual_health() {
     let mut sim = Simulation::new();
     let entity = GameEntity::test_default(1, "ESTIMATE", "Americans", 2, 2);
-    assert_eq!(entity.estimated_health.get(), entity.health.current);
+    assert_eq!(entity.estimated_health.get(), entity.health.current());
     sim.substrate.entities.insert(entity);
     let baseline = sim.state_hash();
     sim.substrate.entities.get_mut(1).unwrap().estimated_health = EstimatedHealth::from_raw(-1);
@@ -102,7 +102,7 @@ fn active_tube_bypasses_recovery_until_ordinary_ai_resumes() {
     for category in [EntityCategory::Unit, EntityCategory::Infantry] {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "ESTIMATE", "Americans", 2, 2);
-        entity.category = category;
+        entity.set_category_for_test(category);
         entity.lifecycle.in_limbo = false;
         entity.estimated_health = EstimatedHealth::from_raw(-100);
         entity.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
@@ -152,7 +152,7 @@ fn save_restore_preserves_negative_reservations_and_ai_continuation() {
     let mut sim = Simulation::new();
     let id = sim.allocate_stable_id();
     let mut entity = GameEntity::test_default(id, "E1", "Americans", 5, 5);
-    entity.category = EntityCategory::Infantry;
+    entity.set_category_for_test(EntityCategory::Infantry);
     entity.lifecycle.in_limbo = false;
     entity.estimated_health = EstimatedHealth::from_raw(-123);
     sim.substrate.entities.insert(entity);
@@ -202,9 +202,9 @@ fn common_ai_recovers_before_self_heal_without_mirroring_actual_health() {
     let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
     let mut sim = Simulation::new();
     let mut entity = GameEntity::test_default(1, "E1", "Americans", 5, 5);
-    entity.category = EntityCategory::Infantry;
+    entity.set_category_for_test(EntityCategory::Infantry);
     entity.lifecycle.in_limbo = false;
-    entity.health.current = 10;
+    entity.health.set_for_test(10);
     entity.estimated_health = EstimatedHealth::from_raw(10);
     sim.interner = crate::sim::intern::test_interner();
     sim.substrate.entities.insert(entity);
@@ -213,13 +213,13 @@ fn common_ai_recovers_before_self_heal_without_mirroring_actual_health() {
 
     sim.object_ai_stage(Some(&rules));
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(entity.health.current, 11);
+    assert_eq!(entity.health.current(), 11);
     assert_eq!(entity.estimated_health.get(), 10);
 
     sim.session.binary_frame = 904;
     sim.object_ai_stage(Some(&rules));
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(entity.health.current, 11);
+    assert_eq!(entity.health.current(), 11);
     assert_eq!(
         entity.estimated_health.get(),
         10,

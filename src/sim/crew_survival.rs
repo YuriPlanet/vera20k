@@ -520,7 +520,7 @@ impl Simulation {
             .substrate
             .entities
             .get(passenger)
-            .map(|entity| entity.category == EntityCategory::Infantry)
+            .map(|entity| entity.category() == EntityCategory::Infantry)
         else {
             return;
         };
@@ -779,7 +779,7 @@ impl Simulation {
         if entity.passenger_role.inside_transport_id() == Some(unit_id) {
             entity.passenger_role.clear_carrier_relation();
         }
-        let infantry = entity.category == EntityCategory::Infantry;
+        let infantry = entity.category() == EntityCategory::Infantry;
         let passenger_owner = entity.owner();
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -977,7 +977,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         let (rx, ry, z) = unlimbo.cell_level();
         let requested_z = match unlimbo {
             CrewUnlimbo::Place { raw_z, .. } | CrewUnlimbo::Exact { raw_z, .. } => raw_z,
@@ -1178,7 +1178,7 @@ impl Simulation {
 
     fn set_crew_health(&mut self, id: u64, health: i32) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.health.current = health;
+            entity.health.set(health);
         }
     }
 

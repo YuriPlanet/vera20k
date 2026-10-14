@@ -98,7 +98,7 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.exact_z_leptons = Some(integer("z", 0));
     entity.on_bridge = flag("on_bridge");
-    entity.health.current = integer("health", 100);
+    entity.health.set_for_test(integer("health", 100));
     let loco = entity.locomotor.as_mut().unwrap();
     if flag("landing") {
         loco.begin_fly_landing();
@@ -353,7 +353,11 @@ fn landing_base_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
             "helipad" => "HELIPAD",
             _ => "PLAIN",
         });
-        sim.substrate.entities.get_mut(id).unwrap().type_ref = type_ref;
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_type_ref_for_test(type_ref);
     }
     for id in holes {
         slots.remove(id);
@@ -1042,7 +1046,7 @@ fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
         let (mut sim, rules) = takeoff_fixture(&row);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         match gate {
-            "health" => entity.health.current = 0,
+            "health" => entity.health.set_for_test(0),
             "power" => entity.locomotor.as_mut().unwrap().powered = false,
             "life" => entity.lifecycle.object_alive = false,
             _ => unreachable!(),

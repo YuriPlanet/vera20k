@@ -491,7 +491,7 @@ mod tests {
                 0,
                 0,
                 owner,
-                crate::sim::components::Health { current: 100 },
+                crate::sim::combat::Health::new(100),
                 type_id,
                 crate::map::entities::EntityCategory::Unit,
                 0,

@@ -286,7 +286,7 @@ fn warp_object(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let category = entity.category;
+    let category = entity.category();
     if !matches!(
         category,
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -294,9 +294,9 @@ fn warp_object(
     {
         return;
     }
-    if let Some(eater) = entity.parasite_eating_me
+    if let Some(eater) = entity.parasite.eater()
         && sim.substrate.entities.get(eater).is_some_and(|eater| {
-            eater.parasite.is_some()
+            eater.parasite.class().is_some()
                 && sim
                     .object_type(eater.type_ref(), rules)
                     .is_some_and(|object| object.naval)
@@ -382,13 +382,13 @@ fn arm_chrono_warp(
     if entity.locomotor.is_none() {
         return;
     }
-    let category = entity.category;
+    let category = entity.category();
     if let Some(bunker) = entity.bunker_link.installed_in()
         && sim
             .substrate
             .entities
             .get(bunker)
-            .is_some_and(|building| building.category == EntityCategory::Structure)
+            .is_some_and(|building| building.category() == EntityCategory::Structure)
     {
         crate::sim::docking::bunker_link::clear_bunker(sim, bunker, rules, frame_effects);
     }

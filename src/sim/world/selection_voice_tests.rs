@@ -117,7 +117,7 @@ fn normal_voice_requests_match_native_rejections_draws_and_complete_main_state()
 fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuation() {
     use crate::map::entities::EntityCategory;
     use crate::rules::area_guard_tests as native;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
     use crate::sim::rng::SimRng;
@@ -183,7 +183,7 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
                     0,
                     0,
                     owner,
-                    Health { current: 100 },
+                    Health::new(100),
                     type_ref,
                     category,
                     0,

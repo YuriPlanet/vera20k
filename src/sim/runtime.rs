@@ -491,7 +491,7 @@ mod tests {
                 .values()
                 .next()
                 .expect("projected MTNK")
-                .techno_ctor_random_word,
+                .techno_ctor_random_word(),
             0xA55A
         );
     }
@@ -1196,7 +1196,7 @@ pub(crate) fn finalize_constructed_scenario(
             .substrate
             .entities
             .values()
-            .filter(|entity| entity.category == crate::map::entities::EntityCategory::Structure)
+            .filter(|entity| entity.category() == crate::map::entities::EntityCategory::Structure)
             .map(|entity| {
                 let country = sim
                     .houses

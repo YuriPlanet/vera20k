@@ -1295,7 +1295,7 @@ fn presentation_skips_dying_infantry_without_changing_its_stage_or_action() {
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.dying = true;
-    actor.health.current = 0;
+    actor.health.set_for_test(0);
     actor.set_native_stage_value(14);
     let dead = tick_animations(
         &mut sim.substrate.entities,
@@ -1323,7 +1323,7 @@ fn completed_infantry_death_is_removed_by_the_class_sequencer() {
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.dying = true;
-    actor.health.current = 0;
+    actor.health.set_for_test(0);
     actor.set_native_stage_value(15);
     assert!(sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
     let retired = sim.substrate.entities.get(id).unwrap();
@@ -1355,7 +1355,7 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.dying = true;
-    actor.health.current = 0;
+    actor.health.set_for_test(0);
     actor.set_native_stage_value(14);
     assert_eq!(
         (

@@ -446,7 +446,7 @@ impl Simulation {
                         continue;
                     };
                     if !matches!(
-                        entity.category,
+                        entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                     ) || entity.low_bridge_tube_state.is_some()
                     {

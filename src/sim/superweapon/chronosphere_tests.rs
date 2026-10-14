@@ -283,7 +283,7 @@ fn dead(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
         .get(id)
-        .is_none_or(|entity| entity.health.current == 0 || entity.dying)
+        .is_none_or(|entity| entity.health.current() == 0 || entity.dying)
 }
 
 /// The keys the chain reads, through the production reader on the retail

@@ -32,7 +32,7 @@ fn warhead(raw: &str) -> WarheadType {
 
 fn infantry(prone: bool) -> GameEntity {
     let mut entity = GameEntity::test_default(1, "E1", "Americans", 5, 5);
-    entity.category = EntityCategory::Infantry;
+    entity.set_category_for_test(EntityCategory::Infantry);
     let mut runtime = InfantryRuntime::new();
     runtime.is_prone = prone;
     entity.infantry = Some(runtime);

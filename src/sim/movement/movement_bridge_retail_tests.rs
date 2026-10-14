@@ -3347,7 +3347,7 @@ fn record_until(
             panic!("the mover left the path grid at {cell:?}");
         };
         let loco_layer = entity.movement_layer_or_ground();
-        if entity.category == crate::map::entities::EntityCategory::Infantry
+        if entity.category() == crate::map::entities::EntityCategory::Infantry
             && facts.bridge_structural
             && !entity.on_bridge
         {

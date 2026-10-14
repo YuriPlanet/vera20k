@@ -132,12 +132,12 @@ impl Simulation {
     /// that owner. This is an input producer, never an event-execution gate.
     pub(crate) fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         let actor = self.substrate.entities.get(id)?;
-        if actor.category == EntityCategory::Structure {
+        if actor.category() == EntityCategory::Structure {
             return None;
         }
         let ordinary =
             self.techno_player_controllable(id, rules) && self.techno_is_active(id, rules);
-        let miner = actor.category == EntityCategory::Unit
+        let miner = actor.category() == EntityCategory::Unit
             && (actor.slave_manager.is_some() || actor.is_harvester());
         if !ordinary && !miner {
             return None;
@@ -646,7 +646,7 @@ impl Simulation {
                     .entities
                     .get(*entity_id)
                     .is_some_and(|actor| {
-                        actor.category.is_foot()
+                        actor.category().is_foot()
                             && actor.lifecycle.object_alive
                             && !actor.lifecycle.in_limbo
                             && actor.dock_entered_with.is_none()
@@ -1019,7 +1019,7 @@ impl Simulation {
                 let Some(actor) = self.substrate.entities.get(*entity_id) else {
                     return false;
                 };
-                if actor.category != EntityCategory::Infantry
+                if actor.category() != EntityCategory::Infantry
                     || !self
                         .object_type(actor.type_ref(), rules)
                         .is_some_and(|object| object.deployer)
@@ -1297,10 +1297,10 @@ impl Simulation {
                 // refuses any sender but a Unit or an Aircraft (Building
                 // Receive_Radio 0x0F, UnitRepair arm).
                 let entity_ok = self.substrate.entities.get(*entity_id).is_some_and(|e| {
-                    e.category == crate::map::entities::EntityCategory::Unit
+                    e.category() == crate::map::entities::EntityCategory::Unit
                         && self
                             .object_type(e.type_ref(), rules)
-                            .is_some_and(|object| e.health.current < object.strength)
+                            .is_some_and(|object| e.health.current() < object.strength)
                         && !e.dying
                 });
                 if !entity_ok {
@@ -1368,7 +1368,7 @@ impl Simulation {
                 // rather than inventing Boarding state for a garrison.
                 let carrier = self.substrate.entities.get(*transport_id).is_some_and(|t| {
                     t.passenger_role.cargo().is_some()
-                        && !(t.category == crate::map::entities::EntityCategory::Structure
+                        && !(t.category() == crate::map::entities::EntityCategory::Structure
                             && self
                                 .object_type(t.type_ref(), rules)
                                 .is_some_and(|object| object.can_be_occupied))
@@ -1462,7 +1462,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(*transport_id)
-                    .map(|t| t.category);
+                    .map(|t| t.category());
                 match category {
                     Some(crate::map::entities::EntityCategory::Structure) => {
                         // A garrison's Unload is its own mission
@@ -1654,7 +1654,7 @@ impl Simulation {
                     .entities
                     .get(*target_building_id)
                     .and_then(|b| {
-                        if b.category != crate::map::entities::EntityCategory::Structure {
+                        if b.category() != crate::map::entities::EntityCategory::Structure {
                             return None;
                         }
                         if b.dying {
@@ -1749,11 +1749,11 @@ impl Simulation {
                     .entities
                     .get(*target_building_id)
                     .and_then(|b| {
-                        if b.category != crate::map::entities::EntityCategory::Structure {
+                        if b.category() != crate::map::entities::EntityCategory::Structure {
                             return None;
                         }
                         if !b.lifecycle.object_alive
-                            || b.health.current <= 0
+                            || b.health.current() <= 0
                             || b.lifecycle.in_limbo
                         {
                             return None;
@@ -1972,7 +1972,7 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| {
-                entity.category == crate::map::entities::EntityCategory::Structure
+                entity.category() == crate::map::entities::EntityCategory::Structure
                     && owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
                     && self
                         .object_type(entity.type_ref(), rules)
@@ -2015,12 +2015,12 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        if entity.category != crate::map::entities::EntityCategory::Structure
+        if entity.category() != crate::map::entities::EntityCategory::Structure
             && entity.foot_locomotor_swap_active
         {
             return false;
         }
-        if entity.category == crate::map::entities::EntityCategory::Unit
+        if entity.category() == crate::map::entities::EntityCategory::Unit
             && entity
                 .disguise
                 .as_ref()
@@ -2148,7 +2148,7 @@ impl Simulation {
     ///   arm bypass that prefix and keep a team member in its team.
     pub(crate) fn order_actor_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.lifecycle.object_alive && e.health.current > 0 && !e.lifecycle.in_limbo
+            e.lifecycle.object_alive && e.health.current() > 0 && !e.lifecycle.in_limbo
         })
     }
 
@@ -2161,7 +2161,7 @@ impl Simulation {
     /// corpse that is still resolvable in the store.
     pub(crate) fn order_object_token_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.lifecycle.object_alive && e.health.current != 0 && !e.lifecycle.in_limbo
+            e.lifecycle.object_alive && e.health.current() != 0 && !e.lifecycle.in_limbo
         })
     }
 
@@ -2180,7 +2180,7 @@ impl Simulation {
         let Some(receiver) = self.substrate.entities.get(receiver_id) else {
             return false;
         };
-        if receiver.category == crate::map::entities::EntityCategory::Structure {
+        if receiver.category() == crate::map::entities::EntityCategory::Structure {
             return false;
         }
         if receiver.mission.current()
@@ -2192,7 +2192,7 @@ impl Simulation {
             .substrate
             .entities
             .get(destination_id)
-            .is_some_and(|d| d.category == crate::map::entities::EntityCategory::Structure);
+            .is_some_and(|d| d.category() == crate::map::entities::EntityCategory::Structure);
         if !destination_is_building {
             return false;
         }
@@ -2217,10 +2217,10 @@ impl Simulation {
         let Some(refinery) = self.substrate.entities.get(refinery_id) else {
             return false;
         };
-        if refinery.category != crate::map::entities::EntityCategory::Structure {
+        if refinery.category() != crate::map::entities::EntityCategory::Structure {
             return false;
         }
-        if refinery.health.current == 0 || refinery.dying || refinery.building_up() {
+        if refinery.health.current() == 0 || refinery.dying || refinery.building_up() {
             return false;
         }
         let refinery_owner = self.interner.resolve(refinery.owner());
@@ -2410,7 +2410,7 @@ impl Simulation {
             return false;
         }
         let foot =
-            self.substrate.entities.get(entity_id).unwrap().category != EntityCategory::Structure;
+            self.substrate.entities.get(entity_id).unwrap().category() != EntityCategory::Structure;
         self.queue_megamission(
             entity_id,
             MissionType::AreaGuard,
@@ -2535,7 +2535,7 @@ mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
     use crate::sim::miner::{Miner, MinerConfig, MinerKind, MinerState};
@@ -2573,7 +2573,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: health },
+            Health::new(health),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -2714,7 +2714,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 100 },
+            Health::new(100),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -3138,7 +3138,12 @@ mod tests {
         );
 
         assert!(move_onto(&mut sim, 2));
-        sim.substrate.entities.get_mut(2).unwrap().health.current = 0;
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .health
+            .set_for_test(0);
         assert!(!move_onto(&mut sim, 2));
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().navigation.nav_com,
@@ -3182,7 +3187,7 @@ mod tests {
                 0,
                 0,
                 sim.interner.intern(owner),
-                Health { current: 125 },
+                Health::new(125),
                 sim.interner.intern("E1"),
                 EntityCategory::Infantry,
                 0,
@@ -3273,7 +3278,7 @@ mod tests {
 
         for kill in [
             |e: &mut GameEntity| e.lifecycle.object_alive = false,
-            |e: &mut GameEntity| e.health.current = 0,
+            |e: &mut GameEntity| e.health.set_for_test(0),
         ] {
             let mut sim = Simulation::new();
             spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
@@ -3313,7 +3318,12 @@ mod tests {
         assert!(sim.order_object_token_admits(2));
 
         // Now the same target at zero strength, still present in the store.
-        sim.substrate.entities.get_mut(2).unwrap().health.current = 0;
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .health
+            .set_for_test(0);
         assert!(
             sim.substrate.entities.contains(2),
             "target stays resolvable"
@@ -3403,7 +3413,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 600 },
+            Health::new(600),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -3427,7 +3437,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 900 },
+            Health::new(900),
             type_ref,
             EntityCategory::Structure,
             0,
@@ -3473,7 +3483,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 1000 },
+            Health::new(1000),
             type_ref,
             EntityCategory::Structure,
             0,
@@ -3657,7 +3667,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 1000 },
+            Health::new(1000),
             type_id,
             EntityCategory::Structure,
             0,
@@ -3687,7 +3697,7 @@ mod tests {
             0,
             0,
             owner_id,
-            Health { current: 400 },
+            Health::new(400),
             type_id,
             EntityCategory::Unit,
             0,

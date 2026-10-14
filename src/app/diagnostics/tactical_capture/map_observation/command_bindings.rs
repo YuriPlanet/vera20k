@@ -263,7 +263,7 @@ mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::components::Health;
+    use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
 
     fn rules() -> RuleSet {
@@ -292,7 +292,7 @@ mod tests {
             0,
             0,
             owner,
-            Health { current: 400 },
+            Health::new(400),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -406,7 +406,11 @@ mod tests {
             narrowed.resolve(&sim, &rules).is_err(),
             "cell is current, not initial"
         );
-        sim.entities_mut().get_mut(28).unwrap().health.current = 0;
+        sim.entities_mut()
+            .get_mut(28)
+            .unwrap()
+            .health
+            .set_for_test(0);
         assert_eq!(
             command.resolve(&sim, &rules).unwrap().0,
             Command::Stop { entity_id: 17 }

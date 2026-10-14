@@ -5,9 +5,10 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::Health;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
-use crate::sim::components::{Health, NavTargetRef};
+use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionId;
 use crate::sim::world::Simulation;
@@ -73,7 +74,7 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
         0,
         0,
         owner,
-        Health { current: 1000 },
+        Health::new(1000),
         type_ref,
         EntityCategory::Structure,
         0,

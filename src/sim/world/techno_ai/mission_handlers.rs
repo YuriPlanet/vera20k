@@ -65,7 +65,7 @@ pub(crate) fn dispatch_foot_mission(
         if entity.dying || !entity.is_object_alive() || !super::mission_handlers_run(sim, id) {
             return bridge_changed;
         }
-        let category = entity.category;
+        let category = entity.category();
         if !matches!(category, EntityCategory::Unit | EntityCategory::Infantry) {
             return bridge_changed;
         }
@@ -1003,7 +1003,7 @@ impl Simulation {
         }
         let selection = foot_enter_idle_mode_selection(
             rules,
-            entity.category,
+            entity.category(),
             entity.mission.current().known(),
             entity.attack_target.is_some(),
             entity.navigation.nav_com.is_some(),
@@ -1040,7 +1040,12 @@ pub(crate) fn enter_idle_mode(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    match sim.substrate.entities.get(id).map(|entity| entity.category) {
+    match sim
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| entity.category())
+    {
         Some(EntityCategory::Unit) => {
             sim.unit_enter_idle_mode(id, Some(rules), false, effects);
         }
@@ -1092,7 +1097,12 @@ pub(crate) fn techno_unlimbo_idle_mode(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    match sim.substrate.entities.get(id).map(|entity| entity.category) {
+    match sim
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| entity.category())
+    {
         Some(EntityCategory::Aircraft) => {
             crate::sim::aircraft::enter_idle_mode_for(sim, id, rules, registry, effects);
         }
@@ -1289,7 +1299,7 @@ fn evaluate_foot_hunt(
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         if acquired && infantry {
             hunt_infantry_arm(sim, id, rules, ctx);
         } else if acquired {
@@ -1364,7 +1374,7 @@ fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super:
             .substrate
             .entities
             .get(target)
-            .is_some_and(|target| target.category == EntityCategory::Structure),
+            .is_some_and(|target| target.category() == EntityCategory::Structure),
         crate::sim::combat::TargetKind::Cell(..) => false,
     };
     let mission = if object.engineer && !c4 {
@@ -1446,7 +1456,7 @@ fn c4_sabotage_building(sim: &Simulation, id: u64, rules: &RuleSet) -> Option<u6
         return None;
     };
     let target = sim.substrate.entities.get(building)?;
-    if target.category != EntityCategory::Structure || target.dying || !target.is_alive() {
+    if target.category() != EntityCategory::Structure || target.dying || !target.is_alive() {
         return None;
     }
     sim.object_type(target.type_ref(), rules)
@@ -1500,7 +1510,7 @@ fn computer_capture_building(sim: &Simulation, id: u64, rules: &RuleSet) -> Opti
         return None;
     };
     let target = sim.substrate.entities.get(building)?;
-    if target.category != EntityCategory::Structure || target.dying || !target.is_alive() {
+    if target.category() != EntityCategory::Structure || target.dying || !target.is_alive() {
         return None;
     }
     let object = sim.object_type(entity.type_ref(), rules)?;
@@ -1762,7 +1772,7 @@ pub(super) fn evaluate_foot_area_guard(
     if let Some(crate::sim::combat::TargetKind::Entity(post)) = archive
         && sim.substrate.entities.get(post).is_some_and(|entity| {
             matches!(
-                entity.category,
+                entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
             )
         })
@@ -1856,7 +1866,7 @@ pub(super) fn evaluate_foot_area_guard(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|entity| entity.category == EntityCategory::Aircraft)
+        .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
     {
         base.wrapping_add(base)
     } else {
@@ -2105,7 +2115,7 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
             .blockers(crate::sim::movement::locomotor::MovementLayer::Ground)
             .any(|sid| {
                 sim.substrate.entities.get(sid).is_some_and(|building| {
-                    building.category == EntityCategory::Structure
+                    building.category() == EntityCategory::Structure
                         && !building.dying
                         && building.owner() == entity.owner()
                         && sim
@@ -2320,7 +2330,7 @@ fn foot_type_takes_cadence_band(
     let Some(object) = rules.object(sim.interner.resolve(attacker.type_ref())) else {
         return false;
     };
-    if attacker.category == EntityCategory::Infantry && object.close_range {
+    if attacker.category() == EntityCategory::Infantry && object.close_range {
         return true;
     }
     let Some(primary) = object.primary().and_then(|name| rules.weapon(name)) else {
@@ -2467,7 +2477,7 @@ mod harvester_guard_override_tests {
             0,
             0,
             owner,
-            crate::sim::components::Health { current: 900 },
+            crate::sim::combat::Health::new(900),
             type_ref,
             EntityCategory::Structure,
             0,
@@ -2510,7 +2520,7 @@ mod harvester_guard_override_tests {
             0,
             0,
             owner,
-            crate::sim::components::Health { current: 400 },
+            crate::sim::combat::Health::new(400),
             type_ref,
             EntityCategory::Unit,
             0,
@@ -2804,7 +2814,7 @@ mod move_arrival_tests {
             0,
             0,
             owner,
-            crate::sim::components::Health { current: 300 },
+            crate::sim::combat::Health::new(300),
             type_ref,
             EntityCategory::Unit,
             0,
