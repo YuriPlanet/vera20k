@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 19, 21, 24, 37, 39, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 19, 21, 24, 37, 39, 40, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -134,6 +134,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 24
             | 37
             | 39
+            | 40
             | 42
             | 43
             | 46
@@ -422,11 +423,12 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            // Original6E9BA1..6E9BBD: SetLocal689910(argument, true),
+            // Steam3e81a617: Script39 at6E9BA1 and Script40 at6E9BBE
+            // call SetLocal689910(argument, true/false), respectively,
             // then team+80=1 even if the variable index was rejected. The
             // existing trigger owner keeps dirty admission and timer resets.
-            39 => {
-                self.set_trigger_variable(false, action.argument, true);
+            39 | 40 => {
+                self.set_trigger_variable(false, action.argument, action.action_id == 39);
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;
                 }

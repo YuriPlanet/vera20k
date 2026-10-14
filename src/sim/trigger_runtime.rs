@@ -2277,6 +2277,8 @@ impl Simulation {
         result
     }
 
+    /// Shared Scenario SetGlobal689670/SetLocal689910 mutation, including
+    /// Tag timer resets. Trigger and Team scripts use this same owner.
     pub(crate) fn set_trigger_variable(&mut self, global: bool, index: i32, set: bool) -> bool {
         if !(0..if global { 50 } else { 100 }).contains(&index) {
             return false;

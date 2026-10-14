@@ -13,7 +13,187 @@ use crate::sim::projectile::{
 };
 use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use crate::sim::snapshot::GameSnapshot;
-use crate::sim::world::{MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
+use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
+
+#[test]
+fn script40_clears_local_through_trigger_owner_and_advances_on_rejected_indices() {
+    use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[InfantryTypes]\n0=E1\n[E1]\nStrength=125\nSpeed=4\n",
+        ))
+        .unwrap();
+    // Original Script40 @ 6E9BBE calls SetLocal689910 even without `first`
+    // and finishes after its unsigned index rejection. These are behavior
+    // regressions; the shared variable owner's native controls remain in
+    // parsed_variable_actions_match_native_reader_dispatch_and_restore.
+    for (index, initially_set, changed) in [
+        (0, true, true),
+        (99, false, false),
+        (-1, false, false),
+        (100, false, false),
+    ] {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Russians");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 1, None, false, 0, 10),
+        );
+        sim.session.house_order.push(owner);
+        let member = sim
+            .spawn_object("E1", "Russians", 10, 10, 0, &rules)
+            .unwrap();
+        let script = sim.interner.intern("Clear local then wait");
+        sim.team_script_vm.register_script(TeamScriptDefinition {
+            id: script,
+            source: crate::rules::team_ai_ini::TeamAiDefinitionSource::Scenario,
+            actions: vec![
+                TeamScriptAction {
+                    action_id: 40,
+                    argument: index,
+                },
+                TeamScriptAction {
+                    action_id: 2,
+                    argument: 0,
+                },
+            ],
+        });
+        let team = sim
+            .team_script_vm
+            .create_team(owner, script, vec![member], 0);
+        if initially_set {
+            sim.set_trigger_variable(false, index, true);
+        }
+        sim.set_trigger_variable(true, 3, true);
+        sim.trigger_runtime.dirty[0] = false;
+        let rng = sim.rng_state();
+        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        assert!(sim.trigger_runtime.locals_set.is_empty(), "index {index}");
+        assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([3]));
+        assert_eq!(sim.trigger_runtime.dirty[0], changed, "index {index}");
+        assert!(
+            sim.team_script_vm.team(team).unwrap().advance_pending(),
+            "index {index}"
+        );
+        assert_eq!(sim.rng_state(), rng, "clearing a local has no RNG draw");
+        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        assert_eq!(sim.team_script_vm.team(team).unwrap().cursor(), 1);
+    }
+}
+
+#[test]
+fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::rules::retail_ini_fixture::{
+        retail_archive_bytes, retail_ini, retail_rules_and_art,
+    };
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+    let Some(raw_map) = retail_archive_bytes("SOV01UMD.MAP") else {
+        return;
+    };
+    let Some((retail, art)) = retail_rules_and_art() else {
+        return;
+    };
+    let Some(ai) = retail_ini("aimd.ini") else {
+        return;
+    };
+    let map = crate::map::map_file::MapFile::from_bytes(&raw_map).unwrap();
+    assert_eq!(
+        crate::util::sha256::sha256_hex(&raw_map),
+        "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
+    );
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let mut layers = RulesLayerStack::new(retail);
+    layers.push(RulesLayerKind::Scenario, map.ini.clone());
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let terrain_rules = crate::rules::terrain_rules::TerrainRules::from_ini(processed.ini());
+    let water = terrain_rules.semantics_for_land_type(2).unwrap();
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    // A declared flat-water test scene isolates script admission. Retail map
+    // definitions/waypoints use production readers; this is not a native
+    // terrain or whole-opening replay. The release capture covers real terrain.
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
+        198,
+        198,
+        |x, y| {
+            let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
+            cell.land_type = 2;
+            cell.yr_cell_land_type = 2;
+            cell.base_land_type = 2;
+            cell.base_yr_cell_land_type = 2;
+            cell.terrain_class = water.terrain_class;
+            cell.base_terrain_class = water.terrain_class;
+            cell.speed_costs = water.speed_costs.clone();
+            cell.base_speed_costs = water.speed_costs.clone();
+            cell.is_water = true;
+            cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
+            cell
+        },
+    ));
+    sim.session.map_width = 198;
+    sim.session.map_height = 198;
+    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds::from_map_header(
+        &map.header,
+    ));
+    sim.playfield_size_height = Some(map.header.height as i32);
+    sim.session.install_waypoints(&map.waypoints);
+    let owner = sim.interner.intern("Russians");
+    sim.houses.insert(
+        owner,
+        crate::sim::house_state::HouseState::new(owner, 1, Some(owner), true, 0, 10),
+    );
+    sim.session.house_order.push(owner);
+    sim.session.current_house = Some(owner);
+    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.initialize_trigger_definitions(&map, &registry, None, None);
+    let overlay =
+        crate::rules::overlay_types::OverlayTypeRegistry::from_ini(processed.ini(), Some(&art));
+    let naval = [
+        "0C0A612C", "0C0A790C", "0C0A756C", "0C0A71CC", "0C0A8B7C", "0C0A824C", "0C0A9C8C",
+        "0C0A98EC", "0C04FEFC",
+    ];
+    for name in naval {
+        let team_type = sim.interner.get(name).unwrap();
+        assert!(
+            sim.spawn_team_reinforcements(
+                team_type,
+                -1,
+                &rules,
+                Some(&overlay),
+                FrameEffects::default()
+            )
+            .0,
+            "{name}"
+        );
+    }
+    assert_eq!(sim.team_script_vm.teams_in_order().count(), 9);
+    assert!(
+        sim.team_script_vm
+            .teams_in_order()
+            .all(|team| team.members().count() == 1),
+        "each authored naval TaskForce has one member; spawn-manager children are not team members"
+    );
+    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    assert!(
+        sim.team_script_vm
+            .teams_in_order()
+            .all(|team| team.advance_pending())
+    );
+    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    for team in sim.team_script_vm.teams_in_order() {
+        assert_eq!(
+            team.cursor(),
+            1,
+            "{}",
+            sim.interner.resolve(team.script_id())
+        );
+        assert_eq!(team.refusal(), None);
+    }
+}
 
 /// Shared native-shaped arena for synchronous Object and cell-entry consumers.
 /// Rules, object construction and owner tracking use production ingress; the
