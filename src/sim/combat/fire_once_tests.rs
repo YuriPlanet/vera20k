@@ -115,7 +115,9 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
                 integer(&before["dispatch_timer"][0]),
                 integer(&before["dispatch_timer"][2]),
             );
-            actor.rearm_timer = timer(&before["rearm_timer"]);
+            actor
+                .rearm_timer
+                .set_for_test(timer(&before["rearm_timer"]));
             actor
                 .attack_target
                 .set_for_test(target(&before["target"], targets).map(|value| match value {
@@ -252,7 +254,7 @@ fn assert_boundary(
             "{name}: burst"
         );
         assert_eq!(
-            actor.rearm_timer,
+            actor.rearm_timer.timer(),
             timer(&after["rearm_timer"]),
             "{name}: rearm"
         );

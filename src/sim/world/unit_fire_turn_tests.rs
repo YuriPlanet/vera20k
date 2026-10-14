@@ -67,7 +67,9 @@ fn fixture_with_first(first_type: &str) -> (Simulation, RuleSet, u64, u64) {
                 ai_counter: 0,
                 dispatch_timer: MissionDispatchTimer::from_raw(10, 1000),
             });
-        entity.rearm_timer = crate::sim::timer::CdTimer::started(10, 0);
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 0));
         entity.attack_target.set_for_test(Some(TargetKind::Cell(
             entity.position.rx,
             entity.position.ry - 3,
@@ -234,8 +236,12 @@ fn global_combat_tail_cannot_fire_a_ready_foot_a_second_time() {
         sim.advance_live_object_turn(first, Some(&rules), techno_ai::ObjectAiCtx::default())
             .unwrap();
         assert_eq!(sim.fire_events.len(), 1);
-        sim.substrate.entities.get_mut(first).unwrap().rearm_timer =
-            crate::sim::timer::CdTimer::started(10, 0);
+        sim.substrate
+            .entities
+            .get_mut(first)
+            .unwrap()
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 0));
         let before = sim.scenario_rng.state();
         let result = sim.tick_combat_with_fatal_lifecycle(
             &rules,

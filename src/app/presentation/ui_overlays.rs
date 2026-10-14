@@ -795,7 +795,7 @@ pub(crate) fn build_repair_wrench_instances(
     let mut instances = Vec::new();
     for entity in sim.entities().values() {
         if entity.category() != EntityCategory::Structure
-            || !entity.repairing
+            || !entity.repairing.is_on()
             || entity.lifecycle.in_limbo()
         {
             continue;

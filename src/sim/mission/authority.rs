@@ -1713,7 +1713,8 @@ mod tests {
     fn foot_override_provider_order_includes_same_identity_target_dispatch() {
         let mut unit = entity(EntityCategory::Unit, GUARD);
         let active_target = TargetKind::Entity(7);
-        unit.rearm_timer = crate::sim::timer::CdTimer::started(0, 17);
+        unit.rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
         unit.weapon_burst.complete_shot(4);
         unit.attack_target.set_for_test(Some(active_target));
         unit.navigation.nav_com = Some(NavTargetRef::cell(1, 2));
@@ -1769,7 +1770,7 @@ mod tests {
             .target()
             .unwrap();
         assert_eq!(
-            sim.substrate.entities.get(1).unwrap().rearm_timer,
+            sim.substrate.entities.get(1).unwrap().rearm_timer.timer(),
             crate::sim::timer::CdTimer::started(0, 17)
         );
         assert_eq!(

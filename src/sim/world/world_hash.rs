@@ -1725,13 +1725,13 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.firepower_multiplier.bits().hash(hasher);
     }
     entity.berserk.hash(hasher);
-    entity.was_attacked_by_enemy.hash(hasher);
+    entity.ai_sell_repair.was_attacked_by_enemy().hash(hasher);
     if entity.category() == crate::map::entities::EntityCategory::Structure {
-        entity.ai_sellable.hash(hasher);
+        entity.ai_sell_repair.ai_sellable().hash(hasher);
     }
     if entity.category() == crate::map::entities::EntityCategory::Structure {
-        entity.repairing.hash(hasher);
-        entity.ai_repairable.hash(hasher);
+        entity.repairing.is_on().hash(hasher);
+        entity.ai_sell_repair.ai_repairable().hash(hasher);
     }
     if entity.ai_placement_timer != crate::sim::timer::CdTimer::default() {
         b"ai-placement-timer-v1".hash(hasher);

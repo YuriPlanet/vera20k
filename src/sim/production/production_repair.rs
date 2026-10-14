@@ -66,6 +66,120 @@ use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF
 use super::production_sell::{SellOrder, sell_back, undeploys};
 use crate::rules::foundation::foundation_dimensions;
 
+/// A building's repair byte, `BuildingClass+0x6E8`: the repair step pays for
+/// each `RepairStep=` of health while it is on. The constructor clears it;
+/// [`toggle_repair`] switches it and the repair step (`0x00450813..0x004509BB`)
+/// stops it when the owner cannot pay or the building is whole.
+/// `BuildingClass::ChangeOwner` stops it without a sound (`0x00448CE8`,
+/// [`Self::stop_on_capture`]). The other reader is the wrench
+/// `TechnoClass::DrawExtras` draws over a repairing building.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct RepairByte {
+    on: bool,
+}
+
+impl RepairByte {
+    /// The building is repairing.
+    pub(crate) const fn is_on(self) -> bool {
+        self.on
+    }
+
+    /// `BuildingClass::ChangeOwner`'s silent stop (`0x00448CE8`).
+    pub(crate) fn stop_on_capture(&mut self) {
+        self.on = false;
+    }
+
+    /// Install a fixture's byte.
+    #[cfg(test)]
+    pub(crate) fn set_for_test(&mut self, on: bool) {
+        self.on = on;
+    }
+}
+
+/// The computer's building sale and repair inputs, which
+/// [`update_repair_and_power`] reads:
+/// - `TechnoClass+0x3D1`, hit by an enemy: the constructor clears it
+///   (`0x006F2F43`) and `TechnoClass::ReceiveDamage` sets it after a hostile
+///   hit the object survives (`0x00702812`, [`Self::hit_by_enemy`]). It is
+///   independent of retaliation's transient attacker pointer; the
+///   low-credit sale reads it.
+/// - `BuildingClass+0x6DC`, AI sellable, which the computer's low-credit sale
+///   requires in a campaign (`0x00450781`). The constructor sets it
+///   (`0x0043B93D`) and Init_Managers clears it for a type without a Buildup
+///   (`0x00442CBC`, [`Self::construct`]); the map's `[Structures]` reader then
+///   writes its AI Sellable field (`0x0044FB5B`, [`Self::read_map_line`]).
+/// - `BuildingClass+0x6CB`, AI repairable, which lets the computer's
+///   auto-repair start repair it (`0x004506DE`). The constructor clears it
+///   (`0x0043B91F`); the map's `[Structures]` reader writes its AI Repairable
+///   field (`0x0044FB70`), then the building's Unlimbo sets it outside a
+///   campaign for a house no human controls (`0x00440B7A`), and so does an
+///   MCV deploy for a computer house (`0x007397F4`, [`Self::make_repairable`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AiSellRepair {
+    was_attacked_by_enemy: bool,
+    ai_sellable: bool,
+    ai_repairable: bool,
+}
+
+impl AiSellRepair {
+    /// `+0x3D1`: a hostile hit landed and the object survived.
+    pub(crate) const fn was_attacked_by_enemy(self) -> bool {
+        self.was_attacked_by_enemy
+    }
+
+    /// `+0x6DC`: the computer may sell the building for credits.
+    pub(crate) const fn ai_sellable(self) -> bool {
+        self.ai_sellable
+    }
+
+    /// `+0x6CB`: the computer's auto-repair may start on the building.
+    pub(crate) const fn ai_repairable(self) -> bool {
+        self.ai_repairable
+    }
+
+    /// `TechnoClass::ReceiveDamage`'s latch (`0x00702812`).
+    pub(crate) fn hit_by_enemy(&mut self) {
+        self.was_attacked_by_enemy = true;
+    }
+
+    /// The constructor's sale byte after Init_Managers: set for a building
+    /// whose type has a Buildup (`0x0043B93D`, `0x00442CBC`).
+    pub(crate) fn construct(&mut self, sellable: bool) {
+        self.ai_sellable = sellable;
+    }
+
+    /// The map line's AI Sellable and AI Repairable (`0x0044FB5B`,
+    /// `0x0044FB70`).
+    pub(crate) fn read_map_line(&mut self, sellable: bool, repairable: bool) {
+        self.ai_sellable = sellable;
+        self.ai_repairable = repairable;
+    }
+
+    /// Unlimbo's (`0x00440B7A`) and an MCV deploy's (`0x007397F4`) grant.
+    pub(crate) fn make_repairable(&mut self) {
+        self.ai_repairable = true;
+    }
+
+    /// Install a fixture's `+0x3D1`.
+    #[cfg(test)]
+    pub(crate) fn set_was_attacked_by_enemy_for_test(&mut self, value: bool) {
+        self.was_attacked_by_enemy = value;
+    }
+
+    /// Install a fixture's `+0x6DC`.
+    #[cfg(test)]
+    pub(crate) fn set_ai_sellable_for_test(&mut self, value: bool) {
+        self.ai_sellable = value;
+    }
+
+    /// Install a fixture's `+0x6CB`.
+    #[cfg(test)]
+    pub(crate) fn set_ai_repairable_for_test(&mut self, value: bool) {
+        self.ai_repairable = value;
+    }
+}
+
 /// ToggleRepair's control argument. No caller passes any other value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepairControl {
@@ -107,18 +221,18 @@ pub fn toggle_repair(
         return false;
     }
     match control {
-        RepairControl::Toggle => entity.repairing = !entity.repairing,
-        RepairControl::Stop if !entity.repairing => return true,
-        RepairControl::Stop => entity.repairing = false,
-        RepairControl::Start if entity.repairing => return true,
-        RepairControl::Start => entity.repairing = true,
+        RepairControl::Toggle => entity.repairing.on = !entity.repairing.on,
+        RepairControl::Stop if !entity.repairing.on => return true,
+        RepairControl::Stop => entity.repairing.on = false,
+        RepairControl::Start if entity.repairing.on => return true,
+        RepairControl::Start => entity.repairing.on = true,
     }
     let owner = entity.owner();
     let position = entity.position;
-    let sound = if entity.repairing && entity.health.current() == strength {
+    let sound = if entity.repairing.on && entity.health.current() == strength {
         rules.general.scold_sound.clone()
     } else {
-        if entity.repairing {
+        if entity.repairing.on {
             sim.sound_events.push(SimSoundEvent::Repairing { owner });
         }
         rules.general.generic_click_sound.clone()
@@ -285,8 +399,8 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.game_mode_nonzero || entity.ai_sellable)
-        && entity.was_attacked_by_enemy
+    if !((sim.session.game_mode_nonzero || entity.ai_sell_repair.ai_sellable())
+        && entity.ai_sell_repair.was_attacked_by_enemy()
         && house.authored_iq as u32 >= rules.general.iq_sell_back as u32)
     {
         return;
@@ -327,11 +441,11 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.repair_start_latch || entity.repairing {
+    if house.repair_start_latch || entity.repairing.on {
         return;
     }
     let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero);
-    if !(entity.has_been_captured || entity.ai_repairable || controlled) {
+    if !(entity.has_been_captured || entity.ai_sell_repair.ai_repairable() || controlled) {
         return;
     }
     let delay = house.repair_delay();
@@ -370,7 +484,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    if !entity.repairing {
+    if !entity.repairing.on {
         return;
     }
     let period =
@@ -389,7 +503,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let owner = entity.owner();
     if available_money(sim, owner) < cost {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.repairing = false;
+            entity.repairing.on = false;
         }
         return;
     }
@@ -403,7 +517,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     if entity.health.current() >= strength {
         entity.health.set(strength);
         entity.estimated_health.reset(strength);
-        entity.repairing = false;
+        entity.repairing.on = false;
     }
     sim.refresh_building_damage_state(id, rules);
     sim.retire_damage_smoke_after_heal(id, rules);

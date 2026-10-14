@@ -944,7 +944,7 @@ fn aircraft_receive(
     let ammo = entity
         .aircraft_ammo
         .as_ref()
-        .map_or(-1, |ammo| ammo.current);
+        .map_or(-1, |ammo| ammo.current());
     let object = rules.and_then(|rules| sim.object_type(entity.type_ref(), rules));
     let type_ammo = object.map_or(-1, |object| object.ammo);
     let transport = AircraftHold {
@@ -1440,10 +1440,10 @@ fn techno_reload(sim: &mut Simulation, techno: u64, rules: Option<&RuleSet>) -> 
     else {
         return RadioResponse::None;
     };
-    if ammo.current == type_ammo {
+    if ammo.current() == type_ammo {
         return RadioResponse::Negatory;
     }
-    ammo.current = ammo.current.wrapping_add(1);
+    ammo.reload_round();
     RadioResponse::Roger
 }
 

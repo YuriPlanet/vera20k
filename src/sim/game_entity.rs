@@ -487,10 +487,11 @@ pub struct GameEntity {
     /// orders, fire, the select voice and the voxel draw read it.
     #[serde(default)]
     pub(crate) deactivated: bool,
-    /// A building's repair byte (`BuildingClass+0x6E8`), which only
-    /// `production::toggle_repair` sets; the repair step pays for each
-    /// `RepairStep=` of health while it is on.
-    pub repairing: bool,
+    /// A building's repair byte (`BuildingClass+0x6E8`), a [`RepairByte`]
+    /// that `production::production_repair` owns.
+    ///
+    /// [`RepairByte`]: crate::sim::production::RepairByte
+    pub(crate) repairing: crate::sim::production::RepairByte,
     /// LogicClass active-vector membership — mirrors gamemd ObjectClass+0x98.
     /// True iff this entity is currently in `Simulation::logic`. Not serialized:
     /// Rust snapshots rebuild it from the serialized LogicVector order. Exact
@@ -649,26 +650,13 @@ pub struct GameEntity {
     /// [`Tether`]: crate::sim::radio::Tether
     #[serde(default)]
     pub(crate) tether: crate::sim::radio::Tether,
-    /// Persistent TechnoClass hostile-hit latch (`WasAttackedByEnemy`, native
-    /// byte +0x3D1). It is independent of retaliation's transient attacker
-    /// pointer and is consumed by the building AI low-credit sell decision.
+    /// The computer's sale and repair inputs (`TechnoClass+0x3D1`,
+    /// `BuildingClass+0x6DC`, `+0x6CB`), an [`AiSellRepair`] that
+    /// `production::production_repair` owns.
+    ///
+    /// [`AiSellRepair`]: crate::sim::production::AiSellRepair
     #[serde(default)]
-    pub was_attacked_by_enemy: bool,
-    /// A building's AI sale byte (`BuildingClass+0x6DC`), which the
-    /// computer's low-credit sale requires in a campaign (`0x00450781`). The
-    /// constructor sets it (`0x0043B93D`) and Init_Managers clears it for a
-    /// type without a Buildup (`0x00442CBC`); the map's `[Structures]` reader
-    /// then writes its AI Sellable field (`0x0044FB5B`).
-    #[serde(default)]
-    pub ai_sellable: bool,
-    /// A building's AI repair byte (`BuildingClass+0x6CB`), which lets the
-    /// computer's auto-repair start repair it (`0x004506DE`). The constructor
-    /// clears it (`0x0043B91F`); the map's `[Structures]` reader writes its AI
-    /// Repairable field (`0x0044FB70`), then the building's Unlimbo sets it
-    /// outside a campaign for a house no human controls (`0x00440B7A`), and
-    /// so does an MCV deploy for a computer house (`0x007397F4`).
-    #[serde(default)]
-    pub ai_repairable: bool,
+    pub(crate) ai_sell_repair: crate::sim::production::AiSellRepair,
     /// The turret heading, `TechnoClass+0x3A0` (SecondaryFacing): a
     /// `Turret=yes` unit's and every aircraft's. A building aims its
     /// [`Self::body_facing`] instead.
@@ -729,54 +717,12 @@ pub struct GameEntity {
     /// This retained control history is distinct from the audio pending line.
     #[serde(default)]
     suppress_deploy_voice: bool,
-    /// The rearm countdown (`TechnoClass+0x2EC`, a CDTimerClass whose
-    /// duration is `+0x2F4`). It belongs to the object, not to its target:
-    /// `Assign_Target @ 0x006FCDB0` never touches it, so a new target does not
-    /// reload the weapon.
+    /// The rearm countdown (`TechnoClass+0x2EC`), a [`RearmTimer`] whose
+    /// writers `combat::rof` documents.
     ///
-    /// Writers, from a scan of every `+0x2EC..+0x2F4` operand in the image:
-    /// - The constructor starts it at the current frame with no duration
-    ///   (`0x006F2E81`). Ported.
-    /// - `TechnoClass::FireAt`, every launched shot, with GetROF's value (the
-    ///   drawn gap mid-burst, the full reload after the burst's last shot),
-    ///   halved for a berserk firer (`0x006FF274..0x006FF2CB`). Its DiskLaser
-    ///   path stores the value unhalved, fires the disk laser and returns
-    ///   (`0x006FE4A4..0x006FE4EF`). Ported (`world_fire::emit_admitted_fire`);
-    ///   VERA fires a DiskLaser weapon through the ordinary path, keeping only
-    ///   the unhalved rearm.
-    /// - `AircraftClass::Drop_Payload` restarts it with no duration
-    ///   (`0x00415E88`). Ported (the paradrop success arm).
-    /// - A Prism support beam starts the supporter's downtime,
-    ///   {Frame, `PrismSupportDelay=`} (`0x0044ACD0..0x0044ACDC`). Ported
-    ///   (`building_missions::process_delayed_fire`).
-    /// - A C4 plant arms the planter with `GetROF(1)`
-    ///   (`InfantryClass::Per_Cell_Process 0x0051A564`/`0x0051A624`). Ported
-    ///   (`sim::c4_plant`).
-    /// - RESIDUAL, with their mechanisms:
-    ///   - `UnitClass::ReceiveGunner`/`RemoveGunner` read a running rearm
-    ///     (`0x0074643A`, `0x00746502`) and hand it over (`0x0074646E`,
-    ///     `0x0074655C`; see `temporal.rs`);
-    ///   - `UnitClass::PerCellProcess` arms a unit that stops with no NavCom
-    ///     and no path with `GetROF(1) / 4` when its type has
-    ///     `MobileFire=no` (`0x0073ADCA..0x0073AE18`). Dormant: no retail
-    ///     type sets it (the constructor's default is yes, `0x00711150`).
-    ///
-    /// Readers: GetFireError answers Rearm while it runs (`0x006FC94F`);
-    /// `CanAutoCloak @ 0x006FBDC0` waits for it; `FootClass::Mission_Guard`
-    /// returns its remaining frames as the next delay and draws nothing
-    /// (`0x004D52A9`); the Prism walk skips a tower while it runs
-    /// (`0x0044B3AE`); `TechnoClass::Compute_CRC` folds it (`0x0070C362`).
-    /// RESIDUAL:
-    /// - `AircraftClass::Mission_Guard` falls into the same Foot body
-    ///   (`0x0041A92B`), but VERA's aircraft Guard is not a port of it.
-    /// - `CanDeploySlashUnload @ 0x00700D50` reads it only for a type with
-    ///   `UndeployDelay > -1` (`0x00700DF9..0x00700E23`); that type refuses
-    ///   deployment while it runs. Stock GI/GGI keep the reader default-1.
-    ///
-    /// The charge-turret model index reads this with the saved +2F8 duration
-    /// (6FA540); `game_entity::gunner` owns that presentation state.
+    /// [`RearmTimer`]: crate::sim::combat::rof::RearmTimer
     #[serde(default)]
-    pub rearm_timer: crate::sim::timer::CdTimer,
+    pub(crate) rearm_timer: crate::sim::combat::rof::RearmTimer,
     /// Gattling stage, value and report latch (`TechnoClass+0x140`,
     /// `+0x144`, `+0x4B8`), owned by `combat::gattling`.
     #[serde(default)]
@@ -941,10 +887,10 @@ pub struct GameEntity {
     /// (`0x004D33D2..0x004D33DE`) and written only by `sim::building_entry`.
     #[serde(default)]
     pub(crate) building_entry: crate::sim::building_entry::BuildingEntryLatches,
-    /// Aircraft ammo tracking and airfield docking state.
-    /// Present on all Aircraft, including signed negative native Ammo counts.
-    /// Non-aircraft entities have no aircraft ammo owner.
-    pub aircraft_ammo: Option<AircraftAmmo>,
+    /// An aircraft's Ammo (`TechnoClass+0x2FC`), pending release and dock,
+    /// an [`AircraftAmmo`] that `docking::aircraft_dock` owns. Present on all
+    /// Aircraft, including signed negative native Ammo counts.
+    pub(crate) aircraft_ammo: Option<AircraftAmmo>,
     /// Infantry sub-cell position (0–4). Only meaningful for infantry.
     pub sub_cell: Option<u8>,
     /// Whether this entity can be crushed by vehicles (Crushable= in rules.ini).
@@ -1692,7 +1638,7 @@ impl GameEntity {
             is_voxel,
             selected: false,
             deactivated: false,
-            repairing: false,
+            repairing: Default::default(),
             in_logic_vector: false,
             lifecycle: ObjectLifecycle::default(),
             in_playfield: false,
@@ -1723,15 +1669,13 @@ impl GameEntity {
             charge_turret_delay: 0,
             radio_contacts: Contacts::default(),
             tether: crate::sim::radio::Tether::default(),
-            was_attacked_by_enemy: false,
-            ai_sellable: false,
-            ai_repairable: false,
+            ai_sell_repair: Default::default(),
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
             // `TechnoClass` constructor `0x006F2E81..0x006F2E8C`: started
             // at the construction frame with no duration.
-            rearm_timer: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
+            rearm_timer: crate::sim::combat::rof::RearmTimer::new(construction_frame as i32),
             gattling: Default::default(),
             turret_anim_frame: 0,
             voxel_recoil: None,
@@ -2262,12 +2206,12 @@ mod tests {
         assert_eq!(e.vision_range, 5);
         assert!(e.is_voxel);
         assert!(!e.selected);
-        assert!(!e.repairing);
+        assert!(!e.repairing.is_on());
         assert!(e.locomotor.is_none());
         assert!(e.attack_target.target().is_none());
         assert!(e.radio_contacts.is_empty());
         assert_eq!(e.rally_cell(), None);
-        assert!(!e.was_attacked_by_enemy);
+        assert!(!e.ai_sell_repair.was_attacked_by_enemy());
         assert!(e.barrel_facing.is_none());
         assert!(e.miner.is_none());
         assert!(!e.mega_mission.is_attack_move());

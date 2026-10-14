@@ -57,7 +57,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
         });
     entity.aircraft_ammo = Some(AircraftAmmo::new(2));
-    entity.aircraft_ammo.as_mut().unwrap().current = input["ammo"].as_i64().unwrap_or(2) as i32;
+    entity
+        .aircraft_ammo
+        .as_mut()
+        .unwrap()
+        .set_current_for_test(input["ammo"].as_i64().unwrap_or(2) as i32);
     entity
         .veterancy
         .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
@@ -139,7 +143,7 @@ fn aircraft_release_control_matches_316_original_mission_suffixes() {
             "{row}"
         );
         assert_eq!(
-            entity.aircraft_ammo.as_ref().unwrap().current,
+            entity.aircraft_ammo.as_ref().unwrap().current(),
             row["input"]["ammo"].as_i64().unwrap() as i32,
             "{row}"
         );
@@ -187,8 +191,12 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
             .is_empty()
     );
     let frame = sim.session.binary_frame as i32;
-    sim.substrate.entities.get_mut(1).unwrap().rearm_timer =
-        crate::sim::timer::CdTimer::started(frame, 4);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .rearm_timer
+        .set_for_test(crate::sim::timer::CdTimer::started(frame, 4));
     assert!(
         dispatch(&mut sim, &rules)
             .consequences
@@ -223,7 +231,7 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
     let result = dispatch(&mut sim, &rules);
     assert_eq!(result.consequences.fire_events().len(), 257);
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current, 2);
+    assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current(), 2);
     assert_eq!(entity.weapon_burst.index(), 0);
     // The Mission return owns cadence, independent of the final rearm jitter.
     sim.session.binary_frame = 19;
@@ -236,13 +244,13 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
             .aircraft_ammo
             .as_ref()
             .unwrap()
-            .current,
+            .current(),
         2
     );
     sim.session.binary_frame = 20;
     crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current, 1);
+    assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current(), 1);
     assert!(!entity.aircraft_ammo.as_ref().unwrap().release_pending());
 }
 
@@ -278,7 +286,7 @@ fn aircraft_release_snapshot_retains_burst_pending_and_mission_delay() {
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         let entity = world.substrate.entities.get(1).unwrap();
         assert_eq!(entity.weapon_burst.index(), 1);
-        assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current, 1);
+        assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current(), 1);
         assert!(!entity.aircraft_ammo.as_ref().unwrap().release_pending());
     }
     assert_eq!(restored.state_hash(), sim.state_hash());
@@ -292,7 +300,7 @@ fn aircraft_release_runs_through_advance_tick() {
     assert_eq!(sim.fire_events.len(), 2);
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(entity.aircraft_ammo.as_ref().unwrap().release_pending());
-    assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current, 2);
+    assert_eq!(entity.aircraft_ammo.as_ref().unwrap().current(), 2);
     assert_eq!(crate::sim::aircraft::attack_state(entity), Some(1));
 }
 
@@ -359,7 +367,7 @@ fn a_strafer_drops_five_bombs_on_one_pass() {
     let entity = sim.substrate.entities.get(1).unwrap();
     let ammo = entity.aircraft_ammo.as_ref().unwrap();
     assert!(ammo.release_pending(), "state 3 pays it");
-    assert_eq!(ammo.current, 1);
+    assert_eq!(ammo.current(), 1);
     // (Range 20 cells + 0x400) / (Speed 8 -> 20 leptons a frame).
     assert_eq!(
         entity.mission.dispatch_timer().delay(),
@@ -479,7 +487,7 @@ fn a_fighter_that_drops_its_last_ammo_with_a_passenger_leaves() {
         aircraft.passenger_role.cargo().unwrap().is_empty(),
         "dropped"
     );
-    assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current, 0);
+    assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current(), 0);
     assert_eq!(crate::sim::aircraft::attack_state(aircraft), Some(10));
 }
 

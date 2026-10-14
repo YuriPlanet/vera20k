@@ -333,7 +333,7 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
     assert!(source.pending_building_fire.is_none());
     assert_eq!(source.prism_support_count, 0);
     assert_eq!(
-        source.rearm_timer,
+        source.rearm_timer.timer(),
         CdTimer::from_raw(
             expected["actor_after"]["rearm"][0].as_i64().unwrap() as i32,
             expected["actor_after"]["rearm"][1].as_i64().unwrap() as i32,
@@ -389,7 +389,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             fire: DelayedFire::Weapon(WeaponSlot::Primary),
         });
         source.prism_support_count = 1;
-        source.rearm_timer = CdTimer::started(100, 0);
+        source.rearm_timer.set_for_test(CdTimer::started(100, 0));
         source.mission_leaf.set_building_ready_latch(1);
         source.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Attack),

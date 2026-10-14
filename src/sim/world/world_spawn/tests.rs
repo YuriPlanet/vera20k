@@ -1702,7 +1702,7 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
                         entity
                             .aircraft_ammo
                             .as_ref()
-                            .map(|ammo| (ammo.current, ammo.max)),
+                            .map(|ammo| (ammo.current(), ammo.max())),
                         Some((5, 5))
                     );
                 }
@@ -2588,8 +2588,12 @@ fn aircraft_ammo_initialization_matches_native_for_authored_and_runtime_objects(
         let authored = sim.substrate.entities.values().next().unwrap();
         for entity in [&runtime, authored] {
             let ammo = entity.aircraft_ammo.as_ref().unwrap();
-            assert_eq!(ammo.current, row["ammo"].as_i64().unwrap() as i32, "{row}");
-            assert_eq!(ammo.max, maximum);
+            assert_eq!(
+                ammo.current(),
+                row["ammo"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+            assert_eq!(ammo.max(), maximum);
             assert!(!ammo.release_pending());
         }
     }
@@ -2714,7 +2718,14 @@ fn authored_unlimbo_preserves_scenario_scope_and_applies_native_class_health() {
 fn a_building_s_ai_sale_byte_follows_its_buildup_or_its_map_line() {
     let mut rules = constructor_rules();
     rules.set_buildup_control_for_test("BASE", [0, 25, 2]);
-    let byte = |sim: &Simulation, id: u64| sim.substrate.entities.get(id).unwrap().ai_sellable;
+    let byte = |sim: &Simulation, id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .ai_sell_repair
+            .ai_sellable()
+    };
 
     let mut built = Simulation::with_seed(0x6DC);
     install_constructor_test_playfield(&mut built);
@@ -2782,7 +2793,8 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
         assert_eq!(sim.spawn_from_map(&[line], Some(&rules)), 1);
         let building = sim.substrate.entities.values().next().unwrap();
         assert_eq!(
-            building.ai_repairable, expected,
+            building.ai_sell_repair.ai_repairable(),
+            expected,
             "game mode {game_mode_nonzero}, {owner}, field {field}"
         );
     }

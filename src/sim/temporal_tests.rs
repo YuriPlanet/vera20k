@@ -1520,7 +1520,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     {
         let building = sim.substrate.entities.get_mut(plant).unwrap();
         building.health.set_for_test(300);
-        building.repairing = true;
+        building.repairing.set_for_test(true);
     }
     let americans = sim.interner.get("Americans").unwrap();
     sim.houses

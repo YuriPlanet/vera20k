@@ -81,7 +81,7 @@ impl Simulation {
             ammo: entity
                 .aircraft_ammo
                 .as_ref()
-                .map_or(-1, |ammo| ammo.current),
+                .map_or(-1, |ammo| ammo.current()),
             type_ammo: object.map_or(0, |object| object.ammo),
             human: self.owner_is_human(entity.owner()),
         }

@@ -557,7 +557,7 @@ impl Simulation {
                 || entity
                     .aircraft_ammo
                     .as_ref()
-                    .map_or(-1, |ammo| ammo.current)
+                    .map_or(-1, |ammo| ammo.current())
                     == 0)
     }
 
@@ -625,7 +625,7 @@ impl Simulation {
         let ammo = entity
             .aircraft_ammo
             .as_ref()
-            .map_or(-1, |ammo| ammo.current);
+            .map_or(-1, |ammo| ammo.current());
         let hunter_seeker = object.is_some_and(|object| object.hunter_seeker);
         let armed = target.is_some() && ammo != 0;
         let may_slow = may_slow

@@ -531,7 +531,9 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     {
         let entity = sim.substrate.entities.get_mut(targeter).unwrap();
         let attack = TargetKind::Entity(cloaker);
-        entity.rearm_timer = crate::sim::timer::CdTimer::started(0, 17);
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
         entity.weapon_burst.complete_shot(4);
         entity.pending_building_fire = Some(PendingBuildingFire {
             remaining_ticks: 7,
@@ -570,7 +572,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     let attack = entity.attack_target.target().unwrap();
     assert_eq!(attack, TargetKind::Entity(cloaker));
     assert_eq!(
-        entity.rearm_timer,
+        entity.rearm_timer.timer(),
         crate::sim::timer::CdTimer::started(0, 17)
     );
     assert_eq!(entity.weapon_burst.index(), 1);
@@ -610,8 +612,12 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
     // as the ReCloak delay and left it unarmed, so a sub that surfaced to fire
     // could dive again on the very next tick.
     let (mut sim, rules, id) = spawned_sub();
-    sim.substrate.entities.get_mut(id).unwrap().rearm_timer =
-        crate::sim::timer::CdTimer::started(0, 20);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .rearm_timer
+        .set_for_test(crate::sim::timer::CdTimer::started(0, 20));
 
     for frame in 0..20 {
         sim.session.binary_frame = frame;

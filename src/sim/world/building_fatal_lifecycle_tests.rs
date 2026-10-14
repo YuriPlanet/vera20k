@@ -395,10 +395,12 @@ impl Fixture {
                         int(&attacker["mission_timer"][2]),
                     ),
                 });
-            actor.rearm_timer = crate::sim::timer::CdTimer::from_raw(
-                int(&attacker["rearm_timer"][0]),
-                int(&attacker["rearm_timer"][2]),
-            );
+            actor
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::from_raw(
+                    int(&attacker["rearm_timer"][0]),
+                    int(&attacker["rearm_timer"][2]),
+                ));
             actor.last_fire_frame = i64::from(int(&attacker["last_fire_frame"]));
         }
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(

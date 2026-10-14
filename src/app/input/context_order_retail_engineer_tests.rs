@@ -237,7 +237,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         plant_entity.estimated_health.get(),
         after["estimated_hp"].as_i64().unwrap() as i32
     );
-    assert!(!plant_entity.repairing);
+    assert!(!plant_entity.repairing.is_on());
     assert!(!plant_entity.building_art.damage_state_active());
     assert_eq!(plant_entity.building_power_health_sample(), Some(750));
     let healthy_slot = plant_entity.building_art.anim_slots()[3].unwrap();

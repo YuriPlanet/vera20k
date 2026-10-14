@@ -198,7 +198,7 @@ impl Simulation {
             && entity
                 .aircraft_ammo
                 .as_ref()
-                .is_some_and(|ammo| ammo.current == 0)
+                .is_some_and(|ammo| ammo.current() == 0)
         {
             return None;
         }

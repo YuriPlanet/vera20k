@@ -22,6 +22,7 @@ mod production_placement;
 mod production_queue;
 mod production_refinery;
 mod production_repair;
+pub(crate) use production_repair::{AiSellRepair, RepairByte};
 mod production_sell;
 mod production_spawn;
 mod production_tech;

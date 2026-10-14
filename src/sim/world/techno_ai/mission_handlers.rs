@@ -2910,8 +2910,12 @@ mod guard_rearm_tests {
             let mut sim = Simulation::with_seed(1);
             sim.session.binary_frame = field("frame") as u32;
             let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
-            entity.rearm_timer =
-                crate::sim::timer::CdTimer::from_raw(field("start"), field("duration"));
+            entity
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::from_raw(
+                    field("start"),
+                    field("duration"),
+                ));
             sim.substrate.entities.insert(entity);
             let before = sim.scenario_rng.logical_state();
 

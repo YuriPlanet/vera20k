@@ -1290,7 +1290,7 @@ impl Simulation {
             })
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
-            entity.ai_repairable = true;
+            entity.ai_sell_repair.make_repairable();
         }
     }
 

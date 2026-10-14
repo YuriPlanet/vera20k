@@ -2529,7 +2529,7 @@ fn member_ammo(entity: &GameEntity, object: &crate::rules::object_type::ObjectTy
     entity
         .aircraft_ammo
         .as_ref()
-        .map_or(object.ammo, |ammo| ammo.current)
+        .map_or(object.ammo, |ammo| ammo.current())
 }
 
 /// An object's Location (`+0x9C`) as the building finders read it.

@@ -116,7 +116,11 @@ fn infantry_refused_or_reloading_does_not_snap() {
         if out_of_range {
             store.get_mut(2).unwrap().position.rx = 50;
         } else {
-            store.get_mut(1).unwrap().rearm_timer = crate::sim::timer::CdTimer::started(100, 20);
+            store
+                .get_mut(1)
+                .unwrap()
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::started(100, 20));
         }
         store
             .get_mut(1)

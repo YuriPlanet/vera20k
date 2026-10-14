@@ -91,7 +91,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     );
     let mut rng = SimRng::new(0x50_4e_49_43);
     let rng_before = rng.logical_state();
-    let rearm_before = entities.get(1).unwrap().rearm_timer;
+    let rearm_before = entities.get(1).unwrap().rearm_timer.timer();
     let mut hooks: Option<&mut FixtureTrace> = None;
     let mut emit = CombatEmit::default();
 
@@ -121,7 +121,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     assert!(emit.fire_events.is_empty());
     assert!(emit.damage_events.is_empty());
     assert!(emit.projectile_spawns.is_empty());
-    assert_eq!(entities.get(1).unwrap().rearm_timer, rearm_before);
+    assert_eq!(entities.get(1).unwrap().rearm_timer.timer(), rearm_before);
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);
     assert_eq!(entities.get(1).unwrap().current_weapon_number(), 1);
@@ -2021,7 +2021,7 @@ fn test_install_entity_attack_target_for_test() {
     // Mid-reload: the reload is the object's (`TechnoClass+0x2EC`), and
     // `Assign_Target @ 0x006FCDB0` never touches it.
     let rearm = crate::sim::timer::CdTimer::started(0, 40);
-    store.get_mut(1).unwrap().rearm_timer = rearm;
+    store.get_mut(1).unwrap().rearm_timer.set_for_test(rearm);
 
     let result: bool = install_entity_attack_target_for_test(&mut store, 1, 2);
     assert!(result, "Should succeed for valid entities");
@@ -2029,7 +2029,7 @@ fn test_install_entity_attack_target_for_test() {
     let attack = store.get(1).unwrap().attack_target.target().unwrap();
     assert!(matches!(attack, crate::sim::combat::TargetKind::Entity(2)));
     assert_eq!(
-        store.get(1).unwrap().rearm_timer,
+        store.get(1).unwrap().rearm_timer.timer(),
         rearm,
         "a new attack order does not reload the weapon"
     );
@@ -3452,7 +3452,7 @@ fn gsi_04_07_damage_retaliation_peek_rejects_limbo_attacker() {
         let victim = entities.get(2).expect("victim survives");
         (
             victim.health.current(),
-            victim.was_attacked_by_enemy,
+            victim.ai_sell_repair.was_attacked_by_enemy(),
             victim.mission.current(),
             victim.mission.suspended(),
             victim.attack_target.target(),
@@ -3568,7 +3568,7 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
     for id in protected {
         let victim = sim.substrate.entities.get(id).unwrap();
         assert_eq!(victim.health.current(), 100);
-        assert!(!victim.was_attacked_by_enemy);
+        assert!(!victim.ai_sell_repair.was_attacked_by_enemy());
         assert_eq!(victim.damage_smoke_system_id, None);
     }
     assert_eq!(
@@ -6246,11 +6246,11 @@ fn a_slow_infantry_shot_scatters_its_targets_cell_away_from_the_shooter() {
         let rearm = crate::sim::timer::CdTimer::started(0, 40);
         let shooter = sim.substrate.entities.get_mut(gi).unwrap();
         if refused {
-            shooter.rearm_timer = rearm;
+            shooter.rearm_timer.set_for_test(rearm);
         }
         shooter.set_native_stage_value(2);
         fire(&mut sim);
-        let rearm_after = sim.substrate.entities.get(gi).unwrap().rearm_timer;
+        let rearm_after = sim.substrate.entities.get(gi).unwrap().rearm_timer.timer();
         if refused {
             assert_eq!(rearm_after, rearm, "Speed={speed}: the shot is refused");
         } else {
@@ -9226,7 +9226,8 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
             .entities
             .get(hostile_target)
             .unwrap()
-            .was_attacked_by_enemy,
+            .ai_sell_repair
+            .was_attacked_by_enemy(),
         "surviving hostile source sets the persistent Techno tail byte"
     );
     assert!(
@@ -9234,7 +9235,8 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
             .entities
             .get(allied_target)
             .unwrap()
-            .was_attacked_by_enemy,
+            .ai_sell_repair
+            .was_attacked_by_enemy(),
         "target-owner alliance suppresses the hostile latch"
     );
     assert!(
@@ -9242,7 +9244,8 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
             .entities
             .get(null_target)
             .unwrap()
-            .was_attacked_by_enemy,
+            .ai_sell_repair
+            .was_attacked_by_enemy(),
         "null radiation/environment source cannot set it"
     );
     let latched_hash = sim.state_hash();
@@ -9250,7 +9253,8 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         .entities
         .get_mut(hostile_target)
         .unwrap()
-        .was_attacked_by_enemy = false;
+        .ai_sell_repair
+        .set_was_attacked_by_enemy_for_test(false);
     assert_ne!(
         sim.state_hash(),
         latched_hash,
@@ -9260,7 +9264,8 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         .entities
         .get_mut(hostile_target)
         .unwrap()
-        .was_attacked_by_enemy = true;
+        .ai_sell_repair
+        .set_was_attacked_by_enemy_for_test(true);
 
     let selling = |sim: &crate::sim::world::Simulation, id: u64| {
         sim.substrate
@@ -10783,7 +10788,9 @@ fn gsi_08_12_a_grizzly_promotes_through_the_damage_path() {
         install_entity_attack_target_for_test(&mut store, 1, victim_id);
         // Each victim is a fresh shot: clear the reload the last kill armed.
         if let Some(attacker) = store.get_mut(1) {
-            attacker.rearm_timer = crate::sim::timer::CdTimer::default();
+            attacker
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::default());
         }
         align_attackers_to_targets(&mut store);
         tick_combat(
@@ -11113,7 +11120,9 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
         install_entity_attack_target_for_test(&mut store, 1, victim_id);
         // Each victim is a fresh shot: clear the reload the last kill armed.
         if let Some(attacker) = store.get_mut(1) {
-            attacker.rearm_timer = crate::sim::timer::CdTimer::default();
+            attacker
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::default());
         }
         tick_combat(
             &mut store,
@@ -11532,7 +11541,7 @@ fn gsi_08_06_a_failed_arc_launch_skips_the_rest_of_the_shot() {
             result.projectile_spawns.len(),
             result.consequences.fire_events().len(),
             rng.logical_state() != rng_before,
-            shooter.rearm_timer != before.rearm_timer,
+            shooter.rearm_timer.timer() != before.rearm_timer.timer(),
             shooter.weapon_burst.index() != before.weapon_burst.index(),
             shooter.last_fire_frame != before.last_fire_frame,
         )

@@ -142,7 +142,7 @@ pub(crate) fn acquire_best_target_for_entity(
     };
     // Aircraft with 0 ammo should not acquire new targets — need to reload.
     if let Some(ref ammo) = entity.aircraft_ammo
-        && ammo.current == 0
+        && ammo.current() == 0
     {
         return super::greatest_threat::ThreatScanOutcome::default();
     }

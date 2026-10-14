@@ -50,13 +50,13 @@ fn assert_selection(entity: &GameEntity, expected: &Value, context: &str) {
 }
 
 fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: &Value) {
-    let before_timer = entity.rearm_timer;
+    let before_timer = entity.rearm_timer.timer();
     let before_delay = entity.charge_turret_delay;
     for event in events.as_array().unwrap() {
         assert_eq!(event["event"], "set_gunner", "unexpected native event");
         entity.set_gunner_weapon(int(event, "mode"), object);
     }
-    assert_eq!(entity.rearm_timer, before_timer);
+    assert_eq!(entity.rearm_timer.timer(), before_timer);
     assert_eq!(entity.charge_turret_delay, before_delay);
 }
 
@@ -133,15 +133,18 @@ fn charge_turret_ai_and_restored_owner_match_original_arithmetic() {
         entity.current_weapon_number = int(input, "initial_weapon");
         entity.current_turret_index = int(input, "initial_turret");
         entity.charge_turret_delay = int(input, "charge_delay");
-        entity.rearm_timer = CdTimer::from_raw(int(input, "start"), int(input, "duration"));
-        let before_timer = entity.rearm_timer;
+        entity.rearm_timer.set_for_test(CdTimer::from_raw(
+            int(input, "start"),
+            int(input, "duration"),
+        ));
+        let before_timer = entity.rearm_timer.timer();
         let before_delay = entity.charge_turret_delay;
         let encoded = bincode::serialize(&entity).unwrap();
         let mut restored: GameEntity = bincode::deserialize(&encoded).unwrap();
         for entity in [&mut entity, &mut restored] {
             entity.update_charge_turret(int(input, "frame"), &object);
             assert_selection(entity, &row["after"], context);
-            assert_eq!(entity.rearm_timer, before_timer, "timer: {context}");
+            assert_eq!(entity.rearm_timer.timer(), before_timer, "timer: {context}");
             assert_eq!(entity.charge_turret_delay, before_delay, "delay: {context}");
         }
     }

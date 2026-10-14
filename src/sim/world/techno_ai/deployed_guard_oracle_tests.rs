@@ -264,7 +264,10 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
         signed(&before["reload"][0]) as u32,
         signed(&before["reload"][1]) as u32,
     );
-    actor.rearm_timer = CdTimer::from_raw(signed(&before["rearm"][0]), signed(&before["rearm"][1]));
+    actor.rearm_timer.set_for_test(CdTimer::from_raw(
+        signed(&before["rearm"][0]),
+        signed(&before["rearm"][1]),
+    ));
     actor.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(signed(&before["mission"])),
         suspended: MissionId::from_raw(signed(&before["suspended"])),

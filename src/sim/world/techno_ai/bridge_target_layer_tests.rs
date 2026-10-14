@@ -218,10 +218,10 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
     }
     let source = sim.substrate.entities.get_mut(1).unwrap();
     if let Some(timer) = input["rearm"].as_array() {
-        source.rearm_timer = CdTimer::from_raw(
+        source.rearm_timer.set_for_test(CdTimer::from_raw(
             timer[0].as_i64().unwrap() as i32,
             timer[1].as_i64().unwrap() as i32,
-        );
+        ));
     }
     if let Some(timer) = input["timer"].as_array() {
         source.passive_scan_timer = MissionTimer {
@@ -489,7 +489,7 @@ fn assert_retail_target_state_restored(live: &Simulation, restored: &Simulation,
             assert_eq!(json!(before.position), json!(after.position));
             assert_eq!(before.on_bridge, after.on_bridge);
             assert_eq!(before.passive_scan_timer, after.passive_scan_timer);
-            assert_eq!(before.rearm_timer, after.rearm_timer);
+            assert_eq!(before.rearm_timer.timer(), after.rearm_timer.timer());
             assert_eq!(json!(before.attack_target), json!(after.attack_target));
             assert_eq!(
                 before.passively_acquired_target,
@@ -596,7 +596,10 @@ pub(super) fn retail_hills_collapsed_scene(
         // Native composed deck-to-ground rearm boundary: ready weapons
         // reject earlier in T58; the busy deck source reaches Evaluate's G27.
         // The reverse direction rejects in InRange before G27.
-        entity.rearm_timer = CdTimer::started(runtime.simulation.session.binary_frame as i32, 10);
+        entity.rearm_timer.set_for_test(CdTimer::started(
+            runtime.simulation.session.binary_frame as i32,
+            10,
+        ));
         passive_acquire_step(
             &mut runtime.simulation,
             source,

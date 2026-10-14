@@ -122,7 +122,7 @@ impl Simulation {
             ammo: entity
                 .aircraft_ammo
                 .as_ref()
-                .map_or(-1, |ammo| ammo.current),
+                .map_or(-1, |ammo| ammo.current()),
             team: self.team_script_vm.team_for_member(id).is_some(),
             game_mode: self.session.game_mode_nonzero,
         };

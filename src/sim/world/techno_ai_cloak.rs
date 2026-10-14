@@ -105,10 +105,9 @@ fn stock_cloak_tick_facts(
     let current_frame = sim.session.binary_frame as i32;
     let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state);
     let cloak_progress = entity.cloak.as_ref().map_or(0, |cloak| cloak.depth);
-    let delay_expired = entity
-        .cloak
-        .as_ref()
-        .is_some_and(|cloak| cloak.recloak_delay_expired(current_frame, entity.rearm_timer));
+    let delay_expired = entity.cloak.as_ref().is_some_and(|cloak| {
+        cloak.recloak_delay_expired(current_frame, entity.rearm_timer.timer())
+    });
 
     // `CellClass::IsVisibleToHouse @ 0x004870B0` is the CloakedByHouses bit,
     // NOT cell visibility — see `FogState::is_cloaked_by_house`. It is only

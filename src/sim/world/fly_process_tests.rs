@@ -162,7 +162,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         dispatch_timer: MissionDispatchTimer::at_frame(frame),
     });
     let mut ammo = AircraftAmmo::new(1);
-    ammo.current = int(input, "ammo", 1) as i32;
+    ammo.set_current_for_test(int(input, "ammo", 1) as i32);
     entity.aircraft_ammo = Some(ammo);
     if input["target"].is_array() {
         entity

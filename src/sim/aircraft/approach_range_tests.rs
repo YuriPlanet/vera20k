@@ -121,7 +121,7 @@ fn assert_native_in_range_result(sim: &Simulation, row: &Value) {
         !aircraft.aircraft_ammo.as_ref().unwrap().release_pending(),
         "the range branch only authorizes the next mission state"
     );
-    assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current, 2);
+    assert_eq!(aircraft.aircraft_ammo.as_ref().unwrap().current(), 2);
     assert!(
         crate::sim::movement::motion_query::is_moving(&aircraft) != Some(true),
         "{row}"

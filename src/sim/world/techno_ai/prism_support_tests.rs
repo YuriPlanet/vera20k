@@ -223,7 +223,9 @@ impl Fixture {
                 dispatch_timer: MissionDispatchTimer::from_raw(FRAME, 0),
             });
             entity.mission_leaf.set_building_ready_latch(1);
-            entity.rearm_timer = CdTimer::started(FRAME - 100, 0);
+            entity
+                .rearm_timer
+                .set_for_test(CdTimer::started(FRAME - 100, 0));
         }
         let mut fixture = Self {
             sim,
@@ -295,7 +297,9 @@ impl Fixture {
             let start = rearm[0]
                 .as_i64()
                 .map_or(PAUSED_START_FRAME, |relative| FRAME + relative as i32);
-            entity.rearm_timer = CdTimer::started(start, rearm[1].as_i64().unwrap() as i32);
+            entity
+                .rearm_timer
+                .set_for_test(CdTimer::started(start, rearm[1].as_i64().unwrap() as i32));
         }
         if state["drained"] == true {
             entity.drain.set_draining_me_for_test(Some(u64::MAX));
@@ -661,7 +665,9 @@ fn prism_support_bonus_matches_the_original() {
             Some(8) => fixture.move_target(OUT_OF_RANGE),
             Some(3) => {
                 let entity = fixture.sim.substrate.entities.get_mut(master).unwrap();
-                entity.rearm_timer = CdTimer::started(FRAME, ROF);
+                entity
+                    .rearm_timer
+                    .set_for_test(CdTimer::started(FRAME, ROF));
             }
             Some(6) => fixture.unpower(),
             Some(other) => panic!("{name}: GetFireError {other}"),

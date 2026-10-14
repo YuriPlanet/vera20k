@@ -522,8 +522,10 @@ impl Simulation {
                 // constructor and before the Unlimbo (`BuildingClass::ReadFromINI`
                 // `0x0044FB5B`, `0x0044FB70`).
                 if map_ent.category == EntityCategory::Structure {
-                    ge.ai_sellable = map_ent.structure_ai_sellable;
-                    ge.ai_repairable = map_ent.structure_ai_repairable;
+                    ge.ai_sell_repair.read_map_line(
+                        map_ent.structure_ai_sellable,
+                        map_ent.structure_ai_repairable,
+                    );
                 }
                 // The map readers apply optional signed percentages after the
                 // class constructor (including Init_Managers) and before Unlimbo:
@@ -2302,7 +2304,7 @@ impl Simulation {
         if !self.owner_is_human(owner_id)
             && let Some(building) = self.substrate.entities.get_mut(new_sid)
         {
-            building.ai_repairable = true;
+            building.ai_sell_repair.make_repairable();
         }
         // 0x0073982C: the building takes the unit's target.
         let _ = self.assign_target_represented(

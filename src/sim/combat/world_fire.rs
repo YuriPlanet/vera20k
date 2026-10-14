@@ -1826,9 +1826,8 @@ fn deduct_fire_ammo(world: &mut Simulation, firers: &[u64]) {
             .entities
             .get_mut(id)
             .and_then(|entity| entity.aircraft_ammo.as_mut())
-            && ammo.current > 0
         {
-            ammo.current -= 1;
+            ammo.decrease();
         }
     }
 }

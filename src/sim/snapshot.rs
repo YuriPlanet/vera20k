@@ -6343,7 +6343,9 @@ mod tests {
             crate::util::native_x87::NativeF64Bits::from_bits(1.5_f64.to_bits());
         aircraft.berserk.active = true;
         aircraft.berserk.timer = -17;
-        aircraft.was_attacked_by_enemy = true;
+        aircraft
+            .ai_sell_repair
+            .set_was_attacked_by_enemy_for_test(true);
         aircraft.damage_smoke_system_id = Some(2);
         aircraft.capture_manager = Some(
             crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
@@ -6465,7 +6467,8 @@ mod tests {
             .entities
             .get_mut(entity_id)
             .unwrap()
-            .was_attacked_by_enemy = false;
+            .ai_sell_repair
+            .set_was_attacked_by_enemy_for_test(false);
         assert_ne!(
             sim.state_hash(),
             expected_hash,
@@ -6475,7 +6478,8 @@ mod tests {
             .entities
             .get_mut(entity_id)
             .unwrap()
-            .was_attacked_by_enemy = true;
+            .ai_sell_repair
+            .set_was_attacked_by_enemy_for_test(true);
         sim.houses.get_mut(&owner).unwrap().current_iq = 1;
         assert_ne!(sim.state_hash(), expected_hash, "CurrentIQ is hashed");
         sim.houses.get_mut(&owner).unwrap().current_iq = 2;
@@ -6544,7 +6548,7 @@ mod tests {
         assert_eq!(entity.armor_multiplier.bits(), 1.5_f64.to_bits());
         assert!(entity.berserk.active);
         assert_eq!(entity.berserk.timer, -17);
-        assert!(entity.was_attacked_by_enemy);
+        assert!(entity.ai_sell_repair.was_attacked_by_enemy());
         assert_eq!(entity.damage_smoke_system_id, Some(2));
         assert_eq!(
             entity.pending_c4_detonation,

@@ -37,7 +37,7 @@ fn issue_attack_cell_sets_cell_target_for_armed_unit() {
     let mut store = EntityStore::new();
     store.insert(make_unit(1, "MTNK", 5, 5, 300));
     let rearm = crate::sim::timer::CdTimer::started(0, 40);
-    store.get_mut(1).unwrap().rearm_timer = rearm;
+    store.get_mut(1).unwrap().rearm_timer.set_for_test(rearm);
     let interner = test_interner();
     let rules = ff_rules();
 
@@ -50,7 +50,7 @@ fn issue_attack_cell_sets_cell_target_for_armed_unit() {
     let attack = store.get(1).unwrap().attack_target.target().unwrap();
     assert!(matches!(attack, TargetKind::Cell(50, 50)));
     assert_eq!(
-        store.get(1).unwrap().rearm_timer,
+        store.get(1).unwrap().rearm_timer.timer(),
         rearm,
         "a force-fire order does not reload the weapon"
     );

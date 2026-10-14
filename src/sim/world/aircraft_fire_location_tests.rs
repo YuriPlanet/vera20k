@@ -332,7 +332,7 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
             .then(|| crate::sim::combat::TargetKind::Entity(2)),
     );
     let mut ammo = AircraftAmmo::new(2);
-    ammo.current = input["ammo"].as_i64().unwrap_or(2) as i32;
+    ammo.set_current_for_test(input["ammo"].as_i64().unwrap_or(2) as i32);
     if input["pending"].as_bool().unwrap_or(false) {
         ammo.begin_release();
     }
@@ -389,7 +389,7 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
         "state": sub_state,
         "delay": entity.mission.dispatch_timer().delay(),
         "nav": nav, "aux": entity.navigation.nav_com_aux.is_some(),
-        "ammo": entity.aircraft_ammo.as_ref().unwrap().current,
+        "ammo": entity.aircraft_ammo.as_ref().unwrap().current(),
         "pending": entity.aircraft_ammo.as_ref().unwrap().release_pending(),
         "latch": entity.mission_leaf.as_aircraft().unwrap().action_latch() != 0,
         "destination": [point.x, point.y, point.z], "moving": fly.moving(),

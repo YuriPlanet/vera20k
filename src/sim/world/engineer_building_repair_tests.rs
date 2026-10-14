@@ -235,7 +235,7 @@ impl Fixture {
             ground_pose::put_location(&mut entity.position, coord(&before["position"]));
             entity.health.set_for_test(int(&before["actual_hp"]));
             entity.estimated_health.reset(int(&before["estimated_hp"]));
-            entity.repairing = before["paid_repair"] == 1;
+            entity.repairing.set_for_test(before["paid_repair"] == 1);
             entity.sample_building_health_for_power();
         }
         sim.set_building_anim_slot(building, 3, true, false, 0, &rules)
@@ -297,7 +297,7 @@ impl Fixture {
                 crate::sim::world::FrameEffects::default(),
             );
             let entity = sim.substrate.entities.get_mut(building).unwrap();
-            entity.repairing = before["paid_repair"] == 1;
+            entity.repairing.set_for_test(before["paid_repair"] == 1);
             entity.has_been_captured = false;
             // The preceding fixture transfer is supplied setup, not this
             // arrival. Consume its identical idle request through the owner.
@@ -423,7 +423,7 @@ impl Fixture {
             "{boundary}: retained HP sample"
         );
         assert_eq!(
-            entity.repairing,
+            entity.repairing.is_on(),
             native["paid_repair"] == 1,
             "{boundary}: paid repair"
         );

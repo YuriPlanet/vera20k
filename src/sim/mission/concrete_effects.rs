@@ -609,9 +609,9 @@ pub(crate) fn represented_assign_target_admitted(
         && entity.spawn_owner_id.is_some()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.aircraft_ammo.as_mut()
-        && ammo.current != 0
+        && ammo.current() != 0
     {
-        ammo.current = 0;
+        ammo.empty();
         None
     } else if commits {
         requested

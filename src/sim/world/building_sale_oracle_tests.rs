@@ -595,8 +595,12 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         );
         building.lifecycle.set_in_limbo_for_test(false);
         building.in_playfield = true;
-        building.was_attacked_by_enemy = input["attacked"] == true;
-        building.ai_sellable = input["ai_sellable"] == true;
+        building
+            .ai_sell_repair
+            .set_was_attacked_by_enemy_for_test(input["attacked"] == true);
+        building
+            .ai_sell_repair
+            .set_ai_sellable_for_test(input["ai_sellable"] == true);
         if input["mission"] == "construction" || input["queued"] == "construction" {
             building.install_building_up(
                 crate::sim::components::BuildingUp::completing_in_ticks(

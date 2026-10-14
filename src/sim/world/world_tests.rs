@@ -8777,7 +8777,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
         GameEntity::test_default_of_category(2, "TARGB", "Russia", 7, 5, EntityCategory::Structure);
     bld.type_facts.set_foundation_for_test("1x1".to_string());
     bld.health = Health::new(50);
-    bld.repairing = true;
+    bld.repairing.set_for_test(true);
     sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");
     sim.houses

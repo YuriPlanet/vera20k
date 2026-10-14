@@ -12,6 +12,96 @@ use crate::util::native_x87::{
     MaskedX87Chop53 as X, MaskedX87Ordering, NativeF32Bits, NativeF64Bits,
 };
 
+/// The rearm countdown, `TechnoClass+0x2EC` (a CDTimerClass whose duration is
+/// `+0x2F4`). It belongs to the object, not to its target: `Assign_Target @
+/// 0x006FCDB0` never touches it, so a new target does not reload the weapon.
+///
+/// Writers, from a scan of every `+0x2EC..+0x2F4` operand in the image:
+/// - The constructor starts it at the current frame with no duration
+///   (`0x006F2E81`, [`Self::new`]).
+/// - `TechnoClass::FireAt`, every launched shot, with GetROF's value (the
+///   drawn gap mid-burst, the full reload after the burst's last shot),
+///   halved for a berserk firer (`0x006FF274..0x006FF2CB`). Its DiskLaser
+///   path stores the value unhalved, fires the disk laser and returns
+///   (`0x006FE4A4..0x006FE4EF`). Ported (`world_fire::emit_admitted_fire`,
+///   through `GameEntity::rearm_after_fire`); VERA fires a DiskLaser weapon
+///   through the ordinary path, keeping only the unhalved rearm.
+/// - `AircraftClass::Drop_Payload` restarts it with no duration
+///   (`0x00415E88`). Ported (the paradrop success arm).
+/// - A Prism support beam starts the supporter's downtime,
+///   {Frame, `PrismSupportDelay=`} (`0x0044ACD0..0x0044ACDC`). Ported
+///   (`building_missions::process_delayed_fire`).
+/// - A C4 plant arms the planter with `GetROF(1)`
+///   (`InfantryClass::Per_Cell_Process 0x0051A564`/`0x0051A624`). Ported
+///   (`sim::c4_plant`).
+/// - RESIDUAL, with their mechanisms:
+///   - `UnitClass::ReceiveGunner`/`RemoveGunner` read a running rearm
+///     (`0x0074643A`, `0x00746502`) and hand it over (`0x0074646E`,
+///     `0x0074655C`; see `temporal.rs`);
+///   - `UnitClass::PerCellProcess` arms a unit that stops with no NavCom
+///     and no path with `GetROF(1) / 4` when its type has
+///     `MobileFire=no` (`0x0073ADCA..0x0073AE18`). Dormant: no retail
+///     type sets it (the constructor's default is yes, `0x00711150`).
+///
+/// Readers: GetFireError answers Rearm while it runs (`0x006FC94F`);
+/// `CanAutoCloak @ 0x006FBDC0` waits for it; `FootClass::Mission_Guard`
+/// returns its remaining frames as the next delay and draws nothing
+/// (`0x004D52A9`); the Prism walk skips a tower while it runs
+/// (`0x0044B3AE`); `TechnoClass::Compute_CRC` folds it (`0x0070C362`).
+/// RESIDUAL:
+/// - `AircraftClass::Mission_Guard` falls into the same Foot body
+///   (`0x0041A92B`), but VERA's aircraft Guard is not a port of it.
+/// - `CanDeploySlashUnload @ 0x00700D50` reads it only for a type with
+///   `UndeployDelay > -1` (`0x00700DF9..0x00700E23`); that type refuses
+///   deployment while it runs. Stock GI/GGI keep the reader default-1.
+///
+/// The charge-turret model index reads this with the saved +2F8 duration
+/// (6FA540); `game_entity::gunner` owns that presentation state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RearmTimer {
+    timer: crate::sim::timer::CdTimer,
+}
+
+impl RearmTimer {
+    /// The constructor's start: the current frame, no duration (`0x006F2E81`).
+    pub(crate) const fn new(frame: i32) -> Self {
+        Self {
+            timer: crate::sim::timer::CdTimer::started(frame, 0),
+        }
+    }
+
+    /// The countdown as a timer.
+    pub(crate) const fn timer(self) -> crate::sim::timer::CdTimer {
+        self.timer
+    }
+
+    /// The frame it was last started.
+    pub(crate) const fn start_frame(self) -> i32 {
+        self.timer.start_frame()
+    }
+
+    /// Its duration (`+0x2F4`).
+    pub(crate) const fn duration(self) -> i32 {
+        self.timer.duration()
+    }
+
+    /// The frames left at `current_frame`.
+    pub(crate) fn remaining(self, current_frame: i32) -> i32 {
+        self.timer.remaining(current_frame)
+    }
+
+    /// Start it: the writers listed on [`RearmTimer`].
+    pub(crate) fn start(&mut self, current_frame: i32, duration: i32) {
+        self.timer.start(current_frame, duration);
+    }
+
+    /// Install a fixture's countdown.
+    #[cfg(test)]
+    pub(crate) fn set_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
+        self.timer = timer;
+    }
+}
+
 /// The firer's live particle systems GetROF tests against the weapon's flags.
 /// FireAt creates the fired weapon's systems (`0x006FF15B..0x006FF26E`) before
 /// it calls GetROF, so inside FireAt a flagged weapon always has its own.

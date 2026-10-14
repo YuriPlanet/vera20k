@@ -12,8 +12,8 @@
 
 # VERA20k
 
-VERA20k är en nyimplementation av originalmotorn, `gamemd.exe`. Den använder de ursprungliga
-spelfilerna, så du behöver en egen kopia av Red Alert 2: Yuri's Revenge.
+VERA20k är en communitydriven nyimplementation av originalmotorn, `gamemd.exe`. Den använder
+de ursprungliga spelfilerna, så du behöver en egen kopia av Red Alert 2: Yuri's Revenge.
 
 VERA20k görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.

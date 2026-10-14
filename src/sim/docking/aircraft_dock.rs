@@ -19,10 +19,11 @@
 /// pending release survives Mission changes; it is not an Attack sub-state.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AircraftAmmo {
-    /// Current ammo count. 0 = depleted, triggers auto-return.
-    pub current: i32,
-    /// Maximum ammo (from `Ammo=` in rules.ini).
-    pub max: i32,
+    /// `TechnoClass+0x2FC`, Ammo: a signed count that wraps. 0 is depleted,
+    /// which sends the aircraft home.
+    current: i32,
+    /// The type's `Ammo=`, copied at construction.
+    max: i32,
     /// Aircraft+6C8, initialized by413D40 and set before the release loop41840E.
     pending_release: bool,
     /// Aircraft `+0x6CC`, the dock it last found or was built on: written by
@@ -52,6 +53,63 @@ impl AircraftAmmo {
             pending_release: false,
             dock: None,
         }
+    }
+
+    /// Ammo (`+0x2FC`).
+    pub(crate) const fn current(&self) -> i32 {
+        self.current
+    }
+
+    /// The type's `Ammo=`; only the rearm reads it in production.
+    #[cfg(test)]
+    pub(crate) const fn max(&self) -> i32 {
+        self.max
+    }
+
+    /// `AircraftClass::Drop_Payload @ 0x00415C60`'s Ammo writes: one round
+    /// off for each passenger it drops and one back for a refused drop.
+    /// Returns the new count.
+    pub(crate) fn add(&mut self, delta: i32) -> i32 {
+        self.current = self.current.wrapping_add(delta);
+        self.current
+    }
+
+    /// `TechnoClass::DecreaseAmmo`, called by FireAt after a burst
+    /// (`0x006FF656`): one round off while any is left.
+    pub(crate) fn decrease(&mut self) {
+        if self.current > 0 {
+            self.current -= 1;
+        }
+    }
+
+    /// RELOAD, radio `0x1F` (`0x006F4C9C`): one round more. The receiver has
+    /// already refused a full aircraft.
+    pub(crate) fn reload_round(&mut self) {
+        self.current = self.current.wrapping_add(1);
+    }
+
+    /// The SpawnManager's case-6 rearm (`0x006B788F..0x006B78AA`): Ammo from
+    /// the type's `Ammo=`.
+    pub(crate) fn refill(&mut self) {
+        self.current = self.max;
+    }
+
+    /// The kamikaze tracker's Ammo = 1: Push (`0x0054E478..0x0054E483`) and
+    /// Update (`0x0054E524`).
+    pub(crate) fn load_single_round(&mut self) {
+        self.current = 1;
+    }
+
+    /// `Assign_Target`'s aircraft arm (`0x006FCDEB..0x006FCE46`): a spawned
+    /// aircraft handed another target mid-run drops its ammo.
+    pub(crate) fn empty(&mut self) {
+        self.current = 0;
+    }
+
+    /// Install a fixture's Ammo.
+    #[cfg(test)]
+    pub(crate) fn set_current_for_test(&mut self, current: i32) {
+        self.current = current;
     }
 
     /// Aircraft `+0x6CC`.

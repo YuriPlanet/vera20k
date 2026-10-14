@@ -196,10 +196,7 @@ fn add_ammo(sim: &mut Simulation, id: u64, delta: i32) -> i32 {
         .entities
         .get_mut(id)
         .and_then(|plane| plane.aircraft_ammo.as_mut())
-        .map_or(0, |ammo| {
-            ammo.current = ammo.current.wrapping_add(delta);
-            ammo.current
-        })
+        .map_or(0, |ammo| ammo.add(delta))
 }
 
 /// From the landing point through SpawnParachuted
@@ -615,7 +612,7 @@ mod tests {
             .aircraft_ammo
             .as_mut()
             .unwrap()
-            .current = ammo;
+            .set_current_for_test(ammo);
     }
 
     fn ammo(sim: &Simulation, id: u64) -> i32 {
@@ -626,7 +623,7 @@ mod tests {
             .aircraft_ammo
             .as_ref()
             .unwrap()
-            .current
+            .current()
     }
 
     fn cargo(sim: &Simulation, id: u64) -> Vec<u64> {
@@ -1171,7 +1168,9 @@ mod tests {
         sim.session.binary_frame = 77;
         let plane = sim.substrate.entities.get_mut(aircraft_id).unwrap();
         plane.mission_leaf.set_paradrop_passes_for_test(-2);
-        plane.rearm_timer = crate::sim::timer::CdTimer::started(3, 40);
+        plane
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(3, 40));
 
         drop_payload(
             &mut sim,
@@ -1188,7 +1187,7 @@ mod tests {
             5
         );
         assert_eq!(
-            plane.rearm_timer,
+            plane.rearm_timer.timer(),
             crate::sim::timer::CdTimer::started(77, 0)
         );
         assert_eq!(ammo(&sim, aircraft_id), 3);
@@ -1250,7 +1249,13 @@ mod tests {
                 .mission_leaf
                 .set_paradrop_passes_for_test(2);
             block_three_spots(&mut sim, (51, 20));
-            let rearm = sim.substrate.entities.get(aircraft_id).unwrap().rearm_timer;
+            let rearm = sim
+                .substrate
+                .entities
+                .get(aircraft_id)
+                .unwrap()
+                .rearm_timer
+                .timer();
 
             drop_payload(
                 &mut sim,
@@ -1268,7 +1273,7 @@ mod tests {
                 plane.mission_leaf.as_aircraft().unwrap().paradrop_passes(),
                 2
             );
-            assert_eq!(plane.rearm_timer, rearm);
+            assert_eq!(plane.rearm_timer.timer(), rearm);
             let passenger = sim.substrate.entities.get(passenger_id).unwrap();
             assert_eq!(
                 passenger.passenger_role.inside_transport_id(),

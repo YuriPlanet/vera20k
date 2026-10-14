@@ -1905,8 +1905,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 sim.entities_mut().get_mut(actor).unwrap().bunker_link = BunkerLink::Installed(99);
             }
             // Active rearm never belongs to WhatAction's control/range gate.
-            sim.entities_mut().get_mut(actor).unwrap().rearm_timer =
-                crate::sim::timer::CdTimer::started(0, 999);
+            sim.entities_mut()
+                .get_mut(actor)
+                .unwrap()
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::started(0, 999));
             let x = if case["in_range"].as_bool().unwrap() {
                 4
             } else {
@@ -2236,7 +2239,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     actor.building_body_state(),
                     actor.queued_building_body_state(),
                     actor.passenger_role.cargo(),
-                    actor.rearm_timer,
+                    actor.rearm_timer.timer(),
                     actor.passive_scan_timer,
                     actor.passively_acquired_target,
                     actor.ai_frozen(),

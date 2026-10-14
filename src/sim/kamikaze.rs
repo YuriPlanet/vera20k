@@ -276,7 +276,7 @@ impl KamikazeHost for WorldHost<'_> {
             .get_mut(child)
             .and_then(|entity| entity.aircraft_ammo.as_mut())
         {
-            ammo.current = 1;
+            ammo.load_single_round();
         }
     }
 

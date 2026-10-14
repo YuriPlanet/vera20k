@@ -50,7 +50,7 @@ fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool 
         entity
             .aircraft_ammo
             .as_ref()
-            .is_none_or(|ammo| (ammo.current as i8) < 0)
+            .is_none_or(|ammo| (ammo.current() as i8) < 0)
     } else {
         entity.low_bridge_tube_state.is_none()
     }

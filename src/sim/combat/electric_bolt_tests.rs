@@ -498,7 +498,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         remaining_ticks: 1,
         fire: DelayedFire::Weapon(WeaponSlot::Primary),
     });
-    entity.rearm_timer = CdTimer::started(100, 0);
+    entity.rearm_timer.set_for_test(CdTimer::started(100, 0));
     entity.mission_leaf.set_building_ready_latch(1);
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -782,7 +782,9 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             remaining_ticks: 1,
             fire: DelayedFire::Weapon(WeaponSlot::Primary),
         });
-        entity.rearm_timer = CdTimer::started(sim.session.binary_frame as i32, 0);
+        entity
+            .rearm_timer
+            .set_for_test(CdTimer::started(sim.session.binary_frame as i32, 0));
         let health_before = sim.substrate.entities.get(target).unwrap().health.current();
         let mut previous_light_count = 0;
         for (visit_index, key) in ["first_logic_visit", "second_logic_visit"]

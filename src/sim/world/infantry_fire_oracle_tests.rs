@@ -99,10 +99,10 @@ fn firing_fixture(case: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         signed(&words[3]),
         signed(&words[4]),
     ));
-    actor.rearm_timer = CdTimer::from_raw(
+    actor.rearm_timer.set_for_test(CdTimer::from_raw(
         signed(&before["rearm_timer_words"][0]),
         signed(&before["rearm_timer_words"][2]),
-    );
+    ));
     actor.health = Health::new(signed(&before["health"]));
     actor.lifecycle.set_in_limbo_for_test(before["limbo"] != 0);
     actor

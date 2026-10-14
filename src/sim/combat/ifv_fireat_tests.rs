@@ -103,7 +103,9 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
             input["source_heading"].as_u64().unwrap() as u16,
             0,
         ));
-        firer.rearm_timer = crate::sim::timer::CdTimer::started(0, 0);
+        firer
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(0, 0));
     }
     // Adopt the oracle's declared boundary after source setup, not a claim
     // that the fixture's synthetic world constructed the native full prefix.
@@ -123,7 +125,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
             firer.weapon_burst.index(),
             row["launch"]["burst_before"].as_i64().unwrap() as i32
         );
-        assert!(firer.rearm_timer.expired(frame as i32));
+        assert!(firer.rearm_timer.timer().expired(frame as i32));
         let snapshot = build_attacker_snapshot(firer, target, None);
         assert_eq!(
             world.scenario_rng.native_state_hex(),

@@ -222,11 +222,11 @@ fn toggle_repair_matches_the_original() {
             5,
             false,
         );
-        building.repairing = input["repairing"] == 1;
+        building.repairing.set_for_test(input["repairing"] == 1);
         sim.substrate.entities.insert(building);
         assert!(production::toggle_repair(&mut sim, &rules, 1, control));
         assert_eq!(
-            u64::from(sim.substrate.entities.get(1).unwrap().repairing),
+            u64::from(sim.substrate.entities.get(1).unwrap().repairing.is_on()),
             row["repairing"].as_u64().unwrap(),
             "{name}: +0x6E8"
         );
@@ -319,10 +319,14 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
     building.lifecycle.set_in_limbo_for_test(false);
     building.in_playfield = true;
     building.estimated_health = EstimatedHealth::from_raw(int("estimate", health.into()));
-    building.repairing = flag("repairing", false);
+    building.repairing.set_for_test(flag("repairing", false));
     building.has_been_captured = flag("captured", false);
-    building.ai_repairable = flag("ai_repairable", true);
-    building.was_attacked_by_enemy = flag("attacked", false);
+    building
+        .ai_sell_repair
+        .set_ai_repairable_for_test(flag("ai_repairable", true));
+    building
+        .ai_sell_repair
+        .set_was_attacked_by_enemy_for_test(flag("attacked", false));
     building
         .building_art
         .set_damage_state_active_for_test(flag("damaged", health * 2 <= 1000));
@@ -410,7 +414,7 @@ fn update_repair_and_power_matches_the_original() {
             json!([
                 building.health.current(),
                 building.estimated_health.get(),
-                u8::from(building.repairing),
+                u8::from(building.repairing.is_on()),
                 u8::from(building.building_art.damage_state_active()),
             ]),
             json!([
@@ -552,7 +556,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
             assert_eq!(
                 json!([
                     building.health.current(),
-                    u8::from(building.repairing),
+                    u8::from(building.repairing.is_on()),
                     house.economy.credits(),
                     u8::from(house.repair_start_latch),
                     [
@@ -709,7 +713,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             false,
         );
         building.estimated_health = EstimatedHealth::from_raw(estimate);
-        building.repairing = true;
+        building.repairing.set_for_test(true);
         sim.substrate.entities.insert(building);
         production::update_repair_and_power(
             &mut sim,
@@ -723,7 +727,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             (
                 building.health.current(),
                 building.estimated_health.get(),
-                building.repairing
+                building.repairing.is_on()
             ),
             (expected_actual, expected_estimate, repairing),
             "strength={strength} actual={actual}"
@@ -759,7 +763,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
             .strength;
         let entity = s.sim.substrate.entities.get_mut(building).unwrap();
         entity.health.set_for_test(strength / 2);
-        entity.repairing = repairing;
+        entity.repairing.set_for_test(repairing);
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
             s.sim.session.tick + 1,
@@ -791,7 +795,11 @@ fn a_sale_s_first_visit_stops_the_repair() {
                     matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == SOUNDS[0].1)
                 })
                 .count();
-            frames.push((entity.mission.handler_state(), entity.repairing, clicks));
+            frames.push((
+                entity.mission.handler_state(),
+                entity.repairing.is_on(),
+                clicks,
+            ));
         }
         let (order, visit) = (frames[0], frames[1]);
         assert_eq!(

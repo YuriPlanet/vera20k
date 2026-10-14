@@ -1085,7 +1085,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .entities
             .get(child)
             .and_then(|c| c.aircraft_ammo.as_ref())
-            .map(|a| a.current)
+            .map(|a| a.current())
             // Real Aircraft retain their signed count, including -1. This
             // fallback applies only to incomplete/non-Aircraft data.
             .unwrap_or(i32::MAX)
@@ -1263,7 +1263,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child.health.set(strength);
             child.estimated_health.reset(strength);
             if let Some(ammo) = child.aircraft_ammo.as_mut() {
-                ammo.current = ammo.max;
+                ammo.refill();
             }
         }
     }

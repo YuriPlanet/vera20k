@@ -104,8 +104,15 @@ fn retail_repair_ifv_scan_takes_only_a_damaged_vehicle() {
     let full = rules.object("MTNK").unwrap().strength;
     for rearming in [false, true] {
         let frame = sim.session.binary_frame as i32;
-        sim.substrate.entities.get_mut(ifv).unwrap().rearm_timer =
-            crate::sim::timer::CdTimer::started(frame, if rearming { 80 } else { 0 });
+        sim.substrate
+            .entities
+            .get_mut(ifv)
+            .unwrap()
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(
+                frame,
+                if rearming { 80 } else { 0 },
+            ));
         sim.substrate
             .entities
             .get_mut(tank)

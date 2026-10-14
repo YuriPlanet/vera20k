@@ -2554,12 +2554,18 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
     child
         .attack_target
         .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
-    child.rearm_timer = crate::sim::timer::CdTimer::started(frame, 7);
+    child
+        .rearm_timer
+        .set_for_test(crate::sim::timer::CdTimer::started(frame, 7));
     child.mission.set_current_for_test(
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack),
         7,
     );
-    child.aircraft_ammo.as_mut().expect("Hornet ammo").current = 1;
+    child
+        .aircraft_ammo
+        .as_mut()
+        .expect("Hornet ammo")
+        .set_current_for_test(1);
 
     pass(&mut sim, None);
     let child = sim.substrate.entities.get(hornet).unwrap();
@@ -2570,13 +2576,13 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         "the same target is not re-assigned"
     );
     assert_eq!(
-        child.rearm_timer,
+        child.rearm_timer.timer(),
         crate::sim::timer::CdTimer::started(frame, 7)
     );
 
     pass(&mut sim, Some(other));
     let child = sim.substrate.entities.get(hornet).unwrap();
-    assert_eq!(child.aircraft_ammo.as_ref().unwrap().current, 0);
+    assert_eq!(child.aircraft_ammo.as_ref().unwrap().current(), 0);
     assert!(
         child.attack_target.target().is_none(),
         "the aircraft arm drops it"
@@ -2774,7 +2780,7 @@ fn every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass() {
                     .entities
                     .get(*hornet)
                     .and_then(|h| h.aircraft_ammo.as_ref())
-                    .map(|a| a.current),
+                    .map(|a| a.current()),
                 Some(0),
                 "{shape} Hornet {hornet}: the pass paid its one ammo"
             );

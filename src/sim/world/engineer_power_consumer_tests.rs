@@ -325,7 +325,12 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             .unwrap()
             .economy
             .set_spent_for_test(int(&pending["spent"]));
-        sim.substrate.entities.get_mut(PLANT).unwrap().repairing = true;
+        sim.substrate
+            .entities
+            .get_mut(PLANT)
+            .unwrap()
+            .repairing
+            .set_for_test(true);
         assert_joined(&sim, &rules, owner, prior);
         assert_rng(&sim, &row["receipt"]["rng_before"], "joined prior");
         compared += 1;

@@ -332,7 +332,12 @@ fn a_captured_building_remembers_it() {
     let mut sim = sim_with_houses(1);
     let id = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
     assert!(!sim.substrate.entities.get(id).unwrap().has_been_captured);
-    sim.substrate.entities.get_mut(id).unwrap().repairing = true;
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .repairing
+        .set_for_test(true);
     sim.sound_events.clear();
     let russians = sim.interner.intern("Russians");
     sim.change_owner_with_rules(
@@ -344,7 +349,7 @@ fn a_captured_building_remembers_it() {
     );
     let building = sim.substrate.entities.get(id).unwrap();
     assert!(building.has_been_captured);
-    assert!(!building.repairing);
+    assert!(!building.repairing.is_on());
     assert!(
         !sim.sound_events
             .iter()

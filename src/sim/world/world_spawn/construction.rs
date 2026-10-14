@@ -193,8 +193,10 @@ impl Simulation {
                 ge.initialize_building_idle_body(self.session.binary_frame as i32);
             }
         }
-        ge.ai_sellable = category == EntityCategory::Structure
-            && rules.is_some_and(|rules| rules.has_buildup(&obj.id));
+        ge.ai_sell_repair.construct(
+            category == EntityCategory::Structure
+                && rules.is_some_and(|rules| rules.has_buildup(&obj.id)),
+        );
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,

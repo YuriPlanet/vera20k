@@ -983,7 +983,7 @@ pub(crate) fn commit_entities(
             continue;
         }
         if latch_hostile_hit && let Some(target) = world.substrate.entities.get_mut(target_id) {
-            target.was_attacked_by_enemy = true;
+            target.ai_sell_repair.hit_by_enemy();
         }
 
         if let Some((category, state)) = smoke_maintenance

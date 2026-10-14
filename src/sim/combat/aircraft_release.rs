@@ -121,7 +121,7 @@ pub(super) fn visit(
         ammo: entity
             .aircraft_ammo
             .as_ref()
-            .map_or(-1, |ammo| ammo.current),
+            .map_or(-1, |ammo| ammo.current()),
         strafe: combat_weapon::aircraft_strafes(rules, obj, entity.veterancy.rank()),
         fighter: obj.fighter,
         curley_shuffle: rules.general.curley_shuffle,
@@ -600,6 +600,6 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
             .entities
             .get(self.snap.stable_id)
             .and_then(|entity| entity.aircraft_ammo.as_ref())
-            .map_or(-1, |ammo| ammo.current)
+            .map_or(-1, |ammo| ammo.current())
     }
 }

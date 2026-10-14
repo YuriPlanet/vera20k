@@ -339,7 +339,7 @@ fn original_state10_rows() {
             let name = &input["name"];
             // The prefix: the latch clears, pending ammo is consumed.
             let mut ammo = AircraftAmmo::new(10);
-            ammo.current = get("ammo").as_i64().unwrap() as i32;
+            ammo.set_current_for_test(get("ammo").as_i64().unwrap() as i32);
             if get("pending").as_i64().unwrap() != 0 {
                 ammo.begin_release();
             }
@@ -355,7 +355,7 @@ fn original_state10_rows() {
             house.is_human = get("house_1ec").as_i64().unwrap() != 0;
             house.player_control = get("house_1ed").as_i64().unwrap() != 0;
             let facts = ExitFacts {
-                ammo: ammo.current,
+                ammo: ammo.current(),
                 target: get("target").as_bool().unwrap(),
                 leaves_map: get("flag_3d4").as_i64().unwrap() != 0,
                 human: house.is_controlled_by_human(get("game_mode").as_i64().unwrap() != 0),
@@ -390,7 +390,7 @@ fn original_state10_rows() {
             let input_ammo = get("ammo").as_i64().unwrap();
             let row_input_ammo = row["input"]["ammo"].as_i64().unwrap();
             assert_eq!(
-                i64::from(ammo.current) - input_ammo,
+                i64::from(ammo.current()) - input_ammo,
                 row["ammo"].as_i64().unwrap() - row_input_ammo,
                 "{name}"
             );
@@ -512,7 +512,11 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
                 dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
             });
         plane.aircraft_ammo = Some(AircraftAmmo::new(1));
-        plane.aircraft_ammo.as_mut().unwrap().current = 0;
+        plane
+            .aircraft_ammo
+            .as_mut()
+            .unwrap()
+            .set_current_for_test(0);
         plane
             .attack_target
             .set_for_test(Some(TargetKind::Cell(45, 40)));

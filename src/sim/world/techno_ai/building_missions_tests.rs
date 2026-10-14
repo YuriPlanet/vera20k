@@ -1327,7 +1327,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                 (Some(DelayedFire::SupportBeam { .. }), None) => {
                     let entity = scenario.sim().substrate.entities.get(id).unwrap();
                     assert_eq!(
-                        entity.rearm_timer,
+                        entity.rearm_timer.timer(),
                         crate::sim::timer::CdTimer::started(binary_frame, 45),
                         "the downtime starts on the beam's frame"
                     );
