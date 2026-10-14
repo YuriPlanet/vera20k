@@ -96,7 +96,7 @@ impl crate::sim::world::Simulation {
             //5F3FA4..5F3FFA: PerCell can Limbo the object. The landing
             // frame updates and retains FallRate only after that callback.
             if let Some(entity) = self.substrate.entities.get_mut(id)
-                && !entity.lifecycle.in_limbo
+                && !entity.lifecycle.in_limbo()
             {
                 entity.advance_fall_rate(
                     rules.general.parachute_max_fall_rate,
@@ -108,7 +108,7 @@ impl crate::sim::world::Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|e| e.lifecycle.in_limbo)
+            .is_some_and(|e| e.lifecycle.in_limbo())
         {
             self.substrate.display.remove(id);
             return Ok((landed, changed));
@@ -125,7 +125,7 @@ impl crate::sim::world::Simulation {
             .entities
             .get(id)
             .filter(|e| {
-                !e.lifecycle.in_limbo
+                !e.lifecycle.in_limbo()
                     && !e.is_falling_down()
                     && e.was_dropped_as_bomb()
                     && e.health.current() > 0
@@ -294,7 +294,7 @@ impl crate::sim::world::Simulation {
             return false;
         };
         if crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0 {
-            if !entity.lifecycle.in_limbo {
+            if !entity.lifecycle.in_limbo() {
                 entity.advance_fall_rate(
                     max_fall_rate,
                     rules.map_or(-100, |r| r.general.no_parachute_max_fall_rate),
@@ -335,7 +335,7 @@ mod tests {
     /// inserted into `entities`. Returns the entity id.
     fn insert_test_infantry(entities: &mut EntityStore, id: u64) -> u64 {
         let mut e = GameEntity::test_default(id, "E1", "Americans", 10, 10);
-        e.lifecycle.in_limbo = false;
+        e.lifecycle.set_in_limbo_for_test(false);
         e.locomotor = Some(make_walk_loco());
         e.animation = Some(Animation::new(SequenceKind::Stand));
         entities.insert(e);
@@ -741,7 +741,7 @@ mod canopy_tests {
             .get_mut(id)
             .unwrap()
             .lifecycle
-            .in_limbo = false;
+            .set_in_limbo_for_test(false);
         assert!(begin_parachute_descent(
             &mut sim.substrate.entities,
             id,

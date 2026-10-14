@@ -50,7 +50,7 @@ fn dolphin_rules() -> RuleSet {
 }
 
 fn live(mut entity: GameEntity) -> GameEntity {
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.in_playfield = true;
     entity
 }
@@ -173,8 +173,8 @@ fn healing_overflow_stays_on_techno_nonzero_continuation_and_uncloaks() {
     assert_eq!(landed.victim_hp, i32::MIN);
     assert_eq!(landed.cloak_state, 3, "negative HP must still uncloak");
     let victim = entities.get(2).unwrap();
-    assert!(victim.lifecycle.object_alive);
-    assert!(!victim.dying);
+    assert!(victim.lifecycle.object_alive());
+    assert!(!victim.death.is_dying());
     assert_eq!(victim.estimated_health.get(), -1234);
 }
 

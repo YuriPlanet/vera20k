@@ -207,10 +207,7 @@ impl Fixture {
                 .entities
                 .get_mut(pax)
                 .expect("passenger")
-                .passenger_role = PassengerRole::Inside {
-                transport_id: transport,
-                open_topped,
-            };
+                .passenger_role = PassengerRole::inside_for_test(transport, open_topped);
             ids.push(pax);
         }
         ids
@@ -235,7 +232,7 @@ impl Fixture {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|e| !e.lifecycle.in_limbo)
+            .is_some_and(|e| !e.lifecycle.in_limbo())
     }
 
     fn cargo_ids(&self, transport: u64) -> Vec<u64> {
@@ -244,7 +241,7 @@ impl Fixture {
             .entities
             .get(transport)
             .and_then(|t| t.passenger_role.cargo())
-            .map(|c| c.passengers.clone())
+            .map(|c| c.passengers().to_vec())
             .unwrap_or_default()
     }
 
@@ -606,6 +603,65 @@ fn internal_ejection_preserves_passenger_archive() {
     }
 }
 
+/// The ejectors keep the passenger's target: Unit Mission_Unload clears it
+/// only when the passenger leaves another house's OpenTopped transport,
+/// through the class NULL setter (`0x0073DB9D..0x0073DBC3`), and KickOutUnit
+/// has no target write (`0x00415BF9..0x00415C21`). The passenger's own AI
+/// may drop the target later; this checks what the ejector leaves.
+#[test]
+fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_transport() {
+    use crate::sim::combat::TargetKind;
+
+    for (transport_type, other_house, keeps) in [
+        ("BFRT", false, true),
+        ("BFRT", true, false),
+        ("LCRF", true, true),
+        ("SHAD", false, true),
+    ] {
+        let mut fx = Fixture::new(|_, _| false);
+        let transport = fx.spawn(transport_type, 20, 20, 0);
+        let passenger = fx.board(transport, 1)[0];
+        let target = Some(TargetKind::Cell(9, 9));
+        let other = fx.sim.intern("Russians");
+        let pax = fx.sim.substrate.entities.get_mut(passenger).unwrap();
+        pax.attack_target.set_for_test(target);
+        pax.passively_acquired_target = true;
+        pax.weapon_burst.complete_shot(3);
+        if other_house {
+            pax.set_owner_for_test(other);
+        }
+        let effects = crate::sim::world::FrameEffects::default();
+        if transport_type == "SHAD" {
+            assert!(super::eject_from_aircraft(
+                &mut fx.sim,
+                &fx.rules,
+                None,
+                transport,
+                effects
+            ));
+        } else {
+            assert!(matches!(
+                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, None, effects),
+                super::EjectOutcome::Placed
+            ));
+        }
+        assert!(fx.revealed(passenger), "{transport_type}: passenger leaves");
+        let pax = fx.sim.substrate.entities.get(passenger).unwrap();
+        let case = format!("{transport_type}, other house {other_house}");
+        if keeps {
+            assert_eq!(pax.attack_target.target(), target, "{case}");
+            assert!(pax.passively_acquired_target, "{case}");
+            assert_eq!(pax.weapon_burst.index(), 1, "{case}");
+        } else {
+            // Through the class setter: its NULL arm resets the burst
+            // (`0x006FCF5B`), which a raw store would not.
+            assert_eq!(pax.attack_target.target(), None, "{case}");
+            assert!(!pax.passively_acquired_target, "{case}");
+            assert_eq!(pax.weapon_burst.index(), 0, "{case}");
+        }
+    }
+}
+
 /// `TurretCount > 0`: `+0x6E4 = (cargo == 1 ? 0 : 1)` — the IFV keeps its
 /// last passenger (the first boarded, at the cargo tail).
 #[test]
@@ -957,10 +1013,7 @@ fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
         .entities
         .get_mut(bggy)
         .expect("passenger")
-        .passenger_role = PassengerRole::Inside {
-        transport_id: bfrt,
-        open_topped: true,
-    };
+        .passenger_role = PassengerRole::inside_for_test(bfrt, true);
     // Facing 0: state 0 picks octant 5 (SW) and turns the hull to NE (0x20),
     // so the state-3 scan starts at octant 5; the strict pass fails
     // everywhere (ring two is water) and the relaxed restart accepts octant
@@ -1050,10 +1103,7 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
         .entities
         .get_mut(bggy)
         .expect("passenger")
-        .passenger_role = PassengerRole::Inside {
-        transport_id: bfrt,
-        open_topped: true,
-    };
+        .passenger_role = PassengerRole::inside_for_test(bfrt, true);
     assert!(fx.apply(Command::UnloadPassengers { transport_id: bfrt }));
 
     let order = fx.run_until_revealed_with_missions(&[bggy], 200);
@@ -1449,8 +1499,10 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                 carrier.set_gunner_selection_for_test(99, -1);
                 let cargo = carrier.passenger_role.cargo_mut().unwrap();
                 // Admission-time size differs from current E1 Size=1.
-                cargo.passenger_sizes[0] = 7;
-                cargo.total_size = 7;
+                let mut sizes = cargo.passenger_sizes().to_vec();
+                sizes[0] = 7;
+                cargo.set_passenger_sizes_for_test(sizes);
+                cargo.set_total_size_for_test(7);
             }
             let held = serde_json::to_value(
                 fx.sim
@@ -1497,7 +1549,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
             );
             let pax = fx.sim.substrate.entities.get(passenger).unwrap();
             assert_eq!(pax.passenger_role.inside_transport_id(), Some(transport));
-            assert!(pax.lifecycle.in_limbo);
+            assert!(pax.lifecycle.in_limbo());
             assert_eq!(pax.lifecycle.cell_marked, !already_revealed);
             assert!(!pax.in_logic_vector);
             assert_eq!(pax.locomotor.as_ref().unwrap().layer, MovementLayer::Ground);

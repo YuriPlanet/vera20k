@@ -81,9 +81,15 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
         5,
         false,
     );
-    actor.lifecycle.in_limbo = input["limbo"].as_bool().unwrap_or(false);
-    actor.lifecycle.object_alive = input["alive"].as_bool().unwrap_or(true);
-    actor.dock_entered_with = input["tethered"].as_bool().unwrap_or(false).then_some(4);
+    actor
+        .lifecycle
+        .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
+    actor
+        .lifecycle
+        .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
+    actor
+        .tether
+        .set_for_test(input["tethered"].as_bool().unwrap_or(false).then_some(4));
     actor.set_archive_target(target("old", shape).map(TargetKind::from));
     // These Foot-only fields catch the removed represented-NavCom fallback.
     // The native Building body never touches them, regardless of admission.

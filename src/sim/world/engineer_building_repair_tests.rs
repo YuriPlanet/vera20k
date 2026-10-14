@@ -345,8 +345,8 @@ impl Fixture {
                 5,
                 false,
             );
-            entity.lifecycle.object_alive = true;
-            entity.lifecycle.in_limbo = false;
+            entity.lifecycle.set_object_alive_for_test(true);
+            entity.lifecycle.set_in_limbo_for_test(false);
             sim.substrate.entities.insert(entity);
             sim.substrate.occupancy.remove(10, 10, building);
             for id in [other, building] {
@@ -621,12 +621,12 @@ impl Fixture {
             "{boundary}: Engineer HP"
         );
         assert_eq!(
-            entity.lifecycle.object_alive,
+            entity.lifecycle.object_alive(),
             expected["alive"] == 1,
             "{boundary}: Engineer alive"
         );
         assert_eq!(
-            entity.lifecycle.in_limbo,
+            entity.lifecycle.in_limbo(),
             expected["limbo"] == 1,
             "{boundary}: Engineer limbo"
         );

@@ -270,7 +270,7 @@ impl RetainedRadarTracker {
             .copied()
             .filter(|&stable_id| {
                 entities.get(stable_id).is_none_or(|entity| {
-                    entity.lifecycle.in_limbo || !entity.lifecycle.object_alive
+                    entity.lifecycle.in_limbo() || !entity.lifecycle.object_alive()
                 })
             })
             .collect();

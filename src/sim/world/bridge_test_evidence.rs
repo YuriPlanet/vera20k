@@ -457,7 +457,7 @@ fn repair_ordinary_bridge(
             .sim()
             .entities()
             .get(engineer)
-            .is_none_or(|e| !e.lifecycle.object_alive)
+            .is_none_or(|e| !e.lifecycle.object_alive())
         {
             consumed = true;
             eprintln!(

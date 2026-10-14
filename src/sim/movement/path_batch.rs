@@ -460,7 +460,7 @@ impl Simulation {
             in_playfield: actor.in_playfield,
             mission: actor.mission.current(),
             nav_com: actor.navigation.nav_com,
-            attack_target: actor.attack_target.as_ref().map(|attack| attack.target),
+            attack_target: actor.attack_target.target(),
             radio_contacts: actor.radio_contacts.clone(),
         })
     }

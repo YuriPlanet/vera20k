@@ -506,11 +506,11 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
                 e.mission.current(),
                 e.mission.queued(),
                 e.navigation.nav_com,
-                e.attack_target.as_ref().map(|t| t.target),
+                e.attack_target.target(),
             )),
             s.sim.substrate.entities.get(victim).map(|e| (
                 e.health.current(),
-                e.dying,
+                e.death.is_dying(),
                 e.is_object_alive(),
                 e.infantry_sprite_pose(),
             )),

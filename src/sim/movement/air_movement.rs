@@ -223,7 +223,7 @@ pub(crate) fn fly_speed_facts(
             ammo: entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current),
         },
         hunter_seeker: object.is_some_and(|o| o.hunter_seeker),
-        target: entity.attack_target.is_some(),
+        target: entity.attack_target.target().is_some(),
         slowdown_distance: object.map_or(DEFAULT_SLOWDOWN_DISTANCE, |o| o.slowdown_distance),
     }
 }

@@ -154,7 +154,7 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
     );
     building.foundation = rules.object("BUILDING").unwrap().foundation.clone();
     building.radio_contacts = contacts(input);
-    building.lifecycle.in_limbo = false;
+    building.lifecycle.set_in_limbo_for_test(false);
     position(&mut building, coord(&input["current"]));
     let mut engineer = GameEntity::new_at_frame_zero_for_test(
         1,
@@ -170,7 +170,7 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
         5,
         true,
     );
-    engineer.lifecycle.in_limbo = false;
+    engineer.lifecycle.set_in_limbo_for_test(false);
     engineer.locomotor = Some(
         crate::sim::movement::locomotor::LocomotorState::from_object_type(
             rules.object("ENGI").unwrap(),

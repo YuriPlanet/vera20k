@@ -140,7 +140,9 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.exact_z_leptons = Some(xyz[2]);
     entity.health.set_for_test(int(input, "health", 0) as i32);
-    entity.crashing = int(input, "crashing", 1) != 0;
+    entity
+        .crash
+        .set_crashing_for_test(int(input, "crashing", 1) != 0);
     let mut facing = FacingClass::new(
         int(input, "facing", 0x4000) as u16,
         int(input, "rot", 5) as i32,
@@ -216,7 +218,7 @@ fn crash_matches_native_rows() {
         );
         // The oracle's fixture pre-sets the latch only for rows that call
         // Crash on an already-crashing object; a refused Crash writes nothing.
-        assert_eq!(entity.crashing, returned, "{name}");
+        assert_eq!(entity.crash.is_crashing(), returned, "{name}");
         let draws = row["draws"].as_array().unwrap().len();
         if draws == 0 {
             assert!(entity.rocking.is_none(), "{name}");
@@ -364,7 +366,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                     5,
                     true,
                 );
-                entity.lifecycle.in_limbo = true;
+                entity.lifecycle.set_in_limbo_for_test(true);
                 sim.substrate.entities.insert(entity);
                 assert!(matches!(
                     sim.try_reveal_entity(
@@ -403,7 +405,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                     sim.substrate
                         .entities
                         .get(1)
-                        .is_none_or(|e| !e.lifecycle.object_alive),
+                        .is_none_or(|e| !e.lifecycle.object_alive()),
                     "{name}: UnInit at the impact"
                 );
                 assert_eq!(
@@ -564,7 +566,7 @@ fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
         5,
         true,
     );
-    entity.lifecycle.in_limbo = true;
+    entity.lifecycle.set_in_limbo_for_test(true);
     sim.substrate.entities.insert(entity);
     assert!(matches!(
         sim.try_reveal_entity(
@@ -598,7 +600,9 @@ fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
         .entities
         .get(1)
         .expect("a crashing aircraft stays represented");
-    assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
+    assert!(
+        entity.crash.is_crashing() && entity.lifecycle.object_alive() && !entity.death.is_dying()
+    );
     assert_eq!(entity.health.current(), 0);
     assert_eq!(entity.killed_by, Some(soviets));
     assert!(
@@ -617,7 +621,7 @@ fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
         .substrate
         .entities
         .get(1)
-        .is_some_and(|e| e.lifecycle.object_alive)
+        .is_some_and(|e| e.lifecycle.object_alive())
     {
         frames += 1;
         assert!(frames < 60, "the fall must reach the ground");
@@ -681,7 +685,7 @@ fn a_crash_saved_in_mid_fall_lands_like_the_original() {
         &[AreaDamageReceiver::Entity(hit)],
         crate::sim::world::FrameEffects::default(),
     );
-    assert!(sim.substrate.entities.get(1).unwrap().crashing);
+    assert!(sim.substrate.entities.get(1).unwrap().crash.is_crashing());
     let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
     let tick = |sim: &mut Simulation| {
         sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
@@ -689,7 +693,7 @@ fn a_crash_saved_in_mid_fall_lands_like_the_original() {
     for _ in 0..10 {
         tick(&mut sim);
     }
-    assert!(sim.substrate.entities.get(1).unwrap().crashing_seen);
+    assert!(sim.substrate.entities.get(1).unwrap().crash.seen());
 
     sim.scenario_rng = SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "crash in mid-fall", 0);
@@ -703,7 +707,7 @@ fn a_crash_saved_in_mid_fall_lands_like_the_original() {
         sim.substrate
             .entities
             .get(1)
-            .is_some_and(|entity| entity.lifecycle.object_alive)
+            .is_some_and(|entity| entity.lifecycle.object_alive())
     };
     let mut frames = 0;
     while alive(&sim) {
@@ -879,9 +883,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
                 z: 0,
             })
             .with_flight_for_test(flight);
-        entity.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(2, 0),
-        };
+        entity.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0));
     }
     sim.add_entity_occupancy(1);
     // This held-aircraft midpoint follows native takeoff's tracker Add;
@@ -905,10 +907,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
             .entities
             .get_mut(rider)
             .unwrap()
-            .passenger_role = PassengerRole::Inside {
-            transport_id: 1,
-            open_topped: false,
-        };
+            .passenger_role = PassengerRole::inside_for_test(1, false);
         sim.substrate
             .entities
             .get_mut(1)
@@ -936,7 +935,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
             5,
             true,
         );
-        entity.lifecycle.in_limbo = true;
+        entity.lifecycle.set_in_limbo_for_test(true);
         sim.substrate.entities.insert(entity);
         reveal(sim, id, rx, ry);
         id
@@ -994,8 +993,8 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
             })
             .count();
         match sim.substrate.entities.get(1) {
-            Some(entity) if entity.lifecycle.object_alive => {
-                assert!(entity.crashing && entity.health.current() == 0);
+            Some(entity) if entity.lifecycle.object_alive() => {
+                assert!(entity.crash.is_crashing() && entity.health.current() == 0);
                 fall.heights
                     .push(entity.position.exact_z_leptons.expect("exact Z"));
             }
@@ -1049,8 +1048,8 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         .passenger_role
         .cargo()
         .unwrap()
-        .passengers
-        .clone();
+        .passengers()
+        .to_vec();
     shoot_down(&mut sim, &rules, shooter);
 
     let entity = sim
@@ -1058,7 +1057,9 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         .entities
         .get(1)
         .expect("a crashing unit stays");
-    assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
+    assert!(
+        entity.crash.is_crashing() && entity.lifecycle.object_alive() && !entity.death.is_dying()
+    );
     assert_eq!(entity.health.current(), 0);
     assert!(
         entity
@@ -1068,7 +1069,12 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         "Crash drew the spin"
     );
     assert!(
-        entity.passenger_role.cargo().unwrap().passengers.is_empty(),
+        entity
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .passengers()
+            .is_empty(),
         "KillPassengers emptied the cargo"
     );
     for rider in riders {
@@ -1076,7 +1082,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
             sim.substrate
                 .entities
                 .get(rider)
-                .is_none_or(|rider| !rider.lifecycle.object_alive),
+                .is_none_or(|rider| !rider.lifecycle.object_alive()),
             "rider {rider} died with the transport"
         );
     }
@@ -1290,7 +1296,7 @@ fn a_jumpjet_shot_down_touching_down_still_crashes() {
     }
     shoot_down(&mut sim, &rules, shooter);
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(entity.crashing);
+    assert!(entity.crash.is_crashing());
     let runtime = entity
         .locomotor
         .as_ref()
@@ -1347,7 +1353,7 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
             5,
             true,
         );
-        entity.lifecycle.in_limbo = true;
+        entity.lifecycle.set_in_limbo_for_test(true);
         sim.substrate.entities.insert(entity);
         assert!(matches!(
             sim.try_reveal_entity(
@@ -1376,7 +1382,7 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
                 .substrate
                 .entities
                 .get(1)
-                .filter(|wreck| wreck.lifecycle.object_alive)
+                .filter(|wreck| wreck.lifecycle.object_alive())
             else {
                 break;
             };
@@ -1385,7 +1391,7 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
                 MissionId::from_known(mission),
                 "no handler changes a wreck's mission"
             );
-            acquired |= wreck.attack_target.is_some() && wreck.passively_acquired_target;
+            acquired |= wreck.attack_target.target().is_some() && wreck.passively_acquired_target;
         }
         assert_eq!(acquired, scans, "{mission:?}");
     }
@@ -1410,7 +1416,7 @@ fn a_landed_jumpjet_dies_where_it_stands() {
         sim.substrate
             .entities
             .get(1)
-            .is_none_or(|entity| !entity.lifecycle.object_alive),
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
         "no crash on the ground"
     );
 }
@@ -1580,7 +1586,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
             .substrate
             .entities
             .get(harrier)
-            .filter(|entity| entity.lifecycle.object_alive)
+            .filter(|entity| entity.lifecycle.object_alive())
         else {
             assert!(crash_frame.is_some(), "the Harrier left before crashing");
             impact_frame = Some(frame);
@@ -1597,14 +1603,14 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         };
         let height = current_fly_height(entity, sim.resolved_terrain.as_ref());
         lifted |= height > 0;
-        if !entity.crashing && frame % 15 == 0 {
+        if !entity.crash.is_crashing() && frame % 15 == 0 {
             println!(
                 "frame {frame}: height {height}, health {}, mission {:?}",
                 entity.health.current(),
                 entity.mission.current().known()
             );
         }
-        if entity.crashing {
+        if entity.crash.is_crashing() {
             if crash_frame.is_none() {
                 crash_frame = Some(frame);
                 assert!(height > 0, "shot down in the air");
@@ -1782,10 +1788,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 .entities
                 .get_mut(rider)
                 .unwrap()
-                .passenger_role = PassengerRole::Inside {
-                transport_id: nighthawk,
-                open_topped: false,
-            };
+                .passenger_role = PassengerRole::inside_for_test(nighthawk, false);
             sim.substrate
                 .entities
                 .get_mut(nighthawk)
@@ -1903,7 +1906,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 .substrate
                 .entities
                 .get(id)
-                .filter(|entity| entity.lifecycle.object_alive)
+                .filter(|entity| entity.lifecycle.object_alive())
             else {
                 assert!(wreck.crash_frame.is_some(), "{id} left before crashing");
                 wreck.impact_frame = Some(frame);
@@ -1916,7 +1919,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                     .collect();
                 continue;
             };
-            if !entity.crashing {
+            if !entity.crash.is_crashing() {
                 continue;
             }
             let height = current_fly_height(entity, sim.resolved_terrain.as_ref());
@@ -1931,7 +1934,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                         entity
                             .passenger_role
                             .cargo()
-                            .is_some_and(|cargo| cargo.passengers.is_empty()),
+                            .is_some_and(|cargo| cargo.passengers().is_empty()),
                         "the riders died with the Nighthawk"
                     );
                 }
@@ -1949,7 +1952,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
             sim.substrate
                 .entities
                 .get(*rider)
-                .is_none_or(|rider| !rider.lifecycle.object_alive)
+                .is_none_or(|rider| !rider.lifecycle.object_alive())
         );
     }
     assert!(

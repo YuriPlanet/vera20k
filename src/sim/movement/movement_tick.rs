@@ -1203,7 +1203,7 @@ mod pass_cache_tests {
         assert_eq!(again, before);
 
         // Death sequence: the object stays on the grid.
-        entities.get_mut(7).unwrap().dying = true;
+        entities.get_mut(7).unwrap().death.set_dying_for_test(true);
         let after = cache
             .blocker_plane(&mut entities, &grid, None, None, &interner, None)
             .clone();
@@ -1307,7 +1307,7 @@ Foundation=2x2
                     if let Some(entity) = entities.get_mut(id) {
                         match edit {
                             3 => (entity.position.rx, entity.position.ry) = cell,
-                            4 => entity.dying = !entity.dying,
+                            4 => entity.death.set_dying_for_test(!entity.death.is_dying()),
                             _ => entity.lifecycle.cell_marked = !entity.lifecycle.cell_marked,
                         }
                     }

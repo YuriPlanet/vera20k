@@ -1199,7 +1199,7 @@ fn production_limbo_preserves_frame_sound_scope_without_local_rules() {
     assert!(raw.is_empty());
     assert_eq!(boundary.calls.get(), 1);
     let entity = sim.substrate.entities.get(id).unwrap();
-    assert!(entity.lifecycle.in_limbo);
+    assert!(entity.lifecycle.in_limbo());
     assert!(!entity.gattling.report_latch());
     assert_eq!(
         i64::from(entity.gattling.stage()),

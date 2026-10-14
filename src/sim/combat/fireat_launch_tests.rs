@@ -124,8 +124,7 @@ fn assert_read_only_native_aim(duel: &Duel, source_id: u64, row: &serde_json::Va
         .get(source_id)
         .unwrap()
         .attack_target
-        .as_ref()
-        .map(|target| target.target);
+        .target();
     let actual = super::aim_coord::led_target_coordinate(&duel.sim, &duel.rules, source_id, tarcom);
     assert_eq!(actual, attack_aim_coord(&row["aim"]), "{}", row["name"]);
     assert_eq!(duel.sim.state_hash(), hash, "{}: query state", row["name"]);
@@ -408,6 +407,7 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
             .get(source)
             .unwrap()
             .attack_target
+            .target()
             .is_none(),
         "PointerExpired clears the live reference first"
     );
@@ -483,7 +483,7 @@ fn grand_cannon_recoil_follows_successful_launch_ai_and_snapshot() {
         fog: None,
         firer: actor,
         obj: duel.rules.object("GTGCAN").unwrap(),
-        target: actor.attack_target.as_ref().map(|a| a.target),
+        target: actor.attack_target.target(),
         weapon_index: 0,
     }
     .fire_error(true);

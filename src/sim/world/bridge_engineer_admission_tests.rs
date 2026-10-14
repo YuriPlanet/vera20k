@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::state::MissionTestFixture;
@@ -60,9 +60,9 @@ fn fixture(input: &Value, other_flags: &str) -> (Simulation, RuleSet) {
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
     infantry.navigation.nav_com = identity(&input["nav_com"]).map(NavTargetRef::building);
-    infantry.attack_target = identity(&input["attack_target"]).map(|id| AttackTarget {
-        target: TargetKind::Entity(id),
-    });
+    infantry
+        .attack_target
+        .set_for_test(identity(&input["attack_target"]).map(|id| TargetKind::Entity(id)));
     let ground = input["ground_list"]
         .as_array()
         .map(|members| {

@@ -53,7 +53,7 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
     // the raw handoff directly, not a bridge-dispatch reachability fixture.
     assert!(saved.begin_raw_infantry_death(held));
     let object = saved.substrate.entities.get(held).unwrap();
-    assert!(object.lifecycle.in_limbo && !object.in_logic_vector);
+    assert!(object.lifecycle.in_limbo() && !object.in_logic_vector);
     saved.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = snapshot_bytes(&saved, &rules);
     let registry = OverlayTypeRegistry::empty();
@@ -68,9 +68,9 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
     .expect("retained terminal policy has a factory release owner")
     .simulation;
     let object = restored.substrate.entities.get(held).unwrap();
-    assert!(object.lifecycle.in_limbo && !object.in_logic_vector);
+    assert!(object.lifecycle.in_limbo() && !object.in_logic_vector);
     assert_eq!(
-        object.infantry_terminal,
+        object.death.infantry_terminal(),
         Some(InfantryTerminal::RetireNextVisit)
     );
     restored.advance_tick(&[], Some(&rules), None, None, 100);
@@ -79,9 +79,9 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
         .entities
         .get(held)
         .expect("held lifetime waits for release");
-    assert!(object.lifecycle.in_limbo && !object.in_logic_vector);
+    assert!(object.lifecycle.in_limbo() && !object.in_logic_vector);
     assert_eq!(
-        object.infantry_terminal,
+        object.death.infantry_terminal(),
         Some(InfantryTerminal::RetireNextVisit)
     );
     assert_eq!(
@@ -107,9 +107,9 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
         .entities
         .get(held)
         .expect("release retains the identity");
-    assert!(!object.lifecycle.in_limbo && object.in_logic_vector);
+    assert!(!object.lifecycle.in_limbo() && object.in_logic_vector);
     assert_eq!(
-        object.infantry_terminal,
+        object.death.infantry_terminal(),
         Some(InfantryTerminal::RetireNextVisit)
     );
     assert!(
@@ -184,8 +184,10 @@ fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load()
         .expect("fixture frame must complete");
     assert!(!output.tick.frame_committed);
     let object = saved.substrate.entities.get(victim).unwrap();
-    assert!(object.dying && object.lifecycle.in_limbo && !object.lifecycle.object_alive);
-    assert!(object.infantry_terminal.is_none() && !object.in_logic_vector);
+    assert!(
+        object.death.is_dying() && object.lifecycle.in_limbo() && !object.lifecycle.object_alive()
+    );
+    assert!(object.death.infantry_terminal().is_none() && !object.in_logic_vector);
     assert!(!saved.substrate.occupancy.contains_entity(2, 1, victim));
     assert_eq!(
         saved
@@ -361,7 +363,8 @@ fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit()
                 .entities
                 .get(victim)
                 .unwrap()
-                .infantry_terminal,
+                .death
+                .infantry_terminal(),
             Some(terminal)
         );
         for visit in 1..=remaining_visits {

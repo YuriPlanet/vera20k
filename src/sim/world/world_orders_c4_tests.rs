@@ -164,7 +164,7 @@ fn c4_expiry_ignore_defenses_bypasses_verses_and_kills_building() {
         sim.substrate
             .entities
             .get(bld)
-            .is_none_or(|building| building.dying || building.health.current() == 0),
+            .is_none_or(|building| building.death.is_dying() || building.health.current() == 0),
         "the expiry receiver's ignore_defenses flag must bypass the C4Warhead's 50% Verses"
     );
 }
@@ -187,11 +187,16 @@ fn c4_attacker_death_does_not_abort_detonation() {
         .unwrap()
         .health
         .set_for_test(0);
-    sim.substrate.entities.get_mut(seal).unwrap().dying = true;
+    sim.substrate
+        .entities
+        .get_mut(seal)
+        .unwrap()
+        .death
+        .set_dying_for_test(true);
     step(&mut sim, &rules);
     assert!(
         sim.substrate.entities.get(seal).is_none()
-            || sim.substrate.entities.get(seal).unwrap().dying,
+            || sim.substrate.entities.get(seal).unwrap().death.is_dying(),
         "SEAL must be despawned or dying after kill"
     );
 
@@ -205,7 +210,7 @@ fn c4_attacker_death_does_not_abort_detonation() {
         sim.substrate
             .entities
             .get(bld)
-            .is_none_or(|b| b.dying || b.health.current() == 0),
+            .is_none_or(|b| b.death.is_dying() || b.health.current() == 0),
         "PARITY (OQ2): detonation must fire even after attacker death"
     );
 }
@@ -249,7 +254,7 @@ fn c4_iron_curtain_application_cancels_pending_detonation() {
         .entities
         .get(bld)
         .expect("cancelled C4 must leave the building alive");
-    assert!(!building.dying);
+    assert!(!building.death.is_dying());
     assert_eq!(building.health.current(), 600);
 }
 
@@ -298,7 +303,7 @@ fn a_planted_charge_survives_its_planters_stop() {
         sim.substrate
             .entities
             .get(bld)
-            .is_none_or(|b| b.dying || b.health.current() == 0),
+            .is_none_or(|b| b.death.is_dying() || b.health.current() == 0),
         "claimed plant detonates on schedule even after Stop on attacker"
     );
 }

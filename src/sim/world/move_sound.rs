@@ -79,7 +79,7 @@ impl Simulation {
                 self.session.binary_frame,
             );
         // Native +8D/+425. A retained parachute object alone is not this gate.
-        let falling_or_crashing = entity.is_falling_down() || entity.crashing;
+        let falling_or_crashing = entity.is_falling_down() || entity.crash.is_crashing();
         let state = entity.move_sound;
         if changed_or_moving && !falling_or_crashing {
             let sounds = rules

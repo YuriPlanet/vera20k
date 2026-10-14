@@ -1646,7 +1646,7 @@ mod tests {
                 5,
                 false,
             );
-            producer.lifecycle.in_limbo = false;
+            producer.lifecycle.set_in_limbo_for_test(false);
             producer.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
                 EntityCategory::Structure,
                 rules.object("PRODUCER"),

@@ -104,7 +104,7 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
     );
     for &slave in &slaves {
         let entity = s.scene.sim.substrate.entities.get(slave).unwrap();
-        assert!(!entity.lifecycle.in_limbo);
+        assert!(!entity.lifecycle.in_limbo());
         assert!(
             entity.navigation.nav_com.is_some(),
             "scattered off the drop cell"
@@ -239,7 +239,7 @@ fn a_slave_miner_sets_out_deploys_at_a_field_and_lets_its_slaves_out() {
             .values()
             .find(|entity| {
                 entity.stable_id() != s.refinery
-                    && entity.lifecycle.object_alive
+                    && entity.lifecycle.object_alive()
                     && entity.slave_manager.is_some()
                     && sim.interner.resolve(entity.type_ref()) == "YAREFN"
             })
@@ -249,7 +249,7 @@ fn a_slave_miner_sets_out_deploys_at_a_field_and_lets_its_slaves_out() {
                 sim.substrate
                     .entities
                     .get(slave)
-                    .is_some_and(|entity| !entity.lifecycle.in_limbo)
+                    .is_some_and(|entity| !entity.lifecycle.in_limbo())
             });
         if out {
             break;
@@ -266,7 +266,7 @@ fn a_slave_miner_sets_out_deploys_at_a_field_and_lets_its_slaves_out() {
         !sim.substrate
             .entities
             .get(smin)
-            .is_some_and(|entity| entity.lifecycle.object_alive),
+            .is_some_and(|entity| entity.lifecycle.object_alive()),
         "the vehicle is gone"
     );
     let at = sim.substrate.entities.get(refinery).unwrap();
@@ -279,7 +279,7 @@ fn a_slave_miner_sets_out_deploys_at_a_field_and_lets_its_slaves_out() {
     for &slave in &slaves {
         let entity = sim.substrate.entities.get(slave).unwrap();
         assert_eq!(entity.slave.owner(), Some(refinery));
-        assert!(!entity.lifecycle.in_limbo, "slave {slave} let out");
+        assert!(!entity.lifecycle.in_limbo(), "slave {slave} let out");
     }
 }
 
@@ -291,7 +291,7 @@ fn deployed_refinery(s: &SlaveScene) -> Option<u64> {
         .values()
         .find(|entity| {
             entity.stable_id() != s.refinery
-                && entity.lifecycle.object_alive
+                && entity.lifecycle.object_alive()
                 && entity.slave_manager.is_some()
                 && sim.interner.resolve(entity.type_ref()) == "YAREFN"
         })
@@ -408,7 +408,7 @@ fn a_move_order_takes_the_slave_miner_off_its_hunt() {
             .substrate
             .entities
             .get(s.master)
-            .is_some_and(|entity| entity.lifecycle.object_alive)
+            .is_some_and(|entity| entity.lifecycle.object_alive())
     );
 }
 
@@ -517,7 +517,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     }
     let inside = sim.substrate.entities.get(s.slaves[&2]).unwrap();
     assert!(
-        !inside.lifecycle.object_alive,
+        !inside.lifecycle.object_alive(),
         "the slave inside dies with it"
     );
     // The first freed is the last node's live slave: node 1.
@@ -711,7 +711,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
             .get(id)
             .unwrap()
             .lifecycle
-            .object_alive
+            .object_alive()
     };
     let smin = sim
         .spawn_object_at_height("SMIN", "YuriCountry", 10, 10, 0, 0, &rules)
@@ -847,7 +847,7 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
             .substrate
             .entities
             .values()
-            .find(|entity| entity.lifecycle.object_alive && entity.slave_manager.is_some())
+            .find(|entity| entity.lifecycle.object_alive() && entity.slave_manager.is_some())
             .map(|entity| entity.stable_id())
     };
     let mut packed = false;
@@ -891,7 +891,7 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
                 sim.substrate
                     .entities
                     .get(slave)
-                    .is_some_and(|entity| !entity.lifecycle.in_limbo)
+                    .is_some_and(|entity| !entity.lifecycle.in_limbo())
             })
         {
             relocated = Some(holder);
@@ -906,14 +906,14 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
         !sim.substrate
             .entities
             .get(first)
-            .is_some_and(|entity| entity.lifecycle.object_alive),
+            .is_some_and(|entity| entity.lifecycle.object_alive()),
         "the first refinery is gone"
     );
     assert!(
         !sim.substrate
             .entities
             .get(miner)
-            .is_some_and(|entity| entity.lifecycle.object_alive),
+            .is_some_and(|entity| entity.lifecycle.object_alive()),
         "the Slave Miner deployed"
     );
     let at = sim.substrate.entities.get(relocated).unwrap();
@@ -979,7 +979,7 @@ fn retail_rules_feed_the_slave_refinery_relocation() {
 fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::combat::{AttackTarget, TargetKind};
+    use crate::sim::combat::TargetKind;
     use crate::sim::rng::SimRng;
     use crate::sim::world::Simulation;
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
@@ -1005,7 +1005,9 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .expect("TANK");
     let frame = sim.session.binary_frame;
     let attacker = sim.substrate.entities.get_mut(tank).unwrap();
-    attacker.attack_target = Some(AttackTarget::new(refinery));
+    attacker
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(refinery)));
     attacker.passive_scan_timer.arm(frame, 100);
     let scan_timer = attacker.passive_scan_timer;
     sim.substrate
@@ -1044,13 +1046,13 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .entities
         .values()
         .find(|entity| {
-            entity.lifecycle.object_alive && sim.interner.resolve(entity.type_ref()) == "SMIN"
+            entity.lifecycle.object_alive() && sim.interner.resolve(entity.type_ref()) == "SMIN"
         })
         .expect("the Slave Miner")
         .stable_id();
     let attacker = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(
-        attacker.attack_target.as_ref().map(|target| target.target),
+        attacker.attack_target.target(),
         Some(TargetKind::Entity(miner))
     );
     // The Slave Miner's TechnoClass word and its one slave's, then the

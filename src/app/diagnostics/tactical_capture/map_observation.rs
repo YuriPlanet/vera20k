@@ -3159,7 +3159,7 @@ impl TacticalCaptureSession {
                     "veterancy_rank_cache": entity.veterancy.rank_cache(),
                     "elite_flash_frames": entity.flashing.frames(),
                     "object_alive": entity.is_object_alive(),
-                    "in_limbo": entity.lifecycle.in_limbo, "dying": entity.dying,
+                    "in_limbo": entity.lifecycle.in_limbo(), "dying": entity.death.is_dying(),
                     // Techno +0x1C8, the offline latch (`sim::powered_unit`).
                     "deactivated": entity.deactivated,
                     // Mark and Logic membership are independent retained facts.
@@ -3170,14 +3170,14 @@ impl TacticalCaptureSession {
                         "effective": entity.mission.effective().raw(), "handler_state": entity.mission.handler_state(),
                         "start_frame": entity.mission.mission_start_frame(), "ai_counter": entity.mission.ai_counter(),
                         "dispatch_timer": {"start_frame": timer.start_frame(), "delay": timer.delay()}},
-                    "target": entity.attack_target.as_ref().map(|target| target.target),
+                    "target": entity.attack_target.target(),
                     "archive": entity.archive_target(), "nav": entity.navigation.nav_com, "foot": foot,
                     "retask": retask_observation(entity),
                     "jumpjet": jumpjet,
                     "cloak": cloak,
                     "building": building, "unit": unit,
                     "miner": miner,
-                    "radio": {"contacts": contacts, "dock_entered_with": entity.dock_entered_with},
+                    "radio": {"contacts": contacts, "dock_entered_with": entity.tether.partner()},
                 });
                 if profile.observe_disguise_inputs == Some(true) {
                     observation["disguise_inputs"] = disguise_inputs(state, entity)?;
@@ -5583,7 +5583,7 @@ mod tests {
                 4,
                 true,
             );
-            entity.lifecycle.in_limbo = false;
+            entity.lifecycle.set_in_limbo_for_test(false);
             sim.entities_mut().insert(entity);
         }
         let [attack, launch] = profile.commands() else {

@@ -132,7 +132,7 @@ impl FireSource {
             barrel_facing: entity.barrel_facing,
             veterancy: entity.veterancy.rank(),
             garrison_fire_index: None,
-            tar_com: entity.attack_target.as_ref().map(|attack| attack.target),
+            tar_com: entity.attack_target.target(),
         }
     }
 }
@@ -599,7 +599,7 @@ fn open_topped_port_coordinate(
     let port = transport
         .passenger_role
         .cargo()?
-        .passengers
+        .passengers()
         .iter()
         .position(|&id| id == snap.stable_id)?;
     let transport_obj = rules.object(world.interner.resolve(transport.type_ref()))?;

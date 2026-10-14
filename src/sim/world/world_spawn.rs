@@ -1506,8 +1506,7 @@ impl Simulation {
 
         // This boundary receives newly constructed objects. Make those constructor
         // facts explicit so storage can never imply cell or logic presence.
-        ge.lifecycle.object_alive = true;
-        ge.lifecycle.in_limbo = true;
+        ge.lifecycle.reset_constructed();
         ge.lifecycle.cell_marked = false;
         ge.in_logic_vector = false;
         ge.destruction_recorded = false;
@@ -1534,7 +1533,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        debug_assert!(entity.lifecycle.in_limbo && !entity.lifecycle.cell_marked);
+        debug_assert!(entity.lifecycle.in_limbo() && !entity.lifecycle.cell_marked);
         let spawn_children = self
             .substrate
             .entities
@@ -1969,7 +1968,7 @@ impl Simulation {
         let Some(source) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        if source.dying || source.lifecycle.in_limbo {
+        if source.death.is_dying() || source.lifecycle.in_limbo() {
             return false;
         }
         // Deploy asks CanDeploySlashUnload (vslot +0x314, 0x00700D50) first
@@ -2010,7 +2009,7 @@ impl Simulation {
                 (
                     entity.selected,
                     entity.veterancy.clone(),
-                    entity.attack_target.as_ref().map(|t| t.target),
+                    entity.attack_target.target(),
                 ),
                 // Native rounds FacingClass::Current, including wrap at 0xff80.
                 entity.body_facing_dir(self.session.binary_frame),
@@ -2264,11 +2263,11 @@ impl Simulation {
             .filter(|(id, entity)| {
                 *id != stable_id
                     && *id != new_sid
-                    && entity.lifecycle.object_alive
+                    && entity.lifecycle.object_alive()
                     && entity
                         .attack_target
-                        .as_ref()
-                        .is_some_and(|target| target.target == TargetKind::Entity(stable_id))
+                        .target()
+                        .is_some_and(|target| target == TargetKind::Entity(stable_id))
             })
             .map(|(id, entity)| {
                 let drops = hijacker_drops
@@ -2513,11 +2512,11 @@ impl Simulation {
             .filter(|(id, entity)| {
                 *id != sid
                     && *id != new_sid
-                    && entity.lifecycle.object_alive
+                    && entity.lifecycle.object_alive()
                     && entity
                         .attack_target
-                        .as_ref()
-                        .is_some_and(|target| target.target == TargetKind::Entity(sid))
+                        .target()
+                        .is_some_and(|target| target == TargetKind::Entity(sid))
             })
             .map(|(id, _)| id)
             .collect();

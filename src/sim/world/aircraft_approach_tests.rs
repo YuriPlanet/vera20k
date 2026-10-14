@@ -62,8 +62,7 @@ fn assert_flh(sim: &Simulation, rules: &RuleSet, row: &Value) {
         return;
     }
     let entity = sim.substrate.entities.get(1).unwrap();
-    let snapshot =
-        build_attacker_snapshot(entity, entity.attack_target.as_ref().unwrap().target, None);
+    let snapshot = build_attacker_snapshot(entity, entity.attack_target.target().unwrap(), None);
     let point = fire_coord::fire_coordinate(
         sim,
         rules,

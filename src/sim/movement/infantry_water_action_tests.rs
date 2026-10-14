@@ -495,7 +495,7 @@ fn native_physical_ghost_tanya_wet_death_uses_raw_doing_and_stage() {
             sim.substrate
                 .entities
                 .get(id)
-                .is_none_or(|actor| !actor.lifecycle.object_alive)
+                .is_none_or(|actor| !actor.lifecycle.object_alive())
         );
         count += 1;
     }

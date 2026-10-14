@@ -173,7 +173,7 @@ fn spawn_miner(sim: &mut Simulation, sid: u64, kind: MinerKind, rx: u16, ry: u16
         MinerKind::Slave => {}
     }
     ge.miner = Some(Miner::new(kind, &MinerConfig::default(), 0));
-    ge.lifecycle.in_limbo = false;
+    ge.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(ge);
     if kind != MinerKind::Slave {
         // Direct insertion skips stock miner Unlimbo's idle/Commence. Supply
@@ -222,7 +222,7 @@ fn spawn_refinery(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
         false,
     );
     // Placed in its cells' lists: on the map, out of limbo and marked.
-    ge.lifecycle.in_limbo = false;
+    ge.lifecycle.set_in_limbo_for_test(false);
     ge.lifecycle.cell_marked = true;
     // Construction stamps the type's `Foundation=4x3`.
     ge.foundation = "4x3".to_string();
@@ -274,7 +274,7 @@ fn spawn_structure_owned(
         5,
         false,
     );
-    ge.lifecycle.in_limbo = false;
+    ge.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(ge);
     occupy_structure_cells(sim, sid, rx, ry, 1, 1);
     join_house_list(sim, sid, owner_id);
@@ -308,7 +308,7 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
         5,
         false,
     );
-    ge.lifecycle.in_limbo = false;
+    ge.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(ge);
     sim.houses
         .entry(owner_id)
@@ -2126,7 +2126,12 @@ fn dying_corpse_break_frees_the_dock_before_its_animation_ends() {
     crate::sim::miner::miner_dock::test_support::enter_dock(&mut sim, occupant, 2);
 
     // What the damage receiver does for a unit with a death animation.
-    sim.substrate.entities.get_mut(occupant).unwrap().dying = true;
+    sim.substrate
+        .entities
+        .get_mut(occupant)
+        .unwrap()
+        .death
+        .set_dying_for_test(true);
     crate::sim::radio::broadcast_break(
         &mut sim,
         occupant,
@@ -2136,7 +2141,7 @@ fn dying_corpse_break_frees_the_dock_before_its_animation_ends() {
 
     let corpse = sim.substrate.entities.get(occupant).expect("corpse stays");
     assert!(!corpse.radio_contacts.contains(2));
-    assert_eq!(corpse.dock_entered_with, None);
+    assert_eq!(corpse.tether.partner(), None);
     assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter));
 }
 
@@ -2181,7 +2186,7 @@ fn megamission_before_the_unload_breaks_the_refinery_contact() {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.radio_contacts.set_slot(0, partner);
             if tethered {
-                entity.dock_entered_with = Some(partner);
+                entity.tether.set_for_test(Some(partner));
             }
         }
 
@@ -2196,13 +2201,13 @@ fn megamission_before_the_unload_breaks_the_refinery_contact() {
 
         let entity = sim.substrate.entities.get(miner_id).unwrap();
         assert!(!entity.radio_contacts.contains(2), "tethered={tethered}");
-        assert_eq!(entity.dock_entered_with, None, "tethered={tethered}");
+        assert_eq!(entity.tether.partner(), None, "tethered={tethered}");
         let refinery = sim.substrate.entities.get(2).unwrap();
         assert!(
             !refinery.radio_contacts.contains(miner_id),
             "tethered={tethered}"
         );
-        assert_eq!(refinery.dock_entered_with, None, "tethered={tethered}");
+        assert_eq!(refinery.tether.partner(), None, "tethered={tethered}");
         assert!(
             crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, waiter),
             "tethered={tethered}"
@@ -2296,7 +2301,7 @@ fn harvest_order_mid_unload_drops_the_unload_latch_and_image() {
     let miner = entity.miner.as_ref().unwrap();
     assert!(!miner.unload_active);
     assert_eq!(entity.display_type_override, None);
-    assert_eq!(entity.dock_entered_with, None);
+    assert_eq!(entity.tether.partner(), None);
     assert!(!crate::sim::miner::miner_dock::has_contact(
         &sim, 2, miner_id
     ));
@@ -2351,7 +2356,12 @@ fn full_miner_return_passes_over_a_dying_refinery() {
     spawn_refinery(&mut sim, 2, 10, 10);
     spawn_refinery(&mut sim, 3, 24, 10);
     fill_and_return(&mut sim, miner_id);
-    sim.substrate.entities.get_mut(2).expect("refinery").dying = true;
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .expect("refinery")
+        .death
+        .set_dying_for_test(true);
 
     for wide in [false, true] {
         assert_eq!(
@@ -2555,7 +2565,7 @@ fn stop_commits_guard_and_takes_a_harvesting_miner_off_the_loop() {
         .get_mut(miner_id)
         .expect("miner present")
         .lifecycle
-        .in_limbo = false;
+        .set_in_limbo_for_test(false);
     sim.mission_assign_exact(miner_id, MissionId::from_known(MissionType::Harvest), 0)
         .expect("miner exists");
     let owner = sim.interner.get("Americans").expect("owner interned");
@@ -2628,7 +2638,7 @@ fn stop_does_not_force_guard_on_a_non_miner() {
         true,
     );
     tank.miner = None;
-    tank.lifecycle.in_limbo = false;
+    tank.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(tank);
     sim.substrate.next_stable_object_id = 8;
     sim.mission_assign_exact(7, MissionId::from_known(MissionType::Move), 0)
@@ -2744,7 +2754,7 @@ fn occupy_refinery(sim: &mut Simulation, refinery_sid: u64, occupant_sid: u64) {
         5,
         true,
     );
-    ge.lifecycle.in_limbo = false;
+    ge.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(ge);
     if sim.substrate.next_stable_object_id <= occupant_sid {
         sim.substrate.next_stable_object_id = occupant_sid + 1;
@@ -3115,7 +3125,7 @@ fn dock_for_unload(sim: &mut Simulation, miner: u64, refinery: u64) {
     for (id, partner) in [(miner, refinery), (refinery, miner)] {
         let entity = sim.substrate.entities.get_mut(id).expect("dock end");
         entity.radio_contacts.set_slot(0, partner);
-        entity.dock_entered_with = Some(partner);
+        entity.tether.set_for_test(Some(partner));
     }
     let entity = sim.substrate.entities.get_mut(miner).expect("miner");
     let mut hull = crate::sim::movement::FacingClass::new(DOCK_FACING, 5);
@@ -3445,7 +3455,7 @@ fn refinery_death_drops_the_unloading_miner_at_the_kill() {
         sim.substrate
             .entities
             .get(2)
-            .is_none_or(|refinery| refinery.dying || refinery.health.current() == 0),
+            .is_none_or(|refinery| refinery.death.is_dying() || refinery.health.current() == 0),
         "the refinery died"
     );
     let miner_entity = sim
@@ -3857,7 +3867,7 @@ fn captured_harvesting_miner_requeues_harvest_for_the_new_owner() {
         .get_mut(miner_id)
         .unwrap()
         .lifecycle
-        .in_limbo = true;
+        .set_in_limbo_for_test(true);
     assert!(matches!(
         sim.reveal_entity_with_rules(miner_id, &rules),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -3905,7 +3915,7 @@ fn captured_harvesting_miner_requeues_harvest_for_the_new_owner() {
         MissionId::from_known(MissionType::Harvest),
         "the idle-mode harvester arm re-queues Harvest on ore"
     );
-    assert!(miner.attack_target.is_none());
+    assert!(miner.attack_target.target().is_none());
     assert!(miner.navigation.nav_com.is_none());
     assert!(crate::sim::movement::motion_query::is_moving(&miner) != Some(true));
 }
@@ -3931,7 +3941,7 @@ fn captured_miner_off_ore_under_a_human_house_parks_on_guard() {
         .get_mut(miner_id)
         .unwrap()
         .lifecycle
-        .in_limbo = true;
+        .set_in_limbo_for_test(true);
     assert!(matches!(
         sim.reveal_entity_with_rules(miner_id, &rules),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -3983,7 +3993,7 @@ fn captured_miner_off_ore_under_an_ai_house_requeues_harvest() {
         .get_mut(miner_id)
         .unwrap()
         .lifecycle
-        .in_limbo = true;
+        .set_in_limbo_for_test(true);
     assert!(matches!(
         sim.reveal_entity_with_rules(miner_id, &rules),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4037,7 +4047,7 @@ fn captured_miner_in_radio_contact_gets_only_the_forced_guard() {
         .get_mut(miner_id)
         .unwrap()
         .lifecycle
-        .in_limbo = true;
+        .set_in_limbo_for_test(true);
     assert!(matches!(
         sim.reveal_entity_with_rules(miner_id, &rules),
         crate::sim::world::RevealOutcome::Revealed { .. }

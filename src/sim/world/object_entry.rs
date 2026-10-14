@@ -181,8 +181,8 @@ fn infantry_target_admission(
         }
     };
     let attack_target_is = |id| {
-        mover.attack_target.as_ref().is_some_and(
-            |a| matches!(a.target, crate::sim::combat::TargetKind::Entity(target) if target == id),
+        mover.attack_target.target().is_some_and(
+            |a| matches!(a, crate::sim::combat::TargetKind::Entity(target) if target == id),
         )
     };
     if cell_target_is(blocker_cell) || attack_target_is(blocker.stable_id()) {
@@ -903,7 +903,7 @@ fn classify_foot_entry<'a>(
                     }
                     return Ok(
                         if layer == MovementLayer::Ground
-                            && e.dock_entered_with.is_none()
+                            && e.tether.partner().is_none()
                             && !row_nonzero(live, cell, obj.speed_type)?
                         {
                             7
@@ -1094,7 +1094,7 @@ fn classify_foot_entry<'a>(
         }
     }
     if layer == MovementLayer::Ground
-        && (!infantry || e.dock_entered_with.is_none())
+        && (!infantry || e.tether.partner().is_none())
         && !row_nonzero(live, cell, obj.speed_type)?
     {
         return Ok(7);
@@ -1857,10 +1857,12 @@ mod tests {
             .unwrap()
             .navigation
             .nav_com = None;
-        sim.substrate.entities.get_mut(70).unwrap().attack_target =
-            Some(crate::sim::combat::AttackTarget {
-                target: crate::sim::combat::TargetKind::Entity(71),
-            });
+        sim.substrate
+            .entities
+            .get_mut(70)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(71)));
         // Raw blocker lookup stamps(60,60), then first Building+48 stamps
         //(62,62). Attack-target identity is deliberately evaluated last.
         for (id, p) in [(72, (60, 60)), (71, (61, 61))] {
@@ -1972,9 +1974,8 @@ mod tests {
             .entities
             .get_mut(infantry)
             .unwrap()
-            .attack_target = Some(crate::sim::combat::AttackTarget {
-            target: crate::sim::combat::TargetKind::Entity(hut),
-        });
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(hut)));
         sim.resolved_terrain
             .as_ref()
             .unwrap()

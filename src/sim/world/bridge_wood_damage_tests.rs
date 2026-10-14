@@ -294,7 +294,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
     let source = scene.sim().entities().get(tank).unwrap();
     assert!(source.is_alive());
     assert!(
-        source.attack_target.is_none(),
+        source.attack_target.target().is_none(),
         "70D4A0 must detach the Cell before the bullet continuation returns"
     );
     let mut guarding = false;

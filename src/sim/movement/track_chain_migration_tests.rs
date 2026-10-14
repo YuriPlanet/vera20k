@@ -53,8 +53,8 @@ fn chain_fixture(passive: bool) -> (Simulation, RuleSet, TrackInvocation) {
     let mut mover = GameEntity::test_default(MOVER, "MTNK", "Americans", 10, 10);
     mover.set_category_for_test(EntityCategory::Unit);
     mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    mover.lifecycle.object_alive = true;
-    mover.lifecycle.in_limbo = false;
+    mover.lifecycle.set_object_alive_for_test(true);
+    mover.lifecycle.set_in_limbo_for_test(false);
     mover.lifecycle.cell_marked = true;
     assert!(
         mover
@@ -107,8 +107,8 @@ fn add_blocker(sim: &mut Simulation, moving: bool) {
     let mut blocker = GameEntity::test_default(2, "MTNK", "Americans", CANDIDATE.0, CANDIDATE.1);
     blocker.set_category_for_test(EntityCategory::Unit);
     blocker.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    blocker.lifecycle.object_alive = true;
-    blocker.lifecycle.in_limbo = false;
+    blocker.lifecycle.set_object_alive_for_test(true);
+    blocker.lifecycle.set_in_limbo_for_test(false);
     blocker.lifecycle.cell_marked = true;
     if moving {
         // Unit Can_Enter_Cell's code2 body arm (0x73F86B) sees a NavCom and
@@ -162,8 +162,8 @@ fn production_chain_code3_opens_gate_without_consuming_the_queue() {
         EntityCategory::Structure,
     );
     gate.building_gate = Some(BuildingGateRuntime::default());
-    gate.lifecycle.object_alive = true;
-    gate.lifecycle.in_limbo = false;
+    gate.lifecycle.set_object_alive_for_test(true);
+    gate.lifecycle.set_in_limbo_for_test(false);
     gate.lifecycle.cell_marked = true;
     sim.substrate.entities.insert(gate);
     sim.interner = test_interner();
@@ -324,8 +324,8 @@ fn accepted_chain_per_cell_crush_finishes_lifecycle_in_list_order_before_continu
         victim.sub_cell = Some(0);
         victim.position = position;
         victim.crushable = true;
-        victim.lifecycle.object_alive = true;
-        victim.lifecycle.in_limbo = false;
+        victim.lifecycle.set_object_alive_for_test(true);
+        victim.lifecycle.set_in_limbo_for_test(false);
         victim.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(victim);
     }
@@ -351,9 +351,9 @@ fn accepted_chain_per_cell_crush_finishes_lifecycle_in_list_order_before_continu
                     .entities
                     .get(id)
                     .expect("UnInit retains identity until drain");
-                assert!(!victim.lifecycle.object_alive);
+                assert!(!victim.lifecycle.object_alive());
                 assert!(!victim.lifecycle.cell_marked);
-                assert!(victim.lifecycle.in_limbo);
+                assert!(victim.lifecycle.in_limbo());
                 assert!(
                     !sim.substrate
                         .occupancy

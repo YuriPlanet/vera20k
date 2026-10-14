@@ -17,8 +17,8 @@ use super::dispatch_foot_mission;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::TargetKind;
 use crate::sim::combat::receiver_fixture::trace_fire_visits;
-use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
@@ -237,8 +237,8 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     }
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.health.set_for_test(100);
-    actor.lifecycle.in_limbo = false;
-    actor.lifecycle.object_alive = true;
+    actor.lifecycle.set_in_limbo_for_test(false);
+    actor.lifecycle.set_object_alive_for_test(true);
     // The companion supplies a post-constructor Location at Cell10,10;
     // transport the complete saved XYZ through the existing coordinate owner.
     ground_pose::put_location(&mut actor.position, coordinate(&before["position"]));
@@ -275,7 +275,9 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
         ai_counter: 0,
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
-    actor.attack_target = target(&before["target"], row).map(|target| AttackTarget { target });
+    actor
+        .attack_target
+        .set_for_test(target(&before["target"], row));
     actor.navigation.nav_com = target(&before["nav"], row).map(|target| match target {
         TargetKind::Cell(x, y) => NavTargetRef::cell(x, y),
         TargetKind::Entity(_) => unreachable!(),
@@ -302,7 +304,7 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
         let mut target_coord = ground_pose::position_world_coord(&actor.position);
         target_coord.x = target_coord.x.wrapping_add(signed(&input["delta"]));
         ground_pose::put_location(&mut supplied_target.position, target_coord);
-        supplied_target.attack_target = None;
+        supplied_target.attack_target.set_for_test(None);
         supplied_target.mission_leaf = MissionLeafState::infantry_raw_for_test(0, 0);
         sim.substrate.entities.insert(supplied_target);
     }
@@ -355,7 +357,7 @@ fn assert_actor(actor: &GameEntity, expected: &Value, row: &Value, rearm: bool) 
         "{name}: retained destination"
     );
     assert_eq!(
-        actor.attack_target.as_ref().map(|a| a.target),
+        actor.attack_target.target(),
         target(&expected["target"], row),
         "{name}: TarCom"
     );

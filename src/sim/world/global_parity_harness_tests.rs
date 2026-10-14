@@ -1021,7 +1021,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
                 (298, 16),
                 "Stop retains the active dispatch timer"
             );
-            assert!(tank.attack_target.is_none());
+            assert!(tank.attack_target.target().is_none());
             assert!(tank.navigation.nav_com.is_none());
             assert!(tank.mega_mission.is_attack_move());
             assert_eq!(tank.last_target_scan_frame, 297);
@@ -1033,7 +1033,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         // death frame: main's native Infantry cadence changes the duel's draws.
         if rec.substrate.entities.get(4).is_none() {
             let tank = rec.substrate.entities.get(6).expect("surviving tank");
-            assert!(tank.attack_target.is_none());
+            assert!(tank.attack_target.target().is_none());
             let scan = (tank.last_target_scan_frame, tank.passive_scan_timer);
             if target_expired.is_none() {
                 target_expired = Some(tick);

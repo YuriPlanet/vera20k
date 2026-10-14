@@ -229,7 +229,8 @@ fn computer_crusher_charges_a_crushable_attacker() {
             .entities
             .get_mut(rhino)
             .unwrap()
-            .dock_entered_with = Some(gi);
+            .tether
+            .set_for_test(Some(gi));
         gi
     }));
 

@@ -152,8 +152,8 @@ impl Simulation {
                 || locomotor.jumpjet_runtime().is_some()
                 || locomotor.rocket_runtime().is_some()
         });
-        let desired = entity.lifecycle.object_alive
-            && !entity.lifecycle.in_limbo
+        let desired = entity.lifecycle.object_alive()
+            && !entity.lifecycle.in_limbo()
             && entity.lifecycle.cell_marked
             && !entity.passenger_role.is_inside_transport()
             && if explicit_membership {
@@ -386,7 +386,7 @@ mod tests {
     fn a_marked_grounded_jumpjet_requires_explicit_tracker_entry() {
         let mut sim = native_control_world();
         let actor = sim.substrate.entities.get_mut(1).unwrap();
-        actor.lifecycle.in_limbo = false;
+        actor.lifecycle.set_in_limbo_for_test(false);
         actor.lifecycle.cell_marked = true;
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
         sim.sync_air_spatial_membership(1);
@@ -469,9 +469,9 @@ mod tests {
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(actor.air_tracker_cell(), cell(&retired["tracker_cell"]));
         assert_eq!(actor.air_slot_cell(), cell(&retired["slot_cell"]));
-        assert_eq!(actor.lifecycle.object_alive, retired["alive"] == 1);
+        assert_eq!(actor.lifecycle.object_alive(), retired["alive"] == 1);
         assert_eq!(actor.lifecycle.cell_marked, retired["marked"] == 1);
-        assert!(actor.lifecycle.in_limbo);
+        assert!(actor.lifecycle.in_limbo());
         assert_eq!(sim.substrate.pending_delete.object_ids(), vec![1]);
         assert_eq!(slot(retired, [10, 10]), "0x20000000");
         assert_eq!(sim.substrate.air_slots.holder(10, 10), Some(1));

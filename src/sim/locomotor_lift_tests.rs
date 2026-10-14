@@ -171,14 +171,14 @@ fn retail_magnetron_pulls_a_tank_beside_itself_and_lets_go() {
         "the tank arrives and is let go"
     );
     let dropped = entity(&sim, tank);
-    assert!(dropped.crashing);
+    assert!(dropped.crash.is_crashing());
     assert_eq!(dropped.manipulated_by, Some(magnetron));
     assert_eq!(dropped.warped_by_house, Some(americans));
     assert_eq!(dropped.locomotor_source, None);
     let holder = entity(&sim, magnetron);
     assert_eq!(holder.locomotor_target, None);
     assert!(
-        holder.attack_target.is_none(),
+        holder.attack_target.target().is_none(),
         "the release clears its target"
     );
     let offset = (
@@ -258,7 +258,7 @@ fn retail_tank_let_go_over_clear_ground_lands_and_drives_again() {
         climb(&mut sim, &rules, &grid, tank);
         if death {
             kill(&mut sim, &rules, magnetron, tank);
-            assert!(!entity(&sim, magnetron).lifecycle.object_alive);
+            assert!(!entity(&sim, magnetron).lifecycle.object_alive());
         } else {
             move_away(&mut sim, magnetron);
             assert!(
@@ -285,7 +285,7 @@ fn retail_tank_let_go_over_clear_ground_lands_and_drives_again() {
         );
         let landed = entity(&sim, tank);
         assert_eq!(landed.health.current(), health, "death {death}");
-        assert!(!landed.crashing && !landed.being_manipulated);
+        assert!(!landed.crash.is_crashing() && !landed.being_manipulated);
         assert!(!landed.lift_may_end);
         assert_eq!(landed.manipulated_by, None);
         assert_eq!(landed.warped_by_house, None);
@@ -325,7 +325,7 @@ fn retail_tank_killed_in_the_air_is_uninit_at_once() {
         }
         kill(&mut sim, &rules, tank, magnetron);
         assert!(
-            !entity(&sim, tank).lifecycle.object_alive,
+            !entity(&sim, tank).lifecycle.object_alive(),
             "dropped {dropped}"
         );
         assert_eq!(
@@ -408,7 +408,7 @@ fn retail_locomotor_arm_admission() {
         released.lift_may_end,
         "a grounded release lets the lift end"
     );
-    assert!(!released.crashing && !released.being_manipulated);
+    assert!(!released.crash.is_crashing() && !released.being_manipulated);
 }
 
 /// The links and the drop's credit are saved, and each one moves the world

@@ -237,7 +237,7 @@ fn with_world<R>(
         .substrate
         .entities
         .values()
-        .filter(|entity| !entity.lifecycle.in_limbo && !entity.lifecycle.cell_marked)
+        .filter(|entity| !entity.lifecycle.in_limbo() && !entity.lifecycle.cell_marked)
         .map(|entity| entity.stable_id())
         .collect();
     for &id in &unmarked {
@@ -865,7 +865,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                     world.substrate.entities.get(id).is_some_and(|entity| {
                         entity.category() == EntityCategory::Structure
                             && entity.health.current() > 0
-                            && !entity.lifecycle.in_limbo
+                            && !entity.lifecycle.in_limbo()
                     })
                 })
                 .collect();

@@ -34,7 +34,7 @@ fn stock_cloak_tick_facts(
     if !object.cloakable && !rank_cloak {
         return None;
     }
-    let holds_target = entity.attack_target.is_some();
+    let holds_target = entity.attack_target.target().is_some();
     // vt+0x1D4 / vt+0x1D8 (`0x0070C5B0` / `0x0070C5C0`, reading
     // `TechnoClass+0x270`/`+0x271`): a Chrono teleport or a Temporal warp.
     let chrono_active = entity.is_warped_out() || entity.is_warping_in();
@@ -266,8 +266,8 @@ fn sensor_targeters_in_native_dispatch_order(sim: &Simulation, cloaker_id: u64) 
         .filter_map(|(targeter_id, targeter)| {
             let targets_cloaker = targeter
                 .attack_target
-                .as_ref()
-                .is_some_and(|target| target.target == TargetKind::Entity(cloaker_id));
+                .target()
+                .is_some_and(|target| target == TargetKind::Entity(cloaker_id));
             let admitted = targeter.owner() == cloaker_owner
                 || sim
                     .fog

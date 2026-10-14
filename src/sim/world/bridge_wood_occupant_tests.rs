@@ -6,7 +6,7 @@
 //! movement, outer area-strength admission or whole-world scheduling parity is claimed.
 use super::*;
 use crate::headless_scenario::HeadlessScenario;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::TargetKind;
 use crate::sim::components::DriveCoord;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId};
@@ -141,8 +141,9 @@ fn prime(scene: &mut HeadlessScenario, input: &Value, initial: &Value, rng: &Val
             ai_counter: 0,
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
-        actor.attack_target = (id == primary && input["target_impact"] == true)
-            .then(|| AttackTarget::for_cell(115, 59));
+        actor.attack_target.set_for_test(
+            (id == primary && input["target_impact"] == true).then(|| TargetKind::Cell(115, 59)),
+        );
         actor.suspended_attack_target = (id == primary)
             .then(|| input.get("restore_target"))
             .flatten()
@@ -222,10 +223,10 @@ fn snapshot(
     let owner = actor.owner();
     let second = actors.get(1).map(|&id| {
         let member = sim.substrate.entities.get(id).unwrap();
-        json!({"health":member.health.current(),"alive":u8::from(member.lifecycle.object_alive),
-            "limbo":u8::from(member.lifecycle.in_limbo),"marked":u8::from(member.lifecycle.cell_marked),
+        json!({"health":member.health.current(),"alive":u8::from(member.lifecycle.object_alive()),
+            "limbo":u8::from(member.lifecycle.in_limbo()),"marked":u8::from(member.lifecycle.cell_marked),
             "object_next":object_name(sim.next_cell_object(CellObjectMember::Entity(id)),actors),
-            "target":target_name(member.attack_target.as_ref().map(|target| &target.target))})
+            "target":target_name(member.attack_target.target().as_ref())})
     });
     let current = (actor.position.rx, actor.position.ry);
     let terrain = sim.resolved_terrain.as_ref().unwrap();
@@ -239,8 +240,8 @@ fn snapshot(
         .head_to()
         .map_or([0; 3], |head| [head.x, head.y, head.z]);
     json!({
-        "second":second,"health":actor.health.current(),"alive":u8::from(actor.lifecycle.object_alive),
-        "marked":u8::from(actor.lifecycle.cell_marked),"limbo":u8::from(actor.lifecycle.in_limbo),
+        "second":second,"health":actor.health.current(),"alive":u8::from(actor.lifecycle.object_alive()),
+        "marked":u8::from(actor.lifecycle.cell_marked),"limbo":u8::from(actor.lifecycle.in_limbo()),
         "on_bridge":u8::from(actor.on_bridge),"sink":u8::from(actor.sinking.is_active()),
         "ground_head":object_name(sim.cell_objects(current,MovementLayer::Ground).next(),actors),
         "object_next":object_name(sim.next_cell_object(CellObjectMember::Entity(actors[0])),actors),
@@ -251,7 +252,7 @@ fn snapshot(
         "owner_active_units":sim.houses[&owner].tracking.active_for_test().0-other_active_units,
         "current_land":terrain.cell(current.0,current.1).unwrap().yr_cell_land_type,
         "impact_land":terrain.cell(115,59).unwrap().yr_cell_land_type,
-        "target":target_name(actor.attack_target.as_ref().map(|target| &target.target)),
+        "target":target_name(actor.attack_target.target().as_ref()),
         "mission":actor.mission.current().raw(),"suspended":actor.mission.suspended().raw(),
         "suspended_target":target_name(actor.suspended_attack_target.as_ref()),
         "nav":if actor.navigation.nav_com.is_none(){"null"}else{"unexpected nav"},

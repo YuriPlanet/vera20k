@@ -2,7 +2,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::foundation::FOUNDATION_TABLE;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::TargetKind;
 use crate::sim::docking::aircraft_dock::AircraftAmmo;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
@@ -97,10 +97,10 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
             TargetKind::Entity(2)
         }
     };
-    source.attack_target = Some(match target {
-        TargetKind::Entity(id) => AttackTarget::new(id),
-        TargetKind::Cell(x, y) => AttackTarget::for_cell(x, y),
-    });
+    source.attack_target.set_for_test(Some(match target {
+        TargetKind::Entity(id) => TargetKind::Entity(id),
+        TargetKind::Cell(x, y) => TargetKind::Cell(x, y),
+    }));
     sim.substrate.entities.insert(source);
     sim.interner = test_interner();
     sim.substrate.next_stable_object_id = 3;
@@ -134,7 +134,7 @@ fn selected_strafe_range_branch_matches_native_and_dispatches_when_in_range() {
     for row in rows {
         let (mut sim, rules) = fixture(&row);
         let aircraft = sim.substrate.entities.get(1).unwrap();
-        let target = aircraft.attack_target.as_ref().unwrap().target;
+        let target = aircraft.attack_target.target().unwrap();
         let distance =
             crate::sim::combat::object_distance_to(aircraft, &target, &sim.substrate.entities)
                 .unwrap();

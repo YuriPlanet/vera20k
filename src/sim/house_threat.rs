@@ -201,7 +201,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|actor| actor.lifecycle.object_alive)
+            .is_some_and(|actor| actor.lifecycle.object_alive())
             && let Some(cell) = self.spatial_threat_current_cell(id, terrain)
         {
             self.add_spatial_threat_at(id, cell, rules);
@@ -220,7 +220,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if actor.lifecycle.in_limbo
+        if actor.lifecycle.in_limbo()
             || self
                 .live_spatial_threat(id, rules)
                 .is_none_or(|value| value <= 0)
@@ -245,7 +245,7 @@ impl Simulation {
     /// Return the retained Cell so the post-owner half cannot resample it.
     pub(crate) fn spatial_threat_before_owner_change(&mut self, id: u64) -> Option<(i16, i16)> {
         let actor = self.substrate.entities.get(id)?;
-        if actor.lifecycle.in_limbo {
+        if actor.lifecycle.in_limbo() {
             return None;
         }
         let cell = if actor.category() == EntityCategory::Structure {
@@ -325,7 +325,7 @@ impl Simulation {
         // order independently of active Logic membership (including limbo).
         let mut contributions = Vec::new();
         for (id, actor) in self.substrate.entities.iter_sorted().rev() {
-            if actor.lifecycle.in_limbo || !actor.lifecycle.object_alive {
+            if actor.lifecycle.in_limbo() || !actor.lifecycle.object_alive() {
                 continue;
             }
             let Some(value) = self

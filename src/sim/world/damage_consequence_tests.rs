@@ -183,10 +183,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     let (mut sim, attacker, carrier) = consequence_world();
     let passenger = sim.allocate_stable_id();
     let mut entity = GameEntity::test_default(passenger, "TARGET", "Soviet", 8, 5);
-    entity.passenger_role = PassengerRole::Inside {
-        transport_id: carrier,
-        open_topped: false,
-    };
+    entity.passenger_role = PassengerRole::inside_for_test(carrier, false);
     sim.substrate.entities.insert(entity);
     let mut cargo = PassengerCargo::new(1, 1);
     assert!(cargo.board(passenger, 1));
@@ -194,7 +191,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
         .entities
         .get_mut(carrier)
         .unwrap()
-        .passenger_role = PassengerRole::Transport { cargo };
+        .passenger_role = PassengerRole::transport(cargo);
     sim.lifecycle_test_events.clear();
     advance_lethal_shot(&mut sim, &rules, attacker, carrier);
     assert!(sim.substrate.entities.get(passenger).is_none());
@@ -257,7 +254,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
             .get(victim)
             .unwrap()
             .lifecycle
-            .object_alive
+            .object_alive()
     );
     assert_eq!(
         delivery_sounds(&sim),

@@ -86,7 +86,7 @@ pub(super) fn finish_fresh_head(
         return false;
     };
     loco.begin_walk_motion();
-    if entity.lifecycle.object_alive {
+    if entity.lifecycle.object_alive() {
         let current = super::ground_pose::position_world_coord(&entity.position);
         let facing = crate::util::direction_tables::facing16_from_delta(
             head.x.wrapping_sub(current.x),
@@ -111,7 +111,7 @@ impl crate::sim::world::Simulation {
     /// this destructive raw clear, including when another walker reused it.
     pub(crate) fn release_walk_occupation_before_foot_limbo(&mut self, id: u64) {
         let Some((owner, coord)) = self.substrate.entities.get(id).and_then(|e| {
-            if e.lifecycle.in_limbo {
+            if e.lifecycle.in_limbo() {
                 return None;
             }
             let loco = e.locomotor.as_ref()?;
@@ -188,11 +188,11 @@ impl crate::sim::world::Simulation {
             .entities
             .get_mut(id)
             .ok_or("retired Walk head owner")?;
-        if !picked && !actor.lifecycle.in_limbo {
+        if !picked && !actor.lifecycle.in_limbo() {
             if let Some(loco) = actor.locomotor.as_mut() {
                 loco.set_step_head(None);
             }
-            if !actor.lifecycle.object_alive {
+            if !actor.lifecycle.object_alive() {
                 return Ok(false);
             }
         }
@@ -269,7 +269,7 @@ mod tests {
         {
             let mut actor =
                 crate::sim::game_entity::GameEntity::test_default(1, "E1", "Owner", 9, 10);
-            actor.lifecycle.object_alive = false;
+            actor.lifecycle.set_object_alive_for_test(false);
             actor.locomotor = Some(super::super::locomotor::LocomotorState::for_test_kind(
                 crate::rules::locomotor_type::LocomotorKind::Walk,
             ));

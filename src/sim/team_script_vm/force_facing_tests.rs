@@ -49,8 +49,12 @@ fn script42_and_class_turns_match_original_controls() {
                 };
                 let mut entity =
                     GameEntity::test_default_of_category(id, "MEMBER", "OWNER", 10, 10, category);
-                entity.lifecycle.object_alive = input["active"].as_bool().unwrap();
-                entity.lifecycle.in_limbo = input["limbo"].as_bool().unwrap();
+                entity
+                    .lifecycle
+                    .set_object_alive_for_test(input["active"].as_bool().unwrap());
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());
                 entity
                     .health
                     .set_for_test(input["health"].as_i64().unwrap() as i32);

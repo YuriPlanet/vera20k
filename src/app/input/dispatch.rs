@@ -10,6 +10,9 @@
 use std::collections::{HashSet, VecDeque};
 
 use winit::event::{ElementState, MouseButton};
+// Only the dev chord matches on bare `KeyCode`; the retail path below keeps
+// fully-qualified `winit::keyboard::KeyCode`.
+#[cfg(feature = "dev-overlays")]
 use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
@@ -942,8 +945,8 @@ mod item83_click_route_tests {
                 5,
                 true,
             );
-            entity.lifecycle.object_alive = true;
-            entity.lifecycle.in_limbo = false;
+            entity.lifecycle.set_object_alive_for_test(true);
+            entity.lifecycle.set_in_limbo_for_test(false);
             entities.insert(entity);
         }
 
@@ -1390,6 +1393,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
     }
 }
 
+#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_unit_inspector(state: &mut AppState) {
     state.diag.debug_unit_inspector = !state.diag.debug_unit_inspector;
     if let Some(sim) = state
@@ -1417,6 +1421,7 @@ pub(crate) fn toggle_unit_inspector(state: &mut AppState) {
 /// SpeedType override to None when the overlay turns off, so reopening
 /// the overlay defaults back to "auto from selected unit". Called by both
 /// the F9/P hotkey and the dev overlay checkbox.
+#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_pathgrid_overlay(state: &mut AppState) {
     state.diag.debug_show_pathgrid = !state.diag.debug_show_pathgrid;
     if !state.diag.debug_show_pathgrid {
@@ -1436,6 +1441,7 @@ pub(crate) fn toggle_pathgrid_overlay(state: &mut AppState) {
 ///
 /// On resume, local frame admission is re-anchored so elapsed modal time
 /// cannot cause a catch-up frame.
+#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_debug_pause(state: &mut AppState) {
     state.match_state.debug_pause = !state.match_state.paused();
     if !state.match_state.paused() {
@@ -1574,11 +1580,15 @@ pub(crate) fn handle_hotkey_pressed(
             | HotkeyFallback::ArrowDown,
         ) => {}
         HotkeyResolution::Unhandled => {
+            #[cfg(feature = "dev-overlays")]
             if KeyModifiers::from_modifiers_state(state.match_state.input.hotkey_modifiers)
                 .dev_chord()
             {
                 handle_dev_hotkey_pressed(state, physical_code);
             }
+            // Builds without `dev-overlays` (release) carry no dev chord.
+            #[cfg(not(feature = "dev-overlays"))]
+            let _ = physical_code;
         }
     }
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
@@ -1815,6 +1825,10 @@ fn handle_options_hotkey(state: &mut AppState) {
 }
 
 /// Dev/debug hotkeys require Ctrl+Shift, a chord stock binds to no command.
+///
+/// Gated on `dev-overlays`: every arm here is a diagnostic, a sandbox cheat or
+/// a developer shortcut, and none of them is reachable from the retail UI path.
+#[cfg(feature = "dev-overlays")]
 fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {
     match code {
         // The hotkey-help overlay is VERA-only and used to sit on bare F1, which
@@ -1972,6 +1986,7 @@ pub(crate) struct KeyModifiers {
 }
 
 impl KeyModifiers {
+    #[cfg(feature = "dev-overlays")]
     fn from_modifiers_state(modifiers: winit::keyboard::ModifiersState) -> Self {
         Self {
             shift: modifiers.shift_key(),
@@ -2003,6 +2018,7 @@ impl KeyModifiers {
 
     /// The VERA-internal dev chord. Stock binds nothing to Ctrl+Shift, so it
     /// collides with no retail hotkey.
+    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn dev_chord(self) -> bool {
         self.ctrl && self.shift && !self.alt
     }
@@ -2138,7 +2154,7 @@ pub(crate) fn selection_order_for_world(
                 .filter(|id| {
                     sim.entities()
                         .get(*id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                        .is_some_and(|entity| entity.lifecycle.object_alive())
                 })
                 .collect(),
             true,
@@ -3277,7 +3293,7 @@ mod deploy_key_tests {
         sim.entities_mut()
             .get_mut(transport)
             .unwrap()
-            .passenger_role = PassengerRole::Transport { cargo };
+            .passenger_role = PassengerRole::transport(cargo);
 
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), heli),

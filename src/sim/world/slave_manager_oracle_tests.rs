@@ -636,7 +636,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: SlaveOwner"
         );
         assert_eq!(
-            u64::from(entity.lifecycle.in_limbo),
+            u64::from(entity.lifecycle.in_limbo()),
             expected["limbo"].as_u64().unwrap(),
             "{context}: limbo"
         );

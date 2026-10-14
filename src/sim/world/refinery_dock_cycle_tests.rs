@@ -27,7 +27,7 @@ fn sample(s: &Scene, id: u64) -> Sample {
         cell: (miner.position.rx, miner.position.ry),
         mission: miner.mission.current(),
         contact: miner.radio_contacts.slot(0),
-        tethered: miner.dock_entered_with.is_some(),
+        tethered: miner.tether.partner().is_some(),
         unloading: state.unload_active,
         facing: miner.body_facing_current(s.sim.session.binary_frame),
         ore: state
@@ -191,7 +191,7 @@ fn assert_whole_visit(s: &mut Scene) {
     assert_ne!(end.mission, MissionId::from_known(MissionType::Unload));
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
     assert!(refinery.radio_contacts.is_empty(), "the slot is free again");
-    assert_eq!(refinery.dock_entered_with, None);
+    assert_eq!(refinery.tether.partner(), None);
 }
 
 #[test]
@@ -314,7 +314,7 @@ fn a_refinery_order_mid_unload_redocks_and_pays() {
     assert_eq!(paid, 1000, "the whole load is paid after the re-dock");
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
     assert!(refinery.radio_contacts.is_empty());
-    assert_eq!(refinery.dock_entered_with, None);
+    assert_eq!(refinery.tether.partner(), None);
 }
 
 /// Selling the refinery under an unloading miner: the sale's stage-0 visit,
@@ -461,7 +461,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
         "NowDead clears pending500 even though it names another building",
     );
     let building = s.sim.substrate.entities.get(refinery).unwrap();
-    assert!(!building.lifecycle.object_alive && !building.lifecycle.cell_marked);
+    assert!(!building.lifecycle.object_alive() && !building.lifecycle.cell_marked);
     let trace = &s.sim.lifecycle_test_events_for_test()[trace_start..];
     let expiry = trace
         .iter()

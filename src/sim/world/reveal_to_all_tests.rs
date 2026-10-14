@@ -324,7 +324,7 @@ fn a_computer_buildings_death_takes_its_sight_off_the_current_houses_map_twice()
         sim.substrate
             .entities
             .get(id)
-            .is_none_or(|entity| entity.lifecycle.in_limbo)
+            .is_none_or(|entity| entity.lifecycle.in_limbo())
     );
     assert_eq!(counter(&sim, americans, post), 0);
     assert!(sim.fog.is_cell_visible(americans, post.0, post.1));

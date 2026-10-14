@@ -1272,7 +1272,7 @@ fn a_bridge_strike_hits_the_deck_only() {
         if on_bridge {
             entity.position.z = 4;
         }
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(entity);
         sim.substrate
@@ -1312,7 +1312,7 @@ fn a_strike_damages_a_building() {
         5,
         EntityCategory::Structure,
     );
-    building.lifecycle.in_limbo = false;
+    building.lifecycle.set_in_limbo_for_test(false);
     building.lifecycle.cell_marked = true;
     building.set_owner_for_test(sim.interner.intern("Soviet"));
     building.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
@@ -1381,7 +1381,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
 
     let (fatal, fatal_rng) = run(100);
     assert!(fatal.substrate.entities.get(10).is_some_and(|entity| {
-        entity.health.current() == 0 && entity.dying && !entity.in_logic_vector
+        entity.health.current() == 0 && entity.death.is_dying() && !entity.in_logic_vector
     }));
     assert_eq!(
         fatal.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,

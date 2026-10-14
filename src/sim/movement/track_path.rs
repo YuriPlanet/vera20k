@@ -336,13 +336,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Option<bool> {
-        let target = self
-            .substrate
-            .entities
-            .get(id)?
-            .attack_target
-            .as_ref()?
-            .target;
+        let target = self.substrate.entities.get(id)?.attack_target.target()?;
         Some(self.techno_can_fire_at_target(id, target, rules, registry))
     }
 
@@ -602,7 +596,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(id)
-            .is_some_and(|e| e.lifecycle.object_alive)
+            .is_some_and(|e| e.lifecycle.object_alive())
     }
 
     /// The one completion of a class-setter call Rust deferred (the
@@ -1349,10 +1343,9 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        let (Some(nav_com), Some(target)) = (
-            actor.navigation.nav_com,
-            actor.attack_target.as_ref().map(|attack| attack.target),
-        ) else {
+        let (Some(nav_com), Some(target)) =
+            (actor.navigation.nav_com, actor.attack_target.target())
+        else {
             return false;
         };
         if !self

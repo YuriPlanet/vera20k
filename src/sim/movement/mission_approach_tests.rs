@@ -7,7 +7,7 @@
 //! instruction reading.
 
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::leaf::MissionLeafState;
@@ -51,7 +51,12 @@ fn start_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
 }
 
 fn target(sim: &mut Simulation, id: u64, target: u64) {
-    sim.substrate.entities.get_mut(id).unwrap().attack_target = Some(AttackTarget::new(target));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(target)));
 }
 
 fn order(sim: &mut Simulation, owner: &str, command: Command) {
@@ -365,7 +370,7 @@ fn a_rhino_stops_short_of_its_approach_cell_when_its_target_closes_in() {
         (x, y)
     );
     let entity = sim.substrate.entities.get(rhino).unwrap();
-    assert!(entity.attack_target.is_some());
+    assert!(entity.attack_target.target().is_some());
 }
 
 /// A Rhino on Area Guard with a Target out of range approaches it the same

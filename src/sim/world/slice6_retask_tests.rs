@@ -17,7 +17,7 @@ use super::*;
 use crate::map::entities::{EntityCategory, MapEntity};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::mission::mega_mission::MegaMission;
 use crate::sim::mission::{MissionId, MissionType};
@@ -570,7 +570,7 @@ fn replay_hash_stable_through_slice6() {
                 "Stop clears the live path head"
             );
             assert!(
-                tank.attack_target.is_none(),
+                tank.attack_target.target().is_none(),
                 "Stop retires the previous attack"
             );
         }
@@ -723,7 +723,7 @@ fn slice6_move_command_retasks_via_mission_substrate_and_clears_state() {
     // Seed a conflicting prior order the Move must tear down.
     {
         let e = sim.substrate.entities.get_mut(1).expect("unit");
-        e.attack_target = Some(AttackTarget::new(2));
+        e.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         e.mega_mission = MegaMission::attack_move(Some(crate::sim::combat::TargetKind::Cell(3, 3)));
     }
 
@@ -745,7 +745,7 @@ fn slice6_move_command_retasks_via_mission_substrate_and_clears_state() {
         "the command queued Move through the exact authority (host promotes later)"
     );
     assert!(
-        e.attack_target.is_none(),
+        e.attack_target.target().is_none(),
         "Move tore down the attack target"
     );
     assert!(

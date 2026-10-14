@@ -285,7 +285,7 @@ fn force_fire_on_raised_ground_places_the_explosion_at_the_terrain_height() {
     let mut firer = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
     // This hand-placed combat fixture represents a revealed actor. The
     // live Unit firing host correctly skips constructor-only limbo state.
-    firer.lifecycle.in_limbo = false;
+    firer.lifecycle.set_in_limbo_for_test(false);
     // The fixture `MTNK` authors no `Turret=`, so its HULL is what the
     // native body gate compares (`UnitClass::GetFireError @ 0x00740FD0`
     // step 17). Face it south at the force-fire cell so this test measures

@@ -152,9 +152,10 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     e.position.exact_z_leptons = Some(current.z);
     e.on_bridge = false;
     e.in_playfield = input["in_playfield"].as_bool().unwrap_or(false);
-    e.lifecycle.object_alive = true;
+    e.lifecycle.set_object_alive_for_test(true);
     e.lifecycle.cell_marked = true;
-    e.dock_entered_with = input["tethered"].as_bool().unwrap_or(false).then_some(999);
+    e.tether
+        .set_for_test(input["tethered"].as_bool().unwrap_or(false).then_some(999));
     e.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(before["mission"].as_i64().unwrap() as i32),
         queued: MissionId::from_raw(before["queued_mission"].as_i64().unwrap() as i32),
@@ -181,10 +182,8 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     e.foot_speed.set_speed_fraction(SIM_ZERO);
     e.navigation.nav_com = Some(NavTargetRef::Cell { rx: 10, ry: 10 });
     e.navigation.suspended_nav_com = None;
-    e.attack_target =
-        (input["attack_target"] == true).then_some(crate::sim::combat::AttackTarget {
-            target: TargetKind::Cell(11, 10),
-        });
+    e.attack_target
+        .set_for_test((input["attack_target"] == true).then_some(TargetKind::Cell(11, 10)));
     e.suspended_attack_target = None;
     e.navigation.path_replay.directions = vec![2, 3, 4, 5];
     e.navigation.path_replay.cursor = 0;
@@ -227,7 +226,8 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         e.position.sub_x = SimFixed::from_num(current.x % 256);
         e.position.sub_y = SimFixed::from_num(current.y % 256);
         e.position.exact_z_leptons = Some(current.z);
-        e.lifecycle.object_alive = input["obstacle_alive"].as_bool().unwrap_or(true);
+        e.lifecycle
+            .set_object_alive_for_test(input["obstacle_alive"].as_bool().unwrap_or(true));
         e.lifecycle.cell_marked = true;
         e.on_bridge = input["obstacle_deck"] == true;
         let mut cloak = CloakRuntime::new(0);
@@ -301,10 +301,7 @@ fn compare(sim: &Simulation, id: u64, other: Option<u64>, expected: &Value, row:
         ("nav", json!(nav(e.navigation.nav_com))),
         (
             "target",
-            json!(native_target(
-                e.attack_target.as_ref().map(|a| a.target),
-                other
-            )),
+            json!(native_target(e.attack_target.target(), other)),
         ),
         ("suspended_nav", json!(nav(e.navigation.suspended_nav_com))),
         (

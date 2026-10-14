@@ -32,7 +32,7 @@ pub(crate) fn mission_harvest(
     frame_effects: FrameEffects<'_>,
 ) -> Option<i32> {
     let entity = sim.substrate.entities.get(id)?;
-    if entity.dying {
+    if entity.death.is_dying() {
         return None;
     }
     // The slave-master arm precedes the real-harvester gate in original

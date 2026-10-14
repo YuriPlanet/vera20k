@@ -310,7 +310,8 @@ fn unit_z_adjust_in_runtime(
     let coord = [(xy[0] / 256) as i16, (xy[1] / 256) as i16];
     let special = if entity.category() == EntityCategory::Unit {
         let contact = entity
-            .dock_entered_with
+            .tether
+            .partner()
             .and_then(|_| entity.radio_contacts.slot(0))
             .and_then(|id| view.entities().get(id));
         if contact.is_some_and(|other| {

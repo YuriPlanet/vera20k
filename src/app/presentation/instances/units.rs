@@ -847,7 +847,7 @@ fn body_pose(
         rocking.angle_forwards.to_num::<f32>(),
     ];
     match locomotor.kind {
-        LocomotorKind::Fly if entity.crashing && band != EntityDrawBand::Ground => {
+        LocomotorKind::Fly if entity.crash.is_crashing() && band != EntityDrawBand::Ground => {
             Some(PoseTilt::Fly(angles))
         }
         LocomotorKind::Jumpjet
@@ -1911,7 +1911,7 @@ mod tests {
             body_draw(&entity, EntityDrawBand::Top, 0, false, false),
             BodyDraw::Composite
         );
-        entity.crashing = true;
+        entity.crash.set_crashing_for_test(true);
         entity.rocking = Some(crate::sim::components::RockingState {
             angle_sideways: crate::util::fixed_math::SimFixed::from_num(0.5),
             angle_forwards: crate::util::fixed_math::SimFixed::from_num(-0.25),

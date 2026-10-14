@@ -120,9 +120,9 @@ impl Simulation {
                 source_entity.owner(),
             )
             || !building_weapon0_aims(self, rules, id)
-            || building.attack_target.as_ref().is_some_and(|attack| {
-                let weapon = select_weapon(self, rules, id, Some(attack.target));
-                can_fire_at(self, rules, id, attack.target, weapon, overlay_registry)
+            || building.attack_target.target().is_some_and(|attack| {
+                let weapon = select_weapon(self, rules, id, Some(attack));
+                can_fire_at(self, rules, id, attack, weapon, overlay_registry)
             })
         {
             return ping;

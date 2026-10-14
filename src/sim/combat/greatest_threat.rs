@@ -333,8 +333,8 @@ pub(crate) fn calculate_threat_score(
         let mut term = ScoreX87::mul(coeff_b, verses);
         if candidate
             .attack_target
-            .as_ref()
-            .is_some_and(|target| target.target == super::TargetKind::Entity(scorer.stable_id()))
+            .target()
+            .is_some_and(|target| target == super::TargetKind::Entity(scorer.stable_id()))
         {
             term = ScoreX87::neg(term);
         }
@@ -1691,7 +1691,10 @@ fn evaluate_candidate(
     // G6 — `InLimbo`/`Health == 0`. Actual retained Cell lists and separate
     // airborne registrations are not filtered or reconstructed from these
     // facts; eligibility belongs to this receiver.
-    if candidate.health.current() == 0 || candidate.dying || candidate.lifecycle.in_limbo {
+    if candidate.health.current() == 0
+        || candidate.death.is_dying()
+        || candidate.lifecycle.in_limbo()
+    {
         return None;
     }
 
@@ -2307,7 +2310,7 @@ mod tests {
     ) {
         let mut entity = GameEntity::test_default(id, type_id, owner, rx, ry);
         entity.set_category_for_test(category);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         if category == EntityCategory::Structure {
             entity.foundation = "1x1".to_string();
@@ -3818,7 +3821,7 @@ mod tests {
         let mut cargo = PassengerCargo::new(2, 1);
         assert!(cargo.board(2, 1));
         assert!(cargo.board(3, 1));
-        building.passenger_role = PassengerRole::Transport { cargo };
+        building.passenger_role = PassengerRole::transport(cargo);
         assert_eq!(
             live_threat_posed(
                 &building,

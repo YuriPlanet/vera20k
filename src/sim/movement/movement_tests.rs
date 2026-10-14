@@ -276,7 +276,7 @@ fn test_drive_arrival_clears_navcom_same_tick() {
                     })
             ))
     );
-    e.lifecycle.in_limbo = false;
+    e.lifecycle.set_in_limbo_for_test(false);
     entities.insert(e);
 
     // A track that ends at the owner destination stops immediately: the owner
@@ -1346,7 +1346,7 @@ fn gsi_04_10_crusher_and_omnicrusher_never_enter_or_crush_a_terrain_object_cell(
         let mut entities = EntityStore::new();
         let mut tank = GameEntity::test_default(1, "HTNK", "Americans", 0, 0);
         tank.set_category_for_test(EntityCategory::Unit);
-        tank.lifecycle.in_limbo = false;
+        tank.lifecycle.set_in_limbo_for_test(false);
         tank.lifecycle.cell_marked = true;
         let mut locomotor = make_drive_loco_for_test();
         locomotor.movement_zone = movement_zone;
@@ -1521,7 +1521,7 @@ fn gsi_06_13_fixture_mover(
     let mut e = GameEntity::test_default(1, "HTNK", "Americans", start.0, start.1);
     e.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     e.body_facing.snap(u16::from(facing) << 8, 0);
-    e.lifecycle.in_limbo = false;
+    e.lifecycle.set_in_limbo_for_test(false);
     e.lifecycle.cell_marked = true;
     let goal = *path.last().expect("non-empty path");
     e.navigation.path_replay = crate::sim::components::FootPathQueue {

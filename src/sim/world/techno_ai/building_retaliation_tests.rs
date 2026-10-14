@@ -10,7 +10,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::damage::DamageState;
 use crate::sim::combat::world_receiver::{ReceiverRun, commit_entities};
-use crate::sim::combat::{AttackTarget, EntityDamageEvent, TargetKind};
+use crate::sim::combat::{EntityDamageEvent, TargetKind};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
@@ -166,7 +166,9 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
         dispatch_timer: MissionDispatchTimer::from_raw(FRAME as i32, 0),
     });
     if input["target"].as_bool().unwrap_or(false) {
-        entity.attack_target = source.map(AttackTarget::new);
+        entity
+            .attack_target
+            .set_for_test(source.map(TargetKind::Entity));
     }
     let facing = &mut entity.body_facing;
     if let Some(desired) = input["initial_desired"].as_u64() {
@@ -245,7 +247,7 @@ fn the_block_matches_the_original() {
             "{name} ping"
         );
         assert_eq!(
-            after.attack_target.as_ref().map(|attack| attack.target),
+            after.attack_target.target(),
             row["target"]
                 .as_str()
                 .map(|_| TargetKind::Entity(source.unwrap())),
@@ -386,7 +388,7 @@ fn a_human_defence_hit_from_out_of_range_turns_its_turret_once() {
     );
     let entity = sim.substrate.entities.get(building).unwrap();
     assert_eq!(entity.health.current(), 990);
-    assert!(entity.attack_target.is_none());
+    assert!(entity.attack_target.target().is_none());
     let turret = entity.body_facing;
     assert_eq!(turret.destination(), 0xD500);
     assert_eq!(turret.timer_duration(), 4);
@@ -456,7 +458,7 @@ fn a_returned_hit_takes_the_source_without_a_draw() {
         assert_eq!(sim.scenario_rng.logical_state(), rng, "human {human}");
         let entity = sim.substrate.entities.get(building).unwrap();
         assert_eq!(
-            entity.attack_target.as_ref().map(|attack| attack.target),
+            entity.attack_target.target(),
             Some(TargetKind::Entity(source)),
             "human {human}"
         );
@@ -513,10 +515,11 @@ fn a_computer_defence_drops_its_out_of_range_target_when_hit_by_it() {
         .entities
         .get_mut(building)
         .unwrap()
-        .attack_target = Some(AttackTarget::new(source));
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(source)));
     assert_eq!(hit(&mut sim, &rules, building, source), 1);
     let entity = sim.substrate.entities.get(building).unwrap();
-    assert!(entity.attack_target.is_none());
+    assert!(entity.attack_target.target().is_none());
     assert_eq!(
         entity.suspended_attack_target,
         Some(TargetKind::Entity(source)),

@@ -179,7 +179,7 @@ fn drawing_fixture(
     use crate::rules::ini_parser::IniFile;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-    use crate::sim::combat::AttackTarget;
+    use crate::sim::combat::TargetKind;
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::movement::track_process::TrackFamily;
     use crate::util::native_x87::NativeF64Bits;
@@ -267,10 +267,12 @@ fn drawing_fixture(
     let mut turret = crate::sim::movement::FacingClass::new(0, 0);
     turret.snap(input["turret_facing"].as_u64().unwrap() as u16, frame);
     actor.barrel_facing = Some(turret);
-    actor.attack_target = input["target_present"]
-        .as_bool()
-        .unwrap()
-        .then(|| AttackTarget::new(2));
+    actor.attack_target.set_for_test(
+        input["target_present"]
+            .as_bool()
+            .unwrap()
+            .then(|| TargetKind::Entity(2)),
+    );
     let owner = actor.owner();
     let type_ref = actor.type_ref();
     let mut target = GameEntity::test_default(2, "MTNK", "Americans", 20, 20);
@@ -405,8 +407,11 @@ pub(super) fn workload_fixture(
         let mut target = sim.entities_mut().remove(2).unwrap();
         target.set_stable_id_for_test(20_001);
         sim.entities_mut().insert(target);
-        sim.entities_mut().get_mut(1).unwrap().attack_target =
-            Some(crate::sim::combat::AttackTarget::new(20_001));
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(20_001)));
     }
     (sim, rules, state, view, palette_bytes())
 }

@@ -340,7 +340,7 @@ fn gattling_attack_matches_the_original() {
             "{name} queue"
         );
         assert_eq!(
-            entity.attack_target.is_some(),
+            entity.attack_target.target().is_some(),
             row["target"].is_string(),
             "{name} target"
         );
@@ -444,7 +444,7 @@ fn a_retarget_after_the_visit_keeps_the_visits_shot() {
     );
     let entity = sim.substrate.entities.get(building).unwrap();
     assert_eq!(
-        entity.attack_target.as_ref().map(|attack| attack.target),
+        entity.attack_target.target(),
         Some(TargetKind::Entity(other))
     );
 }
@@ -839,7 +839,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
         let entity = scenario.sim().substrate.entities.get(cannon).unwrap();
         (
             entity.mission.current().known(),
-            entity.attack_target.is_some(),
+            entity.attack_target.target().is_some(),
             entity.gattling.stage(),
             entity.gattling.value(),
         )

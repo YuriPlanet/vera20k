@@ -466,7 +466,7 @@ pub(super) mod retail_tests {
                     impact = last_location;
                     break;
                 };
-                if entity.lifecycle.in_limbo {
+                if entity.lifecycle.in_limbo() {
                     continue;
                 }
                 launched.get_or_insert(frame);
@@ -761,7 +761,7 @@ pub(super) mod retail_tests {
                     .substrate
                     .entities
                     .get(missile)
-                    .is_some_and(|e| !e.lifecycle.in_limbo);
+                    .is_some_and(|e| !e.lifecycle.in_limbo());
                 if out && !flying.contains_key(&missile) && !landed.contains_key(&missile) {
                     launches.push((frame, slot, missile));
                     flying.insert(missile, None);
@@ -1162,7 +1162,7 @@ pub(super) mod retail_tests {
             last_location = Some(position_world_coord(&entity.position));
             let targeted = flak.iter().any(|&id| {
                 sim.substrate.entities.get(id).is_some_and(|flak| {
-                    flak.attack_target.as_ref().map(|attack| attack.target)
+                    flak.attack_target.target()
                         == Some(crate::sim::combat::TargetKind::Entity(missile))
                 })
             });
@@ -1179,13 +1179,16 @@ pub(super) mod retail_tests {
             if entity.health.current() == 0 && killed.is_none() {
                 killed = Some(frame);
                 death_anims = new_anims;
-                assert!(entity.crashing, "Crash keeps the dead rocket alive");
+                assert!(
+                    entity.crash.is_crashing(),
+                    "Crash keeps the dead rocket alive"
+                );
                 assert!(
                     flak.iter().all(|&id| sim
                         .substrate
                         .entities
                         .get(id)
-                        .is_none_or(|flak| flak.attack_target.is_none())),
+                        .is_none_or(|flak| flak.attack_target.target().is_none())),
                     "Crash's Detach_All drops the rocket from every Flak Track"
                 );
             }

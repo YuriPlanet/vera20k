@@ -42,7 +42,7 @@ impl WeaponBurst {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::combat::{AttackTarget, TargetKind};
+    use crate::sim::combat::TargetKind;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::mission::concrete_effects::represented_assign_target;
 
@@ -113,7 +113,7 @@ mod tests {
             };
             assert!(sim.apply_command("Americans", &command, Some(&rules)));
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            assert!(entity.attack_target.is_none(), "{command:?}");
+            assert!(entity.attack_target.target().is_none(), "{command:?}");
             assert!(!entity.passively_acquired_target, "{command:?}");
             assert_eq!(entity.weapon_burst.index(), 0, "{command:?}");
             // A later non-null assignment preserves the reset value, so FLH
@@ -207,7 +207,11 @@ mod tests {
                 // Rejected ownership cannot cancel a burst or passive provenance.
                 assert!(!sim.apply_command("Russians", &command, Some(&rules)));
                 let actor = sim.substrate.entities.get(id).unwrap();
-                assert_eq!(actor.attack_target.is_some(), had_target, "{command:?}");
+                assert_eq!(
+                    actor.attack_target.target().is_some(),
+                    had_target,
+                    "{command:?}"
+                );
                 assert!(actor.passively_acquired_target, "{command:?}");
                 assert_eq!(actor.weapon_burst.index(), 1, "{command:?}");
 
@@ -216,7 +220,7 @@ mod tests {
                     "{command:?}"
                 );
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
-                assert!(actor.attack_target.is_none(), "{command:?}");
+                assert!(actor.attack_target.target().is_none(), "{command:?}");
                 assert!(!actor.passively_acquired_target, "{command:?}");
                 assert_eq!(
                     actor.weapon_burst.index(),
@@ -264,7 +268,7 @@ mod tests {
                 "{row}"
             );
             assert_eq!(
-                entity.attack_target.as_ref().map(|target| target.target),
+                entity.attack_target.target(),
                 target(&row["target"]),
                 "{row}"
             );
@@ -274,7 +278,9 @@ mod tests {
     #[test]
     fn target_assignment_keeps_nonnull_burst_and_clears_changed_null() {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-        entity.attack_target = Some(AttackTarget::new(2));
+        entity
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
         entity.weapon_burst.complete_shot(5);
         crate::sim::mission::concrete_effects::represented_assign_target_admitted(
             &mut entity,

@@ -166,7 +166,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
     structure.set_category_for_test(EntityCategory::Structure);
     structure.set_type_ref_for_test(sim.interner.intern("YARD"));
     structure.lifecycle.cell_marked = true;
-    structure.dying = true; // Dying still owns its marked footprint.
+    structure.death.set_dying_for_test(true); // Dying still owns its marked footprint.
     sim.substrate.entities.insert(structure);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     assert!(!sim.path_grid().unwrap().is_walkable_for_infantry(6, 6));
@@ -244,14 +244,14 @@ fn assert_retained_roles(sim: &Simulation, parent_id: u64, upgrade_id: u64, held
             .cell_marked
     );
     let upgrade = sim.substrate.entities.get(upgrade_id).unwrap();
-    assert!(!upgrade.lifecycle.in_limbo && !upgrade.lifecycle.cell_marked);
+    assert!(!upgrade.lifecycle.in_limbo() && !upgrade.lifecycle.cell_marked);
     assert!(
         upgrade
             .structure_upgrade_link
             .is_some_and(|link| link.parent_stable_id == parent_id)
     );
     let held = sim.substrate.entities.get(held_id).unwrap();
-    assert!(held.lifecycle.in_limbo && !held.lifecycle.cell_marked);
+    assert!(held.lifecycle.in_limbo() && !held.lifecycle.cell_marked);
     assert_eq!(
         sim.production
             .factories
@@ -303,7 +303,7 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
         .values()
         .find(|entity| entity.structure_upgrade_link.is_some())
         .unwrap();
-    assert!(!upgrade.lifecycle.in_limbo && !upgrade.lifecycle.cell_marked);
+    assert!(!upgrade.lifecycle.in_limbo() && !upgrade.lifecycle.cell_marked);
     let upgrade_id = upgrade.stable_id();
     assert!(enqueue_by_type(
         &mut sim,
@@ -323,7 +323,7 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
         .entity_id
         .unwrap();
     let held = sim.substrate.entities.get(held_id).unwrap();
-    assert!(held.lifecycle.in_limbo && !held.lifecycle.cell_marked);
+    assert!(held.lifecycle.in_limbo() && !held.lifecycle.cell_marked);
     assert_eq!((held.position.rx, held.position.ry), (0, 0));
 
     assert!(sim.rebuild_dynamic_navigation(&rules));
@@ -368,7 +368,7 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
             .get(held_id)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
     assert_only_marked_foundation(&restored);
     assert_retained_roles(&restored, parent_id, upgrade_id, held_id);
@@ -380,7 +380,8 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
         .entities
         .get_mut(parent_id)
         .unwrap()
-        .dying = true;
+        .death
+        .set_dying_for_test(true);
     assert!(restored.rebuild_dynamic_navigation(&rules));
     assert_only_marked_foundation(&restored);
     restored.uninit_with_rules(parent_id, &rules);
@@ -476,7 +477,12 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
         assert_only_marked_foundation(&sim);
     }
     let placed = sim.path_grid_snapshot().unwrap();
-    sim.substrate.entities.get_mut(10).unwrap().dying = true;
+    sim.substrate
+        .entities
+        .get_mut(10)
+        .unwrap()
+        .death
+        .set_dying_for_test(true);
     assert!(sim.unmark_entity_remove(9, context));
     assert_only_marked_foundation(&sim);
     assert!(sim.unmark_entity_remove(10, context));

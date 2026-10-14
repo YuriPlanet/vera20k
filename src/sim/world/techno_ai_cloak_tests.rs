@@ -1,8 +1,8 @@
 use super::*;
 use crate::map::playfield::PlayfieldBounds;
 use crate::rules::ini_parser::IniFile;
+use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon::WeaponSlot;
-use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::{DelayedFire, PendingBuildingFire};
 use crate::sim::snapshot::GameSnapshot;
@@ -116,7 +116,12 @@ fn stock_cloak_producer_healthy_trace_uses_type_speed_and_no_rng() {
 #[test]
 fn stock_cloak_producer_current_fire_and_weapons_factory_contact_block_entry() {
     let (mut sim, rules, id) = spawned_sub();
-    sim.substrate.entities.get_mut(id).unwrap().attack_target = Some(AttackTarget::new(999));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(999)));
     tick_stock_cloak_producer(
         &mut sim,
         id,
@@ -136,7 +141,12 @@ fn stock_cloak_producer_current_fire_and_weapons_factory_contact_block_entry() {
         0
     );
 
-    sim.substrate.entities.get_mut(id).unwrap().attack_target = None;
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(None);
     let yard = sim
         .spawn_object_at_height("NAYARD", "Soviet", 30, 40, 0, 0, &rules)
         .unwrap();
@@ -212,7 +222,12 @@ fn fully_cloaked_sub_holding_a_target_does_not_surface() {
         .as_mut()
         .unwrap()
         .establish_unlimbo_fully_cloaked();
-    sim.substrate.entities.get_mut(id).unwrap().attack_target = Some(AttackTarget::new(999));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(999)));
     tick_stock_cloak_producer(
         &mut sim,
         id,
@@ -423,7 +438,9 @@ fn sensor_callback_reassigns_admitted_targeters_in_forward_techno_registration_o
         .unwrap();
     for id in [sensor_admitted, excluded, same_owner, later_sensor_admitted] {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        entity.attack_target = Some(AttackTarget::new(cloaker));
+        entity
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(cloaker)));
         entity.passively_acquired_target = true;
     }
     let american_owner = sim.substrate.entities.get(sensor_admitted).unwrap().owner();
@@ -513,14 +530,14 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         .unwrap();
     {
         let entity = sim.substrate.entities.get_mut(targeter).unwrap();
-        let attack = AttackTarget::new(cloaker);
+        let attack = TargetKind::Entity(cloaker);
         entity.rearm_timer = crate::sim::timer::CdTimer::started(0, 17);
         entity.weapon_burst.complete_shot(4);
         entity.pending_building_fire = Some(PendingBuildingFire {
             remaining_ticks: 7,
             fire: DelayedFire::Weapon(WeaponSlot::Secondary),
         });
-        entity.attack_target = Some(attack);
+        entity.attack_target.set_for_test(Some(attack));
         entity.passively_acquired_target = true;
     }
     // Arm even the dormant cloak-field bit, to prove the refusal comes from
@@ -550,8 +567,8 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         entity.passively_acquired_target,
         "the transaction never runs, so provenance is untouched"
     );
-    let attack = entity.attack_target.as_ref().unwrap();
-    assert_eq!(attack.target, TargetKind::Entity(cloaker));
+    let attack = entity.attack_target.target().unwrap();
+    assert_eq!(attack, TargetKind::Entity(cloaker));
     assert_eq!(
         entity.rearm_timer,
         crate::sim::timer::CdTimer::started(0, 17)
@@ -767,7 +784,8 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
             .entities
             .get_mut(targeter)
             .unwrap()
-            .attack_target = Some(AttackTarget::new(cloaker));
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(cloaker)));
     }
     let american = sim.substrate.entities.get(sensing).unwrap().owner();
     sim.fog.increment_sensor_at(american, cell.0, cell.1);
@@ -801,6 +819,7 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
             .get(sensing)
             .unwrap()
             .attack_target
+            .target()
             .is_some(),
         "a house that senses the cell keeps firing through the dive"
     );
@@ -810,6 +829,7 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
             .get(same_owner)
             .unwrap()
             .attack_target
+            .target()
             .is_some(),
         "same owner is exempt"
     );
@@ -819,6 +839,7 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
             .get(blind)
             .unwrap()
             .attack_target
+            .target()
             .is_none(),
         "everyone else loses the pointer at the instant of StartCloaking"
     );
@@ -944,7 +965,9 @@ fn a_sensing_house_keeps_both_target_and_destination_across_a_dive() {
         .unwrap();
     for chaser in [sensing, blind] {
         let entity = sim.substrate.entities.get_mut(chaser).unwrap();
-        entity.attack_target = Some(AttackTarget::new(cloaker));
+        entity
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(cloaker)));
         entity.navigation.nav_com = Some(NavTargetRef::object(cloaker));
         entity.navigation.nav_com_aux = Some(NavTargetRef::object(cloaker));
         entity.navigation.suspended_nav_com = Some(NavTargetRef::object(cloaker));
@@ -962,7 +985,7 @@ fn a_sensing_house_keeps_both_target_and_destination_across_a_dive() {
 
     let sensing_after = sim.substrate.entities.get(sensing).unwrap();
     assert!(
-        sensing_after.attack_target.is_some(),
+        sensing_after.attack_target.target().is_some(),
         "the sensing house keeps its Target (+0x2B4)"
     );
     assert_eq!(
@@ -982,7 +1005,7 @@ fn a_sensing_house_keeps_both_target_and_destination_across_a_dive() {
 
     let blind_after = sim.substrate.entities.get(blind).unwrap();
     assert!(
-        blind_after.attack_target.is_none(),
+        blind_after.attack_target.target().is_none(),
         "a blind house loses the Target"
     );
     assert_eq!(

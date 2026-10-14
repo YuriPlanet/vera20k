@@ -182,7 +182,7 @@ fn deploy(sim: &mut Simulation, rules: &RuleSet, source: u64, into: &str) -> u64
         .entities
         .values()
         .find(|entity| {
-            entity.lifecycle.object_alive && sim.interner.resolve(entity.type_ref()) == into
+            entity.lifecycle.object_alive() && sim.interner.resolve(entity.type_ref()) == into
         })
         .unwrap()
         .stable_id()
@@ -213,7 +213,7 @@ fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) ->
         .entities
         .values()
         .find(|entity| {
-            entity.lifecycle.object_alive && sim.interner.resolve(entity.type_ref()) == into
+            entity.lifecycle.object_alive() && sim.interner.resolve(entity.type_ref()) == into
         })
         .unwrap()
         .stable_id()

@@ -361,7 +361,7 @@ pub(crate) fn respond_to_base_attack(
         .houses
         .get(&victim_owner)
         .is_some_and(|house| house.is_human)
-        || attacker.lifecycle.in_limbo
+        || attacker.lifecycle.in_limbo()
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself
         // instead of calling for help.

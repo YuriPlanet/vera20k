@@ -151,7 +151,7 @@ impl HuntHost for WorldHunt<'_> {
     fn target(&mut self) -> bool {
         let entity = self.sim.substrate.entities.get(self.id).unwrap();
         crate::sim::combat::target_present(
-            entity.attack_target.as_ref(),
+            entity.attack_target.target(),
             &self.sim.substrate.entities,
         )
     }

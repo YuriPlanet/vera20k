@@ -139,8 +139,8 @@ pub(crate) fn tactical_entity_admission(
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<crate::render::draw_state::DrawDecision> {
     let requires_revealed_anchor = purpose == TacticalEntityPurpose::ScreenSelection;
-    if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive)
-        || entity.lifecycle.in_limbo
+    if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
+        || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         || (requires_revealed_anchor
             && !is_entity_visible_for_local_owner(
@@ -244,7 +244,7 @@ fn compose_tactical_screen_entity_encounter_order(
                 let admitted = if bulk_register_live_buildings
                     && entity.category() == EntityCategory::Structure
                 {
-                    entity.lifecycle.object_alive && !entity.lifecycle.in_limbo
+                    entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo()
                 } else {
                     tactical_entity_admission(
                         TacticalEntityPurpose::ScreenSelection,
@@ -526,8 +526,16 @@ mod tests {
             .insert(GameEntity::test_default(1, "E1", "Americans", 10, 10));
         sim.entities_mut()
             .insert(GameEntity::test_default(2, "E1", "Americans", 10, 10));
-        sim.entities_mut().get_mut(2).unwrap().lifecycle.in_limbo = true;
-        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.entities_mut()
+            .get_mut(2)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
         sim.reveal(2);
         sim.reveal(1);
         sim.set_logic_order_for_test(vec![1, 2]);
@@ -579,8 +587,8 @@ mod tests {
             5,
             false,
         );
-        building.lifecycle.object_alive = true;
-        building.lifecycle.in_limbo = true;
+        building.lifecycle.set_object_alive_for_test(true);
+        building.lifecycle.set_in_limbo_for_test(true);
         sim.entities_mut().insert(building);
         sim.reveal(7);
         assert_eq!(tactical_entity_encounter_order(&sim), [7]);
@@ -670,8 +678,12 @@ mod tests {
                 0,
                 false,
             );
-            building.lifecycle.object_alive = input["active"].as_bool().unwrap_or(true);
-            building.lifecycle.in_limbo = input["limbo"].as_bool().unwrap_or(false);
+            building
+                .lifecycle
+                .set_object_alive_for_test(input["active"].as_bool().unwrap_or(true));
+            building
+                .lifecycle
+                .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
             let coord = crate::sim::movement::ground_pose::position_world_coord(&building.position);
             assert_eq!(
                 serde_json::json!([coord.x, coord.y, coord.z]),
@@ -754,8 +766,12 @@ mod tests {
                 0,
                 true,
             );
-            entity.lifecycle.object_alive = input["alive"].as_bool().unwrap_or(true);
-            entity.lifecycle.in_limbo = input["limbo"].as_bool().unwrap_or(false);
+            entity
+                .lifecycle
+                .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
+            entity
+                .lifecycle
+                .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
             // Native fixture supplies its coordinate independently of class
             // construction; match it rather than testing Infantry's default slot.
             entity.position.sub_x = crate::util::fixed_math::SimFixed::from_num(
@@ -814,8 +830,8 @@ mod tests {
         let fog = FogState::default();
         let local_owner_id = crate::sim::intern::test_intern("Americans");
         let mut entity = GameEntity::test_default(1, "AMCV", "Americans", 10, 10);
-        entity.lifecycle.object_alive = true;
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_object_alive_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
 
         let admitted = |purpose, entity: &GameEntity, owner: &str, ignore_visibility: bool| {
             tactical_entity_admission(
@@ -839,18 +855,15 @@ mod tests {
             "Americans",
             false
         ));
-        entity.passenger_role = PassengerRole::Inside {
-            transport_id: 9,
-            open_topped: false,
-        };
+        entity.passenger_role = PassengerRole::inside_for_test(9, false);
         assert!(!admitted(
             TacticalEntityPurpose::Drawing,
             &entity,
             "Americans",
             false
         ));
-        entity.passenger_role = PassengerRole::None;
-        entity.lifecycle.in_limbo = true;
+        entity.passenger_role = PassengerRole::default();
+        entity.lifecycle.set_in_limbo_for_test(true);
         assert!(!admitted(
             TacticalEntityPurpose::Drawing,
             &entity,
@@ -858,7 +871,7 @@ mod tests {
             false
         ));
 
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         assert!(admitted(
             TacticalEntityPurpose::Drawing,
             &entity,
@@ -929,13 +942,17 @@ mod tests {
             5,
             false,
         );
-        hidden_mobile.lifecycle.in_limbo = false;
-        hidden_building.lifecycle.in_limbo = false;
+        hidden_mobile.lifecycle.set_in_limbo_for_test(false);
+        hidden_building.lifecycle.set_in_limbo_for_test(false);
         let mobile_anchor = interpolated_screen_position_entity(&hidden_mobile);
         let building_anchor = interpolated_screen_position_entity(&hidden_building);
         sim.entities_mut().insert(hidden_mobile);
         sim.entities_mut().insert(hidden_building);
-        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
         sim.reveal(1);
 
         let bounds = (
@@ -1030,7 +1047,7 @@ mod tests {
         let mut sim = Simulation::new();
         let mut aircraft = entity_with_locomotor("BEAG", LocomotorKind::Fly, 900, 40, 40);
         aircraft.set_category_for_test(EntityCategory::Aircraft);
-        aircraft.lifecycle.in_limbo = true;
+        aircraft.lifecycle.set_in_limbo_for_test(true);
         sim.entities_mut().insert(aircraft);
         sim.reveal(1);
         // A headless Reveal commits no exact Z; lift the aircraft back to 900

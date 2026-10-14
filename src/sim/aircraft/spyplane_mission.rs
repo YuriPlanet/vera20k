@@ -61,7 +61,7 @@ pub(super) fn approach(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return frames;
     };
-    let target = entity.attack_target.as_ref().map(|attack| attack.target);
+    let target = entity.attack_target.target();
     let distance = super::target_distance(sim, id, target);
     let range = weapon(sim, id, rules).map(|(range, _)| range);
     match target {
@@ -101,7 +101,7 @@ pub(super) fn overfly(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return OVERFLY_FRAMES;
     };
-    let target = entity.attack_target.as_ref().map(|attack| attack.target);
+    let target = entity.attack_target.target();
     let distance = super::target_distance(sim, id, target);
     if weapon(sim, id, rules).is_some_and(|(range, _)| distance <= range) {
         snapshot(sim, id, rules, false);

@@ -132,8 +132,10 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         // original Unlimbo observations; these histories do not relocate them.
         let coord = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
         assert_eq!([coord.x, coord.y, coord.z], xyz(&before["position"]));
-        actor.lifecycle.in_limbo = before["limbo"] != 0;
-        actor.lifecycle.object_alive = before["alive"] != 0;
+        actor.lifecycle.set_in_limbo_for_test(before["limbo"] != 0);
+        actor
+            .lifecycle
+            .set_object_alive_for_test(before["alive"] != 0);
         actor.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_raw(signed(&before["mission"])),
             suspended: MissionId::from_raw(signed(&before["suspended_mission"])),
@@ -148,7 +150,7 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
             ),
         });
         actor.set_archive_target(archive);
-        actor.attack_target = target.map(|target| AttackTarget { target });
+        actor.attack_target.set_for_test(target);
         actor.suspended_attack_target = suspended_target;
         actor.navigation.suspended_nav_com = suspended_nav;
         actor.navigation.nav_com = nav;

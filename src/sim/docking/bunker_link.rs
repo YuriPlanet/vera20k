@@ -709,8 +709,8 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::Installed(2));
         assert!(unit.in_logic_vector, "install leaves the unit active");
-        assert!(unit.lifecycle.object_alive);
-        assert!(!unit.lifecycle.in_limbo);
+        assert!(unit.lifecycle.object_alive());
+        assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked);
         assert!(!unit.selected);
         assert_eq!(
@@ -774,8 +774,8 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "unit revealed");
-        assert!(unit.lifecycle.object_alive);
-        assert!(!unit.lifecycle.in_limbo);
+        assert!(unit.lifecycle.object_alive());
+        assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked);
         assert_eq!((unit.position.rx, unit.position.ry), (12, 12));
         // The existing exit-search adapter supplies NavCom; Force moves later.
@@ -809,8 +809,8 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "unit remains active");
-        assert!(unit.lifecycle.object_alive);
-        assert!(!unit.lifecycle.in_limbo);
+        assert!(unit.lifecycle.object_alive());
+        assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked);
         assert_eq!((unit.position.rx, unit.position.ry), (12, 12));
         assert_eq!(unit.body_facing.destination(), 0);
@@ -844,8 +844,8 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "clear preserves live membership");
-        assert!(unit.lifecycle.object_alive);
-        assert!(!unit.lifecycle.in_limbo);
+        assert!(unit.lifecycle.object_alive());
+        assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked);
         assert_eq!(
             (unit.position.rx, unit.position.ry),

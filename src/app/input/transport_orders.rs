@@ -59,7 +59,7 @@ mod tests {
         if loaded {
             cargo.board(99, 1);
         }
-        e.passenger_role = PassengerRole::Transport { cargo };
+        e.passenger_role = PassengerRole::transport(cargo);
         e
     }
 

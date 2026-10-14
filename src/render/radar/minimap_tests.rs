@@ -699,7 +699,7 @@ fn radar_gate_fixture(
 ) {
     let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", owner, 0, 0);
     entity.in_playfield = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     let mut entities = crate::sim::entity_store::EntityStore::new();
     entities.insert(entity);
     let interner = crate::sim::intern::test_interner();

@@ -418,7 +418,7 @@ pub(crate) fn band_rect_contains_drawn_object(
         let Some(entity) = entities.get(*id) else {
             return false;
         };
-        if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+        if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
             return false;
         }
         let (sx, sy) =
@@ -455,7 +455,7 @@ pub(crate) fn pick_admits_object(
     fog: Option<&FogState>,
     player: Option<InternedId>,
 ) -> bool {
-    if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+    if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
         return false;
     }
     let (Some(fog), Some(player)) = (fog, player) else {
@@ -771,7 +771,7 @@ fn type_select_candidates(
             let entity = entities.get(*id)?;
             let owner = interner.map_or("", |i| i.resolve(entity.owner()));
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
-            if !entity.lifecycle.object_alive
+            if !entity.lifecycle.object_alive()
                 || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
                 || !seeds.contains(&entity.type_ref())
                 || (screen_only
@@ -947,7 +947,8 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
         };
         let (sx, sy) =
             crate::app::presentation::instances::interpolated_screen_position_entity(entity);
-        if !entity.lifecycle.object_alive || sx < min_x || sx > max_x || sy < min_y || sy > max_y {
+        if !entity.lifecycle.object_alive() || sx < min_x || sx > max_x || sy < min_y || sy > max_y
+        {
             continue;
         }
         if !represented_types.contains(&entity.type_ref()) {
@@ -992,8 +993,8 @@ fn exact_type_group(
             let entity = entities.get(*id)?;
             let owner = interner.map_or("", |i| i.resolve(entity.owner()));
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
-            if !entity.lifecycle.object_alive
-                || entity.lifecycle.in_limbo
+            if !entity.lifecycle.object_alive()
+                || entity.lifecycle.in_limbo()
                 || entity.type_ref() != type_ref
                 || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
                 || (selecting
@@ -1110,7 +1111,7 @@ pub(crate) fn selection_dynamic_prefix(
     if entity.bunker_link.installed_in().is_some() {
         return false;
     }
-    if entity.dock_entered_with.is_some()
+    if entity.tether.partner().is_some()
         && building_covers_cell(
             entities,
             rules,
@@ -1133,7 +1134,7 @@ pub(crate) fn is_local_player_selectable_object(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> bool {
     entity.health.current() > 0
-        && !entity.lifecycle.in_limbo
+        && !entity.lifecycle.in_limbo()
         && entity.in_playfield
         && entity.category() != EntityCategory::Structure
         && entity.discovery.discovered_by_current_house
@@ -1165,8 +1166,8 @@ fn building_covers_cell(
 ) -> bool {
     entities.values().any(|candidate| {
         if candidate.category() != EntityCategory::Structure
-            || candidate.lifecycle.in_limbo
-            || !candidate.lifecycle.object_alive
+            || candidate.lifecycle.in_limbo()
+            || !candidate.lifecycle.object_alive()
         {
             return false;
         }
@@ -1272,8 +1273,8 @@ pub(crate) fn pick_entity_at_point(
     // found nothing. Preserve encounter order when a malformed overlap exists.
     entities.values().find_map(|entity| {
         if entity.category() != EntityCategory::Structure
-            || !entity.lifecycle.object_alive
-            || entity.lifecycle.in_limbo
+            || !entity.lifecycle.object_alive()
+            || entity.lifecycle.in_limbo()
         {
             return None;
         }
@@ -1306,10 +1307,10 @@ fn static_selection_gate(
     rules: Option<&RuleSet>,
     require_playfield_membership: bool,
 ) -> bool {
-    entity.lifecycle.object_alive
+    entity.lifecycle.object_alive()
         // `0x006F32D3`: no Health — a crashing aircraft falls alive at 0.
         && entity.health.current() > 0
-        && !entity.lifecycle.in_limbo
+        && !entity.lifecycle.in_limbo()
         && !entity.is_warped_out()
         // The mouse/type caller's aggregate admission includes +0x3D5.
         // This helper is not the complete virtual+64; see its owner above.
@@ -1362,8 +1363,8 @@ mod tests {
             5,
             false,
         );
-        building.lifecycle.object_alive = alive;
-        building.lifecycle.in_limbo = in_limbo;
+        building.lifecycle.set_object_alive_for_test(alive);
+        building.lifecycle.set_in_limbo_for_test(in_limbo);
         entities.insert(building);
         (entities, interner)
     }
@@ -1443,8 +1444,8 @@ mod tests {
             5,
             category == EntityCategory::Aircraft,
         );
-        entity.lifecycle.object_alive = true;
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_object_alive_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.selected = selected;
         entity
     }
@@ -1495,7 +1496,11 @@ mod tests {
         );
         sim.fog.increment_sensor_at(player, 10, 10);
         assert_eq!(hover(&sim, 1, false), Some(1));
-        sim.entities_mut().get_mut(1).unwrap().lifecycle.in_limbo = true;
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
         assert_eq!(hover(&sim, 1, true), None);
     }
 
@@ -2074,7 +2079,7 @@ mod tests {
         let tank = sim.entities().get(1).unwrap();
         assert_eq!(tank.bunker_link.installed_in(), Some(2));
         assert_eq!(
-            tank.attack_target.as_ref().map(|attack| attack.target),
+            tank.attack_target.target(),
             Some(crate::sim::combat::TargetKind::Entity(3))
         );
         assert_eq!(sim.entities().get(2).unwrap().bunker_occupant, Some(1));
@@ -2461,8 +2466,8 @@ mod tests {
     #[test]
     fn techno_playfield_stored_membership_gates_local_mobile_selection() {
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        entity.lifecycle.object_alive = true;
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_object_alive_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.in_playfield = false;
         assert!(!static_selection_gate(&entity, "MTNK", None, true));
         entity.in_playfield = true;
@@ -2480,12 +2485,12 @@ mod tests {
     #[test]
     fn an_object_without_health_is_not_selectable() {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 5, 5);
-        entity.lifecycle.object_alive = true;
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_object_alive_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.in_playfield = true;
         assert!(static_selection_gate(&entity, "ORCA", None, true));
         entity.health.set_for_test(0);
-        entity.crashing = true;
+        entity.crash.set_crashing_for_test(true);
         assert!(!static_selection_gate(&entity, "ORCA", None, true));
     }
 }

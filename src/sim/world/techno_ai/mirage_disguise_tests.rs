@@ -253,8 +253,10 @@ fn whole_unit_fixture(
         entity.position.sub_x = SimFixed::from_num(x % 256);
         entity.position.sub_y = SimFixed::from_num(y % 256);
         entity.position.exact_z_leptons = Some(z);
-        entity.lifecycle.in_limbo = before["limbo"] != 0;
-        entity.lifecycle.object_alive = before["alive"] != 0;
+        entity.lifecycle.set_in_limbo_for_test(before["limbo"] != 0);
+        entity
+            .lifecycle
+            .set_object_alive_for_test(before["alive"] != 0);
         entity.lifecycle.cell_marked = before["limbo"] == 0;
         entity.in_playfield = before["limbo"] == 0;
         entity.locomotor = Some(LocomotorState::from_object_type(object, frame));
@@ -343,12 +345,12 @@ fn whole_unit_fixture(
         let id = pointers[roles[role].as_str().unwrap()];
         let entity = fixture.sim.substrate.entities.get(id).unwrap();
         assert_eq!(
-            entity.lifecycle.object_alive,
+            entity.lifecycle.object_alive(),
             before["alive"] != 0,
             "{role}: alive"
         );
         assert_eq!(
-            entity.lifecycle.in_limbo,
+            entity.lifecycle.in_limbo(),
             before["limbo"] != 0,
             "{role}: Limbo"
         );
@@ -404,12 +406,12 @@ fn assert_whole_unit_state(
         "{name}: HP"
     );
     assert_eq!(
-        actor.lifecycle.object_alive,
+        actor.lifecycle.object_alive(),
         row[boundary]["alive"] != 0,
         "{name}: alive"
     );
     assert_eq!(
-        actor.lifecycle.in_limbo,
+        actor.lifecycle.in_limbo(),
         row[boundary]["limbo"] != 0,
         "{name}: Limbo"
     );

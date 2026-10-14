@@ -36,7 +36,7 @@ fn actual_object_ai_recovers_each_category_on_binary_frame_mask() {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "ESTIMATE", "Americans", 2, 2);
         entity.set_category_for_test(category);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.health.set_for_test(100);
         entity.estimated_health = EstimatedHealth::from_raw(-100);
         sim.substrate.entities.insert(entity);
@@ -103,7 +103,7 @@ fn active_tube_bypasses_recovery_until_ordinary_ai_resumes() {
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "ESTIMATE", "Americans", 2, 2);
         entity.set_category_for_test(category);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.estimated_health = EstimatedHealth::from_raw(-100);
         entity.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
             tube_id: TubeId(0),
@@ -153,7 +153,7 @@ fn save_restore_preserves_negative_reservations_and_ai_continuation() {
     let id = sim.allocate_stable_id();
     let mut entity = GameEntity::test_default(id, "E1", "Americans", 5, 5);
     entity.set_category_for_test(EntityCategory::Infantry);
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.estimated_health = EstimatedHealth::from_raw(-123);
     sim.substrate.entities.insert(entity);
     sim.set_logic_order_for_test(vec![id]);
@@ -203,7 +203,7 @@ fn common_ai_recovers_before_self_heal_without_mirroring_actual_health() {
     let mut sim = Simulation::new();
     let mut entity = GameEntity::test_default(1, "E1", "Americans", 5, 5);
     entity.set_category_for_test(EntityCategory::Infantry);
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.health.set_for_test(10);
     entity.estimated_health = EstimatedHealth::from_raw(10);
     sim.interner = crate::sim::intern::test_interner();

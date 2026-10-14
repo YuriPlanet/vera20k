@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, TrackProgress};
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
@@ -68,10 +68,10 @@ fn fixture_with_first(first_type: &str) -> (Simulation, RuleSet, u64, u64) {
                 dispatch_timer: MissionDispatchTimer::from_raw(10, 1000),
             });
         entity.rearm_timer = crate::sim::timer::CdTimer::started(10, 0);
-        entity.attack_target = Some(AttackTarget::for_cell(
+        entity.attack_target.set_for_test(Some(TargetKind::Cell(
             entity.position.rx,
             entity.position.ry - 3,
-        ));
+        )));
     }
     (sim, rules, first, second)
 }
@@ -158,12 +158,18 @@ fn paid_move_fires_before_later_unit_and_new_bullet_slots() {
 fn earlier_unit_fire_reads_later_targets_pose_before_its_movement() {
     let (mut sim, rules, first, second) = fixture();
     install_paid_track(&mut sim, second);
-    sim.substrate.entities.get_mut(first).unwrap().attack_target = Some(AttackTarget::new(second));
+    sim.substrate
+        .entities
+        .get_mut(first)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(second)));
     sim.substrate
         .entities
         .get_mut(second)
         .unwrap()
-        .attack_target = None;
+        .attack_target
+        .set_for_test(None);
     let before = position(&sim, second);
     sim.advance_live_object_pass(
         Some(&rules),
@@ -186,7 +192,7 @@ fn attack_move_acquires_before_its_foot_fire_slot() {
     for first_type in ["TANK", "INF"] {
         let (mut sim, rules, first, _) = fixture_with_first(first_type);
         let actor = sim.substrate.entities.get_mut(first).unwrap();
-        actor.attack_target = None;
+        actor.attack_target.set_for_test(None);
         // The event's state: Move committed with the order stored, and a
         // targeting timer that has run out. The targeting slot of
         // TechnoClass::AI (`0x006FA681..0x006FA695`) runs the attack-mover's
@@ -223,7 +229,8 @@ fn global_combat_tail_cannot_fire_a_ready_foot_a_second_time() {
             .entities
             .get_mut(second)
             .unwrap()
-            .attack_target = None;
+            .attack_target
+            .set_for_test(None);
         sim.advance_live_object_turn(first, Some(&rules), techno_ai::ObjectAiCtx::default())
             .unwrap();
         assert_eq!(sim.fire_events.len(), 1);

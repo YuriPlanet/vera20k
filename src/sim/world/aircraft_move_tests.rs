@@ -57,8 +57,8 @@ fn insert(sim: &mut Simulation, id: u64, name: &str, category: EntityCategory, p
     entity.position.sub_x = SimFixed::from_num(point[0] % 256);
     entity.position.sub_y = SimFixed::from_num(point[1] % 256);
     entity.position.exact_z_leptons = Some(point[2]);
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(entity);
     sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
 }
@@ -581,7 +581,7 @@ fn retail_aircraft_types_are_not_carryalls() {
 /// Target.
 #[test]
 fn mission_move_idle_mode_on_the_ground_and_in_flight() {
-    use crate::sim::combat::AttackTarget;
+    use crate::sim::combat::TargetKind;
     for (z, landed) in [(0, true), (1500, false)] {
         let (mut sim, rules) = fixture(&json!({}));
         set_current(&mut sim, MissionType::Move);
@@ -596,7 +596,9 @@ fn mission_move_idle_mode_on_the_ground_and_in_flight() {
         plane
             .mission
             .set_current_for_test(MissionId::from_known(MissionType::Move), 0);
-        plane.attack_target = Some(AttackTarget::for_cell(70, 70));
+        plane
+            .attack_target
+            .set_for_test(Some(TargetKind::Cell(70, 70)));
         let airfield = sim.aircraft_nearest_friendly_airfield_cell(OWNER, &rules);
 
         crate::sim::aircraft::dispatch_mission(&mut sim, OWNER, &rules, Default::default());
@@ -613,7 +615,11 @@ fn mission_move_idle_mode_on_the_ground_and_in_flight() {
         );
         assert_eq!(plane.mission.queued(), MissionId::NONE, "z {z}");
         assert_eq!(plane.mission.handler_state(), 0, "z {z}");
-        assert_eq!(plane.attack_target.is_none(), landed, "z {z}: the Target");
+        assert_eq!(
+            plane.attack_target.target().is_none(),
+            landed,
+            "z {z}: the Target"
+        );
         assert_eq!(
             plane.navigation.nav_com,
             (!landed).then_some(airfield),

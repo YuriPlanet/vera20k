@@ -316,7 +316,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         5,
         false,
     );
-    building.lifecycle.in_limbo = false;
+    building.lifecycle.set_in_limbo_for_test(false);
     building.in_playfield = true;
     building.estimated_health = EstimatedHealth::from_raw(int("estimate", health.into()));
     building.repairing = flag("repairing", false);

@@ -20,9 +20,9 @@ pub(crate) fn issue_order(
     effects: FrameEffects<'_>,
 ) -> bool {
     if !sim.substrate.entities.get(id).is_some_and(|e| {
-        e.lifecycle.object_alive
-            && !e.lifecycle.in_limbo
-            && e.dock_entered_with.is_none()
+        e.lifecycle.object_alive()
+            && !e.lifecycle.in_limbo()
+            && e.tether.partner().is_none()
             && (crate::sim::mcv_deploy::is_mcv(sim, e, rules)
                 || crate::sim::unit_simple_deploy::is_simple_deployer(sim, e, rules))
     }) {

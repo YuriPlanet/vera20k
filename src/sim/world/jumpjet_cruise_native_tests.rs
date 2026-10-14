@@ -21,7 +21,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::retail_ini_fixture::retail_battle_rules_for_map;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::TerrainRules;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
@@ -256,7 +256,7 @@ fn supplied_world(
         .expect("stock SHAD constructor");
     {
         let actor = sim.substrate.entities.get_mut(id).unwrap();
-        actor.lifecycle.in_limbo = false;
+        actor.lifecycle.set_in_limbo_for_test(false);
         actor.health.set_for_test(signed(&state["health"]));
         actor.on_bridge = state["on_bridge"].as_bool().unwrap();
         // make_fixture supplies zeroed Unit storage, retaining Foot+6B6=0.
@@ -345,7 +345,7 @@ fn supplied_world(
             .expect("foreign supplied SHAD identity");
         {
             let foreign = sim.substrate.entities.get_mut(other).unwrap();
-            foreign.lifecycle.in_limbo = false;
+            foreign.lifecycle.set_in_limbo_for_test(false);
             foreign
                 .health
                 .set_for_test(signed(&state["other"]["health"]));
@@ -426,7 +426,7 @@ fn assert_motion_boundary(sim: &Simulation, id: u64, control: &Value, boundary: 
         "{label}: marked"
     );
     assert_eq!(
-        actor.lifecycle.object_alive,
+        actor.lifecycle.object_alive(),
         signed(&state["alive"]) != 0,
         "{label}: alive"
     );
@@ -599,7 +599,7 @@ fn assert_world_boundary(
             "{label}: foreign marked"
         );
         assert_eq!(
-            entity.lifecycle.object_alive,
+            entity.lifecycle.object_alive(),
             signed(&native["alive"]) != 0,
             "{label}: foreign alive"
         );
@@ -615,8 +615,8 @@ fn assert_world_boundary(
         .get(actor)
         .unwrap()
         .attack_target
-        .as_ref()
-        .map_or(Value::Null, |target| match target.target {
+        .target()
+        .map_or(Value::Null, |target| match target {
             TargetKind::Entity(id) => json!(owner_name(id, actor, foreign)),
             unknown => panic!("{label}: unexpected target {unknown:?}"),
         });
@@ -760,13 +760,13 @@ fn execute_step(
                 let at = cell(&inputs["nav_cell"]);
                 NavTargetRef::cell(at.0, at.1)
             });
-            entity.attack_target = match inputs["tarcom_owner"].as_str() {
-                None => None,
-                Some("foreign") => Some(AttackTarget {
-                    target: TargetKind::Entity(foreign.unwrap()),
-                }),
-                unknown => panic!("undeclared target input {unknown:?}"),
-            };
+            entity
+                .attack_target
+                .set_for_test(match inputs["tarcom_owner"].as_str() {
+                    None => None,
+                    Some("foreign") => Some(TargetKind::Entity(foreign.unwrap())),
+                    unknown => panic!("undeclared target input {unknown:?}"),
+                });
             let runtime = entity
                 .locomotor
                 .as_mut()

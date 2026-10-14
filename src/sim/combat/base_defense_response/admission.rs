@@ -50,7 +50,7 @@ pub(super) fn current_target_disposition(
     rules: &RuleSet,
     interner: &StringInterner,
 ) -> ExistingTargetDisposition {
-    match candidate.attack_target.as_ref().map(|target| target.target) {
+    match candidate.attack_target.target() {
         Some(TargetKind::Entity(id)) if id == attacker_id => {
             ExistingTargetDisposition::RequestedAttacker
         }

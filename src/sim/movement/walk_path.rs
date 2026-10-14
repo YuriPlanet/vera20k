@@ -247,7 +247,7 @@ impl Simulation {
                 current.y.wrapping_sub(destination.y),
                 current.z.wrapping_sub(destination.z),
             ) < rules.general.close_enough;
-            if close && actor.dock_entered_with.is_none() {
+            if close && actor.tether.partner().is_none() {
                 self.assign_null_destination(id, Some(rules), None, frame_effects);
             } else if actor.navigation.path_runtime.retries_left != 0 {
                 //The test is before the decrement: 1->0 does not run the
@@ -312,8 +312,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|e| e.attack_target.as_ref())
-            .map(|a| a.target);
+            .and_then(|e| e.attack_target.target());
         if let Some(target) = target {
             let target = match target {
                 crate::sim::combat::TargetKind::Entity(id) => {
@@ -336,7 +335,7 @@ impl Simulation {
                 .get(id)
                 .ok_or("retired exhausted Walk actor")?;
             if actor.in_playfield
-                && actor.attack_target.is_some()
+                && actor.attack_target.target().is_some()
                 && !self.foot_can_reach_navigation_cell(id, coordinate, rules)?
             {
                 self.assign_target_represented(id, None, Some(rules), None, frame_effects)

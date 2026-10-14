@@ -150,7 +150,7 @@ impl Simulation {
             return;
         }
         let entity = self.substrate.entities.get(id).unwrap();
-        if !entity.lifecycle.in_limbo {
+        if !entity.lifecycle.in_limbo() {
             self.adjust_foot_neighbors(entity.navigation.neighbor_state.cell, false);
         }
     }
@@ -265,7 +265,7 @@ mod tests {
             entity.set_category_for_test(EntityCategory::Aircraft);
             entity.set_type_ref_for_test(sim.intern("ORCA"));
             entity.set_owner_for_test(sim.intern("Americans"));
-            entity.lifecycle.in_limbo = false;
+            entity.lifecycle.set_in_limbo_for_test(false);
             entity.lifecycle.cell_marked = input["marked"].as_bool().unwrap_or(true);
             entity.position.exact_z_leptons = Some(input["z"].as_i64().unwrap_or(0) as i32);
             entity.navigation.neighbor_state.cell = (

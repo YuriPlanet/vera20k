@@ -578,7 +578,7 @@ impl Simulation {
                 .entities
                 .iter_sorted()
                 .filter_map(|(id, entity)| {
-                    if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+                    if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
                         return None;
                     }
                     let own = entity.owner() == owner;
@@ -827,8 +827,8 @@ impl Simulation {
         let height_grid = self.sight_height_grid(&config);
         for (id, entity) in self.substrate.entities.iter_sorted() {
             if entity.category() != EntityCategory::Structure
-                || !entity.lifecycle.object_alive
-                || entity.lifecycle.in_limbo
+                || !entity.lifecycle.object_alive()
+                || entity.lifecycle.in_limbo()
                 || self.house_is_human_player(entity.owner())
                 || !self
                     .object_type(entity.type_ref(), rules)
@@ -860,8 +860,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        if entity.dying
-            || entity.lifecycle.in_limbo
+        if entity.death.is_dying()
+            || entity.lifecycle.in_limbo()
             || !matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft

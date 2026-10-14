@@ -9,7 +9,7 @@
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::{MissionId, MissionType};
@@ -207,8 +207,12 @@ fn mission_attacks_c4_arm_sends_a_demolition_man_to_sabotage() {
         let (mut sim, _) = arena(&rules);
         let target = spawn(&mut sim, &rules, building, enemy, 16, 10);
         let actor = spawn(&mut sim, &rules, kind, owner, 10, 10);
-        sim.substrate.entities.get_mut(actor).unwrap().attack_target =
-            Some(AttackTarget::new(target));
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(target)));
         let now = sim.session.binary_frame;
         sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
@@ -248,7 +252,7 @@ fn a_hunting_demolition_man_whose_scan_finds_a_building_sabotages_it() {
     let entity = sim.substrate.entities.get(actor).unwrap();
     assert!(
         matches!(
-            entity.attack_target.as_ref().map(|attack| attack.target),
+            entity.attack_target.target(),
             Some(crate::sim::combat::TargetKind::Entity(id)) if id == target
         ),
         "the scan holds the building"
@@ -335,9 +339,10 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         let frame = sim.session.binary_frame;
         step(&mut sim, &rules, &grid);
         let planter = sim.substrate.entities.get(tanya).unwrap();
-        let on_building = planter.attack_target.as_ref().is_some_and(|attack| {
-            attack.target == crate::sim::combat::TargetKind::Entity(building)
-        });
+        let on_building = planter
+            .attack_target
+            .target()
+            .is_some_and(|attack| attack == crate::sim::combat::TargetKind::Entity(building));
         overridden |= planter.mission.current() == attack && on_building;
         sent_back |= overridden
             && planter.mission.current() == SABOTAGE
@@ -346,7 +351,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
             .substrate
             .entities
             .get(building)
-            .is_none_or(|building| building.dying);
+            .is_none_or(|building| building.death.is_dying());
         if gone {
             assert_eq!(frame, planted + 26);
             break;
@@ -358,7 +363,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         sim.substrate
             .entities
             .get(tanya)
-            .is_some_and(|tanya| !tanya.dying)
+            .is_some_and(|tanya| !tanya.death.is_dying())
     );
 }
 

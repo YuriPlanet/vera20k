@@ -602,7 +602,7 @@ fn is_within_build_area(
     }
     for e in sim.substrate.entities.values() {
         // A dying structure provides no build-area adjacency during its window.
-        if e.dying || e.lifecycle.in_limbo {
+        if e.death.is_dying() || e.lifecycle.in_limbo() {
             continue;
         }
         if e.category() != EntityCategory::Structure {

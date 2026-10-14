@@ -68,9 +68,20 @@ The in-engine diagnostic overlay is separately opt-in with `dev-ui`:
 python -m tools.cargo_run -- build --locked --release --features dev-ui --bin vera20k
 ```
 
-The release workflow builds `vera20k` with default features. egui, egui-wgpu,
-egui-winit, eframe and rfd belong only to the optional UI builds. Their packages
-remain in `Cargo.lock` so those builds stay reproducible.
+egui, egui-wgpu, egui-winit, eframe and rfd belong only to the optional UI
+builds. Their packages remain in `Cargo.lock` so those builds stay reproducible.
+
+The default `dev-overlays` feature carries the Ctrl+Shift dev chord, including
+the renderer-native diagnostic overlays (cell grid, heightmap, pathgrid, unit
+inspector, fog), the debug pause and quicksave/quickload. Development builds,
+captures and tests keep it; captures send literal Ctrl+Shift+M/N for
+quicksave/quickload. `dev-ui` implies it. The release workflow builds `vera20k`
+with `--no-default-features`, so shipped binaries carry no dev chord; build that
+configuration locally with:
+
+```sh
+python -m tools.cargo_run -- build --locked --release --no-default-features --bin vera20k
+```
 
 ## Cargo ownership and labeled builds
 

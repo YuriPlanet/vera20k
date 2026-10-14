@@ -413,7 +413,7 @@ impl Simulation {
         }
         let flight_level =
             air_movement::type_flight_level(entity, rules.map(|rules| (rules, &self.interner)));
-        let armed_flight_level = (entity.attack_target.is_some()
+        let armed_flight_level = (entity.attack_target.target().is_some()
             && entity
                 .aircraft_ammo
                 .as_ref()

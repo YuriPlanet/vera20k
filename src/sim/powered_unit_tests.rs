@@ -241,7 +241,7 @@ fn destroy(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         sim.substrate
             .entities
             .get(id)
-            .is_none_or(|entity| entity.dying)
+            .is_none_or(|entity| entity.death.is_dying())
     );
 }
 

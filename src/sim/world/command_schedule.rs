@@ -226,7 +226,7 @@ impl Simulation {
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, applied, rules);
         let synchronous_deploy = applied
             && matches!(cmd.payload, Command::DeployMcv { entity_id }
-            if self.substrate.entities.get(entity_id).is_none_or(|e| e.dying));
+            if self.substrate.entities.get(entity_id).is_none_or(|e| e.death.is_dying()));
         let spawned_entity = synchronous_deploy
             || placed_building_owner.is_some()
             || applied && matches!(cmd.payload, Command::PlaceProducedMobile { .. })

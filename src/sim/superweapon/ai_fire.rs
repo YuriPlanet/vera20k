@@ -268,7 +268,7 @@ fn rally_entry(
         let standing = sim.entity_display_layer(id, Some(rules))
             == Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
             && entity.is_object_alive()
-            && !entity.lifecycle.in_limbo;
+            && !entity.lifecycle.in_limbo();
         let candidate = standing
             || (house.difficulty == HouseDifficulty::Hard
                 && sim.production.factories.is_building(id));
@@ -567,7 +567,7 @@ fn densest_spread_cell<'a>(
     let mut best = 0usize;
     let mut best_cell = NO_CELL;
     for centre in centres {
-        if centre.lifecycle.in_limbo {
+        if centre.lifecycle.in_limbo() {
             continue;
         }
         let layer = list(centre);

@@ -1,4 +1,5 @@
-//! Infantry terminal lifetime, separate from sprite animation progress.
+//! An object's terminal lifetime ([`TerminalLifetime`]): the dying mark and
+//! the Infantry terminal policy, separate from sprite animation progress.
 //!
 //! VERA-internal compatibility policy, gamemd equivalent UNCHECKED. Preserve
 //! the existing effect recipe and delivery order while correcting indefinite
@@ -32,6 +33,81 @@ impl InfantryDeathSequence {
             Self::Die1 => SequenceKind::Die1,
             Self::Die2 => SequenceKind::Die2,
         }
+    }
+}
+
+/// An object past its killing hit, or its UnInit, that is still in the
+/// store. VERA-only: native has no such field. Natively the object is at
+/// Health 0 running its death sequence (Infantry `Do_Action(11/12)` from
+/// `InfantryClass::ReceiveDamage` `0x0051850F`/`0x005185DF`/`0x0051863F`, or
+/// a Building's or Unit's death anim), or IsAlive (`+0x90`) is cleared by
+/// `ObjectClass::UnInit @ 0x005F65F0` until the pending delete drains it.
+///
+/// Writers: the death recipes (`begin` from the receiver's non-Infantry SHP
+/// death and from UnInit, `begin_infantry` from the Infantry death arm),
+/// PostMortem's restore (`restore`, `0x00701F60`) and a Crash that keeps a
+/// dying infantryman (`keep_crashing`, `0x005185F1`). Dying objects are
+/// excluded from targeting, pathfinding and selection, and stay cell-marked
+/// until their terminal UnInit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TerminalLifetime {
+    dying: bool,
+    /// The Infantry policy for the remaining Logic visits.
+    infantry: Option<InfantryTerminal>,
+}
+
+impl TerminalLifetime {
+    /// The object is dying or dead.
+    pub(crate) const fn is_dying(self) -> bool {
+        self.dying
+    }
+
+    /// The Infantry terminal policy, while one is retained.
+    pub(crate) const fn infantry_terminal(self) -> Option<InfantryTerminal> {
+        self.infantry
+    }
+
+    /// Mark the object dying: a non-Infantry SHP death sequence, or UnInit.
+    pub(crate) fn begin(&mut self) {
+        self.dying = true;
+    }
+
+    /// Mark an infantryman dying, with the policy for its remaining visits
+    /// when it has one.
+    pub(crate) fn begin_infantry(&mut self, terminal: Option<InfantryTerminal>) {
+        self.dying = true;
+        if terminal.is_some() {
+            self.infantry = terminal;
+        }
+    }
+
+    /// PostMortem's restore (`0x00701F60`): alive again at Health 1.
+    pub(crate) fn restore(&mut self) {
+        self.dying = false;
+    }
+
+    /// A Crash kept the dying infantryman (`0x005185F1`): alive at Health 0,
+    /// falling, with no terminal policy.
+    pub(crate) fn keep_crashing(&mut self) {
+        self.dying = false;
+        self.infantry = None;
+    }
+
+    /// UnInit consumes the Infantry policy before its pointer expiry.
+    pub(crate) fn end_infantry_policy(&mut self) {
+        self.infantry = None;
+    }
+
+    /// Install a fixture's dying mark.
+    #[cfg(test)]
+    pub(crate) fn set_dying_for_test(&mut self, dying: bool) {
+        self.dying = dying;
+    }
+
+    /// Install a fixture's Infantry policy.
+    #[cfg(test)]
+    pub(crate) fn set_infantry_terminal_for_test(&mut self, terminal: Option<InfantryTerminal>) {
+        self.infantry = terminal;
     }
 }
 
@@ -133,8 +209,7 @@ impl InfantryDeathPostlude {
                 && world.foot_crash(self.id, None, rules, context.registry(), context.effects())
             {
                 let entity = world.substrate.entities.get_mut(self.id).unwrap();
-                entity.dying = false;
-                entity.infantry_terminal = None;
+                entity.death.keep_crashing();
                 return;
             }
         }
@@ -483,8 +558,9 @@ impl Simulation {
             ReceiverDeathRecipe::Sequence | ReceiverDeathRecipe::CrashExplode
         ) {
             let entity = self.substrate.entities.get_mut(id).unwrap();
-            entity.dying = true;
-            entity.infantry_terminal = Some(InfantryTerminal::AwaitingConsequences);
+            entity
+                .death
+                .begin_infantry(Some(InfantryTerminal::AwaitingConsequences));
         }
         InfantryDeathPostlude {
             id,
@@ -507,14 +583,14 @@ impl Simulation {
             return false;
         }
         entity.health.set_for_test(0);
-        entity.dying = true;
         // Legacy raw coordinate scans can revisit an UnInit'd object before
         // pending deletion drains it. Preserve their HP write, but never give
         // a completed lifetime another scheduled terminal action.
-        if !entity.lifecycle.object_alive {
-            return true;
-        }
-        entity.infantry_terminal = Some(InfantryTerminal::RetireNextVisit);
+        let terminal = entity
+            .lifecycle
+            .object_alive()
+            .then_some(InfantryTerminal::RetireNextVisit);
+        entity.death.begin_infantry(terminal);
         true
     }
 
@@ -541,10 +617,11 @@ impl Simulation {
             return;
         };
         debug_assert_eq!(entity.category(), EntityCategory::Infantry);
-        entity.dying = true;
-        if entity.lifecycle.object_alive {
-            entity.infantry_terminal = Some(InfantryTerminal::Sequence(sequence));
-        }
+        let terminal = entity
+            .lifecycle
+            .object_alive()
+            .then_some(InfantryTerminal::Sequence(sequence));
+        entity.death.begin_infantry(terminal);
     }
 
     /// Consume this object's terminal Logic visit, including eventual UnInit.
@@ -563,10 +640,10 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Default::default();
         };
-        let Some(terminal) = entity.infantry_terminal else {
+        let Some(terminal) = entity.death.infantry_terminal() else {
             return Default::default();
         };
-        debug_assert!(entity.dying && entity.category() == EntityCategory::Infantry);
+        debug_assert!(entity.death.is_dying() && entity.category() == EntityCategory::Infantry);
         let mut outcome = super::techno_ai::ObjectAiOutcome::visited();
         match terminal {
             InfantryTerminal::AwaitingConsequences => return outcome,

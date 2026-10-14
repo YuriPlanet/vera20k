@@ -34,7 +34,7 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
     entity.set_owner_for_test(owner);
     entity.set_category_for_test(EntityCategory::Unit);
     entity.health.set_for_test(0);
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = false;
     entity.position.sub_x = SimFixed::from_num(128);
     entity.position.sub_y = SimFixed::from_num(128);
@@ -176,8 +176,8 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
         assert_eq!(loaded.rng_state(), sim.rng_state(), "frame {frame}");
         if terminal {
             let hull = loaded.substrate.entities.get(id).unwrap();
-            assert!(!hull.lifecycle.object_alive);
-            assert!(hull.lifecycle.in_limbo);
+            assert!(!hull.lifecycle.object_alive());
+            assert!(hull.lifecycle.in_limbo());
             assert!(loaded.substrate.pending_delete.contains_object(&id));
             assert_eq!(loaded.houses[&hull.owner()].stats.units_lost(), 2);
             return;
@@ -429,7 +429,7 @@ fn retained_health_one_ship_is_illegal_as_firer_and_target() {
     let mut firer = GameEntity::test_default(firer_id, "TEST", "Russians", 112, 59);
     firer.set_type_ref_for_test(sim.interner.intern("TEST"));
     firer.set_owner_for_test(sim.interner.intern("Russians"));
-    firer.lifecycle.in_limbo = false;
+    firer.lifecycle.set_in_limbo_for_test(false);
     firer.health.set_for_test(800);
     firer.position.z = 2;
     firer.position.exact_z_leptons = Some(208);

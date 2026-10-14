@@ -584,8 +584,8 @@ impl Simulation {
             return InfantryPerCellBuildingAdmission::NoMatchingGroundBuilding;
         };
         if nav_object == Some(building_id)
-            || infantry.attack_target.as_ref().is_some_and(|attack| {
-                matches!(attack.target, crate::sim::combat::TargetKind::Entity(id) if id == building_id)
+            || infantry.attack_target.target().is_some_and(|attack| {
+                matches!(attack, crate::sim::combat::TargetKind::Entity(id) if id == building_id)
             })
         {
             InfantryPerCellBuildingAdmission::GroundBuilding(building_id)

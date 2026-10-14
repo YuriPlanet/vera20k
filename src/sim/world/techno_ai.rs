@@ -111,9 +111,7 @@ impl Simulation {
             );
             ProjectileCoord::new(location.x, location.y, location.z)
         });
-        let owner_current_target = owner
-            .and_then(|entity| entity.attack_target.as_ref())
-            .map(|attack| attack.target);
+        let owner_current_target = owner.and_then(|entity| entity.attack_target.target());
         // The target's vt+0x58 (`0x00762BD1`, `0x00762D2C`), which an object
         // forwards to its GetCoords (`0x00410540`).
         let target_position = match wave.target_ref {
@@ -188,7 +186,7 @@ impl Simulation {
             let Some(entity) = sim.substrate.entities.get(id) else {
                 return;
             };
-            if entity.dying {
+            if entity.death.is_dying() {
                 return;
             }
             if !matches!(
@@ -212,7 +210,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if (entity.dying && entity.category() != EntityCategory::Infantry)
+        if (entity.death.is_dying() && entity.category() != EntityCategory::Infantry)
             || !matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -534,10 +532,10 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return ObjectAiOutcome::default();
         };
-        if entity.infantry_terminal.is_some() {
+        if entity.death.infantry_terminal().is_some() {
             return self.visit_infantry_terminal(id, rules, ctx);
         }
-        if entity.dying {
+        if entity.death.is_dying() {
             let Some(rules) = rules else {
                 return outcome;
             };
@@ -786,7 +784,7 @@ fn techno_ai_shell(
                 .substrate
                 .entities
                 .get(id)
-                .is_none_or(|entity| entity.dying)
+                .is_none_or(|entity| entity.death.is_dying())
             {
                 return;
             }
@@ -831,7 +829,7 @@ fn techno_ai_shell(
                 // AI tail, before repair/power and factory work. Earlier
                 // native returns admit only a live, nonzero-health building.
                 if sim.substrate.entities.get(id).is_some_and(|entity| {
-                    entity.lifecycle.object_alive
+                    entity.lifecycle.object_alive()
                         && entity.health.current() != 0
                         && !entity.is_warped_out()
                         && !entity.is_warping_in()
@@ -1153,8 +1151,7 @@ fn drop_unsensed_cloaked_target_step(sim: &mut Simulation, id: u64) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(crate::sim::combat::TargetKind::Entity(target_id)) =
-        entity.attack_target.as_ref().map(|target| target.target)
+    let Some(crate::sim::combat::TargetKind::Entity(target_id)) = entity.attack_target.target()
     else {
         return;
     };
@@ -1405,7 +1402,7 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+    let Some(target) = entity.attack_target.target() else {
         return;
     };
     // A target that no longer resolves never reaches this check natively
@@ -1479,7 +1476,7 @@ fn target_reach_step(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+    let Some(target) = entity.attack_target.target() else {
         return;
     };
     if !matches!(
@@ -1519,7 +1516,7 @@ fn target_reach_step(
     if entity.navigation.nav_com.is_some() {
         return;
     }
-    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+    let Some(target) = entity.attack_target.target() else {
         return;
     };
     let weapon = target_scan::select_weapon(sim, rules, id, Some(target));
@@ -1560,9 +1557,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
     // `0x004F9AF0` tests the target's Object flag first: a cell is never
     // allied.
-    let Some(TargetKind::Entity(target_id)) =
-        entity.attack_target.as_ref().map(|attack| attack.target)
-    else {
+    let Some(TargetKind::Entity(target_id)) = entity.attack_target.target() else {
         return;
     };
     let Some(target) = sim.substrate.entities.get(target_id) else {
@@ -1997,7 +1992,7 @@ const PASSIVE_TARGET_CLEAR_MISSIONS: [MissionType; 12] = [
 /// be shooting (see [`PASSIVE_TARGET_CLEAR_MISSIONS`]).
 fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     let drop = sim.substrate.entities.get(id).is_some_and(|entity| {
-        entity.attack_target.is_some()
+        entity.attack_target.target().is_some()
             && entity.passively_acquired_target
             && PASSIVE_TARGET_CLEAR_MISSIONS.contains(&entity.passive_acquire_mission())
     });
@@ -2016,7 +2011,7 @@ mod tests {
     use crate::map::tube_facts::TubeId;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::combat::{AttackTarget, TargetKind};
+    use crate::sim::combat::TargetKind;
     use crate::sim::components::{DriveCoord, NavTargetRef};
     use crate::sim::game_entity::{BunkerLink, GameEntity};
     use crate::sim::miner::{Miner, MinerConfig, MinerKind};
@@ -2061,7 +2056,7 @@ mod tests {
                 EntityCategory::Infantry,
             );
             // Supply placed, ordinary AI boundaries; id7 remains off Logic.
-            entity.lifecycle.in_limbo = false;
+            entity.lifecycle.set_in_limbo_for_test(false);
             register_entity(&mut sim, entity);
         }
         sim.set_logic_order_for_test(vec![9, 5, 3]);
@@ -2320,7 +2315,12 @@ mod tests {
         // Mark id 2 dying AFTER set_logic_order_for_test — that helper resets
         // presence / in_logic_vector but does NOT touch `dying`, and id 2 stays
         // in the live order.
-        sim.substrate.entities.get_mut(2).unwrap().dying = true;
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .death
+            .set_dying_for_test(true);
 
         let visited = sim.object_ai_walk(true, None, ObjectAiCtx::default());
         assert_eq!(
@@ -2416,7 +2416,7 @@ mod tests {
         let mut sim = Simulation::new();
         let mut e = entity_of(1, EntityCategory::Unit);
         e.health.set_for_test(0);
-        e.crashing = true;
+        e.crash.set_crashing_for_test(true);
         sim.substrate.entities.insert(e);
         assert_eq!(
             unit_techno_bracket(
@@ -2648,7 +2648,7 @@ mod tests {
         let timer = {
             let wreck = sim.substrate.entities.get_mut(1).expect("tank present");
             wreck.health.set_for_test(0);
-            wreck.crashing = true;
+            wreck.crash.set_crashing_for_test(true);
             wreck.mission.dispatch_timer()
         };
         let mut acquired = false;
@@ -2661,7 +2661,7 @@ mod tests {
                 timer,
                 "no Guard handler ran, so its epilogue never wrote the timer"
             );
-            acquired |= wreck.attack_target.is_some() && wreck.passively_acquired_target;
+            acquired |= wreck.attack_target.target().is_some() && wreck.passively_acquired_target;
             if sim.substrate.entities.get(2).unwrap().health.current() < 3000 {
                 break;
             }
@@ -2708,7 +2708,7 @@ mod tests {
         {
             let wreck = sim.substrate.entities.get_mut(1).expect("disc present");
             wreck.health.set_for_test(0);
-            wreck.crashing = true;
+            wreck.crash.set_crashing_for_test(true);
         }
         let mut shots = 0;
         let mut rearm_start = None;
@@ -2738,7 +2738,7 @@ mod tests {
         let sim = run_idle_pair("MTNK", "UNARM", 90);
         let allied = sim.substrate.entities.get(1).expect("allied tank present");
         assert!(
-            allied.attack_target.is_some(),
+            allied.attack_target.target().is_some(),
             "an idle Guard-mission unit must passively acquire a hostile in range"
         );
         assert!(
@@ -2774,6 +2774,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_none()
         );
 
@@ -2787,6 +2788,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_some(),
             "Evaluate_Candidate @ 0x006F7DB0 admits the stored true member"
         );
@@ -2828,7 +2830,7 @@ mod tests {
         }
         let soviet = sim.substrate.entities.get(2).expect("soviet tank present");
         assert!(
-            soviet.attack_target.is_some() && soviet.passively_acquired_target,
+            soviet.attack_target.target().is_some() && soviet.passively_acquired_target,
             "precondition: the idle tank must have picked the scout up on its own"
         );
 
@@ -2886,7 +2888,7 @@ mod tests {
         // Pretend the scan had found something.
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(AttackTarget::new(9));
+            e.attack_target.set_for_test(Some(TargetKind::Entity(9)));
             e.passively_acquired_target = true;
             e.passive_scan_timer.clear(); // cadence expired again
         }
@@ -2938,15 +2940,15 @@ mod tests {
         let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(AttackTarget::new(2));
+            e.attack_target.set_for_test(Some(TargetKind::Entity(2)));
             e.rearm_timer = rearm;
             e.passively_acquired_target = true;
             e.passive_scan_timer.clear();
         }
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
         let e = sim.substrate.entities.get(1).unwrap();
-        let attack = e.attack_target.as_ref().expect("target retained");
-        assert_eq!(attack.target, TargetKind::Entity(2));
+        let attack = e.attack_target.target().expect("target retained");
+        assert_eq!(attack, TargetKind::Entity(2));
         assert_eq!(
             e.rearm_timer, rearm,
             "re-picking the same target must leave the ROF cooldown untouched"
@@ -2973,7 +2975,7 @@ mod tests {
         let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(AttackTarget::new(2));
+            e.attack_target.set_for_test(Some(TargetKind::Entity(2)));
             e.rearm_timer = rearm;
             e.passively_acquired_target = true;
             e.passive_scan_timer.clear();
@@ -2983,7 +2985,7 @@ mod tests {
         assert_ne!(sim.scenario_rng.state(), before, "the scan still draws");
         let e = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
-            e.attack_target.as_ref().map(|attack| attack.target),
+            e.attack_target.target(),
             Some(TargetKind::Entity(2)),
             "the victim in range is kept"
         );
@@ -3018,8 +3020,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
-                .as_ref()
-                .map(|t| t.target),
+                .target(),
             Some(TargetKind::Entity(2)),
             "precondition: the scanner picked the nearer candidate"
         );
@@ -3038,7 +3039,7 @@ mod tests {
             let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
             let tank = sim.substrate.entities.get(1).expect("tank present");
             assert!(
-                tank.attack_target.is_none() || tank.passively_acquired_target,
+                tank.attack_target.target().is_none() || tank.passively_acquired_target,
                 "tick {tick}: the tank was never ordered to attack anything, so a target it \
                  holds must always be scanner-owned — a live target with the flag false takes \
                  it out of the passive block, and it never releases"
@@ -3048,12 +3049,12 @@ mod tests {
             sim.substrate
                 .entities
                 .get(2)
-                .is_none_or(|e| e.health.current() == 0 || e.dying),
+                .is_none_or(|e| e.health.current() == 0 || e.death.is_dying()),
             "precondition: the first victim died"
         );
         let tank = sim.substrate.entities.get(1).expect("tank present");
         assert!(
-            tank.attack_target.is_some() && tank.passively_acquired_target,
+            tank.attack_target.target().is_some() && tank.passively_acquired_target,
             "precondition: the second candidate is still in range and was taken up"
         );
     }
@@ -3169,7 +3170,7 @@ mod tests {
                 .entities
                 .get(1)
                 .and_then(|house| house.passenger_role.cargo())
-                .is_some_and(|cargo| cargo.passengers == [2]),
+                .is_some_and(|cargo| cargo.passengers() == [2]),
             "precondition: Capture admitted the occupant"
         );
         (
@@ -3178,8 +3179,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
-                .as_ref()
-                .map(|attack| attack.target),
+                .target(),
             sim.substrate.entities.get(3).unwrap().health.current(),
         )
     }
@@ -3283,7 +3283,7 @@ mod tests {
             "a finished order must not leave the unit stuck outside the gate"
         );
         assert!(
-            tank.attack_target.is_some() && tank.passively_acquired_target,
+            tank.attack_target.target().is_some() && tank.passively_acquired_target,
             "an ordered-then-idle unit must acquire like any other idle unit"
         );
         let enemy = sim.substrate.entities.get(2).expect("enemy present");
@@ -3418,7 +3418,7 @@ mod tests {
         }
         let rifleman = sim.substrate.entities.get(2).expect("infantry present");
         assert!(
-            rifleman.attack_target.is_some() && rifleman.passively_acquired_target,
+            rifleman.attack_target.target().is_some() && rifleman.passively_acquired_target,
             "idle infantry must passively acquire a hostile in range"
         );
     }
@@ -3465,7 +3465,7 @@ mod tests {
             "nothing retasked it, so it must still be on Sticky"
         );
         assert!(
-            sticky_unit.attack_target.is_none(),
+            sticky_unit.attack_target.target().is_none(),
             "Sticky is outside the passive-acquire gate's three admitted missions"
         );
     }
@@ -3483,6 +3483,7 @@ mod tests {
                 .get(2)
                 .expect("soviet vehicle present")
                 .attack_target
+                .target()
                 .is_some(),
             "control: an ordinary type acquires the unarmed enemy in this fixture"
         );
@@ -3494,7 +3495,7 @@ mod tests {
             .get(2)
             .expect("soviet vehicle present");
         assert!(
-            soviet.attack_target.is_none(),
+            soviet.attack_target.target().is_none(),
             "CanPassiveAquire=no must keep the type out of the scanner entirely"
         );
         assert!(!soviet.passively_acquired_target);
@@ -3600,6 +3601,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_none(),
             "no hostile exists, so no target is installed — the draw still happened"
         );
@@ -3693,7 +3695,12 @@ mod tests {
             crate::sim::house_state::HouseState::new(soviet, 0, None, false, 0, 10),
         );
         let aim = |sim: &mut Simulation| {
-            sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(2)));
         };
         let held = |sim: &Simulation| {
             sim.substrate
@@ -3701,6 +3708,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_some()
         };
 
@@ -3739,7 +3747,9 @@ mod tests {
             actor
                 .mission
                 .apply_test_fixture(fixture_with_current(&actor.mission, MissionType::Move));
-            actor.attack_target = Some(AttackTarget::new(2));
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(2)));
             actor.berserk.active = true;
             actor.berserk.timer = 2;
             let step = |sim: &mut Simulation| {
@@ -3754,7 +3764,7 @@ mod tests {
                 (
                     actor.berserk.active,
                     actor.berserk.timer,
-                    actor.attack_target.is_some(),
+                    actor.attack_target.target().is_some(),
                     actor.mission.queued().known(),
                 )
             };
@@ -3791,7 +3801,9 @@ mod tests {
                 crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10),
             );
             let actor = sim.substrate.entities.get_mut(1).unwrap();
-            actor.attack_target = Some(AttackTarget::new(2));
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(2)));
             actor.mission_leaf.set_infantry_doing_verified(0).unwrap();
             actor.mission_leaf.set_foot_firing_sequence(1);
             actor.navigation.path_replay.directions = vec![0, 1, 2];
@@ -3811,7 +3823,7 @@ mod tests {
                 illegal_target_drop_step(&mut sim, 1, &rules);
             }
             let actor = sim.substrate.entities.get(1).unwrap();
-            assert!(actor.attack_target.is_none());
+            assert!(actor.attack_target.target().is_none());
             assert_eq!(actor.mission_leaf.foot_firing_sequence_latch(), 0);
             assert!(
                 actor
@@ -3964,6 +3976,7 @@ mod tests {
                 .get(2)
                 .expect("defence present")
                 .attack_target
+                .target()
                 .is_some(),
             "precondition: the defence acquires the scout parked in range"
         );
@@ -4000,7 +4013,7 @@ mod tests {
         );
         let defence = sim.substrate.entities.get(2).expect("defence present");
         assert!(
-            defence.attack_target.is_none(),
+            defence.attack_target.target().is_none(),
             "the defence must release a target that walked out of range, not latch onto it"
         );
         assert_eq!(
@@ -4027,18 +4040,21 @@ mod tests {
             .unwrap();
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(AttackTarget::new(9));
+            e.attack_target.set_for_test(Some(TargetKind::Entity(9)));
             e.passively_acquired_target = true;
         }
         clear_passive_target_off_mission(&mut sim, 1, None);
         let e = sim.substrate.entities.get(1).unwrap();
-        assert!(e.attack_target.is_none(), "a scanner target is dropped");
+        assert!(
+            e.attack_target.target().is_none(),
+            "a scanner target is dropped"
+        );
         assert!(!e.passively_acquired_target);
 
         // An ordered target on the same mission is left alone.
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(AttackTarget::new(9));
+            e.attack_target.set_for_test(Some(TargetKind::Entity(9)));
             e.passively_acquired_target = false;
         }
         clear_passive_target_off_mission(&mut sim, 1, None);
@@ -4048,6 +4064,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_some(),
             "only a scanner-acquired target is dropped"
         );
@@ -4271,7 +4288,9 @@ mod tests {
     fn attack_band_fixture(seed: u64, type_name: &str, category: EntityCategory) -> Simulation {
         let mut sim = Simulation::with_seed(seed);
         let mut attacker = entity_of(1, category);
-        attacker.attack_target = Some(AttackTarget::new(2));
+        attacker
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
         update_mission_test_fixture(&mut attacker.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Attack);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -4284,7 +4303,7 @@ mod tests {
         // On the map: TechnoClass::AI's 16-frame check drops a target in limbo
         // (GetFireError T12).
         let mut target = entity_of(2, EntityCategory::Unit);
-        target.lifecycle.in_limbo = false;
+        target.lifecycle.set_in_limbo_for_test(false);
         register_entity(&mut sim, target);
         // An enemy: a computer house drops an allied target every frame
         // (`0x006FA30C`).
@@ -4486,7 +4505,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0xA774);
         let rules = representative_foot_handler_rules();
         let mut infantry = entity_of(1, EntityCategory::Infantry);
-        infantry.attack_target = None;
+        infantry.attack_target.set_for_test(None);
         update_mission_test_fixture(&mut infantry.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Attack);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -4523,7 +4542,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0xA775);
         let rules = representative_foot_handler_rules();
         let mut infantry = entity_of(1, EntityCategory::Infantry);
-        infantry.attack_target = None;
+        infantry.attack_target.set_for_test(None);
         infantry.navigation.nav_com =
             Some(crate::sim::components::NavTargetRef::Cell { rx: 20, ry: 21 });
         update_mission_test_fixture(&mut infantry.mission, |fixture| {
@@ -4723,7 +4742,7 @@ mod tests {
                 entity.set_category_for_test(EntityCategory::Infantry);
                 entity.mission_leaf =
                     MissionLeafState::for_entity_category(EntityCategory::Infantry);
-                entity.lifecycle.in_limbo = false;
+                entity.lifecycle.set_in_limbo_for_test(false);
                 entity.set_owner_for_test(sim.interner.intern(owner));
                 entity.set_type_ref_for_test(sim.interner.intern(type_name));
                 sim.substrate.entities.insert(entity);
@@ -4734,7 +4753,7 @@ mod tests {
                 sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
             }
             let dog = sim.substrate.entities.get_mut(1).unwrap();
-            dog.attack_target = Some(AttackTarget::new(2));
+            dog.attack_target.set_for_test(Some(TargetKind::Entity(2)));
             update_mission_test_fixture(&mut dog.mission, |fixture| {
                 fixture.current = MissionId::from_known(MissionType::Attack);
                 fixture.dispatch_timer = MissionDispatchTimer::at_frame(frame);
@@ -4745,6 +4764,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_some()
         };
         assert!(
@@ -4762,7 +4782,8 @@ mod tests {
         let mut sim = Simulation::with_seed(0xA773);
         let rules = representative_foot_handler_rules();
         let mut unit = entity_of(1, EntityCategory::Unit);
-        unit.attack_target = Some(AttackTarget::new(99));
+        unit.attack_target
+            .set_for_test(Some(TargetKind::Entity(99)));
         unit.weapon_burst.complete_shot(2);
         update_mission_test_fixture(&mut unit.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Attack);
@@ -4773,7 +4794,7 @@ mod tests {
         sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
 
         let unit = sim.substrate.entities.get(1).unwrap();
-        assert!(unit.attack_target.is_none());
+        assert!(unit.attack_target.target().is_none());
         assert_eq!(unit.weapon_burst.index(), 1);
         assert_eq!(unit.mission.queued(), MissionId::NONE);
     }
@@ -4981,7 +5002,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0xF008);
         let rules = representative_foot_handler_rules();
         let mut unit = entity_of(1, EntityCategory::Unit);
-        unit.attack_target = Some(AttackTarget::new(2));
+        unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         update_mission_test_fixture(&mut unit.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Hunt);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -5073,7 +5094,7 @@ mod tests {
         for _ in 0..40 {
             let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
             let hunter = sim.substrate.entities.get(1).expect("hunter present");
-            if hunter.attack_target.is_some() {
+            if hunter.attack_target.target().is_some() {
                 acquired = Some((
                     28u16.saturating_sub(hunter.position.rx),
                     hunter.passively_acquired_target,
@@ -5112,6 +5133,7 @@ mod tests {
                 .get(1)
                 .expect("guard present")
                 .attack_target
+                .target()
                 .is_none(),
             "a Guard-mission scan defers to the weapon's own reach (4 cells), so 8 is out"
         );
@@ -5132,7 +5154,7 @@ mod tests {
 
         let hunter = sim.substrate.entities.get(1).expect("hunter present");
         assert!(
-            hunter.attack_target.is_none(),
+            hunter.attack_target.target().is_none(),
             "StupidHunt skips the scan entirely"
         );
         assert_eq!(hunter.mission.dispatch_timer().delay(), expected_delay);
@@ -5156,7 +5178,9 @@ mod tests {
         let rules = representative_foot_handler_rules();
         let mut sim = Simulation::with_seed(0x40_0706);
         let mut attacker = entity_of(1, EntityCategory::Unit);
-        attacker.attack_target = Some(AttackTarget::new(2));
+        attacker
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
         update_mission_test_fixture(&mut attacker.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Attack);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -5170,7 +5194,7 @@ mod tests {
         attacker.set_type_ref_for_test(sim.interner.intern("SHORTVEH"));
         sim.substrate.entities.insert(attacker);
         let mut target = entity_of(2, EntityCategory::Unit);
-        target.lifecycle.in_limbo = false;
+        target.lifecycle.set_in_limbo_for_test(false);
         register_entity(&mut sim, target);
         let soviet = sim.interner.intern("Soviet");
         sim.substrate
@@ -5352,9 +5376,8 @@ mod tests {
             // arms run Mission_Enter.
             if mission == MissionType::Enter {
                 if category == EntityCategory::Infantry {
-                    unit.passenger_role = crate::sim::passenger::PassengerRole::Boarding {
-                        target_transport_id: 2,
-                    };
+                    unit.passenger_role =
+                        crate::sim::passenger::PassengerRole::boarding_for_test(2);
                 } else {
                     unit.bunker_link = crate::sim::game_entity::BunkerLink::Approaching(2);
                 }
@@ -5421,7 +5444,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0x7389);
         let rules = move_cadence_rules();
         let mut unit = entity_of(1, EntityCategory::Unit);
-        unit.attack_target = Some(AttackTarget::new(2));
+        unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         unit.passively_acquired_target = true;
         unit.weapon_burst.complete_shot(2);
         update_mission_test_fixture(&mut unit.mission, |fixture| {
@@ -5439,7 +5462,7 @@ mod tests {
             MissionId::from_known(MissionType::Guard)
         );
         assert!(
-            entity.attack_target.is_none(),
+            entity.attack_target.target().is_none(),
             "Assign_Target(NULL) on arrival"
         );
         assert!(!entity.passively_acquired_target);
@@ -5462,7 +5485,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0x51CB);
         let rules = move_cadence_rules();
         let mut man = entity_of(1, EntityCategory::Infantry);
-        man.attack_target = Some(AttackTarget::new(2));
+        man.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         update_mission_test_fixture(&mut man.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Move);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -5477,7 +5500,7 @@ mod tests {
             MissionId::from_known(MissionType::Attack)
         );
         assert!(
-            entity.attack_target.is_some(),
+            entity.attack_target.target().is_some(),
             "the infantry arm keeps the target it promotes"
         );
     }
@@ -6565,7 +6588,7 @@ mod tests {
         let entity = sim.substrate.entities.get(ORDINARY_DRIVE_HOST_ID).unwrap();
         assert_eq!(entity.mission.current().known(), Some(MissionType::Move));
         assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
-        assert!(entity.attack_target.is_none());
+        assert!(entity.attack_target.target().is_none());
         assert!(entity.pending_entry().is_none() && entity.radio_contacts.is_empty());
         assert!(entity.miner.is_none());
 
@@ -7354,7 +7377,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         // Out of limbo, where `FootClass::AI` admits a Process (`0x004DA86E`).
         // The ground corridor's Walk Process takes its idle tail (Walk75BCE3)
         // on the first Process.
-        e.lifecycle.in_limbo = false;
+        e.lifecycle.set_in_limbo_for_test(false);
         e.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(
                 crate::rules::locomotor_type::LocomotorKind::Walk,
@@ -7444,7 +7467,12 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             sim.substrate.entities.get(1).unwrap().mission.ai_counter(),
             1
         );
-        sim.substrate.entities.get_mut(1).unwrap().dying = true;
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .death
+            .set_dying_for_test(true);
         sim.object_ai_stage(None);
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().mission.ai_counter(),

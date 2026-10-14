@@ -171,7 +171,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
         }
         for (index, product) in products.iter_mut().enumerate() {
             let entity = sim.substrate.entities.get(product.id).unwrap();
-            if entity.lifecycle.in_limbo {
+            if entity.lifecycle.in_limbo() {
                 continue;
             }
             let transmissions = pair_radio(&log, producer, product.id);
@@ -184,7 +184,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
             if product.placed_frame.is_none() {
                 product.placed_frame = Some(frame);
                 assert_eq!(json!(transmissions), golden["delivery_radio"], "{context}");
-                assert!(entity.dock_entered_with.is_some(), "{context}: tethered");
+                assert!(entity.tether.partner().is_some(), "{context}: tethered");
                 assert_eq!(entity.radio_contacts.slot(0), Some(producer));
                 // 444CA3 skips the exit move and the Archive restore, so the
                 // Unlimbo idle handoff (Foot4D8472..852A) leaves a rally as
@@ -209,7 +209,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
             if product.lift_off_frame.is_none() && runtime.phase() == STATE_ASCEND {
                 product.lift_off_frame = Some(frame);
                 assert!(
-                    entity.dock_entered_with.is_some(),
+                    entity.tether.partner().is_some(),
                     "{context}: still tethered when he leaves the ground"
                 );
             }
@@ -225,7 +225,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
                     golden["arrival_radio"],
                     "{context}"
                 );
-                assert!(entity.radio_contacts.is_empty() && entity.dock_entered_with.is_none());
+                assert!(entity.radio_contacts.is_empty() && entity.tether.partner().is_none());
                 assert!(
                     sim.substrate
                         .entities

@@ -110,7 +110,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
     assert!(e.navigation.nav_com.is_none());
     assert!(crate::sim::movement::motion_query::is_moving(&e) != Some(true));
     // 0x4D4149 Assign_Target(NULL).
-    assert!(e.attack_target.is_none());
+    assert!(e.attack_target.target().is_none());
     // A Clear current cell answers 0 at 0x51DBAC.
     assert!(!e.infantry.as_ref().unwrap().cell_entry_blocked);
     // The failure tail never touches +64C; the oracle far row keeps 10.
@@ -430,7 +430,8 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
     // Scatter reads it only in a non-Fraidycat gate (`0x0051D19A`) and in
     // Can_Enter_Cell against candidate occupants (`0x0051C3C2`); the
     // attacker is two cells away.
-    e.attack_target = Some(crate::sim::combat::AttackTarget::new(attacker));
+    e.attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(attacker)));
     let before = position_world_coord(&e.position);
     let facing = e.body_facing;
     let attacker_house = sim.substrate.entities.get(attacker).unwrap().owner();
@@ -471,7 +472,7 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
     // NULL Scatter immediately on arrival while this Fraidycat's fear>50.
     let e = sim.substrate.entities.get_mut(victim).unwrap();
     e.infantry.as_mut().unwrap().fear_level = 0;
-    e.attack_target = None;
+    e.attack_target.set_for_test(None);
     // The same production tick host that handles normal orders must consume
     // the damage-created request. The native corpus proves the first FindPath
     // boundary; this regression continues through our real search/head/step.

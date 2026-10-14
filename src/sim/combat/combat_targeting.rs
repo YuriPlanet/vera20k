@@ -372,9 +372,9 @@ pub(crate) fn should_retaliate(
     // The receiver asks only in its surviving arms; a victim the represented
     // lifecycle already retired cannot be one.
     if !victim.is_alive()
-        || victim.dying
-        || !victim.lifecycle.object_alive
-        || victim.lifecycle.in_limbo
+        || victim.death.is_dying()
+        || !victim.lifecycle.object_alive()
+        || victim.lifecycle.in_limbo()
     {
         return false;
     }
@@ -409,7 +409,7 @@ pub(crate) fn should_retaliate(
         .as_ref()
         .is_some_and(|manager| manager.is_full())
         || victim.spawn_manager.is_some()
-        || (human && victim.attack_target.is_some())
+        || (human && victim.attack_target.target().is_some())
         || crate::sim::mission::control::current_control(rules, &victim.mission)
             .is_some_and(|entry| !entry.retaliate)
     {
@@ -516,8 +516,7 @@ pub(crate) fn should_retaliate(
         .get(&victim.owner())
         .and_then(|house| house.enemy_house);
     if !human
-        && let Some(TargetKind::Entity(current_id)) =
-            victim.attack_target.as_ref().map(|target| target.target)
+        && let Some(TargetKind::Entity(current_id)) = victim.attack_target.target()
         && let (Some(current_score), Some(source_score)) = (
             calculate_ai_threat_score(
                 entities,
@@ -688,13 +687,13 @@ mod tests {
 
         let mut sref = GameEntity::test_default(1, "SREF", "Americans", 5, 5);
         sref.set_category_for_test(EntityCategory::Unit);
-        sref.lifecycle.in_limbo = false;
+        sref.lifecycle.set_in_limbo_for_test(false);
         sref.lifecycle.cell_marked = true;
         entities.insert(sref);
 
         let mut enemy = GameEntity::test_default(2, "HTNK", "Russians", 6, 5);
         enemy.set_category_for_test(EntityCategory::Unit);
-        enemy.lifecycle.in_limbo = false;
+        enemy.lifecycle.set_in_limbo_for_test(false);
         enemy.lifecycle.cell_marked = true;
         entities.insert(enemy);
 

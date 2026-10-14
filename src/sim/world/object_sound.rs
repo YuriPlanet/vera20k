@@ -251,7 +251,7 @@ impl Simulation {
     /// not in Limbo. `None` also stands for a Techno in Limbo.
     fn object_sound_location(&self, id: u64) -> Option<AnimWorldCoord> {
         if let Some(entity) = self.substrate.entities.get(id) {
-            return (!entity.lifecycle.in_limbo).then(|| Self::movement_sound_world(entity));
+            return (!entity.lifecycle.in_limbo()).then(|| Self::movement_sound_world(entity));
         }
         let terrain = self
             .production

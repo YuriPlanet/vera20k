@@ -258,7 +258,7 @@ fn has_live_factory(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> boo
         house.base_projection.buildings().iter().any(|&id| {
             sim.substrate.entities.get(id).is_some_and(|building| {
                 building.is_ai_alive()
-                    && !building.lifecycle.in_limbo
+                    && !building.lifecycle.in_limbo()
                     && sim
                         .object_type(building.type_ref(), rules)
                         .is_some_and(|ty| ty.factory.is_some())
@@ -293,10 +293,9 @@ pub(crate) fn fire_sale(
         else {
             break;
         };
-        let sells =
-            sim.substrate.entities.get(id).is_some_and(|building| {
-                !building.lifecycle.in_limbo && building.health.current() > 0
-            });
+        let sells = sim.substrate.entities.get(id).is_some_and(|building| {
+            !building.lifecycle.in_limbo() && building.health.current() > 0
+        });
         if sells {
             sell_back(sim, rules, id, SellOrder::Computer, registry, frame_effects);
         }
@@ -339,7 +338,7 @@ pub(crate) fn all_to_hunt(
         let Some(techno) = sim.substrate.entities.get(id) else {
             continue;
         };
-        if techno.owner() != owner || !techno.lifecycle.cell_marked || techno.lifecycle.in_limbo {
+        if techno.owner() != owner || !techno.lifecycle.cell_marked || techno.lifecycle.in_limbo() {
             continue;
         }
         let dominated_strength = (techno.mind_control.permanent() && !human)

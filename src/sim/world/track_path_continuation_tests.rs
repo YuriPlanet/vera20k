@@ -1094,7 +1094,8 @@ fn after_active_rows_gate_the_same_call_continuation() {
             (NavTargetRef::Entity { id: target }, coord)
         });
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.lifecycle.object_alive = int(input, "active_alive", 1) != 0;
+        e.lifecycle
+            .set_object_alive_for_test(int(input, "active_alive", 1) != 0);
         let selector = if input["active_retires"] == false {
             0
         } else {
@@ -1417,7 +1418,12 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
     ));
     sim.session.binary_frame = frame;
     order(&mut sim, &rules, id, (10, 16));
-    sim.substrate.entities.get_mut(id).unwrap().attack_target = None;
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(None);
     assert!(
         sim.mission_restore_represented(
             id,

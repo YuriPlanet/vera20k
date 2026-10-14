@@ -408,8 +408,10 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
 fn actor_input(actor: &mut GameEntity, native: &Value) {
     ground_pose::put_location(&mut actor.position, coord(&native["position"]));
     actor.position.z = (int(&native["position"][2]) / 104) as u8;
-    actor.lifecycle.object_alive = native["alive"] == 1;
-    actor.lifecycle.in_limbo = native["limbo"] == 1;
+    actor
+        .lifecycle
+        .set_object_alive_for_test(native["alive"] == 1);
+    actor.lifecycle.set_in_limbo_for_test(native["limbo"] == 1);
     actor.lifecycle.cell_marked = native["marked"] == 1;
     actor.in_logic_vector = native["logic_registered"] == 1;
     actor.in_playfield = native["in_playfield"] == 1;
@@ -426,7 +428,7 @@ fn actor_input(actor: &mut GameEntity, native: &Value) {
         );
     }
     assert_eq!(native["target"], "0x0");
-    actor.attack_target = None;
+    actor.attack_target.set_for_test(None);
     actor.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(int(&native["mission"])),
         suspended: MissionId::NONE,
@@ -562,8 +564,8 @@ fn assert_actor(actor: &GameEntity, native: &Value, name: &str) {
         "{name}: Location"
     );
     for (key, actual) in [
-        ("alive", actor.lifecycle.object_alive),
-        ("limbo", actor.lifecycle.in_limbo),
+        ("alive", actor.lifecycle.object_alive()),
+        ("limbo", actor.lifecycle.in_limbo()),
         ("marked", actor.lifecycle.cell_marked),
         ("logic_registered", actor.in_logic_vector),
         ("in_playfield", actor.in_playfield),
@@ -639,7 +641,7 @@ fn assert_snapshot(fixture: &Fixture, native: &Value, name: &str) {
             "{name}: {role} Contact0"
         );
         assert_eq!(
-            actor.dock_entered_with,
+            actor.tether.partner(),
             (expected["tether"] == 1).then_some(other),
             "{name}: {role} tether"
         );

@@ -182,7 +182,7 @@ mod tests {
                 5,
                 false,
             );
-            actor.lifecycle.in_limbo = false;
+            actor.lifecycle.set_in_limbo_for_test(false);
             actor.position.sub_x = SimFixed::from_num(64);
             actor.position.sub_y = SimFixed::from_num(64);
             actor.set_archive_target(Some(TargetKind::Cell(6, 5)));

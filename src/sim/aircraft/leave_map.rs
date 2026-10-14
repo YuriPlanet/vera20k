@@ -88,7 +88,7 @@ impl Simulation {
             return false;
         };
         let target = crate::sim::combat::target_present(
-            entity.attack_target.as_ref(),
+            entity.attack_target.target(),
             &self.substrate.entities,
         );
         if target && entity.mission.current() != MissionId::from_known(MissionType::SpyplaneOverfly)

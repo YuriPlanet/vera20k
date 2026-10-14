@@ -454,7 +454,7 @@ impl Simulation {
         match held_height {
             Some(height) if height > 0 => {
                 if let Some(entity) = self.substrate.entities.get_mut(held) {
-                    entity.crashing = true;
+                    entity.crash.raise();
                     entity.being_manipulated = true;
                     entity.manipulated_by = Some(firer);
                     entity.warped_by_house = Some(firer_house);

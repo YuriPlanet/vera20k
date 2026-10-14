@@ -217,7 +217,7 @@ impl SpawnManagerState {
                 SpawnSlotState::InFlight => slot
                     .spawn
                     .and_then(|id| entities.get(id))
-                    .filter(|child| !child.lifecycle.in_limbo)
+                    .filter(|child| !child.lifecycle.in_limbo())
                     .and_then(|child| rules.object(interner.resolve(child.type_ref())))
                     .is_some_and(|kind| kind.missile_spawn),
                 _ => false,
@@ -1041,7 +1041,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get(self.owner_id)
-            .is_some_and(|owner| owner.lifecycle.object_alive && !owner.dying)
+            .is_some_and(|owner| owner.lifecycle.object_alive() && !owner.death.is_dying())
     }
 
     fn owner_cell(&self) -> (i32, i32) {
@@ -1248,7 +1248,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get(child)
-            .is_none_or(|child| child.lifecycle.in_limbo);
+            .is_none_or(|child| child.lifecycle.in_limbo());
         if let (false, Some(rules)) = (in_limbo, self.context.rules()) {
             self.sim
                 .techno_limbo_with_context(child, self.context.requiring_rules(rules));

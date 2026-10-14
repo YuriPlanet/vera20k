@@ -207,7 +207,7 @@ impl Simulation {
         else {
             return stats;
         };
-        if !entity.lifecycle.object_alive {
+        if !entity.lifecycle.object_alive() {
             return stats;
         }
         let destination = state.destination();
@@ -426,7 +426,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.lifecycle.object_alive && !entity.lifecycle.in_limbo)
+            .is_some_and(|entity| entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo())
         {
             self.foot_mark_put(id, rules, registry, frame_effects);
         }
@@ -553,7 +553,7 @@ impl Simulation {
             && !state.has_phase_callback()
             && coord_cell(state.destination()) == coord_cell(location)
             && state.target_speed == SIM_ZERO
-            && (entity.attack_target.is_none()
+            && (entity.attack_target.target().is_none()
                 || entity
                     .aircraft_ammo
                     .as_ref()
@@ -621,7 +621,7 @@ impl Simulation {
                 .mission_leaf
                 .as_aircraft()
                 .is_some_and(|leaf| leaf.action_latch() != 0);
-        let target = entity.attack_target.as_ref().map(|attack| attack.target);
+        let target = entity.attack_target.target();
         let ammo = entity
             .aircraft_ammo
             .as_ref()
@@ -850,8 +850,10 @@ impl Simulation {
             .and_then(|cargo| cargo.unload_first())
         {
             self.team_script_vm.mark_member_team_leaving_map(passenger);
+            // RemoveFirstPassenger leaves the passenger's own hold for its
+            // teardown.
             if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
-                passenger.passenger_role = crate::sim::passenger::PassengerRole::None;
+                passenger.passenger_role.clear_carrier_relation();
             }
             self.uninit_with_context(passenger, context);
         }

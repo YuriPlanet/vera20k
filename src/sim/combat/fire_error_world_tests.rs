@@ -5,7 +5,7 @@ use super::super::fire_error::FireError;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{AttackTarget, tick_combat};
+use crate::sim::combat::{TargetKind, tick_combat};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
@@ -47,7 +47,7 @@ fn spawn(
     let mut entity = GameEntity::test_default(id, type_name, owner, at.0, at.1);
     entity.set_category_for_test(category);
     entity.health.set_for_test(300);
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     store.insert(entity);
 }
 
@@ -73,7 +73,7 @@ fn coil_shot(tank_at: (u16, u16), setup: impl FnOnce(&mut GameEntity)) -> (i32, 
         tank_at,
     );
     let coil = store.get_mut(1).unwrap();
-    coil.attack_target = Some(AttackTarget::new(2));
+    coil.attack_target.set_for_test(Some(TargetKind::Entity(2)));
     setup(coil);
     let mut interner = test_interner();
     let mut occupancy = OccupancyGrid::rebuild(&store);
@@ -90,7 +90,7 @@ fn coil_shot(tank_at: (u16, u16), setup: impl FnOnce(&mut GameEntity)) -> (i32, 
     );
     (
         store.get(2).unwrap().health.current(),
-        store.get(1).unwrap().attack_target.is_some(),
+        store.get(1).unwrap().attack_target.target().is_some(),
     )
 }
 
@@ -152,7 +152,7 @@ fn a_warping_in_unit_holds_fire_until_it_lands() {
             (12, 10),
         );
         let tank = store.get_mut(1).unwrap();
-        tank.attack_target = Some(AttackTarget::new(2));
+        tank.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         tank.install_teleport_state_for_test(Some(TeleportState::for_test(
             TeleportPhase::ChronoDelay,
             10,
@@ -174,7 +174,7 @@ fn a_warping_in_unit_holds_fire_until_it_lands() {
         );
         (
             store.get(2).unwrap().health.current(),
-            store.get(1).unwrap().attack_target.is_some(),
+            store.get(1).unwrap().attack_target.target().is_some(),
         )
     };
     assert_eq!(fire(5), (300, true));
@@ -239,7 +239,11 @@ fn an_unpowered_defence_drops_its_target() {
             "Americans",
             (12, 10),
         );
-        store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+        store
+            .get_mut(1)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
         let mut power = std::collections::BTreeMap::new();
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.total_output = output;
@@ -248,7 +252,7 @@ fn an_unpowered_defence_drops_its_target() {
         combat_frame(&mut store, &rules, &power);
         (
             store.get(2).unwrap().health.current(),
-            store.get(1).unwrap().attack_target.is_some(),
+            store.get(1).unwrap().attack_target.target().is_some(),
         )
     };
     assert_eq!(shot(50), (300, false), "short of power");
@@ -278,10 +282,14 @@ fn an_empty_garrison_drops_its_target() {
         "Americans",
         (12, 10),
     );
-    store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+    store
+        .get_mut(1)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(2)));
     combat_frame(&mut store, &rules, &Default::default());
     assert_eq!(store.get(2).unwrap().health.current(), 300);
-    assert!(store.get(1).unwrap().attack_target.is_none());
+    assert!(store.get(1).unwrap().attack_target.target().is_none());
 }
 
 /// `BuildingClass::GetWeapon @ 0x004526F0`: an occupied building fires its
@@ -333,16 +341,16 @@ fn a_garrison_fires_its_occupy_weapon_or_nothing() {
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 1);
         assert!(cargo.board(3, 1));
         let bunker = store.get_mut(1).unwrap();
-        bunker.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
-        bunker.attack_target = Some(AttackTarget::new(2));
-        store.get_mut(3).unwrap().passenger_role = crate::sim::passenger::PassengerRole::Inside {
-            transport_id: 1,
-            open_topped: false,
-        };
+        bunker.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        bunker
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
+        store.get_mut(3).unwrap().passenger_role =
+            crate::sim::passenger::PassengerRole::inside_for_test(1, false);
         combat_frame(&mut store, &rules, &Default::default());
         (
             store.get(2).unwrap().health.current(),
-            store.get(1).unwrap().attack_target.is_some(),
+            store.get(1).unwrap().attack_target.target().is_some(),
         )
     };
     assert_eq!(
@@ -380,7 +388,7 @@ fn a_warping_in_unit_holds_fire_and_its_target() {
         (12, 10),
     );
     let tank = store.get_mut(1).unwrap();
-    tank.attack_target = Some(AttackTarget::new(2));
+    tank.attack_target.set_for_test(Some(TargetKind::Entity(2)));
     tank.install_teleport_state_for_test(Some(TeleportState::for_test(
         TeleportPhase::ChronoDelay,
         10,
@@ -389,7 +397,7 @@ fn a_warping_in_unit_holds_fire_and_its_target() {
     )));
     combat_frame(&mut store, &rules, &Default::default());
     assert_eq!(store.get(2).unwrap().health.current(), 300);
-    assert!(store.get(1).unwrap().attack_target.is_some());
+    assert!(store.get(1).unwrap().attack_target.target().is_some());
 }
 
 /// U6 (`0x007410F9`): a repair weapon fires only at a damaged vehicle, and
@@ -416,11 +424,15 @@ fn a_repair_weapon_lets_go_of_a_healthy_vehicle() {
             (12, 10),
         );
         store.get_mut(2).unwrap().health.set_for_test(health);
-        store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+        store
+            .get_mut(1)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
         combat_frame(&mut store, &rules, &Default::default());
         (
             store.get(2).unwrap().health.current(),
-            store.get(1).unwrap().attack_target.is_some(),
+            store.get(1).unwrap().attack_target.target().is_some(),
         )
     };
     assert_eq!(mend(300), (300, false), "nothing to repair");

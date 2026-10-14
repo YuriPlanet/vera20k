@@ -1017,7 +1017,7 @@ impl Simulation {
             .substrate
             .entities
             .get(controller_id)
-            .is_some_and(|controller| controller.lifecycle.object_alive);
+            .is_some_and(|controller| controller.lifecycle.object_alive());
         if index > 0 && alive {
             let _lean_left = self.scenario_rng.next_range_i32_inclusive(0, 100) < 50;
         }

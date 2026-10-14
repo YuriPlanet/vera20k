@@ -558,7 +558,7 @@ impl crate::sim::world::Simulation {
         let attacking_aircraft = entity.category()
             == crate::map::entities::EntityCategory::Aircraft
             && (entity.mission.current() == attack || entity.mission.queued() == attack)
-            && entity.attack_target.is_some();
+            && entity.attack_target.target().is_some();
         if !attacking_aircraft {
             self.locomotor_stop_moving(id, rules, registry, frame_effects)
                 .unwrap_or_else(|cause| panic!("Foot null destination {id}: {cause}"));

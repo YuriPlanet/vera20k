@@ -130,8 +130,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
                 .get(harrier)
                 .expect("Harrier survives");
             let ammo = entity.aircraft_ammo.as_ref().expect("Harrier ammo");
-            seen.took_miner |= entity.attack_target.as_ref().map(|attack| attack.target)
-                == Some(TargetKind::Entity(miner));
+            seen.took_miner |= entity.attack_target.target() == Some(TargetKind::Entity(miner));
             seen.fired |= ammo.current < ammo.max;
             seen.entered |= seen.fired && mission(sim, harrier) == Some(MissionType::Enter);
             let linked = entity.radio_contacts.contains(airfield);

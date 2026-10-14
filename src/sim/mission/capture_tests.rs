@@ -204,6 +204,7 @@ fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
                 .get(gi)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_none(),
             "{name}"
         );

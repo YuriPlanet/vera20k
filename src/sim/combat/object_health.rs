@@ -153,7 +153,7 @@ pub(super) fn commit(
     }
     target.health.current = post;
     // Alive0 is result5, independent of the newly written health (including0).
-    if !target.lifecycle.object_alive {
+    if !target.lifecycle.object_alive() {
         return DamageState::AlreadyDead;
     }
     if target.health.current == 0 {

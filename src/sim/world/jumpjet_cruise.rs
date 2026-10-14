@@ -224,7 +224,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().locomotor.as_ref().unwrap().balloon_hover
     }
     fn has_target(&self) -> bool {
-        self.owner().attack_target.is_some()
+        self.owner().attack_target.target().is_some()
     }
     fn piggyback_active(&self) -> bool {
         self.owner().foot_locomotor_swap_active
@@ -462,13 +462,13 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let owner = self.sim.substrate.entities.get_mut(id).unwrap();
         owner.lift_may_end = true;
         owner.being_manipulated = false;
-        owner.crashing = false;
+        owner.crash.lower();
         if deploy_to_land {
             owner.set_landing_for_deploy(false);
         }
     }
     fn crashing(&self) -> bool {
-        self.owner().crashing
+        self.owner().crash.is_crashing()
     }
     fn in_bounds(&self, cell: (i16, i16)) -> bool {
         self.sim.map_size_diamond().is_some_and(|(width, height)| {
@@ -1554,7 +1554,7 @@ mod tests {
                 "frame {frame}"
             );
             let Some(crate::sim::combat::TargetKind::Entity(target)) =
-                entity.attack_target.as_ref().map(|attack| attack.target)
+                entity.attack_target.target()
             else {
                 continue;
             };

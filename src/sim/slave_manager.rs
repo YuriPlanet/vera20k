@@ -1625,7 +1625,7 @@ impl Simulation {
                         continue;
                     };
                     entity.slave.owner = None;
-                    if entity.lifecycle.in_limbo {
+                    if entity.lifecycle.in_limbo() {
                         self.uninit_with_context(
                             slave,
                             UninitContext::default().with_effects(frame_effects),
@@ -1672,7 +1672,7 @@ impl Simulation {
                 continue;
             };
             entity.slave.owner = None;
-            if entity.lifecycle.in_limbo {
+            if entity.lifecycle.in_limbo() {
                 self.slave_dies_inside(slave, killer, rules, registry, frame_effects);
                 continue;
             }
@@ -1849,7 +1849,7 @@ mod tests {
                 .get(slave)
                 .unwrap()
                 .lifecycle
-                .in_limbo
+                .in_limbo()
         );
         assert_eq!(
             sim.substrate
@@ -1871,7 +1871,7 @@ mod tests {
             crate::sim::world::FrameEffects::default()
         )));
         let entity = sim.substrate.entities.get(slave).unwrap();
-        assert!(!entity.lifecycle.in_limbo);
+        assert!(!entity.lifecycle.in_limbo());
         assert_eq!(entity.sub_cell, Some(0));
         assert_eq!(
             (entity.position.sub_x, entity.position.sub_y),

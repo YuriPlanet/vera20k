@@ -625,7 +625,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_none_or(|actor| !actor.lifecycle.object_alive)
+                .is_none_or(|actor| !actor.lifecycle.object_alive())
     }
 
     /// The Infantry `INoticeSink` answer to the Jumpjet crash impact

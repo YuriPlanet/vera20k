@@ -719,7 +719,7 @@ impl Simulation {
                 .entities
                 .get(id)
                 .map_or((false, false), |actor| {
-                    (actor.lifecycle.in_limbo, actor.lifecycle.object_alive)
+                    (actor.lifecycle.in_limbo(), actor.lifecycle.object_alive())
                 });
             if !in_limbo {
                 if !alive {
@@ -899,14 +899,14 @@ impl Simulation {
             .entities
             .get_mut(id)
             .ok_or("retired Drive/Ship finalize owner")?;
-        if picked && !actor.lifecycle.in_limbo {
+        if picked && !actor.lifecycle.in_limbo() {
             //4B46FC..4B4705: Apply_Track_Occupation_Mode(head, 1).
             self.track_apply_occupation(id, call.family, true);
             return Ok(false);
         }
         //4B4716..4B473C: a false answer or a limbo owner: a live owner drops
         //the head again.
-        if actor.lifecycle.object_alive {
+        if actor.lifecycle.object_alive() {
             clear_track_head(actor);
         }
         self.track_finalize_stop(id)

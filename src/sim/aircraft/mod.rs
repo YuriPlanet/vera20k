@@ -117,7 +117,7 @@ pub(crate) fn dispatch_mission(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
-    if entity.dying
+    if entity.death.is_dying()
         || entity.category() != EntityCategory::Aircraft
         || !entity.mission.dispatch_timer().due(now)
     {

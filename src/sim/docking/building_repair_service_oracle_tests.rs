@@ -219,8 +219,8 @@ impl Scene {
             "pending_entry": self.name(unit.pending_entry()),
             "unit_contacts": (0..unit.radio_contacts.capacity()).map(|n| self.name(unit.radio_contacts.slot(n))).collect::<Vec<_>>(),
             "building_contacts": (0..building.radio_contacts.capacity()).map(|n| self.name(building.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "unit_tether": u8::from(unit.dock_entered_with.is_some()),
-            "building_tether": u8::from(building.dock_entered_with.is_some()),
+            "unit_tether": u8::from(unit.tether.partner().is_some()),
+            "building_tether": u8::from(building.tether.partner().is_some()),
             "building_mission": building.mission.current().raw(),
             "building_queued": building.mission.queued().raw(),
             "status": building.mission.handler_state(),
@@ -466,7 +466,9 @@ fn scene(golden: &Value, row: &Value) -> Scene {
                 entity.radio_contacts.insert(target);
             }
         }
-        entity.dock_entered_with = (int(&before[tether]) != 0).then_some(peer);
+        entity
+            .tether
+            .set_for_test((int(&before[tether]) != 0).then_some(peer));
     }
     {
         let unit = sim.substrate.entities.get_mut(tank).unwrap();
@@ -611,7 +613,9 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
         }
         {
             let contact = scene.sim.substrate.entities.get_mut(scene.depot).unwrap();
-            contact.lifecycle.object_alive = case["contact_alive"] != false;
+            contact
+                .lifecycle
+                .set_object_alive_for_test(case["contact_alive"] != false);
             if let Some(health) = case["contact_health"].as_u64() {
                 contact.health.set_for_test(health as i32);
             }

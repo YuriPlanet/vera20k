@@ -117,7 +117,7 @@ impl MapScheduledCommand {
                     let mut matches = sim.entities().iter_sorted().filter(|(_, entity)| {
                         entity.is_active()
                             && entity.is_alive()
-                            && !entity.lifecycle.in_limbo
+                            && !entity.lifecycle.in_limbo()
                             && sim.interner.resolve(entity.type_ref()) == selector.type_id
                             && sim.interner.resolve(entity.owner()) == selector.owner
                             && selector
@@ -299,7 +299,7 @@ mod tests {
             4,
             true,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.entities_mut().insert(entity);
     }
 
@@ -415,10 +415,22 @@ mod tests {
             command.resolve(&sim, &rules).unwrap().0,
             Command::Stop { entity_id: 17 }
         );
-        sim.entities_mut().get_mut(17).unwrap().lifecycle.in_limbo = true;
+        sim.entities_mut()
+            .get_mut(17)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
         assert!(command.resolve(&sim, &rules).is_err());
-        sim.entities_mut().get_mut(17).unwrap().lifecycle.in_limbo = false;
-        sim.entities_mut().get_mut(17).unwrap().dying = true;
+        sim.entities_mut()
+            .get_mut(17)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(false);
+        sim.entities_mut()
+            .get_mut(17)
+            .unwrap()
+            .death
+            .set_dying_for_test(true);
         assert!(command.resolve(&sim, &rules).is_err());
     }
 

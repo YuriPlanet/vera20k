@@ -111,7 +111,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
                 .entities
                 .get(member)
                 .expect("physical removal is deferred");
-            assert!(entity.lifecycle.in_limbo && !entity.lifecycle.object_alive);
+            assert!(entity.lifecycle.in_limbo() && !entity.lifecycle.object_alive());
             assert_eq!(
                 entity.health.current(),
                 200,
@@ -187,7 +187,7 @@ fn first_unit_limbo_uses_shared_stop_driver_before_hiding_the_actor() {
     );
     sim.techno_limbo_with_context(member, UninitContext::with_rules(&rules));
     let entity = sim.substrate.entities.get(member).unwrap();
-    assert!(entity.lifecycle.in_limbo);
+    assert!(entity.lifecycle.in_limbo());
     assert_eq!(
         entity
             .locomotor
@@ -244,7 +244,7 @@ fn first_hover_limbo_enters_the_existing_native_hover_stop_receiver() {
     );
     sim.techno_limbo_with_context(member, UninitContext::with_rules(&rules));
     let entity = sim.substrate.entities.get(member).unwrap();
-    assert!(entity.lifecycle.in_limbo);
+    assert!(entity.lifecycle.in_limbo());
     assert!(
         !entity
             .locomotor

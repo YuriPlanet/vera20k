@@ -139,7 +139,7 @@ impl Simulation {
             moving,
             mission_scatter: mission_permits_scatter(infantry, rules),
             fraidycat: object.fraidycat,
-            has_target: infantry.attack_target.is_some(),
+            has_target: infantry.attack_target.target().is_some(),
             player_scatter: rules.general.player_scatter,
             scatter_ability: crate::sim::combat::veterancy::has_weapon_ability(
                 infantry.veterancy.rank_kind(),

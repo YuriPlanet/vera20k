@@ -103,7 +103,7 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
                 .collect(),
         ));
         let mut paratrooper = GameEntity::test_default(1, "E1", "Americans", 10, 10);
-        paratrooper.lifecycle.in_limbo = false;
+        paratrooper.lifecycle.set_in_limbo_for_test(false);
         paratrooper.lifecycle.cell_marked = true;
         paratrooper.on_bridge = on_bridge;
         sim.substrate.entities.insert(paratrooper);
@@ -181,7 +181,7 @@ fn a_falling_paratrooper_is_marked_again_at_the_head_of_its_cell() {
     for id in [1, 2] {
         let mut infantry = GameEntity::test_default(id, "E1", "Americans", 10, 10);
         infantry.set_category_for_test(EntityCategory::Infantry);
-        infantry.lifecycle.in_limbo = false;
+        infantry.lifecycle.set_in_limbo_for_test(false);
         infantry.lifecycle.cell_marked = false;
         infantry.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         infantry.position.exact_z_leptons = Some(0);

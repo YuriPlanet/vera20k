@@ -287,7 +287,7 @@ impl crate::sim::world::Simulation {
                     .substrate
                     .entities
                     .get(victim)
-                    .is_some_and(|victim| victim.lifecycle.object_alive)
+                    .is_some_and(|victim| victim.lifecycle.object_alive())
                 {
                     self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
                 }
@@ -300,7 +300,7 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(victim) else {
             return;
         };
-        if !entity.lifecycle.object_alive || entity.category() == EntityCategory::Unit {
+        if !entity.lifecycle.object_alive() || entity.category() == EntityCategory::Unit {
             return;
         }
         for kind in [7, 48, 29] {
@@ -311,7 +311,7 @@ impl crate::sim::world::Simulation {
                 .substrate
                 .entities
                 .get(victim)
-                .is_some_and(|victim| victim.lifecycle.object_alive)
+                .is_some_and(|victim| victim.lifecycle.object_alive())
             {
                 self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
             }
@@ -346,7 +346,7 @@ fn record_kill_credit(
     if callback == KillCallback::Terminal
         || victim.health.current() == 0
         || killer_owner.is_some()
-        || victim.crashing
+        || victim.crash.is_crashing()
     {
         victim.destruction_recorded = true;
     }

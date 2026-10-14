@@ -175,8 +175,8 @@ fn world_queries_match_all_original_foot_coordinate_rows_and_snapshot() {
         );
         if input["tube"].is_array() {
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.lifecycle.object_alive = false;
-            e.lifecycle.in_limbo = true;
+            e.lifecycle.set_object_alive_for_test(false);
+            e.lifecycle.set_in_limbo_for_test(true);
             e.locomotor = None;
             assert_eq!(
                 sim.foot_navigation_coordinate(1).unwrap(),
@@ -325,8 +325,8 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         Some(104)
     );
     let mut fly = entity(1, LocomotorKind::Fly, base, NULL_COORD);
-    fly.lifecycle.object_alive = true;
-    fly.lifecycle.in_limbo = false;
+    fly.lifecycle.set_object_alive_for_test(true);
+    fly.lifecycle.set_in_limbo_for_test(false);
     let loco = fly.locomotor.as_mut().unwrap();
 
     loco.set_fly_target_height(1000);

@@ -647,9 +647,9 @@ impl Simulation {
                     .get(*entity_id)
                     .is_some_and(|actor| {
                         actor.category().is_foot()
-                            && actor.lifecycle.object_alive
-                            && !actor.lifecycle.in_limbo
-                            && actor.dock_entered_with.is_none()
+                            && actor.lifecycle.object_alive()
+                            && !actor.lifecycle.in_limbo()
+                            && actor.tether.partner().is_none()
                     });
                 if !admitted {
                     return false;
@@ -710,15 +710,15 @@ impl Simulation {
                 // The IDLE arm returns at `0x004C7504..0x004C750C` when the
                 // object's tether byte (`+0x418`) is set: a miner that has
                 // entered its dock ignores Stop and finishes unloading, and so
-                // does a vehicle still leaving its war factory (the other
-                // writer of `dock_entered_with`). Current missions 0x12/0x13
+                // does a vehicle still leaving its war factory (the tether's
+                // other writer). Current missions 0x12/0x13
                 // also return before radio, destination and target writes.
                 if self
                     .substrate
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| {
-                        entity.dock_entered_with.is_some()
+                        entity.tether.partner().is_some()
                             || matches!(entity.mission.current().raw(), 0x12 | 0x13)
                     })
                 {
@@ -1146,7 +1146,7 @@ impl Simulation {
                         .substrate
                         .entities
                         .get(*entity_id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                        .is_some_and(|entity| entity.lifecycle.object_alive())
                 {
                     return false;
                 }
@@ -1301,7 +1301,7 @@ impl Simulation {
                         && self
                             .object_type(e.type_ref(), rules)
                             .is_some_and(|object| e.health.current() < object.strength)
-                        && !e.dying
+                        && !e.death.is_dying()
                 });
                 if !entity_ok {
                     return false;
@@ -1657,7 +1657,7 @@ impl Simulation {
                         if b.category() != crate::map::entities::EntityCategory::Structure {
                             return None;
                         }
-                        if b.dying {
+                        if b.death.is_dying() {
                             return None;
                         }
                         let obj = self.object_type(b.type_ref(), rules)?;
@@ -1752,9 +1752,9 @@ impl Simulation {
                         if b.category() != crate::map::entities::EntityCategory::Structure {
                             return None;
                         }
-                        if !b.lifecycle.object_alive
+                        if !b.lifecycle.object_alive()
                             || b.health.current() <= 0
-                            || b.lifecycle.in_limbo
+                            || b.lifecycle.in_limbo()
                         {
                             return None;
                         }
@@ -2051,7 +2051,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        !entity.lifecycle.in_limbo
+        !entity.lifecycle.in_limbo()
             && self.object_is_selectable(stable_id, rules)
             && !(entity.is_mission_only()
                 && rules.is_some_and(|rules| self.techno_player_controllable(stable_id, rules)))
@@ -2148,7 +2148,7 @@ impl Simulation {
     ///   arm bypass that prefix and keep a team member in its team.
     pub(crate) fn order_actor_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.lifecycle.object_alive && e.health.current() > 0 && !e.lifecycle.in_limbo
+            e.lifecycle.object_alive() && e.health.current() > 0 && !e.lifecycle.in_limbo()
         })
     }
 
@@ -2161,7 +2161,7 @@ impl Simulation {
     /// corpse that is still resolvable in the store.
     pub(crate) fn order_object_token_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.lifecycle.object_alive && e.health.current() != 0 && !e.lifecycle.in_limbo
+            e.lifecycle.object_alive() && e.health.current() != 0 && !e.lifecycle.in_limbo()
         })
     }
 
@@ -2220,7 +2220,7 @@ impl Simulation {
         if refinery.category() != crate::map::entities::EntityCategory::Structure {
             return false;
         }
-        if refinery.health.current() == 0 || refinery.dying || refinery.building_up() {
+        if refinery.health.current() == 0 || refinery.death.is_dying() || refinery.building_up() {
             return false;
         }
         let refinery_owner = self.interner.resolve(refinery.owner());
@@ -2590,7 +2590,7 @@ mod tests {
         // A directly-inserted GameEntity keeps the constructed `in_limbo`
         // byte; production spawns clear it through Reveal. Order admission
         // reads that byte, so the fixture must model a revealed object.
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
     }
 
@@ -2721,7 +2721,7 @@ mod tests {
             5,
             false,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
     }
 
@@ -3014,7 +3014,7 @@ mod tests {
             assert_eq!(actor.mission.dispatch_timer(), before_timer);
             assert!(actor.suspended_attack_target.is_none());
             assert!(actor.navigation.suspended_nav_com.is_none());
-            assert!(actor.attack_target.is_none());
+            assert!(actor.attack_target.target().is_none());
             assert!(
                 !actor.mega_mission.is_attack_move(),
                 "Assign_Target_Command answers Area Guard with Clear_All_TarCom"
@@ -3030,7 +3030,7 @@ mod tests {
         let mut sim = Simulation::new();
         spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
         let actor = sim.substrate.entities.get_mut(1).unwrap();
-        actor.lifecycle.in_limbo = true;
+        actor.lifecycle.set_in_limbo_for_test(true);
         actor.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
             crate::sim::combat::TargetKind::Cell(12, 12),
         ));
@@ -3065,7 +3065,7 @@ mod tests {
             .get_mut(2)
             .unwrap()
             .lifecycle
-            .in_limbo = true;
+            .set_in_limbo_for_test(true);
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         sim.install_fixture_path_grid(Some(&grid));
         assert!(sim.apply_command(
@@ -3194,7 +3194,7 @@ mod tests {
                 0,
                 false,
             );
-            infantry.lifecycle.in_limbo = false;
+            infantry.lifecycle.set_in_limbo_for_test(false);
             sim.substrate.entities.insert(infantry);
         }
         let fortress = rules.object("BFRT").unwrap();
@@ -3204,7 +3204,7 @@ mod tests {
         );
         assert!(cargo.board(3, rules.object("E1").unwrap().size));
         sim.substrate.entities.get_mut(1).unwrap().passenger_role =
-            crate::sim::passenger::PassengerRole::Transport { cargo };
+            crate::sim::passenger::PassengerRole::transport(cargo);
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         sim.install_fixture_path_grid(Some(&grid));
         let rider_target = |sim: &Simulation| {
@@ -3213,8 +3213,7 @@ mod tests {
                 .get(3)
                 .unwrap()
                 .attack_target
-                .as_ref()
-                .map(|attack| attack.target)
+                .target()
         };
 
         assert!(sim.apply_command(
@@ -3251,7 +3250,7 @@ mod tests {
             .get_mut(1)
             .unwrap()
             .lifecycle
-            .in_limbo = true;
+            .set_in_limbo_for_test(true);
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         sim.install_fixture_path_grid(Some(&grid));
 
@@ -3277,7 +3276,7 @@ mod tests {
         let rules = amcv_move_rules();
 
         for kill in [
-            |e: &mut GameEntity| e.lifecycle.object_alive = false,
+            |e: &mut GameEntity| e.lifecycle.set_object_alive_for_test(false),
             |e: &mut GameEntity| e.health.set_for_test(0),
         ] {
             let mut sim = Simulation::new();
@@ -3338,7 +3337,7 @@ mod tests {
             Some(&rules),
         ));
         let attacker = sim.substrate.entities.get(1).unwrap();
-        assert!(attacker.attack_target.is_none());
+        assert!(attacker.attack_target.target().is_none());
         assert_eq!(attacker.mission.queued(), MissionId::NONE);
     }
 
@@ -3422,7 +3421,7 @@ mod tests {
         );
         // Direct insertion skips Unlimbo; player orders require a live,
         // revealed actor before the shared Event retask prefix runs.
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.miner = Some(Miner::new(MinerKind::War, &MinerConfig::default(), 0));
         sim.substrate.entities.insert(entity);
     }
@@ -3444,7 +3443,7 @@ mod tests {
             5,
             false,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
     }
 
@@ -3490,7 +3489,7 @@ mod tests {
             5,
             false,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
     }
 
@@ -3539,7 +3538,7 @@ mod tests {
         for (id, partner) in [(1, 2), (2, 1)] {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.radio_contacts.set_slot(0, partner);
-            entity.dock_entered_with = Some(partner);
+            entity.tether.set_for_test(Some(partner));
         }
         let now = sim.session.binary_frame;
         sim.mission_assign_exact(
@@ -3576,10 +3575,10 @@ mod tests {
         assert!(!miner.unload_active);
         assert_eq!(miner_entity.display_type_override, None);
         assert!(!miner_entity.radio_contacts.contains(2));
-        assert_eq!(miner_entity.dock_entered_with, None);
+        assert_eq!(miner_entity.tether.partner(), None);
         let refinery = sim.substrate.entities.get(2).unwrap();
         assert!(!refinery.radio_contacts.contains(1));
-        assert_eq!(refinery.dock_entered_with, None);
+        assert_eq!(refinery.tether.partner(), None);
         spawn_miner(&mut sim, 7);
         assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 7));
     }
@@ -3676,7 +3675,7 @@ mod tests {
         );
         ge.bunker_runtime = Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
         // Revealed object: order admission reads the limbo byte.
-        ge.lifecycle.in_limbo = false;
+        ge.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(ge);
     }
 
@@ -3705,7 +3704,7 @@ mod tests {
             true,
         );
         // Revealed object: order admission reads the limbo byte.
-        ge.lifecycle.in_limbo = false;
+        ge.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(ge);
     }
 
@@ -3820,7 +3819,7 @@ mod tests {
             .ensure_installed_track_state();
         // Admission-only spawn helper preclears Limbo without placing the
         // object. Restore its constructor gate and publish through Reveal.
-        unit.lifecycle.in_limbo = true;
+        unit.lifecycle.set_in_limbo_for_test(true);
         assert!(matches!(
             sim.reveal(1),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -3934,7 +3933,7 @@ mod tests {
             .ensure_installed_track_state();
         // Exercise real cell/Logic membership, not the admission-only helper's
         // already-clear Limbo byte (which makes Reveal a no-op).
-        unit.lifecycle.in_limbo = true;
+        unit.lifecycle.set_in_limbo_for_test(true);
         assert!(matches!(
             sim.reveal(1),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4010,7 +4009,7 @@ mod tests {
             unit.in_logic_vector,
             "install preserves LogicVector membership"
         );
-        assert!(!unit.lifecycle.in_limbo);
+        assert!(!unit.lifecycle.in_limbo());
         let parked = crate::sim::movement::ground_pose::object_get_coords(
             unit,
             sim.resolved_terrain.as_ref(),
@@ -4044,7 +4043,7 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "occupant stays active on eject");
-        assert!(!unit.lifecycle.in_limbo);
+        assert!(!unit.lifecycle.in_limbo());
         assert_eq!(
             crate::sim::movement::ground_pose::object_get_coords(
                 unit,

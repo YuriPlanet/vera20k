@@ -16,7 +16,7 @@ impl Simulation {
     pub(super) fn release_foot_air_tracker_before_limbo(&mut self, id: u64) {
         if self.substrate.entities.get(id).is_some_and(|entity| {
             entity.category() != EntityCategory::Structure
-                && !entity.lifecycle.in_limbo
+                && !entity.lifecycle.in_limbo()
                 && entity.air_tracker_cell() != (0, 0)
         }) {
             self.aircraft_tracker_remove(id);
@@ -406,8 +406,8 @@ impl Simulation {
         !self.substrate.entities.values().any(|other| {
             other.stable_id() != id
                 && other.category() == EntityCategory::Aircraft
-                && other.lifecycle.object_alive
-                && !other.lifecycle.in_limbo
+                && other.lifecycle.object_alive()
+                && !other.lifecycle.in_limbo()
                 && match (object, other.navigation.nav_com) {
                     (None, Some(NavTargetRef::Cell { rx, ry })) => {
                         self.resolved_terrain.as_ref().map_or(
@@ -627,8 +627,8 @@ mod tests {
         insert_entity(&mut sim, id, EntityCategory::Aircraft);
         let before = &row["before"];
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.lifecycle.object_alive = true;
-        e.lifecycle.in_limbo = false;
+        e.lifecycle.set_object_alive_for_test(true);
+        e.lifecycle.set_in_limbo_for_test(false);
         e.position.rx = 64;
         e.position.ry = 64;
         e.position.sub_x = SimFixed::from_num(128);
@@ -671,8 +671,8 @@ mod tests {
                 },
             );
             let e = sim.substrate.entities.get_mut(id).unwrap();
-            e.lifecycle.object_alive = true;
-            e.lifecycle.in_limbo = false;
+            e.lifecycle.set_object_alive_for_test(true);
+            e.lifecycle.set_in_limbo_for_test(false);
             e.position.rx = 64;
             e.position.ry = 64;
             e.position.sub_x = SimFixed::from_num(128);
@@ -912,8 +912,12 @@ mod tests {
                     5,
                     true,
                 );
-                other.lifecycle.object_alive = input["alive"].as_bool().unwrap_or(true);
-                other.lifecycle.in_limbo = input["limbo"].as_bool().unwrap_or(false);
+                other
+                    .lifecycle
+                    .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
+                other
+                    .lifecycle
+                    .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
                 other.position.sub_x = SimFixed::from_num(128);
                 other.position.sub_y = SimFixed::from_num(128);
                 other.position.exact_z_leptons = Some(0);

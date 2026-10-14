@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use crate::map::houses::HouseAllianceMap;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -203,7 +203,12 @@ fn make_ally_drops_the_targets_on_the_new_ally() {
     let second = spawn(&mut sim, "Computer2", 12);
     let player = spawn(&mut sim, "Player", 14);
     let aim = |sim: &mut Simulation, id, target| {
-        sim.substrate.entities.get_mut(id).unwrap().attack_target = Some(AttackTarget::new(target));
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(target)));
     };
     aim(&mut sim, first, second);
     aim(&mut sim, second, player);
@@ -214,8 +219,7 @@ fn make_ally_drops_the_targets_on_the_new_ally() {
             .get(id)
             .unwrap()
             .attack_target
-            .as_ref()
-            .map(|attack| attack.target)
+            .target()
     };
     assert_eq!(target(first), None);
     assert_eq!(

@@ -122,7 +122,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(id)
-            .is_some_and(|entity| !entity.dying && entity.lifecycle.object_alive)
+            .is_some_and(|entity| !entity.death.is_dying() && entity.lifecycle.object_alive())
     }
 
     /// The Teleport Process of an owner whose Teleport holds a Chronosphere

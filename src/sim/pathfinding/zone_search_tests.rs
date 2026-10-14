@@ -78,7 +78,7 @@ fn gsi_04_12_cell_listed_entity(
     ry: u16,
 ) -> GameEntity {
     let mut entity = GameEntity::test_default(stable_id, type_ref, owner, rx, ry);
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     entity
 }
@@ -971,7 +971,7 @@ fn gsi_04_12_completed_ground_unit_clearance_rally_threads_exact_blocker_counts(
     assert_eq!(produced.rally_cell(), Some((5, 0)));
     assert!(produced.navigation.nav_com.is_none());
     assert!(produced.has_live_contact_with(factory));
-    assert_eq!(produced.dock_entered_with, Some(factory));
+    assert_eq!(produced.tether.partner(), Some(factory));
     assert_eq!(
         sim.substrate
             .entities
@@ -997,7 +997,7 @@ fn gsi_04_12_completed_ground_unit_clearance_rally_threads_exact_blocker_counts(
     .expect("the supplied clear-exit arrival completes");
     let produced = sim.substrate.entities.get(produced_id).unwrap();
     assert!(!produced.has_live_contact_with(factory));
-    assert_eq!(produced.dock_entered_with, None);
+    assert_eq!(produced.tether.partner(), None);
     let route = first_track_process_route(&mut sim, produced_id, Some(&rules), &path_grid)
         .expect("completed MTNK should receive the hierarchy-backed rally route");
     assert_eq!(route.first().copied(), Some((1, 0)));

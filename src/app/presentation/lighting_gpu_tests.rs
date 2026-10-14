@@ -45,7 +45,9 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         })
         .expect("authored stock GALITE must survive normal scenario construction");
     let (id, rx, ry) = (lamp.stable_id(), lamp.position.rx, lamp.position.ry);
-    assert!(lamp.lifecycle.object_alive && !lamp.lifecycle.in_limbo && lamp.lifecycle.cell_marked);
+    assert!(
+        lamp.lifecycle.object_alive() && !lamp.lifecycle.in_limbo() && lamp.lifecycle.cell_marked
+    );
     let rules = &scenario.runtime.resources.rules;
     let stock = rules.object("GALITE").expect("stock GALITE rules");
     assert_eq!(stock.light_visibility, 5000);

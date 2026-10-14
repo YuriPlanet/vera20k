@@ -8,8 +8,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::base_plan::{BasePlanNode, pack_base_plan_cell};
-use crate::sim::combat::Health;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::{Health, TargetKind};
 use crate::sim::command::Command;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseAiActivationLatches;
@@ -152,7 +151,7 @@ fn spawn_infantry(sim: &mut Simulation, type_str: &str, owner: &str, rx: u16, ry
     );
     // A directly-inserted GameEntity keeps the constructed `in_limbo` byte;
     // production spawns clear it through Reveal, and order admission reads it.
-    e.lifecycle.in_limbo = false;
+    e.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(e);
     id
 }
@@ -671,7 +670,7 @@ fn deployed_type<'a>(sim: &'a Simulation, type_name: &str) -> &'a GameEntity {
     sim.substrate
         .entities
         .values()
-        .find(|entity| entity.type_ref() == type_id && !entity.dying)
+        .find(|entity| entity.type_ref() == type_id && !entity.death.is_dying())
         .expect("deployed target exists")
 }
 
@@ -920,7 +919,7 @@ fn base_plan_recalc_deploy_countryless_empty_plan_fails_before_removal() {
         crate::sim::world::FrameEffects::default()
     ));
 
-    assert!(!sim.substrate.entities.get(mcv).unwrap().dying);
+    assert!(!sim.substrate.entities.get(mcv).unwrap().death.is_dying());
     let house = &sim.houses[&owner];
     assert_eq!(house.base_center, None);
     assert_eq!(house.base_plan_center, (0, 0));
@@ -951,7 +950,7 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
         let rng_before = sim.scenario_rng.state();
 
         assert!(!sim.deploy_mcv(mcv, rules, None, crate::sim::world::FrameEffects::default()));
-        assert!(!sim.substrate.entities.get(mcv).unwrap().dying);
+        assert!(!sim.substrate.entities.get(mcv).unwrap().death.is_dying());
         let house = &sim.houses[&owner];
         assert_eq!(house.base_center, None);
         assert_eq!(house.base_plan_center, (0, 0));
@@ -1281,7 +1280,9 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
         actor.navigation.nav_com = Some(crate::sim::components::NavTargetRef::cell(11, 10));
     }
     if before["target"].as_i64().unwrap_or(0) != 0 {
-        actor.attack_target = Some(AttackTarget::for_cell(10, 10));
+        actor
+            .attack_target
+            .set_for_test(Some(TargetKind::Cell(10, 10)));
     }
     if input["archive"].is_array() {
         let post = spawn_infantry(&mut sim, "E1", "Americans", 0, 0);
@@ -1438,7 +1439,7 @@ pub(crate) fn assert_native_deploy_state(sim: &Simulation, id: u64, row: &serde_
             expected["archive"] != 0,
             "{name}: archive identity retained"
         );
-        let target = actor.attack_target.as_ref().map(|target| target.target);
+        let target = actor.attack_target.target();
         assert_eq!(
             target,
             (expected["target"] != 0).then_some(TargetKind::Cell(10, 10)),

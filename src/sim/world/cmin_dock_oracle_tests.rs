@@ -344,7 +344,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
         "{context}: miner contact"
     );
     assert_eq!(
-        u64::from(entity.dock_entered_with.is_some()),
+        u64::from(entity.tether.partner().is_some()),
         state["miner_tether"].as_u64().unwrap(),
         "{context}: miner tether"
     );

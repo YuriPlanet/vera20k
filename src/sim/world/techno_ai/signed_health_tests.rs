@@ -132,7 +132,7 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     } else {
         EntityCategory::Unit
     });
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(entity);
     sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
     sim.set_logic_order_for_test(vec![1]);

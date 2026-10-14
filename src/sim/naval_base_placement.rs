@@ -147,8 +147,8 @@ fn first_yard_distance_accepts(
     };
     if yard.category() != EntityCategory::Structure
         || !yard.build_const_eligible
-        || !yard.lifecycle.object_alive
-        || yard.lifecycle.in_limbo
+        || !yard.lifecycle.object_alive()
+        || yard.lifecycle.in_limbo()
         || !yard.lifecycle.cell_marked
     {
         return false;
@@ -578,7 +578,7 @@ mod tests {
         );
         yard.foundation = foundation.to_string();
         yard.build_const_eligible = true;
-        yard.lifecycle.in_limbo = false;
+        yard.lifecycle.set_in_limbo_for_test(false);
         yard.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(yard);
     }

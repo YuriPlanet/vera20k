@@ -63,7 +63,7 @@ impl Simulation {
 
     pub(super) fn gap_operational_state(&self, id: u64, rules: &RuleSet) -> Option<(bool, i32)> {
         let entity = self.substrate.entities.get(id)?;
-        if !entity.lifecycle.object_alive || entity.lifecycle.in_limbo {
+        if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
             return None;
         }
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
@@ -91,7 +91,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_none_or(|entity| !entity.lifecycle.object_alive || entity.lifecycle.in_limbo)
+            .is_none_or(|entity| !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo())
         {
             return;
         }

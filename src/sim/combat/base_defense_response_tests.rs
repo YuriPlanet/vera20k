@@ -71,7 +71,7 @@ fn response_world(frame: u32, attacker_at: (u16, u16)) -> Simulation {
     sim.substrate.entities.insert(victim);
     let mut attacker =
         GameEntity::test_default(2, "ATTACKER", "Enemy", attacker_at.0, attacker_at.1);
-    attacker.lifecycle.in_limbo = false;
+    attacker.lifecycle.set_in_limbo_for_test(false);
     attacker.lifecycle.cell_marked = true;
     sim.substrate.entities.insert(attacker);
     sim
@@ -307,7 +307,7 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
         );
         assert_eq!(responder.archive_target(), Some(TargetKind::Entity(1)));
         assert_eq!(
-            responder.attack_target.as_ref().map(|target| target.target),
+            responder.attack_target.target(),
             Some(TargetKind::Entity(2))
         );
     }
@@ -362,8 +362,7 @@ fn gsi_04_05_a_defender_whose_weapon_zero_is_illegal_is_not_recruited() {
             .get(id)
             .unwrap()
             .attack_target
-            .as_ref()
-            .map(|target| target.target)
+            .target()
     };
     assert_eq!(target_of(3), None);
     assert_eq!(target_of(4), Some(TargetKind::Entity(2)));
@@ -533,19 +532,25 @@ fn gsi_04_05_is_armed_reads_one_slot_not_the_whole_weapon_array() {
     let mut candidate = GameEntity::test_default(9, "ARMED", "Responder", 9, 9);
     let interner = test_interner();
 
-    candidate.attack_target = Some(crate::sim::combat::AttackTarget::new(1));
+    candidate
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(1)));
     assert_eq!(
         current_target_disposition(&candidate, 99, &entities, &rules, &interner),
         ExistingTargetDisposition::OtherArmedTarget
     );
 
-    candidate.attack_target = Some(crate::sim::combat::AttackTarget::new(2));
+    candidate
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(2)));
     assert_eq!(
         current_target_disposition(&candidate, 99, &entities, &rules, &interner),
         ExistingTargetDisposition::NoneOrUnarmed
     );
 
-    candidate.attack_target = Some(crate::sim::combat::AttackTarget::new(99));
+    candidate
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(99)));
     assert_eq!(
         current_target_disposition(&candidate, 99, &entities, &rules, &interner),
         ExistingTargetDisposition::RequestedAttacker
@@ -630,8 +635,7 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
             .get(3)
             .unwrap()
             .attack_target
-            .as_ref()
-            .map(|target| target.target);
+            .target();
         assert_eq!(
             selected,
             recruits.then_some(TargetKind::Entity(2)),
@@ -773,8 +777,7 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             .get(defender)
             .unwrap()
             .attack_target
-            .as_ref()
-            .map(|target| target.target);
+            .target();
         assert_eq!(
             selected,
             row["output"]["reachable"]

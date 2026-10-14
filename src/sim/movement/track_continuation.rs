@@ -43,7 +43,7 @@ impl Simulation {
             return Ok(false);
         };
         // 4B0583..4B058C: a dead owner returns the Process.
-        if !entity.lifecycle.object_alive {
+        if !entity.lifecycle.object_alive() {
             return Ok(false);
         }
         // 4B0592: a selector still set keeps its track (common tail 4B078C).

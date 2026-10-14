@@ -456,7 +456,7 @@ impl Simulation {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     continue;
                 };
-                if entity.lifecycle.in_limbo || entity.health.current() <= 0 {
+                if entity.lifecycle.in_limbo() || entity.health.current() <= 0 {
                     continue;
                 }
                 let Some(object) = self.object_type(entity.type_ref(), rules) else {
@@ -1134,7 +1134,7 @@ mod tests {
                     0,
                     false,
                 );
-                entity.lifecycle.in_limbo = limbo;
+                entity.lifecycle.set_in_limbo_for_test(limbo);
                 entity.position.sub_x = SimFixed::from_num(xyz[0] % 256);
                 entity.position.sub_y = SimFixed::from_num(xyz[1] % 256);
                 entity.position.exact_z_leptons = Some(xyz[2]);
@@ -1292,7 +1292,7 @@ mod tests {
                 .unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             if index == 1 {
-                entity.lifecycle.object_alive = false;
+                entity.lifecycle.set_object_alive_for_test(false);
             } else if index == 2 {
                 entity.structure_upgrade_link =
                     Some(crate::sim::game_entity::StructureUpgradeLink {

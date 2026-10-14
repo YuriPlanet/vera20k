@@ -1380,7 +1380,7 @@ mod tests {
             "the production API exposes no caller-forced Mark outcome"
         );
         let entity = sim.substrate.entities.get(stable_id).unwrap();
-        assert!(!entity.lifecycle.in_limbo && entity.lifecycle.cell_marked);
+        assert!(!entity.lifecycle.in_limbo() && entity.lifecycle.cell_marked);
     }
 
     #[test]

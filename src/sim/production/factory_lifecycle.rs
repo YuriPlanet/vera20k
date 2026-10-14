@@ -967,7 +967,7 @@ pub(crate) fn validate_restored_factory_state(
         // Factory admission validates retained identity and membership, without
         // inferring health or death flags. Terminal-state admission separately
         // validates the object's lifecycle handoff.
-        if !entity.lifecycle.in_limbo || entity.lifecycle.cell_marked || entity.in_logic_vector {
+        if !entity.lifecycle.in_limbo() || entity.lifecycle.cell_marked || entity.in_logic_vector {
             return Err(fail(
                 owner,
                 "factory object is already admitted to the world",

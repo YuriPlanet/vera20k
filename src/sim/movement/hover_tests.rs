@@ -52,7 +52,7 @@ fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
         }));
         let mut entity = GameEntity::test_default(1, "YHVR", "Confederation", 9, 10);
         entity.position.exact_z_leptons = Some(int(&input["location"][2]));
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.foot_occupation_enabled = false;
         entity.on_bridge = input["on_bridge"].as_bool().unwrap();
         let mut loco =

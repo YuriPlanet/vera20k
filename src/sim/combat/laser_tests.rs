@@ -3,7 +3,7 @@
 //! these tests do not claim Unit pose or allocator-failure parity.
 
 use super::laser::{self, LaserBirth, LaserColor};
-use super::{AttackTarget, TargetKind, WeaponSlot};
+use super::{TargetKind, WeaponSlot};
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
@@ -379,7 +379,9 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
         sim.power_states.clear();
         sim.session.binary_frame = 200;
         let source = sim.substrate.entities.get_mut(tower).unwrap();
-        source.attack_target = Some(AttackTarget::new(target));
+        source
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(target)));
         source.pending_building_fire = Some(PendingBuildingFire {
             remaining_ticks: 1,
             fire: DelayedFire::Weapon(WeaponSlot::Primary),

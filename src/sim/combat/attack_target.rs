@@ -1,9 +1,9 @@
-//! What an attacker holds as its target ([`AttackTarget`], [`TargetKind`])
+//! What an attacker holds as its target ([`TarCom`], [`TargetKind`])
 //! and the coordinates and distances read from it.
 
 use super::*;
 
-/// What an `AttackTarget` is pointing at — an entity or a ground cell.
+/// What a [`TarCom`] points at: an entity or a ground cell.
 ///
 /// Force-fire on empty terrain (Ctrl + click cell) sets the `Cell` variant.
 /// Auto-acquired and explicit attack-on-unit orders set `Entity`.
@@ -57,31 +57,56 @@ impl TargetKind {
     }
 }
 
-/// Component: this entity is attacking a specific target.
+/// `TechnoClass+0x2B4`, TarCom: the object or cell this Techno attacks, or
+/// nothing (the constructor's NULL, `0x006F2E39`).
 ///
-/// Installed by the concrete target authority for entity or cell targets.
-/// The combat system fires the
-/// attacker's weapon at the resolved target each tick. The reload between
-/// shots is the object's own `GameEntity::rearm_timer`, not the target's.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AttackTarget {
-    /// What this attacker is firing at: an entity or a ground cell (force-fire).
-    pub target: TargetKind,
+/// The class target setter (`TechnoClass::Assign_Target @ 0x006FCDB0` and its
+/// class overrides) writes it; `sim::mission::concrete_effects` represents
+/// that setter. The combat system fires the attacker's weapon at the held
+/// target; the reload between shots is the object's own
+/// `GameEntity::rearm_timer`, not the target's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TarCom {
+    target: Option<TargetKind>,
 }
 
-impl AttackTarget {
-    /// Entity-targeted attack: fire at a specific entity by stable ID.
-    pub fn new(target_stable_id: u64) -> Self {
-        Self {
-            target: TargetKind::Entity(target_stable_id),
-        }
+impl TarCom {
+    /// The held target: an object by stable id, or a cell.
+    pub const fn target(self) -> Option<TargetKind> {
+        self.target
     }
 
-    /// Ground-targeted attack: fire at a specific cell coord (force-fire on terrain).
-    pub fn for_cell(rx: u16, ry: u16) -> Self {
-        Self {
-            target: TargetKind::Cell(rx, ry),
-        }
+    /// Store `target`. The writers:
+    /// - the class setter's store (`0x006FCF3E`), after its same-target
+    ///   early-out and admission (`represented_assign_target_admitted`);
+    /// - `FootClass::Arrival_Target_Handler @ 0x004DF3A0`, which stores NULL
+    ///   and its MegaTarget without the setter, so the passive flag, burst
+    ///   index and SpawnManager keep their state;
+    /// - the mission dispatch's stale-handle cleanup, which drops a target
+    ///   whose object is gone or dying. Native PointerExpired
+    ///   (`0x007077C0`) has already cleared that target through the setter
+    ///   when the object died ([`target_present`]).
+    ///
+    /// RESIDUAL: the stale cleanup is a raw store. Native's clear is
+    /// PointerExpired's TarCom arm: unless `allowClear` or the same-owner
+    /// test exempts it, it re-arms the targeting timer (`+0x180/+0x188`) from
+    /// a Scenario `RandomRanged(4, 8)` (`0x00707A0D`) when more than 10 frames
+    /// remain, then calls the setter (`vt+0x3C8(NULL)`, `0x00707A33`). VERA
+    /// runs that arm in the killing hit's announcement
+    /// (`Simulation::object_destroy_callback`) and UnInit's. Trigger: an
+    /// attacker still holds an object that is gone or dying without that
+    /// announcement having cleared it. Effect: no draw, no timer re-arm and
+    /// none of the setter's resets. Frequency: no production path is known to
+    /// leave such a handle. Risk: if one does, the Scenario stream skips a
+    /// draw.
+    pub(crate) fn set(&mut self, target: Option<TargetKind>) {
+        self.target = target;
+    }
+
+    /// Install a fixture's target without the setter's effects.
+    #[cfg(test)]
+    pub(crate) fn set_for_test(&mut self, target: Option<TargetKind>) {
+        self.target = target;
     }
 }
 
@@ -119,15 +144,15 @@ pub(super) fn cell_center_coords(rx: u16, ry: u16) -> (u16, u16, SimFixed, SimFi
 /// object; VERA can keep a dying infantryman's id until its death sequence
 /// ends.
 pub(crate) fn target_present(
-    at: Option<&AttackTarget>,
+    target: Option<TargetKind>,
     entities: &crate::sim::entity_store::EntityStore,
 ) -> bool {
-    match at.map(|attack| attack.target) {
+    match target {
         None => false,
         Some(TargetKind::Cell(..)) => true,
         Some(TargetKind::Entity(id)) => entities
             .get(id)
-            .is_some_and(|target| !target.dying && target.health.current() > 0),
+            .is_some_and(|target| !target.death.is_dying() && target.health.current() > 0),
     }
 }
 
@@ -269,5 +294,32 @@ pub(super) fn attack_world_z_leptons(
         // Bullet::Fire468707 freezes that same unled aim. The flight/impact
         // owners separately resolve ground contact and the final detonation.
         TargetKind::Cell(rx, ry) => crate::sim::projectile::cell_target_coord(terrain, rx, ry).z,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The saved shape before [`TarCom`]: `Option<AttackTarget { target }>`.
+    #[derive(serde::Serialize)]
+    struct AttackTargetBefore {
+        target: TargetKind,
+    }
+
+    #[test]
+    fn tarcom_saves_the_bytes_of_the_optional_attack_target_it_replaced() {
+        for target in [
+            None,
+            Some(TargetKind::Entity(7)),
+            Some(TargetKind::Cell(1, 2)),
+        ] {
+            let before = target.map(|target| AttackTargetBefore { target });
+            assert_eq!(
+                bincode::serialize(&TarCom { target }).unwrap(),
+                bincode::serialize(&before).unwrap(),
+                "{target:?}"
+            );
+        }
     }
 }

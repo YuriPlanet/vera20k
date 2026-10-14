@@ -370,7 +370,7 @@ pub(crate) fn find_factory(
         let Some(building_type) = sim.object_type(building.type_ref(), rules) else {
             continue;
         };
-        if !building.lifecycle.in_limbo
+        if !building.lifecycle.in_limbo()
             && building_type.factory == Some(factory_type)
             && (!require_online || building.building_online())
             && building.mission.effective() != selling
@@ -409,7 +409,7 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
     let Some(building) = sim.substrate.entities.get(id) else {
         return;
     };
-    if building.category() != EntityCategory::Structure || building.lifecycle.in_limbo {
+    if building.category() != EntityCategory::Structure || building.lifecycle.in_limbo() {
         return;
     }
     let Some(ty) = sim.object_type(building.type_ref(), rules) else {
@@ -430,7 +430,7 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
     let keep = current
         .and_then(|primary| sim.substrate.entities.get(primary))
         .is_some_and(|candidate| {
-            !candidate.lifecycle.in_limbo
+            !candidate.lifecycle.in_limbo()
                 && candidate.owner() == owner
                 && sim
                     .object_type(candidate.type_ref(), rules)

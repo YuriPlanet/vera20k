@@ -343,7 +343,7 @@ fn v3_launcher_gets_a_missile_pool_on_spawn() {
     let child_id = manager.slots[0].spawn.expect("child materialised");
     let child = sim.substrate.entities.get(child_id).expect("child exists");
     assert!(
-        child.lifecycle.in_limbo,
+        child.lifecycle.in_limbo(),
         "a docked spawn child sits in limbo until launch"
     );
     assert_eq!(child.spawn_owner_id, Some(v3), "back-pointer to the parent");
@@ -714,7 +714,7 @@ fn v3_launches_its_rocket_into_the_kamikaze_window() {
     );
 
     let child = sim.substrate.entities.get(child_id).expect("child alive");
-    assert!(!child.lifecycle.in_limbo, "rocket is out in the world");
+    assert!(!child.lifecycle.in_limbo(), "rocket is out in the world");
     let rocket = child
         .locomotor
         .as_ref()
@@ -805,7 +805,7 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
         );
     }
     let entity = sim.substrate.entities.get_mut(missile).unwrap();
-    assert!(!entity.lifecycle.in_limbo, "the missile is launched");
+    assert!(!entity.lifecycle.in_limbo(), "the missile is launched");
     assert!(entity.is_mission_only());
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -817,7 +817,7 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
         ai_counter: 0,
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
-    entity.attack_target = None;
+    entity.attack_target.set_for_test(None);
     // Both edge picks draw on the Scenario stream: state 10's, then
     // Mission_Retreat's, each on the house's own edge.
     let mut rng = sim.scenario_rng.clone();
@@ -931,7 +931,7 @@ fn missile_held_after(setup: impl FnOnce(&mut crate::sim::game_entity::GameEntit
         .get(child_id)
         .expect("child")
         .lifecycle
-        .in_limbo
+        .in_limbo()
 }
 
 #[test]
@@ -1023,7 +1023,7 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
         sim.substrate
             .entities
             .get(target)
-            .is_some_and(|t| t.lifecycle.object_alive && t.health.current() == 50),
+            .is_some_and(|t| t.lifecycle.object_alive() && t.health.current() == 50),
         "fixture guard: the target is alive before the impact"
     );
 
@@ -1038,14 +1038,14 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
         sim.substrate
             .entities
             .get(child_id)
-            .is_none_or(|c| !c.lifecycle.object_alive),
+            .is_none_or(|c| !c.lifecycle.object_alive()),
         "the missile leaves the world at the detonation"
     );
     assert!(
         sim.substrate
             .entities
             .get(target)
-            .is_none_or(|t| t.dying || !t.lifecycle.object_alive),
+            .is_none_or(|t| t.death.is_dying() || !t.lifecycle.object_alive()),
         "a target the missile takes to zero must actually die, not stand at 0 HP"
     );
 }
@@ -1065,12 +1065,14 @@ fn v3_attack_order_damages_the_target_through_the_spawned_rocket() {
         sim.substrate
             .entities
             .get(target)
-            .is_some_and(|t| t.lifecycle.object_alive && t.health.current() == 50),
+            .is_some_and(|t| t.lifecycle.object_alive() && t.health.current() == 50),
         "fixture guard: the target must start alive at full health"
     );
 
     if let Some(entity) = sim.substrate.entities.get_mut(v3) {
-        entity.attack_target = Some(crate::sim::combat::AttackTarget::new(target));
+        entity
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     }
 
     // The retail contract is a kill, not a scratch: FRAGILE has Strength=50
@@ -1083,7 +1085,7 @@ fn v3_attack_order_damages_the_target_through_the_spawned_rocket() {
             .substrate
             .entities
             .get(target)
-            .is_none_or(|t| t.dying || !t.lifecycle.object_alive);
+            .is_none_or(|t| t.death.is_dying() || !t.lifecycle.object_alive());
         if gone {
             destroyed = true;
             break;
@@ -1111,8 +1113,12 @@ fn a_v3s_fire_reaches_its_manager_at_the_next_pass() {
     let target = sim
         .spawn_object("FRAGILE", "Yuri", 16, 10, 0, &rules)
         .expect("spawn FRAGILE");
-    sim.substrate.entities.get_mut(v3).unwrap().attack_target =
-        Some(crate::sim::combat::AttackTarget::new(target));
+    sim.substrate
+        .entities
+        .get_mut(v3)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     // A manager pass on every frame.
     let tick = |sim: &mut Simulation| {
         sim.substrate
@@ -1170,7 +1176,7 @@ fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
         sim.substrate
             .entities
             .get(docked)
-            .is_none_or(|c| c.dying || !c.lifecycle.object_alive),
+            .is_none_or(|c| c.death.is_dying() || !c.lifecycle.object_alive()),
         "the docked missile UnInits"
     );
     let frame = sim.session.binary_frame as i32;
@@ -1228,7 +1234,7 @@ fn owner_death_destroys_docked_children() {
             sim.substrate
                 .entities
                 .get(child)
-                .is_none_or(|c| c.dying || !c.lifecycle.object_alive),
+                .is_none_or(|c| c.death.is_dying() || !c.lifecycle.object_alive()),
             "docked children die with the parent (Kill_All_Spawns)"
         );
     }
@@ -1404,7 +1410,7 @@ fn launcher_death_destroys_a_missile_already_in_flight() {
             .get(child_id)
             .expect("missile")
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
 
     sim.uninit(v3);
@@ -1414,7 +1420,7 @@ fn launcher_death_destroys_a_missile_already_in_flight() {
         sim.substrate
             .entities
             .get(child_id)
-            .is_none_or(|c| c.dying || !c.lifecycle.object_alive),
+            .is_none_or(|c| c.death.is_dying() || !c.lifecycle.object_alive()),
         "an in-flight missile dies with its launcher (Kill_All_Spawns state-1 arm)"
     );
 }
@@ -1480,9 +1486,9 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
     }
     assert!(climbing(&sim), "the tilt ends and the missile climbs");
     let entity = sim.substrate.entities.get_mut(missile).expect("missile");
-    assert!(!entity.lifecycle.in_limbo);
+    assert!(!entity.lifecycle.in_limbo());
     entity.health.set_for_test(0);
-    entity.crashing = true;
+    entity.crash.set_crashing_for_test(true);
     let target_health = sim.substrate.entities.get(target).unwrap().health.current();
 
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
@@ -1491,7 +1497,7 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
         sim.substrate
             .entities
             .get(missile)
-            .is_none_or(|m| !m.lifecycle.object_alive),
+            .is_none_or(|m| !m.lifecycle.object_alive()),
         "the missile explodes and is UnInit"
     );
     assert_eq!(
@@ -1556,7 +1562,7 @@ fn ownership_change_clears_the_pool_and_rearms_without_a_regen_wait() {
             sim.substrate
                 .entities
                 .get(child)
-                .is_none_or(|c| c.dying || !c.lifecycle.object_alive),
+                .is_none_or(|c| c.death.is_dying() || !c.lifecycle.object_alive()),
             "docked children of the previous owner are destroyed"
         );
     }
@@ -1770,6 +1776,7 @@ fn hornets_hold_over_the_carrier_until_the_whole_wing_is_up() {
                 .get(*child)
                 .expect("hornet")
                 .attack_target
+                .target()
                 .is_none(),
             "a Hornet holding formation carries no attack order yet"
         );
@@ -1841,7 +1848,7 @@ fn a_dead_carriers_airborne_hornet_crashes() {
         .entities
         .get(hornet)
         .expect("a crashing Hornet stays represented until its impact");
-    assert!(hornet.crashing && hornet.lifecycle.object_alive);
+    assert!(hornet.crash.is_crashing() && hornet.lifecycle.object_alive());
     assert_eq!(hornet.health.current(), 0);
     assert_eq!(hornet.spawn_owner_id, None);
     assert!(
@@ -2126,7 +2133,7 @@ fn a_landing_hornet_keeps_its_slot_and_reloads() {
             .get(hornet)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
 
     // Bring it home: no wing target, over the deck, on the landing step.
@@ -2171,7 +2178,7 @@ fn a_landing_hornet_keeps_its_slot_and_reloads() {
             .get(hornet)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
 
     // Reload completes: the same Hornet is ready on the deck again.
@@ -2312,7 +2319,9 @@ fn stop_cancels_a_v3s_queued_launch() {
         .expect("spawn FRAGILE");
     // As after its fire: the V3 holds the target and its manager queued it.
     let entity = sim.substrate.entities.get_mut(v3).unwrap();
-    entity.attack_target = Some(crate::sim::combat::AttackTarget::new(target));
+    entity
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     entity
         .spawn_manager
         .as_mut()
@@ -2371,7 +2380,9 @@ fn a_null_target_drops_the_managers_queued_retarget() {
         .spawn_object("TARGET", "Yuri", 22, 10, 0, &rules)
         .expect("spawn TARGET");
     let entity = sim.substrate.entities.get_mut(dred).unwrap();
-    entity.attack_target = Some(crate::sim::combat::AttackTarget::new(second));
+    entity
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(second)));
     let manager = entity.spawn_manager.as_mut().unwrap();
     manager.current_target = Some(TargetKind::Entity(first));
     manager.mode = SpawnManagerMode::Launching;
@@ -2437,7 +2448,9 @@ fn stop_recalls_a_carriers_attacking_wing() {
             .collect::<Vec<_>>()
     };
     let entity = sim.substrate.entities.get_mut(carrier).unwrap();
-    entity.attack_target = Some(crate::sim::combat::AttackTarget::new(target));
+    entity
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     entity
         .spawn_manager
         .as_mut()
@@ -2464,7 +2477,7 @@ fn stop_recalls_a_carriers_attacking_wing() {
         assert_eq!(state, SpawnSlotState::ComingHome);
         let hornet = sim.substrate.entities.get(hornet.unwrap()).unwrap();
         assert!(
-            hornet.attack_target.is_none(),
+            hornet.attack_target.target().is_none(),
             "the recall drops the target"
         );
     }
@@ -2538,7 +2551,9 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         .state = SpawnSlotState::Attacking;
     let frame = sim.session.binary_frame as i32;
     let child = sim.substrate.entities.get_mut(hornet).unwrap();
-    child.attack_target = Some(crate::sim::combat::AttackTarget::new(target));
+    child
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     child.rearm_timer = crate::sim::timer::CdTimer::started(frame, 7);
     child.mission.set_current_for_test(
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack),
@@ -2550,7 +2565,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
     let child = sim.substrate.entities.get(hornet).unwrap();
     assert_eq!(crate::sim::aircraft::attack_state(child), Some(7));
     assert_eq!(
-        child.attack_target.as_ref().map(|a| a.target),
+        child.attack_target.target(),
         Some(TargetKind::Entity(target)),
         "the same target is not re-assigned"
     );
@@ -2562,7 +2577,10 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
     pass(&mut sim, Some(other));
     let child = sim.substrate.entities.get(hornet).unwrap();
     assert_eq!(child.aircraft_ammo.as_ref().unwrap().current, 0);
-    assert!(child.attack_target.is_none(), "the aircraft arm drops it");
+    assert!(
+        child.attack_target.target().is_none(),
+        "the aircraft arm drops it"
+    );
 
     pass(&mut sim, None);
     let manager = sim
@@ -2791,7 +2809,7 @@ fn a_recalled_hornet_flies_home_and_lands_on_the_carrier() {
             ((deck.x / 256, deck.y / 256), deck.z),
             "Hornet {hornet} lands on the deck"
         );
-        assert!(h.lifecycle.in_limbo, "Hornet {hornet} is taken in");
+        assert!(h.lifecycle.in_limbo(), "Hornet {hornet} is taken in");
         let slot = slots
             .iter()
             .find(|slot| slot.spawn == Some(*hornet))
@@ -2894,7 +2912,7 @@ fn retail_launches(
             .spawn
             .expect("the slot keeps its missile");
         let missile = sim.substrate.entities.get(child).unwrap();
-        assert!(!missile.lifecycle.in_limbo, "slot {slot} launched");
+        assert!(!missile.lifecycle.in_limbo(), "slot {slot} launched");
         launches.push((
             child,
             RetailLaunch {

@@ -102,7 +102,7 @@ fn commandable_movers() -> (Simulation, crate::sim::intern::InternedId, [u64; 2]
             5,
             false,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.entities_mut().insert(entity);
     }
     (sim, owner, [42, 43])

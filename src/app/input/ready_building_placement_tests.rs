@@ -678,7 +678,7 @@ fn mixed_infantry_delivery_clears_old_cameo_before_same_factory_promotion() {
         .entities
         .get(product)
         .expect("successful delivery retains the E1");
-    assert!(!delivered.lifecycle.in_limbo);
+    assert!(!delivered.lifecycle.in_limbo());
     assert!(delivered.lifecycle.cell_marked);
     assert_old_infantry_cameo_released(&mut fixture, order);
 }
@@ -952,7 +952,7 @@ fn assert_pending_repeat(name: &str, tab: SidebarTab) {
                 .get(stable_id)
                 .unwrap()
                 .lifecycle
-                .in_limbo
+                .in_limbo()
         );
     }
     assert_eq!(
@@ -1196,7 +1196,7 @@ fn late_stationary_blocker_restores_saved_product_and_requests_preview_refresh()
             .get(product)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
     assert!(
         !fixture
@@ -1205,7 +1205,7 @@ fn late_stationary_blocker_restores_saved_product_and_requests_preview_refresh()
             .get(blocker)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
     assert_eq!(
         production::credits_for_owner(&fixture.sim, "Americans"),
@@ -1273,7 +1273,7 @@ fn same_frame_success_then_failure_clears_backup_in_both_building_orders() {
         assert_current_matches_native(&fixture, native);
         assert_saved_matches_native(&fixture, native);
         let placed = fixture.sim.entities().get(first_id).unwrap();
-        assert!(!placed.lifecycle.in_limbo);
+        assert!(!placed.lifecycle.in_limbo());
         assert_eq!((placed.position.rx, placed.position.ry), (8, 4));
         assert_eq!(ready_product(&fixture, orders[1].0), second_id);
         assert!(
@@ -1283,7 +1283,7 @@ fn same_frame_success_then_failure_clears_backup_in_both_building_orders() {
                 .get(second_id)
                 .unwrap()
                 .lifecycle
-                .in_limbo
+                .in_limbo()
         );
         let ready =
             production::ready_buildings_for_owner(&fixture.sim, &fixture.rules, "Americans");

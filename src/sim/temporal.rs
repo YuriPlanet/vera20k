@@ -1197,7 +1197,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_none_or(|entity| entity.dying || !entity.lifecycle.object_alive)
+                .is_none_or(|entity| entity.death.is_dying() || !entity.lifecycle.object_alive())
             {
                 return true;
             }
@@ -1226,7 +1226,7 @@ impl Simulation {
         // does not process.
         let mut clears_destination = false;
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            if entity.attack_target.is_some() {
+            if entity.attack_target.target().is_some() {
                 crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
             clears_destination =

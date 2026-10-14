@@ -696,10 +696,12 @@ fn receive_damage_scatter_gates_match_original_execution() {
             actor.locomotor = Some(locomotor);
         }
         if flag("tether") {
-            actor.dock_entered_with = Some(9);
+            actor.tether.set_for_test(Some(9));
         }
         if flag("target") {
-            actor.attack_target = Some(crate::sim::combat::AttackTarget::new(9));
+            actor
+                .attack_target
+                .set_for_test(Some(crate::sim::combat::TargetKind::Entity(9)));
         }
         if flag("nav") {
             actor.navigation.nav_com = Some(NavTargetRef::cell(9, 9));
@@ -775,7 +777,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
 #[test]
 fn unit_source_arm_matches_original_execution() {
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::combat::AttackTarget;
+    use crate::sim::combat::TargetKind;
     use crate::sim::movement::fresh_oracle_seam::{self, FreshCallRecord};
     let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/unit_source_scatter.json",
@@ -825,7 +827,9 @@ fn unit_source_arm_matches_original_execution() {
             actor.navigation.nav_com = Some(NavTargetRef::cell(8, 8));
         }
         if flag("target") {
-            actor.attack_target = Some(AttackTarget::for_cell(5, 5));
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Cell(5, 5)));
         }
         actor.turret_rotation_latch = flag("turret_latch");
         if flag("unload_active") {

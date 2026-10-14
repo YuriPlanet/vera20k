@@ -104,8 +104,8 @@ fn native_track_fixture(kind: LocomotorKind, budget: i32) -> (Simulation, TrackI
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
     entity.set_category_for_test(EntityCategory::Unit);
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     let head = DriveCoord::cell(10, 9, 0);
     let track = TrackProgress {

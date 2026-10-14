@@ -219,7 +219,7 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
         .copied()
         .find(|&id| {
             sim.substrate.entities.get(id).is_some_and(|building| {
-                !building.lifecycle.in_limbo && building.type_ref() == type_id
+                !building.lifecycle.in_limbo() && building.type_ref() == type_id
             })
         })
 }

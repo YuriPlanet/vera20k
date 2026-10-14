@@ -41,7 +41,7 @@ impl Simulation {
             return false;
         };
         let reached = (|| {
-            let target = actor.attack_target.as_ref()?.target;
+            let target = actor.attack_target.target()?;
             let actor_type = self.object_type(actor.type_ref(), rules)?;
             let (index, selected) = self.foot_target_weapon(actor, actor_type, target, rules)?;
             let TargetKind::Entity(target_id) = target else {

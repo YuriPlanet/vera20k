@@ -225,7 +225,7 @@ fn erased(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
         .get(id)
-        .is_none_or(|entity| !entity.lifecycle.object_alive)
+        .is_none_or(|entity| !entity.lifecycle.object_alive())
 }
 
 /// Link the attackers onto `target` in chain order (the first is the head),
@@ -443,10 +443,7 @@ fn native_update_corpus() {
             }
             if attacker.open_topped == 1 {
                 sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                    crate::sim::passenger::PassengerRole::Inside {
-                        transport_id: transport,
-                        open_topped: true,
-                    };
+                    crate::sim::passenger::PassengerRole::inside_for_test(transport, true);
             }
             if let Some(coords) = attacker.coords {
                 place(&mut sim, id, coords);
@@ -1094,8 +1091,12 @@ fn a_warped_object_is_frozen_and_immune() {
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Russians", 12, 12);
-    sim.substrate.entities.get_mut(tank).unwrap().attack_target =
-        Some(crate::sim::combat::AttackTarget::new(gi));
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(gi)));
     sim.temporal_initiate_warp(
         cleg,
         Some(tank),
@@ -1115,7 +1116,10 @@ fn a_warped_object_is_frozen_and_immune() {
         "frozen"
     );
     assert_eq!(link(&sim, cleg).warp_remaining, 3992, "one step");
-    assert!(entity(&sim, tank).attack_target.is_none(), "TarCom dropped");
+    assert!(
+        entity(&sim, tank).attack_target.target().is_none(),
+        "TarCom dropped"
+    );
     let sparkles: Vec<AnimWorldCoord> = sim
         .substrate
         .anims
@@ -1345,8 +1349,8 @@ fn only_temporal_fire_reaches_a_warped_target() {
     assert!(
         entity(&sim, gi)
             .attack_target
-            .as_ref()
-            .is_none_or(|attack| attack.target != crate::sim::combat::TargetKind::Entity(tank)),
+            .target()
+            .is_none_or(|attack| attack != crate::sim::combat::TargetKind::Entity(tank)),
         "the illegal target is dropped"
     );
 }
@@ -1685,7 +1689,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
         None,
         crate::sim::world::FrameEffects::default(),
     ));
-    assert!(entity(&sim, cleg).attack_target.is_none());
+    assert!(entity(&sim, cleg).attack_target.target().is_none());
     assert_eq!(
         entity(&sim, cleg).mission.current().known(),
         Some(MissionType::Attack)
@@ -1986,9 +1990,9 @@ fn a_warped_transport_admits_no_one() {
     for carrier in [fortress, reactor] {
         let entity = sim.substrate.entities.get_mut(carrier).unwrap();
         if entity.passenger_role.cargo().is_none() {
-            entity.passenger_role = crate::sim::passenger::PassengerRole::Transport {
-                cargo: crate::sim::passenger::PassengerCargo::new(5, 0),
-            };
+            entity.passenger_role = crate::sim::passenger::PassengerRole::transport(
+                crate::sim::passenger::PassengerCargo::new(5, 0),
+            );
         }
     }
     let admits = |sim: &Simulation, carrier: u64| {

@@ -46,7 +46,7 @@ mod infantry_terminal;
 mod jumpjet_cruise;
 #[cfg(test)]
 pub(crate) use infantry_terminal::InfantryDeathSequence;
-pub(crate) use infantry_terminal::{InfantryDeathPostlude, InfantryTerminal};
+pub(crate) use infantry_terminal::{InfantryDeathPostlude, InfantryTerminal, TerminalLifetime};
 mod aircraft_attack;
 mod aircraft_enter;
 mod aircraft_fire_location;
@@ -145,10 +145,11 @@ pub(crate) use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terra
 #[cfg(test)]
 mod team_script_vm_tests;
 
+pub(crate) use crash::CrashLatch;
 pub(crate) use display_registry::entity_layer;
 pub(crate) use lifecycle::{
-    ConcealOutcome, LifecycleOutput, PlacementEvidence, RevealOutcome, RevealPosition,
-    RevealRequest, UninitContext,
+    ConcealOutcome, LifecycleOutput, ObjectLifecycle, PlacementEvidence, RevealOutcome,
+    RevealPosition, RevealRequest, UninitContext,
 };
 #[cfg(test)]
 pub(crate) use lifecycle::{LifecycleTestEvent, RevealFailure};
@@ -1856,7 +1857,7 @@ impl Simulation {
                     let passenger_ids = entity
                         .passenger_role
                         .cargo()
-                        .map(|cargo| cargo.passengers.clone())
+                        .map(|cargo| cargo.passengers().to_vec())
                         .unwrap_or_default();
                     if !object.can_be_occupied || passenger_ids.is_empty() {
                         return None;
@@ -1908,7 +1909,7 @@ impl Simulation {
                 // Unit's receiver retains a `Crashable=` type its Crash(0)
                 // latched (`0x00738475`) and any other type's sinking hull
                 // (`0x00738493`); their own AI terminal calls UnInit. A
-                // Magnetron's drop latches `crashing` too, and keeps nothing.
+                // Magnetron's drop raises the crash latch too, and keeps nothing.
                 if self
                     .substrate
                     .entities
@@ -1918,7 +1919,7 @@ impl Simulation {
                             .object_type(entity.type_ref(), rules)
                             .is_some_and(|object| object.crashable)
                         {
-                            entity.crashing
+                            entity.crash.is_crashing()
                         } else {
                             entity.sinking.is_active()
                         }
@@ -2375,9 +2376,9 @@ impl Simulation {
                                     && self.substrate.entities.get(target_id).is_some_and(
                                         |entity| {
                                             entity.is_alive()
-                                                && !entity.dying
-                                                && !entity.lifecycle.in_limbo
-                                                && entity.lifecycle.object_alive
+                                                && !entity.death.is_dying()
+                                                && !entity.lifecycle.in_limbo()
+                                                && entity.lifecycle.object_alive()
                                         },
                                     );
                             if !eligible {
@@ -3931,9 +3932,9 @@ impl Simulation {
                 );
                 let reveal = !entity.in_playfield
                     && member
-                    && entity.lifecycle.object_alive
-                    && !entity.lifecycle.in_limbo
-                    && !entity.dying
+                    && entity.lifecycle.object_alive()
+                    && !entity.lifecycle.in_limbo()
+                    && !entity.death.is_dying()
                     && entity.health.current() > 0
                     && entity.category() != EntityCategory::Structure
                     && self
@@ -4090,6 +4091,7 @@ impl Simulation {
     /// reconciles every existing entity, so existing and future entities
     /// always agree with the toggle. Enabling preserves logs an entity
     /// already accumulated; disabling drops them all.
+    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn set_debug_event_logging(&mut self, enabled: bool) {
         self.debug_event_logging = enabled;
         for entity in self.substrate.entities.values_mut() {
@@ -4366,9 +4368,9 @@ impl Simulation {
     #[cfg(debug_assertions)]
     pub(crate) fn debug_assert_lifecycle_consistent(&self) {
         for entity in self.substrate.entities.values() {
-            if !entity.lifecycle.object_alive {
+            if !entity.lifecycle.object_alive() {
                 debug_assert!(
-                    entity.lifecycle.in_limbo,
+                    entity.lifecycle.in_limbo(),
                     "dead entity {} must have completed Conceal before alive clear",
                     entity.stable_id()
                 );
@@ -4853,8 +4855,8 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
             (entity.category() == EntityCategory::Structure
                 && entity.build_const_eligible
-                && entity.lifecycle.object_alive
-                && !entity.lifecycle.in_limbo
+                && entity.lifecycle.object_alive()
+                && !entity.lifecycle.in_limbo()
                 && entity.lifecycle.cell_marked)
                 .then_some(entity.owner())
         }) else {
@@ -5095,7 +5097,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| !entity.lifecycle.in_limbo);
+            .is_some_and(|entity| !entity.lifecycle.in_limbo());
         if on_map {
             self.house_removed_from_game(stable_id, rules, effects);
         }
@@ -5371,7 +5373,7 @@ impl Simulation {
         let factory_unloading = category == EntityCategory::Structure
             && current == Some(MissionType::Unload)
             && object.is_some_and(|object| object.weapons_factory);
-        let in_limbo = entity.lifecycle.in_limbo;
+        let in_limbo = entity.lifecycle.in_limbo();
         let now = self.session.binary_frame;
         let rescue = self.substrate.entities.get(stable_id).is_some_and(|e| {
             e.mission.current().known() == Some(MissionType::Rescue)
@@ -5992,7 +5994,7 @@ impl Simulation {
                 let Some(entity) = self.substrate.entities.get(stable_id) else {
                     continue;
                 };
-                let coarse_candidate = !entity.lifecycle.in_limbo
+                let coarse_candidate = !entity.lifecycle.in_limbo()
                     && entity.lifecycle.cell_marked
                     && entity.mission.current() != selling
                     && entity.mission.queued() != selling
@@ -6191,7 +6193,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .filter(|e| e.category() == EntityCategory::Structure && !e.dying)
+            .filter(|e| e.category() == EntityCategory::Structure && !e.death.is_dying())
             .map(|e| (e.owner(), e.type_ref()))
         else {
             return;
@@ -6239,7 +6241,7 @@ impl Simulation {
                     != Some(crate::sim::mission::MissionType::Selling)
                 || entity.ai_frozen()
                 || !entity.is_ai_alive()
-                || entity.lifecycle.in_limbo
+                || entity.lifecycle.in_limbo()
             {
                 return;
             }

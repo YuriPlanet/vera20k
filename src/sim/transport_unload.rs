@@ -491,9 +491,33 @@ fn eject_head_passenger(
             // OpenTopped: `TechnoClass::ClearInOpenTransport` (`0x007104A0`) drops the
             // passenger's in-transport firing membership; VERA's open-topped registry
             // is the logic-object registration the Reveal above re-establishes.
-            if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
-                passenger.attack_target = None;
-                passenger.passively_acquired_target = false;
+            // Leaving an OpenTopped transport of another house takes the class
+            // NULL target setter (`0x0073DB9D..0x0073DBC3`); every other exit keeps
+            // the passenger's target.
+            let leaves_other_houses_open_transport = {
+                let transport = sim
+                    .substrate
+                    .entities
+                    .get(transport_id)
+                    .expect("transport resolved before the head pop");
+                sim.object_type(transport.type_ref(), rules)
+                    .is_some_and(|object| object.open_topped)
+                    && sim
+                        .substrate
+                        .entities
+                        .get(pax_id)
+                        .is_some_and(|passenger| passenger.owner() != transport.owner())
+            };
+            if leaves_other_houses_open_transport
+                && let Err(cause) = sim.assign_target_represented(
+                    pax_id,
+                    None,
+                    Some(rules),
+                    overlay_registry,
+                    effects,
+                )
+            {
+                log::warn!("Unload target {pax_id}: {cause}");
             }
             // Unit73DBDB queues the passenger's Move directly, before
             // class destination73DC06; it does not execute a player event.
@@ -924,10 +948,8 @@ fn eject_from_aircraft(
                 }
             }
             reveal_unloaded_passenger(sim, rules, aircraft_id, pax_id, cell.0, cell.1, z, effects)?;
-            if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
-                passenger.attack_target = None;
-                passenger.passively_acquired_target = false;
-            }
+            // KickOutUnit leaves the passenger's target alone
+            // (`0x00415BF9..0x00415C21`).
             // Aircraft415C05 queues Move directly before destination415C21,
             // followed by its radio callbacks. No Event Archive clear.
             sim.queue_order_mission(pax_id, MissionType::Move);

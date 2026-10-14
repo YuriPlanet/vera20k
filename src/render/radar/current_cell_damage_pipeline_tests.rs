@@ -323,7 +323,7 @@ fn gsi_04_01_production_tick_keeps_pavement_damage_through_ordinary_overlay_repa
             .substrate
             .entities
             .get(attacker)
-            .and_then(|entity| entity.attack_target.clone()),
+            .and_then(|entity| entity.attack_target.target()),
         runtime
             .simulation
             .fog

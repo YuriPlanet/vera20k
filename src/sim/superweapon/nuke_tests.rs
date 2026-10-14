@@ -948,7 +948,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         sim.substrate
             .entities
             .get(tank)
-            .is_none_or(|entity| entity.dying || entity.health.current() == 0),
+            .is_none_or(|entity| entity.death.is_dying() || entity.health.current() == 0),
         "the strike destroys the tank"
     );
     assert!(

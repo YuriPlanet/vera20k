@@ -212,7 +212,7 @@ mod tests {
         entity.set_type_ref_for_test(sim.interner.intern("B"));
         entity.set_owner_for_test(sim.interner.intern("A"));
         entity.health.set_for_test(current);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
         (sim, id)
     }

@@ -75,7 +75,7 @@ impl Simulation {
         let occupied = entity
             .passenger_role
             .cargo()
-            .is_some_and(|c| !c.passengers.is_empty());
+            .is_some_and(|c| !c.passengers().is_empty());
         let damaged = requested_damage_state(
             entity.health,
             object.strength,
@@ -255,10 +255,7 @@ mod tests {
         sim.entities_mut()
             .get_mut(passenger)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::Inside {
-            transport_id: id,
-            open_topped: false,
-        };
+            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(id, false);
         assert!(
             sim.entities_mut()
                 .get_mut(id)
@@ -305,9 +302,7 @@ mod tests {
             .passenger_role
             .cargo_mut()
             .unwrap();
-        cargo.passengers.clear();
-        cargo.passenger_sizes.clear();
-        cargo.total_size = 0;
+        cargo.clear_contents();
         tick(&mut restored, &rules);
         let empty = restored.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
         assert!(restored.entities().get(id).unwrap().building_art.anim_slots[4].is_none());

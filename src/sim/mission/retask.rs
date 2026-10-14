@@ -41,7 +41,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return mission;
         };
-        let tethered = entity.dock_entered_with.is_some();
+        let tethered = entity.tether.partner().is_some();
         let foot = matches!(
             entity.category(),
             crate::map::entities::EntityCategory::Unit
@@ -65,7 +65,8 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if break_tether {
-                entity.dock_entered_with = None;
+                // `0x004C7342`.
+                entity.tether.release();
             }
             entity.set_pending_entry(None);
         }

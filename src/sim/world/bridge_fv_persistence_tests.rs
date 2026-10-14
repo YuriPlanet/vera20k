@@ -60,7 +60,7 @@ fn transient_ids(sim: &Simulation, ambient: &AmbientAnims) -> Vec<u64> {
 
 fn settled(sim: &Simulation, source: u64, ambient: &AmbientAnims) -> bool {
     let actor = sim.substrate.entities.get(source).unwrap();
-    actor.attack_target.is_none()
+    actor.attack_target.target().is_none()
         && actor.navigation.nav_com.is_none()
         && actor
             .locomotor
@@ -144,7 +144,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore() {
         let sim = scene.sim();
         let actor = sim.substrate.entities.get(source).unwrap();
         let name = match checkpoints.len() {
-            0 if actor.attack_target.is_some()
+            0 if actor.attack_target.target().is_some()
                 && actor.navigation.nav_com.is_some()
                 && actor
                     .locomotor
@@ -169,7 +169,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore() {
                 Some("both_missiles")
             }
             2 if output.tick.bridge_state_changed
-                && actor.attack_target.is_none()
+                && actor.attack_target.target().is_none()
                 && sim
                     .resolved_terrain
                     .as_ref()

@@ -9,9 +9,7 @@ use crate::rules::building_rubble::RubbleArt;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{
-    AttackTarget, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, TargetKind,
-};
+use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, TargetKind};
 use crate::sim::house_state::HouseState;
 use crate::sim::overlay_grid::{OverlayGrid, RUBBLE_OVERLAY_INDEX};
 use crate::sim::world::{FrameEffects, Simulation};
@@ -180,9 +178,8 @@ fn a_destroyed_leave_rubble_building_leaves_rubble_on_its_foundation() {
         .entities
         .get_mut(listener)
         .unwrap()
-        .attack_target = Some(AttackTarget {
-        target: TargetKind::Cell(11, 13),
-    });
+        .attack_target
+        .set_for_test(Some(TargetKind::Cell(11, 13)));
     sim.overlay_grid
         .as_mut()
         .unwrap()
@@ -195,7 +192,7 @@ fn a_destroyed_leave_rubble_building_leaves_rubble_on_its_foundation() {
         sim.substrate
             .entities
             .get(ruin)
-            .is_none_or(|entity| !entity.lifecycle.object_alive),
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
         "the building is gone"
     );
     let ruin_type = sim.interner.get("RUIN").expect("interned type");
@@ -224,6 +221,7 @@ fn a_destroyed_leave_rubble_building_leaves_rubble_on_its_foundation() {
             .get(listener)
             .unwrap()
             .attack_target
+            .target()
             .is_none(),
         "the cell detach sweep (0x0070D4A0) clears a target on a foundation cell"
     );

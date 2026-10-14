@@ -321,7 +321,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .entities
             .get(prepared.receiver)
             .expect("preflight guaranteed receiver");
-        let changes = entity.attack_target.as_ref().map(|attack| attack.target) != requested;
+        let changes = entity.attack_target.target() != requested;
         // Infantry51B20E..51B24F clears its firing latch and requests an
         // unforced idle action BEFORE Techno6FCDB0 reads/writes TarCom. The
         // current Doing must survive until Do_Action tests interruptibility.
@@ -543,7 +543,7 @@ pub(crate) fn assign_target_commits(
 ) -> bool {
     match requested {
         Some(TargetKind::Entity(id)) => entities.get(id).is_some_and(|target| {
-            target.lifecycle.object_alive
+            target.lifecycle.object_alive()
                 && target.health.current() != 0
                 && !target.sinking.is_active()
                 && !(target.category() == crate::map::entities::EntityCategory::Infantry
@@ -595,7 +595,7 @@ pub(crate) fn represented_assign_target_admitted(
     entity.passively_acquired_target = false;
     // The same-target early-out (`0x006FCDCC`, Infantry `0x0051B201`) compares
     // the requested pointer, before the liveness refusal.
-    if entity.attack_target.as_ref().map(|target| target.target) == requested {
+    if entity.attack_target.target() == requested {
         return;
     }
     // `0x006FCDEB..0x006FCE46`, the aircraft arm: a spawned aircraft with
@@ -628,10 +628,8 @@ pub(crate) fn represented_assign_target_admitted(
         }
         entity.weapon_burst.reset();
     }
-    entity.attack_target = requested.map(|target| match target {
-        TargetKind::Entity(id) => crate::sim::combat::AttackTarget::new(id),
-        TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),
-    });
+    // The store (`0x006FCF3E`).
+    entity.attack_target.set(requested);
 }
 
 /// The represented `Assign_Destination` write set, entity-local, for either
@@ -759,11 +757,8 @@ impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
             archived_target: entity.suspended_attack_target,
             archived_destination: entity.navigation.suspended_nav_com,
         });
-        if entity.attack_target.as_ref().map(|target| target.target) != requested {
-            entity.attack_target = requested.map(|target| match target {
-                TargetKind::Entity(id) => crate::sim::combat::AttackTarget::new(id),
-                TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),
-            });
+        if entity.attack_target.target() != requested {
+            entity.attack_target.set_for_test(requested);
         }
     }
 
@@ -792,7 +787,7 @@ impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
             receiver: prepared.receiver,
             requested,
             mission_current: entity.mission.current(),
-            installed_target: entity.attack_target.as_ref().map(|target| target.target),
+            installed_target: entity.attack_target.target(),
         });
         entity.navigation.nav_com_aux = None;
         entity.navigation.nav_com = requested;
@@ -870,7 +865,7 @@ mod tests {
         let queued = [NavTargetRef::cell(14, 10), NavTargetRef::cell(16, 10)];
         let infantry = sim.substrate.entities.get_mut(id).unwrap();
         infantry.mark_live_contact_with(building);
-        infantry.dock_entered_with = Some(building);
+        infantry.tether.set_for_test(Some(building));
         infantry.navigation.nav_queue = queued.to_vec();
         sim.substrate
             .entities

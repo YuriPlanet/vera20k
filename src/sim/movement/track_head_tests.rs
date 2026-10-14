@@ -69,7 +69,7 @@ fn first_process_publishes_raw_head_and_matching_progress_for_drive_and_ship() {
         entity.position.z = 1; // Deliberately differs from the retained raw Z.
         entity.position.exact_z_leptons = Some(initial.z);
         entity.body_facing.snap(0x4000, 0);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -306,7 +306,7 @@ fn production_process_admission_uses_valid_selector_independently_of_head() {
             for selector in [-1, 0] {
                 for nonnull_head in [false, true] {
                     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 8, 8);
-                    entity.lifecycle.in_limbo = false;
+                    entity.lifecycle.set_in_limbo_for_test(false);
                     entity.lifecycle.cell_marked = true;
                     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
                     entity.drive_accelerates = false;

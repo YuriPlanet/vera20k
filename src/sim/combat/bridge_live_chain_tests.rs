@@ -173,6 +173,7 @@ fn assert_collapsed_bridge_restores(
             .get(attacker)
             .unwrap()
             .attack_target
+            .target()
             .is_none(),
         "save/load must not reacquire the released Cell target"
     );
@@ -509,6 +510,7 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
                 .get(attacker)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_none()
         {
             issued = true;
@@ -674,6 +676,7 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
                     .get(attacker)
                     .unwrap()
                     .attack_target
+                    .target()
                     .is_none(),
                 "successful bridge destruction must detach the force-fire Cell target"
             );

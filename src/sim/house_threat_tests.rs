@@ -405,7 +405,7 @@ fn required_read_of_dead_unlimbo_uninitialized_contribution_faults_explicitly() 
         .get_mut(id)
         .unwrap()
         .lifecycle
-        .object_alive = false;
+        .set_object_alive_for_test(false);
     assert_eq!(
         sim.reveal_constructed_object_at_height(
             id,

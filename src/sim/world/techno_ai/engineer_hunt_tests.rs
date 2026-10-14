@@ -138,7 +138,7 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 
 fn target(sim: &Simulation, id: u64) -> Option<TargetKind> {
     let entity = sim.substrate.entities.get(id)?;
-    entity.attack_target.as_ref().map(|attack| attack.target)
+    entity.attack_target.target()
 }
 
 fn heading(sim: &Simulation, id: u64) -> Option<u64> {
@@ -267,7 +267,7 @@ fn the_lost_building_follows_owner_changes_and_expiry() {
         sim.substrate
             .entities
             .get(plant)
-            .is_none_or(|entity| !entity.lifecycle.object_alive)
+            .is_none_or(|entity| !entity.lifecycle.object_alive())
     );
     assert_eq!(lost_building(&sim, "Russians"), None);
 }

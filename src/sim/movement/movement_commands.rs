@@ -18,7 +18,7 @@ use crate::sim::game_entity::GameEntity;
 /// Prevents destination changes during special states: dying, deploying,
 /// undeploying and falling.
 pub(crate) fn can_accept_destination(entity: &GameEntity) -> bool {
-    if entity.dying {
+    if entity.death.is_dying() {
         return false;
     }
     if entity.building_up() || entity.building_down() {

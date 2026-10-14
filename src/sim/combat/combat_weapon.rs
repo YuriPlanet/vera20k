@@ -236,8 +236,8 @@ impl ParasiteVictimFacts {
             infectable: matches!(
                 target.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            ) && !target.lifecycle.in_limbo
-                && target.lifecycle.object_alive
+            ) && !target.lifecycle.in_limbo()
+                && target.lifecycle.object_alive()
                 && target.health.current() != 0
                 && target.parasite.eater().is_none()
                 && target_obj.parasiteable
@@ -464,7 +464,7 @@ pub(crate) fn open_topped_cargo_range(
     let mut shortest = None;
     // Cargo owns the native head/+30 sequence. Neither limbo nor death
     // filters belong to this reader; boarded passengers are in limbo.
-    for &id in &entity.passenger_role.cargo()?.passengers {
+    for &id in entity.passenger_role.cargo()?.passengers() {
         let Some(passenger) = entities.get(id) else {
             break;
         };
@@ -1167,8 +1167,8 @@ pub(crate) fn firing_occupant_id(entity: &GameEntity, obj: &ObjectType) -> Optio
     }
     let cargo = entity.passenger_role.cargo()?;
     cargo
-        .passengers
-        .get(usize::from(cargo.garrison_fire_index))
+        .passengers()
+        .get(usize::from(cargo.garrison_fire_index()))
         .copied()
 }
 
@@ -1276,7 +1276,7 @@ mod tests {
                 entities.insert(inside);
                 let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
                 assert!(cargo.board(2, 1));
-                building.passenger_role = PassengerRole::Transport { cargo };
+                building.passenger_role = PassengerRole::transport(cargo);
             }
             entities.insert(building);
             let interner = crate::sim::intern::test_interner();
@@ -3203,17 +3203,11 @@ IsLocomotor=yes
         let f = attacker_facts(&siege, ggi_obj);
         assert_eq!(f.current_weapon_number, 3);
         assert_eq!(f.open_transport_weapon, None);
-        ggi.passenger_role = PassengerRole::Inside {
-            transport_id: 9,
-            open_topped: true,
-        };
+        ggi.passenger_role = PassengerRole::inside_for_test(9, true);
         let f = attacker_facts(&ggi, ggi_obj);
         assert_eq!(f.current_weapon_number, 0);
         assert_eq!(f.open_transport_weapon, Some(1));
-        ggi.passenger_role = PassengerRole::Inside {
-            transport_id: 9,
-            open_topped: false,
-        };
+        ggi.passenger_role = PassengerRole::inside_for_test(9, false);
         assert_eq!(attacker_facts(&ggi, ggi_obj).open_transport_weapon, None);
     }
 

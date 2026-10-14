@@ -257,7 +257,7 @@ impl Simulation {
         let garrisoned = entity
             .passenger_role
             .cargo()
-            .is_some_and(|cargo| !cargo.passengers.is_empty());
+            .is_some_and(|cargo| !cargo.passengers().is_empty());
         // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
         // UnitsGainSelfHeal join the owner's house on every reached opening
         // (a capture counts), with the +0x6E4 test done by the entry guard
@@ -636,7 +636,7 @@ impl Simulation {
         let garrisoned = entity
             .passenger_role
             .cargo()
-            .is_some_and(|cargo| !cargo.passengers.is_empty());
+            .is_some_and(|cargo| !cargo.passengers().is_empty());
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
         self.clear_building_anim_reference(expired);
         let next = match slot {
@@ -835,7 +835,7 @@ pub(crate) fn receiver_body_frame(
                 entity
                     .passenger_role
                     .cargo()
-                    .map_or(0, |cargo| cargo.passengers.len() as i32),
+                    .map_or(0, |cargo| cargo.passengers().len() as i32),
             ),
             tech_level: object.tech_level,
             selling: false,
@@ -1114,7 +1114,7 @@ mod slot_tests {
         // This synthetic owner has never been marked; enter through the real
         // coordinate commit and verify its already retained slot moves in place.
         let entity = sim.entities_mut().get_mut(id).unwrap();
-        entity.lifecycle.in_limbo = true;
+        entity.lifecycle.set_in_limbo_for_test(true);
         entity.lifecycle.cell_marked = false;
         let outcome = sim.try_reveal_entity_with_context(
             id,
@@ -1381,8 +1381,8 @@ mod slot_tests {
         sim.uninit_with_rules(id, &rules);
 
         let building = sim.entities().get(id).expect("deferred Building");
-        assert!(!building.lifecycle.object_alive);
-        assert!(building.lifecycle.in_limbo);
+        assert!(!building.lifecycle.object_alive());
+        assert!(building.lifecycle.in_limbo());
         assert_eq!(building.building_art.anim_slots[3], Some(anim_id));
         let anim = sim.anim(anim_id).expect("slot survives Building UnInit");
         assert_eq!(anim.owner_entity, None);

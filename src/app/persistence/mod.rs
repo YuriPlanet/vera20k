@@ -18,6 +18,7 @@ pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 use std::path::{Path, PathBuf};
 #[cfg(any(feature = "dev-ui", test))]
 use std::time::Instant;
+#[cfg(any(feature = "dev-overlays", test))]
 use std::time::SystemTime;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -451,7 +452,9 @@ impl SaveListCache {
     }
 }
 
-/// Filesystem stage that failed while writing a named save.
+/// Filesystem stage that failed while writing a named save. Only the
+/// `dev-overlays` save log reads it.
+#[cfg(any(feature = "dev-overlays", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SaveWriteStage {
     CreateDirectory,
@@ -461,6 +464,7 @@ pub(crate) enum SaveWriteStage {
 /// Save write failure retaining the old caller-visible stage distinction.
 #[derive(Debug)]
 pub(crate) struct SaveWriteError {
+    #[cfg(any(feature = "dev-overlays", test))]
     stage: SaveWriteStage,
     source: std::io::Error,
 }
@@ -468,11 +472,13 @@ pub(crate) struct SaveWriteError {
 impl SaveWriteError {
     fn write_file(source: std::io::Error) -> Self {
         Self {
+            #[cfg(any(feature = "dev-overlays", test))]
             stage: SaveWriteStage::WriteFile,
             source,
         }
     }
 
+    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn stage(&self) -> SaveWriteStage {
         self.stage
     }
@@ -508,6 +514,7 @@ impl SaveRepository {
         }
     }
 
+    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn directory(&self) -> &Path {
         &self.directory
     }
@@ -522,6 +529,7 @@ impl SaveRepository {
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
         std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
+            #[cfg(any(feature = "dev-overlays", test))]
             stage: SaveWriteStage::CreateDirectory,
             source,
         })?;
@@ -657,6 +665,7 @@ impl SaveRepository {
 
     /// Quickload policy: select the `.bin` file with the newest filesystem
     /// modification time without reading or validating its snapshot header.
+    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn quickload_path_by_modified_time(&self) -> Option<PathBuf> {
         let directory = std::fs::read_dir(&self.directory).ok()?;
         newest_modified_path(directory.filter_map(|item| {
@@ -675,6 +684,7 @@ fn sort_panel_entries_by_embedded_time(entries: &mut [SaveEntry]) {
     entries.sort_by_key(|entry| std::cmp::Reverse(entry.header.save_timestamp));
 }
 
+#[cfg(any(feature = "dev-overlays", test))]
 fn newest_modified_path(
     candidates: impl Iterator<Item = (PathBuf, SystemTime)>,
 ) -> Option<PathBuf> {

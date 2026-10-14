@@ -164,8 +164,8 @@ fn track(entity: &GameEntity) -> crate::sim::components::TrackProgress {
 fn insert(sim: &mut Simulation, mut entity: GameEntity) {
     // This fixture inserts a live object-list entry, so its lifecycle mark
     // must agree. Forced terminal relinking intentionally respects this flag.
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     sim.substrate.occupancy.add(
         entity.position.rx,
@@ -1285,7 +1285,7 @@ fn two_marked_units() -> Simulation {
     sim.interner = crate::sim::intern::test_interner();
     for id in [1, 2] {
         let mut entity = GameEntity::test_default(id, "ACTOR", "Americans", 4, 4);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = false;
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         entity.position.exact_z_leptons = Some(0);
@@ -1398,12 +1398,9 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
     transport.position.exact_z_leptons = Some(0);
     let mut cargo = PassengerCargo::new(5, 2);
     assert!(cargo.board(2, 1));
-    transport.passenger_role = PassengerRole::Transport { cargo };
+    transport.passenger_role = PassengerRole::transport(cargo);
     let mut rider = GameEntity::test_default(2, "E1", "Americans", 3, 0);
-    rider.passenger_role = PassengerRole::Inside {
-        transport_id: 1,
-        open_topped: true,
-    };
+    rider.passenger_role = PassengerRole::inside_for_test(1, true);
     entities.insert(transport);
     entities.insert(rider);
     let interner = crate::sim::intern::test_interner();

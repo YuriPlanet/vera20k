@@ -147,10 +147,8 @@ fn absorb(sim: &mut Simulation, rules: &RuleSet, building: u64, count: usize) {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("absorbed infantry");
-        sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
-            transport_id: building,
-            open_topped: false,
-        };
+        sim.substrate.entities.get_mut(id).unwrap().passenger_role =
+            PassengerRole::inside_for_test(building, false);
         let building = sim.substrate.entities.get_mut(building).unwrap();
         building
             .passenger_role
@@ -244,8 +242,8 @@ fn occupants(sim: &Simulation, building: u64) -> Vec<u64> {
         .passenger_role
         .cargo()
         .unwrap()
-        .passengers
-        .clone()
+        .passengers()
+        .to_vec()
 }
 
 fn xyz(value: &Value) -> [i32; 3] {
@@ -535,10 +533,7 @@ fn the_nearest_own_reactor_with_room_takes_the_foot() {
         MissionId::from_known(MissionType::Enter)
     );
     assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::object(room)));
-    assert!(matches!(
-        entity.passenger_role,
-        PassengerRole::Boarding { target_transport_id } if target_transport_id == room
-    ));
+    assert_eq!(entity.passenger_role.boarding_transport_id(), Some(room));
 }
 
 /// Equidistant absorbers through the production walk: the house's list is
@@ -668,7 +663,7 @@ fn no_taker_clears_the_latch() {
     assert!(!entity.building_entry.seeking());
     assert_eq!(entity.mission, mission);
     assert_eq!(entity.navigation.nav_com, None);
-    assert!(matches!(entity.passenger_role, PassengerRole::None));
+    assert!(entity.passenger_role.is_none());
 }
 
 /// Script action 62 (`0x006E9E83`) through the team pass: the member a
@@ -751,10 +746,7 @@ fn a_seeker_whose_reactor_dies_gives_up_and_can_be_recruited() {
     let infantry = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
     let _team = seek_team(&mut sim, 62, vec![infantry]);
     assert!(run_until(&mut sim, &rules, &grid, 30, |sim| {
-        matches!(
-            entity(sim, infantry).passenger_role,
-            PassengerRole::Boarding { target_transport_id } if target_transport_id == reactor
-        )
+        entity(sim, infantry).passenger_role.boarding_transport_id() == Some(reactor)
     }));
 
     sim.despawn_entity(reactor);
@@ -763,7 +755,7 @@ fn a_seeker_whose_reactor_dies_gives_up_and_can_be_recruited() {
         !entity(sim, infantry).building_entry.seeking()
     }));
     let foot = entity(&sim, infantry);
-    assert!(matches!(foot.passenger_role, PassengerRole::None));
+    assert!(foot.passenger_role.is_none());
     assert_ne!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
@@ -803,7 +795,7 @@ fn a_seeker_beaten_to_the_last_slot_gives_up() {
         5
     );
     let foot = entity(&sim, far);
-    assert!(matches!(foot.passenger_role, PassengerRole::None));
+    assert!(foot.passenger_role.is_none());
     assert_ne!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
@@ -934,7 +926,7 @@ fn a_battle_bunker_team_member_garrisons_the_bunker() {
     assert_eq!(occupants(&sim, bunker), [infantry]);
     assert!(sim.team_script_vm.team(team).is_none());
     let foot = entity(&sim, infantry);
-    assert!(foot.lifecycle.in_limbo);
+    assert!(foot.lifecycle.in_limbo());
     assert!(foot.building_entry.should_enter_occupiable());
 }
 
@@ -1020,7 +1012,7 @@ fn two_occupiers_garrison_in_arrival_order_and_fire_in_that_order() {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .garrison_fire_index = index;
+            .set_garrison_fire_index_for_test(index);
         assert_eq!(
             crate::sim::combat::combat_weapon::firing_occupant_id(entity(&sim, bunker), object),
             Some(expected)
@@ -1059,8 +1051,8 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
         !entity(sim, infantry).building_entry.seeking()
     }));
     let foot = entity(&sim, infantry);
-    assert!(!foot.lifecycle.in_limbo);
-    assert!(matches!(foot.passenger_role, PassengerRole::None));
+    assert!(!foot.lifecycle.in_limbo());
+    assert!(foot.passenger_role.is_none());
     assert_ne!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Capture)

@@ -371,7 +371,7 @@ fn mission_factory_unload(
     let naval = object.naval;
     let phase = entity.door_phase();
     let contact = entity.radio_contacts.slot(0);
-    let tethered = entity.dock_entered_with.is_some();
+    let tethered = entity.tether.partner().is_some();
     let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     let track = crate::sim::movement::factory_exit_track_coordinate(location, object);
     let damaged = requested_damage_state(
@@ -592,7 +592,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
                 .passenger_role
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty());
-        let has_target = entity.attack_target.is_some();
+        let has_target = entity.attack_target.target().is_some();
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             // `0x00449701`.
             entity.mission_leaf.set_building_ready_latch(1);
@@ -712,7 +712,7 @@ fn mission_attack(
 /// answering the target and weapon.
 fn attack_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) -> Option<(TargetKind, i32)> {
     let entity = sim.substrate.entities.get(id)?;
-    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+    let Some(target) = entity.attack_target.target() else {
         let _ = sim.assign_target_represented(
             id,
             None,
@@ -1111,7 +1111,7 @@ fn prism_supporter(
         let Some(candidate) = sim.substrate.entities.get(candidate_id) else {
             continue;
         };
-        let admitted = candidate.lifecycle.object_alive
+        let admitted = candidate.lifecycle.object_alive()
             && candidate.type_ref() == master.type_ref()
             && candidate.rearm_timer.remaining(now) == 0
             && candidate
@@ -1170,7 +1170,7 @@ pub(super) fn process_delayed_fire(
         return;
     };
     // Health 0 returned before the call (`0x00440072`).
-    if entity.dying || entity.health.current() == 0 {
+    if entity.death.is_dying() || entity.health.current() == 0 {
         return;
     }
     let Some(pending) = entity.pending_building_fire.as_mut() else {
@@ -1184,7 +1184,7 @@ pub(super) fn process_delayed_fire(
     entity.pending_building_fire = None;
     match fire {
         DelayedFire::Weapon(slot) => {
-            let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+            let Some(target) = entity.attack_target.target() else {
                 return;
             };
             let weapon = match slot {
@@ -1303,10 +1303,10 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
         return;
     };
     // Health 0 returned before it (`0x00440072`).
-    if entity.dying || entity.health.current() == 0 {
+    if entity.death.is_dying() || entity.health.current() == 0 {
         return;
     }
-    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+    let Some(target) = entity.attack_target.target() else {
         return;
     };
     let weapon = select_weapon(sim, rules, id, Some(target));
@@ -1418,7 +1418,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.attack_target.is_some())
+            .is_some_and(|entity| entity.attack_target.target().is_some())
         {
             let _ = mission_attack(self, id, rules, ctx, &mut false);
         }

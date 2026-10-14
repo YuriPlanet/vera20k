@@ -542,7 +542,7 @@ pub(super) fn spawn_structure(
         5,
         false,
     );
-    ge.lifecycle.in_limbo = false;
+    ge.lifecycle.set_in_limbo_for_test(false);
     ge.in_playfield = true;
     ge.finish_building_construction_for_test();
     ge.building_art.set_actually_placed_for_test(true);
@@ -734,7 +734,8 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
             .entities
             .get(produced)
             .unwrap()
-            .dock_entered_with,
+            .tether
+            .partner(),
         Some(10),
         "WF exit must set the dock-entered (+0x418) flag toward the factory"
     );
@@ -743,7 +744,8 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
             .entities
             .get(unrelated)
             .unwrap()
-            .dock_entered_with,
+            .tether
+            .partner(),
         None,
         "unrelated vehicles get no dock-entered flag"
     );
@@ -969,7 +971,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
         })
         .expect("GAYARD delivered DEST through naval FNPC/Unlimbo");
     assert_eq!((destroyer.position.rx, destroyer.position.ry), (22, 22));
-    assert!(destroyer.lifecycle.cell_marked && !destroyer.lifecycle.in_limbo);
+    assert!(destroyer.lifecycle.cell_marked && !destroyer.lifecycle.in_limbo());
     assert_eq!(
         sim.production
             .primary_factory(americans, ProductionCategory::Ship)
@@ -1191,7 +1193,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     assert_eq!(factory.progress, 0);
     assert!(factory.queue.is_empty());
     let object = sim.substrate.entities.get(successor).unwrap();
-    assert!(object.lifecycle.in_limbo && !object.lifecycle.cell_marked);
+    assert!(object.lifecycle.in_limbo() && !object.lifecycle.cell_marked);
     super::lifecycle_tests::assert_constructor_words(&sim, successor, &mut expected);
     assert_eq!(sim.substrate.entities.len(), entity_count);
     assert_eq!(sim.owned_object_counts(americans).1, owned_units);
@@ -1231,7 +1233,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
         &mut sim, &rules, None
     ));
     let delivered = sim.substrate.entities.get(successor).unwrap();
-    assert!(delivered.lifecycle.cell_marked && !delivered.lifecycle.in_limbo);
+    assert!(delivered.lifecycle.cell_marked && !delivered.lifecycle.in_limbo());
     assert_eq!(
         sim.houses[&americans].stats.built(),
         1,

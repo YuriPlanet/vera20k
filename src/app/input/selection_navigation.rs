@@ -176,7 +176,7 @@ fn combatant_selection(
     let local_alive = |id: &u64| {
         sim.entities()
             .get(*id)
-            .is_some_and(|entity| entity.lifecycle.object_alive && player_owned(entity.owner()))
+            .is_some_and(|entity| entity.lifecycle.object_alive() && player_owned(entity.owner()))
     };
     // Final7325C0 calls the existing dynamic13C prefix (which refuses the
     // offline latch +1C8) and Object138 owner.
@@ -459,7 +459,7 @@ fn category_selection(
             .copied()
             .filter(|id| {
                 sim.entities().get(*id).is_some_and(|entity| {
-                    entity.lifecycle.object_alive
+                    entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
                         && navigation_owner_controlled(sim, entity.owner())
                 })

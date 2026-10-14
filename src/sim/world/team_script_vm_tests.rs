@@ -435,7 +435,7 @@ fn a_computer_team_attacks_the_bigger_power_plant() {
         if members.iter().all(|&member| {
             sim.entities()
                 .get(member)
-                .and_then(|entity| entity.attack_target.as_ref())
+                .and_then(|entity| entity.attack_target.target())
                 .is_some()
         }) {
             break;
@@ -446,7 +446,7 @@ fn a_computer_team_attacks_the_bigger_power_plant() {
     for member in members {
         let entity = sim.entities().get(member).expect("member");
         assert_eq!(
-            entity.attack_target.as_ref().map(|attack| attack.target),
+            entity.attack_target.target(),
             Some(crate::sim::combat::TargetKind::Entity(bigger)),
             "member {member} attacks the 200-power plant"
         );
@@ -610,10 +610,10 @@ fn a_computer_engineer_team_attacks_the_enemy_factory() {
             if let Some(attack) = sim
                 .entities()
                 .get(member)
-                .and_then(|entity| entity.attack_target.as_ref())
-                && !targets.contains(&attack.target)
+                .and_then(|entity| entity.attack_target.target())
+                && !targets.contains(&attack)
             {
-                targets.push(attack.target);
+                targets.push(attack);
             }
         }
     }

@@ -128,7 +128,7 @@ fn list_fixture() -> (RuleSet, EntityStore, OccupancyGrid, ResolvedTerrainGrid) 
         (3, "TARGET", "Russians", 6, false),
     ] {
         let mut entity = GameEntity::test_default(id, kind, owner, x, 5);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         entity.on_bridge = on_bridge;
         occupancy.add(
@@ -286,7 +286,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         entity.position.exact_z_leptons = Some(624);
         entity.health.set_for_test(hp);
         entity.lifecycle.cell_marked = true;
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.in_playfield = true;
         entity.locomotor = Some(LocomotorState::from_object_type(obj, 0));
         entity.barrel_facing = Some(FacingClass::new(16383, 0));

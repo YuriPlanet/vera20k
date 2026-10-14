@@ -581,7 +581,9 @@ fn place_selects_the_original_house_order_and_primary_factory() {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             // These controls supply flags and House insertion order. They
             // compare FindFactory, not the separate Limbo/sale producers.
-            entity.lifecycle.in_limbo = row["limbo"][index] == 1;
+            entity
+                .lifecycle
+                .set_in_limbo_for_test(row["limbo"][index] == 1);
             match row["selling"][index].as_u64().unwrap() {
                 1 => {
                     queue_entity_mission_deferred(

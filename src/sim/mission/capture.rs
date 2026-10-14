@@ -47,8 +47,8 @@ pub(crate) fn mission_capture(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };
-    let target = match entity.attack_target.as_ref().map(|attack| &attack.target) {
-        Some(TargetKind::Entity(target)) => Some(*target),
+    let target = match entity.attack_target.target() {
+        Some(TargetKind::Entity(target)) => Some(target),
         _ => None,
     };
     let building_target = target.filter(|&target| {
@@ -116,7 +116,7 @@ pub(crate) fn mission_capture(
     }
 
     let hunts = sim.substrate.entities.get(id).is_some_and(|entity| {
-        entity.attack_target.is_none()
+        entity.attack_target.target().is_none()
             && !sim.owner_is_human(entity.owner())
             && !(entity.category() == EntityCategory::Infantry
                 && sim

@@ -75,7 +75,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Build the game
-        run: cargo build --release --locked --bin vera20k
+        # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord).
+        run: cargo build --release --locked --no-default-features --bin vera20k
       - name: Package
         shell: bash
         run: |

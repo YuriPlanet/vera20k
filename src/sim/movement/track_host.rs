@@ -179,10 +179,10 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| received && !entity.lifecycle.in_limbo);
+            .is_some_and(|entity| received && !entity.lifecycle.in_limbo());
         if !survives {
             if let Some(entity) = self.substrate.entities.get_mut(id)
-                && entity.lifecycle.object_alive
+                && entity.lifecycle.object_alive()
                 && let Some(loco) = entity.locomotor.as_mut()
             {
                 loco.store_track_head(family, None);
@@ -266,7 +266,9 @@ impl Simulation {
 
     pub(super) fn track_survives(&self, id: u64) -> bool {
         self.substrate.entities.get(id).is_some_and(|entity| {
-            entity.lifecycle.object_alive && !entity.lifecycle.in_limbo && !entity.is_falling_down()
+            entity.lifecycle.object_alive()
+                && !entity.lifecycle.in_limbo()
+                && !entity.is_falling_down()
         })
     }
 
@@ -425,7 +427,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|e| e.lifecycle.object_alive)
+                    .is_some_and(|e| e.lifecycle.object_alive())
                 {
                     return Ok(TrackPass::paid(moved));
                 }
@@ -490,7 +492,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.lifecycle.object_alive)
+                .is_some_and(|entity| entity.lifecycle.object_alive())
             {
                 return Ok(TrackPass::paid(moved));
             }
@@ -704,7 +706,7 @@ impl Simulation {
             &self.interner,
         );
         observe(self, id, TrackWorldEvent::SetCoords);
-            let grid = self.path_grid.as_deref();
+        let grid = self.path_grid.as_deref();
         if crossing && let Some(entity) = self.substrate.entities.get_mut(id) {
             if !terminal {
                 // Crossing uses actual current cell; this predicate instead
@@ -979,8 +981,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return Ok(true);
         };
-        if !(picked && !entity.lifecycle.in_limbo) {
-            if entity.lifecycle.object_alive {
+        if !(picked && !entity.lifecycle.in_limbo()) {
+            if entity.lifecycle.object_alive() {
                 set_head(entity, family, None);
                 set_track_valid(entity, family, false);
             }
@@ -1084,12 +1086,12 @@ impl Simulation {
         // which keeps its own NavCom fallback for a receiver no class setter
         // represents, then the queue shift.
         if let Some((rx, ry)) = queued_cell {
-                        let target = crate::sim::components::NavTargetRef::cell(rx, ry);
+            let target = crate::sim::components::NavTargetRef::cell(rx, ry);
             if let Err(cause) =
                 self.assign_destination_keeping_queue(id, Some(target), rules, registry, effects)
             {
                 log::debug!("Foot {id} NavQueue destination: {cause:?}");
-                    }
+            }
             if let Some(entity) = self.substrate.entities.get_mut(id)
                 && !entity.navigation.nav_queue.is_empty()
             {
@@ -1289,7 +1291,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.navigation.nav_com.is_some() || entity.attack_target.is_some() {
+        if entity.navigation.nav_com.is_some() || entity.attack_target.target().is_some() {
             return false;
         }
         self.unit_enter_idle_mode(id, rules, false, effects)

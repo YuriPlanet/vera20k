@@ -691,7 +691,7 @@ fn unit_crate_places_a_goodie_vehicle_and_returns_false() {
         })
         .expect("the free tank");
     assert_eq!((free.position.rx, free.position.ry), (21, 22));
-    assert!(free.lifecycle.cell_marked && !free.lifecycle.in_limbo);
+    assert!(free.lifecycle.cell_marked && !free.lifecycle.in_limbo());
     assert_eq!(free.owner(), owner);
     assert_eq!(overlay_at(&sim, (21, 22)), None);
     assert_eq!(
@@ -741,7 +741,7 @@ fn unit_crate_under_its_picker_lands_the_goodie_on_the_first_ring_at_any_level()
         1,
         "the first ring, two levels up: {cell:?}"
     );
-    assert!(free.lifecycle.cell_marked && !free.lifecycle.in_limbo);
+    assert!(free.lifecycle.cell_marked && !free.lifecycle.in_limbo());
     assert_eq!(free.owner(), owner);
 }
 

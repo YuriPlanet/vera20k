@@ -49,9 +49,16 @@ name = "inspect-water-tiles"
 path = "src/bin/inspect-water-tiles.rs"
 
 [features]
-default = []
-# Optional in-engine diagnostic overlay. Player UI uses the retail UI owners.
-dev-ui = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit"]
+# Development builds carry the Ctrl+Shift dev chord. The release workflow builds
+# with `--no-default-features`, so shipped binaries do not.
+default = ["dev-overlays"]
+# The Ctrl+Shift dev chord: renderer-native diagnostic overlays (grid, heightmap,
+# pathgrid, inspector, fog), the debug pause and quicksave/quickload. Captures
+# rely on it (literal Ctrl+Shift+M/N quicksave/quickload). It needs no egui.
+dev-overlays = []
+# Optional in-engine diagnostic overlay (egui panels). Player UI uses the retail
+# UI owners. Implies `dev-overlays` so a dev build keeps its world overlays.
+dev-ui = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit", "dev-overlays"]
 # Standalone asset/video tools; this does not enable the engine overlay.
 tools-ui = ["dep:eframe", "dep:rfd"]
 
@@ -62,6 +69,14 @@ wgpu = "27"
 # winit 0.30 is the latest stable. 0.31 is still in beta.
 # Uses the ApplicationHandler trait pattern (deferred window creation).
 winit = "0.30"
+# raw-window-handle + windows-sys let us clip the OS cursor to the game window
+# with the Win32 ClipCursor API . That is reliable on frameless
+# windows, where winit's CursorGrabMode::Confined mis-computes the clip rect and
+# pins the pointer in place ("mouse won't move").
+raw-window-handle = "0.6"
+# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClientRect;
+# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
 # pollster bridges wgpu's async initialization inside winit's sync event loop.
 pollster = "0.4"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.

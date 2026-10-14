@@ -35,7 +35,7 @@ fn output_arrival_fixture() -> (Simulation, RuleSet) {
             GameEntity::test_default_of_category(id, name, "Americans", cell.0, cell.1, category);
         entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_type_ref_for_test(sim.intern(name));
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         if category == EntityCategory::Infantry {
             entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
@@ -84,7 +84,7 @@ fn infantry_arrival_runs_reciprocal_clearance_then_the_existing_foot_tail() {
     .unwrap();
     assert!(radio::take_transmit_log().is_empty());
     assert_eq!(
-        sim.substrate.entities.get(1).unwrap().dock_entered_with,
+        sim.substrate.entities.get(1).unwrap().tether.partner(),
         Some(2)
     );
     assert!(!sim.substrate.entities.get(1).unwrap().in_playfield);
@@ -114,7 +114,7 @@ fn infantry_arrival_runs_reciprocal_clearance_then_the_existing_foot_tail() {
     );
     for id in [1, 2] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.dock_entered_with, None);
+        assert_eq!(entity.tether.partner(), None);
         assert!(entity.radio_contacts.is_empty());
     }
     let infantry = sim.substrate.entities.get(1).unwrap();
@@ -169,7 +169,7 @@ fn an_untethered_infantry_arrival_preserves_its_contact_and_runs_the_foot_tail()
     assert!(radio::take_transmit_log().is_empty());
     for (id, partner) in [(1, 2), (2, 1)] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.dock_entered_with, None);
+        assert_eq!(entity.tether.partner(), None);
         assert_eq!(entity.radio_contacts.slot(0), Some(partner));
     }
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield);
@@ -300,7 +300,10 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
         .unwrap();
     assert_eq!(runtime.phase(), STATE_GROUND);
     assert!(!runtime.moving());
-    assert!(entity.attack_target.is_none(), "no conditional range stop");
+    assert!(
+        entity.attack_target.target().is_none(),
+        "no conditional range stop"
+    );
     assert_eq!(entity.navigation.nav_com, None);
     assert_eq!(entity.navigation.nav_com_aux, None);
     assert!(entity.navigation.nav_queue.is_empty());

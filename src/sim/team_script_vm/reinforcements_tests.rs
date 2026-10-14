@@ -255,8 +255,8 @@ fn flash_team_type_matches_original_member_writes_across_houses() {
             entity.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             // The native member-write body reads none of these admission
             // fields; a retained member is still flashed before retirement.
-            entity.lifecycle.object_alive = false;
-            entity.lifecycle.in_limbo = true;
+            entity.lifecycle.set_object_alive_for_test(false);
+            entity.lifecycle.set_in_limbo_for_test(true);
             entity.health.set_for_test(0);
             entity.flashing.start(int(initial));
             sim.substrate.entities.insert(entity);
@@ -640,7 +640,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
             "{input}"
         );
         assert_eq!(
-            plane.lifecycle.in_limbo,
+            plane.lifecycle.in_limbo(),
             row["plane"]["limbo"].as_bool().unwrap(),
             "{input}"
         );
@@ -663,7 +663,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         );
         let native_id = |id| sim.entities().get(id).unwrap().native_unique_id();
         assert_eq!(
-            plane.attack_target.as_ref().unwrap().target,
+            plane.attack_target.target().unwrap(),
             crate::sim::combat::TargetKind::Cell(
                 int(&row["plane"]["target_cell"][0]) as u16,
                 int(&row["plane"]["target_cell"][1]) as u16
@@ -675,7 +675,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
                 .passenger_role
                 .cargo()
                 .unwrap()
-                .passengers
+                .passengers()
                 .iter()
                 .copied()
                 .map(native_id)
@@ -693,7 +693,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
             .entities()
             .values()
             .filter(|entity| entity.category() == EntityCategory::Infantry)
-            .map(|entity| entity.lifecycle.in_limbo)
+            .map(|entity| entity.lifecycle.in_limbo())
             .collect();
         assert_eq!(
             limbo,
@@ -1014,7 +1014,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             .cargo()
             .unwrap();
         assert_eq!(
-            native_ids(&cargo.passengers),
+            native_ids(cargo.passengers()),
             values(&row["cargo_before"]),
             "{input}"
         );
@@ -1169,12 +1169,12 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
                 "{input}"
             );
             assert_eq!(
-                entity.lifecycle.in_limbo,
+                entity.lifecycle.in_limbo(),
                 int(&native["limbo"]) != 0,
                 "{input}"
             );
             assert_eq!(
-                entity.lifecycle.object_alive,
+                entity.lifecycle.object_alive(),
                 int(&native["alive"]) != 0,
                 "{input}"
             );
@@ -1312,8 +1312,12 @@ fn shared_leader_matches_original_script3_signed_ratings_and_live_joined_gates()
                     .unwrap();
                 let entity = sim.substrate.entities.get_mut(id).unwrap();
                 entity.set_native_unique_id_for_test(int(&state["native_id"]));
-                entity.lifecycle.object_alive = int(&state["alive"]) != 0;
-                entity.lifecycle.in_limbo = int(&state["limbo"]) != 0;
+                entity
+                    .lifecycle
+                    .set_object_alive_for_test(int(&state["alive"]) != 0);
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(int(&state["limbo"]) != 0);
                 entity.health.set_for_test(int(&state["health"]));
                 id
             })
@@ -1569,7 +1573,7 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
     );
     for id in original_members {
         assert_eq!(sim.team_script_vm.team_for_member(id), None);
-        assert!(sim.entities().get(id).unwrap().lifecycle.object_alive);
+        assert!(sim.entities().get(id).unwrap().lifecycle.object_alive());
     }
     assert_eq!(
         [

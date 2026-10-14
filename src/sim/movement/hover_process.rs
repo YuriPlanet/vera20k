@@ -186,7 +186,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(id)
-            .is_some_and(|e| e.lifecycle.object_alive)
+            .is_some_and(|e| e.lifecycle.object_alive())
     }
 
     fn hover_is_moving(&self, id: u64) -> bool {
@@ -1147,7 +1147,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.lifecycle.in_limbo);
+                .is_some_and(|entity| entity.lifecycle.in_limbo());
             if !in_limbo {
                 if self.track_survives(id) {
                     self.hover_drop_track(id, rules, effects);

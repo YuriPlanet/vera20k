@@ -9,7 +9,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::movement::FacingClass;
 use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
@@ -104,7 +104,9 @@ fn building_aim_directions_match_the_original() {
         let facing = input["facing"].as_u64().unwrap() as u16;
         let building = sim.substrate.entities.get_mut(1).unwrap();
         building.body_facing = FacingClass::new(facing, 10);
-        building.attack_target = (!target.is_null()).then(|| AttackTarget::new(2));
+        building
+            .attack_target
+            .set_for_test((!target.is_null()).then(|| TargetKind::Entity(2)));
 
         let building = sim.substrate.entities.get(1).unwrap();
         let obj = sim.object_type(building.type_ref(), &rules).unwrap();
@@ -133,8 +135,8 @@ fn building_aim_directions_match_the_original() {
         assert_eq!(Some(flh), word("turret_facing"), "{name} vt+0x2A8");
         let direction = building
             .attack_target
-            .as_ref()
-            .and_then(|attack| building_direction_to(&sim, &rules, building, attack.target));
+            .target()
+            .and_then(|attack| building_direction_to(&sim, &rules, building, attack));
         assert_eq!(direction, word("direction_to"), "{name} vt+0x4E8");
     }
 }

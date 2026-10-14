@@ -527,11 +527,14 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
             }
             if kind == "ROCKET" && height > 0 {
                 let entity = sim.substrate.entities.get(id).unwrap();
-                assert!(entity.crashing, "common Crashable tail follows splash");
-                assert!(entity.lifecycle.object_alive);
+                assert!(
+                    entity.crash.is_crashing(),
+                    "common Crashable tail follows splash"
+                );
+                assert!(entity.lifecycle.object_alive());
                 assert_eq!(entity.health.current(), 0);
-                assert!(entity.infantry_terminal.is_none());
-                assert!(!entity.dying);
+                assert!(entity.death.infantry_terminal().is_none());
+                assert!(!entity.death.is_dying());
                 assert!(!sim.substrate.pending_delete.contains_object(&id));
                 continue;
             }
@@ -541,7 +544,7 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
                     .get(id)
                     .unwrap()
                     .lifecycle
-                    .object_alive
+                    .object_alive()
             );
             assert!(sim.substrate.pending_delete.contains_object(&id));
         } else if kind == "SHIP" {
@@ -843,8 +846,8 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 1,
                 "a sinking hull retains native Health 1 until its terminal AI visit"
             );
-            assert!(retained.lifecycle.object_alive);
-            assert!(!retained.lifecycle.in_limbo);
+            assert!(retained.lifecycle.object_alive());
+            assert!(!retained.lifecycle.in_limbo());
             assert!(retained.in_logic_vector);
             assert!(!sim.substrate.pending_delete.contains_object(&ship));
             assert!(
@@ -910,7 +913,10 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             );
             let retained = sim.substrate.entities.get(ship).unwrap();
             assert_eq!(i64::from(retained.health.current()), repeat["health"]);
-            assert_eq!(u64::from(retained.lifecycle.object_alive), repeat["alive"]);
+            assert_eq!(
+                u64::from(retained.lifecycle.object_alive()),
+                repeat["alive"]
+            );
             assert_eq!(u64::from(retained.sinking.is_active()), repeat["sinking"]);
             assert_eq!(
                 u64::from(sim.houses[&owner].stats.units_lost()),

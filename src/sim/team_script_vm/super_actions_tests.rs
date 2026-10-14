@@ -160,7 +160,9 @@ fn replay(row: &Value, plant: bool) -> Replay {
             .spawn_object_at_height(&format!("M{index}"), OWNER, rx, 11, 0, 0, &rules)
             .expect("member spawns");
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        entity.lifecycle.object_alive = flag(&member["live"]);
+        entity
+            .lifecycle
+            .set_object_alive_for_test(flag(&member["live"]));
         // What_Am_I (vt+0x2C) is all the leader test asks of an aircraft.
         if flag(&member["aircraft"]) {
             entity.set_category_for_test(crate::map::entities::EntityCategory::Aircraft);

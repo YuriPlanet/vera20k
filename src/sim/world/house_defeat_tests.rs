@@ -395,7 +395,9 @@ fn native_blowup_subsets_corpus() {
                     .set_for_test(object["health"].as_i64().unwrap_or(100) as i32);
                 //The native corpus also supplies byte81 directly. This checks
                 //sweep admission, not the unrelated lifecycle producing this byte.
-                entity.lifecycle.in_limbo = object["limbo"].as_bool().unwrap_or(false);
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(object["limbo"].as_bool().unwrap_or(false));
                 id
             })
             .collect();

@@ -290,8 +290,7 @@ fn walk_attack_range_entry_finishes_paid_head_then_accepts_new_move() {
             .get(actor)
             .unwrap()
             .attack_target
-            .as_ref()
-            .map(|t| t.target),
+            .target(),
         Some(crate::sim::combat::TargetKind::Entity(victim)),
         "the real first-step path retains the visible attack target"
     );

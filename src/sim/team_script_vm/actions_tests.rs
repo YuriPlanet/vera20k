@@ -204,7 +204,7 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
     );
     assert!(members.iter().all(|&member| {
         let entity = sim.substrate.entities.get(member).unwrap();
-        entity.attack_target.is_none() && entity.navigation.nav_com.is_none()
+        entity.attack_target.target().is_none() && entity.navigation.nav_com.is_none()
     }));
     sim.session.binary_frame += 1;
     sim.team_step_script(team, &rules, None, FrameEffects::default());
@@ -240,8 +240,8 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
             .get(member)
             .unwrap()
             .attack_target
-            .as_ref()
-            .is_some_and(|attack| attack.target == crate::sim::combat::TargetKind::Entity(enemy))
+            .target()
+            == Some(crate::sim::combat::TargetKind::Entity(enemy))
     }));
 }
 
@@ -291,8 +291,12 @@ fn patrol_reuses_the_native_leadership_rating_member_selection() {
                     10,
                     category,
                 );
-                entity.lifecycle.object_alive = input["active"].as_bool().unwrap();
-                entity.lifecycle.in_limbo = input["limbo"].as_bool().unwrap();
+                entity
+                    .lifecycle
+                    .set_object_alive_for_test(input["active"].as_bool().unwrap());
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());
                 entity
                     .health
                     .set_for_test(input["health"].as_i64().unwrap() as i32);
@@ -584,8 +588,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
                         .get(member)
                         .unwrap()
                         .attack_target
-                        .as_ref()
-                        .map(|attack| attack.target),
+                        .target(),
                     Some(crate::sim::combat::TargetKind::Entity(buildings[0])),
                     "{input}: existing CoordinateAttack consumer"
                 );
@@ -827,7 +830,7 @@ fn the_team_attacks_the_building_its_first_member_finds() {
         );
         let first = sim.substrate.entities.get(members[0]).unwrap();
         assert_eq!(
-            first.attack_target.as_ref().map(|attack| attack.target),
+            first.attack_target.target(),
             Some(crate::sim::combat::TargetKind::Entity(plants[pick])),
             "mode {mode}: the first member's target"
         );
@@ -1194,7 +1197,7 @@ impl DeployTeam {
             .entities
             .values()
             .filter(|entity| {
-                !entity.dying && self.sim.interner.resolve(entity.type_ref()) == "YARD"
+                !entity.death.is_dying() && self.sim.interner.resolve(entity.type_ref()) == "YARD"
             })
             .map(|entity| (entity.position.rx, entity.position.ry))
             .collect()

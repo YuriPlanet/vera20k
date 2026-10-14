@@ -1444,7 +1444,7 @@ mod tests {
     #[test]
     fn projectile_arm_producer_uses_aircraft_identity_in_runtime_fireat() {
         use crate::rules::ini_parser::IniFile;
-        use crate::sim::combat::AttackTarget;
+        use crate::sim::combat::TargetKind;
         use crate::sim::runtime::SimRuntime;
         for arm in [-1, i32::MIN, i32::MAX, 9_999_999, 10] {
             for aircraft in [false, true] {
@@ -1496,7 +1496,9 @@ mod tests {
                 }
                 let firer = sim.substrate.entities.get_mut(source).unwrap();
                 firer.body_facing.snap(0x4000, 0);
-                firer.attack_target = Some(AttackTarget::new(target));
+                firer
+                    .attack_target
+                    .set_for_test(Some(TargetKind::Entity(target)));
                 sim.session.binary_frame = 100;
                 let mut runtime = SimRuntime::from_simulation(sim);
                 runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
@@ -1521,7 +1523,7 @@ mod tests {
     #[test]
     fn runtime_fireat_fractional_velocity_survives_live_gravity_and_snapshot() {
         use crate::rules::ini_parser::IniFile;
-        use crate::sim::combat::AttackTarget;
+        use crate::sim::combat::TargetKind;
         use crate::sim::runtime::SimRuntime;
         use crate::sim::snapshot::GameSnapshot;
         let native: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
@@ -1594,7 +1596,9 @@ mod tests {
             assert!(sim.substrate.entities.get(target).unwrap().in_playfield);
             let firer = sim.substrate.entities.get_mut(source).unwrap();
             firer.body_facing.snap(0x4000, 0);
-            firer.attack_target = Some(AttackTarget::new(target));
+            firer
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(target)));
             let mut runtime = SimRuntime::from_simulation(sim);
             runtime.resources.rules = make_rules();
             let inputs = &native["inputs"];
@@ -1659,7 +1663,8 @@ mod tests {
                 .entities
                 .get_mut(source)
                 .unwrap()
-                .attack_target = None;
+                .attack_target
+                .set_for_test(None);
             let snapshot = GameSnapshot::save(&runtime.simulation, 0, 0, "native motion", 0);
             let mut restored = GameSnapshot::load(&snapshot).unwrap().sim;
             let mut serialized_expected = runtime.simulation.projectiles.get(id).unwrap().clone();

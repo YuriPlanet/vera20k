@@ -11,8 +11,10 @@ use serde::{Deserialize, Serialize};
 
 pub mod contacts;
 pub mod receive;
+mod tether;
 pub use contacts::Contacts;
 pub(crate) use receive::receive_radio;
+pub use tether::Tether;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;

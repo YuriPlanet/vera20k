@@ -402,7 +402,7 @@ fn phase_b_interleaves_each_cells_roll_with_its_mark() {
                 let entity = sim.substrate.entities.get(id).unwrap();
                 assert_eq!(sim.interner.resolve(entity.owner()), "Americans");
                 assert_eq!(queued(&sim, id), MissionId::from_known(MissionType::Hunt));
-                assert!(entity.sub_cell.is_some() && !entity.lifecycle.in_limbo);
+                assert!(entity.sub_cell.is_some() && !entity.lifecycle.in_limbo());
                 (
                     type_name(&sim, id),
                     (entity.position.rx, entity.position.ry),
@@ -530,7 +530,7 @@ fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
             assert_eq!(marks, expected_marks, "seed {seed}");
             for id in new_ids(&sim, &before) {
                 let survivor = sim.substrate.entities.get(id).unwrap();
-                let target = survivor.attack_target.as_ref().map(|target| target.target);
+                let target = survivor.attack_target.target();
                 if expect_attack {
                     assert_eq!(queued(&sim, id), MissionId::from_known(MissionType::Attack));
                     assert_eq!(target, Some(TargetKind::Entity(planter)));
@@ -577,9 +577,7 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
         .entities
         .get_mut(building)
         .unwrap()
-        .passenger_role = PassengerRole::Transport {
-        cargo: PassengerCargo::new(5, 0),
-    };
+        .passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
     (0..count)
         .map(|_| {
             let id = sim
@@ -594,10 +592,8 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
-                transport_id: building,
-                open_topped: false,
-            };
+            sim.substrate.entities.get_mut(id).unwrap().passenger_role =
+                PassengerRole::inside_for_test(building, false);
             let cargo = sim
                 .substrate
                 .entities
@@ -660,8 +656,8 @@ fn a_bio_reactor_releases_its_absorbed_infantry_before_its_crew() {
     assert!(reactor_entity.passenger_role.cargo().unwrap().is_empty());
     for id in absorbed {
         let passenger = sim.substrate.entities.get(id).expect("released alive");
-        assert!(matches!(passenger.passenger_role, PassengerRole::None));
-        assert!(!passenger.lifecycle.in_limbo);
+        assert!(passenger.passenger_role.is_none());
+        assert!(!passenger.lifecycle.in_limbo());
         assert_eq!((passenger.position.rx, passenger.position.ry), (10, 10));
         assert_eq!(queued(&sim, id), MissionId::from_known(MissionType::Hunt));
     }
@@ -693,7 +689,7 @@ fn no_survivor_uninits_the_absorbed_infantry() {
             sim.substrate
                 .entities
                 .get(id)
-                .is_none_or(|entity| !entity.lifecycle.object_alive),
+                .is_none_or(|entity| !entity.lifecycle.object_alive()),
             "absorbed passenger {id} is removed"
         );
     }
@@ -907,7 +903,7 @@ fn a_killing_hit_spawns_the_building_crew_in_the_same_receiver_call() {
                 sim.substrate
                     .entities
                     .get(yard)
-                    .is_none_or(|entity| !entity.lifecycle.object_alive),
+                    .is_none_or(|entity| !entity.lifecycle.object_alive()),
                 "the yard died"
             );
             let crew: Vec<_> = new_ids(&sim, &before)
@@ -1011,8 +1007,8 @@ fn a_killing_hit_releases_the_bio_reactors_infantry() {
     kill(&mut sim, &rules, reactor, ORDINARY);
     for id in absorbed {
         let passenger = sim.substrate.entities.get(id).expect("released");
-        assert!(passenger.lifecycle.object_alive && passenger.health.current() > 0);
-        assert!(!passenger.lifecycle.in_limbo);
+        assert!(passenger.lifecycle.object_alive() && passenger.health.current() > 0);
+        assert!(!passenger.lifecycle.in_limbo());
     }
 }
 
@@ -1048,10 +1044,8 @@ fn load_passengers(
         })
         .collect();
     for &id in passengers.iter().rev() {
-        sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
-            transport_id: transport,
-            open_topped,
-        };
+        sim.substrate.entities.get_mut(id).unwrap().passenger_role =
+            PassengerRole::inside_for_test(transport, open_topped);
         let cargo = sim
             .substrate
             .entities
@@ -1100,7 +1094,7 @@ fn cargo_len(sim: &Simulation, transport: u64) -> usize {
         .entities
         .get(transport)
         .and_then(|entity| entity.passenger_role.cargo())
-        .map_or(0, |cargo| cargo.passengers.len())
+        .map_or(0, |cargo| cargo.passengers().len())
 }
 
 /// Through the production receiver: a dying transport's passengers step out
@@ -1122,8 +1116,8 @@ fn a_killing_hit_lets_the_passengers_out() {
         assert_eq!(cargo_len(&sim, apc), 0);
         for &id in &passengers {
             let passenger = sim.substrate.entities.get(id).expect("escaped");
-            assert!(passenger.lifecycle.object_alive && !passenger.lifecycle.in_limbo);
-            assert!(matches!(passenger.passenger_role, PassengerRole::None));
+            assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
+            assert!(passenger.passenger_role.is_none());
             assert_eq!((passenger.position.rx, passenger.position.ry), (10, 10));
             assert_eq!(passenger.killed_by, None);
             assert!(!passenger.selected);
@@ -1156,7 +1150,7 @@ fn an_ignore_defenses_kill_takes_the_passengers_along() {
     for id in passengers {
         let passenger = sim.substrate.entities.get(id).unwrap();
         assert!(sim.substrate.pending_delete.contains_object(&id));
-        assert!(!passenger.lifecycle.object_alive);
+        assert!(!passenger.lifecycle.object_alive());
         assert_eq!(passenger.killed_by, Some(russians));
     }
 }
@@ -1219,10 +1213,10 @@ fn a_gunner_transport_on_its_suicide_weapon_explodes() {
             .current()
             < 200;
         if explodes {
-            assert!(!passenger.lifecycle.object_alive);
+            assert!(!passenger.lifecycle.object_alive());
             assert_eq!(passenger.killed_by, Some(russians));
         } else {
-            assert!(passenger.lifecycle.object_alive && !passenger.lifecycle.in_limbo);
+            assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
             assert_eq!(passenger.killed_by, None);
         }
         assert_eq!(bystander_hit, explodes, "IFVMode {ifv_mode}");
@@ -1300,7 +1294,7 @@ fn a_selected_foreign_vehicle_selects_nothing() {
     kill(&mut sim, &rules, apc, ORDINARY);
     for id in passengers {
         let passenger = sim.substrate.entities.get(id).unwrap();
-        assert!(passenger.lifecycle.object_alive && !passenger.lifecycle.in_limbo);
+        assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
         assert!(!passenger.selected);
     }
 }
@@ -1610,9 +1604,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                         )
                     });
                 sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                    PassengerRole::Boarding {
-                        target_transport_id: transport,
-                    };
+                    PassengerRole::boarding_for_test(transport);
                 id
             })
             .collect();
@@ -1648,10 +1640,10 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
         for &id in gis {
             let gi = sim.substrate.entities.get(id).expect("GI lives");
             assert!(
-                gi.lifecycle.object_alive && !gi.lifecycle.in_limbo,
+                gi.lifecycle.object_alive() && !gi.lifecycle.in_limbo(),
                 "{kind}"
             );
-            assert!(matches!(gi.passenger_role, PassengerRole::None));
+            assert!(gi.passenger_role.is_none());
             assert_eq!(
                 (gi.position.rx, gi.position.ry),
                 *cell,

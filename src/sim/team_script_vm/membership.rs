@@ -142,9 +142,9 @@ impl Simulation {
             return None;
         }
         let entity = self.substrate.entities.get(entity_id)?;
-        if !entity.lifecycle.object_alive
+        if !entity.lifecycle.object_alive()
             || entity.health.current() == 0
-            || (entity.lifecycle.in_limbo && !self.object_placement_scope_active())
+            || (entity.lifecycle.in_limbo() && !self.object_placement_scope_active())
             || entity.owner() != team.owner
         {
             return None;
@@ -349,7 +349,9 @@ impl Simulation {
                 entity.mission.clear_suspended();
                 entity.navigation.suspended_nav_com = None;
                 entity.suspended_attack_target = None;
-                entity.lifecycle.object_alive && !entity.crashing && !entity.lifecycle.in_limbo
+                entity.lifecycle.object_alive()
+                    && !entity.crash.is_crashing()
+                    && !entity.lifecycle.in_limbo()
             });
         if idles
             && !no_idle

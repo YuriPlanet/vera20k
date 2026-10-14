@@ -55,7 +55,7 @@ impl Simulation {
             return;
         };
         entity.health.set(1);
-        entity.lifecycle.object_alive = true;
+        entity.lifecycle.restore_alive();
         entity.sinking.active = true;
         self.techno_death_stun(
             id,

@@ -33,7 +33,10 @@ use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::world::{ConcealOutcome, FrameEffects, SimSoundEvent, Simulation, UninitContext};
 
-/// Passenger cargo state, attached as `Option<PassengerCargo>` on transport entities.
+/// The cargo hold of a type that holds passengers: CargoClass `Passengers`
+/// (`TechnoClass+0x114`: the count, then the list head at `+0x118`, chained
+/// through each passenger's `ObjectClass+0x30`), held in a
+/// [`PassengerRole`].
 ///
 /// Tracks which entities are currently inside this transport/garrison.
 /// Passengers are stored as a Vec of stable_ids in native CargoClass list
@@ -54,25 +57,25 @@ pub struct PassengerCargo {
     /// Stable IDs of entities currently inside: a transport's head first
     /// (the most recently boarded at index 0, LIFO unload), a garrison's in
     /// admission order.
-    pub passengers: Vec<u64>,
+    passengers: Vec<u64>,
     /// `Size=` captured for each entry in `passengers`, at the same index.
     ///
     /// CargoClass can remove an individual expiring object without receiving
     /// its size as a separate argument. Keeping the admission-time size with
     /// the entry gives the Rust cargo list the same exact bookkeeping ability.
     #[serde(default)]
-    pub(crate) passenger_sizes: Vec<u32>,
+    passenger_sizes: Vec<u32>,
     /// Maximum passenger count (from Passengers= or MaxNumberOccupants= in rules.ini).
-    pub capacity: u32,
+    capacity: u32,
     /// Maximum Size= of individual passenger allowed (from SizeLimit= in rules.ini).
     /// 0 means no size restriction.
-    pub size_limit: u32,
+    size_limit: u32,
     /// Total Size units currently occupied (sum of passenger Size= values).
-    pub total_size: u32,
+    total_size: u32,
     /// Round-robin index for garrison fire — which occupant fires next.
     /// Matches gamemd BuildingClass+0x69C (CurrentFireIdx). Init 0, advanced
     /// by garrison combat after each shot: `(idx + 1) % occupant_count`.
-    pub garrison_fire_index: u8,
+    garrison_fire_index: u8,
     /// A transport's own passenger relation is independent of its cargo.
     /// Unit73A6EC..73A77C attaches it without clearing CargoClass+114;
     /// Steam gamemd.exe SHA3e81a617, original Unit739EC0 instructions.
@@ -110,6 +113,70 @@ impl PassengerCargo {
     /// Number of passengers currently inside.
     pub fn count(&self) -> u32 {
         self.passengers.len() as u32
+    }
+
+    /// The passengers' stable ids, a transport's list head first and a
+    /// garrison's earliest admission first.
+    pub fn passengers(&self) -> &[u64] {
+        &self.passengers
+    }
+
+    /// The `Size=` each passenger had when it boarded, by index.
+    pub(crate) fn passenger_sizes(&self) -> &[u32] {
+        &self.passenger_sizes
+    }
+
+    /// `Passengers=`, or a garrison's `MaxNumberOccupants=`.
+    pub fn capacity(&self) -> u32 {
+        self.capacity
+    }
+
+    /// `SizeLimit=`; 0 admits any size.
+    pub fn size_limit(&self) -> u32 {
+        self.size_limit
+    }
+
+    /// The passengers' total `Size=`.
+    pub fn total_size(&self) -> u32 {
+        self.total_size
+    }
+
+    /// `BuildingClass+0x69C`, the garrison occupant that fires next.
+    pub fn garrison_fire_index(&self) -> u8 {
+        self.garrison_fire_index
+    }
+
+    /// `BulletClass::Fire`'s advance of an occupied building's firing
+    /// occupant: `+0x69C = (+0x69C + 1) % occupants`.
+    pub(crate) fn advance_garrison_fire_index(&mut self) {
+        let count = self.count() as u8;
+        if count > 0 {
+            self.garrison_fire_index = (self.garrison_fire_index + 1) % count;
+        }
+    }
+
+    /// Install a fixture's firing occupant.
+    #[cfg(test)]
+    pub(crate) fn set_garrison_fire_index_for_test(&mut self, index: u8) {
+        self.garrison_fire_index = index;
+    }
+
+    /// Install a fixture's passenger list, sizes untouched.
+    #[cfg(test)]
+    pub(crate) fn set_passengers_for_test(&mut self, passengers: Vec<u64>) {
+        self.passengers = passengers;
+    }
+
+    /// Install a fixture's admission-time sizes.
+    #[cfg(test)]
+    pub(crate) fn set_passenger_sizes_for_test(&mut self, sizes: Vec<u32>) {
+        self.passenger_sizes = sizes;
+    }
+
+    /// Install a fixture's total size, whatever the sizes say.
+    #[cfg(test)]
+    pub(crate) fn set_total_size_for_test(&mut self, total_size: u32) {
+        self.total_size = total_size;
     }
 
     /// Whether the transport has room for a passenger of the given size.
@@ -238,9 +305,9 @@ impl Simulation {
             return false;
         }
         // Every native Foot has CargoClass even when Type.Passengers is0.
-        // Materialize its existing empty representation at the first raw
-        // Cargo attach; ordinary capacity admission remains a caller policy.
-        let cargo = transport.passenger_role.materialize_foot_cargo();
+        // Make its empty hold at the first raw Cargo attach; ordinary
+        // capacity admission remains a caller policy.
+        let cargo = transport.passenger_role.ensure_hold();
         // The existing size cache belongs to Cargo as well: ordinary callers
         // supply their admitted type size; retries retain the popped size.
         // Native quantity is the chain length, not its configured capacity.
@@ -249,12 +316,26 @@ impl Simulation {
     }
 }
 
-/// Cargo capability and the entity's passenger relation share one owner.
-/// A transport retains its own cargo while boarding or riding in another hull;
-/// ordinary passengers keep the historical Boarding/Inside representations.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum PassengerRole {
+/// An entity's passenger relation and, for a type that holds passengers, its
+/// cargo hold. Natively these are separate Techno fields: the CargoClass
+/// `Passengers` (`TechnoClass+0x114`, [`PassengerCargo`]), the Transporter
+/// (`+0x11C`) and InOpenToppedTransport (`+0x82`). VERA keeps a hold only for
+/// a type that can carry passengers, and a transport's own relation to the
+/// hull it rides in inside that hold. This module owns all of it: other
+/// modules read it through these methods and change it through its boarding,
+/// unload and teardown methods.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PassengerRole {
+    role: Role,
+}
+
+/// The stored shape of a [`PassengerRole`]. A transport keeps its own cargo
+/// while boarding or riding in another hull; other entities keep the
+/// Boarding/Inside representations.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+enum Role {
     /// Entity has no passenger/transport role. Most entities are this.
+    #[default]
     None,
     /// Entity is a transport or garrisonable building that can hold passengers.
     Transport { cargo: PassengerCargo },
@@ -275,42 +356,22 @@ pub enum PassengerRole {
 }
 
 impl PassengerRole {
-    /// Rust's optional Cargo representation of an always-present native Foot
-    /// CargoClass. Adding its capability preserves the independent +11C
-    /// carrier relation; it does not make Type.Passengers admit boarding.
-    fn materialize_foot_cargo(&mut self) -> &mut PassengerCargo {
-        if !self.is_transport() {
-            let relation = match *self {
-                Self::Boarding {
-                    target_transport_id,
-                } => CarrierRelation::Boarding {
-                    target_transport_id,
-                },
-                Self::Inside {
-                    transport_id,
-                    open_topped,
-                } => CarrierRelation::Inside {
-                    transport_id,
-                    open_topped,
-                },
-                Self::None => CarrierRelation::Outside,
-                Self::Transport { .. } => unreachable!(),
-            };
-            let mut cargo = PassengerCargo::new(0, 0);
-            cargo.carrier_relation = relation;
-            *self = Self::Transport { cargo };
+    /// The role of a type that holds passengers (`Passengers=`, or a
+    /// garrison's `MaxNumberOccupants=`), with its empty hold.
+    pub(crate) fn transport(cargo: PassengerCargo) -> Self {
+        Self {
+            role: Role::Transport { cargo },
         }
-        self.cargo_mut().unwrap()
     }
 
     /// Live transport destination held by the boarding adapter, including a
     /// vehicle which itself retains passengers.
     pub fn boarding_transport_id(&self) -> Option<u64> {
-        match self {
-            Self::Boarding {
+        match &self.role {
+            Role::Boarding {
                 target_transport_id,
             } => Some(*target_transport_id),
-            Self::Transport { cargo } => match cargo.carrier_relation {
+            Role::Transport { cargo } => match cargo.carrier_relation {
                 CarrierRelation::Boarding {
                     target_transport_id,
                 } => Some(target_transport_id),
@@ -323,12 +384,12 @@ impl PassengerRole {
     /// Transporter+11C and InOpenToppedTransport+82, independent of an entity's
     /// own CargoClass. Callers do not inspect the storage representation.
     pub fn inside_transport(&self) -> Option<(u64, bool)> {
-        match self {
-            Self::Inside {
+        match &self.role {
+            Role::Inside {
                 transport_id,
                 open_topped,
             } => Some((*transport_id, *open_topped)),
-            Self::Transport { cargo } => match cargo.carrier_relation {
+            Role::Transport { cargo } => match cargo.carrier_relation {
                 CarrierRelation::Inside {
                     transport_id,
                     open_topped,
@@ -345,14 +406,14 @@ impl PassengerRole {
         if self.is_inside_transport() {
             return false;
         }
-        match self {
-            Self::Transport { cargo } => {
+        match &mut self.role {
+            Role::Transport { cargo } => {
                 cargo.carrier_relation = CarrierRelation::Boarding {
                     target_transport_id,
                 };
             }
-            _ => {
-                *self = Self::Boarding {
+            role => {
+                *role = Role::Boarding {
                     target_transport_id,
                 }
             }
@@ -363,15 +424,15 @@ impl PassengerRole {
     /// Successful attachment or departure rollback. Cargo and its gunner
     /// selection remain owned by the vehicle throughout this transition.
     pub(crate) fn set_inside_transport(&mut self, transport_id: u64, open_topped: bool) {
-        match self {
-            Self::Transport { cargo } => {
+        match &mut self.role {
+            Role::Transport { cargo } => {
                 cargo.carrier_relation = CarrierRelation::Inside {
                     transport_id,
                     open_topped,
                 };
             }
-            _ => {
-                *self = Self::Inside {
+            role => {
+                *role = Role::Inside {
                     transport_id,
                     open_topped,
                 }
@@ -382,16 +443,16 @@ impl PassengerRole {
     /// Clear only this entity's carrier link. Its own cargo remains available
     /// for unloading, retry restoration and recursive UnInit.
     pub(crate) fn clear_carrier_relation(&mut self) {
-        match self {
-            Self::Transport { cargo } => cargo.carrier_relation = CarrierRelation::Outside,
-            _ => *self = Self::None,
+        match &mut self.role {
+            Role::Transport { cargo } => cargo.carrier_relation = CarrierRelation::Outside,
+            role => *role = Role::None,
         }
     }
 
     /// Returns the cargo hold if this entity is a transport.
     pub fn cargo(&self) -> Option<&PassengerCargo> {
-        match self {
-            Self::Transport { cargo } => Some(cargo),
+        match &self.role {
+            Role::Transport { cargo } => Some(cargo),
             _ => Option::None,
         }
     }
@@ -401,10 +462,44 @@ impl PassengerRole {
         self.cargo().map_or(0, PassengerCargo::count)
     }
 
-    /// Returns a mutable reference to the cargo hold if this entity is a transport.
-    pub fn cargo_mut(&mut self) -> Option<&mut PassengerCargo> {
-        match self {
-            Self::Transport { cargo } => Some(cargo),
+    /// The hold of a type without `Passengers=` that is loaded anyway, made
+    /// on first use: every native Techno has its CargoClass (`+0x114`), and
+    /// `HouseClass::SendParadropPlanes` fills the paradrop plane's through
+    /// `CargoClass::AddPassenger` (`0x0065E7F5`). The entity's own carrier
+    /// relation (`+0x11C`, `+0x82`) is a separate Techno field that
+    /// `CargoClass::AddPassenger` (`0x004733A0`) does not write, so the hold
+    /// keeps it.
+    pub(crate) fn ensure_hold(&mut self) -> &mut PassengerCargo {
+        if !self.is_transport() {
+            let carrier_relation = match self.role {
+                Role::Boarding {
+                    target_transport_id,
+                } => CarrierRelation::Boarding {
+                    target_transport_id,
+                },
+                Role::Inside {
+                    transport_id,
+                    open_topped,
+                } => CarrierRelation::Inside {
+                    transport_id,
+                    open_topped,
+                },
+                Role::None | Role::Transport { .. } => CarrierRelation::Outside,
+            };
+            let mut cargo = PassengerCargo::new(0, 0);
+            cargo.carrier_relation = carrier_relation;
+            self.role = Role::Transport { cargo };
+        }
+        match &mut self.role {
+            Role::Transport { cargo } => cargo,
+            _ => unreachable!("the hold was made above"),
+        }
+    }
+
+    /// The cargo hold, for its own boarding, unload and teardown methods.
+    pub(crate) fn cargo_mut(&mut self) -> Option<&mut PassengerCargo> {
+        match &mut self.role {
+            Role::Transport { cargo } => Some(cargo),
             _ => Option::None,
         }
     }
@@ -435,7 +530,35 @@ impl PassengerRole {
 
     /// True if entity is a transport/garrison with a cargo hold.
     pub fn is_transport(&self) -> bool {
-        matches!(self, Self::Transport { .. })
+        matches!(self.role, Role::Transport { .. })
+    }
+
+    /// No hold and no carrier relation.
+    #[cfg(test)]
+    pub(crate) fn is_none(&self) -> bool {
+        matches!(self.role, Role::None)
+    }
+
+    /// A fixture's passenger inside `transport_id`, replacing any hold.
+    #[cfg(test)]
+    pub(crate) fn inside_for_test(transport_id: u64, open_topped: bool) -> Self {
+        Self {
+            role: Role::Inside {
+                transport_id,
+                open_topped,
+            },
+        }
+    }
+
+    /// A fixture's Foot walking to board `target_transport_id`, replacing
+    /// any hold.
+    #[cfg(test)]
+    pub(crate) fn boarding_for_test(target_transport_id: u64) -> Self {
+        Self {
+            role: Role::Boarding {
+                target_transport_id,
+            },
+        }
     }
 }
 
@@ -455,10 +578,10 @@ pub fn can_enter_transport(
     };
     // These are order/UI lifecycle admission, not extra receiver0F gates.
     if !passenger.is_alive()
-        || passenger.dying
+        || passenger.death.is_dying()
         || passenger.passenger_role.is_inside_transport()
         || !transport.is_alive()
-        || transport.dying
+        || transport.death.is_dying()
     {
         return false;
     }
@@ -757,7 +880,7 @@ pub(crate) fn process_boarding_passenger(
         .substrate
         .entities
         .get(transport_id)
-        .is_some_and(|t| t.is_alive() && !t.dying);
+        .is_some_and(|t| t.is_alive() && !t.death.is_dying());
     if !transport_alive {
         if let Some(e) = sim.substrate.entities.get_mut(pax_id) {
             e.passenger_role.clear_carrier_relation();
@@ -969,12 +1092,14 @@ pub(crate) fn process_boarding_passenger(
         }
 
         if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
+            // Boarding keeps the passenger's TarCom and passive flag:
+            // PerCellProcess's transport and building arms (Infantry
+            // `0x0051A3FC..0x0051A47E` and `0x0051A27F..0x0051A39D`, Unit
+            // `0x0073A28A..0x0073A31C` and `0x0073A6E8..0x0073A793`) write
+            // neither, nor does Limbo. A closed transport's rider has no AI
+            // turn to act on it; an open-topped one reaches the setter below.
             pax.passenger_role
                 .set_inside_transport(transport_id, transport_open_topped);
-            if !transport_open_topped {
-                pax.attack_target = None;
-                pax.passively_acquired_target = false;
-            }
         }
         if transport_open_topped {
             // `SetInOpenTransport @ 0x00710470` (Infantry `0x0051A45E`, Unit
@@ -1029,9 +1154,7 @@ pub(crate) fn process_boarding_passenger(
 /// RESIDUALS: the `Assaulter=` arm (`0x00522A09..0x00522A45`: the
 /// building's occupants are killed, and the assaulter drops its destination
 /// and scatters) is not represented; no retail infantry is an assaulter.
-/// VERA's passenger also drops its target (native Limbo keeps TarCom) and
-/// its movement and order state; an ejected occupant starts without a
-/// target.
+/// VERA's passenger also drops its movement and order state.
 pub(crate) fn add_garrison_occupant(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1077,9 +1200,8 @@ pub(crate) fn add_garrison_occupant(
         return false;
     };
     if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
+        // Admission and Limbo keep the occupant's TarCom and passive flag.
         pax.passenger_role.set_inside_transport(building_id, false);
-        pax.attack_target = None;
-        pax.passively_acquired_target = false;
     }
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
@@ -1550,9 +1672,8 @@ ConditionYellow=50%
         ge.foundation = obj.foundation.clone();
         ge.health.set_for_test(obj.strength);
         ge.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(obj.strength);
-        ge.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(obj.max_number_occupants, 1),
-        };
+        ge.passenger_role =
+            PassengerRole::transport(PassengerCargo::new(obj.max_number_occupants, 1));
         sim.substrate.entities.insert(ge);
         // A standing building, as a map places it: no build-up.
         assert!(matches!(
@@ -1589,9 +1710,10 @@ ConditionYellow=50%
         entity.set_owner_for_test(owner_id);
         entity.set_type_ref_for_test(type_id);
         entity.set_category_for_test(EntityCategory::Unit);
-        entity.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(obj.passengers.max(0) as u32, obj.size_limit),
-        };
+        entity.passenger_role = PassengerRole::transport(PassengerCargo::new(
+            obj.passengers.max(0) as u32,
+            obj.size_limit,
+        ));
         sim.substrate.entities.insert(entity);
         assert!(matches!(
             sim.reveal_entity_with_rules(stable_id, rules),
@@ -1638,9 +1760,7 @@ ConditionYellow=50%
             .and_then(|target| sim.object_type(target.type_ref(), rules))
             .is_some_and(|object| object.can_be_occupied);
         if !capture {
-            ge.passenger_role = PassengerRole::Boarding {
-                target_transport_id: transport_id,
-            };
+            ge.passenger_role = PassengerRole::boarding_for_test(transport_id);
         }
         sim.substrate.entities.insert(ge);
         assert!(matches!(
@@ -1706,9 +1826,10 @@ ConditionYellow=50%
             entity.set_owner_for_test(owner);
             entity.set_type_ref_for_test(type_ref);
             let object = rules.object(name).unwrap();
-            entity.passenger_role = PassengerRole::Transport {
-                cargo: PassengerCargo::new(object.passengers as u32, object.size_limit),
-            };
+            entity.passenger_role = PassengerRole::transport(PassengerCargo::new(
+                object.passengers as u32,
+                object.size_limit,
+            ));
             sim.substrate.entities.insert(entity);
         }
         sim.substrate
@@ -1814,7 +1935,7 @@ ConditionYellow=50%
             ConcealOutcome::Concealed
         );
         let entity = sim.substrate.entities.get(rider).unwrap();
-        assert!(entity.attack_target.is_none());
+        assert!(entity.attack_target.target().is_none());
         assert_eq!(entity.passenger_role.inside_transport(), Some((hull, true)));
         assert!(
             entity.in_logic_vector,
@@ -1850,6 +1971,7 @@ ConditionYellow=50%
                 .get(rider)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_some(),
             "repeated Limbo skips the native first-live target clear"
         );
@@ -1884,10 +2006,13 @@ ConditionYellow=50%
             let pax =
                 spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", bldg, cell.0, cell.1);
             tick_entry_arrival(&mut sim, &rules);
-            let inside = matches!(
-                sim.substrate.entities.get(pax).unwrap().passenger_role,
-                PassengerRole::Inside { .. }
-            );
+            let inside = sim
+                .substrate
+                .entities
+                .get(pax)
+                .unwrap()
+                .passenger_role
+                .is_inside_transport();
             assert_eq!(
                 inside, expected,
                 "occupier at {cell:?} on the fixed-ART 2x2 at (10,10)"
@@ -1991,10 +2116,15 @@ ConditionYellow=50%
         tick_entry_arrival(&mut sim, &rules);
 
         assert_eq!(owner_name(&sim, bldg), "Neutral");
-        assert!(matches!(
-            sim.substrate.entities.get(pax).unwrap().passenger_role,
-            PassengerRole::Inside { transport_id, .. } if transport_id == bldg
-        ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(pax)
+                .unwrap()
+                .passenger_role
+                .inside_transport_id(),
+            Some(bldg)
+        );
     }
 
     #[test]
@@ -2030,10 +2160,12 @@ ConditionYellow=50%
         assert_eq!(owner_name(&sim, bldg), "Neutral");
 
         assert!(
-            matches!(
-                sim.substrate.entities.get(pax).unwrap().passenger_role,
-                PassengerRole::None
-            ),
+            sim.substrate
+                .entities
+                .get(pax)
+                .unwrap()
+                .passenger_role
+                .is_none(),
             "the legacy passenger phase cannot admit a Capture occupier"
         );
         tick_entry_arrival(&mut sim, &rules);
@@ -2299,8 +2431,8 @@ ConditionYellow=50%
             .entities
             .get(pax)
             .expect("occupant should still exist");
-        assert!(matches!(passenger.passenger_role, PassengerRole::None));
-        assert!(!passenger.dying);
+        assert!(passenger.passenger_role.is_none());
+        assert!(!passenger.death.is_dying());
         assert_eq!((passenger.position.rx, passenger.position.ry), (12, 12));
 
         assert!(sim.sound_events.iter().any(|event| {
@@ -2327,10 +2459,12 @@ ConditionYellow=50%
         tick_entry_arrival(&mut sim, &rules);
 
         assert!(
-            matches!(
-                sim.substrate.entities.get(pax).unwrap().passenger_role,
-                PassengerRole::Inside { .. }
-            ),
+            sim.substrate
+                .entities
+                .get(pax)
+                .unwrap()
+                .passenger_role
+                .is_inside_transport(),
             "passenger should have boarded"
         );
         assert!(
@@ -2338,8 +2472,8 @@ ConditionYellow=50%
             "boarded passenger leaves the active order"
         );
         let passenger = sim.substrate.entities.get(pax).unwrap();
-        assert!(passenger.lifecycle.object_alive);
-        assert!(passenger.lifecycle.in_limbo);
+        assert!(passenger.lifecycle.object_alive());
+        assert!(passenger.lifecycle.in_limbo());
         assert!(!passenger.lifecycle.cell_marked);
         assert!(!passenger.in_logic_vector);
         assert!(
@@ -2366,9 +2500,7 @@ ConditionYellow=50%
         tick_entry_arrival(&mut sim, &rules);
 
         let actor = sim.substrate.entities.get(gi).unwrap();
-        assert!(
-            matches!(actor.passenger_role, PassengerRole::Inside { transport_id, .. } if transport_id == building)
-        );
+        assert!(actor.passenger_role.inside_transport_id() == Some(building));
         assert_eq!(
             actor.archive_target(),
             Some(crate::sim::combat::TargetKind::Entity(building))
@@ -2406,11 +2538,11 @@ ConditionYellow=50%
             .entities
             .get(passenger)
             .expect("passenger survives boarding");
-        assert!(matches!(
-            passenger_entity.passenger_role,
-            PassengerRole::Inside { transport_id, .. } if transport_id == transport
-        ));
-        assert!(passenger_entity.lifecycle.in_limbo);
+        assert_eq!(
+            passenger_entity.passenger_role.inside_transport_id(),
+            Some(transport)
+        );
+        assert!(passenger_entity.lifecycle.in_limbo());
         assert!(!passenger_entity.lifecycle.cell_marked);
         assert!(passenger_entity.in_logic_vector);
         assert_eq!(
@@ -2451,10 +2583,7 @@ ConditionYellow=50%
             entity.on_bridge = true;
             tick_entry_arrival(&mut sim, &rules);
             let entity = sim.substrate.entities.get(rider).unwrap();
-            assert!(matches!(
-                entity.passenger_role,
-                PassengerRole::Inside { transport_id, .. } if transport_id == transport
-            ));
+            assert_eq!(entity.passenger_role.inside_transport_id(), Some(transport));
             entity.on_bridge
         };
         assert!(!board(EntityCategory::Infantry));
@@ -2468,10 +2597,7 @@ ConditionYellow=50%
         sim.substrate.entities.get_mut(occupant).unwrap().on_bridge = true;
         tick_entry_arrival(&mut sim, &rules);
         let occupant = sim.substrate.entities.get(occupant).unwrap();
-        assert!(matches!(
-            occupant.passenger_role,
-            PassengerRole::Inside { .. }
-        ));
+        assert!(occupant.passenger_role.is_inside_transport());
         assert!(
             occupant.on_bridge,
             "the infantry building arm keeps OnBridge"
@@ -2506,10 +2632,14 @@ ConditionYellow=50%
             crate::sim::world::FrameEffects::default(),
         );
         assert!(changed);
-        assert!(matches!(
-            sim.substrate.entities.get(pax).unwrap().passenger_role,
-            PassengerRole::None
-        ));
+        assert!(
+            sim.substrate
+                .entities
+                .get(pax)
+                .unwrap()
+                .passenger_role
+                .is_none()
+        );
         assert!(
             sim.live_object_order_snapshot().contains(&pax),
             "ejected occupant is re-appended to the active order"
@@ -2843,7 +2973,9 @@ ConditionYellow=50%
         actor
             .health
             .set_for_test(row["input"]["health"].as_i64().unwrap() as i32);
-        actor.attack_target = Some(crate::sim::combat::AttackTarget::new(transport));
+        actor
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(transport)));
         actor
             .mission_leaf
             .set_foot_firing_sequence(row["before"]["firing_latch"].as_u64().unwrap() as u8);
@@ -2851,12 +2983,11 @@ ConditionYellow=50%
         tick_entry_arrival(&mut sim, &rules);
 
         let actor = sim.substrate.entities.get(passenger).unwrap();
-        assert!(matches!(
-            actor.passenger_role,
-            PassengerRole::Inside { transport_id, open_topped: true }
-                if transport_id == transport
-        ));
-        assert!(actor.attack_target.is_none());
+        assert_eq!(
+            actor.passenger_role.inside_transport(),
+            Some((transport, true))
+        );
+        assert!(actor.attack_target.target().is_none());
         // Original51B20E clears68D on a changed live target before any Doing
         // admission. Limbo51DF10 has already forced Ready during boarding;
         // therefore only this independent native latch output is transported
@@ -2889,10 +3020,15 @@ ConditionYellow=50%
 
         tick_entry_arrival(&mut sim, &rules);
 
-        assert!(matches!(
-            sim.substrate.entities.get(pax).unwrap().passenger_role,
-            PassengerRole::Inside { transport_id, .. } if transport_id == bldg
-        ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(pax)
+                .unwrap()
+                .passenger_role
+                .inside_transport_id(),
+            Some(bldg)
+        );
         assert!(
             sim.substrate
                 .entities
@@ -2998,8 +3134,8 @@ ConditionYellow=50%
         //repair/power and before any later object's visit.
         assert_eq!(owner_name(&sim, bldg), "Neutral");
         let unloaded = sim.substrate.entities.get(pax).unwrap();
-        assert!(unloaded.lifecycle.object_alive);
-        assert!(!unloaded.lifecycle.in_limbo);
+        assert!(unloaded.lifecycle.object_alive());
+        assert!(!unloaded.lifecycle.in_limbo());
         assert!(unloaded.lifecycle.cell_marked);
         assert!(unloaded.in_logic_vector);
 
@@ -3100,9 +3236,7 @@ ConditionYellow=50%
         let mut bldg = GameEntity::test_default(bldg_id, "IFV", "Americans", 10, 10);
         bldg.set_owner_for_test(owner_id);
         bldg.set_type_ref_for_test(type_id);
-        bldg.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(5, 0),
-        };
+        bldg.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
         sim.substrate.entities.insert(bldg);
         let _pax = spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", bldg_id, 10, 10);
 
@@ -3140,10 +3274,7 @@ ConditionYellow=50%
         ge.set_category_for_test(EntityCategory::Infantry);
         ge.mission_leaf =
             crate::sim::mission::leaf::MissionLeafState::for_entity_category(ge.category());
-        ge.passenger_role = PassengerRole::Inside {
-            transport_id: building_id,
-            open_topped: false,
-        };
+        ge.passenger_role = PassengerRole::inside_for_test(building_id, false);
         sim.substrate.entities.insert(ge);
         // Add to building's cargo.
         if let Some(bldg) = sim.substrate.entities.get_mut(building_id)
@@ -3225,8 +3356,8 @@ ConditionYellow=50%
         ] {
             let pax = sim.substrate.entities.get(pid).expect("survivor present");
             assert!(pax.is_alive(), "occupant {pid} should be alive");
-            assert!(!pax.dying, "occupant {pid} should not be dying");
-            assert!(matches!(pax.passenger_role, PassengerRole::None));
+            assert!(!pax.death.is_dying(), "occupant {pid} should not be dying");
+            assert!(pax.passenger_role.is_none());
             assert_eq!(
                 sim.interner.resolve(pax.owner()),
                 "Allied",
@@ -3309,14 +3440,11 @@ ConditionYellow=50%
         cargo.board_forced(back, 1);
         cargo.board_forced(front, 2);
         let mut transport = GameEntity::test_default(transport_id, "BFRT", "Americans", 10, 10);
-        transport.passenger_role = PassengerRole::Transport { cargo };
+        transport.passenger_role = PassengerRole::transport(cargo);
         sim.substrate.entities.insert(transport);
         for id in [front, back] {
             let mut rider = GameEntity::test_default(id, "E1", "Americans", 10, 10);
-            rider.passenger_role = PassengerRole::Inside {
-                transport_id,
-                open_topped: true,
-            };
+            rider.passenger_role = PassengerRole::inside_for_test(transport_id, true);
             sim.substrate.entities.insert(rider);
         }
         // `test_default` interns its names in the shared test interner.
@@ -3338,7 +3466,8 @@ ConditionYellow=50%
             departure::DepartureRoute::Vehicle,
             |sim, id| {
                 assert_eq!(id, front, "the head departs");
-                sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::None;
+                sim.substrate.entities.get_mut(id).unwrap().passenger_role =
+                    PassengerRole::default();
                 Err(departure::DepartureFailure::Placement)
             },
             crate::sim::world::FrameEffects::default(),

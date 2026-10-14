@@ -6,7 +6,7 @@
 use super::{FrameEffects, RuleSet, Simulation, target_reach_step};
 use crate::map::resolved_terrain::zone_class;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
 
@@ -63,7 +63,12 @@ fn hold(
     sim.mission_assign_exact(tank, MissionId::from_known(mission), now)
         .unwrap();
     let _ = sim.mission_commence_exact(tank, now);
-    sim.substrate.entities.get_mut(tank).unwrap().attack_target = Some(AttackTarget::new(target));
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(target)));
     (sim, tank, TargetKind::Entity(target))
 }
 
@@ -84,10 +89,7 @@ fn reach(
 ) -> (Option<TargetKind>, Option<NavTargetRef>) {
     target_reach_step(sim, tank, rules, None, FrameEffects::default());
     let tank = sim.substrate.entities.get(tank).unwrap();
-    (
-        tank.attack_target.as_ref().map(|attack| attack.target),
-        tank.navigation.nav_com,
-    )
+    (tank.attack_target.target(), tank.navigation.nav_com)
 }
 
 /// A target in another zone is approached on any mission: from (8, 10) on

@@ -243,16 +243,13 @@ impl Simulation {
         }
         // Passenger cargo for transports and garrisonable buildings.
         if obj.passengers > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::Transport {
-                cargo: crate::sim::passenger::PassengerCargo::new(
-                    obj.passengers as u32,
-                    obj.size_limit,
-                ),
-            };
+            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
+                crate::sim::passenger::PassengerCargo::new(obj.passengers as u32, obj.size_limit),
+            );
         } else if obj.can_be_occupied && obj.max_number_occupants > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::Transport {
-                cargo: crate::sim::passenger::PassengerCargo::new(obj.max_number_occupants, 1),
-            };
+            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
+                crate::sim::passenger::PassengerCargo::new(obj.max_number_occupants, 1),
+            );
         }
 
         stamp_building_cell_profile(ge, Some(obj));

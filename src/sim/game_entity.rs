@@ -12,14 +12,14 @@
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on map/ (EntityCategory), sim/components, sim/locomotor,
-//!   sim/combat (AttackTarget), sim/animation, sim/miner, and special movement modules.
+//!   sim/combat (TarCom), sim/animation, sim/miner, and special movement modules.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use crate::map::entities::EntityCategory;
 use crate::sim::animation::Animation;
 use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
 use crate::sim::combat::combat_weapon::WeaponSlot;
-use crate::sim::combat::{AttackTarget, Health, TargetKind};
+use crate::sim::combat::{Health, TarCom, TargetKind};
 use crate::sim::components::{
     HarvestOverlay, NavigationState, PendingC4Detonation, Position, RockingState, VoxelAnimation,
 };
@@ -34,6 +34,7 @@ use crate::sim::passenger::PassengerRole;
 use crate::sim::radio::Contacts;
 use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::sim::timer::CdTimer;
+use crate::sim::world::ObjectLifecycle;
 use crate::util::native_x87::NativeF64Bits;
 
 mod foot_air;
@@ -206,33 +207,6 @@ pub(crate) use crate::sim::gate_runtime::BuildingGateRuntime;
 pub struct BuildingLightRuntime {
     pub behavior: u8,
     pub target_id: Option<u64>,
-}
-
-/// Independent ObjectClass lifecycle facts.
-///
-/// These bytes deliberately do not derive from health, store presence, cell
-/// occupancy, LogicVector membership, or the Rust death-sequence state. Active
-/// gamemd keeps those concerns independent, including alive objects that are in
-/// limbo, active objects that are temporarily off-cell, and dead-limbo objects
-/// that remain resolvable until the pending-delete drain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct ObjectLifecycle {
-    /// ObjectClass native-alive state (`ObjectClass+0x90` analogue).
-    pub object_alive: bool,
-    /// ObjectClass InLimbo state. This is independent of LogicVector membership.
-    pub in_limbo: bool,
-    /// Whether Mark/cell-list insertion currently owns cell membership.
-    pub cell_marked: bool,
-}
-
-impl Default for ObjectLifecycle {
-    fn default() -> Self {
-        Self {
-            object_alive: true,
-            in_limbo: true,
-            cell_marked: false,
-        }
-    }
 }
 
 /// Accepted Psychedelic-warhead state owned by TechnoClass.
@@ -558,9 +532,10 @@ pub struct GameEntity {
     /// native save/load reconstruction remains unverified.
     #[serde(skip)]
     pub in_logic_vector: bool,
-    /// Independent, serialized ObjectClass lifecycle facts.
+    /// Independent, serialized ObjectClass lifecycle facts, an
+    /// [`ObjectLifecycle`] that `world::lifecycle` owns.
     #[serde(default)]
-    pub lifecycle: ObjectLifecycle,
+    pub(crate) lifecycle: ObjectLifecycle,
     /// Canonical TechnoClass playfield-membership byte (`TechnoClass+0x3D5`).
     ///
     /// gamemd-derived: the constructor clears it at `0x006F2F5B`, Unlimbo
@@ -674,8 +649,9 @@ pub struct GameEntity {
     /// reinforcement (`0x0065F212`, `ChronoReinfDelay=`), is not ported.
     #[serde(default)]
     chrono_warp_delay: i32,
-    /// Active attack target — present when entity is firing at something.
-    pub attack_target: Option<AttackTarget>,
+    /// The object's target (`TechnoClass+0x2B4`), a [`TarCom`] that the class
+    /// target setter (`mission::concrete_effects`) writes.
+    pub(crate) attack_target: TarCom,
     /// A building's delayed fire: a delayed shot, or a Prism support beam.
     #[serde(default)]
     pub pending_building_fire: Option<PendingBuildingFire>,
@@ -702,13 +678,12 @@ pub struct GameEntity {
     /// `sim::radio` owns the slots (`RadioClass+0xE4`/`+0xE8`).
     #[serde(default)]
     pub(crate) radio_contacts: Contacts,
-    /// Models the TechnoClass dock-entered flag (ENTER_DOCK(0x18) sets it,
-    /// LEAVE_DOCK(0x19)/BREAK clears it). `Some(other_sid)` while this entity is
-    /// linked-and-entered at that dock partner; `None` otherwise. The radio
-    /// receivers set and clear it; teardown paths that reset an entity also
-    /// clear it.
+    /// The tether latch (`TechnoClass+0x418`), a [`Tether`] that `sim::radio`
+    /// owns.
+    ///
+    /// [`Tether`]: crate::sim::radio::Tether
     #[serde(default)]
-    pub dock_entered_with: Option<u64>,
+    pub(crate) tether: crate::sim::radio::Tether,
     /// Persistent TechnoClass hostile-hit latch (`WasAttackedByEnemy`, native
     /// byte +0x3D1). It is independent of retaliation's transient attacker
     /// pointer and is consumed by the building AI low-credit sell decision.
@@ -1036,40 +1011,32 @@ pub struct GameEntity {
     /// Whether this entity ignores per-cell radiation damage (ImmuneToRadiation= in rules.ini).
     #[serde(default)]
     pub immune_to_radiation: bool,
-    /// Whether this entity is playing its death animation (health=0, not yet despawned).
-    /// Dying entities are excluded from combat targeting, pathfinding, and selection.
-    /// A dying object stays cell-marked until its terminal UnInit. Products
-    /// derived from the entities (the movement pass's blocker plane and block
-    /// sets) follow the flag through the store's touch log, like any other field.
-    pub dying: bool,
-    /// Retained Infantry lifetime policy; sprite animation stores progress only.
-    pub(crate) infantry_terminal: Option<crate::sim::world::InfantryTerminal>,
+    /// The terminal lifetime (the dying mark and the Infantry terminal
+    /// policy), a [`TerminalLifetime`] that `world::infantry_terminal` owns.
+    /// Products derived from the entities (the movement pass's blocker plane
+    /// and block sets) follow it through the store's touch log, like any
+    /// other field.
+    ///
+    /// [`TerminalLifetime`]: crate::sim::world::TerminalLifetime
+    pub(crate) death: crate::sim::world::TerminalLifetime,
     /// Foot+53C/+540 latch and countdown. The shared Foot sound owner alone
     /// writes these; the process-local audio handle is not simulation state.
     #[serde(default)]
     pub(crate) move_sound: crate::sim::world::MoveSoundState,
-    /// `FootClass+0x425`, the crash latch: set by `FootClass::Crash @
-    /// 0x004DEBB0` (`0x004DEC7F`, `Simulation::foot_crash` in
-    /// `sim::world::crash`) and by a Magnetron dropping an airborne object
-    /// (`0x0070FF25`, `sim::locomotor_lift`); cleared by the constructor
-    /// (`0x006F2FF9`) and a Jumpjet Descend touchdown (`0x0054CA12`). A
-    /// crashing object is alive (Object+90) with Health 0 (a dropped one keeps
-    /// its Health) and falls under its locomotor until the impact.
+    /// The crash latch (`FootClass+0x425`/`+0x426`), a [`CrashLatch`] that
+    /// `world::crash` owns.
     #[serde(default)]
-    pub crashing: bool,
-    /// `FootClass+0x426`, the latch as the previous `FootClass::AI` saw it: the
-    /// rising edge plays the crash voice and sound (`0x004DACDD..0x004DADC2`).
-    #[serde(default)]
-    pub crashing_seen: bool,
+    pub(crate) crash: crate::sim::world::CrashLatch,
     /// Techno+3CD/+3CE retained sinking lifetime and prior Foot AI sound edge.
     /// `world::sinking` owns mutations; this is independent of crash +425/+426.
     #[serde(default)]
     pub(crate) sinking: crate::sim::world::SinkingState,
 
     // --- Passenger/transport system ---
-    /// Combined passenger/transport role — replaces separate passenger_cargo,
-    /// transport_id, and boarding_state fields. See `PassengerRole` variants.
-    pub passenger_role: PassengerRole,
+    /// The passenger relation and cargo hold (`TechnoClass+0x114` CargoClass,
+    /// `+0x11C` Transporter, `+0x82` InOpenToppedTransport), a
+    /// [`PassengerRole`] that `sim::passenger` owns.
+    pub(crate) passenger_role: PassengerRole,
     /// Temporary VXL model override for visual-only state changes.
     /// When Some, the renderer should use this type's VXL model instead of `type_ref`.
     /// Set during refinery unloading (UnloadingClass= from rules.ini).
@@ -1775,14 +1742,14 @@ impl GameEntity {
             warped_by_house: None,
             setter_force_reassign: false,
             chrono_warp_delay: 0,
-            attack_target: None,
+            attack_target: TarCom::default(),
             pending_building_fire: None,
             prism_support_count: 0,
             current_weapon_number: 0,
             current_turret_index: -1,
             charge_turret_delay: 0,
             radio_contacts: Contacts::default(),
-            dock_entered_with: None,
+            tether: crate::sim::radio::Tether::default(),
             was_attacked_by_enemy: false,
             ai_sellable: false,
             ai_repairable: false,
@@ -1848,13 +1815,11 @@ impl GameEntity {
             drive_accelerates: true,
             omni_crush_resistant: false,
             immune_to_radiation: false,
-            dying: false,
-            infantry_terminal: None,
+            death: crate::sim::world::TerminalLifetime::default(),
             move_sound: crate::sim::world::MoveSoundState::default(),
-            crashing: false,
-            crashing_seen: false,
+            crash: crate::sim::world::CrashLatch::default(),
             sinking: crate::sim::world::SinkingState::default(),
-            passenger_role: PassengerRole::None,
+            passenger_role: PassengerRole::default(),
             display_type_override: None,
             capture_infantry_type_index: -1,
             pending_c4_detonation: None,
@@ -2117,7 +2082,7 @@ impl GameEntity {
     /// Whether ObjectClass native-alive state is set. This is intentionally
     /// independent from health and the Rust death-sequence state.
     pub fn is_object_alive(&self) -> bool {
-        self.lifecycle.object_alive
+        self.lifecycle.object_alive()
     }
 
     /// Transitional Rust system gate until ordinary Infantry lifecycle authority
@@ -2125,7 +2090,7 @@ impl GameEntity {
     /// `is_object_alive()`; death-sequence state still suppresses current raw-store
     /// consumers even while ObjectClass native-alive remains set.
     pub fn is_active(&self) -> bool {
-        self.lifecycle.object_alive && !self.dying
+        self.lifecycle.object_alive() && !self.death.is_dying()
     }
 
     /// ObjectClass IsAlive (`+0x90`) as the per-object AI and a Unit's fire
@@ -2134,7 +2099,7 @@ impl GameEntity {
     /// as dead here unless the object is crashing, and a wreck keeps IsAlive
     /// until its impact. A death sequence (`dying`) runs through its own path.
     pub fn is_ai_alive(&self) -> bool {
-        self.is_active() && (self.health.current() > 0 || self.crashing)
+        self.is_active() && (self.health.current() > 0 || self.crash.is_crashing())
     }
 
     /// Infantry522510's Doing27..30 deployment predicate. Undeploy31 already
@@ -2326,7 +2291,7 @@ mod tests {
         assert!(!e.selected);
         assert!(!e.repairing);
         assert!(e.locomotor.is_none());
-        assert!(e.attack_target.is_none());
+        assert!(e.attack_target.target().is_none());
         assert!(e.radio_contacts.is_empty());
         assert_eq!(e.rally_cell(), None);
         assert!(!e.was_attacked_by_enemy);
@@ -2405,21 +2370,24 @@ mod lifecycle_tests {
 
         // Exercise every combination without deriving one fact from another.
         for bits in 0u8..64 {
-            e.lifecycle.object_alive = bits & 0b00_0001 != 0;
-            e.lifecycle.in_limbo = bits & 0b00_0010 != 0;
+            e.lifecycle.set_object_alive_for_test(bits & 0b00_0001 != 0);
+            e.lifecycle.set_in_limbo_for_test(bits & 0b00_0010 != 0);
             e.lifecycle.cell_marked = bits & 0b00_0100 != 0;
             e.in_logic_vector = bits & 0b00_1000 != 0;
-            e.dying = bits & 0b01_0000 != 0;
+            e.death.set_dying_for_test(bits & 0b01_0000 != 0);
             e.health
                 .set_for_test(if bits & 0b10_0000 != 0 { 1 } else { 0 });
 
             assert_eq!(e.is_object_alive(), bits & 0b00_0001 != 0);
-            assert_eq!(e.lifecycle.in_limbo, bits & 0b00_0010 != 0);
+            assert_eq!(e.lifecycle.in_limbo(), bits & 0b00_0010 != 0);
             assert_eq!(e.lifecycle.cell_marked, bits & 0b00_0100 != 0);
             assert_eq!(e.in_logic_vector, bits & 0b00_1000 != 0);
-            assert_eq!(e.dying, bits & 0b01_0000 != 0);
+            assert_eq!(e.death.is_dying(), bits & 0b01_0000 != 0);
             assert_eq!(e.is_alive(), bits & 0b10_0000 != 0);
-            assert_eq!(e.is_active(), e.lifecycle.object_alive && !e.dying,);
+            assert_eq!(
+                e.is_active(),
+                e.lifecycle.object_alive() && !e.death.is_dying(),
+            );
         }
     }
 }

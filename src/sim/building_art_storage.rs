@@ -220,7 +220,7 @@ mod tests {
             entity.set_type_ref_for_test(sim.interner.intern("B"));
             entity.set_owner_for_test(sim.interner.intern("A"));
             entity.health.set_for_test(current);
-            entity.lifecycle.in_limbo = false;
+            entity.lifecycle.set_in_limbo_for_test(false);
             entity.building_art.damage_state_active = current <= 50;
             entity.building_art.storage = BuildingStorage {
                 amounts: std::array::from_fn(|i| {

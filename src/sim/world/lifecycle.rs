@@ -15,7 +15,6 @@ use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::occupancy::{
     BUILDING_OCCUPATION_BIT, CellListInsertion, cell_list_layer_for_entity, entity_occupancy_cells,
 };
-use crate::sim::passenger::PassengerRole;
 use crate::sim::projectile::ProjectileTarget;
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::lepton::LEPTONS_PER_LEVEL;
@@ -23,6 +22,76 @@ use crate::util::lepton::LEPTONS_PER_LEVEL;
 use super::display_layers::DisplayLayer;
 use super::substrate::{DeferredDeleteTicket, ObjectKind};
 use super::{FrameEffects, Simulation};
+
+/// Independent ObjectClass lifecycle facts.
+///
+/// These bytes deliberately do not derive from health, store presence, cell
+/// occupancy, LogicVector membership, or the Rust death-sequence state. Active
+/// gamemd keeps those concerns independent, including alive objects that are in
+/// limbo, active objects that are temporarily off-cell, and dead-limbo objects
+/// that remain resolvable until the pending-delete drain.
+///
+/// IsAlive and InLimbo are private to this module, whose Reveal, Limbo and
+/// UnInit write them. The ObjectClass constructor sets both
+/// (`0x005F392A`, `0x005F3930`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ObjectLifecycle {
+    /// `ObjectClass+0x90`, IsAlive. UnInit clears it (`0x005F6625`).
+    object_alive: bool,
+    /// `ObjectClass+0x81`, InLimbo: Limbo sets it (`0x005F4E9E`) and Unlimbo
+    /// clears it (`0x005F4F4E`). Independent of LogicVector membership.
+    in_limbo: bool,
+    /// Whether Mark/cell-list insertion currently owns cell membership.
+    pub cell_marked: bool,
+}
+
+impl Default for ObjectLifecycle {
+    fn default() -> Self {
+        Self {
+            object_alive: true,
+            in_limbo: true,
+            cell_marked: false,
+        }
+    }
+}
+
+impl ObjectLifecycle {
+    /// `ObjectClass+0x90`, IsAlive.
+    pub const fn object_alive(self) -> bool {
+        self.object_alive
+    }
+
+    /// `ObjectClass+0x81`, InLimbo.
+    pub const fn in_limbo(self) -> bool {
+        self.in_limbo
+    }
+
+    /// The constructor's facts for a newly built object: alive and in limbo
+    /// (`0x005F392A`, `0x005F3930`).
+    pub(crate) fn reset_constructed(&mut self) {
+        self.object_alive = true;
+        self.in_limbo = true;
+    }
+
+    /// IsAlive set again on an object that took a lethal hit: PostMortem's
+    /// restore (`0x00701F60`) and a ship that starts sinking (Unit
+    /// `0x00737E4A`). Each also stores Health 1.
+    pub(crate) fn restore_alive(&mut self) {
+        self.object_alive = true;
+    }
+
+    /// Install a fixture's IsAlive.
+    #[cfg(test)]
+    pub(crate) fn set_object_alive_for_test(&mut self, alive: bool) {
+        self.object_alive = alive;
+    }
+
+    /// Install a fixture's InLimbo.
+    #[cfg(test)]
+    pub(crate) fn set_in_limbo_for_test(&mut self, in_limbo: bool) {
+        self.in_limbo = in_limbo;
+    }
+}
 
 /// The control value `DispatchPointerExpiredCleanup @ 0x007258D0` forwards to
 /// every listener's `PointerExpired` slot (`vt+0x28`), i.e. the third argument
@@ -3095,7 +3164,9 @@ impl Simulation {
                     // already booked (`combat::record_kill::record_kill_credit`);
                     // a crashing infantryman falls at Health 1 (`0x0051BC57`)
                     // after the kill that booked its loss.
-                    entity.health.current() == 0 || entity.killed_by.is_some() || entity.crashing,
+                    entity.health.current() == 0
+                        || entity.killed_by.is_some()
+                        || entity.crash.is_crashing(),
                     entity.dont_score,
                 )
             })
@@ -3559,14 +3630,14 @@ impl Simulation {
             target.is_some_and(|target| Self::nav_ref_targets_expired(target, expired_id))
         };
         listener_id == expired_id
-            || names(listener.attack_target.as_ref().map(|attack| attack.target))
+            || names(listener.attack_target.target())
             || names(listener.suspended_attack_target)
             || names(listener.archive_target())
             || listener.has_live_contact_with(expired_id)
             || listener
                 .passenger_role
                 .cargo()
-                .is_some_and(|cargo| cargo.passengers.contains(&expired_id))
+                .is_some_and(|cargo| cargo.passengers().contains(&expired_id))
             || listener.passenger_role.boarding_transport_id() == Some(expired_id)
             || listener.passenger_role.inside_transport_id() == Some(expired_id)
             || nav_names(listener.navigation.suspended_nav_com.as_ref())
@@ -3701,9 +3772,9 @@ impl Simulation {
     ///    the null-out then does not run.
     ///
     /// The native sweep has callers in area damage, building sale, owner change,
-    /// building placement and teleportation. The represented owner-change and
-    /// bridge-damage callers share this owner; the other caller chains remain
-    /// separate migration work.
+    /// building placement and teleportation. The represented owner-change,
+    /// bridge-damage and teleport (`0x007193C7`) callers share this owner; the
+    /// other caller chains remain separate migration work.
     ///
     /// RESIDUALS, recorded rather than guessed:
     /// - The native suppression clause (`0x0070D4DB..0x0070D4FB`) skips the
@@ -3788,13 +3859,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(listener_id)
-            .is_some_and(|listener| {
-                listener
-                    .attack_target
-                    .as_ref()
-                    .map(|current| current.target)
-                    == Some(target)
-            })
+            .is_some_and(|listener| listener.attack_target.target() == Some(target))
     }
 
     /// Infantry PerCell repair519D17..519D36 calls each registered Infantry
@@ -3906,9 +3971,10 @@ impl Simulation {
         let Some(listener) = self.substrate.entities.get(listener_id) else {
             return;
         };
-        let current_target_matches = listener.attack_target.as_ref().is_some_and(
-            |target| matches!(target.target, TargetKind::Entity(id) if id == expired_id),
-        );
+        let current_target_matches = listener
+            .attack_target
+            .target()
+            .is_some_and(|target| matches!(target, TargetKind::Entity(id) if id == expired_id));
         let listener_owner = listener.owner();
         let mission_is_suspended =
             listener.mission.suspended() != crate::sim::mission::MissionId::NONE;
@@ -3918,10 +3984,10 @@ impl Simulation {
         // reference to the expiring object.
         let drops_contact =
             control == PointerExpiryControl::Uninit && listener.has_live_contact_with(expired_id);
-        let drops_passenger = matches!(
-            &listener.passenger_role,
-            PassengerRole::Transport { cargo } if cargo.passengers.contains(&expired_id)
-        );
+        let drops_passenger = listener
+            .passenger_role
+            .cargo()
+            .is_some_and(|cargo| cargo.passengers().contains(&expired_id));
         // `0x007077EE..0x007077FD`, after the radio and cargo, whatever the
         // control: a child whose SpawnOwner (`+0x2D4`) expires forgets it.
         let drops_spawn_owner = listener.spawn_owner_id == Some(expired_id);
@@ -3982,9 +4048,7 @@ impl Simulation {
 
             // TechnoClass removes an expiring passenger from its CargoClass before
             // clearing its target/archive/manager reference family.
-            if drops_passenger
-                && let PassengerRole::Transport { cargo } = &mut listener.passenger_role
-            {
+            if drops_passenger && let Some(cargo) = listener.passenger_role.cargo_mut() {
                 let _ = cargo.disembark(expired_id);
             }
             if drops_spawn_owner {
@@ -4676,7 +4740,7 @@ impl Simulation {
         };
         // Consume deferred/retained Infantry lifetime before pointer-expiry
         // callbacks, including an UnInit that overtakes receiver delivery.
-        entity.infantry_terminal = None;
+        entity.death.end_infantry_policy();
         // `FootClass::UnInit @ 0x004DE5DD` frees a controller's captives
         // first (a crushed or otherwise removed Yuri or Mastermind).
         let foot = matches!(
@@ -4736,7 +4800,7 @@ impl Simulation {
         let _ = self.techno_limbo_with_context(stable_id, context);
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.object_alive = false;
-            entity.dying = true;
+            entity.death.begin();
         }
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitAliveCleared { stable_id });

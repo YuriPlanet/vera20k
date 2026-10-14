@@ -297,7 +297,7 @@ impl Simulation {
     /// carries a bomb out of limbo (`0x00438C84..0x00438CFE`); `None` stops it.
     pub(crate) fn bomb_ticking_coord(&self, carrier: u64) -> Option<AnimWorldCoord> {
         let entity = self.substrate.entities.get(carrier)?;
-        (entity.bomb.is_some() && !entity.lifecycle.in_limbo)
+        (entity.bomb.is_some() && !entity.lifecycle.in_limbo())
             .then(|| Self::movement_sound_world(entity))
     }
 
@@ -326,7 +326,7 @@ impl Simulation {
         // takes it out (`0x006F6B7A`). Coordinates are GetCoords (`vt+0x48`).
         let mut detectors = Vec::new();
         for entity in self.substrate.entities.values() {
-            if entity.lifecycle.in_limbo || !entity.lifecycle.object_alive {
+            if entity.lifecycle.in_limbo() || !entity.lifecycle.object_alive() {
                 continue;
             }
             let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
@@ -385,7 +385,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(id)
-                .filter(|entity| entity.lifecycle.object_alive)
+                .filter(|entity| entity.lifecycle.object_alive())
         };
         let Some(planter_entity) = live(planter) else {
             return;
@@ -475,7 +475,7 @@ impl Simulation {
         let bomb = entity.bomb.take()?;
         self.bombs.carriers.remove(&carrier);
         let entity = self.substrate.entities.get(carrier)?;
-        if entity.lifecycle.in_limbo {
+        if entity.lifecycle.in_limbo() {
             log::info!("BOMB {carrier} went off in limbo, silently");
             return None;
         }
@@ -512,7 +512,7 @@ impl Simulation {
         let expired = entity
             .bomb
             .is_some_and(|bomb| bomb.expired(self.session.binary_frame as i32));
-        if !expired || entity.lifecycle.in_limbo {
+        if !expired || entity.lifecycle.in_limbo() {
             return false;
         }
         let Some(blast) = self.take_bomb_blast(carrier, rules) else {

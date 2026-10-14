@@ -53,7 +53,7 @@ pub(crate) fn spawn_building_free_unit(
 ) -> bool {
     let Some((owner_id, type_ref, rx, ry, width, height)) =
         sim.substrate.entities.get(stable_id).and_then(|entity| {
-            if entity.category() != EntityCategory::Structure || entity.dying {
+            if entity.category() != EntityCategory::Structure || entity.death.is_dying() {
                 return None;
             }
             let (width, height) = foundation_dimensions(&entity.foundation);

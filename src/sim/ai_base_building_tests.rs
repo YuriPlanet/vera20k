@@ -484,7 +484,7 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
 
     assert_eq!(exit, BuildingExit::Placed);
     let building = sim.substrate.entities.get(product).unwrap();
-    assert!(!building.lifecycle.in_limbo);
+    assert!(!building.lifecycle.in_limbo());
     assert_eq!((building.position.rx, building.position.ry), (16, 16));
     assert!(building.building_up(), "the placed building builds up");
     let house = &sim.houses[&owner];
@@ -584,7 +584,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
                 .get(product)
                 .unwrap()
                 .lifecycle
-                .in_limbo
+                .in_limbo()
         );
         assert_eq!(node_state(&sim, owner), [((16, 16), count)]);
     }
@@ -629,7 +629,7 @@ fn an_enemy_on_the_site_fails_the_exit_and_the_node_forgets_its_cell() {
             .get(product)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
     assert_eq!(node_state(&sim, owner), [((0, 0), 0)]);
 }
@@ -655,7 +655,7 @@ fn a_human_yard_places_nothing() {
             .get(product)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
     assert_eq!(node_state(&sim, owner), [((16, 16), 0)]);
 }

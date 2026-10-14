@@ -73,7 +73,7 @@ impl Simulation {
                 let Some(building) = self.substrate.entities.get(building) else {
                     continue;
                 };
-                if building.lifecycle.in_limbo {
+                if building.lifecycle.in_limbo() {
                     continue;
                 }
                 let mut d = distance(building);
@@ -100,7 +100,7 @@ impl Simulation {
             }
         }
         for other in self.substrate.entities.values() {
-            if other.stable_id() == id || other.lifecycle.in_limbo || other.owner() != owner {
+            if other.stable_id() == id || other.lifecycle.in_limbo() || other.owner() != owner {
                 continue;
             }
             let d = distance(other);

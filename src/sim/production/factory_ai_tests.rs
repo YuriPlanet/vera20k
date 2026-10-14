@@ -84,8 +84,8 @@ impl Fixture {
             .entities
             .values()
             .find(|e| {
-                !e.dying
-                    && !e.lifecycle.in_limbo
+                !e.death.is_dying()
+                    && !e.lifecycle.in_limbo()
                     && self.sim.interner.resolve(e.type_ref()) == "PLAIN"
             })
             .map(|e| (e.position.rx, e.position.ry))
@@ -180,7 +180,11 @@ fn a_failed_exit_abandons_the_object_and_refunds_it() {
         "the node forgot its cell after {frames} frames"
     );
     assert!(
-        f.sim.substrate.entities.get(object).is_none_or(|e| e.dying),
+        f.sim
+            .substrate
+            .entities
+            .get(object)
+            .is_none_or(|e| e.death.is_dying()),
         "the object is destroyed"
     );
     assert_eq!(f.sim.houses[&f.owner].economy.credits(), 1_000, "refunded");

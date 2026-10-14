@@ -54,7 +54,7 @@ pub(super) fn approach(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return APPROACH_FRAMES;
     };
-    match entity.attack_target.as_ref().map(|attack| attack.target) {
+    match entity.attack_target.target() {
         None => {
             sim.assign_aircraft_destination(id, None, rules, frame_effects);
             super::queue_mission(sim, id, MissionType::Retreat);
@@ -94,7 +94,7 @@ pub(super) fn overfly(
         return OVERFLY_FRAMES;
     };
     entity.mission_leaf.set_aircraft_action_latch(true);
-    let target = entity.attack_target.as_ref().map(|attack| attack.target);
+    let target = entity.attack_target.target();
     let carrying = entity
         .passenger_role
         .cargo()

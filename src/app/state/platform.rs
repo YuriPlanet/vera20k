@@ -29,6 +29,13 @@ pub(super) fn render_dimensions(
 /// deterministic simulation.
 pub(crate) struct PlatformState {
     pub(crate) window: Arc<Window>,
+    /// Whether the OS cursor is clipped to the window rectangle 
+    /// edge-scroll lock), so it cannot leave the game while the player scrolls
+    /// the map. On by default, by default; the cursor-lock hotkey flips it,
+    /// and `apply_cursor_confinement` re-applies it on every focus regain because
+    /// the OS drops the clip on alt-tab. Presentation-only — never serialized or
+    /// read by the deterministic simulation.
+    pub(crate) cursor_confined: bool,
     /// Live message-pump modifiers for focused shell controls. Gameplay keeps
     /// its separate paused-input admission snapshot.
     pub(crate) live_modifiers: winit::keyboard::ModifiersState,
@@ -81,6 +88,7 @@ impl PlatformState {
             .is_some_and(|config| config.gameplay.pause_on_focus_loss);
         Self {
             window,
+            cursor_confined: true,
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             window_active: true,

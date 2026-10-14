@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::*;
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::combat::receiver_fixture::with_building_fire_stub;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::game_entity::GameEntity;
@@ -142,7 +142,12 @@ fn set_mission(sim: &mut Simulation, id: u64, mission: MissionId, status: u32) {
 }
 
 pub(super) fn aim_at(sim: &mut Simulation, id: u64, target: u64) {
-    sim.substrate.entities.get_mut(id).unwrap().attack_target = Some(AttackTarget::new(target));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(target)));
 }
 
 fn ready_latch(sim: &Simulation, id: u64) -> u8 {
@@ -217,7 +222,7 @@ fn assert_state(sim: &Simulation, id: u64, target: u64, row: &Value) {
         "{name} +0x6DD"
     );
     assert_eq!(
-        entity.attack_target.as_ref().map(|attack| attack.target),
+        entity.attack_target.target(),
         row["target"].as_str().map(|_| TargetKind::Entity(target)),
         "{name} target"
     );
@@ -460,8 +465,7 @@ fn set_target_matches_the_original() {
                 .get(building)
                 .unwrap()
                 .attack_target
-                .as_ref()
-                .map(|attack| attack.target),
+                .target(),
             row["target"].as_str().map(|_| TargetKind::Entity(target)),
             "{name}"
         );
@@ -582,6 +586,7 @@ fn the_update_tail_drops_a_target_out_of_range() {
             .get(building)
             .unwrap()
             .attack_target
+            .target()
             .is_none()
     );
 
@@ -594,6 +599,7 @@ fn the_update_tail_drops_a_target_out_of_range() {
             .get(building)
             .unwrap()
             .attack_target
+            .target()
             .is_some()
     );
 }
@@ -730,7 +736,7 @@ fn building_dispatch_cadence_matches_the_original() {
             if !matches!(events.get(&(k + 1)), Some(Event::Order)) {
                 assert_eq!(entity.mission.queued(), MissionId::NONE, "{at} queue");
                 assert_eq!(
-                    entity.attack_target.is_some(),
+                    entity.attack_target.target().is_some(),
                     frame["target"].is_string(),
                     "{at} target"
                 );
@@ -1029,7 +1035,7 @@ fn retail_defence_guards_attacks_and_returns(
         let entity = scenario.sim().substrate.entities.get(defence).unwrap();
         (
             entity.mission.current().known(),
-            entity.attack_target.as_ref().map(|attack| attack.target),
+            entity.attack_target.target(),
         )
     };
     {

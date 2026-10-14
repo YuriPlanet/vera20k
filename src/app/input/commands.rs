@@ -1248,7 +1248,7 @@ mod tests {
             5,
             false,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
 
         // A cell the Megamission record cannot hold shows the ordinary Move

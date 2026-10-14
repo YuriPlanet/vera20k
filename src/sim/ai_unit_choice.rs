@@ -401,7 +401,7 @@ fn is_recruitable(
 ) -> bool {
     entity.owner() == owner
         && entity.is_ai_alive()
-        && !entity.lifecycle.in_limbo
+        && !entity.lifecycle.in_limbo()
         && sim
             .team_script_vm
             .team_for_member(entity.stable_id())

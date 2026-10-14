@@ -258,7 +258,7 @@ impl Simulation {
                     entity.owner(),
                     (entity.position.rx, entity.position.ry),
                     unit_sensor_radius(entity.category(), object)?,
-                    entity.lifecycle.in_limbo,
+                    entity.lifecycle.in_limbo(),
                 ))
             })
         else {
@@ -326,7 +326,7 @@ impl Simulation {
                         entity,
                         &self.interner,
                     ),
-                    entity.lifecycle.in_limbo,
+                    entity.lifecycle.in_limbo(),
                 ))
             })
         else {
@@ -896,7 +896,7 @@ mod tests {
         // successful Techno6F6CFE tail still establishes mode-one membership.
         let authored_outside = sim.substrate.entities.get(2).unwrap();
         assert!(!authored_outside.in_playfield);
-        assert!(!authored_outside.lifecycle.in_limbo);
+        assert!(!authored_outside.lifecycle.in_limbo());
         assert!(authored_outside.lifecycle.cell_marked);
 
         let inside = sim

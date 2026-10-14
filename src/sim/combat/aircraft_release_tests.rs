@@ -63,7 +63,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     entity.body_facing = FacingClass::new(0, 5);
     entity.barrel_facing = Some(FacingClass::new(0, 5));
-    entity.attack_target = Some(AttackTarget::for_cell(10, 9));
+    entity
+        .attack_target
+        .set_for_test(Some(TargetKind::Cell(10, 9)));
     entity.locomotor = Some(LocomotorState::from_object_type(
         rules.object("ORCA").unwrap(),
         0,
@@ -71,7 +73,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     if passenger {
         let mut cargo = crate::sim::passenger::PassengerCargo::new(8, 0);
         cargo.board_forced(2, 1);
-        entity.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+        entity.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
     }
     sim.substrate.entities.insert(entity);
     sim.substrate.next_stable_object_id = 2;
@@ -91,10 +93,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         infantry.set_category_for_test(EntityCategory::Infantry);
         infantry.is_voxel = false;
         infantry.sub_cell = Some(2);
-        infantry.passenger_role = crate::sim::passenger::PassengerRole::Inside {
-            transport_id: 1,
-            open_topped: false,
-        };
+        infantry.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(1, false);
         sim.substrate.entities.insert(infantry);
         sim.substrate.next_stable_object_id = 3;
     }
@@ -374,7 +373,12 @@ fn a_strafer_drops_five_bombs_on_one_pass() {
 #[test]
 fn a_fighter_out_of_range_cycles_back_to_its_search() {
     let (mut sim, rules) = fixture(&serde_json::json!({"burst": 1, "fighter": true}));
-    sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::for_cell(10, 60));
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Cell(10, 60)));
     assert!(
         dispatch(&mut sim, &rules)
             .consequences
@@ -534,7 +538,7 @@ fn a_kamikaze_missile_is_removed_after_its_shot() {
     let result = dispatch(&mut sim, &rules);
     assert_eq!(result.consequences.fire_events().len(), 1, "it fires");
     let missile = sim.substrate.entities.get(1).unwrap();
-    assert!(!missile.lifecycle.object_alive, "UnInit");
+    assert!(!missile.lifecycle.object_alive(), "UnInit");
     assert!(sim.substrate.pending_delete.contains_object(&1));
 }
 

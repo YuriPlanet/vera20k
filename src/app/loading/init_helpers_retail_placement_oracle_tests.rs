@@ -378,7 +378,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     assert_eq!(completed.entity_id, Some(held_id));
     assert_eq!(ready_buildings_for_owner(&sim, &rules, OWNER).len(), 1);
     let held = sim.substrate.entities.get(held_id).unwrap();
-    assert!(held.lifecycle.in_limbo && !held.lifecycle.cell_marked);
+    assert!(held.lifecycle.in_limbo() && !held.lifecycle.cell_marked);
 
     let blocked_cells = rect_cells(fixture.blocked, 2, 2);
     let overlay_before: BTreeMap<(u16, u16), (Option<u8>, u8)> = blocked_cells

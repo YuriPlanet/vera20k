@@ -35,7 +35,7 @@ fn legality_rules() -> RuleSet {
 }
 
 fn live(mut entity: GameEntity) -> GameEntity {
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     entity.in_playfield = true;
     entity

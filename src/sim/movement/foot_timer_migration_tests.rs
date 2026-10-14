@@ -58,8 +58,8 @@ fn fixture(kind: LocomotorKind) -> Simulation {
     );
     entity.position.sub_x = SimFixed::from_num(128);
     entity.position.sub_y = SimFixed::from_num(128);
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     entity.drive_accelerates = false;

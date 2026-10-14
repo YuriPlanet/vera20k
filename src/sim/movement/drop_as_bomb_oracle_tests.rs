@@ -66,7 +66,9 @@ mod tests {
             if int(input, "falling", 1) == 0 {
                 entity.finish_fall();
             }
-            entity.lifecycle.in_limbo = int(input, "limbo", 0) != 0;
+            entity
+                .lifecycle
+                .set_in_limbo_for_test(int(input, "limbo", 0) != 0);
             entity.health.set_for_test(int(input, "health", 100));
             sim.substrate.entities.insert(entity);
             sim.object_ai_fall(1, &rules, None, FrameEffects::default())
@@ -106,7 +108,7 @@ mod tests {
             .unwrap();
         let mut sim = Simulation::new();
         let mut entity = GameEntity::test_default(1, "E1", "Americans", 10, 10);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.position.exact_z_leptons = Some(416);
         entity.on_bridge = true;
         entity.set_fall_rate_for_test(int(&row["input"], "rate", 0));

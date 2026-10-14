@@ -56,9 +56,9 @@ fn structural_fallout_retires_effect_only_ground_victim() {
         crate::sim::world::FrameEffects::default(),
     );
     let object = sim.substrate.entities.get(victim).unwrap();
-    assert!(object.infantry_terminal.is_none());
-    assert!(!object.lifecycle.object_alive);
-    assert!(object.dying && !object.selected);
+    assert!(object.death.infantry_terminal().is_none());
+    assert!(!object.lifecycle.object_alive());
+    assert!(object.death.is_dying() && !object.selected);
     assert!(!sim.substrate.occupancy.contains_entity(4, 4, victim));
     assert!(!sim.live_object_order_snapshot().contains(&victim));
     assert_eq!(
@@ -276,7 +276,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
     }
     assert_eq!(sim.substrate.next_air_tracker_order.current(), next_order);
     let twin = sim.substrate.entities.get(unmarked).unwrap();
-    assert!(twin.on_bridge && twin.lifecycle.in_limbo && !twin.lifecycle.cell_marked);
+    assert!(twin.on_bridge && twin.lifecycle.in_limbo() && !twin.lifecycle.cell_marked);
     assert_eq!(twin.position.z, 4);
     assert_ne!(
         sim.substrate.raw_cell_occupation, raw_before,

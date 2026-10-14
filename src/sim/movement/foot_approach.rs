@@ -112,7 +112,7 @@ impl Simulation {
     /// that crushes nothing. Every represented object is a Techno.
     fn approach_crush(&self, id: u64, rules: &RuleSet) -> Option<(ApproachCrush, u64)> {
         let actor = self.substrate.entities.get(id)?;
-        let TargetKind::Entity(target) = actor.attack_target.as_ref()?.target else {
+        let TargetKind::Entity(target) = actor.attack_target.target()? else {
             return None;
         };
         if actor.category() != EntityCategory::Unit || !self.substrate.entities.contains(target) {
@@ -221,7 +221,7 @@ impl Simulation {
     /// rows.
     pub(crate) fn balloon_hover_approach(&self, id: u64, rules: &RuleSet) -> Option<NavTargetRef> {
         let actor = self.substrate.entities.get(id)?;
-        let target = actor.attack_target.as_ref()?.target;
+        let target = actor.attack_target.target()?;
         let object = self.object_type(actor.type_ref(), rules)?;
         if actor.category() != EntityCategory::Unit || !object.balloon_hover {
             return None;
@@ -329,7 +329,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
+        let Some(target) = actor.attack_target.target() else {
             return false;
         };
         if !actor.infantry_deploy_doing() {
@@ -376,7 +376,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
+        let Some(target) = actor.attack_target.target() else {
             return false;
         };
         matches!(
@@ -434,7 +434,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(None);
         };
-        let Some(target) = actor.attack_target.as_ref().map(|a| a.target) else {
+        let Some(target) = actor.attack_target.target() else {
             return Ok(None);
         };
         // 4D56A1..56B1: a Magnetron holding its target (+2AC == TarCom)

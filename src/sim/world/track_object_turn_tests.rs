@@ -20,8 +20,8 @@ fn fixture() -> (Simulation, RuleSet) {
     sim.session.binary_frame = 10;
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
     entity.set_category_for_test(EntityCategory::Unit);
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     entity.is_voxel = false;
     entity.drive_accelerates = false;
@@ -84,7 +84,7 @@ fn object_turn_resets_foot_idle_latch_only_on_native_live_continuation() {
         let (mut sim, _) = fixture();
         let actor = sim.substrate.entities.get_mut(1).unwrap();
         actor.locomotor = None;
-        actor.lifecycle.object_alive = alive;
+        actor.lifecycle.set_object_alive_for_test(alive);
         actor.mission_leaf.set_foot_idle_entry_latch(1);
         let rng = sim.rng_state();
         sim.advance_live_object_turn(1, None, techno_ai::ObjectAiCtx::default())
@@ -157,14 +157,14 @@ fn post_ai_object_alive_gate_precedes_drive_ship_process_slope_sampling() {
             }
             slope_transition::snap_after_successful_unlimbo(entity, 2, 9);
             let old_slope = *slope_transition::state_for_entity(entity).unwrap();
-            entity.lifecycle.object_alive = object_alive;
-            assert!(entity.health.current() > 0 && !entity.dying);
+            entity.lifecycle.set_object_alive_for_test(object_alive);
+            assert!(entity.health.current() > 0 && !entity.death.is_dying());
 
             let outcome = sim
                 .advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
                 .expect("object turn");
             let entity = sim.substrate.entities.get(1).unwrap();
-            assert_eq!(entity.lifecycle.object_alive, object_alive);
+            assert_eq!(entity.lifecycle.object_alive(), object_alive);
             let slope = slope_transition::state_for_entity(entity).unwrap();
             if object_alive {
                 assert_eq!(slope.hash_fields(), (2, 5, 10, 3), "{kind:?}");

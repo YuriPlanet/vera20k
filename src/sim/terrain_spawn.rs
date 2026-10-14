@@ -1436,7 +1436,7 @@ mod tests {
                 .substrate
                 .entities
                 .get(attacker_id)
-                .is_some_and(|e| e.attack_target.is_some());
+                .is_some_and(|e| e.attack_target.target().is_some());
             match sim.production.terrain_objects.get(&stable_id) {
                 Some(terrain) => {
                     last_health = terrain.health;

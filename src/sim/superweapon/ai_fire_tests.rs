@@ -671,7 +671,7 @@ fn retail_walk_reads_each_object() {
         .get_mut(dead)
         .unwrap()
         .lifecycle
-        .object_alive = false;
+        .set_object_alive_for_test(false);
     let flying = spawn(&mut sim, "ORCA", "Russians", (20, 50), 0);
     sim.set_object_height(
         flying,

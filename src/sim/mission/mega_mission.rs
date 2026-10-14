@@ -297,7 +297,7 @@ impl Simulation {
             return;
         };
         let mega = entity.mega_mission;
-        let tarcom = entity.attack_target.as_ref().map(|attack| attack.target);
+        let tarcom = entity.attack_target.target();
         let in_reach = |sim: &Self, target| {
             sim.foot_in_auxiliary_search_range(id, target, rules, ctx.overlay_registry)
         };
@@ -306,7 +306,13 @@ impl Simulation {
                 if in_reach(self, tarcom) {
                     return;
                 }
-                self.substrate.entities.get_mut(id).unwrap().attack_target = None;
+                // `0x004DF3D3`.
+                self.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .attack_target
+                    .set(None);
             }
             None
         } else {
@@ -315,7 +321,13 @@ impl Simulation {
             {
                 return;
             }
-            self.substrate.entities.get_mut(id).unwrap().attack_target = None;
+            // `0x004DF46A`.
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .attack_target
+                .set(None);
             Some(mega.target)
         };
         let found = crate::sim::world::retaliate_and_scan(
@@ -330,8 +342,8 @@ impl Simulation {
             if let Some(target) = fallback
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
-                entity.attack_target =
-                    target.map(|target| crate::sim::combat::AttackTarget { target });
+                // `0x004DF4A5`.
+                entity.attack_target.set(target);
             }
             return;
         }

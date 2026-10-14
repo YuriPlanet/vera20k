@@ -53,7 +53,7 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         3,
         false,
     );
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = false;
     entity.in_playfield = true;
     if name == "SIGHT" {

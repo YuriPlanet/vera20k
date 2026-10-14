@@ -106,7 +106,9 @@ impl Replay {
                 int(&before["dispatch_words"][2]),
             ),
         });
-        entity.lifecycle.object_alive = before["alive"] == 1;
+        entity
+            .lifecycle
+            .set_object_alive_for_test(before["alive"] == 1);
         entity.health.set_for_test(int(&before["health"]));
         // Foot+6B3 is the original constructor's 0: the corpus runs no
         // Unlimbo, whose Enter_Idle_Mode set it here.
@@ -217,8 +219,8 @@ impl Replay {
         );
         let target = e
             .attack_target
-            .as_ref()
-            .map(|t| match t.target {
+            .target()
+            .map(|t| match t {
                 TargetKind::Entity(id) if id == self.first => "0x200c2000",
                 TargetKind::Entity(id) if id == self.second => "0x200c2800",
                 other => panic!("{context}: unexpected Target {other:?}"),
@@ -402,7 +404,7 @@ impl Replay {
                 if input["dead"] == true {
                     let e = s.sim.substrate.entities.get_mut(victim).unwrap();
                     e.health.set_for_test(0);
-                    e.lifecycle.object_alive = false;
+                    e.lifecycle.set_object_alive_for_test(false);
                 }
                 let e = s.sim.substrate.entities.get(victim).unwrap();
                 let (at, alive, health, owner) = (

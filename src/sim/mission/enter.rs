@@ -86,7 +86,7 @@ pub(crate) fn mission_enter(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.dock_entered_with.is_some());
+                .is_some_and(|entity| entity.tether.partner().is_some());
             if reply != RadioResponse::Roger && !tethered {
                 // 0x004D92CE..0x004D92E8.
                 radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);

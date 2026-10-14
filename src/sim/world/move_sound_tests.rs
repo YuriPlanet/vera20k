@@ -76,8 +76,12 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     actor.position.sub_y = SimFixed::from_num(xyz[1] % 256);
     actor.position.z = (xyz[2] / 104) as u8;
     actor.position.exact_z_leptons = Some(xyz[2]);
-    actor.lifecycle.in_limbo = input["limbo"].as_u64().unwrap_or(0) != 0;
-    actor.lifecycle.object_alive = input["alive"].as_u64().unwrap_or(1) != 0;
+    actor
+        .lifecycle
+        .set_in_limbo_for_test(input["limbo"].as_u64().unwrap_or(0) != 0);
+    actor
+        .lifecycle
+        .set_object_alive_for_test(input["alive"].as_u64().unwrap_or(1) != 0);
     actor.lifecycle.cell_marked = false;
     actor.locomotor = Some(LocomotorState::from_object_type(
         rules.object("SQD").unwrap(),
@@ -89,7 +93,9 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
         before["countdown"].as_i64().unwrap() as i32,
     );
     actor.set_falling_down_for_test(input["falling"].as_u64().unwrap_or(0) != 0);
-    actor.crashing = input["crashing"].as_u64().unwrap_or(0) != 0;
+    actor
+        .crash
+        .set_crashing_for_test(input["crashing"].as_u64().unwrap_or(0) != 0);
     sim.substrate.entities.insert(actor);
     assert_eq!(actor_state(&sim, id), expected_state(before));
     assert_rng(&sim, before, "supplied seeded entry");

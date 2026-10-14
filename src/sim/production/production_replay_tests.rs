@@ -331,7 +331,7 @@ fn delivered_unit_count(sim: &Simulation) -> usize {
             matches!(
                 e.category(),
                 EntityCategory::Unit | EntityCategory::Infantry
-            ) && !e.lifecycle.in_limbo
+            ) && !e.lifecycle.in_limbo()
         })
         .count()
 }
@@ -788,7 +788,7 @@ fn retail_builds_step_at_the_native_frames() {
                     .entities
                     .get(held.unwrap())
                     .expect("held head");
-                assert!(entity.lifecycle.in_limbo && !entity.in_logic_vector);
+                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector);
                 break;
             }
         }

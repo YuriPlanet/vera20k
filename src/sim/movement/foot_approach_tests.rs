@@ -199,10 +199,10 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
             }
             if stop_issued && !actor.temporal.is_warping_someone() {
                 let victim = sim.substrate.entities.get(target).unwrap();
-                assert!(victim.lifecycle.object_alive);
+                assert!(victim.lifecycle.object_alive());
                 assert!(!victim.ai_frozen());
                 assert_eq!(victim.health.current(), original_health);
-                assert!(actor.attack_target.is_none());
+                assert!(actor.attack_target.target().is_none());
                 completed = true;
                 break;
             }
@@ -210,7 +210,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
                 .substrate
                 .entities
                 .get(target)
-                .is_none_or(|t| !t.lifecycle.object_alive)
+                .is_none_or(|t| !t.lifecycle.object_alive())
             {
                 assert!(
                     !actor.temporal.is_warping_someone(),
@@ -390,16 +390,17 @@ fn approach_retargets_a_destroyable_cliff_cell_to_its_nearest_imaged_cell() {
     let tank = sim
         .spawn_object_at_height("TANK", "Americans", 2, 8, 0, 0, &rules)
         .expect("tank spawns");
-    sim.substrate.entities.get_mut(tank).unwrap().attack_target =
-        Some(combat::AttackTarget::for_cell(10, 10));
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(combat::TargetKind::Cell(10, 10)));
 
     sim.approach_target(tank, &rules, None, FrameEffects::default());
 
     let tank = sim.substrate.entities.get(tank).unwrap();
-    assert_eq!(
-        tank.attack_target.as_ref().map(|attack| attack.target),
-        Some(TargetKind::Cell(8, 10))
-    );
+    assert_eq!(tank.attack_target.target(), Some(TargetKind::Cell(8, 10)));
     assert!(
         matches!(tank.navigation.nav_com, Some(NavTargetRef::Cell { .. })),
         "{:?}",
@@ -423,7 +424,9 @@ fn approach_takes_the_first_queued_destination_of_any_kind() {
     let escort = spawn(&mut sim, "Americans", 8);
     let queued = [NavTargetRef::object(escort), NavTargetRef::cell(5, 5)];
     let actor = sim.substrate.entities.get_mut(tank).unwrap();
-    actor.attack_target = Some(combat::AttackTarget::new(enemy));
+    actor
+        .attack_target
+        .set_for_test(Some(combat::TargetKind::Entity(enemy)));
     actor.navigation.nav_queue = queued.to_vec();
 
     let answer = sim

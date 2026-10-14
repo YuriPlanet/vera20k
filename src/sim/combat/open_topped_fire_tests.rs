@@ -8,7 +8,6 @@ use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::ground_pose::position_world_coord;
-use crate::sim::passenger::PassengerRole;
 use crate::sim::world::{SimFrameOutput, TickLane};
 
 /// A loaded Battle Fortress on retail Dustbowl.
@@ -226,21 +225,15 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         let transport = sim.substrate.entities.get(bfrt).unwrap();
         let cargo = transport.passenger_role.cargo().expect("a transport");
         assert_eq!(
-            cargo.passengers,
+            cargo.passengers(),
             gis.iter().rev().copied().collect::<Vec<_>>()
         );
         for &id in &gis {
             let gi = sim.substrate.entities.get(id).unwrap();
-            assert!(matches!(
-                gi.passenger_role,
-                PassengerRole::Inside {
-                    transport_id,
-                    open_topped: true,
-                } if transport_id == bfrt
-            ));
-            assert!(gi.lifecycle.in_limbo);
+            assert_eq!(gi.passenger_role.inside_transport(), Some((bfrt, true)));
+            assert!(gi.lifecycle.in_limbo());
             assert_eq!(gi.mission.current().known(), Some(MissionType::Guard));
-            assert!(gi.attack_target.is_none());
+            assert!(gi.attack_target.target().is_none());
             // Native51A441..51A46E preserves the arrival subcell; a later
             // carrier SetLocation copies its coordinate through4DB88A/7104F0.
             assert_eq!(
@@ -295,7 +288,7 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         if first_volley.is_none() && !output.fire_events.is_empty() {
             first_volley = Some((output.fire_events.len(), 200 - target.health.current()));
         }
-        if target.health.current() == 0 || !target.lifecycle.object_alive {
+        if target.health.current() == 0 || !target.lifecycle.object_alive() {
             break;
         }
     }
@@ -320,7 +313,11 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
             .passenger_role
             .cargo()
             .unwrap();
-        let port = cargo.passengers.iter().position(|&id| id == rider).unwrap();
+        let port = cargo
+            .passengers()
+            .iter()
+            .position(|&id| id == rider)
+            .unwrap();
         // Real sequential boarding retains each rider's own scan/animation
         // cadence; it does not synchronize their first shots into one frame.
         firing_ports.insert(port);
@@ -344,7 +341,7 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         sim.substrate
             .entities
             .get(enemy)
-            .is_none_or(|target| !target.lifecycle.object_alive || target.health.current() == 0),
+            .is_none_or(|target| !target.lifecycle.object_alive() || target.health.current() == 0),
         "the riders kill Tanya"
     );
     // The experience (`+0x150`), not yet a rank: Tanya's 1000 over the
@@ -387,12 +384,7 @@ fn retail_dustbowl_battle_fortress_orders_reach_its_riders() {
         gis.iter()
             .map(|&id| {
                 let entities = &fortress.scenario.sim().substrate.entities;
-                entities
-                    .get(id)
-                    .unwrap()
-                    .attack_target
-                    .as_ref()
-                    .map(|attack| attack.target)
+                entities.get(id).unwrap().attack_target.target()
             })
             .collect()
     };
@@ -466,8 +458,7 @@ fn retail_dustbowl_battle_fortress_orders_reach_its_riders() {
         gis.iter().all(|&id| {
             let gi = fortress.scenario.sim().substrate.entities.get(id).unwrap();
             gi.passively_acquired_target
-                && gi.attack_target.as_ref().map(|attack| attack.target)
-                    == Some(TargetKind::Entity(apocalypse))
+                && gi.attack_target.target() == Some(TargetKind::Entity(apocalypse))
         })
     };
     for _ in 0..120 {
@@ -488,7 +479,7 @@ fn retail_dustbowl_battle_fortress_orders_reach_its_riders() {
         .entities
         .get(bfrt)
         .unwrap();
-    assert!(transport.attack_target.is_none());
+    assert!(transport.attack_target.target().is_none());
 }
 
 /// A loaded Battle Fortress force-fired at the ground: the order hands the
@@ -508,12 +499,7 @@ fn retail_dustbowl_battle_fortress_riders_force_fire_at_the_ground() {
         gis.iter()
             .map(|&id| {
                 let entities = &fortress.scenario.sim().substrate.entities;
-                entities
-                    .get(id)
-                    .unwrap()
-                    .attack_target
-                    .as_ref()
-                    .map(|attack| attack.target)
+                entities.get(id).unwrap().attack_target.target()
             })
             .collect()
     };
@@ -592,20 +578,16 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
     );
     retail_frame(&mut fortress.scenario, vec![enter]);
     let inside = |fortress: &Fortress| {
-        matches!(
-            fortress
-                .scenario
-                .sim()
-                .substrate
-                .entities
-                .get(gi)
-                .unwrap()
-                .passenger_role,
-            PassengerRole::Inside {
-                open_topped: true,
-                ..
-            }
-        )
+        fortress
+            .scenario
+            .sim()
+            .substrate
+            .entities
+            .get(gi)
+            .unwrap()
+            .passenger_role
+            .inside_transport()
+            .is_some_and(|(_, open)| open == true)
     };
     let mut frames = 0;
     while !inside(&fortress) {
@@ -630,7 +612,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
         let [rider, transport] =
             [gi, bfrt].map(|id| sim.substrate.entities.get(id).expect("object lives"));
         assert!(inside(&fortress), "frame {frame}: still inside");
-        assert!(rider.lifecycle.in_limbo, "frame {frame}: in limbo");
+        assert!(rider.lifecycle.in_limbo(), "frame {frame}: in limbo");
         assert_eq!(
             position_world_coord(&rider.position),
             arrival,
@@ -939,9 +921,9 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                     ));
                     stop_issued = true;
                 }
-                if stop_issued && actor.attack_target.is_none() && !stop_observed {
+                if stop_issued && actor.attack_target.target().is_none() && !stop_observed {
                     assert_eq!(
-                        actor.attack_target.is_none(),
+                        actor.attack_target.target().is_none(),
                         native_stop["target_is_null"].as_bool().unwrap()
                     );
                     assert_eq!(
@@ -976,7 +958,7 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
                 .substrate
                 .entities
                 .get(target)
-                .is_none_or(|victim| !victim.lifecycle.object_alive)
+                .is_none_or(|victim| !victim.lifecycle.object_alive())
             {
                 assert!(
                     !release_by_moving,

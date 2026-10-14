@@ -187,7 +187,7 @@ fn fixture(row: &Value) -> Scene {
         if let Some(contact) = contact {
             e.radio_contacts.set_slot(0, contact);
         }
-        e.dock_entered_with = (before[tether] == 1).then_some(peer);
+        e.tether.set_for_test((before[tether] == 1).then_some(peer));
     }
     if let Some(slots) = case["actual_slots"].as_array() {
         // These native controls supply an actual vector independently of the
@@ -287,7 +287,8 @@ fn fixture(row: &Value) -> Scene {
         let pending = s.id(name);
         building_dock::set_pending_entry(&mut s.sim, s.miner, Some(pending));
         let e = s.sim.substrate.entities.get_mut(pending).unwrap();
-        e.lifecycle.object_alive = case["pending_alive"] != false;
+        e.lifecycle
+            .set_object_alive_for_test(case["pending_alive"] != false);
         if let Some(health) = case["pending_health"].as_i64() {
             e.health.set_for_test(health as i32);
         }
@@ -338,7 +339,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
         "dispatch_timer":[e.mission.dispatch_timer().start_frame(),e.mission.dispatch_timer().delay()],
         "nav_queue_count":e.navigation.nav_queue.len(), "miner_nav":nav_name(s,e.navigation.nav_com),
         "archive":nav_name(s,archive), "pending_entry":pending,
-        "target":e.attack_target.as_ref().map_or(Value::Null, |t| match t.target { TargetKind::Entity(id)=>s.name(id), TargetKind::Cell(rx,ry)=>json!([rx,ry]) }),
+        "target":e.attack_target.target().map_or(Value::Null, |t| match t { TargetKind::Entity(id)=>s.name(id), TargetKind::Cell(rx,ry)=>json!([rx,ry]) }),
         "health":e.health.current(),"strength":s.sim.object_type(e.type_ref(),&s.rules).unwrap().strength,
         "locomotor_powered":u8::from(e.locomotor.as_ref().unwrap().is_powered()),
         "locomotor_kind":if e.locomotor.as_ref().unwrap().active_kind()==crate::rules::locomotor_type::LocomotorKind::Hover {"hover"} else {"drive"},
@@ -381,7 +382,8 @@ fn compare(s: &Scene, native: &Value, context: &str) {
                     .entities
                     .get(id)
                     .unwrap()
-                    .dock_entered_with
+                    .tether
+                    .partner()
                     .is_some()
             ),
             int(&native[field]) as u8,
@@ -602,7 +604,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
         "building_now_dead_contacts" => {
             let e = s.sim.substrate.entities.get_mut(s.refinery).unwrap();
             e.health.set_for_test(0);
-            e.lifecycle.object_alive = false;
+            e.lifecycle.set_object_alive_for_test(false);
             s.sim.building_now_dead_contacts(
                 s.refinery,
                 &[s.miner],

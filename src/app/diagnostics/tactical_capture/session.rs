@@ -816,7 +816,7 @@ impl TacticalCaptureSession {
                 cell: (entity.position.rx, entity.position.ry),
                 facing: entity.body_facing_byte(sim.session.binary_frame),
                 active: entity.is_active(),
-                dying: entity.dying,
+                dying: entity.death.is_dying(),
                 building_up: entity.building_up(),
             })
             .collect();
@@ -1169,7 +1169,7 @@ impl TacticalCaptureSession {
                 return Ok(false);
             };
             if !entity.is_active()
-                || entity.dying
+                || entity.death.is_dying()
                 || entity.building_up()
                 || sim.interner.resolve(entity.owner())
                     != self.request.profile()?.launch.player_name

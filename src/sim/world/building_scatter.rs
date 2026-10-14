@@ -59,7 +59,7 @@ impl Simulation {
                 .entities
                 .get(id)
                 .expect("query does not remove listener");
-            if !e.lifecycle.object_alive || first_building != Some(building) {
+            if !e.lifecycle.object_alive() || first_building != Some(building) {
                 continue;
             }
             if e.navigation.nav_com.is_some_and(|target| !matches!(target,

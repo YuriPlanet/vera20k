@@ -170,7 +170,7 @@ pub(super) fn commit_receiver_health(
                 .substrate
                 .entities
                 .get(target_id)
-                .is_none_or(|target| !target.lifecycle.object_alive)
+                .is_none_or(|target| !target.lifecycle.object_alive())
             {
                 break;
             }

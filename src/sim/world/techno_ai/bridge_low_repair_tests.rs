@@ -127,7 +127,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
             approach_snapshot = Some(save_scene(&scene, "Shrapnel Engineer approaching hut"));
         }
         let actor = scene.sim().entities().get(engineer);
-        if actor.is_none_or(|entity| !entity.lifecycle.object_alive) {
+        if actor.is_none_or(|entity| !entity.lifecycle.object_alive()) {
             consumed = true;
             eprintln!("SHRAPNEL_ENGINEER consumed after {} frames", frame + 1);
             break;
@@ -746,8 +746,8 @@ fn assert_retained_naval_ship(
         actor.health.current(),
         native["health"].as_i64().unwrap() as i32
     );
-    assert_eq!(actor.lifecycle.object_alive, native["alive"] == 1);
-    assert_eq!(actor.lifecycle.in_limbo, native["limbo"] == 1);
+    assert_eq!(actor.lifecycle.object_alive(), native["alive"] == 1);
+    assert_eq!(actor.lifecycle.in_limbo(), native["limbo"] == 1);
     assert_eq!(actor.lifecycle.cell_marked, native["marked"] == 1);
     assert_eq!(actor.sinking.is_active(), native["sinking"] == 1);
     assert_eq!(actor.in_logic_vector, native["logic_registered"] == 1);

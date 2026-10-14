@@ -763,8 +763,8 @@ mod tests {
             "installed unit remains in LogicVector"
         );
         let installed = sim.substrate.entities.get(1).unwrap();
-        assert!(installed.lifecycle.object_alive);
-        assert!(!installed.lifecycle.in_limbo);
+        assert!(installed.lifecycle.object_alive());
+        assert!(!installed.lifecycle.in_limbo());
         assert!(installed.lifecycle.cell_marked);
         assert_eq!(
             sim.bunker_wall_events.iter().filter(|e| e.up).count(),

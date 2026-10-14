@@ -493,7 +493,7 @@ fn retail_force_fire_collapses_concrete_then_engineer_rebuilds_it() {
     let source = scene.sim().entities().get(tank).unwrap();
     assert!(source.is_alive());
     assert!(
-        source.attack_target.is_none(),
+        source.attack_target.target().is_none(),
         "native70D4A0 detaches the collapsed Cell target immediately"
     );
     let mut guarding = false;

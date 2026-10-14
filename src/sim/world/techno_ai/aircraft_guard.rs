@@ -117,7 +117,7 @@ impl Simulation {
                 continue;
             };
             let unit = self.substrate.entities.get(unit_id).expect("listed unit");
-            if unit.lifecycle.in_limbo {
+            if unit.lifecycle.in_limbo() {
                 continue;
             }
             let owner = unit.owner();
@@ -272,7 +272,7 @@ impl GuardHost for WorldGuard<'_> {
 
     fn target(&mut self) -> bool {
         crate::sim::combat::target_present(
-            self.entity().attack_target.as_ref(),
+            self.entity().attack_target.target(),
             &self.sim.substrate.entities,
         )
     }

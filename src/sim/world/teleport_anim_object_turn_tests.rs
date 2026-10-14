@@ -321,7 +321,9 @@ fn the_warp_drops_attack_locks_on_its_owner() {
     let rules = rules(false);
     let mut sim = relocating_legionnaire((8, 9));
     let mut attacker = GameEntity::test_default(2, "CMON", "Russians", 4, 5);
-    attacker.attack_target = Some(crate::sim::combat::AttackTarget::new(1));
+    attacker
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(1)));
     sim.substrate.entities.insert(attacker);
 
     sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
@@ -340,8 +342,50 @@ fn the_warp_drops_attack_locks_on_its_owner() {
             .get(2)
             .unwrap()
             .attack_target
+            .target()
             .is_none()
     );
+}
+
+/// The warp's first step is the shared detach sweep (`0x007193C7` ->
+/// `0x0070D4A0`): an attacker aiming at the owner restores its suspended
+/// mission and takes the class NULL setter, which also clears its
+/// passive-acquire flag.
+#[test]
+fn the_warp_restores_its_attackers_suspended_missions() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
+
+    let rules = rules(false);
+    let mut sim = relocating_legionnaire((8, 9));
+    let mut attacker = GameEntity::test_default(2, "CMON", "Russians", 4, 5);
+    attacker
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(1)));
+    attacker.passively_acquired_target = true;
+    attacker.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::from_known(MissionType::Guard),
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    sim.substrate.entities.insert(attacker);
+
+    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+        .unwrap();
+
+    let attacker = sim.substrate.entities.get(2).unwrap();
+    assert!(attacker.attack_target.target().is_none());
+    assert!(!attacker.passively_acquired_target);
+    assert_eq!(
+        attacker.mission.current(),
+        MissionId::from_known(MissionType::Guard)
+    );
+    assert_eq!(attacker.mission.suspended(), MissionId::NONE);
 }
 
 /// A mission Restore represents `Assign_Destination(saved, 1)` by NavCom and

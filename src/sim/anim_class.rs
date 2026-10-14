@@ -2067,8 +2067,8 @@ impl Simulation {
         self.substrate.entities.values().any(|entity| {
             if entity.owner() != viewer
                 || entity.category() != crate::map::entities::EntityCategory::Structure
-                || !entity.lifecycle.object_alive
-                || entity.lifecycle.in_limbo
+                || !entity.lifecycle.object_alive()
+                || entity.lifecycle.in_limbo()
             {
                 return false;
             }

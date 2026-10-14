@@ -267,7 +267,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.lifecycle.object_alive
+        if entity.lifecycle.object_alive()
             && entity_layer(
                 entity,
                 self.resolved_terrain.as_ref(),

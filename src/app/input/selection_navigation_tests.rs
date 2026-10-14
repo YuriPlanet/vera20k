@@ -267,7 +267,7 @@ fn veterancy_navigation_keeps_shared_snapshot_without_pointer_expiry() {
         .get_mut(20)
         .unwrap()
         .lifecycle
-        .object_alive = false;
+        .set_object_alive_for_test(false);
     sim.entities_mut().get_mut(40).unwrap().selected = false;
 
     reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules));
@@ -368,12 +368,12 @@ fn assert_navigation_boundary(
             "{label}: committed bit{id}"
         );
         assert_eq!(
-            entity.lifecycle.object_alive,
+            entity.lifecycle.object_alive(),
             actor["alive"].as_bool().unwrap(),
             "{label}: Alive{id}"
         );
         assert_eq!(
-            entity.lifecycle.in_limbo,
+            entity.lifecycle.in_limbo(),
             actor["limbo"].as_bool().unwrap(),
             "{label}: Limbo{id}"
         );
@@ -805,8 +805,12 @@ fn replay_category_history(
                     .unwrap();
                 for (field, value) in step["fields"].as_object().unwrap() {
                     match field.as_str() {
-                        "alive" => entity.lifecycle.object_alive = value.as_bool().unwrap(),
-                        "limbo" => entity.lifecycle.in_limbo = value.as_bool().unwrap(),
+                        "alive" => entity
+                            .lifecycle
+                            .set_object_alive_for_test(value.as_bool().unwrap()),
+                        "limbo" => entity
+                            .lifecycle
+                            .set_in_limbo_for_test(value.as_bool().unwrap()),
                         "selected" => entity.selected = value.as_bool().unwrap(),
                         "health" => entity.health.set_for_test(value.as_i64().unwrap() as i32),
                         other => panic!("unsupported declared actor-state writer {other}"),
@@ -854,12 +858,16 @@ fn replay_category_history(
                     &label,
                 );
                 let entity = sim.entities_mut().get_mut(id).unwrap();
-                entity.lifecycle.object_alive = step["actor_state"][id.to_string()]["alive"]
-                    .as_bool()
-                    .unwrap();
-                entity.lifecycle.in_limbo = step["actor_state"][id.to_string()]["limbo"]
-                    .as_bool()
-                    .unwrap();
+                entity.lifecycle.set_object_alive_for_test(
+                    step["actor_state"][id.to_string()]["alive"]
+                        .as_bool()
+                        .unwrap(),
+                );
+                entity.lifecycle.set_in_limbo_for_test(
+                    step["actor_state"][id.to_string()]["limbo"]
+                        .as_bool()
+                        .unwrap(),
+                );
             }
             "supply_selection_sources" => {
                 let map: Vec<u64> = serde_json::from_value(step["map_order"].clone()).unwrap();
@@ -1111,8 +1119,12 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
                 }
                 let boundary = &cleanup["actor_state"][actor.id.to_string()];
                 let entity = sim.entities_mut().get_mut(actor.id).unwrap();
-                entity.lifecycle.object_alive = boundary["alive"].as_bool().unwrap();
-                entity.lifecycle.in_limbo = boundary["limbo"].as_bool().unwrap();
+                entity
+                    .lifecycle
+                    .set_object_alive_for_test(boundary["alive"].as_bool().unwrap());
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(boundary["limbo"].as_bool().unwrap());
                 entity.selected = boundary["selected"].as_bool().unwrap();
             }
             // A consumed input can leave a different committed selection
@@ -1222,7 +1234,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
         input.selection_order = history.selected.clone();
         input.selection_order_pending = true;
         let actor = sim.entities_mut().get_mut(20).unwrap();
-        actor.lifecycle.in_limbo = true;
+        actor.lifecycle.set_in_limbo_for_test(true);
         let owner = sim.session.current_house.unwrap();
         let command = if queued_selection {
             Command::Select {
@@ -1780,8 +1792,8 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
             5,
             false,
         );
-        entity.lifecycle.object_alive = actor.alive;
-        entity.lifecycle.in_limbo = actor.limbo;
+        entity.lifecycle.set_object_alive_for_test(actor.alive);
+        entity.lifecycle.set_in_limbo_for_test(actor.limbo);
         entity.in_playfield = actor.in_playfield;
         entity.discovery.discovered_by_current_house = actor.discovered;
         entity.selected = selected.contains(&actor.id);
@@ -1804,7 +1816,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
             entity.bunker_link = BunkerLink::Installed(999);
         }
         if actor.docked {
-            entity.dock_entered_with = Some(999);
+            entity.tether.set_for_test(Some(999));
         }
         let [x, y, z] = actor.coord;
         ground_pose::put_location(&mut entity.position, DriveCoord { x, y, z });
@@ -1824,8 +1836,8 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
                 0,
                 false,
             );
-            building.lifecycle.object_alive = true;
-            building.lifecycle.in_limbo = false;
+            building.lifecycle.set_object_alive_for_test(true);
+            building.lifecycle.set_in_limbo_for_test(false);
             sim.entities_mut().insert(building);
         }
         sim.entities_mut().insert(entity);

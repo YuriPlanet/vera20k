@@ -260,7 +260,9 @@ fn simulation_fixture_for_type(
     entity.set_type_ref_for_test(sim.interner.intern(type_name));
     entity.set_owner_for_test(sim.interner.intern(owner));
     entity.selected = input["selected"].as_bool().unwrap_or(true);
-    entity.lifecycle.object_alive = input["alive"].as_bool().unwrap_or(true);
+    entity
+        .lifecycle
+        .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
     entity.foundation = foundation.to_owned();
     let [tx, ty] = input.get("target_cell").map(point).unwrap_or([14, 20]);
     if !input["no_target"].as_bool().unwrap_or(false) {

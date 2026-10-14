@@ -201,8 +201,8 @@ pub(crate) fn facing_update(
     // --- A. AIM ---------------------------------------------------------
     let target_facing: Option<u16> = entity
         .attack_target
-        .as_ref()
-        .and_then(|attack| facing_toward_target(entity, &attack.target, entities));
+        .target()
+        .and_then(|attack| facing_toward_target(entity, &attack, entities));
     if let Some(tgt) = target_facing
         && !entity.turret_rotation_latch
     {
@@ -242,7 +242,7 @@ pub(crate) fn facing_update(
         // in completed turns instead of re-snapshotting `prev` every frame
         // against a mover.
         let committed_to_an_arc = barrel.is_rotating(binary_frame);
-        if !committed_to_an_arc && entity.attack_target.is_none() {
+        if !committed_to_an_arc && entity.attack_target.target().is_none() {
             let dwell = rules.map_or(NATIVE_IDLE_TURRET_DWELL_FALLBACK, |r| {
                 i64::from(r.general.guard_area_targeting_delay)
             }) + NATIVE_IDLE_TURRET_DWELL_BIAS;
@@ -341,8 +341,8 @@ pub(crate) fn desired_turret_facing(
         _ => Some(
             entity
                 .attack_target
-                .as_ref()
-                .and_then(|attack| facing_toward_target(entity, &attack.target, entities))
+                .target()
+                .and_then(|attack| facing_toward_target(entity, &attack, entities))
                 .unwrap_or_else(|| entity.body_facing_current(binary_frame)),
         ),
     }
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn gunner_selection_controls_omni_fire_before_the_first_shot_and_after_reset() {
         use crate::rules::ini_parser::IniFile;
-        use crate::sim::combat::AttackTarget;
+        use crate::sim::combat::TargetKind;
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=FV\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [FV]\nTurret=yes\nTurretCount=4\nGunner=yes\nWeaponCount=3\n\
@@ -443,7 +443,9 @@ mod tests {
         let object = rules.object("FV").unwrap();
         let mut entity = GameEntity::test_default(1, "FV", "Americans", 5, 5);
         entity.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 5));
-        entity.attack_target = Some(AttackTarget::for_cell(10, 5));
+        entity
+            .attack_target
+            .set_for_test(Some(TargetKind::Cell(10, 5)));
         let interner = crate::sim::intern::test_interner();
         let store = EntityStore::new();
         for (mode, turns) in [(0, true), (2, false), (0, true)] {

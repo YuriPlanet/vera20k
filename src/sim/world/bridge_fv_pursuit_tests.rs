@@ -184,7 +184,7 @@ fn paid_snapshot(
         "drive_destination":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.destination())),
         "drive_head":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.head_to())),
         "track_state":track_state,
-        "target_present":actor.attack_target.is_some(),
+        "target_present":actor.attack_target.target().is_some(),
         "live_bullet_positions":bullets.iter().map(|b|b["position"].clone()).collect::<Vec<_>>(),
         "bullets":bullets,"anims":anims,
         "anim_count":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id)).count(),
@@ -464,7 +464,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
 fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
-    use crate::sim::combat::AttackTarget;
+    use crate::sim::combat::TargetKind;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId};
     let packet: Value = serde_json::from_str(crate::test_fixture::text(
@@ -504,7 +504,9 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
             let sim = &mut runtime.simulation;
             sim.resolve_type_handles(rules);
             let actor = sim.substrate.entities.get_mut(id).unwrap();
-            actor.attack_target = Some(AttackTarget::for_cell(87, 54));
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Cell(87, 54)));
             actor.in_playfield = row["input"].get("in_playfield").is_none_or(|v| v == 1);
             actor.mission.apply_test_fixture(MissionTestFixture {
                 current: MissionId::from_raw(row["before"]["mission"].as_i64().unwrap() as i32),
@@ -577,7 +579,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                 row["before_mission_state"],
                 "{name} supplied mission state"
             );
-            let target_before = actor.attack_target.as_ref().map(|attack| attack.target);
+            let target_before = actor.attack_target.target();
             let result = sim
                 .approach_foot_target(
                     id,
@@ -593,12 +595,12 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                 "{name} direct Approach preserves mission/rearm state"
             );
             assert_eq!(
-                actor.attack_target.is_some(),
+                actor.attack_target.target().is_some(),
                 row["target_present"].as_bool().unwrap(),
                 "{name} target presence"
             );
             assert_eq!(
-                actor.attack_target.as_ref().map(|attack| attack.target) == target_before,
+                actor.attack_target.target() == target_before,
                 row["target_unchanged"].as_bool().unwrap(),
                 "{name} target identity"
             );
@@ -651,8 +653,8 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
             if let Some(expected) = row.get("target_cell") {
                 let actual = actor
                     .attack_target
-                    .as_ref()
-                    .map(|a| match a.target {
+                    .target()
+                    .map(|a| match a {
                         crate::sim::combat::TargetKind::Cell(x, y) => json!([x, y]),
                         other => panic!("unexpected target {other:?}"),
                     })
@@ -757,7 +759,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
         "native MissionAttack chooses a firing cell before the same object's Drive Process"
     );
     assert_eq!(
-        actor.attack_target.as_ref().unwrap().target,
+        actor.attack_target.target().unwrap(),
         crate::sim::combat::TargetKind::Cell(87, 54)
     );
     assert!(

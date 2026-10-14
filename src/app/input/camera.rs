@@ -1719,7 +1719,7 @@ pub(crate) fn update_follow_camera(state: &mut AppState) {
         .and_then(|sim| {
             sim.entities()
                 .get(id)
-                .filter(|entity| entity.lifecycle.object_alive && entity.selected)
+                .filter(|entity| entity.lifecycle.object_alive() && entity.selected)
                 .map(|entity| entity_lepton_coord(sim, entity))
         });
     let Some((x, y, z)) = coord else {

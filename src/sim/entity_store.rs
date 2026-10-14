@@ -275,20 +275,17 @@ impl EntityStore {
         let stored = self.len();
         self.touched.note(stable_id, stored);
         for entity in self.entities.iter_mut().filter_map(Option::as_deref_mut) {
-            if entity.has_live_contact_with(stable_id)
-                || entity.dock_entered_with == Some(stable_id)
+            if entity.has_live_contact_with(stable_id) || entity.tether.partner() == Some(stable_id)
             {
                 self.touched.note(entity.stable_id(), stored);
             }
             entity.clear_live_contact_with(stable_id);
-            // Drop a dangling dock-entered link pointing at the departing entity
-            // (the BREAK cascade a limbo'd dock partner would otherwise miss).
-            if entity.dock_entered_with == Some(stable_id) {
-                entity.dock_entered_with = None;
-            }
+            // Drop a dangling tether to the departing entity (the BREAK
+            // cascade a limbo'd dock partner would otherwise miss).
+            entity.tether.forget(stable_id);
             if entity.stable_id() == stable_id {
                 entity.radio_contacts.clear_all();
-                entity.dock_entered_with = None;
+                entity.tether.release();
             }
         }
     }
@@ -699,8 +696,16 @@ mod tests {
             e.set_category_for_test(EntityCategory::Infantry);
             store.insert(e);
         }
-        store.get_mut(1).unwrap().lifecycle.object_alive = false;
-        store.get_mut(1).unwrap().lifecycle.in_limbo = true;
+        store
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_object_alive_for_test(false);
+        store
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
         assert_eq!(store.infantry_registry_at(0), Some(1));
         store.remove(1);
         // A caller that just visited index0 next reads index1, skipping2.

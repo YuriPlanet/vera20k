@@ -257,8 +257,8 @@ impl Simulation {
         for other in self.substrate.entities.values() {
             if carried == Some(other.stable_id())
                 || own == Some(other.stable_id())
-                || !other.lifecycle.object_alive
-                || other.lifecycle.in_limbo
+                || !other.lifecycle.object_alive()
+                || other.lifecycle.in_limbo()
                 || !matches!(
                     other.category(),
                     EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft

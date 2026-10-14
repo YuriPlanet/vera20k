@@ -203,7 +203,7 @@ pub fn tick(
         // 1–2: mutate the rocking state. The &mut borrow is scoped to this
         // block so step 3 can take a fresh &mut GameEntity for the hook.
         {
-            let crashing = entity.crashing;
+            let crashing = entity.crash.is_crashing();
             let balloon_hover = balloon_hover_type(entity, rules, interner);
             let rocking = entity.rocking.as_mut().unwrap();
             if rocking.is_ship_rocking {
@@ -267,7 +267,7 @@ fn balloon_hover_type(
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
 ) -> bool {
-    entity.crashing
+    entity.crash.is_crashing()
         && rules
             .object(interner.resolve(entity.type_ref()))
             .is_some_and(|object| object.balloon_hover)

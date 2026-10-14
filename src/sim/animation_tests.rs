@@ -8,7 +8,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::animation::*;
-use crate::sim::combat::AttackTarget;
+use crate::sim::combat::TargetKind;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::game_options::GameOptions;
@@ -226,7 +226,7 @@ fn test_shp_vehicle_non_eight_facings_draws_slot_zero() {
 fn gsi_13_06_active_shp_unit(type_name: &str, kind: LocomotorKind) -> GameEntity {
     let mut entity = GameEntity::test_default(13_006, type_name, "Soviet", 5, 5);
     entity.is_voxel = false;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     let head = DriveCoord::cell(6, 5, 0);
     match kind {
@@ -387,13 +387,13 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
     let mut variants = Vec::new();
 
     let mut in_limbo = base.clone();
-    in_limbo.lifecycle.in_limbo = true;
+    in_limbo.lifecycle.set_in_limbo_for_test(true);
     variants.push(("in limbo", in_limbo));
     let mut dead = base.clone();
-    dead.lifecycle.object_alive = false;
+    dead.lifecycle.set_object_alive_for_test(false);
     variants.push(("not native-alive", dead));
     let mut dying = base.clone();
-    dying.dying = true;
+    dying.death.set_dying_for_test(true);
     variants.push(("dying", dying));
     let mut falling = base.clone();
     falling.set_falling_down_for_test(true);
@@ -887,7 +887,7 @@ fn infantry_action_fixture(
         .get_mut(id)
         .unwrap()
         .lifecycle
-        .in_limbo = false;
+        .set_in_limbo_for_test(false);
     assert!(
         sim.infantry_do_action(
             id,
@@ -1057,7 +1057,9 @@ fn presentation_preserves_infantry_fire_action_latch_and_signed_stage() {
         .unwrap()
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.attack_target = Some(AttackTarget::new(999));
+    actor
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(999)));
     actor.mission_leaf.set_foot_firing_sequence(1);
     actor.set_native_stage_value(65_538);
     let facing = actor.body_facing;
@@ -1073,7 +1075,7 @@ fn presentation_preserves_infantry_fire_action_latch_and_signed_stage() {
     let actor = sim.substrate.entities.get(id).unwrap();
     assert_eq!(actor.mission_leaf.foot_firing_sequence_latch(), 1);
     assert_eq!(
-        actor.attack_target.as_ref().unwrap().target,
+        actor.attack_target.target().unwrap(),
         crate::sim::combat::TargetKind::Entity(999)
     );
     assert_eq!(actor.body_facing, facing);
@@ -1294,7 +1296,7 @@ fn presentation_skips_dying_infantry_without_changing_its_stage_or_action() {
         .unwrap()
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.dying = true;
+    actor.death.set_dying_for_test(true);
     actor.health.set_for_test(0);
     actor.set_native_stage_value(14);
     let dead = tick_animations(
@@ -1322,13 +1324,13 @@ fn completed_infantry_death_is_removed_by_the_class_sequencer() {
         .unwrap()
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.dying = true;
+    actor.death.set_dying_for_test(true);
     actor.health.set_for_test(0);
     actor.set_native_stage_value(15);
     assert!(sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
     let retired = sim.substrate.entities.get(id).unwrap();
-    assert!(!retired.lifecycle.object_alive);
-    assert!(retired.lifecycle.in_limbo);
+    assert!(!retired.lifecycle.object_alive());
+    assert!(retired.lifecycle.in_limbo());
     assert!(sim.substrate.pending_delete.contains_object(&id));
     sim.process_pending_delete_with(
         Some(&rules),
@@ -1354,7 +1356,7 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
         .unwrap()
     );
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.dying = true;
+    actor.death.set_dying_for_test(true);
     actor.health.set_for_test(0);
     actor.set_native_stage_value(14);
     assert_eq!(
@@ -1381,8 +1383,8 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
         .set_native_stage_value(15);
     assert!(sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
     let retired = sim.substrate.entities.get(id).unwrap();
-    assert!(!retired.lifecycle.object_alive);
-    assert!(retired.lifecycle.in_limbo);
+    assert!(!retired.lifecycle.object_alive());
+    assert!(retired.lifecycle.in_limbo());
     assert!(sim.substrate.pending_delete.contains_object(&id));
     sim.process_pending_delete_with(
         Some(&rules),
@@ -1703,7 +1705,9 @@ fn unit_body_counter_matches_original_foot_cadence() {
                 );
             }
             if flag("target") {
-                entity.attack_target = Some(AttackTarget::new(42));
+                entity
+                    .attack_target
+                    .set_for_test(Some(TargetKind::Entity(42)));
             }
             entity.foot_locomotor_swap_active = flag("locomotor_swap");
             // BeingWarpedOut (`+0x270`) through a Temporal chain's head,

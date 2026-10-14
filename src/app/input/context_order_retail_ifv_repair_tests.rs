@@ -6,7 +6,7 @@ use crate::app::input::cursor::{capability_cursor_for_hover, cursor_id_for_feedb
 use crate::app::types::{CursorFeedbackKind, CursorId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
-use crate::sim::passenger::{PassengerRole, tick_passenger_system};
+use crate::sim::passenger::tick_passenger_system;
 use crate::sim::world::UnitRepairAction;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -39,17 +39,24 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
     tick_passenger_system(&mut sim, rules, None, FrameEffects::default());
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..240 {
-        if matches!(
-            sim.entities().get(engineer).unwrap().passenger_role,
-            PassengerRole::Inside { .. }
-        ) {
+        if sim
+            .entities()
+            .get(engineer)
+            .unwrap()
+            .passenger_role
+            .is_inside_transport()
+        {
             break;
         }
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
     }
     assert!(
-        matches!(sim.entities().get(engineer).unwrap().passenger_role,
-        PassengerRole::Inside { transport_id, .. } if transport_id == ifv)
+        sim.entities()
+            .get(engineer)
+            .unwrap()
+            .passenger_role
+            .inside_transport_id()
+            == Some(ifv)
     );
     let tank = sim.spawn_object("MTNK", OWNER, 17, 16, 64, rules).unwrap();
     sim.entities_mut()
@@ -222,12 +229,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     // already published before the actor became berserk is still received.
     assert!(sim.apply_command(OWNER, &already_sent, Some(rules)));
     assert_eq!(
-        sim.entities()
-            .get(ifv)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .map(|attack| attack.target),
+        sim.entities().get(ifv).unwrap().attack_target.target(),
         Some(TargetKind::Entity(tank))
     );
 }
@@ -244,12 +246,7 @@ fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
     let command = repair_click(&sim, rules, ifv, tank);
     assert!(sim.apply_command(OWNER, &command, Some(rules)));
     assert_eq!(
-        sim.entities()
-            .get(ifv)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .map(|attack| attack.target),
+        sim.entities().get(ifv).unwrap().attack_target.target(),
         Some(TargetKind::Entity(tank))
     );
     let grid = sim.path_grid_snapshot().unwrap();
@@ -473,12 +470,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
         .set_for_test(rules.object("MTNK").unwrap().strength);
     assert!(sim.apply_command(OWNER, &command, Some(rules)));
     assert_eq!(
-        sim.entities()
-            .get(ifv)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .map(|a| a.target),
+        sim.entities().get(ifv).unwrap().attack_target.target(),
         Some(TargetKind::Entity(tank)),
         "the event still commits its original target"
     );
@@ -509,12 +501,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
     assert_eq!(sim.entities().get(ifv).unwrap().current_weapon_number(), 0);
     assert!(sim.apply_command(OWNER, &command, Some(rules)));
     assert_eq!(
-        sim.entities()
-            .get(ifv)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .map(|a| a.target),
+        sim.entities().get(ifv).unwrap().attack_target.target(),
         Some(TargetKind::Entity(tank)),
         "cargo changes do not replace the issued event"
     );

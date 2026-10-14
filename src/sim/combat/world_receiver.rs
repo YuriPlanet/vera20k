@@ -430,14 +430,14 @@ fn area_record_dispatches(world: &Simulation, rules: &RuleSet, event: &EntityDam
         .entities
         .get(event.target_id)
         .is_some_and(|target| {
-            target.lifecycle.object_alive
+            target.lifecycle.object_alive()
                 && !(target.category() == EntityCategory::Structure
                     && rules
                         .object(world.interner.resolve(target.type_ref()))
                         .is_some_and(|object| object.invisible_in_game))
                 && target.health.current() > 0
                 && target.lifecycle.cell_marked
-                && !target.lifecycle.in_limbo
+                && !target.lifecycle.in_limbo()
         })
 }
 
@@ -972,9 +972,10 @@ pub(crate) fn commit_entities(
                     source_entity_id: retained_source,
                 });
             }
-            target.lifecycle.object_alive = true;
+            // PostMortem's restore (`0x00701F60`, `0x00701F67`).
+            target.lifecycle.restore_alive();
             target.health.set(1);
-            target.dying = false;
+            target.death.restore();
             #[cfg(test)]
             death
                 .receiver_stage_trace
@@ -1112,7 +1113,7 @@ pub(crate) fn commit_entities(
         ) && sound_enabled
             && let Some(target) = world.substrate.entities.get(target_id)
             && target.category() == EntityCategory::Structure
-            && target.lifecycle.object_alive
+            && target.lifecycle.object_alive()
             && rules
                 .object(world.interner.resolve(target.type_ref()))
                 .is_some_and(|object| object.damage_sound().is_none())
@@ -1328,7 +1329,8 @@ pub(crate) fn commit_entities(
                 .entities
                 .get(target_id)
                 .is_some_and(|target| {
-                    target.category() == EntityCategory::Structure && target.lifecycle.object_alive
+                    target.category() == EntityCategory::Structure
+                        && target.lifecycle.object_alive()
                 })
             && let Some(ping) = world.building_hit_response(
                 target_id,
@@ -1366,7 +1368,7 @@ fn finish_building_art_receiver(
     let Some(target) = world.substrate.entities.get(target_id) else {
         return;
     };
-    if !target.lifecycle.object_alive {
+    if !target.lifecycle.object_alive() {
         return;
     }
     let Some(object) = rules.object(world.interner.resolve(target.type_ref())) else {
@@ -1581,7 +1583,7 @@ pub(crate) fn handle_death(
                 .get(dead_id)
                 .is_some_and(|building| {
                     building.category() == EntityCategory::Structure
-                        && building.lifecycle.object_alive
+                        && building.lifecycle.object_alive()
                 })
         {
             world.building_now_dead_contacts(dead_id, contacts, Some(rules), run.effects());
@@ -1621,7 +1623,7 @@ fn finish_concrete_death(
     };
     let category = entity.category();
     // Building442230 returns before its result dispatch when Alive is clear.
-    if category == EntityCategory::Structure && !entity.lifecycle.object_alive {
+    if category == EntityCategory::Structure && !entity.lifecycle.object_alive() {
         return;
     }
     let (type_id, owner, rx, ry, has_animation) = (
@@ -1756,7 +1758,7 @@ fn finish_concrete_death(
     {
         // Non-Infantry SHP lifetime remains on its existing path.
         if let Some(entity) = world.substrate.entities.get_mut(dead_id) {
-            entity.dying = true;
+            entity.death.begin();
             if let (Some(sequence), Some(anim)) = (
                 crate::sim::animation::death_sequence_for_inf_death(inf_death),
                 entity.animation.as_mut(),

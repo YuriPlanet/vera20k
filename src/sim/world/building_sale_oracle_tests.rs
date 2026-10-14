@@ -159,9 +159,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     building.selected = input["selected"] == true;
     let mut passengers = Vec::new();
     if let Some(names) = input["passengers"].as_array() {
-        building.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(5, 0),
-        };
+        building.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
         for name in names {
             let id = sim
                 .construct_object_limbo_at_height(
@@ -175,10 +173,8 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
-                transport_id: refinery,
-                open_topped: false,
-            };
+            sim.substrate.entities.get_mut(id).unwrap().passenger_role =
+                PassengerRole::inside_for_test(refinery, false);
             passengers.push(id);
         }
         // AddPassenger prepends: the list's head is the first passenger.
@@ -216,7 +212,7 @@ fn compare_infantry(s: &SlaveScene, id: u64, expected: &Value, context: &str) {
         "{context}: owner"
     );
     assert_eq!(
-        u64::from(entity.lifecycle.in_limbo),
+        u64::from(entity.lifecycle.in_limbo()),
         expected["limbo"].as_u64().unwrap(),
         "{context}: limbo"
     );
@@ -597,7 +593,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             5,
             false,
         );
-        building.lifecycle.in_limbo = false;
+        building.lifecycle.set_in_limbo_for_test(false);
         building.in_playfield = true;
         building.was_attacked_by_enemy = input["attacked"] == true;
         building.ai_sellable = input["ai_sellable"] == true;

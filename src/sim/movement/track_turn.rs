@@ -58,7 +58,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if entity.dying || !entity.lifecycle.object_alive {
+        if entity.death.is_dying() || !entity.lifecycle.object_alive() {
             return false;
         }
         if entity.low_bridge_tube_state.is_some()
@@ -122,7 +122,7 @@ impl Simulation {
             );
             // Native reloads these three bytes after the synchronous callback.
             if !self.substrate.entities.get(id).is_some_and(|e| {
-                e.lifecycle.object_alive && !e.lifecycle.in_limbo && !e.is_falling_down()
+                e.lifecycle.object_alive() && !e.lifecycle.in_limbo() && !e.is_falling_down()
             }) {
                 return false;
             }

@@ -303,7 +303,7 @@ fn ground_command_fixture(
             prior["health"].as_i64().unwrap() as i32
         );
         assert_eq!(target_actor.is_object_alive(), prior["alive"] != 0);
-        assert_eq!(target_actor.lifecycle.in_limbo, prior["limbo"] != 0);
+        assert_eq!(target_actor.lifecycle.in_limbo(), prior["limbo"] != 0);
         assert_eq!(target_actor.lifecycle.cell_marked, prior["marked"] != 0);
         assert_eq!(
             ground_pose::position_world_coord(&target_actor.position),
@@ -395,8 +395,8 @@ fn ground_command_fixture(
             actor.health.current(),
             state["health"].as_i64().unwrap() as i32
         );
-        assert_eq!(actor.lifecycle.object_alive, state["alive"] != 0);
-        assert_eq!(actor.lifecycle.in_limbo, state["limbo"] != 0);
+        assert_eq!(actor.lifecycle.object_alive(), state["alive"] != 0);
+        assert_eq!(actor.lifecycle.in_limbo(), state["limbo"] != 0);
     } else {
         actor
             .mission_leaf
@@ -524,7 +524,7 @@ fn ground_command_fixture(
             ambient["health"].as_i64().unwrap() as i32
         );
         assert_eq!(target_actor.is_object_alive(), ambient["alive"] != 0);
-        assert_eq!(target_actor.lifecycle.in_limbo, ambient["limbo"] != 0);
+        assert_eq!(target_actor.lifecycle.in_limbo(), ambient["limbo"] != 0);
         assert_eq!(target_actor.lifecycle.cell_marked, ambient["marked"] != 0);
         assert_eq!(target_actor.on_bridge, ambient["on_bridge"] != 0);
         assert_eq!(
@@ -694,7 +694,7 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
             ground_command_cell_reference(state, state["aux_nav"].as_u64().unwrap()),
             "{context}: auxiliary NavCom"
         );
-        match actor.attack_target.as_ref().map(|target| target.target) {
+        match actor.attack_target.target() {
             None => assert_eq!(
                 state["target"], 0,
                 "{context}: Target cleared before destination"
@@ -1773,7 +1773,7 @@ fn local_state(sim: &Simulation, id: u64) -> Value {
         "queued": entity.mission.queued().raw(),
         "nav_is_set": entity.navigation.nav_com.is_some(),
         "archive_is_set": entity.archive_target().is_some(),
-        "tether": entity.dock_entered_with.is_some(),
+        "tether": entity.tether.partner().is_some(),
         "contact_count": entity.radio_contacts.len(),
         "doing": entity.mission_leaf.as_infantry().unwrap().doing(),
         "idle_entry_latch": entity.mission_leaf.foot_idle_entry_latch(),
@@ -2055,10 +2055,17 @@ fn joined_two_paid_gi(route: OutputRoute) {
                         .get(first)
                         .unwrap()
                         .lifecycle
-                        .in_limbo,
+                        .in_limbo(),
                     "the FIFO successor constructs only after the first PLACE admits"
                 );
-                assert!(sim.substrate.entities.get(held).unwrap().lifecycle.in_limbo);
+                assert!(
+                    sim.substrate
+                        .entities
+                        .get(held)
+                        .unwrap()
+                        .lifecycle
+                        .in_limbo()
+                );
                 assert_eq!(view.progress, 0);
                 assert!(view.queue.is_empty());
                 products.push(ProductProgress {
@@ -2070,7 +2077,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             if view.complete_object().is_some() && progress.completed_frame.is_none() {
                 progress.completed_frame = Some(frame);
                 let entity = sim.substrate.entities.get(held).unwrap();
-                assert!(entity.lifecycle.in_limbo && !entity.in_logic_vector);
+                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector);
                 assert!(
                     !sim.pending_command_snapshot().iter().any(|command| {
                         matches!(command.payload, Command::PlaceProducedMobile { .. })
@@ -2081,7 +2088,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
         }
         for (index, progress) in products.iter_mut().enumerate() {
             let entity = sim.substrate.entities.get(progress.id).unwrap();
-            if entity.lifecycle.in_limbo {
+            if entity.lifecycle.in_limbo() {
                 assert!(!entity.in_logic_vector && !entity.lifecycle.cell_marked);
                 continue;
             }
@@ -2177,7 +2184,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 );
                 assert!(frame > progress.first_live_frame.unwrap());
                 assert_eq!(json!(&transmissions[start..]), golden["arrival_radio"]);
-                assert!(entity.radio_contacts.is_empty() && entity.dock_entered_with.is_none());
+                assert!(entity.radio_contacts.is_empty() && entity.tether.partner().is_none());
                 assert!(
                     sim.substrate
                         .entities

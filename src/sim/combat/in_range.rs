@@ -1296,7 +1296,7 @@ mod tests {
                 for id in 2..2 + building["occupants"].as_u64().unwrap_or(1) {
                     assert!(cargo.board(id, 1));
                 }
-                actor.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+                actor.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
                 EntityCategory::Structure
             } else if input["unit"] == true {
                 EntityCategory::Unit
@@ -1321,10 +1321,8 @@ mod tests {
                 );
             }
             if input["open_topped"] == true {
-                actor.passenger_role = crate::sim::passenger::PassengerRole::Inside {
-                    transport_id: 2,
-                    open_topped: true,
-                };
+                actor.passenger_role =
+                    crate::sim::passenger::PassengerRole::inside_for_test(2, true);
             }
             let mut weapon = rules.weapon("GUN").unwrap().clone();
             weapon.range_leptons = input["range"].as_i64().unwrap_or(768) as i32;

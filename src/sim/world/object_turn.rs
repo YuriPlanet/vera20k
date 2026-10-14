@@ -136,8 +136,8 @@ impl Simulation {
             return Ok(false);
         };
         if infantry.category() != EntityCategory::Infantry
-            || !infantry.lifecycle.object_alive
-            || infantry.lifecycle.in_limbo
+            || !infantry.lifecycle.object_alive()
+            || infantry.lifecycle.in_limbo()
             || !matches!(
                 infantry.mission.effective().known(),
                 Some(MissionType::Guard | MissionType::AreaGuard)
@@ -231,7 +231,7 @@ impl Simulation {
                 .map_or((None, false), |entity| {
                     let sinking = entity.sinking.is_active();
                     let admitted = entity.locomotor.as_ref().and_then(|locomotor| {
-                        (!sinking && !entity.is_falling_down() && !entity.lifecycle.in_limbo)
+                        (!sinking && !entity.is_falling_down() && !entity.lifecycle.in_limbo())
                             .then(|| locomotor.active_kind())
                     });
                     (admitted, sinking)
@@ -401,12 +401,19 @@ impl Simulation {
         });
         let teleport_relocating = teleport_armed && !teleport_reached;
         if teleport_relocating {
-            // 0x007193C7: the Techno detach sweep drops the locks aimed at
-            // the owner; 0x00719442: the departure WarpOut at its Location.
-            teleport_movement::release_incoming_target_locks(
-                &mut sim.substrate.entities,
-                stable_id,
-            );
+            // `0x007193C7`: the detach sweep (`0x0070D4A0`) with the owner,
+            // so every Techno aiming at it restores its mission and takes the
+            // class NULL target setter.
+            //
+            // RESIDUAL: the bullet sweep after it (`0x007193CC..0x007193F4`)
+            // retargets every live bullet aimed at the owner (+0x10C) to the
+            // cell the owner leaves (`0x00468430`; NULL for an airborne
+            // owner). VERA's projectiles keep homing on the owner. Trigger: a
+            // shot in flight at a Chrono Miner, Legionnaire, Commando or Ivan
+            // the frame it warps. Effect: the shot follows it to the
+            // destination instead of landing on the old cell.
+            sim.stop_all_targeting_on_detach(stable_id, rules, overlay_registry, ctx.effects);
+            // `0x00719442`: the departure WarpOut at its Location.
             if let Some(rules) = rules {
                 sim.teleport_warp_out(stable_id, rules);
             }
@@ -665,7 +672,7 @@ impl Simulation {
                         .substrate
                         .entities
                         .get(id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                        .is_some_and(|entity| entity.lifecycle.object_alive())
                 {
                     pending_movement.record_native_track(
                         movement::track_process::TrackInvocation::after_process_movement(
@@ -681,7 +688,7 @@ impl Simulation {
                     sim.substrate
                         .entities
                         .get(invocation.entity_id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                        .is_some_and(|entity| entity.lifecycle.object_alive())
                 })
             else {
                 break;
@@ -810,7 +817,7 @@ impl Simulation {
         // successful finalization clears the payload but must still skip
         // every ordinary locomotor tail and the second mission checkpoint.
         let tube_active_at_entry = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
-            !entity.dying
+            !entity.death.is_dying()
                 && matches!(
                     entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
@@ -834,18 +841,18 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(stable_id)
-                .is_none_or(|entity| entity.dying)
+                .is_none_or(|entity| entity.death.is_dying())
         {
             outcome.destroyed_structure = true;
         }
         if sim.substrate.entities.get(stable_id).is_none_or(|entity| {
-            entity.dying
+            entity.death.is_dying()
                 || (!tube_active_at_entry
                     && matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                     )
-                    && !entity.lifecycle.object_alive)
+                    && !entity.lifecycle.object_alive())
         }) {
             // Foot4DA53E..548 reloads Object+90 after TechnoAI and returns
             // before locomotor Process when false. Health and the Rust dying
@@ -930,7 +937,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(stable_id)
-                .is_none_or(|e| e.dying || !e.lifecycle.object_alive)
+                .is_none_or(|e| e.death.is_dying() || !e.lifecycle.object_alive())
         {
             return Ok(outcome);
         }

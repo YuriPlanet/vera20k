@@ -597,7 +597,7 @@ impl Simulation {
             //4FC7C3/4FC857/4FC907: typed cleanup excludes limbo, not dead
             //or unmarked objects. Building RTTI is6; other Technos use the
             //production type's native Naval read, even Aircraft/Infantry.
-            if entity.lifecycle.in_limbo {
+            if entity.lifecycle.in_limbo() {
                 return false;
             }
             let building = entity.category() == crate::map::entities::EntityCategory::Structure;

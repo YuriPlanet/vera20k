@@ -120,7 +120,7 @@ pub(crate) fn hunt_deploys(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     };
     deploys_into(sim, entity, rules).is_some_and(|yard| {
         yard.build_const_eligible
-            || entity.attack_target.is_some()
+            || entity.attack_target.target().is_some()
             || sim.owner_is_human(entity.owner())
     })
 }
@@ -381,7 +381,12 @@ pub(crate) fn mission_unload(
 /// pending deploy moves to state 2; otherwise a computer house in a nonzero
 /// game mode hunts and everyone else guards.
 pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64) {
-    if let Some(e) = sim.substrate.entities.get(id).filter(|e| !e.dying) {
+    if let Some(e) = sim
+        .substrate
+        .entities
+        .get(id)
+        .filter(|e| !e.death.is_dying())
+    {
         if e.mcv_deploy_pending {
             sim.substrate
                 .entities
@@ -429,7 +434,7 @@ pub(crate) fn per_cell_process(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|e| !e.dying && e.mcv_deploy_pending)
+        .is_some_and(|e| !e.death.is_dying() && e.mcv_deploy_pending)
     {
         sim.deploy_mcv(id, rules, registry, effects);
     }

@@ -4,7 +4,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::state::MissionTestFixture;
@@ -25,7 +25,7 @@ fn unit(id: u64, name: &str, cell: (u16, u16), sub: (i32, i32)) -> GameEntity {
     unit.set_category_for_test(EntityCategory::Unit);
     unit.position.sub_x = SimFixed::from_num(sub.0);
     unit.position.sub_y = SimFixed::from_num(sub.1);
-    unit.lifecycle.in_limbo = false;
+    unit.lifecycle.set_in_limbo_for_test(false);
     unit
 }
 
@@ -74,10 +74,10 @@ fn world(input: &Value, facing: u16) -> (Simulation, RuleSet) {
     let mut actor = unit(ACTOR, "KIROV", (10, 10), (128, 128));
     let target = target(input);
     if input["target"] != false {
-        actor.attack_target = Some(match target {
-            TargetKind::Entity(id) => AttackTarget::new(id),
-            TargetKind::Cell(rx, ry) => AttackTarget::for_cell(rx, ry),
-        });
+        actor.attack_target.set_for_test(Some(match target {
+            TargetKind::Entity(id) => TargetKind::Entity(id),
+            TargetKind::Cell(rx, ry) => TargetKind::Cell(rx, ry),
+        }));
     }
     actor.navigation.nav_com = match input["nav"].as_str().unwrap_or("none") {
         "none" => None,
@@ -274,7 +274,7 @@ fn stop_clears_an_attacking_balloons_destination() {
         ));
         let actor = sim.substrate.entities.get(ACTOR).unwrap();
         assert_eq!(actor.navigation.nav_com, None, "balloon {balloon}");
-        assert!(actor.attack_target.is_none());
+        assert!(actor.attack_target.target().is_none());
         let attack = MissionId::from_known(crate::sim::mission::MissionType::Attack);
         let guard = MissionId::from_known(crate::sim::mission::MissionType::Guard);
         assert_eq!(

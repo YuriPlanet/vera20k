@@ -13,8 +13,8 @@
 //! whichever re-probing miner wins a freed slot docks next (V3).
 //!
 //! The refinery handshake has one record, the radio state on the two objects:
-//! the refinery's `GameEntity::radio_contacts` and the miner's
-//! `dock_entered_with`. The miner FSM uses [`radio::transmit`]. Retasking uses
+//! the refinery's `GameEntity::radio_contacts` and the miner's tether
+//! (`GameEntity::tether`, `TechnoClass+0x418`). The miner FSM uses [`radio::transmit`]. Retasking uses
 //! the shared mission event owner; refinery release uses
 //! the functions here on that same bus. (Other mechanisms write
 //! `radio_contacts` for their own links, e.g. a factory exit; none of them
@@ -38,7 +38,7 @@ pub(crate) fn has_contact(sim: &Simulation, refinery_sid: u64, miner_sid: u64) -
 }
 
 /// BREAK over the bus — drops the contact on both ends and clears the miner's
-/// `dock_entered_with`.
+/// tether.
 pub(crate) fn break_contact(
     sim: &mut Simulation,
     miner_sid: u64,
@@ -79,10 +79,10 @@ pub(crate) mod test_support {
         sim.substrate
             .entities
             .get(miner_sid)
-            .is_some_and(|miner| miner.dock_entered_with == Some(refinery_sid))
+            .is_some_and(|miner| miner.tether.partner() == Some(refinery_sid))
     }
 
-    /// ENTER_DOCK (0x18) over the bus — sets the miner's `dock_entered_with`.
+    /// ENTER_DOCK (0x18) over the bus — sets the miner's tether.
     pub(crate) fn enter_dock(sim: &mut Simulation, miner_sid: u64, refinery_sid: u64) {
         let _ = radio::transmit(
             sim,

@@ -1636,7 +1636,7 @@ mod tests {
             .get_mut(1)
             .unwrap()
             .lifecycle
-            .in_limbo = true;
+            .set_in_limbo_for_test(true);
         (sim, rules)
     }
 
@@ -2059,7 +2059,7 @@ mod tests {
             5,
             category == EntityCategory::Unit,
         );
-        ge.lifecycle.in_limbo = false;
+        ge.lifecycle.set_in_limbo_for_test(false);
         if category == EntityCategory::Unit {
             // A live Drive mover: the depot's class setter and the Process
             // corridor need its locomotor.

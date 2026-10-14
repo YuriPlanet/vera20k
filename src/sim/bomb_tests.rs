@@ -454,8 +454,9 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
                     .into_iter()
                     .flatten()
                     .any(|listed| listed.as_u64() == Some(n as u64));
-            entity.lifecycle.in_limbo =
-                techno["in_limbo"].as_bool() == Some(true) || unlisted_detector;
+            entity.lifecycle.set_in_limbo_for_test(
+                techno["in_limbo"].as_bool() == Some(true) || unlisted_detector,
+            );
             id
         })
         .collect();
@@ -773,7 +774,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
         .expect("the stock shot attaches a bomb");
     assert_eq!(bomb(&sim, tank).unwrap().planter, Some(ivan));
     assert!(
-        entity(&sim, ivan).attack_target.is_none(),
+        entity(&sim, ivan).attack_target.target().is_none(),
         "FireAt must clear the FireOnce target in the attach frame"
     );
 
@@ -791,7 +792,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
     // gameplay after aligning that unrelated owner.
     restored.scenario_rng = sim.scenario_rng.clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
-    assert!(entity(&restored, ivan).attack_target.is_none());
+    assert!(entity(&restored, ivan).attack_target.target().is_none());
     assert_eq!(bomb(&restored, tank), bomb(&sim, tank));
     assert_eq!(restored.bomb_carriers(), sim.bomb_carriers());
 
@@ -800,7 +801,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
     run_until(&mut sim, rules, &grid, 200, |sim| bomb(sim, next).is_some())
         .expect("Ivan accepts a subsequent explicit attack");
     assert_eq!(bomb(&sim, next).unwrap().planter, Some(ivan));
-    assert!(entity(&sim, ivan).attack_target.is_none());
+    assert!(entity(&sim, ivan).attack_target.target().is_none());
 }
 
 /// The other stock one-shot bomb route uses the same FireAt tail; defusing
@@ -834,7 +835,7 @@ fn retail_fire_once_defuse_releases_target_and_carrier() {
         .expect("the stock kit defuses the friendly tank");
     assert_eq!(entity(&sim, tank).health.current(), health);
     assert!(!sim.bomb_carriers().contains(&tank));
-    assert!(entity(&sim, engineer).attack_target.is_none());
+    assert!(entity(&sim, engineer).attack_target.target().is_none());
 }
 
 /// A normal retail weapon must keep attacking its surviving target.
@@ -855,7 +856,7 @@ fn retail_non_fire_once_shot_retains_target() {
     })
     .expect("the stock GI fires");
     assert_eq!(
-        entity(&sim, gi).attack_target.as_ref().unwrap().target,
+        entity(&sim, gi).attack_target.target().unwrap(),
         crate::sim::combat::TargetKind::Entity(tank)
     );
 }
@@ -876,7 +877,7 @@ fn the_fuse_waits_while_the_carrier_is_in_limbo() {
         .get_mut(tank)
         .unwrap()
         .lifecycle
-        .in_limbo = true;
+        .set_in_limbo_for_test(true);
     sim.bomb_fuse_step(
         tank,
         &rules,
@@ -889,7 +890,7 @@ fn the_fuse_waits_while_the_carrier_is_in_limbo() {
         .get_mut(tank)
         .unwrap()
         .lifecycle
-        .in_limbo = false;
+        .set_in_limbo_for_test(false);
     sim.bomb_fuse_step(
         tank,
         &rules,
@@ -1277,7 +1278,7 @@ fn the_ticking_loop_follows_the_carrier() {
         .get_mut(tank)
         .unwrap()
         .lifecycle
-        .in_limbo = true;
+        .set_in_limbo_for_test(true);
     assert_eq!(
         sim.looping_sound_owner_coord(owner),
         None,

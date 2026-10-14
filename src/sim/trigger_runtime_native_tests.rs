@@ -1923,7 +1923,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         5,
         false,
     );
-    entity.lifecycle.in_limbo = true;
+    entity.lifecycle.set_in_limbo_for_test(true);
     sim.substrate.entities.insert(entity);
     sim.replace_trigger_tag_attachment(TagAttachment::Object(object), Some(tag));
     let cell = sim.trigger_cell_identity((50, 60));
@@ -2874,7 +2874,7 @@ fn history_state(
                     .substrate
                     .entities
                     .get(id)
-                    .map(|entity| i32::from(entity.lifecycle.object_alive)))
+                    .map(|entity| i32::from(entity.lifecycle.object_alive())))
                 .collect::<Vec<_>>()
         );
     }
@@ -3004,7 +3004,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
                                     5,
                                     false,
                                 );
-                            object.lifecycle.in_limbo = true;
+                            object.lifecycle.set_in_limbo_for_test(true);
                             object.in_logic_vector = false;
                             sim.substrate.entities.insert(object);
                             objects.push(id);
@@ -3018,7 +3018,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
                             .get_mut(objects[integer(&args[1]) as usize])
                             .unwrap()
                             .lifecycle
-                            .object_alive = integer(&args[2]) != 0;
+                            .set_object_alive_for_test(integer(&args[2]) != 0);
                     }
                     "supply_pending" => {
                         sim.substrate.pending_delete.clear_for_test();

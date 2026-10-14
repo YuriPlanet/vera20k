@@ -560,8 +560,8 @@ pub(crate) fn build_occupant_pip_instances(
 
         for i in 0..count {
             // Determine pip frame: occupied slot → occupant's OccupyPip, empty → frame 6.
-            let frame_index: u32 = if (i as usize) < cargo.passengers.len() {
-                let pax_id = cargo.passengers[i as usize];
+            let frame_index: u32 = if (i as usize) < cargo.passengers().len() {
+                let pax_id = cargo.passengers()[i as usize];
                 sim.entities()
                     .get(pax_id)
                     .and_then(|pax| {
@@ -696,7 +696,7 @@ pub(crate) fn build_bomb_clock_instances(
         let Some(bomb) = entity.bomb else {
             continue;
         };
-        if entity.lifecycle.in_limbo
+        if entity.lifecycle.in_limbo()
             || entity.passenger_role.is_inside_transport()
             || entity.sinking.is_active()
         {
@@ -796,7 +796,7 @@ pub(crate) fn build_repair_wrench_instances(
     for entity in sim.entities().values() {
         if entity.category() != EntityCategory::Structure
             || !entity.repairing
-            || entity.lifecycle.in_limbo
+            || entity.lifecycle.in_limbo()
         {
             continue;
         }

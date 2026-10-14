@@ -514,7 +514,14 @@ fn retail_superweapon_construction_survives_revalidation() {
             super::PRODUCTION_STEPS,
             "{building}: reaches placement readiness"
         );
-        assert!(sim.substrate.entities.get(head).unwrap().lifecycle.in_limbo);
+        assert!(
+            sim.substrate
+                .entities
+                .get(head)
+                .unwrap()
+                .lifecycle
+                .in_limbo()
+        );
         assert!(
             !enqueue_by_type(
                 &mut sim,
@@ -545,7 +552,12 @@ fn retail_superweapon_construction_survives_revalidation() {
         );
         sim.advance_tick(&[place], Some(rules), None, None, 67);
         assert!(
-            !sim.substrate.entities.get(head).unwrap().lifecycle.in_limbo,
+            !sim.substrate
+                .entities
+                .get(head)
+                .unwrap()
+                .lifecycle
+                .in_limbo(),
             "{building}: the completed object is placed without replacement"
         );
         assert!(sim.production.factories.view(owner, category).is_none());
@@ -684,7 +696,7 @@ pub(super) fn children(sim: &Simulation, parent: u64) -> Vec<u64> {
             .entities
             .get(id)
             .expect("held manager child remains represented");
-        assert!(child.lifecycle.in_limbo && !child.lifecycle.cell_marked);
+        assert!(child.lifecycle.in_limbo() && !child.lifecycle.cell_marked);
         assert!(child.spawn_owner_id == Some(parent) || child.slave.owner() == Some(parent));
     }
     ids
@@ -863,7 +875,7 @@ fn a_produced_slave_miner_hunts_instead_of_taking_the_rally_point() {
             &mut sim, &rules, None
         ));
         let entity = sim.substrate.entities.get(produced).unwrap();
-        assert!(!entity.lifecycle.in_limbo, "{unit_type} delivered");
+        assert!(!entity.lifecycle.in_limbo(), "{unit_type} delivered");
         assert_eq!(
             crate::sim::movement::motion_query::is_moving(&entity) == Some(true),
             !hunts,
@@ -914,7 +926,7 @@ fn produced_infantry_retains_its_barracks_rally_until_exit_handoff() {
         &mut sim, &rules, None
     ));
     let entity = sim.substrate.entities.get(produced).unwrap();
-    assert!(!entity.lifecycle.in_limbo, "E1 delivered");
+    assert!(!entity.lifecycle.in_limbo(), "E1 delivered");
     // Nonzero rally: TechnoUnlimbo's InfIdle establishes Nav, then Exit
     // saves it back to Archive444CE7 before assigning the exit444D11.
     // A stock NavNULL prior follows the separate skip arm. FootEnterIdle
@@ -929,7 +941,7 @@ fn produced_infantry_retains_its_barracks_rally_until_exit_handoff() {
         Some(crate::sim::components::NavTargetRef::cell(30, 30))
     );
     assert!(entity.has_live_contact_with(2));
-    assert_eq!(entity.dock_entered_with, Some(2));
+    assert_eq!(entity.tether.partner(), Some(2));
 }
 
 /// `TechnoClass::ChangeOwner @ 0x007014A0` clears the ArchiveTarget
@@ -1184,7 +1196,7 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
     assert_eq!(factory.progress, super::PRODUCTION_STEPS);
     assert_eq!(factory.queue.len(), 1);
     let object = sim.substrate.entities.get(held).unwrap();
-    assert!(object.lifecycle.in_limbo && !object.lifecycle.cell_marked);
+    assert!(object.lifecycle.in_limbo() && !object.lifecycle.cell_marked);
     assert_eq!(sim.houses[&owner].economy.credits(), credits);
     assert_eq!(sim.substrate.next_stable_object_id, allocated);
     assert_eq!(
@@ -1349,7 +1361,14 @@ fn missing_aircraft_producer_retains_completed_aircraft_and_queued_successor() {
     assert!(factory.complete_object().is_some());
     assert_eq!(factory.progress, super::PRODUCTION_STEPS);
     assert_eq!(factory.queue.len(), 1);
-    assert!(sim.substrate.entities.get(held).unwrap().lifecycle.in_limbo);
+    assert!(
+        sim.substrate
+            .entities
+            .get(held)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
     assert_eq!(sim.houses[&owner].economy.credits(), credits);
     assert_eq!(sim.substrate.next_stable_object_id, allocated);
     assert_eq!(
@@ -1598,16 +1617,16 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
     ));
     assert!(sim.pending_command_snapshot().is_empty());
     let first_entity = sim.substrate.entities.get(first).unwrap();
-    assert!(!first_entity.lifecycle.in_limbo && first_entity.in_logic_vector);
+    assert!(!first_entity.lifecycle.in_limbo() && first_entity.in_logic_vector);
     let first_contacts = first_entity.radio_contacts.clone();
     assert_eq!(first_contacts.slot(0), Some(producer));
-    assert_eq!(first_entity.dock_entered_with, Some(producer));
+    assert_eq!(first_entity.tether.partner(), Some(producer));
     let producer_entity = sim.substrate.entities.get(producer).unwrap();
     let producer_contacts = producer_entity.radio_contacts.clone();
     assert_eq!(producer_contacts.capacity(), 1);
     assert_eq!(producer_contacts.slot(0), Some(first));
     assert_eq!(producer_contacts.first_free(), None);
-    assert_eq!(producer_entity.dock_entered_with, Some(first));
+    assert_eq!(producer_entity.tether.partner(), Some(first));
     assert!(
         sim.production
             .factories
@@ -1665,7 +1684,7 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
             .get(refused)
             .unwrap()
             .lifecycle
-            .in_limbo
+            .in_limbo()
     );
     let completed = sim.production.factories.view(owner, category).unwrap();
     assert!(completed.complete_object().is_some());
@@ -1712,14 +1731,14 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
         "exactly one FIFO successor constructs"
     );
     let successor_entity = sim.substrate.entities.get(successor).unwrap();
-    assert!(successor_entity.lifecycle.in_limbo && !successor_entity.lifecycle.cell_marked);
+    assert!(successor_entity.lifecycle.in_limbo() && !successor_entity.lifecycle.cell_marked);
     assert!(!successor_entity.in_logic_vector);
     let first_entity = sim.substrate.entities.get(first).unwrap();
     assert_eq!(first_entity.radio_contacts, first_contacts);
-    assert_eq!(first_entity.dock_entered_with, Some(producer));
+    assert_eq!(first_entity.tether.partner(), Some(producer));
     let producer_entity = sim.substrate.entities.get(producer).unwrap();
     assert_eq!(producer_entity.radio_contacts, producer_contacts);
-    assert_eq!(producer_entity.dock_entered_with, Some(first));
+    assert_eq!(producer_entity.tether.partner(), Some(first));
     assert!(
         sim.production
             .factories

@@ -420,7 +420,10 @@ fn capture_building_command_accepts_collapsed_noncapturable_hut_for_every_relati
             Some(NavTargetRef::building(cabhut)),
             "relation={relation}"
         );
-        assert!(actor.attack_target.is_none(), "native queue target is null");
+        assert!(
+            actor.attack_target.target().is_none(),
+            "native queue target is null"
+        );
         assert_eq!(
             (
                 sim.scenario_rng.logical_state(),
@@ -719,7 +722,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
         cabhut_max_hp,
         "hut HP unchanged: BridgeRepairHut branch must skip damage"
     );
-    assert!(!hut.dying, "hut must not be marked dying");
+    assert!(!hut.death.is_dying(), "hut must not be marked dying");
     assert!(
         hut.pending_c4_detonation.is_none(),
         "CABHUT pending C4 marker must clear after bridge dispatch"
@@ -827,7 +830,7 @@ fn c4_on_cabhut_without_bridge_clears_pending_marker() {
 
     let hut = sim.substrate.entities.get(cabhut).unwrap();
     assert_eq!(hut.health.current(), cabhut_max_hp);
-    assert!(!hut.dying);
+    assert!(!hut.death.is_dying());
     assert!(hut.pending_c4_detonation.is_none());
     assert!(
         !bridge_state_changed_seen,
@@ -865,7 +868,7 @@ fn c4_on_invulnerable_cabhut_still_dispatches_bridge_and_clears_pending() {
 
     let hut = sim.substrate.entities.get(cabhut).unwrap();
     assert_eq!(hut.health.current(), cabhut_max_hp);
-    assert!(!hut.dying);
+    assert!(!hut.death.is_dying());
     assert!(hut.pending_c4_detonation.is_none());
     assert!(bridge_state_changed_seen);
     for y in [14, 15, 16] {
@@ -942,7 +945,7 @@ fn c4_on_cabhut_low_overlay_collapses_low_bridge() {
     }
     let hut = sim.substrate.entities.get(cabhut).unwrap();
     assert_eq!(hut.health.current(), hut_hp);
-    assert!(!hut.dying);
+    assert!(!hut.death.is_dying());
     assert!(hut.pending_c4_detonation.is_none());
     assert!(changed);
     for y in [14, 15, 16] {

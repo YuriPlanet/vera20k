@@ -1152,7 +1152,7 @@ pub(crate) fn map_wall_owner_candidate_from_building(
         world_z: coords.z,
         foundation_width,
         foundation_height,
-        object_alive: entity.lifecycle.object_alive,
+        object_alive: entity.lifecycle.object_alive(),
         cell_marked: entity.lifecycle.cell_marked,
         house_wall_owner,
     }

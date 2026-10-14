@@ -185,7 +185,7 @@ impl Simulation {
         let owner = unit.owner();
         if unit.category() != EntityCategory::Unit
             || self.team_script_vm.team_for_member(id).is_some()
-            || unit.dock_entered_with.is_some()
+            || unit.tether.partner().is_some()
             || crate::sim::combat::combat_weapon::is_ally_by_object(
                 Some(&self.house_alliances),
                 &self.interner,

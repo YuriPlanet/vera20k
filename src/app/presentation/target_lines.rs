@@ -371,14 +371,14 @@ fn selected_action_line_for_entity(
         return None;
     }
     let project = |x, y, z| crate::util::lepton::absolute_leptons_to_screen(x, y, z).into();
-    if let Some(attack) = &entity.attack_target {
+    if let Some(attack) = entity.attack_target.target() {
         let rules = rules?;
         let start = crate::sim::combat::fire_coord::turret_pivot_coordinate(sim, rules, entity)?;
         let end = crate::sim::combat::aim_coord::led_target_coordinate(
             sim,
             rules,
             entity.stable_id(),
-            Some(attack.target),
+            Some(attack),
         );
         return Some(SelectedActionLine {
             // Foot4DC0C6/4DC0DF: +300 pivot and70BCB0's own TarCom+58.
@@ -567,7 +567,7 @@ mod tests {
     use crate::rules::house_colors::HouseColorIndex;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::combat::AttackTarget;
+    use crate::sim::combat::TargetKind;
     use crate::sim::game_entity::GameEntity;
 
     #[test]
@@ -621,7 +621,7 @@ mod tests {
         sim.session.game_mode_nonzero = true;
         sim.session.current_house = Some(unit.owner());
         unit.navigation.nav_com = Some(NavTargetRef::cell(25, 25));
-        unit.attack_target = Some(AttackTarget::new(2));
+        unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         let mut target = GameEntity::test_default(2, "HTNK", "Soviet", 14, 10);
         target.set_owner_for_test(sim.interner.intern("Soviet"));
         target.set_type_ref_for_test(sim.interner.intern("HTNK"));

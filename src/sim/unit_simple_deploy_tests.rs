@@ -316,22 +316,20 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
     ] {
         let (mut sim, rules, id) = fixture(&json!({}));
         match case {
-            "not_alive" => {
-                sim.substrate
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .lifecycle
-                    .object_alive = false
-            }
-            "limbo" => {
-                sim.substrate
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .lifecycle
-                    .in_limbo = true
-            }
+            "not_alive" => sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .lifecycle
+                .set_object_alive_for_test(false),
+            "limbo" => sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .lifecycle
+                .set_in_limbo_for_test(true),
             "tethered" => {
                 let partner = sim
                     .spawn_object("SCHP", "Russians", 12, 10, 64, &rules)
@@ -340,7 +338,8 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
                     .entities
                     .get_mut(id)
                     .unwrap()
-                    .dock_entered_with = Some(partner);
+                    .tether
+                    .set_for_test(Some(partner));
             }
             "construction" | "selling" => {
                 let mission = if case == "construction" {
@@ -354,9 +353,15 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
             "zero_health_crashing" => {
                 let entity = sim.substrate.entities.get_mut(id).unwrap();
                 entity.health.set_for_test(0);
-                entity.crashing = true;
+                entity.crash.set_crashing_for_test(true);
             }
-            "dying" => sim.substrate.entities.get_mut(id).unwrap().dying = true,
+            "dying" => sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .death
+                .set_dying_for_test(true),
             _ => unreachable!(),
         }
         let before = sim.state_hash();

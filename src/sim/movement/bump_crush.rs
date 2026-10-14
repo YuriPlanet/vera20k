@@ -166,7 +166,7 @@ pub(crate) fn blocker_plane_source(
     }
     // Dying corpses are off the occupancy grid: don't let them inflate the
     // A* dynamic-blocker neighbor costs.
-    if entity.dying || !entity.lifecycle.cell_marked {
+    if entity.death.is_dying() || !entity.lifecycle.cell_marked {
         return None;
     }
     if entity.passenger_role.is_inside_transport()
@@ -1105,7 +1105,7 @@ mod tests {
         let mut entities = EntityStore::new();
         let mut blocker = vehicle(1, 2, 2);
         blocker.on_bridge = true;
-        blocker.lifecycle.in_limbo = false;
+        blocker.lifecycle.set_in_limbo_for_test(false);
         blocker.lifecycle.cell_marked = true;
         entities.insert(blocker);
         let interner = crate::sim::intern::StringInterner::new();
@@ -1175,7 +1175,7 @@ mod tests {
     fn blocker_neighbor_counts_building_uses_expanded_foundation_rectangle_once() {
         let mut entities = EntityStore::new();
         let mut building = structure(1, 2, 2);
-        building.lifecycle.in_limbo = false;
+        building.lifecycle.set_in_limbo_for_test(false);
         building.lifecycle.cell_marked = true;
         entities.insert(building);
         let interner = crate::sim::intern::StringInterner::new();
@@ -1311,7 +1311,7 @@ mod tests {
     fn gsi_04_15_detached_tube_mover_is_absent_from_the_blocker_plane() {
         let mut entities = EntityStore::new();
         let mut mover = GameEntity::test_default(7, "MTNK", "Americans", 2, 2);
-        mover.lifecycle.in_limbo = false;
+        mover.lifecycle.set_in_limbo_for_test(false);
         mover.lifecycle.cell_marked = false;
         entities.insert(mover);
         let interner = crate::sim::intern::test_interner();

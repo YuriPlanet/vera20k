@@ -336,7 +336,7 @@ mod tests {
             .set_building_ready_latch(input["ready"].as_u64().unwrap_or(0) as u8);
         // The native fixture supplies an already admitted cell-list object;
         // class construction/reveal is outside this comparison boundary.
-        gate.lifecycle.in_limbo = false;
+        gate.lifecycle.set_in_limbo_for_test(false);
         gate.lifecycle.cell_marked = true;
         gate.in_playfield = true;
         sim.substrate.entities.insert(gate);

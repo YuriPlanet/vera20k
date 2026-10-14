@@ -117,7 +117,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
             6,
             true,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         entity.in_playfield = true;
         entity.locomotor = Some(LocomotorState::from_object_type(obj, 0));
@@ -242,7 +242,7 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
 fn assert_state(sim: &Simulation, state: &Value, label: &str) {
     use crate::sim::combat::TargetKind;
     let source = sim.substrate.entities.get(1).unwrap();
-    let name = match source.attack_target.as_ref().map(|a| a.target) {
+    let name = match source.attack_target.target() {
         None => "null",
         Some(TargetKind::Entity(1)) => "source",
         Some(TargetKind::Entity(2)) => "target",
@@ -497,9 +497,12 @@ fn assert_retail_target_state_restored(live: &Simulation, restored: &Simulation,
             );
             assert_eq!(before.estimated_health, after.estimated_health);
             assert_eq!(before.health.current(), after.health.current());
-            assert_eq!(before.lifecycle.object_alive, after.lifecycle.object_alive);
-            assert_eq!(before.lifecycle.in_limbo, after.lifecycle.in_limbo);
-            assert_eq!(before.dying, after.dying);
+            assert_eq!(
+                before.lifecycle.object_alive(),
+                after.lifecycle.object_alive()
+            );
+            assert_eq!(before.lifecycle.in_limbo(), after.lifecycle.in_limbo());
+            assert_eq!(before.death.is_dying(), after.death.is_dying());
         }
     }
     for xy in [(64, 69), (66, 69)] {
@@ -611,6 +614,7 @@ pub(super) fn retail_hills_collapsed_scene(
                 .get(source)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_none()
         );
         assert!(
@@ -689,6 +693,7 @@ pub(super) fn retail_hills_collapsed_scene(
                 .get(source)
                 .unwrap()
                 .attack_target
+                .target()
                 .is_none()
         );
         std::mem::swap(&mut runtime.simulation, &mut first);

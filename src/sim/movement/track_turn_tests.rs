@@ -122,8 +122,8 @@ fn fixture(kind: LocomotorKind) -> Simulation {
     let mut entity = GameEntity::test_default(1, "TURN", "Americans", 8, 8);
     entity.set_type_ref_for_test(sim.intern("TURN"));
     entity.set_owner_for_test(sim.intern("Americans"));
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     match kind {
@@ -720,8 +720,8 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     let mut blocker = GameEntity::test_default(99, "TURN", "Americans", 9, 8);
                     blocker.set_type_ref_for_test(sim.intern("TURN"));
                     blocker.set_owner_for_test(sim.intern("Americans"));
-                    blocker.lifecycle.object_alive = true;
-                    blocker.lifecycle.in_limbo = false;
+                    blocker.lifecycle.set_object_alive_for_test(true);
+                    blocker.lifecycle.set_in_limbo_for_test(false);
                     blocker.lifecycle.cell_marked = true;
                     sim.substrate.entities.insert(blocker);
                     sim.substrate.occupancy =
@@ -976,8 +976,8 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.sub_cell = Some(0);
                         victim.position = position;
                         victim.crushable = true;
-                        victim.lifecycle.object_alive = true;
-                        victim.lifecycle.in_limbo = false;
+                        victim.lifecycle.set_object_alive_for_test(true);
+                        victim.lifecycle.set_in_limbo_for_test(false);
                         victim.lifecycle.cell_marked = true;
                         victim.invulnerability = Some(InvulnerabilityState::new(
                             crate::sim::timer::CdTimer::started((frame - age) as i32, 30),
@@ -997,7 +997,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                             .get(2)
                             .unwrap()
                             .lifecycle
-                            .object_alive,
+                            .object_alive(),
                         "protected: {context}"
                     );
                     assert!(
@@ -1006,7 +1006,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                             .get(3)
                             .unwrap()
                             .lifecycle
-                            .object_alive,
+                            .object_alive(),
                         "expired: {context}"
                     );
                     assert!(

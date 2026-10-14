@@ -770,7 +770,7 @@ mod tests {
             5,
             true,
         );
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         entity.locomotor = Some(LocomotorState::for_test_kind(
             crate::rules::locomotor_type::LocomotorKind::Drive,
@@ -1170,14 +1170,11 @@ mod tests {
         });
         let mut cargo = PassengerCargo::new(5, 2);
         assert!(cargo.board(2, 1));
-        transport.passenger_role = PassengerRole::Transport { cargo };
+        transport.passenger_role = PassengerRole::transport(cargo);
         let mut rider = unit_of(2, "E1");
         rider.set_category_for_test(EntityCategory::Infantry);
         rider.position.rx = 3;
-        rider.passenger_role = PassengerRole::Inside {
-            transport_id: 1,
-            open_topped: true,
-        };
+        rider.passenger_role = PassengerRole::inside_for_test(1, true);
         let mut entities = EntityStore::new();
         entities.insert(transport);
         entities.insert(rider);

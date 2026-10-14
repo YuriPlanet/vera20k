@@ -124,8 +124,12 @@ fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
     let seen = run_cycle(&mut sim, &rules, orca, airfield);
     assert_eq!(seen.guarding_frames, 300, "the aircraft reloads and guards");
 
-    sim.substrate.entities.get_mut(orca).unwrap().attack_target =
-        Some(crate::sim::combat::AttackTarget::new(victim));
+    sim.substrate
+        .entities
+        .get_mut(orca)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(victim)));
     let mut relaunched = false;
     for _ in 0..600 {
         let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
@@ -172,7 +176,10 @@ fn a_guarding_aircraft_scans_passively_unless_its_type_may_not_and_takes_nothing
             let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
             let entity = sim.substrate.entities.get(orca).expect("aircraft survives");
             assert_eq!(mission(&sim, orca), Some(MissionType::Guard));
-            assert!(entity.attack_target.is_none(), "the scan takes nothing");
+            assert!(
+                entity.attack_target.target().is_none(),
+                "the scan takes nothing"
+            );
             scans.insert(entity.last_target_scan_frame);
         }
         // Each scan re-arms the timer for the Guard delay plus RandomRanged(0, 2).

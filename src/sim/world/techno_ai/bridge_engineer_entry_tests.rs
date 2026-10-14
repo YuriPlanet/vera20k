@@ -395,7 +395,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
             .unwrap()
             .bridge_facts
             .has_structural_bridge();
-        if repaired && actor.is_none_or(|e| !e.lifecycle.object_alive) {
+        if repaired && actor.is_none_or(|e| !e.lifecycle.object_alive()) {
             break;
         }
     }
@@ -415,7 +415,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
             .simulation
             .entities()
             .get(engineer)
-            .is_none_or(|e| !e.lifecycle.object_alive),
+            .is_none_or(|e| !e.lifecycle.object_alive()),
         "repair consumes the Engineer"
     );
     assert_repaired_hills_authorities(&runtime.simulation, engineer, hut);
@@ -501,7 +501,7 @@ fn assert_repaired_hills_authorities(sim: &Simulation, engineer: u64, hut: u64) 
         sim.entities().get(engineer).is_none(),
         "Engineer retired after repair"
     );
-    assert!(sim.entities().get(hut).unwrap().lifecycle.object_alive);
+    assert!(sim.entities().get(hut).unwrap().lifecycle.object_alive());
     for at in [(66, 76), (67, 75), (68, 74)] {
         assert!(
             sim.cell_objects(at, crate::sim::movement::locomotor::MovementLayer::Ground)

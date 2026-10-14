@@ -37,8 +37,8 @@ fn fixture() -> (Simulation, RuleSet, MatchInputState) {
             5,
             false,
         );
-        entity.lifecycle.object_alive = true;
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_object_alive_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
         entity.selected = id != 2;
         sim.entities_mut().insert(entity);
     }

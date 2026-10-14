@@ -637,7 +637,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.lifecycle.in_limbo {
+        if entity.lifecycle.in_limbo() {
             return;
         }
         let eligible = entity.locomotor.as_ref().is_some_and(|locomotor| {

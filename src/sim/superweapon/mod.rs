@@ -909,8 +909,8 @@ fn owned_live_buildings(
         .filter_map(|&id| sim.substrate.entities.get(id))
         .filter(move |building| {
             building.category() == crate::map::entities::EntityCategory::Structure
-                && !building.dying
-                && !building.lifecycle.in_limbo
+                && !building.death.is_dying()
+                && !building.lifecycle.in_limbo()
                 && building.owner() == owner
         })
 }

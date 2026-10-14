@@ -81,8 +81,8 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
         false,
     );
     entity.estimated_health = EstimatedHealth::from_raw(health);
-    entity.lifecycle.object_alive = true;
-    entity.lifecycle.in_limbo = false;
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.cell_marked = true;
     entity.in_playfield = true;
     entity.building_art.set_actually_placed_for_test(true);
@@ -472,7 +472,9 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             input["queued"].as_i64().unwrap_or(-1) as i32,
         );
         provider.lifecycle.cell_marked = flag(input, "marked", true);
-        provider.lifecycle.in_limbo = flag(input, "limbo", false);
+        provider
+            .lifecycle
+            .set_in_limbo_for_test(flag(input, "limbo", false));
         let power = input["power"].as_array();
         let mut state = PowerState::default();
         state.total_output = power.map_or(101, |v| int(&v[0]));

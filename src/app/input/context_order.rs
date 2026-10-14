@@ -4239,7 +4239,7 @@ mod tests {
                             .get_mut(child)
                             .unwrap()
                             .lifecycle
-                            .in_limbo = native_slot["limbo"] == true;
+                            .set_in_limbo_for_test(native_slot["limbo"] == true);
                         Some(child)
                     } else {
                         None

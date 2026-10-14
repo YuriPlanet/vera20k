@@ -132,11 +132,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         );
         passenger.set_type_ref_for_test(sim.interner.intern("E1"));
         passenger.set_owner_for_test(houses[owner.as_u64().unwrap() as usize]);
-        passenger.passenger_role = PassengerRole::Inside {
-            transport_id: id,
-            open_topped: false,
-        };
-        passenger.lifecycle.in_limbo = true;
+        passenger.passenger_role = PassengerRole::inside_for_test(id, false);
+        passenger.lifecycle.set_in_limbo_for_test(true);
         passenger.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(
                 crate::rules::locomotor_type::LocomotorKind::Walk,
@@ -145,7 +142,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         cargo.add_occupant(passenger_id, 1);
         sim.substrate.entities.insert(passenger);
     }
-    building.passenger_role = PassengerRole::Transport { cargo };
+    building.passenger_role = PassengerRole::transport(cargo);
     sim.substrate.entities.insert(building);
     assert!(matches!(
         sim.reveal_entity_with_rules(id, &rules),
@@ -315,7 +312,7 @@ fn building_ai_caller_admission_matches_native_unwarped_gates() {
             .get_mut(id)
             .unwrap()
             .lifecycle
-            .object_alive = input["alive"].as_bool().unwrap();
+            .set_object_alive_for_test(input["alive"].as_bool().unwrap());
         rules.general.condition_red = -1.0; // no ejection or death dependency
         let old_owner = sim.substrate.entities.get(id).unwrap().owner();
         sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());

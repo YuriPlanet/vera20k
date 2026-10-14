@@ -2394,8 +2394,8 @@ mod tests {
         let mut entities = crate::sim::entity_store::EntityStore::new();
         let limbo = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Allies", 5, 5);
 
-        assert!(limbo.lifecycle.object_alive);
-        assert!(limbo.lifecycle.in_limbo);
+        assert!(limbo.lifecycle.object_alive());
+        assert!(limbo.lifecycle.in_limbo());
         assert!(!limbo.lifecycle.cell_marked);
         entities.insert(limbo);
 

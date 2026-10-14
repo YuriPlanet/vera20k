@@ -360,7 +360,7 @@ pub(super) fn build_radar_object_update(
     let visibility = if foundation.is_some() {
         RadarRegistrationVisibilityFacts::Building(RadarBuildingVisibilityFacts {
             type_invisible: effective_type_invisible,
-            in_limbo: entity.lifecycle.in_limbo,
+            in_limbo: entity.lifecycle.in_limbo(),
             owner_is_human_player,
             fresh_in_playfield,
             both_corners_shrouded,
@@ -376,8 +376,8 @@ pub(super) fn build_radar_object_update(
         RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
             type_invisible: effective_type_invisible,
             sinking: entity.sinking.is_active(),
-            object_alive: entity.lifecycle.object_alive,
-            in_limbo: entity.lifecycle.in_limbo,
+            object_alive: entity.lifecycle.object_alive(),
+            in_limbo: entity.lifecycle.in_limbo(),
             owner_is_human_player,
             fresh_in_playfield,
             shrouded,
@@ -544,7 +544,7 @@ mod tests {
         entity.set_type_ref_for_test(sim.interner.intern("TEST"));
         entity.set_owner_for_test(sim.interner.intern("Americans"));
         entity.set_category_for_test(EntityCategory::Unit);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
         let update = |sim: &crate::sim::world::Simulation| {
             build_radar_object_update(
@@ -565,7 +565,7 @@ mod tests {
         tracker.update_object(update(&sim), false);
         assert!(tracker.is_registered(id));
         sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
-        assert!(sim.entities().get(id).unwrap().lifecycle.object_alive);
+        assert!(sim.entities().get(id).unwrap().lifecycle.object_alive());
         tracker.update_object(update(&sim), false);
         assert!(
             !tracker.is_registered(id),
@@ -881,7 +881,7 @@ mod tests {
         let mut fog = FogState::default();
         fog.mark_visible_for_owner(local, 5, 5);
         let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", "Enemy", 5, 5);
-        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.set_in_limbo_for_test(false);
         let update = build_radar_object_update(
             &entity,
             &houses,

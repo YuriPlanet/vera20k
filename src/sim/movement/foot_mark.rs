@@ -149,7 +149,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.dock_entered_with.is_some())
+            .is_some_and(|entity| entity.tether.partner().is_some())
         {
             crate::sim::radio::transmit_to_contact(
                 self,
@@ -174,7 +174,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if entity.lifecycle.in_limbo || !entity.lifecycle.cell_marked {
+        if entity.lifecycle.in_limbo() || !entity.lifecycle.cell_marked {
             return false;
         }
         entity.lifecycle.cell_marked = false;
@@ -232,7 +232,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if entity.lifecycle.in_limbo || entity.lifecycle.cell_marked {
+        if entity.lifecycle.in_limbo() || entity.lifecycle.cell_marked {
             return false;
         }
         entity.lifecycle.cell_marked = true;
