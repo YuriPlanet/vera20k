@@ -226,7 +226,9 @@ pub(super) fn for_each_native_case(
             10,
             EntityCategory::Structure,
         );
-        building.foundation.clone_from(&object.foundation);
+        building
+            .type_facts
+            .set_foundation_for_test(object.foundation.clone());
         building
             .veterancy
             .set_rank_for_test((input["building_veterancy"].as_f64().unwrap() * 100.0) as u16);

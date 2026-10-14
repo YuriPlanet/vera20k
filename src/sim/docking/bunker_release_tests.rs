@@ -66,7 +66,9 @@ fn take_trace() -> Vec<Boundary> {
 fn release_fixture() -> Simulation {
     let mut sim = super::tests::installed_sim();
     let building = sim.substrate.entities.get_mut(2).unwrap();
-    building.foundation = "2x3".to_owned();
+    building
+        .type_facts
+        .set_foundation_for_test("2x3".to_owned());
     building.position.sub_x = SimFixed::from_num(64);
     building.position.sub_y = SimFixed::from_num(192);
     building.position.exact_z_leptons = Some(731);

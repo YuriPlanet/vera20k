@@ -1203,7 +1203,9 @@ fn getcoords_xy_is_the_location_or_a_buildings_foundation_centre() {
         ("", raw),
         ("not-a-native-foundation", raw),
     ] {
-        entity.foundation = foundation.to_string();
+        entity
+            .type_facts
+            .set_foundation_for_test(foundation.to_string());
         assert_eq!(
             ground_pose::object_center_xy(&entity),
             expected,

@@ -433,7 +433,9 @@ mod map_wall_owner_candidate_tests {
             ry,
             EntityCategory::Structure,
         );
-        entity.foundation = foundation.to_string();
+        entity
+            .type_facts
+            .set_foundation_for_test(foundation.to_string());
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.cell_marked = true;
         entity

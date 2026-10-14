@@ -512,13 +512,10 @@ pub(super) fn capability_cursor_for_hover(
         if let Some(entity) = entity
             && entity.category() == EntityCategory::Structure
         {
-            if let Some(obj) = obj
-                && obj.can_be_occupied
+            if super::transport_orders::unload_command(entity, obj, sim.session.current_house)
+                .is_some()
             {
-                let has_occupants = entity.passenger_role.cargo().is_some_and(|c| !c.is_empty());
-                if has_occupants {
-                    return CursorFeedbackKind::Deploy;
-                }
+                return CursorFeedbackKind::Deploy;
             }
             // Own occupied tank bunker self-hover → eject (deploy cursor).
             if entity.bunker_occupant.is_some() {

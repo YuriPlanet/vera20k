@@ -74,8 +74,8 @@
 //!   building (retail has none), or an open-topped rider whose Guard head
 //!   runs with the latch set.
 //! - Mission_Unload's eject clears the latch of a human house's passenger
-//!   (`0x0044DBEA`); VERA's absorbers do not eject on Unload
-//!   (`techno_ai::building_missions`), so nothing clears it there.
+//!   (`0x0044DBEA`); the absorber Unload path calls
+//!   [`Simulation::clear_human_absorber_seek_on_unload`].
 //! - A tank bunker entry runs through VERA's bunker adapter
 //!   ([`crate::sim::docking::bunker_link::begin_entry`]), as a player's
 //!   EnterBunker order does. In place of the destination (vt+0x480(bunker,
@@ -165,6 +165,13 @@ impl BuildingEntryLatches {
         self.should_enter_occupiable = false;
         self.should_enter_nearest_occupiable = false;
     }
+
+    /// `BuildingClass::Mission_Unload @ 0x0044DBEA` clears `+0x68F` only for
+    /// a human-controlled passenger owner after successful InfantryAbsorb
+    /// Unlimbo.
+    pub(crate) fn clear_absorber_seek(&mut self) {
+        self.should_enter_absorber = false;
+    }
 }
 
 /// EnterBioReactor's decision (`0x004DFB87..0x004DFC81`) over its walk:
@@ -221,6 +228,24 @@ fn garrison_seek_reissues(pick: u64, nav_com: Option<NavTargetRef>, mission: Mis
 }
 
 impl Simulation {
+    /// Bio Reactor Unload's `IsHuman` gate (`House+0x1EC` at `0x0044DBE6`) and
+    /// passenger latch clear. Computer-owned passengers retain the seek byte.
+    pub(crate) fn clear_human_absorber_seek_on_unload(&mut self, stable_id: u64) {
+        let Some(owner) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .map(GameEntity::owner)
+        else {
+            return;
+        };
+        if self.houses.get(&owner).is_some_and(|house| house.is_human)
+            && let Some(passenger) = self.substrate.entities.get_mut(stable_id)
+        {
+            passenger.building_entry.clear_absorber_seek();
+        }
+    }
+
     /// `FootClass::EnterBioReactor @ 0x004DFB70`. Each of the house's
     /// absorbers (House+0xB0, [`Self::house_absorbers`]), from the last, is
     /// asked CAN_LOAD (vt+0x278, `0x004DFBB9`); of those answering ROGER the

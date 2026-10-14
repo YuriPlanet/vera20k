@@ -7,8 +7,10 @@
 use serde_json::{Value, json};
 
 use super::*;
+use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
+use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::docking::bunker_install::BunkerState;
 use crate::sim::game_entity::BunkerLink;
 use crate::sim::house_state::HouseState;
@@ -94,6 +96,8 @@ Strength=700
 InfantryAbsorb=yes
 Passengers=5
 SizeLimit=15
+Power=50
+ExtraPower=100
 [GAPOWR]
 Strength=750
 [UABSORB]
@@ -732,6 +736,806 @@ fn a_bio_reactor_team_member_walks_into_the_reactor() {
     let cargo = entity(&sim, reactor).passenger_role.cargo().unwrap();
     assert_eq!(cargo.count(), 1);
     assert!(sim.team_script_vm.team(team).is_none());
+}
+
+/// A loaded Bio Reactor accepts the player's Unload order and ejects its cargo
+/// through the regular building mission and frame, one cargo head per visit.
+#[test]
+fn a_bio_reactor_unload_command_reveals_its_passenger() {
+    let rules = rules();
+    let (mut sim, grid) = arena(&rules);
+    let owner = sim.interner.get("YuriCountry").unwrap();
+    sim.houses.get_mut(&owner).unwrap().is_human = true;
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    let passengers: Vec<_> = (0..5)
+        .map(|index| spawn(&mut sim, &rules, "INIT", "YuriCountry", 6 + index * 2, 10))
+        .collect();
+    for &passenger in &passengers {
+        assert!(seek(&mut sim, &rules, passenger));
+        assert!(
+            entity(&sim, passenger)
+                .building_entry
+                .should_enter_absorber()
+        );
+        assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+            entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+        }));
+    }
+    assert_eq!(sim.houses[&owner].tracking.infantry(), 0);
+    assert_eq!(
+        sim.houses[&owner].tracking.owned_count(
+            EntityCategory::Infantry,
+            entity(&sim, passengers[0]).type_ref()
+        ),
+        5
+    );
+    for &passenger in &passengers {
+        assert!(
+            !entity(&sim, passenger)
+                .house_tracking_latches()
+                .is_counted()
+        );
+        assert!(
+            entity(&sim, passenger)
+                .house_tracking_latches()
+                .is_absorbed()
+        );
+    }
+    let cargo_lifo = entity(&sim, reactor)
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()
+        .to_vec();
+    assert_eq!(
+        cargo_lifo,
+        passengers.iter().rev().copied().collect::<Vec<_>>()
+    );
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .mission_leaf
+        .set_building_ready_latch(1);
+
+    let order = CommandEnvelope::new(
+        owner,
+        sim.session.tick,
+        Command::UnloadPassengers {
+            transport_id: reactor,
+        },
+    );
+    let result = sim.advance_tick(&[order], Some(&rules), Some(&grid), None, 33);
+    assert_eq!(result.executed_commands, 1, "the Unload order is admitted");
+
+    let mut departed = Vec::new();
+    let record_departures = |sim: &Simulation, departed: &mut Vec<u64>| {
+        for &passenger in &passengers {
+            if !entity(sim, passenger).lifecycle.in_limbo() && !departed.contains(&passenger) {
+                departed.push(passenger);
+            }
+        }
+    };
+    record_departures(&sim, &mut departed);
+    for _ in 0..300 {
+        let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+        record_departures(&sim, &mut departed);
+        if entity(&sim, reactor)
+            .passenger_role
+            .cargo()
+            .is_some_and(|cargo| cargo.is_empty())
+            && departed.len() == passengers.len()
+        {
+            break;
+        }
+    }
+    assert!(
+        entity(&sim, reactor)
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(departed, cargo_lifo, "one cargo head leaves on each visit");
+    for passenger_id in passengers {
+        let passenger = entity(&sim, passenger_id);
+        assert!(passenger.lifecycle.object_alive());
+        assert!(passenger.lifecycle.cell_marked);
+        assert!(passenger.in_logic_vector);
+        assert!(!passenger.building_entry.should_enter_absorber());
+        assert!(passenger.house_tracking_latches().is_counted());
+        assert!(!passenger.house_tracking_latches().is_absorbed());
+    }
+    assert_eq!(sim.houses[&owner].tracking.infantry(), 5);
+    assert_eq!(
+        sim.houses[&owner].tracking.owned_count(
+            EntityCategory::Infantry,
+            entity(&sim, departed[0]).type_ref()
+        ),
+        5
+    );
+}
+
+/// Mission_Unload pops the cargo head before scanning; when all eight
+/// adjacent cells fail it restores that same head, spends only the shared
+/// Unload cadence draw, and retries successfully after a legal exit opens.
+#[test]
+fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
+    let mut ini = IniFile::from_str(RULES);
+    ini.merge(&IniFile::from_str(
+        "[AudioVisual]\nLeaveBioReactorSound=BioReactorExit\n",
+    ));
+    assert_eq!(
+        ini.section("AudioVisual")
+            .unwrap()
+            .read_name("LeaveBioReactorSound", 0x80),
+        Some("BioReactorExit")
+    );
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini.clone())
+        .process_with_fixed_art(&IniFile::from_str(ART))
+        .unwrap();
+    assert_eq!(
+        processed
+            .ini()
+            .section("AudioVisual")
+            .unwrap()
+            .read_name("LeaveBioReactorSound", 0x80),
+        Some("BioReactorExit")
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(ART))
+        .expect("Bio Reactor sound rules parse");
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=BioReactorExit\n[BioReactorExit]\nSounds=fixture.wav\n",
+    ));
+    rules.bind_type_sound_references(&ini, &sounds);
+    assert_eq!(
+        rules.general.leave_bio_reactor_sound.as_deref(),
+        Some("BioReactorExit")
+    );
+    let (mut sim, grid) = arena(&rules);
+    let owner = sim.interner.get("YuriCountry").unwrap();
+    sim.houses.get_mut(&owner).unwrap().is_human = true;
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
+    assert!(seek(&mut sim, &rules, passenger));
+    assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+        entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+    }));
+    sim.mission_assign_exact(
+        reactor,
+        MissionId::from_known(MissionType::Unload),
+        sim.session.binary_frame,
+    )
+    .unwrap();
+
+    // Mission_Unload's scan uses the building Location (`vt+0x1B8`),
+    // distinct from GetCoords' foundation center used by its sound tail.
+    let base = (
+        entity(&sim, reactor).position.rx,
+        entity(&sim, reactor).position.ry,
+    );
+    let directions = crate::util::direction_tables::CELL_DELTAS;
+    let neighbor = |from: (u16, u16), direction: (i32, i32)| {
+        (
+            (i32::from(from.0) + direction.0) as u16,
+            (i32::from(from.1) + direction.1) as u16,
+        )
+    };
+    let adjacent: Vec<_> = directions
+        .iter()
+        .map(|&delta| neighbor(base, delta))
+        .collect();
+    let block_foot = |sim: &mut Simulation, cell: (u16, u16), blocked: bool| {
+        let cost = if blocked { 0 } else { 100 };
+        let cell = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(cell.0, cell.1)
+            .unwrap();
+        cell.speed_costs.foot = Some(cost);
+        cell.base_speed_costs.foot = Some(cost);
+    };
+    for &cell in &adjacent {
+        block_foot(&mut sim, cell, true);
+    }
+
+    let held = serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap();
+    let health = entity(&sim, passenger).health.current();
+    let mut expected_rng = sim.scenario_rng.clone();
+    expected_rng.next_range_u32_inclusive(0, 2);
+    let rate_only_state = expected_rng.logical_state();
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap(),
+        held,
+        "the failed search reinserts the popped passenger at the cargo head"
+    );
+    assert_eq!(
+        entity(&sim, passenger).passenger_role.inside_transport_id(),
+        Some(reactor)
+    );
+    assert!(entity(&sim, passenger).lifecycle.in_limbo());
+    assert_eq!(entity(&sim, passenger).health.current(), health);
+    assert_eq!(sim.scenario_rng.logical_state(), rate_only_state);
+    assert!(!sim.sound_events.iter().any(|event| matches!(
+        event,
+        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
+            if sound_id == "BioReactorExit"
+    )));
+
+    let facing = entity(&sim, reactor).body_facing_current(sim.session.binary_frame);
+    let start = ((((u32::from(facing.wrapping_add(0x7FFF)) >> 12) + 1) >> 1) & 7) as usize;
+    let exit = adjacent[start];
+    let beyond = neighbor(exit, directions[start]);
+    block_foot(&mut sim, exit, false);
+    block_foot(&mut sim, beyond, false);
+
+    let mut expected_rng = sim.scenario_rng.clone();
+    assert!(
+        crate::sim::movement::bump_crush::place_infantry_in_cell(
+            &sim.substrate.raw_cell_occupation,
+            exit.0,
+            exit.1,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            &mut expected_rng,
+        )
+        .is_some()
+    );
+    expected_rng.next_range_u32_inclusive(0, 2);
+    let successful_state = expected_rng.logical_state();
+
+    sim.power_states.insert(
+        owner,
+        crate::sim::power_system::PowerState::settled_for_test(),
+    );
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        entity(&sim, reactor)
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!entity(&sim, passenger).lifecycle.in_limbo());
+    assert!(entity(&sim, passenger).lifecycle.cell_marked);
+    assert_eq!(sim.scenario_rng.logical_state(), successful_state);
+    assert!(sim.power_states[&owner].power_recheck_for_test());
+    assert_eq!(
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
+                    if sound_id == "BioReactorExit"
+            ))
+            .count(),
+        1
+    );
+}
+
+/// A legal Infantry exit spends the native placement draw before Unlimbo. If
+/// reveal then refuses the passenger, Mission_Unload re-adds the cargo head
+/// and still takes its shared rate draw; the success-only tail does not run.
+#[test]
+fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
+    let rules = rules();
+    let (mut sim, _) = arena(&rules);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    absorb(&mut sim, &rules, reactor, 1);
+    let passenger = entity(&sim, reactor)
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()[0];
+    let owner = entity(&sim, reactor).owner();
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .body_facing
+        .set(0, sim.session.binary_frame);
+
+    // The first strict pair is north: Location (16,10), exit (16,9),
+    // beyond (16,8). MarkSucceeded reaches reveal, whose lifecycle authority
+    // rejects an already-marked object after the placement operation ran.
+    // This injected state exercises Unlimbo's post-placement failure tail.
+    let exit = (16, 9);
+    let mut expected_rng = sim.scenario_rng.clone();
+    assert!(
+        crate::sim::movement::bump_crush::place_infantry_in_cell(
+            &sim.substrate.raw_cell_occupation,
+            exit.0,
+            exit.1,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            &mut expected_rng,
+        )
+        .is_some()
+    );
+    expected_rng.next_range_u32_inclusive(0, 2);
+    let expected_state = expected_rng.logical_state();
+
+    let cargo_before = serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap();
+    let health_before = entity(&sim, passenger).health.current();
+    sim.substrate
+        .entities
+        .get_mut(passenger)
+        .unwrap()
+        .lifecycle
+        .cell_marked = true;
+    sim.power_states.insert(
+        owner,
+        crate::sim::power_system::PowerState::settled_for_test(),
+    );
+
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    let released = entity(&sim, passenger);
+    assert_eq!(
+        serde_json::to_value(entity(&sim, reactor).passenger_role.cargo()).unwrap(),
+        cargo_before
+    );
+    assert_eq!(released.passenger_role.inside_transport_id(), Some(reactor));
+    assert!(released.lifecycle.in_limbo());
+    assert_eq!(released.health.current(), health_before);
+    assert_eq!(sim.scenario_rng.logical_state(), expected_state);
+    assert!(!sim.power_states[&owner].power_recheck_for_test());
+}
+
+/// `Mission_Unload @ 0x0044D92D` scans from the Building's Location cell
+/// (`vt+0x1B8`), not the foundation-center `GetCoords` used by the sound.
+/// This 2x2 fixture leaves only the Location's north exit and its strict
+/// beyond cell open; those cells are outside every strict exit pair around
+/// the foundation center.
+#[test]
+fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
+    let rules = rules();
+    let (mut sim, _) = arena(&rules);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    absorb(&mut sim, &rules, reactor, 1);
+    let passenger = entity(&sim, reactor)
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()[0];
+    let base = (16u16, 10u16);
+    let center = {
+        let coords = crate::sim::movement::ground_pose::object_get_coords(
+            entity(&sim, reactor),
+            sim.resolved_terrain.as_ref(),
+        );
+        (
+            crate::util::lepton::lepton_to_cell(coords.x) as u16,
+            crate::util::lepton::lepton_to_cell(coords.y) as u16,
+        )
+    };
+    assert_ne!(
+        center, base,
+        "the 2x2 foundation has a distinct center cell"
+    );
+    let directions = crate::util::direction_tables::CELL_DELTAS;
+    let set_foot = |sim: &mut Simulation, cell: (u16, u16), cost| {
+        let terrain = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(cell.0, cell.1)
+            .unwrap();
+        terrain.speed_costs.foot = Some(cost);
+        terrain.base_speed_costs.foot = Some(cost);
+    };
+    let step = |cell: (u16, u16), delta: (i32, i32), scale: i32| {
+        (
+            (i32::from(cell.0) + delta.0 * scale) as u16,
+            (i32::from(cell.1) + delta.1 * scale) as u16,
+        )
+    };
+    for origin in [base, center] {
+        for delta in directions {
+            set_foot(&mut sim, step(origin, delta, 1), 0);
+            set_foot(&mut sim, step(origin, delta, 2), 0);
+        }
+    }
+    let north = (base.0, base.1 - 1);
+    let beyond_north = (base.0, base.1 - 2);
+    let center_scan = directions
+        .into_iter()
+        .flat_map(|delta| [step(center, delta, 1), step(center, delta, 2)])
+        .collect::<Vec<_>>();
+    assert!(!center_scan.contains(&north) && !center_scan.contains(&beyond_north));
+    set_foot(&mut sim, north, 100);
+    set_foot(&mut sim, beyond_north, 100);
+
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .body_facing
+        .set(0x7000, sim.session.binary_frame);
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    assert!(
+        entity(&sim, reactor)
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        (
+            entity(&sim, passenger).position.rx,
+            entity(&sim, passenger).position.ry
+        ),
+        north,
+        "the only eligible exit is the native Location-cell north neighbor"
+    );
+}
+
+/// The native Infantry +0x1AC receiver gets Building 5F5F00's height. A
+/// two-level step blocks the first strict direction even though its foot
+/// terrain cost is open, so the next flat strict pair is selected.
+#[test]
+fn a_bio_reactor_scan_uses_infantry_cell_entry_with_building_height() {
+    let rules = rules();
+    let (mut sim, _) = arena(&rules);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    absorb(&mut sim, &rules, reactor, 1);
+    let passenger = entity(&sim, reactor)
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()[0];
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .body_facing
+        .set(0, sim.session.binary_frame);
+    for cell in [(16, 11), (16, 12)] {
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(cell.0, cell.1)
+            .unwrap()
+            .level = 2;
+    }
+
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    assert_eq!(
+        (
+            entity(&sim, passenger).position.rx,
+            entity(&sim, passenger).position.ry
+        ),
+        (15, 11),
+        "the south pair fails Infantry51BF90's height check; southwest is flat"
+    );
+}
+
+/// Every strict beyond cell is refused, so the original loop falls through
+/// to its relaxed pass at index 1. With facing 0x7000 that wraps from octant 7
+/// to north (octant 0), which accepts the adjacent cell despite its blocked
+/// beyond cell.
+#[test]
+fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
+    let rules = rules();
+    let (mut sim, _) = arena(&rules);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    absorb(&mut sim, &rules, reactor, 1);
+    let passenger = entity(&sim, reactor)
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers()[0];
+    let base = (16u16, 10u16);
+    let directions = crate::util::direction_tables::CELL_DELTAS;
+    let step = |delta: (i32, i32), scale: i32| {
+        (
+            (i32::from(base.0) + delta.0 * scale) as u16,
+            (i32::from(base.1) + delta.1 * scale) as u16,
+        )
+    };
+    let set_foot = |sim: &mut Simulation, cell: (u16, u16), cost| {
+        let terrain = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(cell.0, cell.1)
+            .unwrap();
+        terrain.speed_costs.foot = Some(cost);
+        terrain.base_speed_costs.foot = Some(cost);
+    };
+    for delta in directions {
+        set_foot(&mut sim, step(delta, 1), 0);
+        set_foot(&mut sim, step(delta, 2), 0);
+    }
+    let north = (16, 9);
+    set_foot(&mut sim, north, 100);
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .body_facing
+        .set(0x7000, sim.session.binary_frame);
+    let mut expected_rng = sim.scenario_rng.clone();
+    assert!(
+        crate::sim::movement::bump_crush::place_infantry_in_cell(
+            &sim.substrate.raw_cell_occupation,
+            north.0,
+            north.1,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            crate::util::lepton::CELL_CENTER_LEPTON,
+            &mut expected_rng,
+        )
+        .is_some()
+    );
+    expected_rng.next_range_u32_inclusive(0, 2);
+
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    assert!(
+        entity(&sim, reactor)
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        (
+            entity(&sim, passenger).position.rx,
+            entity(&sim, passenger).position.ry
+        ),
+        north
+    );
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected_rng.logical_state()
+    );
+}
+
+/// The native `IsHuman` gate clears `+0x68F` only for human-owned
+/// passengers. A computer-owned Infantry keeps its absorber-seek latch after
+/// the shared InfantryAbsorb unload succeeds.
+#[test]
+fn a_computer_bio_reactor_passenger_keeps_its_seek_latch_after_unload() {
+    let rules = rules();
+    let (mut sim, grid) = arena(&rules);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
+    assert!(seek(&mut sim, &rules, passenger));
+    assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+        entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+    }));
+    assert!(
+        entity(&sim, passenger)
+            .building_entry
+            .should_enter_absorber()
+    );
+    sim.mission_assign_exact(
+        reactor,
+        MissionId::from_known(MissionType::Unload),
+        sim.session.binary_frame,
+    )
+    .unwrap();
+
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(!entity(&sim, passenger).lifecycle.in_limbo());
+    assert!(
+        entity(&sim, passenger)
+            .building_entry
+            .should_enter_absorber()
+    );
+    assert!(
+        entity(&sim, passenger)
+            .house_tracking_latches()
+            .is_counted()
+    );
+    assert!(
+        !entity(&sim, passenger)
+            .house_tracking_latches()
+            .is_absorbed()
+    );
+}
+
+/// `IsControlledByHuman` also admits campaign PlayerControl houses, but the
+/// native Unload tail tests the distinct House+0x1EC `IsHuman` byte. A
+/// PlayerControl-only owner therefore retains the absorbed passenger's
+/// `ShouldEnterAbsorber` latch after a successful reveal.
+#[test]
+fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
+    let rules = rules();
+    let (mut sim, grid) = arena(&rules);
+    let owner = sim.interner.get("YuriCountry").unwrap();
+    let house = sim.houses.get_mut(&owner).unwrap();
+    house.is_human = false;
+    house.player_control = true;
+    sim.session.game_mode_nonzero = false;
+    assert!(sim.owner_is_human(owner));
+    assert!(!sim.houses[&owner].is_human);
+
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+    let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
+    assert!(seek(&mut sim, &rules, passenger));
+    assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+        entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+    }));
+    assert!(
+        entity(&sim, passenger)
+            .building_entry
+            .should_enter_absorber()
+    );
+
+    crate::sim::transport_unload::building_mission_unload_absorber(
+        &mut sim,
+        &rules,
+        reactor,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    assert!(!entity(&sim, passenger).lifecycle.in_limbo());
+    assert!(
+        entity(&sim, passenger)
+            .building_entry
+            .should_enter_absorber()
+    );
+}
+
+/// A real Bio Reactor boarding first removes House+0x2F4 and clears the
+/// once-counted latch. Both native successful-exit owners—SpawnSurvivors and
+/// Selling—must restore that total exactly once while leaving the per-type
+/// tracking count unchanged.
+#[test]
+fn absorbed_infantry_tracking_is_restored_after_building_death_and_sale() {
+    for selling in [false, true] {
+        let mut rules = rules();
+        if selling {
+            rules.set_buildup_control_for_test("YAPOWR", [0, 25, 2]);
+        }
+        let (mut sim, grid) = arena(&rules);
+        let owner = sim.interner.get("YuriCountry").unwrap();
+        let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+        let passenger = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
+        assert!(seek(&mut sim, &rules, passenger));
+        assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+            entity(sim, passenger).passenger_role.inside_transport_id() == Some(reactor)
+        }));
+        let infantry_type = entity(&sim, passenger).type_ref();
+        assert_eq!(sim.houses[&owner].tracking.infantry(), 0);
+        assert_eq!(
+            sim.houses[&owner]
+                .tracking
+                .owned_count(EntityCategory::Infantry, infantry_type),
+            1
+        );
+        assert!(
+            !entity(&sim, passenger)
+                .house_tracking_latches()
+                .is_counted()
+        );
+        assert!(
+            entity(&sim, passenger)
+                .house_tracking_latches()
+                .is_absorbed()
+        );
+
+        if selling {
+            assert!(crate::sim::production::sell_building_now_for_test(
+                &mut sim, &rules, reactor
+            ));
+        } else {
+            sim.spawn_building_survivors(
+                &rules,
+                None,
+                reactor,
+                false,
+                |_, _| {},
+                crate::sim::world::FrameEffects::default(),
+            );
+        }
+
+        let released = entity(&sim, passenger);
+        assert!(!released.lifecycle.in_limbo());
+        assert!(released.lifecycle.cell_marked);
+        assert!(released.house_tracking_latches().is_counted());
+        assert!(!released.house_tracking_latches().is_absorbed());
+        assert_eq!(sim.houses[&owner].tracking.infantry(), 1);
+        assert_eq!(
+            sim.houses[&owner]
+                .tracking
+                .owned_count(EntityCategory::Infantry, infantry_type),
+            1
+        );
+    }
+}
+
+/// Native unload dirties power only when the BuildingType's `ExtraPower`
+/// field (`+0xEE8`) is positive (`0x0044DC55..0x0044DC75`).
+#[test]
+fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
+    for extra_power in [0, -1] {
+        let ini = IniFile::from_str(
+            &RULES.replace("ExtraPower=100", &format!("ExtraPower={extra_power}")),
+        );
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(ART))
+            .expect("Bio Reactor rules parse");
+        let (mut sim, _) = arena(&rules);
+        let owner = sim.interner.get("YuriCountry").unwrap();
+        let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
+        absorb(&mut sim, &rules, reactor, 1);
+        sim.power_states.insert(
+            owner,
+            crate::sim::power_system::PowerState::settled_for_test(),
+        );
+
+        crate::sim::transport_unload::building_mission_unload_absorber(
+            &mut sim,
+            &rules,
+            reactor,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+
+        assert!(
+            entity(&sim, reactor)
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .is_empty(),
+            "ExtraPower={extra_power} still unloads its passenger"
+        );
+        assert!(
+            !sim.power_states[&owner].power_recheck_for_test(),
+            "ExtraPower={extra_power} does not dirty the house power cache"
+        );
+    }
 }
 
 /// A reactor destroyed while the Foot walks to it: the adapter lets the

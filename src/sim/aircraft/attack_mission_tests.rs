@@ -477,7 +477,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
                 EntityCategory::Structure,
             );
             // Construction stamps the type's `Foundation=2x2`.
-            pad.foundation = "2x2".to_string();
+            pad.type_facts.set_foundation_for_test("2x2".to_string());
             pad.lifecycle.set_in_limbo_for_test(false);
             sim.substrate.entities.insert(pad);
         }

@@ -484,7 +484,9 @@ mod tests {
             spawn_bunker(&mut sim, 2);
             spawn_tank_on(&mut sim, 1, 10, 10);
             let building = sim.substrate.entities.get_mut(2).unwrap();
-            building.foundation = rules.object("NATBNK").unwrap().foundation.clone();
+            building
+                .type_facts
+                .set_foundation_for_test(rules.object("NATBNK").unwrap().foundation.clone());
             put_location(&mut building.position, coord(&input["building_location"]));
             let unit = sim.substrate.entities.get_mut(1).unwrap();
             put_location(&mut unit.position, coord(&input["unit_location"]));
@@ -569,8 +571,12 @@ mod tests {
         let mut sim = Simulation::new();
         spawn_bunker(&mut sim, 2);
         spawn_tank_on(&mut sim, 1, 10, 10);
-        sim.substrate.entities.get_mut(2).unwrap().foundation =
-            retail.rules.object("NATBNK").unwrap().foundation.clone();
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test(retail.rules.object("NATBNK").unwrap().foundation.clone());
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         let building = sim.substrate.entities.get(2).unwrap();
         // Steam459164 calls Building447AC0 even when both raw cells match.

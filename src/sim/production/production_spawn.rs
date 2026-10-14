@@ -203,7 +203,8 @@ fn infantry_exit_coordinate_and_facing(
         [centre(dock.0), centre(dock.1)],
     );
     let facing = crate::util::direction_tables::quantize::round_facing16_to_8(word);
-    let (width, height) = crate::rules::foundation::foundation_dimensions(&producer.foundation);
+    let (width, height) =
+        crate::rules::foundation::foundation_dimensions(producer.type_facts.foundation());
     let inward = |cell: i16, base: i16, size: u16| {
         if i32::from(cell) >= i32::from(base) + i32::from(size) {
             cell.wrapping_sub(1)
@@ -951,7 +952,7 @@ mod tests {
                 14,
                 crate::map::entities::EntityCategory::Structure,
             );
-            producer.foundation = "3x2".into();
+            producer.type_facts.set_foundation_for_test("3x2".into());
             ground_pose::put_location(&mut producer.position, location);
             let dock = (number("dock", 0) as i16, number("dock", 1) as i16);
             let producer_type = rules.object("GAPILE").unwrap();
@@ -1175,7 +1176,9 @@ mod tests {
         let mut producer =
             crate::sim::game_entity::GameEntity::test_default(10, "GAYARD", "Americans", 10, 10);
         producer.set_category_for_test(crate::map::entities::EntityCategory::Structure);
-        producer.foundation = "4x4".to_string();
+        producer
+            .type_facts
+            .set_foundation_for_test("4x4".to_string());
         producer
     }
 

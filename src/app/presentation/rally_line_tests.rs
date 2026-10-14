@@ -263,7 +263,9 @@ fn simulation_fixture_for_type(
     entity
         .lifecycle
         .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
-    entity.foundation = foundation.to_owned();
+    entity
+        .type_facts
+        .set_foundation_for_test(foundation.to_owned());
     let [tx, ty] = input.get("target_cell").map(point).unwrap_or([14, 20]);
     if !input["no_target"].as_bool().unwrap_or(false) {
         if let Some(target) = input.get("target_object") {

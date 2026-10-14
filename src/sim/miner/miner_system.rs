@@ -122,7 +122,9 @@ mod gsi_04_03b_tests {
         );
         refinery.set_type_ref_for_test(refinery_type);
         // Construction stamps the type's `Foundation=4x3`.
-        refinery.foundation = "4x3".to_string();
+        refinery
+            .type_facts
+            .set_foundation_for_test("4x3".to_string());
         sim.substrate.entities.insert(refinery);
 
         // East of the building: NW distance is sqrt(37) cells (far), centre
@@ -1809,7 +1811,7 @@ mod harvest_scan_dispatch_tests {
         );
         ge.lifecycle.set_in_limbo_for_test(false);
         // Construction stamps the type's `Foundation=4x3`.
-        ge.foundation = "4x3".to_string();
+        ge.type_facts.set_foundation_for_test("4x3".to_string());
         sim.substrate.entities.insert(ge);
         // Unlimbo's House+0x68 append.
         register_house(sim);

@@ -2417,7 +2417,9 @@ fn uninit_removes_all_structure_foundation_cells() {
     // into the thread-local test interner, which sim code never resolves against.
     structure.set_owner_for_test(sim.interner.intern("Americans"));
     structure.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
-    structure.foundation = "2x2".to_string();
+    structure
+        .type_facts
+        .set_foundation_for_test("2x2".to_string());
     sim.substrate.entities.insert(structure);
     sim.reveal(10);
     sim.add_entity_occupancy(10);
@@ -3354,7 +3356,7 @@ fn a_sonic_wave_aims_at_a_buildings_foundation_centre() {
         EntityCategory::Structure,
     );
     target.set_type_ref_for_test(sim.interner.intern("TARGET"));
-    target.foundation = "3x3".to_string();
+    target.type_facts.set_foundation_for_test("3x3".to_string());
     sim.substrate.entities.insert(firer);
     sim.substrate.entities.insert(target);
     let event = sonic_fire_event(&mut sim, firer_id, target_id);
@@ -8520,7 +8522,7 @@ fn insert_revealed_structure(sim: &mut Simulation, id: u64, rx: u16, ry: u16) {
     );
     s.set_owner_for_test(sim.interner.intern("Americans"));
     s.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
-    s.foundation = "2x2".to_string();
+    s.type_facts.set_foundation_for_test("2x2".to_string());
     sim.substrate.entities.insert(s);
     sim.reveal(id);
 }
@@ -8685,7 +8687,7 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
             ry,
             EntityCategory::Structure,
         );
-        bld.foundation = "2x2".to_string();
+        bld.type_facts.set_foundation_for_test("2x2".to_string());
         bld.health = Health::new(750);
         sim.substrate.entities.insert(bld);
         sim.reveal(id);
@@ -8773,7 +8775,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     // Damaged, auto-repairing enemy building MTNK destroys this tick at Phase 5.
     let mut bld =
         GameEntity::test_default_of_category(2, "TARGB", "Russia", 7, 5, EntityCategory::Structure);
-    bld.foundation = "1x1".to_string();
+    bld.type_facts.set_foundation_for_test("1x1".to_string());
     bld.health = Health::new(50);
     bld.repairing = true;
     sim.interner = crate::sim::intern::test_interner();

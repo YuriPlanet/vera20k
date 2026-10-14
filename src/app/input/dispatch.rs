@@ -2735,7 +2735,8 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     }
     let owner: String = preferred_local_owner(state).unwrap_or_else(|| "Americans".to_string());
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let commands = deploy_key_commands(sim, state.rules(), &selected_ids);
+    let local_owner = sim.interner.get(&owner);
+    let commands = deploy_key_commands(sim, state.rules(), &selected_ids, local_owner);
     for cmd in commands {
         schedule_command(state, &owner, cmd);
     }
@@ -2765,6 +2766,7 @@ fn deploy_key_commands(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     selection: &[u64],
+    local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Vec<Command> {
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
@@ -2774,7 +2776,7 @@ fn deploy_key_commands(
                 .cargo()
                 .is_some_and(|cargo| !cargo.is_empty())
     }) {
-        return deploy_key_command(sim, rules, building.stable_id())
+        return deploy_key_command(sim, rules, building.stable_id(), local_owner)
             .into_iter()
             .collect();
     }
@@ -2804,7 +2806,7 @@ fn deploy_key_commands(
                 .is_some_and(|entity| !entity.berserk.active)
                 && !(mixed && deployed(id) == Some(true))
         })
-        .filter_map(|id| deploy_key_command(sim, rules, id))
+        .filter_map(|id| deploy_key_command(sim, rules, id, local_owner))
         .collect()
 }
 
@@ -2837,35 +2839,28 @@ fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     entity_id: u64,
+    local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
     let obj = rules.and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())));
     match entity.category() {
         EntityCategory::Structure => {
-            // Garrisoned building → evacuate occupants.
-            if obj.is_some_and(|object| object.can_be_occupied)
-                && entity
-                    .passenger_role
-                    .cargo()
-                    .is_some_and(|cargo| !cargo.is_empty())
-            {
-                Some(Command::UnloadPassengers {
-                    transport_id: entity_id,
-                })
-            } else {
+            // Absorbers and garrisons share unload admission; otherwise a
+            // construction yard may take its undeploy action.
+            super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
                 rules
                     .is_some_and(|rules| {
                         sim.should_show_undeploy_building_command(entity_id, rules)
                     })
                     .then_some(Command::UndeployBuilding { entity_id })
-            }
+            })
         }
         EntityCategory::Infantry => obj
             .is_some_and(|object| object.deploy_fire)
             .then_some(Command::ToggleInfantryDeploy { entity_id }),
         _ => {
             // A loaded transport (including aircraft) keeps the unload action.
-            super::transport_orders::transport_unload_command(entity, obj).or_else(|| {
+            super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
                 let object = obj?;
                 let deployable = if super::context_order::is_simple_deploy_unit(entity, object) {
                     rules.is_some_and(|rules| sim.can_simple_deploy(entity_id, rules))
@@ -3296,23 +3291,29 @@ mod deploy_key_tests {
             .passenger_role = PassengerRole::transport(cargo);
 
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), heli),
+            deploy_key_command(&sim, Some(&rules), heli, sim.session.current_house),
             Some(Command::DeployMcv { entity_id: heli })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), transport),
+            deploy_key_command(&sim, Some(&rules), transport, sim.session.current_house),
             Some(Command::UnloadPassengers {
                 transport_id: transport
             })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), infantry),
+            deploy_key_command(&sim, Some(&rules), infantry, sim.session.current_house),
             Some(Command::ToggleInfantryDeploy {
                 entity_id: infantry
             })
         );
-        assert_eq!(deploy_key_command(&sim, Some(&rules), aircraft), None);
-        assert_eq!(deploy_key_command(&sim, Some(&rules), plain), None);
+        assert_eq!(
+            deploy_key_command(&sim, Some(&rules), aircraft, sim.session.current_house),
+            None
+        );
+        assert_eq!(
+            deploy_key_command(&sim, Some(&rules), plain, sim.session.current_house),
+            None
+        );
         sim.entities_mut()
             .get_mut(heli)
             .unwrap()
@@ -3323,7 +3324,34 @@ mod deploy_key_tests {
                 target: crate::sim::components::DriveCoord::cell(10, 10, 0),
             },
         );
-        assert_eq!(deploy_key_command(&sim, Some(&rules), heli), None);
+        assert_eq!(
+            deploy_key_command(&sim, Some(&rules), heli, sim.session.current_house),
+            None
+        );
+    }
+
+    #[test]
+    fn the_deploy_key_issues_unload_for_a_loaded_bio_reactor() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=YAPOWR\n[YAPOWR]\nStrength=1000\n\
+             InfantryAbsorb=yes\nPassengers=5\n",
+        ))
+        .expect("Bio Reactor deploy-key rules");
+        let mut sim = player_sim();
+        let reactor = sim
+            .spawn_object("YAPOWR", "Americans", 10, 10, 0, &rules)
+            .expect("Bio Reactor builds");
+        let mut cargo = PassengerCargo::new(5, 0);
+        cargo.board(99, 1);
+        sim.entities_mut().get_mut(reactor).unwrap().passenger_role =
+            PassengerRole::transport(cargo);
+
+        assert_eq!(
+            deploy_key_commands(&sim, Some(&rules), &[reactor], sim.session.current_house),
+            [Command::UnloadPassengers {
+                transport_id: reactor
+            }]
+        );
     }
 
     /// `Selection::IssueDeployCommand`'s issue walk skips a berserk object
@@ -3339,11 +3367,13 @@ mod deploy_key_tests {
             .spawn_object_limbo_at_height("HELI", "Americans", 10, 10, 0, 0, &rules)
             .expect("the deploy key fixture builds");
         assert_eq!(
-            deploy_key_commands(&sim, Some(&rules), &[heli]),
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house),
             [Command::DeployMcv { entity_id: heli }]
         );
         sim.entities_mut().get_mut(heli).unwrap().berserk.active = true;
-        assert!(deploy_key_commands(&sim, Some(&rules), &[heli]).is_empty());
+        assert!(
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house).is_empty()
+        );
     }
 
     /// The issue walk admits an object the player may control (vt+0xA0) or
@@ -3362,11 +3392,18 @@ mod deploy_key_tests {
         };
         let (heli, theirs) = (spawn("Americans"), spawn("Russians"));
         assert_eq!(
-            deploy_key_commands(&sim, Some(&rules), &[heli, theirs]),
+            deploy_key_commands(
+                &sim,
+                Some(&rules),
+                &[heli, theirs],
+                sim.session.current_house
+            ),
             [Command::DeployMcv { entity_id: heli }]
         );
         sim.entities_mut().get_mut(heli).unwrap().deactivated = true;
-        assert!(deploy_key_commands(&sim, Some(&rules), &[heli]).is_empty());
+        assert!(
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house).is_empty()
+        );
     }
 
     /// The first walk (`0x00730B8C..0x00730C0E`) counts deployed and
@@ -3392,7 +3429,9 @@ mod deploy_key_tests {
             .unwrap();
         sim.entities_mut().get_mut(gassed).unwrap().berserk.active = true;
         let toggle = |entity_id| Command::ToggleInfantryDeploy { entity_id };
-        let commands = |selection: &[u64]| deploy_key_commands(&sim, Some(&rules), selection);
+        let commands = |selection: &[u64]| {
+            deploy_key_commands(&sim, Some(&rules), selection, sim.session.current_house)
+        };
         assert_eq!(commands(&[deployed]), [toggle(deployed)]);
         assert_eq!(commands(&[deployed, standing]), [toggle(standing)]);
         // The gassed man counts as undeployed but is not ordered.
@@ -3420,7 +3459,7 @@ mod deploy_key_tests {
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             assert_eq!(
-                deploy_key_command(&sim, Some(rules), id),
+                deploy_key_command(&sim, Some(rules), id, sim.session.current_house),
                 Some(Command::DeployMcv { entity_id: id }),
             );
         }

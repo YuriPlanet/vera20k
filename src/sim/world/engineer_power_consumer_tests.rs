@@ -151,10 +151,9 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
         rules.object("FACTORY"),
         Some(&rules),
     );
-    sim.update_house_tracking(
-        PRODUCER,
-        crate::sim::house_tracking::HouseTracking::increment_factory_count,
-    );
+    sim.update_house_tracking(PRODUCER, |tracking, entity| {
+        tracking.increment_factory_count(entity)
+    });
     (sim, rules, owner)
 }
 

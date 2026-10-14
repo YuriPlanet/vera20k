@@ -56,7 +56,7 @@ pub(crate) fn spawn_building_free_unit(
             if entity.category() != EntityCategory::Structure || entity.death.is_dying() {
                 return None;
             }
-            let (width, height) = foundation_dimensions(&entity.foundation);
+            let (width, height) = foundation_dimensions(entity.type_facts.foundation());
             Some((
                 entity.owner(),
                 entity.type_ref(),

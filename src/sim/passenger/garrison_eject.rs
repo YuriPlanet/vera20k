@@ -689,7 +689,9 @@ pub(crate) mod tests {
             10,
             EntityCategory::Structure,
         );
-        building.foundation = "2x2".to_string();
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
         building.set_owner_for_test(americans);
         building.set_type_ref_for_test(sim.interner.intern(type_id));
         building.passenger_role =

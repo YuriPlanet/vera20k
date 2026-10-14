@@ -176,7 +176,7 @@ fn place(
     entity.lifecycle.cell_marked = true;
     entity.health.set_for_test(health);
     if category == EntityCategory::Structure {
-        entity.foundation = "1x1".to_string();
+        entity.type_facts.set_foundation_for_test("1x1".to_string());
     }
     entities.insert(entity);
 }

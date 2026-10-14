@@ -471,7 +471,9 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
             EntityCategory::Structure,
         );
         structure.set_type_ref_for_test(sim.interner.intern("YARD"));
-        structure.foundation = rules.object("YARD").unwrap().foundation.clone();
+        structure
+            .type_facts
+            .set_foundation_for_test(rules.object("YARD").unwrap().foundation.clone());
         sim.substrate.entities.insert(structure);
         assert!(sim.mark_entity_put(id, context));
         assert_only_marked_foundation(&sim);

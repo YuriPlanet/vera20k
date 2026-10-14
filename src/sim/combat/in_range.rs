@@ -1290,8 +1290,8 @@ mod tests {
                 GameEntity::test_default(1, "ATKR", "Test", (x / 256) as u16, (y / 256) as u16);
             let category = if let Some(building) = input.get("building") {
                 actor
-                    .foundation
-                    .clone_from(&rules.object("ATKR").unwrap().foundation);
+                    .type_facts
+                    .set_foundation_for_test(rules.object("ATKR").unwrap().foundation.clone());
                 let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
                 for id in 2..2 + building["occupants"].as_u64().unwrap_or(1) {
                     assert!(cargo.board(id, 1));
@@ -1955,7 +1955,7 @@ mod tests {
         let attacker = ground_attacker(6, 1, 0, "ATKR");
         let mut target = building_target(0, 0, "BLDG");
         // Construction stamps the type's `Foundation=4x2`.
-        target.foundation = "4x2".to_string();
+        target.type_facts.set_foundation_for_test("4x2".to_string());
         let mut entities = EntityStore::new();
         entities.insert(target);
         let interner = test_interner();

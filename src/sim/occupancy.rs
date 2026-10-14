@@ -1322,7 +1322,7 @@ pub(crate) fn entity_occupancy_cells(entity: &GameEntity) -> Vec<(u16, u16)> {
     if entity.category() != EntityCategory::Structure {
         return vec![(entity.position.rx, entity.position.ry)];
     }
-    crate::rules::foundation::foundation_cell_offsets(&entity.foundation)
+    crate::rules::foundation::foundation_cell_offsets(entity.type_facts.foundation())
         .into_iter()
         .filter_map(|(dx, dy)| {
             Some((
@@ -2374,7 +2374,9 @@ mod tests {
         let mut structure =
             crate::sim::game_entity::GameEntity::test_default(100, "GAPOWR", "Allies", 5, 5);
         structure.set_category_for_test(EntityCategory::Structure);
-        structure.foundation = "2x2".to_string();
+        structure
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
         structure.lifecycle.cell_marked = true;
         entities.insert(structure);
 

@@ -329,19 +329,182 @@ fn stamp_building_cell_profile(
     let Some(obj) = obj else {
         return;
     };
-    ge.foundation = obj.foundation.clone();
     ge.spotlight_capable = obj.has_spotlight;
-    if ge.category() == EntityCategory::Structure {
-        ge.building_hidden_occupancy = Some(obj.hidden_occupancy);
-        ge.base_reservation_spacing = obj.base_reservation_spacing;
-        ge.determines_waypoint_edge = obj.factory == Some(FactoryType::BuildingType);
-        ge.build_const_eligible = obj.build_const_eligible;
-        ge.base_plan_type_index = obj.base_plan_type_index;
-        ge.base_plan_is_defense = obj.is_base_defense;
-        // Projection of native BuildingType+0x408 after
-        // UnitTypeClass__FindOrAllocate @ 0x007480D0 has resolved
-        // `none`/`<none>` to a null pointer.
-        ge.base_plan_has_undeploy_target = obj.undeploys_into.is_some();
+    ge.type_facts.stamp(ge.category(), obj);
+}
+
+/// Facts the object's type fixes, copied when the object is built so paths
+/// without a RuleSet can read them: the cell-list exits of UnInit and Limbo,
+/// the House base lists, BasePlan and owner transfer. Natively a building
+/// reads each through its type pointer (`BuildingClass+0x520`); the rules
+/// reader owns the native reads (the matching `ObjectType` fields). Only the
+/// construction stamp writes them.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TypeFacts {
+    /// `Foundation=`, as its rules string: the structure footprint the cell
+    /// lists cover; `1x1` for a type without one.
+    #[serde(default = "default_foundation")]
+    foundation: String,
+    /// A building's hidden-object counter inputs
+    /// (`ObjectType::hidden_occupancy`), so cell-list exit can reverse its
+    /// contribution.
+    #[serde(default)]
+    building_hidden_occupancy: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
+    /// `[AI] AIBaseSpacing=` for a building that runs the House base
+    /// reservation writer; `None` is the native BuildingType gate.
+    #[serde(default)]
+    base_reservation_spacing: Option<i32>,
+    /// `Factory=BuildingType`: the House edge refresh callback's input.
+    #[serde(default)]
+    determines_waypoint_edge: bool,
+    /// Membership in the resolved `[AI] BuildConst=` vector
+    /// (`RulesClass__ReadAI @ 0x00672AE0`, `0x00672B14..0x00672C01`).
+    #[serde(default)]
+    build_const_eligible: bool,
+    /// The BuildingType registry index ordered House BasePlan nodes use;
+    /// `-1` for any other type.
+    #[serde(default = "default_base_plan_type_index")]
+    base_plan_type_index: i32,
+    /// `IsBaseDefense=` (`BuildingType+0x1706`).
+    #[serde(default)]
+    base_plan_is_defense: bool,
+    /// `UndeploysInto=` resolved to a type (`BuildingType+0x408`, null for
+    /// `none`/`<none>` after `UnitTypeClass__FindOrAllocate @ 0x007480D0`).
+    #[serde(default)]
+    base_plan_has_undeploy_target: bool,
+}
+
+fn default_foundation() -> String {
+    "1x1".to_string()
+}
+
+fn default_base_plan_type_index() -> i32 {
+    -1
+}
+
+impl TypeFacts {
+    /// A new object's facts before the construction stamp: a building's
+    /// empty hidden-occupancy profile, no other type's.
+    pub(crate) fn new(category: EntityCategory) -> Self {
+        Self {
+            foundation: default_foundation(),
+            building_hidden_occupancy: (category == EntityCategory::Structure)
+                .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
+            base_reservation_spacing: None,
+            determines_waypoint_edge: false,
+            build_const_eligible: false,
+            base_plan_type_index: default_base_plan_type_index(),
+            base_plan_is_defense: false,
+            base_plan_has_undeploy_target: false,
+        }
+    }
+
+    /// Copy the type's facts: the foundation for every object, the rest for
+    /// a building.
+    fn stamp(&mut self, category: EntityCategory, obj: &ObjectType) {
+        self.foundation = obj.foundation.clone();
+        if category == EntityCategory::Structure {
+            self.building_hidden_occupancy = Some(obj.hidden_occupancy);
+            self.base_reservation_spacing = obj.base_reservation_spacing;
+            self.determines_waypoint_edge = obj.factory == Some(FactoryType::BuildingType);
+            self.build_const_eligible = obj.build_const_eligible;
+            self.base_plan_type_index = obj.base_plan_type_index;
+            self.base_plan_is_defense = obj.is_base_defense;
+            self.base_plan_has_undeploy_target = obj.undeploys_into.is_some();
+        }
+    }
+
+    /// `Foundation=`, as its rules string.
+    pub(crate) fn foundation(&self) -> &str {
+        &self.foundation
+    }
+
+    /// A building's hidden-object counter inputs.
+    pub(crate) fn building_hidden_occupancy(
+        &self,
+    ) -> Option<crate::rules::object_type::BuildingHiddenOccupancyProfile> {
+        self.building_hidden_occupancy
+    }
+
+    /// `[AI] AIBaseSpacing=` for a base-reserving building.
+    pub(crate) fn base_reservation_spacing(&self) -> Option<i32> {
+        self.base_reservation_spacing
+    }
+
+    /// `Factory=BuildingType`.
+    pub(crate) fn determines_waypoint_edge(&self) -> bool {
+        self.determines_waypoint_edge
+    }
+
+    /// In `[AI] BuildConst=`.
+    pub(crate) fn build_const_eligible(&self) -> bool {
+        self.build_const_eligible
+    }
+
+    /// The BuildingType registry index, `-1` for any other type.
+    pub(crate) fn base_plan_type_index(&self) -> i32 {
+        self.base_plan_type_index
+    }
+
+    /// `IsBaseDefense=`.
+    pub(crate) fn base_plan_is_defense(&self) -> bool {
+        self.base_plan_is_defense
+    }
+
+    /// `UndeploysInto=` names a type.
+    pub(crate) fn base_plan_has_undeploy_target(&self) -> bool {
+        self.base_plan_has_undeploy_target
+    }
+
+    /// Install a fixture's `foundation`.
+    #[cfg(test)]
+    pub(crate) fn set_foundation_for_test(&mut self, value: String) {
+        self.foundation = value;
+    }
+
+    /// Install a fixture's `building_hidden_occupancy`.
+    #[cfg(test)]
+    pub(crate) fn set_building_hidden_occupancy_for_test(
+        &mut self,
+        value: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
+    ) {
+        self.building_hidden_occupancy = value;
+    }
+
+    /// Install a fixture's `base_reservation_spacing`.
+    #[cfg(test)]
+    pub(crate) fn set_base_reservation_spacing_for_test(&mut self, value: Option<i32>) {
+        self.base_reservation_spacing = value;
+    }
+
+    /// Install a fixture's `determines_waypoint_edge`.
+    #[cfg(test)]
+    pub(crate) fn set_determines_waypoint_edge_for_test(&mut self, value: bool) {
+        self.determines_waypoint_edge = value;
+    }
+
+    /// Install a fixture's `build_const_eligible`.
+    #[cfg(test)]
+    pub(crate) fn set_build_const_eligible_for_test(&mut self, value: bool) {
+        self.build_const_eligible = value;
+    }
+
+    /// Install a fixture's `base_plan_type_index`.
+    #[cfg(test)]
+    pub(crate) fn set_base_plan_type_index_for_test(&mut self, value: i32) {
+        self.base_plan_type_index = value;
+    }
+
+    /// Install a fixture's `base_plan_is_defense`.
+    #[cfg(test)]
+    pub(crate) fn set_base_plan_is_defense_for_test(&mut self, value: bool) {
+        self.base_plan_is_defense = value;
+    }
+
+    /// Install a fixture's `base_plan_has_undeploy_target`.
+    #[cfg(test)]
+    pub(crate) fn set_base_plan_has_undeploy_target_for_test(&mut self, value: bool) {
+        self.base_plan_has_undeploy_target = value;
     }
 }
 

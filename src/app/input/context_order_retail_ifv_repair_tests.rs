@@ -492,6 +492,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
                 16,
                 15,
                 0,
+                None,
                 FrameEffects::default(),
             )
         },

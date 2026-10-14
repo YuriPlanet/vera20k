@@ -146,7 +146,7 @@ fn first_yard_distance_accepts(
         return false;
     };
     if yard.category() != EntityCategory::Structure
-        || !yard.build_const_eligible
+        || !yard.type_facts.build_const_eligible()
         || !yard.lifecycle.object_alive()
         || yard.lifecycle.in_limbo()
         || !yard.lifecycle.cell_marked
@@ -576,8 +576,9 @@ mod tests {
             5,
             false,
         );
-        yard.foundation = foundation.to_string();
-        yard.build_const_eligible = true;
+        yard.type_facts
+            .set_foundation_for_test(foundation.to_string());
+        yard.type_facts.set_build_const_eligible_for_test(true);
         yard.lifecycle.set_in_limbo_for_test(false);
         yard.lifecycle.cell_marked = true;
         sim.substrate.entities.insert(yard);
@@ -683,7 +684,13 @@ mod tests {
             .spawn_object("GACNST", "AIHouse", 10, 10, 0, &rules)
             .expect("parsed BuildConst Construction Yard reveals");
         assert_eq!(sim.houses[&owner].build_const_order, [yard]);
-        assert!(sim.entities().get(yard).unwrap().build_const_eligible);
+        assert!(
+            sim.entities()
+                .get(yard)
+                .unwrap()
+                .type_facts
+                .build_const_eligible()
+        );
 
         sim.houses.get_mut(&owner).unwrap().base_center = Some((11, 10));
         let path = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());

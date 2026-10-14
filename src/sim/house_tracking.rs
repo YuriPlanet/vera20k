@@ -63,11 +63,16 @@
 //! plus the buildings tracked with them, `0x004FF72E`/`0x004FF78B`) and
 //! `+0x2F4` (the infantry, `0x004FF81A..0x004FF83B`) are read by the crate
 //! pickup's Unit and Squad eligibility (`0x00481C27`, `0x00481C3B`). Native
-//! counts an infantry once through the `+0x438` latch, which Remove_Tracking
-//! (`0x004FF636..0x004FF64D`) tests and clears, and skips one whose `+0x439`
-//! byte is set; VERA pairs the add and remove per object and does not model
-//! `+0x439` (identity unestablished). `+0x2EC`, `+0x2F8` and the owned-type
-//! sets have no reader here and are not kept.
+//! counts an infantry once through object `+0x438`; `+0x439` skips only that
+//! total increment (`0x004FF824..0x004FF83B`), while per-type `+0x5528` is
+//! always updated. Remove_Tracking tests and clears `+0x438`
+//! (`0x004FF636..0x004FF64D`). Bio Reactor entry sets `+0x439`, removes an
+//! existing `+0x2F4` contribution and clears `+0x438`; successful unload,
+//! SpawnSurvivors and Selling reveals restore the contribution and clear
+//! `+0x439` (`0x0051A30F`, `0x0051A327..0x0051A348`,
+//! `0x0044DBEA..0x0044DC02`, `0x00442F6D..0x00442FA1`,
+//! `0x0044A510..0x0044A548`). `+0x2EC`, `+0x2F8`
+//! and the owned-type sets have no reader here and are not kept.
 //!
 //! Factory counters (`+0x5378` aircraft, `+0x537C` infantry, `+0x5380`
 //! vehicle, `+0x5384` building, `+0x5388` naval): a building whose type has
@@ -129,6 +134,7 @@ use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::{HouseCostFactors, RuleSet};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
+use crate::sim::world::Simulation;
 
 /// The type facts the counters test, fixed when the Techno is constructed
 /// ([`TrackingFacts::of`]).
@@ -197,6 +203,64 @@ impl TrackingFacts {
             insignificant: true,
             ..Self::default()
         }
+    }
+}
+
+/// The two object-owned latches that gate an Infantry's `HouseClass+0x2F4`
+/// total. Add_Tracking sets `counted_infantry_total` only when both bytes are
+/// clear; Remove_Tracking tests and clears it. InfantryAbsorb entry can clear
+/// the count latch while the passenger remains in its per-type `+0x5528`
+/// count; any successful reveal from an absorber, SpawnSurvivors or Selling
+/// may restore it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) struct InfantryTrackingLatches {
+    /// Techno `+0x438`: Add/Remove_Tracking's once-counted total latch.
+    counted_infantry_total: bool,
+    /// Techno `+0x439`: Add_Tracking skips the total arm while set.
+    skip_infantry_total_on_add: bool,
+}
+
+impl InfantryTrackingLatches {
+    /// Add_Tracking `0x004FF81A..0x004FF83B` increments the house total and
+    /// sets `+0x438` only when both latches are clear.
+    fn add_total(&mut self) -> bool {
+        if self.counted_infantry_total || self.skip_infantry_total_on_add {
+            return false;
+        }
+        self.counted_infantry_total = true;
+        true
+    }
+
+    /// Remove_Tracking `0x004FF636..0x004FF64D` subtracts only when `+0x438`
+    /// is set, then clears it.
+    fn remove_total(&mut self) -> bool {
+        let counted = self.counted_infantry_total;
+        self.counted_infantry_total = false;
+        counted
+    }
+
+    fn set_absorbed(&mut self, absorbed: bool) {
+        self.skip_infantry_total_on_add = absorbed;
+    }
+
+    fn restore_absorbed(&mut self) -> bool {
+        self.skip_infantry_total_on_add = false;
+        if self.counted_infantry_total {
+            false
+        } else {
+            self.counted_infantry_total = true;
+            true
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_counted(&self) -> bool {
+        self.counted_infantry_total
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_absorbed(&self) -> bool {
+        self.skip_infantry_total_on_add
     }
 }
 
@@ -345,16 +409,16 @@ pub struct HouseTracking {
 
 impl HouseTracking {
     /// `HouseClass::Add_Tracking @ 0x004FF700`.
-    pub(crate) fn add_tracking(&mut self, entity: &GameEntity) {
+    pub(crate) fn add_tracking(&mut self, entity: &mut GameEntity) {
         self.track(entity, 1);
     }
 
     /// `HouseClass::Remove_Tracking @ 0x004FF550`.
-    pub(crate) fn remove_tracking(&mut self, entity: &GameEntity) {
+    pub(crate) fn remove_tracking(&mut self, entity: &mut GameEntity) {
         self.track(entity, -1);
     }
 
-    fn track(&mut self, entity: &GameEntity, delta: i32) {
+    fn track(&mut self, entity: &mut GameEntity, delta: i32) {
         let facts = entity.tracking_facts;
         if facts.insignificant || entity.dont_score {
             return;
@@ -366,7 +430,16 @@ impl HouseTracking {
             EntityCategory::Structure | EntityCategory::Unit => {
                 self.vehicles = self.vehicles.wrapping_add(delta);
             }
-            EntityCategory::Infantry => self.infantry = self.infantry.wrapping_add(delta),
+            EntityCategory::Infantry => {
+                let count_total = if delta > 0 {
+                    entity.house_tracking_latches_mut().add_total()
+                } else {
+                    entity.house_tracking_latches_mut().remove_total()
+                };
+                if count_total {
+                    self.infantry = self.infantry.wrapping_add(delta);
+                }
+            }
             EntityCategory::Aircraft => {}
         }
         let counts = match entity.category() {
@@ -377,6 +450,22 @@ impl HouseTracking {
         };
         let count = counts.entry(entity.type_ref()).or_default();
         *count = count.wrapping_add(delta);
+    }
+
+    fn absorber_entry(&mut self, entity: &mut GameEntity) {
+        if entity.category() == EntityCategory::Infantry
+            && entity.house_tracking_latches_mut().remove_total()
+        {
+            self.infantry = self.infantry.wrapping_sub(1);
+        }
+    }
+
+    fn restore_absorbed_infantry(&mut self, entity: &mut GameEntity) {
+        if entity.category() == EntityCategory::Infantry
+            && entity.house_tracking_latches_mut().restore_absorbed()
+        {
+            self.infantry = self.infantry.wrapping_add(1);
+        }
     }
 
     /// The tracked count of one type of `category` (`0x0049FAE0` on
@@ -673,6 +762,68 @@ impl HouseTracking {
             .wrapping_add(self.active_aircraft())
             .wrapping_add(refinery)
             != 0
+    }
+}
+
+impl Simulation {
+    /// Native Infantry::PerCellProcess sets `+0x439` immediately before the
+    /// absorber's Limbo (`0x0051A2ED..0x0051A316`). This only suppresses a
+    /// subsequent Add_Tracking total increment; it does not affect `+0x5528`.
+    pub(crate) fn set_infantry_absorber_entry(&mut self, stable_id: u64, absorbed: bool) {
+        if let Some(entity) = self
+            .substrate
+            .entities
+            .get_mut(stable_id)
+            .filter(|entity| entity.category() == EntityCategory::Infantry)
+        {
+            entity.house_tracking_latches_mut().set_absorbed(absorbed);
+        }
+    }
+
+    /// After the absorber's Limbo, native `0x0051A327..0x0051A348` removes
+    /// the once-counted infantry total and clears `+0x438`; per-type tracking
+    /// remains intact while the passenger is hidden in the building.
+    pub(crate) fn account_infantry_absorber_entry(&mut self, stable_id: u64) {
+        let Some(owner) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .filter(|entity| entity.category() == EntityCategory::Infantry)
+            .map(GameEntity::owner)
+        else {
+            return;
+        };
+        let (Some(entity), Some(house)) = (
+            self.substrate.entities.get_mut(stable_id),
+            self.houses.get_mut(&owner),
+        ) else {
+            return;
+        };
+        house.tracking.absorber_entry(entity);
+    }
+
+    /// Successful reveals from a Bio Reactor, SpawnSurvivors or Selling restore
+    /// the absorbed Infantry's total once and clear its Add_Tracking skip byte.
+    /// Native writers: Building Mission_Unload `0x0044DBEA..0x0044DC02`,
+    /// SpawnSurvivors `0x00442F6D..0x00442FA1`, and Mission_Selling
+    /// `0x0044A510..0x0044A548`. The per-type counter never changes here.
+    pub(crate) fn restore_absorbed_infantry_tracking(&mut self, stable_id: u64) {
+        let Some(owner) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .filter(|entity| entity.category() == EntityCategory::Infantry)
+            .map(GameEntity::owner)
+        else {
+            return;
+        };
+        let (Some(entity), Some(house)) = (
+            self.substrate.entities.get_mut(stable_id),
+            self.houses.get_mut(&owner),
+        ) else {
+            return;
+        };
+        house.tracking.restore_absorbed_infantry(entity);
     }
 }
 

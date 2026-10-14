@@ -225,7 +225,7 @@ fn spawn_refinery(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
     ge.lifecycle.set_in_limbo_for_test(false);
     ge.lifecycle.cell_marked = true;
     // Construction stamps the type's `Foundation=4x3`.
-    ge.foundation = "4x3".to_string();
+    ge.type_facts.set_foundation_for_test("4x3".to_string());
     sim.substrate.entities.insert(ge);
     occupy_structure_cells(sim, sid, rx, ry, 4, 3);
     join_house_list(sim, sid, owner_id);

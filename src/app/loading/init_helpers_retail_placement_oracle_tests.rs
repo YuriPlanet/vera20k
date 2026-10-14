@@ -337,7 +337,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         .expect("spawned provider retained");
     assert!(provider.lifecycle.cell_marked);
     assert!(provider.in_logic_vector);
-    assert_eq!(provider.foundation, "4x4");
+    assert_eq!(provider.type_facts.foundation(), "4x4");
 
     // This placement oracle starts after the yard's construction lifecycle.
     let provider = sim.substrate.entities.get_mut(provider_id).unwrap();
@@ -502,7 +502,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         })
         .expect("accepted command spawned stock GAPOWR");
     assert_eq!(placed.category(), EntityCategory::Structure);
-    assert_eq!(placed.foundation, "2x2");
+    assert_eq!(placed.type_facts.foundation(), "2x2");
     assert_eq!(placed.health.current(), 750);
     assert_eq!(rules.object("GAPOWR").unwrap().strength, 750);
     assert!(placed.lifecycle.cell_marked);

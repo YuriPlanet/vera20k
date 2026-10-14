@@ -13,13 +13,15 @@ use crate::rules::sound_ini::SoundRegistry;
 fn building_repaired_sound_uses_the_fixed_catalog_and_retains_prior_ids() {
     let ini = IniFile::from_str;
     let sounds = Arc::new(SoundRegistry::from_ini(&ini(
-        "[SoundList]\n0=Repair\n1=Wrong\n[NotRegistered]\nSounds=sample\n",
+        "[SoundList]\n0=Repair\n1=Wrong\n2=BioReactorExit\n\
+         [NotRegistered]\nSounds=sample\n[BioReactorExit]\nSounds=sample\n",
     )));
     let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
-        ini(
-            "[AudioVisual]\nBuildingRepairedSound=Repair\n[General]\nBuildingRepairedSound=Wrong\n",
-        ),
-        Some(ini("[AudioVisual]\nBuildingRepairedSound=unknown\n")),
+        ini("[AudioVisual]\nBuildingRepairedSound=Repair\n\
+             LeaveBioReactorSound=BioReactorExit\n\
+             [General]\nBuildingRepairedSound=Wrong\n"),
+        Some(ini("[AudioVisual]\nBuildingRepairedSound=unknown\n\
+             LeaveBioReactorSound=NotRegistered\n")),
         ini(""),
         Arc::clone(&sounds),
     )
@@ -27,9 +29,13 @@ fn building_repaired_sound_uses_the_fixed_catalog_and_retains_prior_ids() {
     let (rules, _, _, _) = owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&ini(
-                "[AudioVisual]\nBuildingRepairedSound= rEpAiR \n",
+                "[AudioVisual]\nBuildingRepairedSound= rEpAiR \n\
+                 LeaveBioReactorSound=\n",
             ))),
-            &ini("[AudioVisual]\nBuildingRepairedSound=\nbuildingrepairedsound=Wrong\n"),
+            &ini(
+                "[AudioVisual]\nBuildingRepairedSound=\nbuildingrepairedsound=Wrong\n\
+                 LeaveBioReactorSound=StillNotRegistered\n",
+            ),
         )
         .unwrap()
         .into_parts();
@@ -37,10 +43,16 @@ fn building_repaired_sound_uses_the_fixed_catalog_and_retains_prior_ids() {
         rules.general.building_repaired_sound.as_deref(),
         Some("Repair")
     );
+    assert_eq!(
+        rules.general.leave_bio_reactor_sound.as_deref(),
+        Some("BioReactorExit"),
+        "unknown and empty later reads retain the fixed-catalog Voc index"
+    );
     assert!(Arc::ptr_eq(owner.fixed_sounds(), &sounds));
 
     let mut invalid = NativeRulesProcessOwner::from_cold_start_sources(
-        ini("[AudioVisual]\nBuildingRepairedSound=NotRegistered\n"),
+        ini("[AudioVisual]\nBuildingRepairedSound=NotRegistered\n\
+             LeaveBioReactorSound=NotRegistered\n"),
         None,
         ini(""),
         sounds,
@@ -54,6 +66,7 @@ fn building_repaired_sound_uses_the_fixed_catalog_and_retains_prior_ids() {
         .unwrap()
         .into_parts();
     assert!(rules.general.building_repaired_sound.is_none());
+    assert!(rules.general.leave_bio_reactor_sound.is_none());
 }
 
 /// Original Rules66A979..66A9B7 reads AudioVisual/Construction and

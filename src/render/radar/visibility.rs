@@ -302,7 +302,7 @@ pub(super) fn build_radar_object_update(
         |surface| surface.world_to_surface_pixel(raw_x, raw_y, false),
     );
     let foundation = (entity.category() == EntityCategory::Structure)
-        .then(|| parse_foundation_size(&entity.foundation));
+        .then(|| parse_foundation_size(entity.type_facts.foundation()));
     let owner_is_human_player = local_owner.is_none_or(|local_owner| {
         radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero)
     });
@@ -485,7 +485,7 @@ mod tests {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 5);
         entity.set_category_for_test(EntityCategory::Structure);
-        entity.foundation = "3x2".to_string();
+        entity.type_facts.set_foundation_for_test("3x2".to_string());
         let raw = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
         let visibility = crate::sim::movement::ground_pose::object_center_xy(&entity);
         assert_eq!(radar_fog_cell_from_leptons(raw[0], raw[1]), Some((4, 5)));
@@ -845,7 +845,7 @@ mod tests {
         let local = crate::sim::intern::test_intern("Local");
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 4);
-        entity.foundation = "3x2".to_string();
+        entity.type_facts.set_foundation_for_test("3x2".to_string());
         let mut fog = FogState::default();
         fog.mark_visible_for_owner(local, 6, 5);
         assert!(!radar_building_both_corners_shrouded(

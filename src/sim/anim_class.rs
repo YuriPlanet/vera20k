@@ -3398,7 +3398,9 @@ mod tests {
             5,
             false,
         );
-        building.foundation = "4x4".to_string();
+        building
+            .type_facts
+            .set_foundation_for_test("4x4".to_string());
         sim.substrate.entities.insert(building);
         sim.reveal(id);
         (sim, rules, id)

@@ -2313,7 +2313,7 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.cell_marked = true;
         if category == EntityCategory::Structure {
-            entity.foundation = "1x1".to_string();
+            entity.type_facts.set_foundation_for_test("1x1".to_string());
         }
         entities.insert(entity);
     }
@@ -3089,7 +3089,11 @@ mod tests {
                 9,
                 EntityCategory::Structure,
             );
-            entities.get_mut(2).unwrap().foundation = "3x3".to_string();
+            entities
+                .get_mut(2)
+                .unwrap()
+                .type_facts
+                .set_foundation_for_test("3x3".to_string());
             assert_eq!(
                 pick_with_mask(&entities, &rules, 1, super::super::ScanMission::AreaGuard),
                 expected,
@@ -3224,7 +3228,11 @@ mod tests {
             10,
             EntityCategory::Structure,
         );
-        entities.get_mut(1).unwrap().foundation = "3x3".to_string();
+        entities
+            .get_mut(1)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test("3x3".to_string());
         place(
             &mut entities,
             2,
@@ -3270,7 +3278,11 @@ mod tests {
                 ry,
                 EntityCategory::Structure,
             );
-            entities.get_mut(2).unwrap().foundation = foundation.to_string();
+            entities
+                .get_mut(2)
+                .unwrap()
+                .type_facts
+                .set_foundation_for_test(foundation.to_string());
             let interner = test_interner();
             truncate_score(
                 calculate_threat_score(

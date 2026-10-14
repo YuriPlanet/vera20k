@@ -627,7 +627,7 @@ impl Simulation {
                 .filter(|t| t.category() == EntityCategory::Structure)
                 .map(|t| {
                     let (width, height) =
-                        crate::rules::foundation::foundation_dimensions(&t.foundation);
+                        crate::rules::foundation::foundation_dimensions(t.type_facts.foundation());
                     (i32::from(width), i32::from(height))
                 }),
             TargetKind::Cell(..) => None,

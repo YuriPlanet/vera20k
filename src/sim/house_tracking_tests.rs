@@ -123,8 +123,9 @@ fn fixture_type(case: &str) -> Option<&'static str> {
 /// defeat gate reads is compared with the native routing: `+0x2F0` (a
 /// building unless Insignificant, DontScore, a 1x1 undeployer or one that
 /// undeploys into a ResourceGatherer) and the per-type `+0x5514` (a Unit
-/// unless Insignificant or DontScore). The other counters the functions
-/// write (`+0x2E8`, `+0x2EC`, `+0x2F4` and its latch, `+0x2F8`) are not kept.
+/// unless Insignificant or DontScore). This corpus does not compare its other
+/// counters (`+0x2E8`, `+0x2EC`, `+0x2F4`, `+0x2F8`); infantry absorber latch
+/// lifecycle is covered through production in building-entry tests.
 #[test]
 fn native_tracking_corpus() {
     let cases: Vec<NativeTrackingCase> = serde_json::from_str(crate::test_fixture::text(

@@ -167,7 +167,7 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
                 8,
                 EntityCategory::Structure,
             );
-            building.foundation = "3x3".into();
+            building.type_facts.set_foundation_for_test("3x3".into());
             building.radio_contacts.set_capacity(3);
             for id in [100, 101, if contacted { 1 } else { 102 }] {
                 building.radio_contacts.insert(id);
@@ -1125,7 +1125,7 @@ fn factory_per_cell_fixture(
     );
     producer.set_type_ref_for_test(sim.intern("GAWEAP"));
     producer.set_owner_for_test(owner);
-    producer.foundation = "1x1".into();
+    producer.type_facts.set_foundation_for_test("1x1".into());
     producer.on_bridge = producer_on_bridge;
     producer.lifecycle.set_object_alive_for_test(true);
     producer.lifecycle.set_in_limbo_for_test(false);
@@ -1561,7 +1561,7 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
             );
             if middle_row_underneath {
                 let producer = sim.substrate.entities.get_mut(2).unwrap();
-                producer.foundation = "1x2".into();
+                producer.type_facts.set_foundation_for_test("1x2".into());
                 super::super::ground_pose::put_location(
                     &mut producer.position,
                     DriveCoord::cell(10, 9, 0),

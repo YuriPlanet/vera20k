@@ -1480,7 +1480,7 @@ impl Simulation {
             .iter()
             .filter_map(|&id| {
                 let building = self.substrate.entities.get(id)?;
-                (building.base_plan_type_index == index)
+                (building.type_facts.base_plan_type_index() == index)
                     .then(|| (id, location_xyz(building, terrain)))
             })
             .collect();
@@ -2236,7 +2236,7 @@ impl Simulation {
             .iter_sorted()
             .filter(|(_, building)| {
                 building.category() == EntityCategory::Structure
-                    && building.base_plan_type_index == index
+                    && building.type_facts.base_plan_type_index() == index
             })
             .map(|(id, building)| TargetBuilding {
                 id,

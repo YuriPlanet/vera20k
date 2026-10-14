@@ -111,11 +111,10 @@
 //!   hijacker arm is unreachable.
 //! - The crewman takes the vehicle's tag (`0x006E57C0`/`0x005F5B50`): VERA
 //!   has no per-object tags.
-//! - Absorbed-passenger bookkeeping: the House `+0x2F4` counter and the
-//!   passenger `+0x438`/`+0x439` flags, and a refused passenger's kill credit
-//!   to a Techno C4AppliedBy (vt+0xE0) before its UnInit. A UnitAbsorb
-//!   passenger (no stock building) leaves without its Scatter in Phase A and
-//!   with it in a sale; VERA scatters neither.
+//! - A refused passenger's kill credit to a Techno C4AppliedBy (vt+0xE0)
+//!   before its UnInit. A UnitAbsorb passenger (no stock building) leaves
+//!   without its Scatter in Phase A and with it in a sale; VERA scatters
+//!   neither.
 //! - The Nominal survivor flag (Infantry `+0x6D9`, set from the crew type's
 //!   `+0xC9E`; a sale sets it at `0x0044A747`; read by
 //!   `HouseClass::Added_To_Game @ 0x00502C3C`) is not represented.
@@ -593,6 +592,13 @@ impl Simulation {
                 );
                 return;
             }
+            // SpawnSurvivors `0x00442F6D..0x00442FA1` and Mission_Selling
+            // `0x0044A510..0x0044A548` both restore the absorbed infantry's
+            // House+0x2F4 contribution and clear +0x439 only after Unlimbo
+            // succeeds. This is the same HouseTracking owner used by a normal
+            // Bio Reactor unload; no Unload-only sound/latch/mission effects
+            // belong to these ejection paths.
+            sim.restore_absorbed_infantry_tracking(passenger);
             if infantry {
                 sim.scatter_crew(rules, registry, passenger, effects);
             }

@@ -560,10 +560,9 @@ pub(super) fn spawn_structure(
     // prerequisites read them.
     sim.update_house_tracking(sid, crate::sim::house_tracking::HouseTracking::add_tracking);
     sim.house_added_to_game(sid);
-    sim.update_house_tracking(
-        sid,
-        crate::sim::house_tracking::HouseTracking::increment_factory_count,
-    );
+    sim.update_house_tracking(sid, |tracking, entity| {
+        tracking.increment_factory_count(entity)
+    });
     if sim.substrate.next_stable_object_id <= sid {
         sim.substrate.next_stable_object_id = sid + 1;
     }
@@ -587,7 +586,8 @@ pub(super) fn stamp_type_foundation(sim: &mut Simulation, rules: &RuleSet, sid: 
         .entities
         .get_mut(sid)
         .expect("a spawned structure")
-        .foundation = foundation;
+        .type_facts
+        .set_foundation_for_test(foundation);
 }
 
 /// P5d: arm a registry factory's queue-of-record directly (replaces the retired
@@ -1272,7 +1272,7 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.foundation = "4x4".to_string();
+        yard.type_facts.set_foundation_for_test("4x4".to_string());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(20, 10)));
     }
     sim.add_entity_occupancy(1);
@@ -1377,7 +1377,7 @@ fn naval_rally_destination_and_move_survive_without_path_grid() {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.foundation = "4x4".to_string();
+        yard.type_facts.set_foundation_for_test("4x4".to_string());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(20, 10)));
     }
     sim.add_entity_occupancy(1);
@@ -1457,7 +1457,7 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.foundation = "4x4".to_string();
+        yard.type_facts.set_foundation_for_test("4x4".to_string());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(39, 39)));
     }
     sim.add_entity_occupancy(1);

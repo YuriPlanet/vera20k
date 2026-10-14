@@ -275,6 +275,41 @@ fn passenger_can_enter(
     )
 }
 
+/// The Bio Reactor's `Mission_Unload @ 0x0044D880` calls the passenger's
+/// `+0x1AC` twice for each strict candidate and once for each relaxed
+/// candidate. Infantry dispatches to `InfantryClass::Can_Enter_Cell
+/// @ 0x0051BF90`; `0x44D988` supplies the building's `5F5F00` height,
+/// octant, NULL previous cell, and mode 1. The shared `foot_can_enter` owner
+/// models that active receiver (the mode is a side-effect-free locomotor
+/// query); zero is the native acceptance result.
+fn absorber_passenger_can_enter(
+    sim: &Simulation,
+    rules: &RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    passenger_id: u64,
+    cell: (u16, u16),
+    octant: usize,
+    height: i32,
+) -> bool {
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return false;
+    };
+    let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
+        .lookup((cell.0 as i16, cell.1 as i16));
+    sim.foot_can_enter(
+        passenger_id,
+        cell,
+        crate::sim::movement::infantry_entry::InfantryEntryArgs {
+            direction: octant as i32,
+            height,
+            previous_cell: None,
+        },
+        rules,
+        registry,
+    )
+    .is_ok_and(|code| code == 0)
+}
+
 fn queue_guard(sim: &mut Simulation, id: u64) {
     let now = sim.session.binary_frame;
     let _ = sim.mission_queue_exact(
@@ -485,6 +520,7 @@ fn eject_head_passenger(
                 place_cell.0,
                 place_cell.1,
                 z,
+                None,
                 effects,
             )?;
 
@@ -553,6 +589,244 @@ fn eject_head_passenger(
         Ok(()) => EjectOutcome::Placed,
         Err(_) => EjectOutcome::Failed,
     }
+}
+
+/// One `BuildingClass::Mission_Unload @ 0x0044D880` absorber attempt. Native
+/// removes the cargo head before scanning, restores that same head on any
+/// failed search/Unlimbo, then takes the shared Unload rate epilogue. The
+/// source is the supported Steam `gamemd.exe` body `0x0044D880..0x0044DC84`;
+/// infantry placement delegates to `MapClass::PlaceInfantryInCell
+/// @ 0x004ACA10` and the existing `CellClass::PlaceInfantryInCell @
+/// 0x00481180` owner.
+///
+/// Only an `InfantryAbsorb=` building reaches this, and only its infantry
+/// passengers are ported. Residual: a non-infantry passenger (a custom type
+/// that also sets `UnitAbsorb=`; no retail type does) fails placement and
+/// stays in the cargo, as a `UnitAbsorb=`-only building's do.
+pub(crate) fn building_mission_unload_absorber(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) -> i32 {
+    let now = sim.session.binary_frame;
+    let Some((base, facing16, building_owner, extra_power, height)) =
+        sim.substrate.entities.get(id).and_then(|building| {
+            let object = sim.object_type(building.type_ref(), rules)?;
+            // Native 0x44D92D calls Building+0x1B8 (GetMapCoords) and scans
+            // outward from its Location cell. The sound tail separately uses
+            // +0x48 GetCoords (the foundation center).
+            let base = (building.position.rx, building.position.ry);
+            let height = sim
+                .resolved_terrain
+                .as_ref()
+                .map(|terrain| {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                    crate::sim::movement::ground_pose::query_object_cell_height(
+                        &cells,
+                        crate::sim::movement::ground_pose::position_world_coord(&building.position),
+                        building.on_bridge,
+                    )
+                })
+                .unwrap_or(0);
+            Some((
+                base,
+                building.body_facing_current(now),
+                building.owner(),
+                // Native Type+0xEE8 is `ExtraPower`: BuildingType::ReadINI
+                // passes the raw `ExtraPower` string at 0x81A7B0 to the
+                // integer reader at 0x5276D0 and stores it at +0xEE8
+                // (0x004610B3..0x004610C7). The unload tail tests this field
+                // `> 0` before dirtying House+0x5778 (0x0044DC55..0x0044DC75).
+                object.extra_power > 0,
+                height,
+            ))
+        })
+    else {
+        return unload_epilogue(sim, rules, id);
+    };
+
+    let _ = depart_cargo_head(
+        sim,
+        rules,
+        overlay_registry,
+        id,
+        DepartureRoute::Absorber,
+        |sim, passenger_id| {
+            let Some(passenger_category) = sim
+                .substrate
+                .entities
+                .get(passenger_id)
+                .map(|passenger| passenger.category())
+            else {
+                return Err(DepartureFailure::MissingPassenger);
+            };
+            if passenger_category != EntityCategory::Infantry {
+                return Err(DepartureFailure::Placement);
+            }
+            let start =
+                ((((u32::from(facing16.wrapping_add(0x7FFF)) >> 12) + 1) >> 1) as usize) & 7;
+            let mut strict_pass = true;
+            let mut index = 0usize;
+            let mut placement = None;
+            while index < 8 {
+                let octant = (start + index) & 7;
+                let adjacent = cell_from(base, CELL_DELTAS[octant]);
+                let beyond = adjacent.and_then(|cell| cell_from(cell, CELL_DELTAS[octant]));
+                let accepts = if strict_pass {
+                    // Native tests the cell two steps away before the adjacent
+                    // cell. The relaxed pass calls only the adjacent cell.
+                    let beyond_open = beyond.is_some_and(|cell| {
+                        absorber_passenger_can_enter(
+                            sim,
+                            rules,
+                            overlay_registry,
+                            passenger_id,
+                            cell,
+                            octant,
+                            height,
+                        )
+                    });
+                    beyond_open
+                        && adjacent.is_some_and(|cell| {
+                            absorber_passenger_can_enter(
+                                sim,
+                                rules,
+                                overlay_registry,
+                                passenger_id,
+                                cell,
+                                octant,
+                                height,
+                            )
+                        })
+                } else {
+                    adjacent.is_some_and(|cell| {
+                        absorber_passenger_can_enter(
+                            sim,
+                            rules,
+                            overlay_registry,
+                            passenger_id,
+                            cell,
+                            octant,
+                            height,
+                        )
+                    })
+                };
+                if !accepts {
+                    if strict_pass && index == 7 {
+                        strict_pass = false;
+                        index = 1;
+                    } else {
+                        index += 1;
+                    }
+                    continue;
+                }
+                let adjacent = adjacent.expect("accepted adjacent cell exists");
+                // The native structural bridge skip advances the octant; it
+                // does not trigger the relaxed-pass transition at index 7.
+                if cell_has_structural_bridge(sim, adjacent) {
+                    index += 1;
+                    continue;
+                }
+                let strict_beyond = if strict_pass { beyond } else { None };
+                placement = Some((adjacent, strict_beyond, octant));
+                break;
+            }
+            let Some((adjacent, strict_beyond, octant)) = placement else {
+                return Err(DepartureFailure::Placement);
+            };
+
+            // Native supplies the cell centre (x*256+0x80,y*256+0x80,z=0)
+            // to 4ACA10. A bridge candidate was skipped above, so this path
+            // uses the selected ground plane and consumes the shared
+            // center-row Scenario draw in 481180.
+            let Some(sub_cell) = bump_crush::place_infantry_in_cell(
+                &sim.substrate.raw_cell_occupation,
+                adjacent.0,
+                adjacent.1,
+                MovementLayer::Ground,
+                CELL_CENTER_LEPTON,
+                CELL_CENTER_LEPTON,
+                &mut sim.scenario_rng,
+            ) else {
+                return Err(DepartureFailure::Placement);
+            };
+            let destination = strict_beyond.unwrap_or(adjacent);
+            if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
+                passenger.sub_cell = Some(sub_cell);
+                passenger.body_facing.snap((octant as u16) << 13, now);
+                if let Some(locomotor) = passenger.locomotor.as_mut() {
+                    locomotor.layer = MovementLayer::Ground;
+                }
+            }
+            let fallback_z = sim
+                .substrate
+                .entities
+                .get(id)
+                .map_or(0, |building| building.position.z);
+            let z = cell_level_or(sim, adjacent, fallback_z);
+            reveal_unloaded_passenger(
+                sim,
+                rules,
+                id,
+                passenger_id,
+                adjacent.0,
+                adjacent.1,
+                z,
+                Some((octant as u8) << 5),
+                effects,
+            )?;
+
+            if let Some(sound) = rules.general.leave_bio_reactor_sound.as_ref() {
+                let coordinate = sim.substrate.entities.get(id).map(|building| {
+                    crate::sim::movement::ground_pose::object_get_coords(
+                        building,
+                        sim.resolved_terrain.as_ref(),
+                    )
+                });
+                if let Some(coordinate) = coordinate {
+                    let (rx, ry, sub_x, sub_y, _) = crate::sim::anim_class::AnimWorldCoord {
+                        x: coordinate.x,
+                        y: coordinate.y,
+                        z: coordinate.z,
+                    }
+                    .to_cell_sub_z();
+                    sim.sound_events.push(SimSoundEvent::VocAt {
+                        sound_id: sound.clone(),
+                        audible_to: None,
+                        rx,
+                        ry,
+                        sub_x,
+                        sub_y,
+                        world_z_leptons: coordinate.z,
+                    });
+                }
+            }
+            sim.clear_human_absorber_seek_on_unload(passenger_id);
+            sim.restore_absorbed_infantry_tracking(passenger_id);
+
+            sim.queue_order_mission(passenger_id, MissionType::Move);
+            if let Err(cause) = sim.assign_destination_represented(
+                passenger_id,
+                Some(crate::sim::components::NavTargetRef::cell(
+                    destination.0,
+                    destination.1,
+                )),
+                Some(rules),
+                overlay_registry,
+                effects,
+            ) {
+                log::warn!("Building Unload destination {passenger_id}: {cause}");
+            }
+            if extra_power {
+                sim.invalidate_house_power(building_owner, false);
+            }
+            Ok(())
+        },
+        effects,
+    );
+    unload_epilogue(sim, rules, id)
 }
 
 /// The `Passengers > 0` branch of `UnitClass::Mission_Unload @ 0x0073D630`.
@@ -947,7 +1221,17 @@ fn eject_from_aircraft(
                     loco.layer = MovementLayer::Ground;
                 }
             }
-            reveal_unloaded_passenger(sim, rules, aircraft_id, pax_id, cell.0, cell.1, z, effects)?;
+            reveal_unloaded_passenger(
+                sim,
+                rules,
+                aircraft_id,
+                pax_id,
+                cell.0,
+                cell.1,
+                z,
+                None,
+                effects,
+            )?;
             // KickOutUnit leaves the passenger's target alone
             // (`0x00415BF9..0x00415C21`).
             // Aircraft415C05 queues Move directly before destination415C21,

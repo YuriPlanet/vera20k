@@ -689,8 +689,9 @@ const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x69E4_BD1F_0A5C_4319;
 // historical Rust receipts; they are not comparable to current u64 outputs.
 const GLOBAL_HARNESS_INCOMING_HASH: u64 = 0x0D69_4099_AD39_5D63;
 const GLOBAL_HARNESS_R6_FINAL_HASH: u64 = 0x488E_0917_87DF_8E1A;
-// The legacy-feed control uses this main StateHasher reference.
-const GLOBAL_HARNESS_MAIN_HASH: u64 = 0x0B64_C58D_B313_2AB4;
+// The legacy-feed control uses this main StateHasher reference, which
+// includes the +0x438/+0x439 infantry tracking latches.
+const GLOBAL_HARNESS_MAIN_HASH: u64 = 0x6616_10FD_E8C9_ADDE;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a

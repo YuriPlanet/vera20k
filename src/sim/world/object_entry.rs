@@ -1744,7 +1744,7 @@ mod tests {
             entity.set_category_for_test(category);
             if category == EntityCategory::Structure {
                 // Construction stamps the type's `Foundation=2x2`.
-                entity.foundation = "2x2".to_string();
+                entity.type_facts.set_foundation_for_test("2x2".to_string());
             }
             entity.position.sub_x = crate::util::fixed_math::SimFixed::from_num(128);
             entity.position.sub_y = crate::util::fixed_math::SimFixed::from_num(128);

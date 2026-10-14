@@ -929,7 +929,9 @@ mod tests {
                 entity.set_type_ref_for_test(type_ref);
                 if category == EntityCategory::Structure {
                     // Construction stamps the type's ART `Foundation=`.
-                    entity.foundation = dimensions.clone();
+                    entity
+                        .type_facts
+                        .set_foundation_for_test(dimensions.clone());
                 }
                 entity.lifecycle.cell_marked = target["marked"].as_bool().unwrap_or(true);
                 entity.on_bridge = target["on_bridge"].as_bool().unwrap_or(false);
@@ -1039,7 +1041,9 @@ mod tests {
             // Construction stamps the type's foundation on each building.
             for entity in sim.substrate.entities.values_mut() {
                 if entity.category() == EntityCategory::Structure {
-                    entity.foundation = foundation.clone();
+                    entity
+                        .type_facts
+                        .set_foundation_for_test(foundation.clone());
                 }
             }
             let mut world = world(&sim);

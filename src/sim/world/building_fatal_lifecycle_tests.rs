@@ -300,7 +300,7 @@ impl Fixture {
             for (rx, ry) in crate::sim::crew_survival::foundation_cells(
                 entity.position.rx,
                 entity.position.ry,
-                &entity.foundation,
+                entity.type_facts.foundation(),
             ) {
                 sim.substrate.raw_cell_occupation.clear_ground(
                     rx,

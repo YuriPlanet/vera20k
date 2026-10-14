@@ -7970,7 +7970,9 @@ fn a_buildings_death_weapon_detonates_at_its_foundation_centre() {
     );
     derrick.set_owner_for_test(owner);
     derrick.set_type_ref_for_test(sim.interner.intern("DERRICK"));
-    derrick.foundation = "3x3".to_string();
+    derrick
+        .type_facts
+        .set_foundation_for_test("3x3".to_string());
     derrick.is_voxel = false;
     derrick.health.set_for_test(100);
     sim.substrate.entities.insert(derrick);
@@ -9881,7 +9883,7 @@ fn projectile_shrapnel_count_measures_to_the_firers_get_coords() {
     let mut source = make_entity_owned(1, "HQ", 2, 4, 100, "Soviet");
     source.set_category_for_test(EntityCategory::Structure);
     // Construction stamps the type's `Foundation=3x3`.
-    source.foundation = "3x3".to_string();
+    source.type_facts.set_foundation_for_test("3x3".to_string());
     source.lifecycle.cell_marked = true;
     entities.insert(source);
     // The target stands in the bullet's cell, which SpawnShrapnel requires.
@@ -9957,7 +9959,7 @@ fn projectile_shrapnel_aims_at_a_building_foundation_center() {
     let mut target = make_entity_owned(2, "HQ", 6, 4, 100, "Americans");
     target.set_category_for_test(EntityCategory::Structure);
     // Construction stamps the type's `Foundation=2x2`.
-    target.foundation = "2x2".to_string();
+    target.type_facts.set_foundation_for_test("2x2".to_string());
     target.lifecycle.cell_marked = true;
     entities.insert(target);
     let mut occupancy = OccupancyGrid::rebuild(&entities);
@@ -10191,7 +10193,7 @@ fn projectile_shrapnel_needs_a_non_building_first_object_in_the_bullets_cell() {
     building.insert(firer());
     let mut hq = make_entity_owned(2, "HQ", 5, 5, 100, "Americans");
     hq.set_category_for_test(EntityCategory::Structure);
-    hq.foundation = "1x1".to_string();
+    hq.type_facts.set_foundation_for_test("1x1".to_string());
     building.insert(hq);
     assert!(shrapnel_at_cell_5_5(&rules, building, 1).0.is_empty());
 
@@ -11994,7 +11996,9 @@ fn a_dying_buildings_debris_leaves_from_its_centre() {
     let _ = test_intern("BIG");
     let mut building = make_structure_entity(2, "BIG", 8, 5, 0, 1);
     // Construction stamps the type's `Foundation=3x3`.
-    building.foundation = "3x3".to_string();
+    building
+        .type_facts
+        .set_foundation_for_test("3x3".to_string());
     let location = (
         8 * 256 + building.position.sub_x.to_num::<i32>(),
         5 * 256 + building.position.sub_y.to_num::<i32>(),

@@ -142,6 +142,7 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
                     exit.0,
                     exit.1,
                     0,
+                    None,
                     crate::sim::world::FrameEffects::default(),
                 )
             },
@@ -436,6 +437,7 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
                     16,
                     20,
                     0,
+                    None,
                     crate::sim::world::FrameEffects::default(),
                 )
             },

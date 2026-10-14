@@ -103,7 +103,9 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
     entity.position.sub_x = SimFixed::from_num(at[0] % 256);
     entity.position.sub_y = SimFixed::from_num(at[1] % 256);
     entity.position.exact_z_leptons = Some(at[2]);
-    entity.foundation = if kind == "GAPOWR" { "2x2" } else { "1x1" }.into();
+    entity
+        .type_facts
+        .set_foundation_for_test(if kind == "GAPOWR" { "2x2" } else { "1x1" }.into());
     sim.substrate.entities.insert(entity);
 }
 

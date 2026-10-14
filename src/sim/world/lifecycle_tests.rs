@@ -383,8 +383,12 @@ fn insert_reservation_building(
         5,
         false,
     );
-    entity.foundation = foundation.to_string();
-    entity.base_reservation_spacing = Some(spacing);
+    entity
+        .type_facts
+        .set_foundation_for_test(foundation.to_string());
+    entity
+        .type_facts
+        .set_base_reservation_spacing_for_test(Some(spacing));
     sim.substrate.entities.insert(entity);
     owner
 }
@@ -562,7 +566,9 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
-        building.foundation = "2x2".to_string();
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
         let mut cargo = PassengerCargo::new(5, 1);
         assert!(cargo.board(passenger_id, 1));
         building.passenger_role = PassengerRole::transport(cargo);
@@ -1744,7 +1750,9 @@ fn gsi_04_12_common_raw_occupation_building_foundation_is_ground_only() {
     insert_entity(&mut sim, 1, EntityCategory::Structure);
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
-        building.foundation = "2x2".to_string();
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
         building.on_bridge = true;
     }
 
@@ -1776,13 +1784,18 @@ fn gsi_04_05_hidden_lifecycle_follows_base_lists_without_expanding_them() {
     insert_entity(&mut sim, 1, EntityCategory::Structure);
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
-        building.foundation = "2x2".to_string();
-        let profile = building
-            .building_hidden_occupancy
-            .as_mut()
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
+        let mut profile = building
+            .type_facts
+            .building_hidden_occupancy()
             .expect("structure constructor profile");
         profile.add_occupy[0] = Some((-1, 0));
         profile.remove_occupy[0] = Some((1, 1));
+        building
+            .type_facts
+            .set_building_hidden_occupancy_for_test(Some(profile));
     }
 
     let _ = sim.try_reveal_entity(1, common_raw_request(4, 4, 0, 128, 128));
@@ -4292,7 +4305,8 @@ fn gsi_04_16_dustbowl_conyard_unlimbo_uses_local_size_edge() {
             .entities
             .get(conyard)
             .unwrap()
-            .determines_waypoint_edge,
+            .type_facts
+            .determines_waypoint_edge(),
         "Factory=BuildingType must freeze onto the entity before Reveal"
     );
     let house = sim.houses.get(&owner).expect("launch house");
@@ -4345,7 +4359,8 @@ fn gsi_04_16_caoild_reveal_and_owner_change_preserve_waypoint_edges() {
             .entities
             .get(oil)
             .unwrap()
-            .determines_waypoint_edge,
+            .type_facts
+            .determines_waypoint_edge(),
         "missing Factory= must freeze as an ineligible edge profile"
     );
     assert_eq!(sim.houses.get(&old_owner).unwrap().waypoint_edge, 1);
@@ -5871,7 +5886,7 @@ fn gsi_05_04_building_get_coords_uses_foundation_center_cell() {
     {
         let target = sim.substrate.entities.get_mut(target_id).unwrap();
         target.set_type_ref_for_test(gapowr);
-        target.foundation = "2x2".to_string();
+        target.type_facts.set_foundation_for_test("2x2".to_string());
     }
     assert!(matches!(
         sim.try_reveal_entity(target_id, common_raw_request(9, 11, 0, 128, 128)),
@@ -6072,7 +6087,9 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
-        building.foundation = "2x2".to_string();
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
         building.health.set_for_test(10);
         let mut cargo = PassengerCargo::new(5, 1);
         assert!(cargo.board(passenger_id, 1));
@@ -7168,7 +7185,9 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
     {
         let factory = sim.substrate.entities.get_mut(factory_id).unwrap();
         factory.set_type_ref_for_test(sim.interner.intern("WEAP"));
-        factory.foundation = "1x1".to_string();
+        factory
+            .type_facts
+            .set_foundation_for_test("1x1".to_string());
     }
     assert!(matches!(
         sim.try_reveal_entity(factory_id, common_raw_request(4, 5, 0, 128, 128)),
@@ -7252,7 +7271,9 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
         {
             let building = sim.substrate.entities.get_mut(building_id).unwrap();
             building.set_type_ref_for_test(sim.interner.intern("BLDG"));
-            building.foundation = "1x1".to_string();
+            building
+                .type_facts
+                .set_foundation_for_test("1x1".to_string());
         }
         assert!(matches!(
             sim.try_reveal_entity(building_id, common_raw_request(4, 5, 0, 128, 128)),
@@ -7898,7 +7919,9 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
     {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
-        building.foundation = "2x1".to_string();
+        building
+            .type_facts
+            .set_foundation_for_test("2x1".to_string());
         building.health.set_for_test(10);
     }
     assert!(matches!(
@@ -8254,8 +8277,10 @@ fn insert_naval_build_const_fixture(
         5,
         false,
     );
-    building.foundation = "1x1".to_string();
-    building.build_const_eligible = true;
+    building
+        .type_facts
+        .set_foundation_for_test("1x1".to_string());
+    building.type_facts.set_build_const_eligible_for_test(true);
     sim.substrate.entities.insert(building);
 }
 

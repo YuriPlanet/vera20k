@@ -259,7 +259,8 @@ pub(crate) fn building_at_cell_in_store(entities: &EntityStore, rx: u16, ry: u16
         if entity.category() != EntityCategory::Structure || entity.death.is_dying() {
             return None;
         }
-        let (width, height) = crate::rules::foundation::foundation_dimensions(&entity.foundation);
+        let (width, height) =
+            crate::rules::foundation::foundation_dimensions(entity.type_facts.foundation());
         let (bx, by) = (entity.position.rx, entity.position.ry);
         (rx >= bx && rx < bx.saturating_add(width) && ry >= by && ry < by.saturating_add(height))
             .then_some(entity.stable_id())

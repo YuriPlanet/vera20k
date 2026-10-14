@@ -786,6 +786,12 @@ pub struct GeneralRules {
     /// `NavalUnitEmerge`; the native constructor's invalid Voc index is silence
     /// when the key is absent or cannot resolve.
     pub cloak_sound: Option<String>,
+    /// `[AudioVisual] LeaveBioReactorSound=` is RulesClass+0x274, read by
+    /// `RulesClass::ReadAudioVisual @ 0x006691E0` and played by the successful
+    /// InfantryAbsorb arm of `BuildingClass::Mission_Unload @ 0x0044D880`.
+    /// `None` is the constructor's invalid Voc index; the fixed SOUNDMD binder
+    /// resolves the name and retains the prior valid index across rules passes.
+    pub leave_bio_reactor_sound: Option<String>,
     /// `[AudioVisual] UpgradeVeteranSound=` — `RulesClass::ReadAudioVisual @
     /// 0x006691E0` resolves it to a Voc index at `RulesClass+0x228`
     /// (`0x00669CFD..0x00669D27`); `TechnoClass::AI_Update` plays that index
@@ -2168,6 +2174,7 @@ impl Default for GeneralRules {
             cloaking_stages: 9,
             cloak_delay_frames: 18,
             cloak_sound: None,
+            leave_bio_reactor_sound: None,
             upgrade_veteran_sound: None,
             upgrade_elite_sound: None,
             slaves_free_sound: None,
@@ -3139,6 +3146,9 @@ impl GeneralRules {
             cloak_sound: audio_visual
                 .read_name("CloakSound", 0x80)
                 .map(str::to_owned),
+            // The fixed SOUNDMD binder resolves Rules+0x274 as a Voc index.
+            // Keep the constructor's invalid index until that owner binds it.
+            leave_bio_reactor_sound: None,
             upgrade_veteran_sound: audio_visual
                 .read_name("UpgradeVeteranSound", 0x80)
                 .map(str::to_owned),
@@ -3959,6 +3969,9 @@ impl RuleSet {
         ini: &IniFile,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        self.general.leave_bio_reactor_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound"));
         self.general.sinking_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));
@@ -6639,6 +6652,7 @@ SpawnCount=3
         assert_eq!(defaults.cloaking_stages, 9);
         assert_eq!(defaults.cloak_delay_frames, 18);
         assert_eq!(defaults.cloak_sound, None);
+        assert_eq!(defaults.leave_bio_reactor_sound, None);
         let parsed = GeneralRules::from_ini(&IniFile::from_str(
             "[General]\nCloakingStages=13\nCloakDelay=.031\n\
              [AudioVisual]\nCloakSound=NavalUnitEmerge\n",
@@ -6646,6 +6660,7 @@ SpawnCount=3
         assert_eq!(parsed.cloaking_stages, 13);
         assert_eq!(parsed.cloak_delay_frames, 27);
         assert_eq!(parsed.cloak_sound.as_deref(), Some("NavalUnitEmerge"));
+        assert_eq!(parsed.leave_bio_reactor_sound, None);
         assert_eq!(
             GeneralRules::from_ini(&IniFile::from_str("[General]\nCloakingStages=9\n")).cloak_sound,
             None,
@@ -6658,6 +6673,31 @@ SpawnCount=3
             .cloak_sound,
             None,
             "empty CloakSound preserves the native invalid-index default"
+        );
+    }
+
+    #[test]
+    fn leave_bio_reactor_sound_resolves_only_registered_vocs() {
+        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=BioReactorExit\n",
+        ));
+        let ini =
+            IniFile::from_str("[General]\n[AudioVisual]\nLeaveBioReactorSound=BioReactorExit\n");
+        let mut rules = RuleSet::from_ini(&ini).expect("rules");
+        assert_eq!(rules.general.leave_bio_reactor_sound, None);
+        rules.bind_type_sound_references(&ini, &sounds);
+        assert_eq!(
+            rules.general.leave_bio_reactor_sound.as_deref(),
+            Some("BioReactorExit")
+        );
+
+        let unknown_ini =
+            IniFile::from_str("[General]\n[AudioVisual]\nLeaveBioReactorSound=NotRegistered\n");
+        let mut unknown_rules = RuleSet::from_ini(&unknown_ini).expect("rules");
+        unknown_rules.bind_type_sound_references(&unknown_ini, &sounds);
+        assert_eq!(
+            unknown_rules.general.leave_bio_reactor_sound, None,
+            "native Voc lookup leaves the constructor's invalid index on a miss"
         );
     }
 

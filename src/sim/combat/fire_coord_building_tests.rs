@@ -86,8 +86,12 @@ fn building_aim_directions_match_the_original() {
             &input["location"],
         );
         // Construction stamps each building type's `Foundation=`.
-        sim.substrate.entities.get_mut(1).unwrap().foundation =
-            input["foundation"].as_str().unwrap().to_string();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test(input["foundation"].as_str().unwrap().to_string());
         let target = &input["target"];
         if !target.is_null() {
             let (kind, category) = match target["kind"].as_str().unwrap() {
@@ -96,8 +100,14 @@ fn building_aim_directions_match_the_original() {
             };
             place(&mut sim, 2, kind, category, &target["location"]);
             if category == EntityCategory::Structure {
-                sim.substrate.entities.get_mut(2).unwrap().foundation =
-                    target["foundation"].as_str().unwrap_or("1x1").to_string();
+                sim.substrate
+                    .entities
+                    .get_mut(2)
+                    .unwrap()
+                    .type_facts
+                    .set_foundation_for_test(
+                        target["foundation"].as_str().unwrap_or("1x1").to_string(),
+                    );
             }
         }
         let frame = sim.session.binary_frame;
@@ -397,7 +407,12 @@ fn a_voxel_turrets_laser_birth_uses_the_original_get_flh_coordinate() {
             EntityCategory::Structure,
             &serde_json::json!([4096, 3200, 0]),
         );
-        sim.substrate.entities.get_mut(2).unwrap().foundation = "1x1".to_string();
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test("1x1".to_string());
         let heading = input["heading"].as_u64().unwrap() as u16;
         sim.substrate.entities.get_mut(1).unwrap().body_facing = FacingClass::new(heading, 0);
         sim.lifecycle_outputs.clear();

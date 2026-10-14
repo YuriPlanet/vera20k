@@ -1658,7 +1658,12 @@ mod tests {
             ry,
             object.strength,
         );
-        sim.substrate.entities.get_mut(id).unwrap().foundation = object.foundation.clone();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test(object.foundation.clone());
         let (width, height) = crate::rules::foundation::foundation_dimensions(&object.foundation);
         for y in ry..ry + height {
             for x in rx..rx + width {
@@ -2094,7 +2099,12 @@ mod tests {
             DEPOT_RY,
             1000,
         );
-        sim.substrate.entities.get_mut(DEPOT).unwrap().foundation = "3x3".to_string();
+        sim.substrate
+            .entities
+            .get_mut(DEPOT)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test("3x3".to_string());
         for y in DEPOT_RY..DEPOT_RY + 3 {
             for x in DEPOT_RX..DEPOT_RX + 3 {
                 sim.substrate.occupancy.add(

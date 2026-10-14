@@ -19,6 +19,9 @@ pub(crate) enum DepartureRoute {
     Vehicle,
     LandedAircraft,
     Paradrop,
+    /// A building absorber's native Unload path: pop one, try the ordered
+    /// eight-cell scan, and prepend the same passenger if placement fails.
+    Absorber,
     /// A dying Unit's passenger (`UnitClass::ReceiveDamage` `0x00737FD4`,
     /// `FootClass::RemoveFirstPassenger @ 0x004DE710`). Its attempt never
     /// fails: a refused passenger dies instead of re-boarding.
@@ -142,7 +145,7 @@ fn restore_departure(
         DepartureRoute::DeathEscape => {
             unreachable!("a dying transport's passenger never re-boards")
         }
-        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft => {
+        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::Absorber => {
             assert!(
                 matches!(
                     failure,
@@ -164,6 +167,13 @@ fn restore_departure(
         &[(passenger_id, passenger_size)],
         UninitContext::new(Some(rules), registry).with_effects(effects),
     );
+    if route == DepartureRoute::Absorber {
+        // Mission_Unload's failed Unlimbo path first re-adds the passenger,
+        // then dispatches infantry vtable+0x11C (`TechnoClass::
+        // ClearDiscoveryOnConceal @ 0x006F4A40`), which preserves the
+        // discovery latch for human-controlled owners and clears it for AI.
+        sim.techno_clear_discovery_on_conceal(passenger_id);
+    }
     // Vehicle failures always re-adopt the current passenger's IFVMode. The
     // landed-aircraft compatibility path did so only before Reveal; retain that
     // distinction instead of restoring a saved override or unifying failure tails.
@@ -189,6 +199,7 @@ pub(crate) fn reveal_unloaded_passenger(
     rx: u16,
     ry: u16,
     z: u8,
+    unlimbo_facing: Option<u8>,
     effects: FrameEffects<'_>,
 ) -> Result<(), DepartureFailure> {
     let sub_cell = sim
@@ -220,7 +231,9 @@ pub(crate) fn reveal_unloaded_passenger(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
-        UninitContext::with_rules(rules).with_effects(effects),
+        UninitContext::with_rules(rules)
+            .with_effects(effects)
+            .with_unlimbo_facing(unlimbo_facing),
     );
     match outcome {
         RevealOutcome::Revealed { .. } => Ok(()),

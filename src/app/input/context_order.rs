@@ -2176,17 +2176,13 @@ fn self_click_command(
         .get(target.stable_id)
         .filter(|entity| entity.owner() == local_owner)?;
     let obj = rules.object(sim.interner.resolve(entity.type_ref()));
+    if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
+        return Some(command);
+    }
     if entity.category() == EntityCategory::Structure {
-        // A garrisoned building unloads its occupants, a tank bunker ejects
-        // its unit, and a building that undeploys (a Construction Yard)
-        // packs up.
-        return if obj.is_some_and(|o| o.can_be_occupied)
-            && entity.passenger_role.cargo().is_some_and(|c| !c.is_empty())
-        {
-            Some(Command::UnloadPassengers {
-                transport_id: target.stable_id,
-            })
-        } else if entity.bunker_occupant.is_some() {
+        // A tank bunker ejects its unit, and a building that undeploys
+        // (a Construction Yard) packs up.
+        return if entity.bunker_occupant.is_some() {
             Some(Command::EjectBunker {
                 bunker_id: target.stable_id,
             })
@@ -2202,9 +2198,6 @@ fn self_click_command(
         return Some(Command::ToggleInfantryDeploy {
             entity_id: target.stable_id,
         });
-    }
-    if let Some(cmd) = super::transport_orders::transport_unload_command(entity, obj) {
-        return Some(cmd);
     }
     if obj.is_some_and(|object| is_simple_deploy_unit(entity, object)) {
         return sim
@@ -3618,6 +3611,49 @@ mod tests {
         assert_eq!(click(&[mcv, gi], mcv), None, "a group click selects");
         assert_eq!(click(&[gi], other_gi), None, "not the selected object");
         assert_eq!(click(&[enemy_mcv], enemy_mcv), None, "not the player's");
+    }
+
+    #[test]
+    fn a_loaded_bio_reactor_self_click_and_hover_cursor_offer_unload() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[BuildingTypes]\n0=YAPOWR\n[YAPOWR]\nStrength=1000\n\
+                 InfantryAbsorb=yes\nPassengers=5\n",
+            ))
+            .expect("Bio Reactor input rules");
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        sim.session.current_house = Some(owner);
+        let reactor = sim
+            .spawn_object_limbo_at_height("YAPOWR", "Americans", 10, 10, 0, 0, &rules)
+            .expect("Bio Reactor builds");
+        let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
+        cargo.board(99, 1);
+        sim.entities_mut().get_mut(reactor).unwrap().passenger_role =
+            crate::sim::passenger::PassengerRole::transport(cargo);
+        let hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyStructure,
+            stable_id: reactor,
+        };
+
+        let command = self_click_command(&sim, &rules, owner, &[reactor], Some(&hover));
+        let cursor = crate::app::input::cursor::capability_cursor_for_hover(
+            &sim,
+            &[reactor],
+            Some(reactor),
+            &hover,
+            Some(&rules),
+            None,
+        );
+
+        assert_eq!(
+            command,
+            Some(Command::UnloadPassengers {
+                transport_id: reactor
+            })
+        );
+        assert_eq!(cursor, crate::app::types::CursorFeedbackKind::Deploy);
     }
 
     /// Retail SCHP has IsSimpleDeployer without DeploysInto/Deployer. Native
