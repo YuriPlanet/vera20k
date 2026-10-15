@@ -570,6 +570,8 @@ fn gattling_idle_decay_matches_the_original() {
             .set_for_test(i64::from(FRAME) - since);
         if input["dead"] == true {
             entity.health.set_for_test(0);
+            // The native oracle clears Object+90, not just Health+6C.
+            entity.lifecycle.set_object_alive_for_test(false);
         }
         let dead = row["ended"].as_u64().unwrap() == 0x0044_0573;
         assert_eq!(dead, input["dead"] == true, "{name}");

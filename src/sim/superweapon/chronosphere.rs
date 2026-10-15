@@ -36,6 +36,7 @@
 //! RESIDUALS:
 //! - An off-map cell of either block reads the shared dummy cell's
 //!   coordinates natively; VERA reads the requested cell's.
+//!
 //! The other warp-latch writers, Foot4DF7F0 and Infantry522FE0, share the
 //! same Teleport state through `Simulation::foot_chrono_warp_to`; House
 //! Action128 uses that owner without running the Super's area/eater path.

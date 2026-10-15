@@ -56,6 +56,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
                 id,
                 &scenario.runtime.resources.rules,
                 Some(&scenario.runtime.resources.overlay_registry),
+                None,
             )
             .unwrap();
         let zones = sim

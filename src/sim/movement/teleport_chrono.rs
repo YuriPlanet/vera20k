@@ -143,7 +143,7 @@ impl Simulation {
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return Ok(false);
             };
-            actor.set_foot_occupation_enabled(true);
+            actor.foot_occupation_enabled.resume();
             self.assign_destination_represented(
                 id,
                 Some(crate::sim::components::NavTargetRef::cell(
@@ -174,7 +174,7 @@ impl Simulation {
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return Ok(false);
             };
-            actor.set_foot_occupation_enabled(true);
+            actor.foot_occupation_enabled.resume();
             self.assign_destination_represented(
                 id,
                 Some(crate::sim::components::NavTargetRef::cell(
