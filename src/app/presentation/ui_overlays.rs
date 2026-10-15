@@ -136,27 +136,50 @@ pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
     (selected, selected || hovered)
 }
 
-/// The gate both non-building status passes share: the health strip's own
-/// visibility rule followed by the fog test every status overlay uses.
-fn unit_status_drawable(
+/// Health-bar admission shared by building pips, mobile pips and their extras.
+///
+/// Steam gamemd SHA3e81a617: Tactical6D907E/6D9111 marks a Display member for
+/// Extras before drawing its body; 6D95D2..6D9789 dispatches that later sweep.
+/// Techno6F5E27/6F5E37..6F5E87 then admits selected / ordinary hovered objects
+/// to health-bar slot+44C (6F64A0). Neither arm retests the raw anchor's shroud
+/// or discovery+41B. Hover already passed ProcessClickCoords' projected query.
+/// Reuse the body admission owner for lifecycle/cloak instead of adding another
+/// fog interpretation here. Native dispatch controls: health_hover.json.
+fn health_bar_drawable(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
-    hovered_unit_id: Option<u64>,
-    local_owner_id: Option<crate::sim::intern::InternedId>,
-    ignore_visibility: bool,
+    hovered_id: Option<u64>,
+    local_owner: Option<&str>,
+    rules: Option<&RuleSet>,
 ) -> bool {
     let (_, draw_pips) = status_visibility(
         entity.selection.is_selected(),
-        hovered_unit_id == Some(entity.stable_id()),
+        hovered_id == Some(entity.stable_id()),
     );
-    draw_pips
-        && status_entity_visible_plain(
-            local_owner_id,
-            &sim.fog,
-            &entity.position,
-            entity.owner(),
-            ignore_visibility,
-        )
+    if !draw_pips || sim.display_layers().layer_of(entity.stable_id()).is_none() {
+        return false;
+    }
+    let local_owner_id = local_owner.and_then(|owner| sim.interner.get(owner));
+    let observer = crate::app::presentation::instances::observer_draw_context(
+        sim,
+        entity,
+        local_owner,
+        local_owner_id,
+        rules,
+    );
+    crate::app::presentation::instances::tactical_entity_admission(
+        crate::app::presentation::instances::TacticalEntityPurpose::Drawing,
+        entity,
+        sim.interner.resolve(entity.owner()),
+        local_owner,
+        local_owner_id,
+        &sim.fog,
+        false,
+        sim.session.binary_frame,
+        0,
+        observer,
+    )
+    .is_some()
 }
 
 /// Native `DrawHealthBar @0x006F64A0` guards its class `vt+0x450` pip/status
@@ -578,8 +601,6 @@ pub(crate) fn build_building_status_instances(
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner.as_deref().and_then(|n| sim.interner.get(n));
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
     let pip_size: [f32; 2] = overlay.pip_frame_size();
     let pip_uv_size: [f32; 2] = overlay.pip_uv_size();
     let (pip_adj_x, pip_adj_y) = overlay.pip_canvas_adj();
@@ -591,20 +612,17 @@ pub(crate) fn build_building_status_instances(
         if e.category() != EntityCategory::Structure {
             continue;
         }
-        if !e.selection.is_selected() && hovered_structure_id != Some(e.stable_id()) {
+        if !health_bar_drawable(
+            sim,
+            e,
+            hovered_structure_id,
+            local_owner.as_deref(),
+            state.rules(),
+        ) {
             continue;
         }
         let health = &e.health;
         let type_str = sim.interner.resolve(e.type_ref());
-        if !status_entity_visible_plain(
-            local_owner_id,
-            &sim.fog,
-            &e.position,
-            e.owner(),
-            ignore_visibility,
-        ) {
-            continue;
-        }
         let (sx, sy) = crate::render::locomotor_visual::screen_position(e);
         // The ordered rules processor supplies ObjectType's ART Foundation.
         // Height= is an art.ini property, looked up via Image= redirect.
@@ -803,7 +821,13 @@ pub(crate) fn build_occupant_pip_instances(
         if e.category() != EntityCategory::Structure {
             continue;
         }
-        if !e.selection.is_selected() && hovered_structure_id != Some(e.stable_id()) {
+        if !health_bar_drawable(
+            sim,
+            e,
+            hovered_structure_id,
+            local_owner.as_deref(),
+            state.rules(),
+        ) {
             continue;
         }
         let type_str = sim.interner.resolve(e.type_ref());
@@ -811,15 +835,6 @@ pub(crate) fn build_occupant_pip_instances(
             continue;
         };
         if !obj.show_occupant_pips || obj.max_number_occupants == 0 {
-            continue;
-        }
-        if !status_entity_visible_plain(
-            local_owner_id,
-            &sim.fog,
-            &e.position,
-            e.owner(),
-            ignore_visibility,
-        ) {
             continue;
         }
         let cargo = match e.passenger_role.cargo() {
@@ -1163,8 +1178,6 @@ pub(crate) fn build_unit_status_bg_instances(
         return Vec::new();
     }
     let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner.as_deref().and_then(|n| sim.interner.get(n));
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
     let hovered_unit_id = unit_health_hover_target(state, local_owner.as_deref());
     let mut instances = Vec::new();
     for e in sim.entities().values() {
@@ -1181,12 +1194,12 @@ pub(crate) fn build_unit_status_bg_instances(
         if !draw_background {
             continue;
         }
-        if !status_entity_visible_plain(
-            local_owner_id,
-            &sim.fog,
-            &e.position,
-            e.owner(),
-            ignore_visibility,
+        if !health_bar_drawable(
+            sim,
+            e,
+            hovered_unit_id,
+            local_owner.as_deref(),
+            state.rules(),
         ) {
             continue;
         }
@@ -1260,8 +1273,6 @@ pub(crate) fn build_unit_status_fill_instances(
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner.as_deref().and_then(|n| sim.interner.get(n));
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
     let (cond_y, cond_r) = condition_thresholds(state);
     let hovered_unit_id = unit_health_hover_target(state, local_owner.as_deref());
     let mut instances = Vec::new();
@@ -1273,7 +1284,13 @@ pub(crate) fn build_unit_status_fill_instances(
             continue;
         }
         let health = &e.health;
-        if !unit_status_drawable(sim, e, hovered_unit_id, local_owner_id, ignore_visibility) {
+        if !health_bar_drawable(
+            sim,
+            e,
+            hovered_unit_id,
+            local_owner.as_deref(),
+            state.rules(),
+        ) {
             continue;
         }
         // Already the drawn position, height lift included, so the bar tracks
@@ -1417,10 +1434,6 @@ pub(crate) fn build_self_heal_pip_instances(
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner
-        .as_deref()
-        .and_then(|name| sim.interner.get(name));
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
     let hovered_unit_id = unit_health_hover_target(state, local_owner.as_deref());
     let mut instances = Vec::new();
     for e in sim.entities().values() {
@@ -1430,7 +1443,13 @@ pub(crate) fn build_self_heal_pip_instances(
         if e.passenger_role.is_inside_transport() {
             continue;
         }
-        if !unit_status_drawable(sim, e, hovered_unit_id, local_owner_id, ignore_visibility) {
+        if !health_bar_drawable(
+            sim,
+            e,
+            hovered_unit_id,
+            local_owner.as_deref(),
+            state.rules(),
+        ) {
             continue;
         }
         let Some(obj) = state
@@ -1940,6 +1959,162 @@ mod tests {
     }
 
     use super::*;
+
+    /// Original Building DrawExtras selected/hover dispatch, with raw shroud
+    /// and +41B contrasts. The same health admission owns mobile pips too.
+    #[test]
+    fn ordinary_health_hover_matches_native_without_raw_anchor_gate() {
+        use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/health_hover.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for row in corpus["controls"].as_array().unwrap() {
+            let input = &row["input"];
+            // The disguised hover branch is a separate existing residual;
+            // this comparison is ordinary buildings and the shared admission.
+            if input["disguised"].as_bool().unwrap() {
+                continue;
+            }
+            for category in [
+                EntityCategory::Structure,
+                EntityCategory::Unit,
+                EntityCategory::Infantry,
+                EntityCategory::Aircraft,
+            ] {
+                let mut sim = Simulation::new();
+                let player = sim.interner.intern("Player");
+                let owner = sim.interner.intern("Neutral");
+                let type_ref = sim.interner.intern("CATIME01");
+                sim.fog = crate::sim::vision::FogState::new(32, 32);
+                if input["raw_mapped"].as_bool().unwrap() {
+                    sim.fog.reveal_cells_for_owner(player, [(20, 20)]);
+                }
+                let mut entity = GameEntity::new_at_frame_zero_for_test(
+                    1,
+                    20,
+                    20,
+                    4,
+                    0,
+                    owner,
+                    Health::new(100),
+                    type_ref,
+                    category,
+                    0,
+                    5,
+                    false,
+                );
+                entity.lifecycle.set_in_limbo_for_test(false);
+                entity
+                    .selection
+                    .set_selected_for_test(input["selected"].as_bool().unwrap());
+                entity.discovery.set_discovered_by_current_house_for_test(
+                    input["discovered"].as_bool().unwrap(),
+                );
+                sim.entities_mut().insert(entity);
+                sim.resubmit_entity_display_for_test(1);
+                let hovered = input["hovered"].as_bool().unwrap().then_some(1);
+                let expected = row["draw_health_bar"].as_bool().unwrap();
+                assert_eq!(
+                    health_bar_drawable(
+                        &sim,
+                        sim.entities().get(1).unwrap(),
+                        hovered,
+                        Some("Player"),
+                        None
+                    ),
+                    expected,
+                    "{} {category:?}",
+                    row["name"]
+                );
+                if expected {
+                    // Being hovered cannot resurrect a limbo member, even
+                    // while a retained Display registration still exists.
+                    sim.entities_mut()
+                        .get_mut(1)
+                        .unwrap()
+                        .lifecycle
+                        .set_in_limbo_for_test(true);
+                    assert!(!health_bar_drawable(
+                        &sim,
+                        sim.entities().get(1).unwrap(),
+                        hovered,
+                        Some("Player"),
+                        None
+                    ));
+                }
+                compared += 1;
+            }
+        }
+        assert!(
+            compared >= 16,
+            "ordinary selected/hover and anchor contrasts"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires retail SOV01 assets"]
+    fn sov01_trigger_revealed_time_machine_hover_admits_health_bar() {
+        let (retail, _) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+        let mut scene = crate::headless_scenario::load(&retail, "SOV01UMD.MAP", 339173046)
+            .expect("retail SOV01 scenario");
+        let sim = &mut scene.runtime.simulation;
+        let rules = &scene.runtime.resources.rules;
+        let id = sim
+            .entities()
+            .values()
+            .find(|entity| {
+                sim.resolve(entity.type_ref()) == "CATIME01"
+                    && (entity.position.rx(), entity.position.ry()) == (142, 96)
+            })
+            .expect("authored Neutral time machine")
+            .stable_id();
+        assert_eq!(rules.object("CATIME01").unwrap().strength, 2500);
+        let viewer = sim.session.current_house.unwrap();
+        let viewer_name = sim.resolve(viewer).to_owned();
+        for waypoint in [63, 66, 71, 99, 100, 114, 437, 647] {
+            assert!(sim.trigger_reveal_at_waypoint(
+                waypoint,
+                crate::sim::world::UninitContext::with_rules(rules)
+            ));
+        }
+        let target = sim.entities().get(id).unwrap();
+        let (sx, sy) = crate::render::locomotor_visual::ground_screen_position(&target.position);
+        let heights = sim.resolved_terrain.as_ref().unwrap().build_height_map();
+        let hover = crate::app::input::entity_pick::hover_target_at_point(
+            sim,
+            sx,
+            sy,
+            &viewer_name,
+            false,
+            Some(rules),
+            &heights,
+            None,
+        )
+        .expect("revealed time-machine hover");
+        assert_eq!(hover.stable_id, id);
+        assert!(!target.selection.is_selected());
+        println!(
+            "CATIME01 raw_anchor_mapped={} hover={hover:?}",
+            sim.fog
+                .is_cell_revealed(viewer, target.position.rx(), target.position.ry())
+        );
+        assert!(health_bar_drawable(
+            sim,
+            target,
+            Some(hover.stable_id),
+            Some(&viewer_name),
+            Some(rules)
+        ));
+        assert!(!health_bar_drawable(
+            sim,
+            target,
+            None,
+            Some(&viewer_name),
+            Some(rules)
+        ));
+    }
 
     /// A selected object draws both halves — bracket and pips.
     #[test]

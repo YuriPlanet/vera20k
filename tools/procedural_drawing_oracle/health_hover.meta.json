@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ordinary Building selected/hover health dispatch independent of raw anchor mapping or discovery; no status/bracket pixels or complete Tactical frame.",
+  "assumptions": [
+    "Reuse Shroud/Rally/BuildingReveal original image, surface and supplied32x32 map owner. Its existing GAPILE constructor/Foundation prerequisite supplies only generic Building geometry; this corpus does not run CATIME01 rules or a whole retail scenario. The measured class-level dispatch reads no type identity, Insignificant, Nominal, Strength, Powered or alliance key.",
+    "Original Building vtable7E3EBC has110=6F5190,44C=6F64A0,C8=41C020,D0=41BE70. Start6F5388 after ordinary DrawExtras rank work with supplied EBP Building, ESI clip and stack point argument. Actual selected+83 and hovered+431 branches, Building IsDisguisedTo+1D8 and null GetDisguiseHouse execute unchanged.",
+    "The selected Building cuboid drawing at6F539C is an explicit skipped geometry boundary resuming at original selected health call6F5E17 with its incoming clip restored. Actual5399 push and5E2D pop balance. This is not an executed selection-bracket or whole selected DrawExtras comparison.",
+    "Raw mapped-ground and discovered+41B zero/one histories are supplied, not produced by reveal traversal. Object+99=1 is a supplied earlier Tactical draw-opportunity latch. Static6D8F48 clears it,6D907E/6D9111 set it before body dispatch, and6D95D2 tests it before projected/viewport-clipped6D9789 virtual110; it is not a successful-pixel result or an IsShrouded gate.",
+    "Static Display4AAEBC casts the resolved object,4AAED9 tests BuildingType InvisibleInGame+1701, then4AAEEC sets hover+431 outside Armageddon. Hover production, pick and visibility are not executed here. Ordinary selected/hover health dispatch contains no586360,487950,+41B or raw-cell check;487950 calls earlier in DrawExtras belong to bomb-clock/repair-wrench branches.",
+    "A disguised Building C8=true and GetDisguiseHouse=NULL suppresses only the unselected hover arm; selected still draws. These explicit controls do not establish legal building disguise production. No RNG draw, timer write or detach call lies in this measured dispatch block."
+  ],
+  "substitutions": [
+    "Original selected Building bracket geometry is an observed skipped boundary6F539C->6F5E17; no bracket pixels are claimed.",
+    "Original DrawHealthBar entry6F64A0 is a recorded RET12 terminal. No health ratio, pip count, positions, textures or pixels are executed or certified."
+  ],
+  "entry_points": {
+    "extras": "0x006F5190",
+    "selected_gate": "0x006F5388",
+    "selected_geometry_boundary": "0x006F539C",
+    "selected_health_call": "0x006F5E27",
+    "hover_gate": "0x006F5E37",
+    "hover_health_call": "0x006F5E87",
+    "health_boundary": "0x006F64A0",
+    "disguised": "0x0041C020",
+    "disguise_house": "0x0041BE70"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --health-hover",
+  "payload_sha256": "7269694579e4634f4718dcfa4cdb35696f871ecd140f9ebcbc07f1530c0b8337"
+}

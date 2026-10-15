@@ -4,6 +4,10 @@ The existing rally fixture owns native Surface/ABuffer setup; stock.mix owns
 archive extraction. Native fill, SHP access, edge selection, projection, clips
 and shroud writes execute without gameplay substitutions. Fog/AlphaShapes are
 explicitly absent; supplied cell flags are not a reveal-traversal oracle.
+
+The independent ``--health-hover`` mode reuses BuildingReveal to execute the
+selected/hover health dispatch. Health pixels and selected bracket geometry
+are declared boundaries; it does not regenerate ABuffer/reveal corpora.
 """
 from functools import lru_cache
 import hashlib
@@ -242,6 +246,23 @@ class BuildingReveal(Shroud):
             cell = u.reg_read(UC_X86_REG_ECX)
             self.events.append(dict(kind='center_cell_shroud_query', pc=pc,
                                     cell=list(struct.unpack('<hh', u.mem_read(cell + 0x24, 4)))))
+        elif self.phase == 'health_hover':
+            if pc == 0x6F539C:
+                # The selected Building branch draws its cuboid before the
+                # shared selected health call. Observe that boundary; this
+                # corpus does not execute or certify bracket geometry.
+                self.events.append(dict(kind='selected_bracket_geometry_boundary', pc=pc))
+                u.reg_write(UC_X86_REG_EIP,0x6F5E17)
+                u.reg_write(UC_X86_REG_ESI,self.RECT)
+            elif pc == 0x6F64A0:
+                sp=u.reg_read(UC_X86_REG_ESP)
+                self.events.append(dict(kind='health_draw_boundary',pc=pc,
+                    arguments=rally.ints(u,sp+4,3)))
+                self.fixture_return(0,12)
+            elif pc in (0x41C020,0x41BE70):
+                self.events.append(dict(kind='original_disguise_query',pc=pc))
+            elif pc in (0x586360,0x487950):
+                self.events.append(dict(kind='shroud_query',pc=pc))
 
     def prepare_visibility(self, case):
         for xy in self.cells:
@@ -286,6 +307,33 @@ class BuildingReveal(Shroud):
                     light_intensity=u.reg_read(UC_X86_REG_EBP),
                     events=self.events.copy())
 
+    def health_hover(self, case):
+        self.prepare_visibility(dict(top_revealed=case['raw_mapped']))
+        u=self.u
+        original_vtable=bytes(u.mem_read(0x7E3EBC,0x600))
+        for offset,key in ((0x83,'selected'),(0x431,'hovered'),
+                           (0x1D8,'disguised'),(0x41B,'discovered')):
+            u.mem_write(self.OBJECT+offset,bytes([case[key]]))
+        u.mem_write(self.OBJECT+0x41A,b'\0')
+        u.mem_write(self.OBJECT+0x99,b'\1')
+        # This is the actual post-rank selected/hover block. Supply its two
+        # incoming drawing arguments and ordinary nonsinking Building shell.
+        u.mem_write(SP,bytes(0x100));u.mem_write(SP+0x9C,words(self.COORD))
+        u.reg_write(UC_X86_REG_ESP,SP)
+        u.reg_write(UC_X86_REG_EBP,self.OBJECT)
+        u.reg_write(UC_X86_REG_ESI,self.RECT)
+        self.events,self.phase=[],'health_hover'
+        native.run_checked(u,0x6F5388,0x6F5E8D,count=1000,
+                           required_addresses=[0x6F5388,0x6F5E37])
+        self.phase=None
+        assert u.reg_read(UC_X86_REG_ESP)==SP
+        assert bytes(u.mem_read(0x401000,4063232))==self.original_text
+        assert bytes(u.mem_read(0x7E3EBC,0x600))==original_vtable
+        return dict(name=case['name'],input={key:case[key] for key in
+            ('selected','hovered','disguised','raw_mapped','discovered')},
+            draw_health_bar=any(e['kind']=='health_draw_boundary' for e in self.events),
+            events=self.events.copy())
+
 
 def generate_building_reveal():
     physical = rally.stock_type_inputs()
@@ -315,6 +363,45 @@ def generate_building_reveal():
                 admission_cases=[f.admission(case) for case in admission_inputs],
                 tint_cases=[f.tint(case) for case in tint_inputs],
                 original_text_unchanged=True)
+
+
+def generate_health_hover():
+    physical=rally.stock_type_inputs()
+    f=BuildingReveal(physical)
+    base=dict(selected=False,hovered=True,disguised=False,
+              raw_mapped=False,discovered=False)
+    cases=[dict(base,name=name,**changes) for name,changes in (
+        ('hover_unmapped_undiscovered',{}),
+        ('hover_mapped_undiscovered',dict(raw_mapped=True)),
+        ('hover_unmapped_discovered',dict(discovered=True)),
+        ('no_selection_or_hover',dict(hovered=False)),
+        ('selected_unmapped_undiscovered',dict(selected=True,hovered=False)),
+        ('selected_and_hovered',dict(selected=True)),
+        ('hover_disguised_building',dict(disguised=True)),
+        ('selected_disguised_building',dict(selected=True,disguised=True)),
+    )]
+    return dict(controls=[f.health_hover(case) for case in cases],
+        physical_foundation=physical,
+        original_text_and_vtables_unchanged=True)
+
+
+def health_hover_metadata():
+    return native.provenance(
+        scope='Original ordinary Building selected/hover health dispatch independent of raw anchor mapping or discovery; no status/bracket pixels or complete Tactical frame.',
+        assumptions=[
+            'Reuse Shroud/Rally/BuildingReveal original image, surface and supplied32x32 map owner. Its existing GAPILE constructor/Foundation prerequisite supplies only generic Building geometry; this corpus does not run CATIME01 rules or a whole retail scenario. The measured class-level dispatch reads no type identity, Insignificant, Nominal, Strength, Powered or alliance key.',
+            'Original Building vtable7E3EBC has110=6F5190,44C=6F64A0,C8=41C020,D0=41BE70. Start6F5388 after ordinary DrawExtras rank work with supplied EBP Building, ESI clip and stack point argument. Actual selected+83 and hovered+431 branches, Building IsDisguisedTo+1D8 and null GetDisguiseHouse execute unchanged.',
+            'The selected Building cuboid drawing at6F539C is an explicit skipped geometry boundary resuming at original selected health call6F5E17 with its incoming clip restored. Actual5399 push and5E2D pop balance. This is not an executed selection-bracket or whole selected DrawExtras comparison.',
+            'Raw mapped-ground and discovered+41B zero/one histories are supplied, not produced by reveal traversal. Object+99=1 is a supplied earlier Tactical draw-opportunity latch. Static6D8F48 clears it,6D907E/6D9111 set it before body dispatch, and6D95D2 tests it before projected/viewport-clipped6D9789 virtual110; it is not a successful-pixel result or an IsShrouded gate.',
+            'Static Display4AAEBC casts the resolved object,4AAED9 tests BuildingType InvisibleInGame+1701, then4AAEEC sets hover+431 outside Armageddon. Hover production, pick and visibility are not executed here. Ordinary selected/hover health dispatch contains no586360,487950,+41B or raw-cell check;487950 calls earlier in DrawExtras belong to bomb-clock/repair-wrench branches.',
+            'A disguised Building C8=true and GetDisguiseHouse=NULL suppresses only the unselected hover arm; selected still draws. These explicit controls do not establish legal building disguise production. No RNG draw, timer write or detach call lies in this measured dispatch block.'],
+        substitutions=[
+            'Original selected Building bracket geometry is an observed skipped boundary6F539C->6F5E17; no bracket pixels are claimed.',
+            'Original DrawHealthBar entry6F64A0 is a recorded RET12 terminal. No health ratio, pip count, positions, textures or pixels are executed or certified.'],
+        entry_points=dict(extras=0x6F5190,selected_gate=0x6F5388,
+            selected_geometry_boundary=0x6F539C,selected_health_call=0x6F5E27,
+            hover_gate=0x6F5E37,hover_health_call=0x6F5E87,
+            health_boundary=0x6F64A0,disguised=0x41C020,disguise_house=0x41BE70))
 
 
 def stock_geometry():
@@ -480,6 +567,15 @@ def entity_reveal_metadata():
 
 if __name__=='__main__':
     import sys
+    if '--health-hover' in sys.argv[1:]:
+        native.finish_vectors(generate_health_hover,
+            Path(__file__).with_name('health_hover.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--health-hover'],
+            provenance=health_hover_metadata,
+            source_paths={'oracle':Path(__file__),'surface_fixture':Path(rally.__file__),
+                          'stock_owner':Path(stock.__file__),
+                          'projection_fixture':Path('tools/bridge_click_oracle.py')})
+        raise SystemExit(0)
     if '--entity-reveal' in sys.argv[1:]:
         native.finish_vectors(generate_entity_reveal,
             Path(__file__).with_name('entity_reveal.json'),
