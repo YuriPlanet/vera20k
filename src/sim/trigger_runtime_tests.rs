@@ -16,6 +16,126 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
 
 #[test]
+fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
+    use crate::rules::{ini_parser::IniFile, team_ai_ini::TeamAiIniRegistry};
+    use crate::sim::combat::{KillCallback, KillSource};
+    use crate::sim::world::UninitContext;
+
+    for (kind, victim_type) in [(15, "CABHUT"), (16, "TAGUNIT")] {
+        let (mut sim, rules, overlay, houses) = event_ingress_fixture();
+        sim.session.game_mode_nonzero = false;
+        for house in sim.houses.values_mut() {
+            house.is_human = true;
+        }
+        let victims: Vec<_> = [(15, 15), (16, 15)]
+            .into_iter()
+            .map(|cell| {
+                sim.spawn_object_at_height(victim_type, "House0", cell.0, cell.1, 0, 0, &rules)
+                    .unwrap()
+            })
+            .collect();
+        let killer = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 16));
+        let map = install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nLOSS=Country0,<none>,Loss,0,1,1,1,0\n\
+                 [Events]\nLOSS=1,{kind},0,2\n\
+                 [Actions]\nLOSS=2,7,1,TT,0,0,0,0,A,28,0,7,0,0,0,0,A\n\
+                 [Tags]\nLOSS_TAG=0,Loss,LOSS\n\
+                 [TeamTypes]\n0=TT\n[TT]\nHouse=Country0\nScript=S\nTaskForce=F\nWaypoint=A\nMax=1\n\
+                 [ScriptTypes]\n0=S\n[S]\n0=5,0\n\
+                 [TaskForces]\n0=F\n[F]\n0=1,TAGUNIT\n\
+                 [Waypoints]\n0=16014\n"
+            ),
+        );
+        let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
+        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        // The shared simple-map fixture initially has no Team registry.
+        // Re-enter the real definition reader with the authored Team inputs.
+        sim.initialize_trigger_definitions(&map, &teams, None, None);
+        sim.session.install_waypoints(&map.waypoints);
+        sim.classify_map_triggers(Some(&rules));
+        let team_type = sim.interner.get("TT").unwrap();
+        let loss_count = |sim: &Simulation| {
+            let stats = &sim.houses[&houses[0]].stats;
+            if kind == 15 {
+                stats.buildings_lost()
+            } else {
+                stats.units_lost()
+            }
+        };
+        let frame = |sim: &mut Simulation| {
+            sim.advance_master_frame(
+                &[],
+                Some(&rules),
+                Some(&overlay),
+                67,
+                TickLane::Ordinary,
+                Some(TriggerInputs {
+                    events: &Default::default(),
+                    actions: &Default::default(),
+                    rules: Some(&rules),
+                }),
+                FrameEffects::default(),
+            )
+            .unwrap();
+        };
+        assert_eq!(loss_count(&sim), 0);
+        for (index, victim) in victims.into_iter().enumerate() {
+            // Enter at the existing real kill callback, before UnInit. The
+            // callback's native arithmetic/gates have their own RecordKill
+            // evidence; this regression connects its authoritative loss write
+            // to House polling, Team construction, placement and Tag cleanup.
+            sim.record_the_kill(
+                victim,
+                KillSource::Techno(Some(killer)),
+                KillCallback::Terminal,
+                UninitContext::new(Some(&rules), Some(&overlay)),
+            );
+            assert_eq!(loss_count(&sim), index as u32 + 1);
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(victim)
+                    .unwrap()
+                    .lifecycle
+                    .object_alive()
+            );
+            assert!(!sim.trigger_runtime.globals_set.contains(&7));
+            sim.uninit_with_rules(victim, &rules);
+            sim.session.binary_frame = if index == 0 { 8 } else { 16 };
+            frame(&mut sim);
+            assert_eq!(sim.trigger_runtime.globals_set.contains(&7), index == 1);
+        }
+        let members: Vec<_> = sim
+            .team_script_vm
+            .teams_in_order()
+            .filter(|team| team.team_type_id() == Some(team_type))
+            .flat_map(|team| team.members())
+            .collect();
+        assert_eq!(members.len(), 1, "event{kind}: real Team member");
+        let reinforcement = sim.substrate.entities.get(members[0]).unwrap();
+        assert_eq!(reinforcement.owner(), houses[0]);
+        assert_eq!(sim.interner.resolve(reinforcement.type_ref()), "TAGUNIT");
+        assert!(!reinforcement.lifecycle.in_limbo());
+        assert!(reinforcement.lifecycle.object_alive());
+        assert!(sim.trigger_runtime.tag_order.is_empty());
+        sim.session.binary_frame = 24;
+        frame(&mut sim);
+        assert_eq!(
+            sim.trigger_runtime
+                .action_trace
+                .iter()
+                .map(|row| row.0)
+                .collect::<Vec<_>>(),
+            [7, 28],
+            "event{kind}: one-shot reinforcement must not repeat"
+        );
+    }
+}
+
+#[test]
 fn funds_event_runs_from_house_rung_after_a_spend() {
     let (mut sim, rules, overlay, houses) = event_ingress_fixture();
     sim.session.game_mode_nonzero = false;

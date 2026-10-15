@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Thirty-four original HasOccurred15/16 controls, four StateA/StateB calls and two original counted Event reads from actual retail ALL04. Loss counters are supplied priors; not RecordKill, House lifecycle, reinforcement execution or whole-campaign parity.",
+  "assumptions": [
+    "Reuse PowerEventControls/FlagsFixture and its existing counted TEvent reader. Three original-layout Houses have Country bindings0/7/0. House+5488 Building losses and+5434 other-object losses are supplied signed bit patterns; the other counter is1000 in boundary controls to distinguish the selected field.",
+    "Original HasOccurred71E940 executes15 at71F03F and16 at71F058. Both compare their incoming House counter >= Event+34 signed. Controls cover equality, negatives, INT_MIN/MAX, incoming House1, absent incoming House, wrong raised99 and both A8ED6B values. A separate Country7 House has larger losses when threshold7 must still fail for incoming House0.",
+    "Event+54 sentinel0xABCD1234, supplied timer and initial persistence0/1 remain unchanged. StateA71F950 returns0 and StateB71F9C0 returns1. The existing native observer asserts no65C780/65C7E0 draw entry. No trigger timer write or detach belongs to these predicates; shared RegisterEvent/Tag repeat/reset/cleanup are outside this scalar execution.",
+    "Existing retail MIX extraction supplies the actual mapsmd03.mix member ALL04DMD.MAP; hashes identify archive and member bytes. Existing lexical sections supply Events cache strings, then original ReadString/count/constructor/Read71F4E0/strtok/atoi parse each selected record. Original physical file loading and complete INI layer ordering are not emulated.",
+    "The two retained routes are retail Americans easy own-loss reinforcements: Event16/6 on093B41CC and Event15/4 on093B522C. Trigger, Tag, action, Team, TaskForce and Script sections are included as raw retail data for production-reader integration. Their references and ground reinforcement execution are not native-executed here; the counted Event reader outputs alone establish the parsed event kinds/values.",
+    "Counter initialization and writers remain the existing MatchStatistics/RecordKill owners. Existing engineer_capture_accounting evidence covers its declared NULL callback/capture controls on its recorded binary. This new corpus does not execute RecordKill, sale, sinking, capture, House construction, loss wrapping or death timing, and adds no new lifecycle claim."
+  ],
+  "substitutions": [
+    "Existing FlagsFixture allocator/CRT/TLS transports and explicit House loss-counter priors only. Original HasOccurred/Country lookup/StateA/StateB and counted Event reader instructions run unchanged; no selected gameplay return is supplied."
+  ],
+  "entry_points": {
+    "event_constructor": "0x0071E6A0",
+    "event_counted_read": "0x007274DC",
+    "has_occurred": "0x0071E940",
+    "building_loss_compare": "0x0071F03F",
+    "unit_loss_compare": "0x0071F058",
+    "country_house": "0x00502D30",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --loss-threshold-events",
+  "payload_sha256": "7af299c649fa07020703d74c9cfacdf11e7fa26ca5146bc9ec81bcc300e0348a"
+}

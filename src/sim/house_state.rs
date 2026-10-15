@@ -1543,7 +1543,12 @@ impl HouseState {
     }
 }
 
-/// Post-match statistics accumulated for the end-of-match score screen.
+/// House accounting shared by loss-trigger predicates and the score screen.
+///
+/// HasOccurred15/16 (`71F03F`/`71F058`) reads the same cumulative loss
+/// counters that RecordKill updates, interpreted as signed32-bit values.
+/// These count admitted callbacks, including building captures, rather than
+/// objects currently absent from the map. The counters wrap on increment.
 ///
 /// gamemd sums per-victim-house kill tables into one number for the Kills
 /// column, adds its two loss counters for the Losses column, and sums its four
@@ -1558,9 +1563,9 @@ pub struct MatchStatistics {
     units_killed: u32,
     /// Buildings recorded as kills for this house, including captures.
     buildings_killed: u32,
-    /// Non-building objects of this house that were destroyed.
+    /// Admitted non-building loss callbacks for this house.
     units_lost: u32,
-    /// Buildings of this house that were destroyed.
+    /// Admitted building loss callbacks for this house, including captures.
     buildings_lost: u32,
     /// Objects of this house that left their factory, `DontScore=` types
     /// excepted: placed buildings and delivered units

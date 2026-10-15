@@ -1558,10 +1558,97 @@ def funds_event_metadata():
             'action_execute':0x6DD8B0,'deferred_drain':0x725C70,'house_pointer_expired':0x4FB9B0})
 
 
+def generate_loss_threshold_events():
+    """Original15/16 compare the incoming House's signed loss counters."""
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.sidebar_oracle.stock import mix, mix_hash
+    from tools.rules_oracle.bridge_child_sound import sections
+    m=PowerEventControls(reader_inputs=())
+    m.SPANS=[*m.SPANS,(0x71F950,0x71FA40)]
+    m.original.append(bytes(m.u.mem_read(0x71F950,0xF0)))
+    controls,classifiers=[],[]
+
+    def probe(kind,name,value,counters,house=0,raised=8,buildup=False,persistence=0):
+        for pointer,(buildings,units) in zip(m.houses,counters):
+            m.u.mem_write(pointer+0x5488,dwords(buildings))
+            m.u.mem_write(pointer+0x5434,dwords(units))
+        before=list(struct.unpack('<iii',m.u.mem_read(m.timer,12)))
+        m.predicate(f'loss{kind}_{name}',f'1,{kind},0,{value}',house_index=house,
+                    raised=raised,scenario_init=buildup,initial_persistence=persistence)
+        row=m.predicates[-1]
+        after=list(struct.unpack('<iii',m.u.mem_read(m.timer,12)))
+        assert before==after and row['persistence']==persistence
+        assert row['event54']==struct.unpack('<i',dwords(0xABCD1234))[0]
+        controls.append(dict(name=row['name'],kind=kind,value=value,loss_counters=counters,
+            incoming_house=house,raised=raised,scenario_init=buildup,
+            initial_persistence=persistence,result=row['result'],persistence=row['persistence'],
+            event54=row['event54'],timer_before=before,timer_after=after))
+
+    for kind in (15,16):
+        probe(kind,'all_houses_zero_losses_threshold0',0,((0,0),(0,0),(0,0)))
+        for count,value in ((0,0),(0,1),(5,6),(6,6),(7,6),(-1,-1),(-1,0),
+                            (-2147483648,0),(2147483647,-1),(-2147483648,-2147483648)):
+            pair=(count,1000) if kind==15 else (1000,count)
+            probe(kind,f'counter{count}_threshold{value}',value,(pair,(100,100),(0,0)))
+        pair=(6,1000) if kind==15 else (1000,6)
+        probe(kind,'threshold_is_not_country',7,(pair,(100,100),(0,0)))
+        probe(kind,'incoming_house1',6,((0,0),(6,6),(0,0)),house=1)
+        probe(kind,'null_incoming',2147483647,((0,0),(0,0),(0,0)),house=None,raised=99)
+        for buildup in (False,True):
+            probe(kind,f'wrong_raise_bypass{buildup}',6,((6,6),(0,0),(0,0)),
+                  raised=99,buildup=buildup)
+        probe(kind,'retained_persistence_one',6,((6,6),(0,0),(0,0)),persistence=1)
+        classifiers.append(dict(kind=kind,state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+                                state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255))
+    m.assert_unchanged()
+
+    # Reuse the retail MIX and lexical cache owners. Only the counted TEvent
+    # reader is executed here; Team/TaskForce/Script sections remain raw data.
+    archive=(Path(os.environ['RA2_DIR'])/'mapsmd03.mix').read_bytes()
+    raw_map=mix(archive)[mix_hash('ALL04DMD.MAP')]
+    definitions=sections(raw_map)
+    routes=[]
+    for trigger_id,tag_id,team_id in (('093B41CC','093B571C','0997621C'),
+                                      ('093B522C','093B50BC','08D1D32C')):
+        team=definitions[team_id]
+        task_force_id,script_id=team['TaskForce'],team['Script']
+        raw=definitions['Events'][trigger_id]
+        routes.append(dict(map='ALL04DMD.MAP',map_sha256=hashlib.sha256(raw_map).hexdigest(),
+            archive='mapsmd03.mix',archive_sha256=hashlib.sha256(archive).hexdigest(),
+            trigger_id=trigger_id,trigger=definitions['Triggers'][trigger_id],
+            tag_id=tag_id,tag=definitions['Tags'][tag_id],raw_event=raw,native_read=m.read_event(raw),
+            actions=definitions['Actions'][trigger_id],team_id=team_id,team=team,
+            task_force_id=task_force_id,task_force=definitions[task_force_id],
+            script_id=script_id,script=definitions[script_id]))
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+                country_indices=[0,7,0],controls=controls,classification=classifiers,
+                retail_routes=routes,code_unchanged=True,zero_rng_calls=True)
+
+
+def loss_threshold_event_metadata():
+    return provenance(
+        scope='Thirty-four original HasOccurred15/16 controls, four StateA/StateB calls and two original counted Event reads from actual retail ALL04. Loss counters are supplied priors; not RecordKill, House lifecycle, reinforcement execution or whole-campaign parity.',
+        assumptions=[
+            'Reuse PowerEventControls/FlagsFixture and its existing counted TEvent reader. Three original-layout Houses have Country bindings0/7/0. House+5488 Building losses and+5434 other-object losses are supplied signed bit patterns; the other counter is1000 in boundary controls to distinguish the selected field.',
+            'Original HasOccurred71E940 executes15 at71F03F and16 at71F058. Both compare their incoming House counter >= Event+34 signed. Controls cover equality, negatives, INT_MIN/MAX, incoming House1, absent incoming House, wrong raised99 and both A8ED6B values. A separate Country7 House has larger losses when threshold7 must still fail for incoming House0.',
+            'Event+54 sentinel0xABCD1234, supplied timer and initial persistence0/1 remain unchanged. StateA71F950 returns0 and StateB71F9C0 returns1. The existing native observer asserts no65C780/65C7E0 draw entry. No trigger timer write or detach belongs to these predicates; shared RegisterEvent/Tag repeat/reset/cleanup are outside this scalar execution.',
+            'Existing retail MIX extraction supplies the actual mapsmd03.mix member ALL04DMD.MAP; hashes identify archive and member bytes. Existing lexical sections supply Events cache strings, then original ReadString/count/constructor/Read71F4E0/strtok/atoi parse each selected record. Original physical file loading and complete INI layer ordering are not emulated.',
+            'The two retained routes are retail Americans easy own-loss reinforcements: Event16/6 on093B41CC and Event15/4 on093B522C. Trigger, Tag, action, Team, TaskForce and Script sections are included as raw retail data for production-reader integration. Their references and ground reinforcement execution are not native-executed here; the counted Event reader outputs alone establish the parsed event kinds/values.',
+            'Counter initialization and writers remain the existing MatchStatistics/RecordKill owners. Existing engineer_capture_accounting evidence covers its declared NULL callback/capture controls on its recorded binary. This new corpus does not execute RecordKill, sale, sinking, capture, House construction, loss wrapping or death timing, and adds no new lifecycle claim.'],
+        substitutions=['Existing FlagsFixture allocator/CRT/TLS transports and explicit House loss-counter priors only. Original HasOccurred/Country lookup/StateA/StateB and counted Event reader instructions run unchanged; no selected gameplay return is supplied.'],
+        entry_points={'event_constructor':0x71E6A0,'event_counted_read':0x7274DC,
+            'has_occurred':0x71E940,'building_loss_compare':0x71F03F,'unit_loss_compare':0x71F058,
+            'country_house':0x502D30,'state_a':0x71F950,'state_b':0x71F9C0})
+
+
 if __name__=='__main__':
     import sys
     args=sys.argv[1:]
-    if '--funds-events' in args:
+    if '--loss-threshold-events' in args:
+        args.remove('--loss-threshold-events')
+        finish_vectors(generate_loss_threshold_events,Path(__file__).with_name('trigger_loss_threshold_events.json'),
+                       provenance=loss_threshold_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--funds-events' in args:
         args.remove('--funds-events')
         finish_vectors(generate_funds_events,Path(__file__).with_name('trigger_funds_events.json'),
                        provenance=funds_event_metadata,source_paths=power_event_source_paths(),argv=args)

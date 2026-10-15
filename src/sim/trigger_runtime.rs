@@ -1736,6 +1736,26 @@ impl Simulation {
                 }
                 result
             }
+            15 | 16 => {
+                // HasOccurred71EE82 takes the Trigger's incoming House,
+                // not Event.value's Country. 71F03F/71F058 compare signed
+                // House+5488/+5434 loss counters with Event+34 using >=.
+                // The null-House tail is true; neither arm latches, writes
+                // the timer/retained House, draws RNG or detaches anything.
+                // Steam3e81a617..08600; tag_lifecycle --loss-threshold-events.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                let Some(house) = self.houses.get(&owner) else {
+                    return false;
+                };
+                let losses = if condition.kind == 15 {
+                    house.stats.buildings_lost()
+                } else {
+                    house.stats.units_lost()
+                };
+                (losses as i32) >= condition.value
+            }
             9 | 11 => {
                 //71F069 ->502D30: Event.value selects a Country's first
                 //registered House, independently of the incoming House or
