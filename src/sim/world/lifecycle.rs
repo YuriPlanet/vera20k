@@ -980,7 +980,7 @@ impl Simulation {
     #[cfg(test)]
     pub(crate) fn reveal(&mut self, stable_id: u64) -> RevealOutcome {
         if self.substrate.anims.contains_key(stable_id) {
-            let registered = self.reveal_anim(stable_id, None);
+            let registered = self.reveal_anim(stable_id, None, true);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -2778,7 +2778,15 @@ impl Simulation {
         self.unregister_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_anim(&mut self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    /// Reveal, leaving out the Display submit when `submit` is false: the
+    /// constructor's attach submits the Anim before anything reads Display
+    /// (`spawn_anim_at_world_with_constructor`).
+    pub(crate) fn reveal_anim(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        submit: bool,
+    ) -> bool {
         // A physically retained Destroy/UnInit object has already left Logic
         // and Display. Its independent19B byte can still be zero, so it cannot
         // be resurrected through Reveal before the common deferred drain.
@@ -2792,7 +2800,9 @@ impl Simulation {
             return false;
         }
         self.mark_anim_display(stable_id, true);
-        self.submit_anim_display(stable_id, rules);
+        if submit {
+            self.submit_anim_display(stable_id, rules);
+        }
         self.register_logic_object(stable_id)
     }
 

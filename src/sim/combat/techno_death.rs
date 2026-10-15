@@ -282,7 +282,7 @@ impl<'r> DeathDebrisWorldHost<'_, 'r> {
     }
 }
 
-impl crate::sim::voxel_anim::DeathDebrisHost for DeathDebrisWorldHost<'_, '_> {
+impl crate::sim::voxel_anim::ShpDebrisHost for DeathDebrisWorldHost<'_, '_> {
     fn rng(&mut self) -> &mut SimRng {
         &mut self.world.scenario_rng
     }
@@ -292,57 +292,13 @@ impl crate::sim::voxel_anim::DeathDebrisHost for DeathDebrisWorldHost<'_, '_> {
         source: crate::sim::voxel_anim::ShpDebrisSource,
         index: usize,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
-        let native_unique_id = crate::sim::native_identity::NativeUniqueIdCursor::assign_runtime(
-            &mut self.world.native_unique_ids,
-        );
         let name = self.debris_name(source, index);
-        let config = name.and_then(|name| {
-            self.rules
-                .art()
-                .anim_runtime_config(&name.to_ascii_uppercase())
-        });
-        let mut draws = if let Some(config) = config {
-            crate::sim::anim_class::anim_constructor_draws(
-                config,
-                self.anim_coord,
-                &mut self.world.scenario_rng,
-            )?
-        } else {
-            crate::sim::anim_class::AnimConstructorDraws {
-                native_unique_id: None,
-                random_rate: None,
-                bounce: None,
-            }
-        };
-        draws.native_unique_id = Some(native_unique_id);
-        if let Some(name) = name {
-            let shp_name = self.world.interner.intern(name);
-            let (rx, ry, sub_x, sub_y, z) = self.anim_coord.to_cell_sub_z();
-            let effect = ExplosionEffect {
-                shp_name,
-                rx,
-                ry,
-                sub_x,
-                sub_y,
-                z,
-                world_z: self.anim_coord.z,
-                death: Some(destruction_effects::DeathAnimSpawn {
-                    draws: Some(draws),
-                    ..destruction_effects::DeathAnimSpawn::at(self.anim_coord, 0)
-                }),
-            };
-            if world_receiver::callbacks_enabled(self.world) {
-                crate::sim::world::damage_consequences::admit_explosion_effect(
-                    self.world, self.rules, effect,
-                );
-            } else {
-                // Explicit callback-disabled tests retain their packet seam.
-                self.explosion_effects.push(effect);
-            }
-        }
-        Ok(())
+        self.world
+            .emit_debris_anim(self.rules, name, self.anim_coord, self.explosion_effects)
     }
+}
 
+impl crate::sim::voxel_anim::DeathDebrisHost for DeathDebrisWorldHost<'_, '_> {
     fn admit_voxel(&mut self, spawn: &crate::sim::voxel_anim::VoxelDebrisSpawn) {
         if world_receiver::callbacks_enabled(self.world) {
             self.world

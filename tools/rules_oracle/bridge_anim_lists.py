@@ -22,10 +22,13 @@ class Lists:
   self.events=[];self.read_result=None;self.u.hook_add(UC_HOOK_CODE,self.hook)
   for address,items in ((0x8B4150,HEAP+0x1000),(0xB0F670,HEAP+0x4000)):
    self.u.mem_write(address,dwords(0x7EB6D4,items,1024,1,0,10))
-  self.u.reg_write(UC_X86_REG_ESP,SP);self.u.reg_write(UC_X86_REG_ESI,TYPE)
+  self.initialize_vectors()
+  self.initial={k:self.state(k) for k in KEYS}
+ def initialize_vectors(self,rules_ptr=TYPE):
+  """Run the same native vector constructors on a composed Rules object."""
+  self.u.reg_write(UC_X86_REG_ESP,SP);self.u.reg_write(UC_X86_REG_ESI,rules_ptr)
   self.u.reg_write(UC_X86_REG_EBX,0);self.u.reg_write(UC_X86_REG_EDI,10)
   run_checked(self.u,0x665827,0x66585F)
-  self.initial={k:self.state(k) for k in KEYS}
  def read32(self,p):return struct.unpack('<I',self.u.mem_read(p,4))[0]
  def string(self,p):return bytes(self.u.mem_read(p,512)).split(b'\0')[0].decode('latin1')
  def ret(self,eax,cleanup=0):
@@ -40,16 +43,16 @@ class Lists:
   elif p==0x7D140B:self.ret(HEAP+0x8000)
   elif p==0x428B80:self.events.append(self.string(u.reg_read(UC_X86_REG_ECX)))
   elif p in (0x66DAB2,0x66DBB5):self.read_result={'length':u.reg_read(UC_X86_REG_EAX),'value':self.string(SP+0x50)}
- def state(self,key):
-  off=KEYS[key][3];p=self.read32(TYPE+off+4);n=self.read32(TYPE+off+16)
+ def state(self,key,rules_ptr=TYPE):
+  off=KEYS[key][3];p=self.read32(rules_ptr+off+4);n=self.read32(rules_ptr+off+16)
   return {'data_is_null':p==0,'count':n,'names':[self.string(self.read32(p+i*4)+0x24) for i in range(n)]}
- def read(self,key,raw):
+ def read(self,key,raw,rules_ptr=TYPE):
   p,begin,end,off=KEYS[key];self.f.ini(p,raw);self.f.write(INI+4,0x826278)
-  self.u.reg_write(UC_X86_REG_ESP,SP);self.u.reg_write(UC_X86_REG_ESI,TYPE);self.u.reg_write(UC_X86_REG_EDI,INI)
+  self.u.reg_write(UC_X86_REG_ESP,SP);self.u.reg_write(UC_X86_REG_ESI,rules_ptr);self.u.reg_write(UC_X86_REG_EDI,INI)
   self.events=[];self.read_result=None
   run_checked(self.u,begin,end,count=2000000,required_addresses=(0x528A10,))
   assert self.u.reg_read(UC_X86_REG_ESP)==SP
-  return {'key':key,'raw':raw,'native_read_string':self.read_result,'find_or_allocate_inputs':list(self.events),'result':self.state(key)}
+  return {'key':key,'raw':raw,'native_read_string':self.read_result,'find_or_allocate_inputs':list(self.events),'result':self.state(key,rules_ptr)}
 def generate():
  s=Lists();rows=[]
  for key in KEYS:

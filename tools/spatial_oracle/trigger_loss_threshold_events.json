@@ -1,0 +1,1385 @@
+{
+  "classification": [
+    {
+      "kind": 15,
+      "state_a": 0,
+      "state_b": 1
+    },
+    {
+      "kind": 16,
+      "state_a": 0,
+      "state_b": 1
+    }
+  ],
+  "code_unchanged": true,
+  "controls": [
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_all_houses_zero_losses_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          0,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter0_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          0,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter0_threshold1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 1
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          5,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter5_threshold6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          6,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter6_threshold6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          7,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter7_threshold6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          -1,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter-1_threshold-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": -1
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          -1,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter-1_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          -2147483648,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter-2147483648_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          2147483647,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter2147483647_threshold-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": -1
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          -2147483648,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_counter-2147483648_threshold-2147483648",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": -2147483648
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          6,
+          1000
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_threshold_is_not_country",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 7
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          0,
+          0
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_incoming_house1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_null_incoming",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 2147483647
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_wrong_raise_bypassFalse",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 15,
+      "loss_counters": [
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_wrong_raise_bypassTrue",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 1,
+      "kind": 15,
+      "loss_counters": [
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss15_retained_persistence_one",
+      "persistence": 1,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_all_houses_zero_losses_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          0
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter0_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          0
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter0_threshold1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 1
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          5
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter5_threshold6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          6
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter6_threshold6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          7
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter7_threshold6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          -1
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter-1_threshold-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": -1
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          -1
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter-1_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          -2147483648
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter-2147483648_threshold0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 0
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          2147483647
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter2147483647_threshold-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": -1
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          -2147483648
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_counter-2147483648_threshold-2147483648",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": -2147483648
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          1000,
+          6
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_threshold_is_not_country",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 7
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          0,
+          0
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_incoming_house1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_null_incoming",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 2147483647
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_wrong_raise_bypassFalse",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 16,
+      "loss_counters": [
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_wrong_raise_bypassTrue",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    },
+    {
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 1,
+      "kind": 16,
+      "loss_counters": [
+        [
+          6,
+          6
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "name": "loss16_retained_persistence_one",
+      "persistence": 1,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "value": 6
+    }
+  ],
+  "country_indices": [
+    0,
+    7,
+    0
+  ],
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "retail_routes": [
+    {
+      "actions": "3,7,1,0997621C,0,0,0,0,A,21,6,EVA_ReinforcementsHaveArrived,0,0,0,0,A,53,2,08AEAF3C,0,0,0,0,A",
+      "archive": "mapsmd03.mix",
+      "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+      "map": "ALL04DMD.MAP",
+      "map_sha256": "f1621a21e7221c1e475a52dccd4a04bb3125f8a095377c917e2122019f2157b2",
+      "native_read": {
+        "kind": 16,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 6
+      },
+      "raw_event": "1,16,0,6",
+      "script": {
+        "0": "21,0",
+        "1": "3,108",
+        "Name": "_Easy Reinforcement 1"
+      },
+      "script_id": "09975DBC",
+      "tag": "0,_Easy Reinforcement 1,093B41CC",
+      "tag_id": "093B571C",
+      "task_force": {
+        "0": "4,GGI",
+        "1": "2,TNKD",
+        "Group": "-1",
+        "Name": "_Easy Reinforcement Team 1"
+      },
+      "task_force_id": "093825AC",
+      "team": {
+        "Aggressive": "no",
+        "Annoyance": "no",
+        "AreTeamMembersRecruitable": "no",
+        "Autocreate": "no",
+        "AvoidThreats": "no",
+        "Droppod": "no",
+        "Full": "no",
+        "Group": "-1",
+        "GuardSlower": "no",
+        "House": "Americans",
+        "IonImmune": "no",
+        "IsBaseDefense": "no",
+        "Loadable": "no",
+        "LooseRecruit": "no",
+        "Max": "1",
+        "MindControlDecision": "0",
+        "Name": "_Easy Reinforcements",
+        "OnTransOnly": "no",
+        "OnlyTargetHouseEnemy": "no",
+        "Prebuild": "no",
+        "Priority": "100",
+        "Recruiter": "no",
+        "Reinforce": "no",
+        "Script": "09975DBC",
+        "Suicide": "no",
+        "TaskForce": "093825AC",
+        "TechLevel": "0",
+        "TransportsReturnOnUnload": "no",
+        "UseTransportOrigin": "no",
+        "VeteranLevel": "1",
+        "Waypoint": "CA",
+        "Whiner": "no"
+      },
+      "team_id": "0997621C",
+      "trigger": "Americans,<none>,_Easy Reinforcement 1,0,1,0,0,0",
+      "trigger_id": "093B41CC"
+    },
+    {
+      "actions": "2,7,1,08D1D32C,0,0,0,0,A,21,6,EVA_ReinforcementsHaveArrived,0,0,0,0,A",
+      "archive": "mapsmd03.mix",
+      "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+      "map": "ALL04DMD.MAP",
+      "map_sha256": "f1621a21e7221c1e475a52dccd4a04bb3125f8a095377c917e2122019f2157b2",
+      "native_read": {
+        "kind": 15,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 4
+      },
+      "raw_event": "1,15,0,4",
+      "script": {
+        "0": "21,0",
+        "1": "3,108",
+        "Name": "_Easy Reinforcement 3"
+      },
+      "script_id": "0997545C",
+      "tag": "0,_Easy Reinforcement 3,093B522C",
+      "tag_id": "093B50BC",
+      "task_force": {
+        "0": "5,MTNK",
+        "Group": "-1",
+        "Name": "_Easy Reinforcement 3"
+      },
+      "task_force_id": "093BCBAC",
+      "team": {
+        "Aggressive": "no",
+        "Annoyance": "no",
+        "AreTeamMembersRecruitable": "no",
+        "Autocreate": "no",
+        "AvoidThreats": "no",
+        "Droppod": "no",
+        "Full": "no",
+        "Group": "-1",
+        "GuardSlower": "no",
+        "House": "Americans",
+        "IonImmune": "no",
+        "IsBaseDefense": "no",
+        "Loadable": "no",
+        "LooseRecruit": "no",
+        "Max": "1",
+        "MindControlDecision": "0",
+        "Name": "_Easy Reinforcment 3",
+        "OnTransOnly": "no",
+        "OnlyTargetHouseEnemy": "no",
+        "Prebuild": "no",
+        "Priority": "100",
+        "Recruiter": "no",
+        "Reinforce": "no",
+        "Script": "0997545C",
+        "Suicide": "no",
+        "TaskForce": "093BCBAC",
+        "TechLevel": "0",
+        "TransportsReturnOnUnload": "no",
+        "UseTransportOrigin": "no",
+        "VeteranLevel": "1",
+        "Waypoint": "BX",
+        "Whiner": "no"
+      },
+      "team_id": "08D1D32C",
+      "trigger": "Americans,<none>,_Easy Reinforcement 3,0,1,0,0,0",
+      "trigger_id": "093B522C"
+    }
+  ],
+  "schema_version": 1,
+  "zero_rng_calls": true
+}

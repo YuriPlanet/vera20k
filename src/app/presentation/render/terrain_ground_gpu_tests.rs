@@ -620,10 +620,13 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
                     } else {
                         // Real UnitAtlas draw range, deliberately outside this tiny
                         // attachment. This is a planner-work/fence gate, not20k FPS.
-                        (
-                            ObjectTexture::UnitAtlasPage(0),
-                            sprite([200., 200.], [1., 1.], 0.),
-                        )
+                        let mut instance = sprite([200., 200.], [1., 1.], 0.);
+                        // Native-paletted opaque bodies exercise signed-range
+                        // admission while preserving the ordinary safe batch.
+                        instance.palette_light = crate::render::palette_light::PaletteLight::new(
+                            [1000; 3], 53, 1000, true,
+                        );
+                        (ObjectTexture::UnitAtlasPage(0), instance)
                     };
                     PlannedObjectInstance::object(
                         ObjectDraw {

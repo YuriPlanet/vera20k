@@ -40,9 +40,87 @@ pub(super) fn draw_native_object_pass<'a>(
     };
     let mut terrain_stats = crate::render::terrain_draw::TerrainBatchStats::default();
     assert_eq!(count as usize, ground.instances.len());
+    let packed_binding = |target| match target {
+        ObjectTexture::UnitAtlasPage(page) => unit_atlas
+            .and_then(|atlas| atlas.page_texture(page))
+            .zip(palette_set)
+            .map(|(texture, palette)| {
+                (
+                    &texture.bind_group,
+                    &palette.bind_group,
+                    PackedSpriteKind::Voxel,
+                )
+            }),
+        ObjectTexture::UnitPose => pose_texture.zip(palette_set).map(|(texture, palette)| {
+            (
+                &texture.bind_group,
+                &palette.bind_group,
+                PackedSpriteKind::Voxel,
+            )
+        }),
+        ObjectTexture::UnitTransitionPage(page) => transition_cache
+            .page_texture(page)
+            .zip(palette_set)
+            .map(|(texture, palette)| {
+                (
+                    &texture.bind_group,
+                    &palette.bind_group,
+                    PackedSpriteKind::Voxel,
+                )
+            }),
+        ObjectTexture::ShpPage(page) => sprite_atlas
+            .and_then(|atlas| atlas.page(page))
+            .map(|page| (&page.texture.bind_group, zshape, PackedSpriteKind::Shp)),
+        ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body) => {
+            overlay_atlas.map(|atlas| (&atlas.texture.bind_group, zshape, PackedSpriteKind::Shp))
+        }
+        _ => {
+            unreachable!("packed source classification is retained by lowering")
+        }
+    };
+    let camera = batch.camera_uniform();
+    let mut run_offset = 0;
     let mut cursor = 0;
     while cursor < ground.runs.len() {
         let run = &ground.runs[cursor];
+        // Only an opaque body's unsafe signed candidates need manual replay.
+        // Retain one composite per instance: an ordinary run can coalesce
+        // many Display parents, unlike native parent-grouped blend sources.
+        if is_opaque_voxel_run(run)
+            && voxel_needs_manual_depth(
+                &ground.instances[(run.start + run_offset) as usize],
+                camera,
+            )
+        {
+            let index = run.start + run_offset;
+            if let Some((source, material, kind)) = packed_binding(run.target) {
+                let composite = PackedComposite {
+                    pieces: vec![PackedCompositePiece {
+                        index,
+                        instance: &ground.instances[index as usize],
+                        source,
+                        material,
+                        kind,
+                    }],
+                    render_z: run.render_z,
+                };
+                terrain_stats.accumulate(terrain.draw_packed_span(
+                    encoder,
+                    color,
+                    depth,
+                    batch,
+                    buffer,
+                    &[composite],
+                    tactical,
+                ));
+            }
+            run_offset += 1;
+            if run_offset == run.count {
+                cursor += 1;
+                run_offset = 0;
+            }
+            continue;
+        }
         if run.packed_parent.is_some() {
             // Unit73B140 shades the opaque source cache and composites once.
             // Native hull/turret/barrel source ownership survives atlas pages;
@@ -56,50 +134,7 @@ pub(super) fn draw_native_object_pass<'a>(
                 let pieces: Vec<_> = ground.runs[start..cursor]
                     .iter()
                     .flat_map(|run| {
-                        let binding = match run.target {
-                            ObjectTexture::UnitAtlasPage(page) => unit_atlas
-                                .and_then(|atlas| atlas.page_texture(page))
-                                .zip(palette_set)
-                                .map(|(texture, palette)| {
-                                    (
-                                        &texture.bind_group,
-                                        &palette.bind_group,
-                                        PackedSpriteKind::Voxel,
-                                    )
-                                }),
-                            ObjectTexture::UnitPose => {
-                                pose_texture.zip(palette_set).map(|(texture, palette)| {
-                                    (
-                                        &texture.bind_group,
-                                        &palette.bind_group,
-                                        PackedSpriteKind::Voxel,
-                                    )
-                                })
-                            }
-                            ObjectTexture::UnitTransitionPage(page) => transition_cache
-                                .page_texture(page)
-                                .zip(palette_set)
-                                .map(|(texture, palette)| {
-                                    (
-                                        &texture.bind_group,
-                                        &palette.bind_group,
-                                        PackedSpriteKind::Voxel,
-                                    )
-                                }),
-                            ObjectTexture::ShpPage(page) => {
-                                sprite_atlas.and_then(|atlas| atlas.page(page)).map(|page| {
-                                    (&page.texture.bind_group, zshape, PackedSpriteKind::Shp)
-                                })
-                            }
-                            ObjectTexture::TerrainShp(
-                                crate::render::terrain_draw::TerrainPiece::Body,
-                            ) => overlay_atlas.map(|atlas| {
-                                (&atlas.texture.bind_group, zshape, PackedSpriteKind::Shp)
-                            }),
-                            _ => {
-                                unreachable!("packed source classification is retained by lowering")
-                            }
-                        };
+                        let binding = packed_binding(run.target);
                         (run.start..run.start + run.count).filter_map(move |index| {
                             let (source, material, kind) = binding?;
                             Some(PackedCompositePiece {
@@ -182,6 +217,19 @@ pub(super) fn draw_native_object_pass<'a>(
             && destination_edit(ground.runs[cursor].target).is_none()
         {
             let run = &ground.runs[cursor];
+            let start = run.start + run_offset;
+            let remaining = run.count - run_offset;
+            let count = if is_opaque_voxel_run(run) {
+                voxel_fast_prefix(
+                    &ground.instances[start as usize..(start + remaining) as usize],
+                    camera,
+                )
+            } else {
+                remaining
+            };
+            if count == 0 {
+                break;
+            }
             match run.target {
                 ObjectTexture::TerrainShp(_) | ObjectTexture::ProjectileShp(_, _) => {
                     unreachable!("native destination edits split normal runs")
@@ -192,8 +240,8 @@ pub(super) fn draw_native_object_pass<'a>(
                             &mut pass,
                             &atlas.texture,
                             buffer,
-                            run.start,
-                            run.count,
+                            start,
+                            count,
                         );
                     }
                 }
@@ -207,8 +255,8 @@ pub(super) fn draw_native_object_pass<'a>(
                             texture,
                             &palette.bind_group,
                             buffer,
-                            run.start,
-                            run.count,
+                            start,
+                            count,
                             run.render_z,
                         );
                     }
@@ -220,8 +268,8 @@ pub(super) fn draw_native_object_pass<'a>(
                             texture,
                             &palette.bind_group,
                             buffer,
-                            run.start,
-                            run.count,
+                            start,
+                            count,
                             run.render_z,
                         );
                     }
@@ -235,8 +283,8 @@ pub(super) fn draw_native_object_pass<'a>(
                             texture,
                             &palette.bind_group,
                             buffer,
-                            run.start,
-                            run.count,
+                            start,
+                            count,
                             run.render_z,
                         );
                     }
@@ -251,16 +299,16 @@ pub(super) fn draw_native_object_pass<'a>(
                                 &mut pass,
                                 &texture.texture,
                                 buffer,
-                                run.start,
-                                run.count,
+                                start,
+                                count,
                             ),
                             RenderZPolicy::ReadOnly => batch.draw_zsprite_range(
                                 &mut pass,
                                 &texture.texture,
                                 zshape,
                                 buffer,
-                                run.start,
-                                run.count,
+                                start,
+                                count,
                                 false,
                             ),
                             RenderZPolicy::ReadWrite | RenderZPolicy::AlphaReadWrite => batch
@@ -269,15 +317,21 @@ pub(super) fn draw_native_object_pass<'a>(
                                     &texture.texture,
                                     zshape,
                                     buffer,
-                                    run.start,
-                                    run.count,
+                                    start,
+                                    count,
                                     true,
                                 ),
                         }
                     }
                 }
             }
-            cursor += 1;
+            run_offset += count;
+            if run_offset == run.count {
+                cursor += 1;
+                run_offset = 0;
+            } else {
+                break;
+            }
         }
         // Ordinary draws are submission boundaries as well as ordering
         // fences. Many alternating Bullet/Anim parents must not fill Metal's
@@ -286,6 +340,62 @@ pub(super) fn draw_native_object_pass<'a>(
         terrain.note_external_passes(encoder, 1);
     }
     terrain_stats
+}
+
+/// Only fully opaque, native-paletted body stores have selector0 copy
+/// semantics. Shadows/compatibility alpha and unsupported FX retain their
+/// existing owners; sinking changes admission, already shared by both shaders.
+fn is_opaque_voxel_run(run: &ObjectDrawRun) -> bool {
+    run.packed_parent.is_none()
+        && is_voxel_target(run.target)
+        && run.render_z == RenderZPolicy::ReadOnly
+}
+
+fn voxel_fast_prefix(
+    instances: &[crate::render::batch::SpriteInstance],
+    camera: crate::render::batch::CameraUniform,
+) -> u32 {
+    instances
+        .iter()
+        .take_while(|instance| !voxel_needs_manual_depth(instance, camera))
+        .count() as u32
+}
+
+fn voxel_needs_manual_depth(
+    instance: &crate::render::batch::SpriteInstance,
+    camera: crate::render::batch::CameraUniform,
+) -> bool {
+    if instance.draw_state.native_selector_bits() != 0
+        || instance.alpha != 1.0
+        || instance.draw_state.fx_params[0] != 1.0
+        || instance.draw_state.fx_flags & !crate::render::draw_state::FX_SINKING_CLIP != 0
+        || instance.palette_light.0[0] >> 24 == 0
+    {
+        return false;
+    }
+    // GPU location13 aliases the CPU's zshape_origin as voxel z_rect.
+    let rect = if instance.zshape_origin[1] > 0.0 {
+        instance.zshape_origin
+    } else {
+        [instance.position[1], instance.size[1]]
+    };
+    let camera_row = (camera.camera_pos[1] + camera.native_z_origin_y).round() as i32;
+    let clip_height = if instance.draw_state.fx_params[3] > 0.0 {
+        instance.draw_state.fx_params[3]
+    } else {
+        camera.screen_size[1] / camera.zoom
+    };
+    let Some(bottom) = camera_row.checked_add(clip_height.round() as i32) else {
+        return true;
+    };
+    crate::render::native_z::voxel_depth_range(
+        [rect[0].round() as i32, (rect[1].round() as i32).max(1)],
+        instance.z_gradient,
+        instance.z_adjust.round() as i32,
+        camera_row,
+        [camera_row, bottom],
+    )
+    .is_none_or(|[min, max]| min < 0 || max > i32::from(u16::MAX))
 }
 
 fn is_voxel_target(target: ObjectTexture) -> bool {
@@ -347,6 +457,62 @@ mod tests {
     use crate::render::batch::SpriteInstance;
     use crate::render::draw_state::DrawState;
     use crate::render::tactical_draw_plan::SpriteEncoding;
+
+    #[test]
+    fn opaque_voxel_fast_prefix_preserves_coalesced_order_and_effect_owners() {
+        let camera = crate::render::terrain_draw_gpu_tests::camera([64, 96]);
+        let mut safe = SpriteInstance {
+            position: [27.0, 43.0],
+            size: [18.0, 15.0],
+            alpha: 1.0,
+            tint: crate::map::lighting::DEFAULT_TINT,
+            palette_light: crate::render::palette_light::PaletteLight::new(
+                [1000; 3], 53, 1000, true,
+            ),
+            draw_state: DrawState::default(),
+            z_adjust: -65.0,
+            ..Default::default()
+        };
+        let mut unsafe_body = safe;
+        // Supplied render boundary near signed zero, using the real shader axis.
+        unsafe_body.position[1] = 32768.0;
+        assert!(!voxel_needs_manual_depth(&safe, camera));
+        assert!(voxel_needs_manual_depth(&unsafe_body, camera));
+        let slices = [safe, safe, unsafe_body, safe, unsafe_body];
+        assert_eq!(voxel_fast_prefix(&slices, camera), 2);
+        assert_eq!(voxel_fast_prefix(&slices[2..], camera), 0);
+        assert_eq!(voxel_fast_prefix(&slices[3..], camera), 1);
+        for target in [
+            ObjectTexture::UnitAtlasPage(0),
+            ObjectTexture::UnitTransitionPage(0),
+            ObjectTexture::UnitPose,
+        ] {
+            assert!(is_opaque_voxel_run(&ObjectDrawRun {
+                target,
+                render_z: RenderZPolicy::ReadOnly,
+                packed_parent: None,
+                start: 0,
+                count: 5
+            }));
+        }
+        unsafe_body.draw_state.fx_flags = crate::render::draw_state::FX_SHADOW;
+        assert!(
+            !voxel_needs_manual_depth(&unsafe_body, camera),
+            "shadow must keep its source owner"
+        );
+        unsafe_body.draw_state.fx_flags = crate::render::draw_state::FX_SINKING_CLIP;
+        assert!(voxel_needs_manual_depth(&unsafe_body, camera));
+        unsafe_body.alpha = 0.5;
+        assert!(
+            !voxel_needs_manual_depth(&unsafe_body, camera),
+            "compatibility alpha retains its own shading"
+        );
+        safe.zshape_origin = [32768.0, 15.0];
+        assert!(
+            voxel_needs_manual_depth(&safe, camera),
+            "the shared composite rect owns row Z"
+        );
+    }
 
     #[test]
     fn unit_source_cache_groups_pages_but_not_other_parent_or_ancillary_draws() {

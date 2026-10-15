@@ -630,6 +630,7 @@ impl Simulation {
             draw_flags: RING_ANIM_DRAW_FLAGS,
             z_adjust: 0,
             reverse: false,
+            owner: Some(target_id),
             ..crate::sim::components::AnimClassSpawnDescriptor::new(
                 type_id, rx, ry, sub_x, sub_y, z,
             )
@@ -644,7 +645,6 @@ impl Simulation {
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
             target.mind_control.ring_anim = Some(anim_id);
         }
-        self.set_anim_owner_object(anim_id, Some(target_id), rules);
         if building {
             self.set_anim_z_adjust(anim_id, BUILDING_RING_Z_ADJUST);
         }

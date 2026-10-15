@@ -792,6 +792,9 @@ impl CellOccupationGrid {
     /// test has its bit on the other plane. A Unit standing on a deck or on
     /// the ground beneath it agrees; frequency elsewhere is unmeasured.
     pub(crate) fn reconcile_entity(&mut self, entity: &GameEntity, lists: &OccupancyGrid) {
+        if self.projection_unchanged(entity, lists) {
+            return;
+        }
         let old_footprints = self
             .footprints_by_owner
             .get_mut(&entity.stable_id())
@@ -834,6 +837,59 @@ impl CellOccupationGrid {
         {
             self.footprints_by_owner.remove(&entity.stable_id());
         }
+    }
+
+    /// Whether `entity`'s marks are already exactly the ones
+    /// [`Self::reconcile_entity`] would leave. Clearing and marking them again
+    /// would change nothing a reader sees: every plane write keeps the owner's
+    /// footprints with it, and their order only orders that function's clears.
+    fn projection_unchanged(&self, entity: &GameEntity, lists: &OccupancyGrid) -> bool {
+        let id = entity.stable_id();
+        let held = self.footprints_by_owner.get(&id);
+        if entity.category() != EntityCategory::Unit
+            || !entity.lifecycle.cell_marked()
+            || entity.passenger_role.is_inside_transport()
+        {
+            return held.is_none();
+        }
+        let mut wanted = [None; 8];
+        let mut count = 0;
+        let mut fits = true;
+        let mut want = |footprint: CellOccupationFootprint| {
+            if !matches!(
+                footprint.layer,
+                MovementLayer::Ground | MovementLayer::Bridge
+            ) || wanted[..count].contains(&Some(footprint))
+            {
+                return;
+            }
+            if count == wanted.len() {
+                fits = false;
+                return;
+            }
+            wanted[count] = Some(footprint);
+            count += 1;
+        };
+        let (rx, ry) = (entity.position.rx(), entity.position.ry());
+        if entity.foot_occupation_enabled()
+            && let Some(layer) = lists.listed_layer(rx, ry, id)
+        {
+            want(CellOccupationFootprint { rx, ry, layer });
+        }
+        if let Some(loco) = entity.locomotor.as_ref() {
+            loco.visit_track_occupation(|mark| {
+                want(CellOccupationFootprint {
+                    rx: mark.rx,
+                    ry: mark.ry,
+                    layer: mark.layer,
+                });
+            });
+        }
+        fits && held.map_or(0, |held| held.marks.len()) == count
+            && wanted[..count]
+                .iter()
+                .flatten()
+                .all(|footprint| held.is_some_and(|held| held.marks.contains(footprint)))
     }
 
     /// Exact explicit-plane mark. Ground/deck storage is independent.

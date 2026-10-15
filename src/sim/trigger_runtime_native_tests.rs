@@ -10,6 +10,227 @@ fn integer(value: &Value) -> i32 {
     value.as_i64().unwrap() as i32
 }
 
+fn loss_threshold_event_corpus() -> Value {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_loss_threshold_events.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        corpus["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    corpus
+}
+
+#[test]
+fn loss_threshold_events_match_original_incoming_house_and_signed_counters() {
+    use super::tests::{event_ingress_fixture, install_event_ingress_map};
+    use crate::sim::house_state::MatchStatistics;
+
+    let corpus = loss_threshold_event_corpus();
+    let cases = corpus["controls"].as_array().unwrap();
+    assert_eq!(cases.len(), 34);
+    for case in cases {
+        let (mut sim, rules, _, houses) = event_ingress_fixture();
+        for (house, losses) in houses.iter().zip(case["loss_counters"].as_array().unwrap()) {
+            sim.houses.get_mut(house).unwrap().stats = MatchStatistics::from_totals_for_test(
+                0,
+                0,
+                integer(&losses[1]) as u32,
+                integer(&losses[0]) as u32,
+                0,
+            );
+        }
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nLOSS=Country0,<none>,Loss,0,1,1,1,0\n\
+                 [Events]\nLOSS=1,{},0,{}\n[Tags]\nTAG=2,Loss,LOSS\n",
+                integer(&case["kind"]),
+                integer(&case["value"])
+            ),
+        );
+        let typ = sim.trigger_runtime.definitions.tag_type("TAG").unwrap();
+        let tag = sim.shared_trigger_tag(typ);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let trigger_type = sim.trigger_runtime.trigger(live).unwrap().type_index;
+        sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house =
+            Some(houses[2]);
+        let timer = sim.trigger_runtime.trigger(live).unwrap().timer;
+        let rng_before = (
+            sim.scenario_rng.logical_state(),
+            sim.main_rng.logical_state(),
+            sim.mapgen_rng.logical_state(),
+        );
+        let owner = case["incoming_house"]
+            .as_u64()
+            .map(|index| houses[index as usize]);
+        let mut persistence = integer(&case["initial_persistence"]) != 0;
+        let mut predicate = |sim: &mut Simulation| {
+            sim.has_occurred(
+                0,
+                TagEventInput {
+                    kind: integer(&case["raised"]),
+                    ..Default::default()
+                },
+                owner,
+                &mut persistence,
+                Some(&rules),
+                live,
+            )
+        };
+        let result = if case["scenario_init"].as_bool().unwrap() {
+            sim.with_buildup_bypass(predicate)
+        } else {
+            predicate(&mut sim)
+        };
+        assert_eq!(result, integer(&case["result"]) != 0, "{case}");
+        assert_eq!(persistence, integer(&case["persistence"]) != 0, "{case}");
+        assert_eq!(sim.trigger_runtime.trigger(live).unwrap().timer, timer);
+        assert_eq!(
+            sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house,
+            Some(houses[2]),
+            "loss conditions must not replace the retained House: {case}"
+        );
+        assert_eq!(
+            (
+                sim.scenario_rng.logical_state(),
+                sim.main_rng.logical_state(),
+                sim.mapgen_rng.logical_state()
+            ),
+            rng_before,
+            "{case}"
+        );
+    }
+    for classification in corpus["classification"].as_array().unwrap() {
+        // The existing shared registration owner classifies both as House
+        // polls. Their original StateA0/StateB1 does not latch completion.
+        assert_eq!(classification["state_a"], 0);
+        assert_eq!(classification["state_b"], 1);
+        assert_eq!(event_classification(integer(&classification["kind"])), 8);
+    }
+}
+
+#[test]
+fn loss_threshold_events_bind_retail_all04_reinforcement_operands() {
+    use crate::rules::{process_owner::NativeScenarioRulesPrefix, team_ai_ini::TeamAiIniRegistry};
+    use crate::sim::house_state::MatchStatistics;
+
+    let corpus = loss_threshold_event_corpus();
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let raw = assets.get_ref("ALL04DMD.MAP").unwrap();
+    let map = crate::map::map_file::MapFile::from_bytes(raw).unwrap();
+    let named = assets.resolve_ref("ALL04DMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL04DMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut rules_owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = rules_owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
+        .unwrap()
+        .ini;
+    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let mut sim = Simulation::with_seed(31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+        &mut sim,
+        &roster,
+        Some(&rules),
+        Some(&map.ini),
+    );
+    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.initialize_trigger_definitions(&map, &teams, None, None);
+    let routes = corpus["retail_routes"].as_array().unwrap();
+    assert_eq!(routes.len(), 2);
+    for route in routes {
+        assert_eq!(crate::util::sha256::sha256_hex(raw), route["map_sha256"]);
+        let trigger_id = route["trigger_id"].as_str().unwrap();
+        assert_eq!(
+            map.ini
+                .section("Events")
+                .unwrap()
+                .read_string(trigger_id, "", 512),
+            route["raw_event"]
+        );
+        let tag_type = sim
+            .trigger_runtime
+            .definitions
+            .tag_type(route["tag_id"].as_str().unwrap())
+            .unwrap();
+        let tag = sim.shared_trigger_tag(tag_type);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let definition = &sim.trigger_runtime.definitions.trigger_types
+            [sim.trigger_runtime.trigger(live).unwrap().type_index];
+        assert_eq!(definition.id, trigger_id);
+        let condition = &definition.events[0].condition;
+        let kind = condition.kind;
+        let threshold = condition.value;
+        assert_eq!(kind, integer(&route["native_read"]["kind"]));
+        assert_eq!(threshold, integer(&route["native_read"]["value"]));
+        let owner = resolve_trigger_house(&sim, definition.owner.as_deref(), Some(&rules))
+            .expect("the authored trigger House exists in the campaign roster");
+        assert_eq!(sim.interner.resolve(owner), route["team"]["House"]);
+        let action = definition
+            .actions
+            .iter()
+            .find(|action| action.entry.kind == 7)
+            .unwrap();
+        let Some(DefinitionReference::Team(team)) = action.reference else {
+            panic!("the retail reinforcement must retain its actual Team reference");
+        };
+        let team_name = &sim.trigger_runtime.definitions.team_types[team];
+        assert_eq!(team_name, route["team_id"].as_str().unwrap());
+        assert!(
+            sim.team_script_vm
+                .team_type_definition(sim.interner.get(team_name).unwrap())
+                .is_some()
+        );
+        // Bind actual retail operands and the existing downstream Team owner.
+        // Supplied accounting priors isolate the predicate; the normal-frame
+        // callback -> reinforcement test covers the connected ordinary path.
+        // This is not a played ALL04 mission or original Team execution.
+        for (losses, expected) in [(threshold - 1, false), (threshold, true)] {
+            sim.houses.get_mut(&owner).unwrap().stats = MatchStatistics::from_totals_for_test(
+                0,
+                0,
+                if kind == 16 { losses as u32 } else { 0 },
+                if kind == 15 { losses as u32 } else { 0 },
+                0,
+            );
+            let mut persistence = false;
+            assert_eq!(
+                sim.has_occurred(
+                    0,
+                    TagEventInput {
+                        kind: EVENT_ANY,
+                        ..Default::default()
+                    },
+                    Some(owner),
+                    &mut persistence,
+                    Some(&rules),
+                    live,
+                ),
+                expected,
+                "{trigger_id} losses{losses}"
+            );
+            assert!(!persistence);
+        }
+    }
+}
+
 #[test]
 fn naval_land_events_match_original_signed_tracking_and_country_selection() {
     use super::tests::{
@@ -649,6 +870,197 @@ fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
         );
     }
     assert_eq!(sim.trigger_runtime.action_trace, [(21, cue)]);
+}
+
+#[test]
+fn building_loss_event_matches_original_tracked_count_and_country_order() {
+    use super::tests::{
+        event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit,
+    };
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_building_loss_events.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        corpus["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    let controls = corpus["controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 14);
+    for case in controls {
+        let (mut sim, rules, _, houses) = event_ingress_fixture();
+        sim.session.house_order = case["house_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| houses[integer(index) as usize])
+            .collect();
+        for (index, owner) in houses.iter().enumerate() {
+            sim.houses
+                .get_mut(owner)
+                .unwrap()
+                .tracking
+                .set_buildings_for_test(integer(&case["tracked_buildings"][index]));
+        }
+        let actor = case["actor_owner"].as_u64().map(|index| {
+            spawn_event_ingress_unit(&mut sim, &rules, houses[index as usize], (15, 15))
+        });
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nLOSS=Country0,<none>,Loss,0,1,1,1,0\n\
+             [Events]\nLOSS=1,10,0,{}\n[Tags]\nTAG=2,Loss,LOSS\n",
+                integer(&case["value"])
+            ),
+        );
+        let typ = sim.trigger_runtime.definitions.tag_type("TAG").unwrap();
+        let tag = sim.shared_trigger_tag(typ);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let trigger_type = sim.trigger_runtime.trigger(live).unwrap().type_index;
+        sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house =
+            Some(houses[1]);
+        let timer = sim.trigger_runtime.trigger(live).unwrap().timer;
+        let rng = (
+            sim.scenario_rng.logical_state(),
+            sim.main_rng.logical_state(),
+            sim.mapgen_rng.logical_state(),
+        );
+        let mut persistence = integer(&case["initial_persistence"]) != 0;
+        let mut predicate = |sim: &mut Simulation| {
+            sim.has_occurred(
+                0,
+                TagEventInput {
+                    kind: integer(&case["raised"]),
+                    actor,
+                    source: None,
+                    cell: (0, 0),
+                    force: false,
+                },
+                case["incoming_house"]
+                    .as_u64()
+                    .map(|index| houses[index as usize]),
+                &mut persistence,
+                Some(&rules),
+                live,
+            )
+        };
+        let result = if case["scenario_init"].as_bool().unwrap() {
+            sim.with_buildup_bypass(predicate)
+        } else {
+            predicate(&mut sim)
+        };
+        assert_eq!(result, integer(&case["result"]) != 0, "{case}");
+        assert_eq!(persistence, integer(&case["persistence"]) != 0, "{case}");
+        assert_eq!(sim.trigger_runtime.trigger(live).unwrap().timer, timer);
+        assert_eq!(
+            sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house,
+            Some(houses[1]),
+            "{case}"
+        );
+        assert_eq!(
+            (
+                sim.scenario_rng.logical_state(),
+                sim.main_rng.logical_state(),
+                sim.mapgen_rng.logical_state()
+            ),
+            rng
+        );
+    }
+}
+
+#[test]
+fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
+    use crate::rules::{process_owner::NativeScenarioRulesPrefix, ruleset::CountryIdx};
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let raw = assets.get_ref("ALL04DMD.MAP").unwrap();
+    assert_eq!(
+        crate::util::sha256::sha256_hex(raw),
+        "f1621a21e7221c1e475a52dccd4a04bb3125f8a095377c917e2122019f2157b2"
+    );
+    let map = crate::map::map_file::MapFile::from_bytes(raw).unwrap();
+    let named = assets.resolve_ref("ALL04DMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL04DMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut rules_owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = rules_owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+        &mut sim,
+        &roster,
+        Some(&rules),
+        Some(&map.ini),
+    );
+    let owner = sim.house_by_country_index(CountryIdx(9), &rules).unwrap();
+    assert_eq!(sim.interner.resolve(owner), "YuriCountry");
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+    let typ = sim
+        .trigger_runtime
+        .definitions
+        .tag_type("07C973FC")
+        .unwrap();
+    let tag = sim.shared_trigger_tag(typ);
+    let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+    let definition = &sim.trigger_runtime.definitions.trigger_types
+        [sim.trigger_runtime.trigger(live).unwrap().type_index];
+    assert_eq!(definition.id, "07C9797C");
+    assert_eq!(
+        (
+            definition.events[0].condition.kind,
+            definition.events[0].condition.value
+        ),
+        (10, 9)
+    );
+    assert!(!sim.trigger_runtime.locals_set.contains(&10));
+    // Isolate the authored retail route. Actual constructor/Limbo/destructor
+    // accounting is exercised separately through the ordinary master frame.
+    for (buildings, expected) in [(1, false), (0, true), (1, true)] {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .tracking
+            .set_buildings_for_test(buildings);
+        sim.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: EVENT_ANY,
+                ..Default::default()
+            },
+            &mut Vec::new(),
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        );
+        assert_eq!(sim.trigger_runtime.locals_set.contains(&10), expected);
+    }
+    assert_eq!(sim.trigger_runtime.action_trace, [(56, 10)]);
+    // The later actual rescue trigger reads the same local. It is initially
+    // disabled; this fixture does not claim to play the full rescue sequence.
+    let rescue = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .find(|typ| typ.id == "07BC56CC")
+        .unwrap();
+    assert!(
+        rescue
+            .events
+            .iter()
+            .any(|event| event.condition.kind == 36 && event.condition.value == 10)
+    );
 }
 
 #[test]

@@ -1195,10 +1195,23 @@ impl Simulation {
         registered.runtime.frame_timer = frame_timer;
         registered.bounce = draws.bounce;
         // Native registry insertion precedes Reveal, and Reveal precedes the
-        // delay-zero constructor-time Start call.
-        self.reveal_anim(stable_id, Some(rules));
+        // delay-zero constructor-time Start call. A producer's attach then
+        // removes the Anim from Display and submits it to Ground again, so
+        // Reveal's own submit is left out when nothing before the attach can
+        // read or change Display: Start reaches it only through Middle's
+        // smudge construction.
+        let start_reaches_display = descriptor.delay == 0
+            && middle_frame(&config).is_none()
+            && (config.scorch || config.crater);
+        let attaches = descriptor
+            .owner
+            .is_some_and(|owner| self.anim_owner_coords(owner).is_some());
+        self.reveal_anim(stable_id, Some(rules), !attaches || start_reaches_display);
         if descriptor.delay == 0 {
             self.anim_start(stable_id, &config, rules, None);
+        }
+        if let Some(owner) = descriptor.owner {
+            self.set_anim_owner_object(stable_id, Some(owner), rules);
         }
         Ok(stable_id)
     }
@@ -1381,6 +1394,7 @@ impl Simulation {
                 use_cell_drawer: false,
                 terrain_attached: false,
                 draw_runtime: AnimDrawRuntime::default(),
+                owner: None,
             };
             // RESIDUAL: this unwrap relies on the binder having bound the
             // parent's whole `TrailerAnim=` closure. The strict binder
@@ -1670,21 +1684,28 @@ impl Simulation {
         else {
             return;
         };
-        if self
+        if let Some(building_slot) = self
             .anim(id)
-            .is_some_and(|anim| anim.owner_entity.is_some())
+            .and_then(|anim| anim.owner_entity.map(|_| anim.building_slot.is_some()))
         {
-            if let Some(rules) = rules {
-                self.detach_anim_from_owner(id, rules);
-            } else {
-                // An imminent physical owner retirement may have no Rules.
-                // Preserve SetOwner(NULL)'s resolved coordinates and pointer
-                // callback here. Its temporary Display resubmission is omitted:
-                // this same operation conceals the Anim before another draw.
-                self.release_anim_owner_reference(id);
-                self.anim_mut_by_id(id)
-                    .expect("the retiring animation still exists")
-                    .world_coord = world;
+            match rules {
+                // A Building slot Anim's expiry below can construct its
+                // successor, which reads and changes Display.
+                Some(rules) if building_slot => {
+                    self.detach_anim_from_owner(id, rules);
+                }
+                _ => {
+                    // SetOwner(NULL)'s resolved coordinates and pointer
+                    // callback, without its temporary Display resubmission:
+                    // until this operation's conceal below, nothing reads or
+                    // changes Display (the expiry reaches Bullets and
+                    // damage-fire slots only), so it is unobservable. An
+                    // imminent physical owner retirement may have no Rules.
+                    self.release_anim_owner_reference(id);
+                    self.anim_mut_by_id(id)
+                        .expect("the retiring animation still exists")
+                        .world_coord = world;
+                }
             }
         }
         if let Some(anim) = self.anim_mut_by_id(id) {
@@ -2189,6 +2210,7 @@ impl Simulation {
                     use_cell_drawer: false,
                     terrain_attached: false,
                     draw_runtime: AnimDrawRuntime::default(),
+                    owner: None,
                 };
                 let world = AnimWorldCoord {
                     x: base.x.wrapping_add(offset.world_dx),
@@ -3488,7 +3510,94 @@ mod tests {
             use_cell_drawer: false,
             terrain_attached: false,
             draw_runtime: AnimDrawRuntime::default(),
+            owner: None,
         }
+    }
+
+    /// A producer's `owner` attaches inside the constructor without Reveal's
+    /// own Display submit, and Destroy conceals the attached Anim without
+    /// SetOwner(NULL)'s temporary resubmission: Display ends as the native
+    /// constructor, SetOwnerObject, detach and conceal sequence leaves it.
+    #[test]
+    fn an_owned_anim_leaves_display_as_construct_then_attach_does() {
+        let rules = runtime_rules("[A]\nLayer=Ground\n", &[("A", 10)]);
+        let coord = AnimWorldCoord {
+            x: 2816,
+            y: 2944,
+            z: 0,
+        };
+        let scene = || {
+            let mut sim = Simulation::with_seed(0);
+            let house = sim.interner.intern("HOUSE");
+            let unit = sim.interner.intern("UNIT");
+            let ids: Vec<u64> = [(10, 10), (14, 3), (6, 9), (12, 12), (8, 15)]
+                .into_iter()
+                .map(|(rx, ry)| {
+                    let id = sim.allocate_stable_id();
+                    sim.substrate
+                        .entities
+                        .insert(GameEntity::new_at_frame_zero_for_test(
+                            id,
+                            rx,
+                            ry,
+                            0,
+                            0,
+                            house,
+                            Health::new(100),
+                            unit,
+                            EntityCategory::Unit,
+                            0,
+                            5,
+                            false,
+                        ));
+                    sim.resubmit_entity_display_for_test(id);
+                    id
+                })
+                .collect();
+            let type_id = sim.interner.intern("A");
+            (sim, ids[3], type_id)
+        };
+        let layers = |sim: &Simulation| -> Vec<Vec<u64>> {
+            (0..5)
+                .map(|index| {
+                    let layer = crate::sim::world::display_layers::DisplayLayer::from_index(index);
+                    sim.substrate.display.members(layer.unwrap()).to_vec()
+                })
+                .collect()
+        };
+
+        let (mut native, owner, type_id) = scene();
+        let id = native
+            .spawn_anim_at_world(&rules, runtime_descriptor(type_id, 0), coord)
+            .unwrap();
+        assert!(native.set_anim_owner_object(id, Some(owner), &rules));
+        let (mut sim, _, _) = scene();
+        let descriptor = AnimClassSpawnDescriptor {
+            owner: Some(owner),
+            ..runtime_descriptor(type_id, 0)
+        };
+        assert_eq!(
+            sim.spawn_anim_at_world(&rules, descriptor, coord).unwrap(),
+            id
+        );
+        assert_eq!(sim.anim(id).unwrap().owner_entity, Some(owner));
+        assert_eq!(
+            sim.anim(id).unwrap().world_coord,
+            native.anim(id).unwrap().world_coord
+        );
+        assert!(sim.anim(id).unwrap().display.marked_on_map);
+        assert_eq!(layers(&sim), layers(&native));
+
+        assert!(native.set_anim_owner_object(id, None, &rules));
+        native.destroy_anim(id, &rules);
+        sim.destroy_anim(id, &rules);
+        assert_eq!(
+            sim.anim(id).unwrap().world_coord,
+            native.anim(id).unwrap().world_coord
+        );
+        assert_eq!(sim.anim(id).unwrap().owner_entity, None);
+        assert_eq!(layers(&sim), layers(&native));
+        assert_eq!(sim.substrate.display.layer_of(id), None);
     }
 
     /// Techno710443..71044E clears the matching retained animation pointer,
@@ -4917,7 +5026,7 @@ mod tests {
         assert_eq!(sim.substrate.pending_delete.object_ids(), vec![id]);
         assert!(!sim.anim(id).unwrap().in_logic_vector);
         assert_eq!(sim.display_layers().layer_of(id), None);
-        assert!(!sim.reveal_anim(id, Some(&rules)));
+        assert!(!sim.reveal_anim(id, Some(&rules), true));
         sim.process_pending_delete();
         assert!(sim.anim(id).is_none());
     }
@@ -5377,6 +5486,7 @@ mod tests {
                     use_cell_drawer: false,
                     terrain_attached: false,
                     draw_runtime: AnimDrawRuntime::default(),
+                    owner: None,
                 },
                 AnimWorldCoord { x: 0, y: 0, z: 0 },
             )

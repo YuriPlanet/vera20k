@@ -7,14 +7,15 @@
 //! - Part of sim/ - depends on sim/zone_map, pathfinding passability, and rules movement zones.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use super::native_heap::NativeHeap;
 use super::passability;
 use super::stamped_table::StampedTable;
 use super::zone_map::{ZONE_INVALID, ZoneId};
 use crate::rules::locomotor_type::MovementZone;
+use crate::util::lookup_hash::LookupMap;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 /// Retained House+57E4 reader. No Map/GetCell lookup belongs to585F40.
@@ -660,11 +661,17 @@ struct PrecheckLevelResult {
 /// and goal's own parents. Path searches keep asking for the same corridors,
 /// and the top level, which no corridor confines, searches much of its graph
 /// each time. The answers are exact, so the memo changes no result;
-/// [`ZoneHierarchy::levels_mut`] clears it.
+/// [`ZoneHierarchy::levels_mut`] clears it. Each level's answers are split
+/// over [`PRECHECK_MEMO_SHARDS`] locks by start zone, so a path batch's
+/// workers seldom wait on each other; a kept answer is shared, and copied
+/// outside the lock.
 #[derive(Default)]
-struct PrecheckMemo(
-    Mutex<[HashMap<PrecheckKey, Option<PrecheckLevelResult>>; ZONE_PRECHECK_LEVELS]>,
-);
+struct PrecheckMemo([[Mutex<PrecheckAnswers>; PRECHECK_MEMO_SHARDS]; ZONE_PRECHECK_LEVELS]);
+
+type PrecheckAnswers = LookupMap<PrecheckKey, Arc<Option<PrecheckLevelResult>>>;
+
+/// Locks per memo level.
+const PRECHECK_MEMO_SHARDS: usize = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct PrecheckKey {
@@ -673,18 +680,15 @@ struct PrecheckKey {
     goal: ZoneId,
 }
 
-/// Answers kept per level before that level starts over. Bounds memory on
-/// maps whose movers spread over many base-level zones; the coarse levels'
+/// Answers kept per level shard before that shard starts over. Bounds memory
+/// on maps whose movers spread over many base-level zones; the coarse levels'
 /// few, expensive answers outlive a base-level reset, and a dropped answer is
 /// only searched again.
-const PRECHECK_MEMO_ANSWERS: usize = 1 << 16;
+const PRECHECK_MEMO_ANSWERS: usize = (1 << 16) / PRECHECK_MEMO_SHARDS;
 
 impl PrecheckMemo {
-    fn answers(
-        &self,
-    ) -> MutexGuard<'_, [HashMap<PrecheckKey, Option<PrecheckLevelResult>>; ZONE_PRECHECK_LEVELS]>
-    {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    fn shard(&self, level: usize, key: &PrecheckKey) -> &Mutex<PrecheckAnswers> {
+        &self.0[level][key.start as usize % PRECHECK_MEMO_SHARDS]
     }
 
     /// The memoized answer for `key` at `level`, else `search`'s, kept for
@@ -695,8 +699,10 @@ impl PrecheckMemo {
         key: PrecheckKey,
         search: impl FnOnce() -> Result<Option<PrecheckLevelResult>, String>,
     ) -> Result<Option<PrecheckLevelResult>, String> {
-        let kept = self.answers()[level].get(&key).cloned();
+        let shard = self.shard(level, &key);
+        let kept = lock(shard).get(&key).cloned();
         if let Some(answer) = kept {
+            let answer = Option::clone(&answer);
             // Every test that prechecks also checks the memo against a new
             // search, including after production hierarchy repairs.
             #[cfg(test)]
@@ -704,25 +710,31 @@ impl PrecheckMemo {
             return Ok(answer);
         }
         let answer = search()?;
-        let mut answers = self.answers();
-        let level_answers = &mut answers[level];
-        if level_answers.len() >= PRECHECK_MEMO_ANSWERS {
-            level_answers.clear();
+        let mut answers = lock(shard);
+        if answers.len() >= PRECHECK_MEMO_ANSWERS {
+            answers.clear();
         }
-        level_answers.insert(key, answer.clone());
+        answers.insert(key, Arc::new(answer.clone()));
         Ok(answer)
     }
 
     fn clear(&mut self) {
-        for answers in self.0.get_mut().unwrap_or_else(PoisonError::into_inner) {
-            answers.clear();
+        for shard in self.0.iter_mut().flatten() {
+            shard
+                .get_mut()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clear();
         }
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.answers().iter().map(HashMap::len).sum()
+        self.0.iter().flatten().map(|shard| lock(shard).len()).sum()
     }
+}
+
+fn lock(shard: &Mutex<PrecheckAnswers>) -> std::sync::MutexGuard<'_, PrecheckAnswers> {
+    shard.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// A copy answers its own searches.

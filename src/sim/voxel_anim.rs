@@ -376,17 +376,48 @@ pub struct ShpDebrisSpawn {
     pub source: ShpDebrisSource,
 }
 
-/// The same ordered death block runs against its live world or a numeric
-/// comparison fixture. The host owns the Scenario stream and constructs each
-/// selected piece before the next pick, including Anim Start's callbacks.
-pub trait DeathDebrisHost {
+/// Shared SHP debris emission: the host constructs each selected piece before
+/// the next Scenario pick, including constructor and Start callbacks.
+pub trait ShpDebrisHost {
     fn rng(&mut self) -> &mut SimRng;
     fn construct_anim(
         &mut self,
         source: ShpDebrisSource,
         index: usize,
     ) -> Result<(), NativeX87Error>;
+}
+
+/// The death entry additionally admits its VoxelAnim pieces.
+pub trait DeathDebrisHost: ShpDebrisHost {
     fn admit_voxel(&mut self, spawn: &VoxelDebrisSpawn);
+}
+
+/// Techno702291..7022C8 and Bullet469D0C..469D2F share this signed budget
+/// request. The authored upper bound is decremented before RandomRanged;
+/// max<=0 consumes nothing, and the RNG owner sorts/equal-tests the bounds.
+pub(crate) fn debris_budget(minimum: i32, maximum: i32, rng: &mut SimRng) -> i32 {
+    if maximum <= 0 {
+        return 0;
+    }
+    rng.next_range_i32_inclusive(minimum, maximum - 1)
+}
+
+/// Ordered list-pick/constructor loop shared by Techno702403..70256C and
+/// Bullet469E34..469EB4. List resolution belongs to the host; a constructor
+/// finishes, with all its RNG/identity/Logic effects, before the next pick.
+pub(crate) fn throw_shp_debris(
+    pieces: i32,
+    source: ShpDebrisSource,
+    list_count: usize,
+    host: &mut impl ShpDebrisHost,
+) -> Result<(), NativeX87Error> {
+    for _ in 0..pieces.max(0) {
+        let index = host
+            .rng()
+            .next_range_i32_inclusive(0, list_count as i32 - 1) as usize;
+        host.construct_anim(source, index)?;
+    }
+    Ok(())
 }
 
 /// Everything a numeric fixture selects. The live host admits pieces inline
@@ -532,9 +563,6 @@ pub fn throw_death_debris(
     origin: IVec3,
     host: &mut impl DeathDebrisHost,
 ) -> Result<(), NativeX87Error> {
-    if data.max_debris <= 0 {
-        return Ok(());
-    }
     // `Random__RandomRanged` sorts reversed bounds and consumes no draw when
     // they coincide; `next_range_i32_inclusive` models that helper directly.
     // The signed form is what native computes: `DEC EDI` at `0x007022AD` puts
@@ -544,9 +572,7 @@ pub fn throw_death_debris(
     // `MinDebris == MaxDebris - 1` (`(0,1)`, `(1,2)`, three at `(2,3)`), which
     // is a coincident span costing no draw, and none is higher — so only a
     // modded rules file inverts it.
-    let mut budget = host
-        .rng()
-        .next_range_i32_inclusive(data.min_debris, data.max_debris - 1);
+    let mut budget = debris_budget(data.min_debris, data.max_debris, host.rng());
 
     if !data.debris_types.is_empty() && budget > 0 {
         let mut index = 0usize;
@@ -599,13 +625,12 @@ pub fn throw_death_debris(
     }
 
     if data.debris_anim_count > 0 {
-        for _ in 0..budget.max(0) {
-            let index = host
-                .rng()
-                .next_range_i32_inclusive(0, data.debris_anim_count as i32 - 1)
-                as usize;
-            host.construct_anim(ShpDebrisSource::TypeDebrisAnims, index)?;
-        }
+        throw_shp_debris(
+            budget,
+            ShpDebrisSource::TypeDebrisAnims,
+            data.debris_anim_count,
+            host,
+        )?;
     } else if data.debris_types.is_empty() {
         // No count gate here, unlike the arm above: `0x007024D2` tests only
         // `DebrisTypes.Count` and `0x007024DA` only the budget, then
@@ -615,14 +640,13 @@ pub fn throw_death_debris(
         // gamemd — the resulting -1 lands in the out-of-bounds index at
         // `0x00702560 MOV EDX,[ECX + EAX*4]`, which is why the caller resolves
         // the name with `.get()` and drops the row rather than inventing one.
-        // Stock authors 20 entries, so only a modded rules file reaches it.
-        for _ in 0..budget.max(0) {
-            let index = host
-                .rng()
-                .next_range_i32_inclusive(0, data.metallic_debris_count as i32 - 1)
-                as usize;
-            host.construct_anim(ShpDebrisSource::RulesMetallicDebris, index)?;
-        }
+        // Native ReadString128 retains15 stock entries, including unread D.
+        throw_shp_debris(
+            budget,
+            ShpDebrisSource::RulesMetallicDebris,
+            data.metallic_debris_count,
+            host,
+        )?;
     }
 
     Ok(())
@@ -667,7 +691,7 @@ mod tests {
         receipt: DeathDebris,
     }
 
-    impl DeathDebrisHost for NumericDebrisHost<'_> {
+    impl ShpDebrisHost for NumericDebrisHost<'_> {
         fn rng(&mut self) -> &mut SimRng {
             self.rng
         }
@@ -679,6 +703,9 @@ mod tests {
             self.receipt.anims.push(ShpDebrisSpawn { index, source });
             Ok(())
         }
+    }
+
+    impl DeathDebrisHost for NumericDebrisHost<'_> {
         fn admit_voxel(&mut self, spawn: &VoxelDebrisSpawn) {
             self.receipt.voxels.push(spawn.clone());
         }

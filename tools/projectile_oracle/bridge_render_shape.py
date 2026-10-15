@@ -27,17 +27,8 @@ def packed_words(values):
     return struct.pack('<' + 'H' * len(values), *values)
 
 
-def execute(case, native_type, raw_shp, palette):
-    spec = dict(level=6, flags=256, z=1041, viewport=[0, 0, WIDTH, HEIGHT], camera=[0, 0])
-    spec.update(case)
-    state = setup(spec, native_type, raw_shp)
-    u, obj, typ, shp, tactical, clip, point = state
-    heap, globals_ = palette
-    u.mem_map(0x24000000, 0x4000000)
-    u.mem_write(0x24000000, heap)
-    for address, blob in globals_:
-        u.mem_write(address, blob)
-
+def prepare_surface(u, case):
+    """Shared original BSurface/circular A/Z transport; caller owns mapping."""
     def surface(address, buffer):
         # Original BSurface virtual methods are used for bounds, locks and pitch.
         u.mem_write(address, words(0x7E2070, WIDTH, HEIGHT, 0, 2,
@@ -56,12 +47,46 @@ def execute(case, native_type, raw_shp, palette):
                                    buffer, buffer + PIXEL_COUNT * 2,
                                    PIXEL_COUNT * 2, case.get('depth_baseline',1024), WIDTH))
         u.mem_write(global_, words(address))
+        if case.get('scroll_rows', 0):
+            # Same physical circular-scroll transport as shroud.py's owner.
+            u.mem_write(address + 0x10, words(case['scroll_rows'] * WIDTH * 2))
+            u.mem_write(address + 0x2c, words(HEIGHT))
     background, old_z = case.get('background', 0xffff), case.get('old_z', 2000)
     initial = packed_words([background] * PIXEL_COUNT)
-    depths = packed_words([old_z] * PIXEL_COUNT)
+    z_values = [old_z] * PIXEL_COUNT
+    for index, value in case.get('z_patches', []):
+        z_values[index] = value
+    depths = packed_words(z_values)
     u.mem_write(PIXELS, initial)
     u.mem_write(Z, depths)
-    u.mem_write(A, packed_words([127] * PIXEL_COUNT))
+    a_values = [case.get('a_value', 127)] * PIXEL_COUNT
+    for index, value in case.get('a_patches', []):
+        a_values[index] = value
+    lighting = packed_words(a_values)
+    u.mem_write(A, lighting)
+    return dict(background=background, depths=depths, lighting=lighting)
+
+
+def surface_snapshot(u, state):
+    raw = bytes(u.mem_read(PIXELS, PIXEL_COUNT * 2))
+    changed = [[i % WIDTH, i // WIDTH, value[0]]
+               for i, value in enumerate(struct.iter_unpack('<H', raw))
+               if value[0] != state['background']]
+    return dict(changed_pixels=changed, color_sha256=hashlib.sha256(raw).hexdigest(),
+                z_unchanged=bytes(u.mem_read(Z, len(state['depths']))) == state['depths'])
+
+
+def execute(case, native_type, raw_shp, palette):
+    spec = dict(level=6, flags=256, z=1041, viewport=[0, 0, WIDTH, HEIGHT], camera=[0, 0])
+    spec.update(case)
+    state = setup(spec, native_type, raw_shp)
+    u, obj, typ, shp, tactical, clip, point = state
+    heap, globals_ = palette
+    u.mem_map(0x24000000, 0x4000000)
+    u.mem_write(0x24000000, heap)
+    for address, blob in globals_:
+        u.mem_write(address, blob)
+    buffers = prepare_surface(u, case)
     # Derive the camera from an actual original projection, keeping the desired
     # body screen point an explicit fixture input rather than an expected result.
     call(u, 0x6D2140, tactical, (obj + 0x9C, point))
@@ -72,12 +97,7 @@ def execute(case, native_type, raw_shp, palette):
     draws, leaves, reached = [], [], set()
 
     def snapshot():
-        raw = bytes(u.mem_read(PIXELS, PIXEL_COUNT * 2))
-        changed = [[i % WIDTH, i // WIDTH, value[0]]
-                   for i, value in enumerate(struct.iter_unpack('<H', raw))
-                   if value[0] != background]
-        return dict(changed_pixels=changed, color_sha256=hashlib.sha256(raw).hexdigest(),
-                    z_unchanged=bytes(u.mem_read(Z, len(depths))) == depths)
+        return surface_snapshot(u, buffers)
 
     def observe(_u, address, _size, _data):
         if address in (0x5F4B10, 0x468090, 0x4AED70, 0x490B90, 0x4373B0,

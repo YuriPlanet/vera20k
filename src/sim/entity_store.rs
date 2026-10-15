@@ -79,13 +79,14 @@ pub struct EntityStore {
     /// of the dense storage's empty slots and compaction schedule.
     /// RMG PreconsumedGenerated registration parity is not established here.
     techno_registry: Vec<u64>,
-    /// VERA-only: `(enter order, stable_id)` of every stored entity the
-    /// AircraftTracker holds (an air bucket), in the order
-    /// [`Self::airborne`] yields them. The entity's tracker membership is the
-    /// source of truth: [`Self::insert`] and [`Self::remove`] keep this set,
-    /// and [`Self::set_air_membership`], the membership's one live writer,
-    /// writes both. Rebuilt on load, never saved or hashed.
-    airborne: BTreeSet<(u64, u64)>,
+    /// VERA-only: `(bucket, enter order, stable_id)` of every stored entity
+    /// the AircraftTracker holds (an air bucket): each bucket's entries in
+    /// the order [`Self::airborne_in_query_order`] copies them. The entity's
+    /// tracker membership is the source of truth: [`Self::insert`] and
+    /// [`Self::remove`] keep this set, and [`Self::set_air_membership`], the
+    /// membership's one live writer, writes both. Rebuilt on load, never
+    /// saved or hashed.
+    airborne: BTreeSet<(u16, u64, u64)>,
     /// Which entities may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Every route to a `&mut GameEntity` goes
     /// through the store, so an entity missing from a log has not changed.
@@ -163,11 +164,11 @@ impl EntityStore {
         let foot = entity.category().is_foot();
         // A replaced entity leaves the airborne set; this one joins it if the
         // tracker holds it.
-        if let Some(order) = self.get(id).map(GameEntity::air_spatial_enter_order) {
-            self.airborne.remove(&(order, id));
+        if let Some(entry) = self.get(id).and_then(airborne_entry) {
+            self.airborne.remove(&entry);
         }
-        if entity.air_spatial_bucket().is_some() {
-            self.airborne.insert((entity.air_spatial_enter_order(), id));
+        if let Some(entry) = airborne_entry(&entity) {
+            self.airborne.insert(entry);
         }
         let entity = Some(Box::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
@@ -218,9 +219,8 @@ impl EntityStore {
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
         let slot = self.slot_of.remove(&stable_id)? as usize;
         let removed = self.entities[slot].take().map(|entity| *entity);
-        if let Some(entity) = &removed {
-            self.airborne
-                .remove(&(entity.air_spatial_enter_order(), stable_id));
+        if let Some(entry) = removed.as_ref().and_then(airborne_entry) {
+            self.airborne.remove(&entry);
         }
         self.touched.note(stable_id, self.len());
         self.remove_infantry_index(stable_id);
@@ -487,32 +487,34 @@ impl EntityStore {
         let Some(entity) = self.entities[slot as usize].as_deref_mut() else {
             return;
         };
-        self.airborne
-            .remove(&(entity.air_spatial_enter_order(), stable_id));
+        if let Some(entry) = airborne_entry(entity) {
+            self.airborne.remove(&entry);
+        }
         entity.set_air_membership_from_store(bucket, enter_order, AirMembershipAuthority(()));
-        if bucket.is_some() {
-            self.airborne.insert((enter_order, stable_id));
+        if let Some(bucket) = bucket {
+            self.airborne.insert((bucket, enter_order, stable_id));
         }
     }
 
     /// The stored entities the AircraftTracker holds, by enter order and,
-    /// for the ties only fixtures make, stable_id: what a walk of every
-    /// entity with an air bucket, sorted on `(air_spatial_enter_order,
-    /// stable_id)`, gives, without the walk. Debug builds check it against
-    /// that walk on every call (the live-read check).
+    /// for the ties only fixtures make, stable_id.
+    #[cfg(test)]
     pub(crate) fn airborne(&self) -> impl Iterator<Item = &GameEntity> {
-        debug_assert!(
-            !crate::sim::touch_log::live_read_check_enabled()
-                || self.airborne == self.walk_airborne(),
-            "the airborne set disagrees with the entities"
-        );
-        self.airborne.iter().filter_map(|&(_, id)| self.get(id))
+        let mut entries: Vec<(u64, u64)> = self
+            .airborne
+            .iter()
+            .map(|&(_, order, id)| (order, id))
+            .collect();
+        entries.sort_unstable();
+        entries.into_iter().filter_map(|(_, id)| self.get(id))
     }
 
     /// Materialize AircraftTracker412B40/4137A0 in retained per-bucket entry
     /// order. Shared by GreatestThreat6F91D3 and area damage4892D8. Current
     /// object coordinates do not relocate entries; FootAir owns that update.
-    /// Repeated query buckets deliberately copy their vectors again.
+    /// Repeated query buckets deliberately copy their vectors again. Each
+    /// bucket's entries come from the airborne set, which debug builds check
+    /// against a walk of every entity on every call (the live-read check).
     pub(crate) fn airborne_in_query_order(
         &self,
         center_cell: &crate::sim::cell_rect::CellRef<'_>,
@@ -528,13 +530,11 @@ impl EntityStore {
             crate::util::lepton::lepton_to_cell_packed(point.x) as u16,
             crate::util::lepton::lepton_to_cell_packed(point.y) as u16,
         );
-        let mut buckets: BTreeMap<u16, Vec<u64>> = BTreeMap::new();
-        for entity in self.airborne() {
-            buckets
-                .entry(entity.air_spatial_bucket().expect("tracked bucket"))
-                .or_default()
-                .push(entity.stable_id());
-        }
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || self.airborne == self.walk_airborne(),
+            "the airborne set disagrees with the entities"
+        );
         let mut ordered = Vec::new();
         for bucket in crate::sim::occupancy::air_spatial_query_bucket_order(
             center.0,
@@ -543,19 +543,19 @@ impl EntityStore {
             map_extent.0,
             map_extent.1,
         ) {
-            if let Some(entries) = buckets.get(&bucket) {
-                ordered.extend_from_slice(entries);
-            }
+            ordered.extend(
+                self.airborne
+                    .range((bucket, 0, 0)..=(bucket, u64::MAX, u64::MAX))
+                    .map(|&(_, _, id)| id),
+            );
         }
         ordered
     }
 
-    /// `(enter order, stable_id)` of every stored entity the tracker holds.
-    fn walk_airborne(&self) -> BTreeSet<(u64, u64)> {
-        self.values()
-            .filter(|entity| entity.air_spatial_bucket().is_some())
-            .map(|entity| (entity.air_spatial_enter_order(), entity.stable_id()))
-            .collect()
+    /// `(bucket, enter order, stable_id)` of every stored entity the tracker
+    /// holds.
+    fn walk_airborne(&self) -> BTreeSet<(u16, u64, u64)> {
+        self.values().filter_map(airborne_entry).collect()
     }
 
     /// Rebuild class registries from primary storage. Owned by
@@ -658,6 +658,13 @@ impl Default for EntityStore {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// `entity`'s entry in the airborne set, if the AircraftTracker holds it.
+fn airborne_entry(entity: &GameEntity) -> Option<(u16, u64, u64)> {
+    entity
+        .air_spatial_bucket()
+        .map(|bucket| (bucket, entity.air_spatial_enter_order(), entity.stable_id()))
 }
 
 #[cfg(test)]

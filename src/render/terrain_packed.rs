@@ -458,7 +458,8 @@ impl TerrainDrawRenderer {
             return TerrainBatchStats::default();
         };
         let selector = first.instance.draw_state.native_selector_bits();
-        assert_ne!(selector & 6, 0, "packed selector is required");
+        // Selector0 is the original opaque copy (494B60), also used when
+        // a signed candidate cannot be compared as a wrapped hardware depth.
         let writes = matches!(
             render_z,
             RenderZPolicy::ReadWrite | RenderZPolicy::AlphaReadWrite

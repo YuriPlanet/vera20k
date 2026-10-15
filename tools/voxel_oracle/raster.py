@@ -22,15 +22,17 @@ def pack(*values):
 
 
 def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=False,
-                  *, bullet_velocity_bits=None):
+                  *, bullet_velocity_bits=None, bullet_surface=None, palette=None):
     """Unmirrored native Render core, preserving all submitted sections.
 
     `diffuse` lights the draw as VoxelAnimClass::DrawIt does, through 753C80
     with section zero and the world light (0x00749D97..0x00749DA3), instead of
     TechnoClass's 753D00.
-    Bullet mode executes468090 through46B0C0's completed packed raster and
-    stops before490B90. The surface blit/Convert are outside that boundary.
+    Bullet mode normally stops before490B90. Optional bullet_surface completes
+    the same draw using the shared native ColorScheme/surface transports.
     """
+    if bullet_surface is not None and bullet_velocity_bits is None:
+        raise ValueError('Completed Bullet surface requires velocity inputs')
     u = Uc(UC_ARCH_X86, UC_MODE_32)
     oracle.load_image(u)
     u.mem_map(oracle.STACK_BASE, oracle.STACK_SIZE)
@@ -46,6 +48,7 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
     substitutions, params = [], []
     bullet_observation, section_matrices = {}, []
     observing_bullet = False
+    surface_draws, current_leaves = [], []
     writes, zero_writes, zero_erases = 0, 0, 0
     visited, uninitialized = set(), set()
     initialized = bytearray(oracle.IMAGE_SIZE)
@@ -103,6 +106,27 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
                 section_matrices.append(list(struct.unpack('<12I', u.mem_read(read32(sp + 8), 48))))
             elif address == 0x46b18c:
                 write(RESULT, bytes(u.mem_read(u.reg_read(UC_X86_REG_EAX), 24)))
+            elif bullet_surface is not None and address == 0x490b90:
+                bullet_observation['palette_call'] = dict(color_index=read32(ptype + 0x2d4),
+                    flags=read32(sp + 4), z_adjust=struct.unpack('<i', pack(read32(sp + 8)))[0],
+                    gradient=read32(sp + 12), brightness=read32(sp + 16))
+            elif bullet_surface is not None and address == 0x4af2a0:
+                args = [read32(sp + 4 + i * 4) for i in range(11)]
+                bullet_observation['surface_call'] = dict(
+                    source_rect=list(struct.unpack('<4i', u.mem_read(args[1], 16))),
+                    point=list(struct.unpack('<2i', u.mem_read(args[2], 8))),
+                    clip=list(struct.unpack('<4i', u.mem_read(args[3], 16))),
+                    z_adjust=struct.unpack('<i', pack(args[6]))[0],
+                    gradient=args[7], brightness=args[8])
+            elif bullet_surface is not None and address in (0x494b60, 0x493df0):
+                from tools.projectile_oracle.bridge_render_shape import PIXELS, WIDTH, Z, A
+                args = [read32(sp + 4 + i * 4) for i in range(8)]
+                offset = (args[0] - PIXELS) // 2
+                current_leaves.append(dict(leaf=f'{address:08X}', x=offset % WIDTH,
+                    y=offset // WIDTH, count=args[2],
+                    candidate_z=struct.unpack('<i', pack(args[3]))[0],
+                    z_offset_words=(args[4] - Z) // 2, a_offset_words=(args[5] - A) // 2,
+                    brightness=args[6], source_indices=list(u.mem_read(args[1], args[2]))))
         if address in (0x7dfab6, 0x7dfbc8):
             writes += 1
             if u.reg_read(UC_X86_REG_EDX) & 255 == 0:
@@ -118,7 +142,10 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
                 'axis_xy': [list(struct.unpack_from('<2h', raw, offset)) for offset in (30, 36, 42)],
                 'sizes': list(raw[48:51]),
             })
-        if address == 0x7c8e17:
+        if bullet_surface is not None and address == 0x7c978a:
+            substitutions.append(['CRT_atexit', read32(sp + 4)])
+            finish(0, 0)
+        elif address == 0x7c8e17:
             count = read32(sp + 4)
             allocation = heap
             heap += (count + 15) & ~15
@@ -197,21 +224,64 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
         write(colors, pack(scheme, scheme))
         write(point, struct.pack('<2i', 32, 48))
         write(clip, struct.pack('<4i', 0, 0, 64, 96))
+        if bullet_surface is not None:
+            from tools.projectile_oracle.bridge_render_shape import prepare_surface
+            assert palette is not None
+            # Original static BSurface constructor around the shared raster;
+            # the historical raster-only boundary did not need its vtable.
+            invoke(0x7539d0, required=(0x43ad00,))
+            u.mem_map(0x21000000, 0x100000)
+            u.mem_map(0x24000000, 0x4000000)
+            write(0x24000000, palette[0])
+            for address, blob in palette[1]:
+                write(address, blob)
+            buffers = prepare_surface(u, bullet_surface)
+            # Shared transport initializes these original-image pointer globals.
+            for address in (0x887314, 0x887644, 0x87e8a4):
+                write(address, bytes(u.mem_read(address, 4)))
+            write(ptype + 0x2f7, bytes((int(bullet_surface.get('flat', True)),)))
+            write(point, struct.pack('<2i', *bullet_surface.get('point', [32, 48])))
+            write(clip, struct.pack('<4i', *bullet_surface.get('clip', [0, 0, 64, 96])))
         sp = oracle.STACK_BASE + oracle.STACK_SIZE - 0x1000
         write(sp, pack(RET, point, clip))
         u.reg_write(UC_X86_REG_ESP, sp)
         u.reg_write(UC_X86_REG_ECX, bullet)
         observing_bullet = True
-        oracle.run_checked(u, 0x468090, 0x46b21a, required_addresses=(
+        oracle.run_checked(u, 0x468090, RET if bullet_surface is not None else 0x46b21a, required_addresses=(
             0x468112, 0x4cae30, 0x7c5f00, 0x4cac40, 0x5af1a0, 0x5af080,
             0x754be0, 0x5af980, 0x46b0c0, 0x753c80, 0x753e00, 0x7540f0, 0x754510))
         observing_bullet = False
         draw_matrix = bytes(u.mem_read(INPUT, 48))
         sp = u.reg_read(UC_X86_REG_ESP)
-        bullet_observation['palette_call'] = dict(
-            color_index=read32(ptype + 0x2d4),
-            flags=read32(sp), remap=read32(sp + 4), gradient=read32(sp + 8),
-            brightness=read32(sp + 12))
+        if bullet_surface is None:
+            bullet_observation['palette_call'] = dict(
+                color_index=read32(ptype + 0x2d4),
+                flags=read32(sp), remap=read32(sp + 4), gradient=read32(sp + 8),
+                brightness=read32(sp + 12))
+        else:
+            from tools.projectile_oracle.bridge_render_shape import surface_snapshot, A
+            def capture_surface_draw(bits):
+                pixels = bytes(u.mem_read(0xb2ff78, 65536))
+                surface_draws.append(dict(velocity_bits=bits,
+                    point=list(struct.unpack('<2i', u.mem_read(point, 8))),
+                    clip=list(struct.unpack('<4i', u.mem_read(clip, 16))),
+                    body=dict(input_matrix_bits=list(struct.unpack('<12I', u.mem_read(INPUT, 48))),
+                        rect=list(struct.unpack('<6i', u.mem_read(RESULT, 24))),
+                        pixels=[[i, value] for i, value in enumerate(pixels) if value]),
+                    **bullet_observation, leaves=current_leaves[:],
+                    after_draw=dict(**surface_snapshot(u, buffers),
+                        a_unchanged=bytes(u.mem_read(A, len(buffers['lighting']))) == buffers['lighting'])))
+            capture_surface_draw(bullet_velocity_bits)
+            for draw in bullet_surface.get('next_draws', []):
+                bits = draw['velocity_bits']
+                write(bullet + 0xe8, struct.pack('<3Q', *[int(value, 16) for value in bits]))
+                write(point, struct.pack('<2i', *draw['point']))
+                write(clip, struct.pack('<4i', *draw.get('clip', [0, 0, 64, 96])))
+                current_leaves.clear()
+                observing_bullet = True
+                invoke(0x468090, ecx=bullet, args=(point, clip), required=(0x490b90, 0x4af2a0))
+                observing_bullet = False
+                capture_surface_draw(bits)
     else:
         write(INPUT, draw_matrix)
     if bullet_velocity_bits is not None:
@@ -259,4 +329,9 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
     }
     if bullet_velocity_bits is not None:
         result['bullet'] = bullet_observation
+    if bullet_surface is not None:
+        result['surface_draws'] = surface_draws
+        result['reached'] = [f'{address:08X}' for address in sorted(visited)
+            if address in (0x468090, 0x46b0c0, 0x754510, 0x490b90, 0x4af2a0,
+                           0x4373b0, 0x494b60, 0x493df0, 0x7bc040)]
     return result

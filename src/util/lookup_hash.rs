@@ -10,8 +10,14 @@ use std::hash::{BuildHasherDefault, Hasher};
 pub(crate) struct LookupHasher(u64);
 
 impl Hasher for LookupHasher {
+    /// Eight bytes a step, little-endian whatever the platform, then the
+    /// remaining bytes one at a time.
     fn write(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
+        let mut words = bytes.chunks_exact(8);
+        for word in &mut words {
+            self.write_u64(u64::from_le_bytes(word.try_into().expect("eight bytes")));
+        }
+        for &byte in words.remainder() {
             self.write_u64(u64::from(byte));
         }
     }

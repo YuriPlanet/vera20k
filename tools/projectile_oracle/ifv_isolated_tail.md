@@ -75,3 +75,57 @@ cursor. Empty and Iron Curtain cases admit no smoke and retain direct cursor
 equality. These bounds do not establish native receiver health, kills or a
 whole-game identity prefix. The `EMEffect=yes` rows are explicit controls, not
 a claim that retail HE enables the key.
+
+## Stock Smashing metallic debris
+
+The same owner has an opt-in `--brute-debris` mode and a small
+[`brute_smash_debris.json`](brute_smash_debris.json) corpus. It reads physical
+Smash, InvisibleLow and Smashing through the original type readers, constructs
+the actual 14-name-plus-`D` MetallicDebris vector through native ReadGeneral128,
+then loads the real ART/SHP inputs through the existing native reader. It does
+not use the old 20-name supplied death-loop pool or VERA-exported ART scalars.
+
+```sh
+source ~/Documents/vera20k-dev/env.sh
+PYTHONDONTWRITEBYTECODE=1 \
+VERA20K_PROJECTILE_RENDER_ASSETS=/absolute/physical-inputs/extract \
+python -m tools.projectile_oracle.ifv_isolated_tail --brute-debris --check
+```
+
+That input directory needs RULESMD, optional LANGRULE, Battle, Hills and ARTMD,
+the existing IFV impact assets, the 14 real MetallicDebris SHPs, SMOKEY2,
+TWLT026/036/070 and IRONFX. The existing `asset extract NAME --out DIR`
+owns extraction; it writes `DIR/extract/`. No `D.SHP` is supplied: original
+AnimType construction and failed ART admission retain the unread type.
+Physical inputs and hashes are recorded in the payload; no retail files are
+committed. Current Hills is recorded independently of the older IFV corpus.
+
+Eight controls cover a single large/small piece, two successive Bouncer
+constructors, unread `D`, native-reader zero-Min/Max, native Iron Curtain
+isolation, distinct live/placement coordinates and the declared Unit receiver
+boundary. Seven execute full `468D80`, full `4690B0` and the last Cluster1
+successor; the coordinate control executes full `4690B0` alone. Original
+AreaDamage, selector, debris budget/list selection, full Anim constructor,
+Unlimbo, Logic insertion and immediate Start execute. Constructor completion
+precedes the next pick. Debris receives live Bullet coordinates plus Z20,
+independently of Inviso's scattered animation placement. No native gameplay
+gate return is supplied to force these results.
+
+Rows retain full Main/Scenario/MapGen RNG bytes before/after, ordered helper
+requests and rejection words, independently counted raw advances, native
+identity cursors, constructor arguments and returned runtime/Bounce state.
+Per-constructor checkpoints retain Scenario bytes only; the unchanged Main and
+MapGen streams are checked across the whole call. `input.seed` is RngTrace's
+base: Main uses it, Scenario uses base+1 and MapGen base+2. Consumers restore the
+retained bytes rather than infer a draw count or seed. The coverage seeds were
+selected by original execution and rerun on fresh physical worlds.
+
+All allocations succeed. Incoming admitted Bullet/source/world state is a
+supplied boundary, not a full native Brute launch. Empty receiver rows execute
+native AreaDamage result1; receiver/IC rows retain the existing explicitly
+supplied UnitReceiveDamage return0/no health mutation while native AreaDamage
+independently returns0/2. Thus native MTNK health, receiver RNG/IDs, later Anim
+flight/landing and whole Logic scheduling remain outside this comparison.
+The existing CRT `atexit(7C978A)` boundary returns0 without registering host
+process teardown; it supplies no gameplay result. Production Brute tests and
+retail-loaded release observations cover the connected actor and asset path.

@@ -194,6 +194,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
             use_cell_drawer: true,
             terrain_attached: true,
             draw_runtime: AnimDrawRuntime::default(),
+            owner: None,
         };
         let id = self.spawn_load_anim(
             &request.anim_name,

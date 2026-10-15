@@ -278,30 +278,16 @@ pub struct WarheadType {
     /// -> warhead `+0x18C`, resolved through the `VoxelAnimTypeClass` name
     /// lookup at `0x0074B960`. These are voxel-anim types, NOT AnimTypes.
     ///
-    /// RESIDUAL (GSI-05.14) — the four warhead debris keys parse and nothing
-    /// reads them, and the producer players actually see lives on a different
-    /// class. `WarheadTypeClass::ReadINI` reads exactly `DebrisTypes=`,
-    /// `DebrisMaximums=` (`0x0075DCFC` -> `+0x1A8`), `MinDebris=`
-    /// (`0x0075DAAB` -> `+0x1C8`) and `MaxDebris=` (`0x0075DA95` -> `+0x1C4`);
-    /// no stock warhead authors any of them, so these fields are stock-dead.
-    /// The 456 `MaxDebris=`, 272 `MinDebris=`, 36 `DebrisTypes=`, 36
-    /// `DebrisMaximums=` and 166 `DebrisAnims=` lines in stock rules all sit on
-    /// TechnoType sections, read by `TechnoTypeClass::ReadINI` (`0x007126EB`,
-    /// `0x0071274F`) — that is the live producer, and `src/rules/object_type.rs`
-    /// already parses its `MaxDebris=`/`MinDebris=` pair. The three stock
-    /// `Debris=` lines are TiberiumClass keys (`TiberiumClass::ReadINI_Fields`
-    /// @ `0x00721B4F`, sections `[Cruentus]`/`[Vinifera]`/`[Aboreus]`) naming
-    /// AnimTypes CRYSTAL1-4, unrelated to either.
+    /// Stock Smashing (Brute Smash/SmashE) and TRexWH author MinDebris1 /
+    /// MaxDebris3, with no typed entries: Bullet469D06..469EBA uses the
+    /// fallback General.MetallicDebris SHP path on each admitted hit. This
+    /// differs from TechnoType debris, which belongs to the death receiver.
     ///
-    /// The TechnoType side is ported: `throw_debris_for_death` launches a dying
-    /// object's `DebrisTypes=` into the `VoxelAnimClass` store
-    /// (`sim::voxel_anim`) and records its `DebrisAnims=` rows, which stay
-    /// unbound on stock (the GSI-05.14 residual there). These four warhead
-    /// keys still have no reader.
-    /// - Trigger: a mod authoring warhead debris keys; none in stock.
-    /// - Player effect: none in stock; the native reader of these warhead
-    ///   fields is not traced.
-    /// - Frequency: zero in unmodded play.
+    /// RESIDUAL: the authored nonempty typed-warhead arm469D40..469E18
+    /// still lacks VoxelAnim emission. Its budget request precedes that arm;
+    /// a nonempty list must not instead produce fallback metallic SHPs.
+    /// Stock Brute's empty typed list does not exercise this residual. General
+    /// Airburst child emission469EBA..46A28A is a separate later mechanism.
     pub debris_types: Vec<String>,
     /// Per-type debris count cap.
     ///

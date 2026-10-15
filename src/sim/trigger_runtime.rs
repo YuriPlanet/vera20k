@@ -1736,13 +1736,36 @@ impl Simulation {
                 }
                 result
             }
-            9 | 11 | 55 | 56 => {
+            15 | 16 => {
+                // HasOccurred71EE82 takes the Trigger's incoming House,
+                // not Event.value's Country. 71F03F/71F058 compare signed
+                // House+5488/+5434 loss counters with Event+34 using >=.
+                // The null-House tail is true; neither arm latches, writes
+                // the timer/retained House, draws RNG or detaches anything.
+                // Steam3e81a617..08600; tag_lifecycle --loss-threshold-events.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                let Some(house) = self.houses.get(&owner) else {
+                    return false;
+                };
+                let losses = if condition.kind == 15 {
+                    house.stats.buildings_lost()
+                } else {
+                    house.stats.units_lost()
+                };
+                (losses as i32) >= condition.value
+            }
+            9 | 10 | 11 | 55 | 56 => {
                 //71F069 ->502D30: Event.value selects a Country's first
                 //registered House, independently of the incoming House or
                 //raised event. No matching House reaches the AL1 tail; this
                 //does not write persistence or the Type-owned Event+54.
                 //The private HouseTracking owner preserves separate signed
-                //Unit/Infantry totals and11's tracked Building scalar.
+                //Unit/Infantry totals and the tracked Building scalar.
+                //10's71F115..71F12E tests tracked buildings <=0, including
+                //constructor-complete Limbo until actual destruction. Steam
+                //3e81a617..08600; tag_lifecycle --building-loss-events.
                 //55/56: Steam3e81a617..08600, 71F159 /71F16F..71F187;
                 //tools/spatial_oracle/tag_lifecycle.py --naval-land-events.
                 //56's TEST after SUB observes wrapping subtraction, not a
@@ -1761,6 +1784,7 @@ impl Simulation {
                         .get(&owner)
                         .is_none_or(|house| match condition.kind {
                             9 => house.tracking.units_destroyed(),
+                            10 => house.tracking.buildings() <= 0,
                             11 => house.tracking.all_destroyed(),
                             55 => house.tracking.navy() <= 0,
                             56 => {

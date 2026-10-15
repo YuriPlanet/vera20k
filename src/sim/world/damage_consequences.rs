@@ -287,20 +287,16 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
             0
         },
         reverse: false,
+        owner: (!is_building).then_some(event.attacker_id),
         ..crate::sim::components::AnimClassSpawnDescriptor::new(
             type_name, rx, ry, sub_x, sub_y, level,
         )
     };
-    match world.spawn_anim_at_world(rules, descriptor, coord) {
-        Ok(anim_id) => {
-            if !is_building {
-                world.set_anim_owner_object(anim_id, Some(event.attacker_id), rules);
-            }
-        }
-        Err(error) => log::debug!(
+    if let Err(error) = world.spawn_anim_at_world(rules, descriptor, coord) {
+        log::debug!(
             "muzzle anim [{}] did not construct: {error}",
             world.interner.resolve(type_name)
-        ),
+        );
     }
 }
 
