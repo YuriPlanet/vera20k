@@ -9,6 +9,7 @@ use crate::audio::sfx::SfxPlayer;
 use crate::audio::theme::{
     MusicOutputState, PreparedTrack, ThemeAction, ThemeAllowContext, ThemeGates, ThemeRuntime,
 };
+use crate::sim::trigger_runtime::ThemeRequest;
 
 pub(crate) const fn derive_launcher_audio_available(
     audio_requested: bool,
@@ -345,9 +346,14 @@ impl AppAudioRuntime {
         self.apply_theme_action(action);
     }
 
-    /// `Queue_Song(From_Name(track))` @ `0x00720B20`; Theme AI starts it.
-    pub(crate) fn queue_theme(&mut self, track: &str, wall_ms: u64) {
-        let index = self.theme.from_name(track);
+    /// `Queue_Song @ 0x00720B20`; Theme AI starts it. Named callers use
+    /// the same From_Name721210 owner as type8 map actions; Action20 can
+    /// also supply the native signed index/sentinels directly.
+    pub(crate) fn queue_theme(&mut self, request: &ThemeRequest, wall_ms: u64) {
+        let index = match request {
+            ThemeRequest::Name(track) => self.theme.from_name(track),
+            ThemeRequest::Index(index) => *index,
+        };
         let gates = self.theme_gates();
         let physical = self.music_output_state();
         let action = self.theme.queue_song(index, gates, physical, wall_ms);

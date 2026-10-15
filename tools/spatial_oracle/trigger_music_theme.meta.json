@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Seventeen original TAction20 constructor/read/dispatch and Theme queue controls; names, scalar operands, sentinels, ordering, audio gates and one repeated-request fade history. No physical audio claim.",
+  "assumptions": [
+    "The eight declared Theme keys and preexisting slots/stream flags are supplied priors, not a replay of Init_Game or Theme ReadINI. Rust reads the accompanying synthetic INI through its production catalog reader. Native From_Name721210 and the actual CRT case-insensitive compare execute; Sound= stems are not name aliases.",
+    "Original6DD000 constructor,6DD5B0 counted action reader and full6DD8B0 Execute run. Parameter8 resolves its untrimmed name into+90; scalar0/11 reads preserve signed values independently of the trailing waypoint/auxiliary token. All requests reach original720B20, including its process/device/startup gates, retained comparison, pending write and fading byte.",
+    "The existing ActionFixture supplies CRT thread data/heap/INI transport. No action, name lookup or queue instruction is patched. In the first16 controls, stream playing/interpolating/stop/target-zero are recorded transports, without decoding or output-device callbacks.",
+    "The timed history supplies a full-scale sample shell, then executes original VolumeInterp Init407100, Tick4071C0, target-zero4080C0, SetTarget407170 and stream interpolation4080D0. Timestamp4093B0 returns declared milliseconds. Repeated queue requests at100/600/950 finish fading by1200; no call restarts the current ramp. Rust retains its documented linear-fade/1ms residual and compares the post-fade stop, not exact gain samples. This is not a Windows audio-pump cadence or waveform comparison.",
+    "Three original RNG constructors seed31 before each control. Read/Execute/Queue leave the complete states unchanged and reach neither original draw entry. This control does not run later Theme AI/NextSong and makes no automatic-playlist RNG claim.",
+    "No gameplay timer or detach belongs to this dispatcher leaf. Its ordered queue requests return AL1 even when audio admission rejects them. Numeric sentinels pass unfiltered; missing/unknown names resolve-1. Non-theme named metadata types6/7 on Action20 and malformed/truncated action authoring are outside this ordinary music-parameter chain.",
+    "VERA retains type8 names until the process Theme owner receives the ordered effect. Its catalog is immutable after initial selection, so this uses the same lookup without copying a catalog into deterministic simulation. The existing intentional RA2 playlist append policy is unchanged; native controls use only the declared YR-shaped prefix."
+  ],
+  "substitutions": [
+    "Audio device407000, stream playing408070 and stop407F40 return declared/recorded transport results. Interpolation4080D0 and fade target4080C0 are transports only in untimed controls; timed controls execute them unchanged and supply Timestamp4093B0. Diagnostic4068E0 is a no-op. No Theme AI or actual hardware output is included."
+  ],
+  "entry_points": {
+    "action_constructor": "0x006DD000",
+    "action_read": "0x006DD5B0",
+    "action_execute": "0x006DD8B0",
+    "action20": "0x006DE8E4",
+    "theme_from_name": "0x00721210",
+    "theme_queue": "0x00720B20",
+    "interp_init": "0x00407100",
+    "interp_target": "0x00407170",
+    "interp_tick": "0x004071C0",
+    "still_playing": "0x00720FD0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --music-theme",
+  "payload_sha256": "1609c177551309412d1acaf8d8ce283466cf803c046516515a54003aa1284c28"
+}

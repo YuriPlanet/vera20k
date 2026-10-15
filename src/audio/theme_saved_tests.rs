@@ -20,6 +20,124 @@ fn slots(value: &Value) -> ThemeSlots {
 }
 
 #[test]
+fn map_music_action_follows_native_read_and_queue() {
+    use crate::app::audio_runtime::AppAudioRuntime;
+    use crate::map::map_file::MapFile;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+    use crate::sim::trigger_runtime::{ThemeRequest, TriggerEffect};
+    use crate::sim::world::{FrameEffects, Simulation, TriggerInputs};
+
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_music_theme.json",
+    ))
+    .unwrap();
+    for case in fixture["controls"].as_array().unwrap() {
+        let input = &case["input"];
+        let actions = input["actions"].as_array().unwrap();
+        let payload = actions
+            .iter()
+            .map(|raw| raw.as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join(",");
+        let map = MapFile::from_bytes(
+            format!(
+                "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+                 [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+                 [VariableNames]\n9=MusicReady,0\n\
+                 [Triggers]\nMUSIC=Neutral,<none>,Music,0,1,1,1,0\n\
+                 [Tags]\nTMUSIC=0,Music,MUSIC\n\
+                 [Events]\nMUSIC=1,36,0,9\n\
+                 [Actions]\nMUSIC={},{payload}\n",
+                actions.len(),
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        let mut sim = Simulation::with_seed(31);
+        sim.initialize_trigger_definitions(&map, &TeamAiIniRegistry::default(), None, None);
+        sim.classify_map_triggers(None);
+        sim.set_trigger_variable(false, 9, true);
+        let effects = sim.advance_triggers(
+            TriggerInputs {
+                events: &map.events,
+                actions: &map.actions,
+                rules: None,
+            },
+            None,
+            FrameEffects::default(),
+        );
+        assert_eq!(effects.len(), actions.len(), "{case}");
+
+        let prior = &fixture["default_prior"];
+        let theme = ThemeRuntime {
+            catalog_loaded: input["scores"].as_bool().unwrap_or(true),
+            entries: catalog_from_ini(&IniFile::from_str(fixture["theme_ini"].as_str().unwrap())),
+            slots: ThemeSlots {
+                retained: input["retained"]
+                    .as_i64()
+                    .unwrap_or(prior["slots"][1].as_i64().unwrap())
+                    as i32,
+                ..slots(&prior["slots"])
+            },
+            score_volume: input["volume"]
+                .as_i64()
+                .unwrap_or(prior["volume"].as_i64().unwrap()) as i32,
+            ..ThemeRuntime::default()
+        };
+        let mut audio = AppAudioRuntime {
+            theme,
+            service_clock: Default::default(),
+            music_player: None,
+            sfx_player: None,
+            launcher_audio_available: input["device"].as_bool().unwrap_or(true),
+            theme_startup_suppressed: input["suppressed"].as_bool().unwrap_or(false),
+            movie_audio: Default::default(),
+        };
+        for (index, effect) in effects.iter().enumerate() {
+            let TriggerEffect::MusicTheme { request } = effect else {
+                panic!("unexpected effect {effect:?}");
+            };
+            let resolved = match request {
+                ThemeRequest::Name(name) => audio.theme.from_name(name),
+                ThemeRequest::Index(index) => *index,
+            };
+            assert_eq!(resolved, case["parsed"][index], "{case}");
+            let wall_ms = input["wall_times"][index].as_u64().unwrap_or(100);
+            if input["stream"].as_bool().unwrap_or(false) {
+                // Original stream calls are transport observations. Exercise
+                // the existing device-independent Theme owner with that prior;
+                // the app cases below require no audio device or fake player.
+                let output = audio.theme.queue_song(
+                    resolved,
+                    ThemeGates {
+                        launcher_audio_available: audio.launcher_audio_available,
+                        startup_suppressed: audio.theme_startup_suppressed,
+                    },
+                    MusicOutputState::Playing,
+                    wall_ms,
+                );
+                assert!(output.start.is_none(), "Queue never starts a track inline");
+            } else {
+                audio.queue_theme(request, wall_ms);
+            }
+        }
+        assert_eq!(audio.theme.slots, slots(&case["slots"]), "{case}");
+        assert_eq!(audio.theme.fading, case["fading"], "{case}");
+        assert!(case["rng_draws"].as_array().unwrap().is_empty());
+        if let Some(wall_ms) = input["settle_at_ms"].as_u64() {
+            // Original SetTarget/Tick execute in this control. The existing
+            // linear-ramp residual is at most 1 ms here; this observation is
+            // deliberately after both ramps finish, not a gain golden.
+            let (playing, output) = audio
+                .theme
+                .still_playing(MusicOutputState::Playing, wall_ms);
+            assert_eq!(playing, case["settled"]["playing"], "{case}");
+            assert_eq!(output.stop_output, case["settled"]["stopped"], "{case}");
+        }
+    }
+}
+
+#[test]
 fn score_volume_conversion_matches_native_stored_options_and_setter() {
     let fixture = corpus();
     let cases = fixture["score_volume_cases"].as_array().unwrap();

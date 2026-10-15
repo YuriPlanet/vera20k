@@ -76,6 +76,15 @@ const EVENT_TECHTYPE_EXISTS: i32 = 60;
 const EVENT_TECHTYPE_DOES_NOT_EXIST: i32 = 61;
 const LOGICAL_FRAMES_PER_SECOND: i32 = crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND as i32;
 
+/// Action20's music operand. Theme owns the immutable process catalog, so a
+/// type8 name is kept verbatim until that owner resolves it. This preserves
+/// Read6DD7E0's From_Name721210 result without a second music registry in sim.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ThemeRequest {
+    Name(String),
+    Index(i32),
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TriggerEffect {
     CameraAtCoord {
@@ -120,6 +129,11 @@ pub enum TriggerEffect {
     /// while app resources own captured frames and physical audio.
     ChronoScreen {
         command: crate::sim::superweapon::chrono_screen::ChronoScreenCommand,
+    },
+    /// Execute20 queues the song; the shared Theme owner controls admission,
+    /// fade, subsequent playback and the process Main RNG.
+    MusicTheme {
+        request: ThemeRequest,
     },
 }
 
@@ -2688,6 +2702,20 @@ impl Simulation {
                 });
             }
             103 => self.session.set_scenario_timer_caption(action.csf_label()),
+            20 => {
+                // Steam3e81a617..08600: Execute6DE8E4..6DE903 passes +90
+                // to Theme720B20 and returns AL1, even when audio is gated.
+                // Type8 is an untrimmed section key, not Sound= or an ordinal.
+                // The process catalog is immutable, so its existing owner can
+                // resolve the retained name at delivery; numeric sentinels
+                // pass through unchanged. No scenario RNG/timer/detach here.
+                let request = if action.params.first().map_or(0, |v| crt_atoi(v)) == 8 {
+                    ThemeRequest::Name(action.params.get(1).cloned().unwrap_or_default())
+                } else {
+                    ThemeRequest::Index(value.unwrap_or(-1))
+                };
+                effects.push(TriggerEffect::MusicTheme { request });
+            }
             0 => {
                 //Unsigned kind-1 falls through6DFDDD with the Execute
                 //entry's AL1. ALL01 has nine authored no-op tail records.

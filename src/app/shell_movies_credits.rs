@@ -3,6 +3,7 @@
 //! 4, `0xD`, `0xE` and `0xF`. Each child destroys its source dialog first and
 //! recreates its return dialog afterwards.
 
+use crate::sim::trigger_runtime::ThemeRequest;
 use crate::ui::shell::list::ListMetrics;
 use std::sync::Arc;
 use std::time::Instant;
@@ -422,7 +423,9 @@ impl App {
                 false,
             );
         }
-        state.audio.queue_theme(CREDITS_THEME, now_ms);
+        state
+            .audio
+            .queue_theme(&ThemeRequest::Name(CREDITS_THEME.into()), now_ms);
         let roll = CreditsRoll::new(
             lines,
             &state.renderer.bit_font,
@@ -463,7 +466,9 @@ impl App {
     fn finish_credits_roll_return(state: &mut AppState) {
         let now_ms =
             crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
-        state.audio.queue_theme("INTRO", now_ms);
+        state
+            .audio
+            .queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);
         Self::open_movies_credits_page(state);
     }
 }

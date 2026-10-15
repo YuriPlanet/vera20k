@@ -586,7 +586,11 @@ impl ThemeRuntime {
 
     fn start_fade(&mut self, wall_ms: u64) {
         self.fading = true;
-        self.fade_started_at_ms = Some(wall_ms);
+        // Queue720B20 / Stop720EA0 ->4080C0 ->407170 retargets the
+        // existing ramp; SetTarget only restamps an interpolator at rest.
+        // Repeated requests must not restart a fade already in flight.
+        // Executed history: trigger_action_values --music-theme.
+        self.fade_started_at_ms.get_or_insert(wall_ms);
     }
 
     /// `ThemeClass__Queue_Song @ 0x00720B20`.

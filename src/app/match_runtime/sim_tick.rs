@@ -1277,6 +1277,10 @@ fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
     let mut refresh_sidebar = false;
     for effect in effects {
         match effect {
+            TriggerEffect::MusicTheme { request } => {
+                let wall_ms = monotonic_frame_pacer_ms(state, Instant::now());
+                state.audio.queue_theme(request, wall_ms);
+            }
             TriggerEffect::ChronoScreen { command } => {
                 crate::app::chrono_screen::apply(state, *command);
             }

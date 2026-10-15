@@ -1,0 +1,530 @@
+{
+  "controls": [
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A"
+        ]
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        5
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": true,
+      "input": {
+        "actions": [
+          "20,8,dRoK,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        5
+      ],
+      "stream_calls": [
+        "fade_target_zero"
+      ]
+    },
+    {
+      "fading": true,
+      "input": {
+        "actions": [
+          "20,8,BrainFreeze,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        4
+      ],
+      "queue_requests": [
+        4
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        4
+      ],
+      "stream_calls": [
+        "fade_target_zero"
+      ]
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,BrainFre,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        -1
+      ],
+      "queue_requests": [
+        -1
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -1
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8, Drok ,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        -1
+      ],
+      "queue_requests": [
+        -1
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -1
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,unknown,0,0,0,0,A"
+        ]
+      },
+      "parsed": [
+        -1
+      ],
+      "queue_requests": [
+        -1
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -1
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": true,
+      "input": {
+        "actions": [
+          "20,0,-3,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        -3
+      ],
+      "queue_requests": [
+        -3
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -3
+      ],
+      "stream_calls": [
+        "fade_target_zero"
+      ]
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,0,-2,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        -2
+      ],
+      "queue_requests": [
+        -2
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -2
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,0,1,0,0,0,0,A"
+        ]
+      },
+      "parsed": [
+        1
+      ],
+      "queue_requests": [
+        1
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        1
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A"
+        ],
+        "scores": false
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -2
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A"
+        ],
+        "device": false
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -2
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A"
+        ],
+        "suppressed": true
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -2
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A"
+        ],
+        "retained": 5,
+        "stream": true
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        5,
+        5
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A"
+        ],
+        "volume": 0
+      },
+      "parsed": [
+        5
+      ],
+      "queue_requests": [
+        5
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        5
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": true,
+      "input": {
+        "actions": [
+          "20,8,Drok,0,0,0,0,A",
+          "20,8,BrainFreeze,0,0,0,0,A",
+          "20,0,-3,0,0,0,0,A"
+        ],
+        "stream": true
+      },
+      "parsed": [
+        5,
+        4,
+        -3
+      ],
+      "queue_requests": [
+        5,
+        4,
+        -3
+      ],
+      "returned": [
+        1,
+        1,
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        -3
+      ],
+      "stream_calls": [
+        "fade_target_zero",
+        "fade_target_zero",
+        "fade_target_zero"
+      ]
+    },
+    {
+      "fading": false,
+      "input": {
+        "actions": [
+          "20,11,3,0,0,0,0,29"
+        ]
+      },
+      "parsed": [
+        3
+      ],
+      "queue_requests": [
+        3
+      ],
+      "returned": [
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "slots": [
+        2,
+        2,
+        3
+      ],
+      "stream_calls": []
+    },
+    {
+      "fading": true,
+      "input": {
+        "actions": [
+          "20,0,5,0,0,0,0,A",
+          "20,0,4,0,0,0,0,A",
+          "20,0,-3,0,0,0,0,A"
+        ],
+        "settle_at_ms": 1200,
+        "stream": true,
+        "wall_times": [
+          100,
+          600,
+          950
+        ]
+      },
+      "parsed": [
+        5,
+        4,
+        -3
+      ],
+      "queue_requests": [
+        5,
+        4,
+        -3
+      ],
+      "ramp_history": [
+        {
+          "current": 1073741824,
+          "last_ms": 100,
+          "target": 0,
+          "wall_ms": 100
+        },
+        {
+          "current": 536871324,
+          "last_ms": 600,
+          "target": 0,
+          "wall_ms": 600
+        },
+        {
+          "current": 161061974,
+          "last_ms": 950,
+          "target": 0,
+          "wall_ms": 950
+        }
+      ],
+      "returned": [
+        1,
+        1,
+        1
+      ],
+      "rng_draws": [],
+      "rng_unchanged": true,
+      "settled": {
+        "playing": false,
+        "stopped": true,
+        "wall_ms": 1200
+      },
+      "slots": [
+        2,
+        2,
+        -3
+      ],
+      "stream_calls": [
+        "fade_target_zero",
+        "fade_target_zero",
+        "fade_target_zero",
+        "stop"
+      ]
+    }
+  ],
+  "default_prior": {
+    "device": true,
+    "fading": false,
+    "interpolating": true,
+    "scores": true,
+    "slots": [
+      2,
+      2,
+      -2
+    ],
+    "stream": false,
+    "suppressed": false,
+    "volume": 255
+  },
+  "theme_ini": "[Themes]\n0=INTRO\n1=LOADING\n2=CREDITS\n3=SCORE\n4=BrainFreeze\n5=Drok\n6=Deceiver\n7=PhatAttack\n[INTRO]\nSound=INTRO\n[LOADING]\nSound=LOADING\n[CREDITS]\nSound=CREDITS\n[SCORE]\nSound=SCORE\n[BrainFreeze]\nSound=BrainFre\n[Drok]\nSound=Drok\n[Deceiver]\nSound=Deceiver\n[PhatAttack]\nSound=PhatAttack\n",
+  "theme_keys": [
+    "INTRO",
+    "LOADING",
+    "CREDITS",
+    "SCORE",
+    "BrainFreeze",
+    "Drok",
+    "Deceiver",
+    "PhatAttack"
+  ]
+}

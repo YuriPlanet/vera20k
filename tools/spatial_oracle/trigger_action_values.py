@@ -57,6 +57,9 @@ recorded callback boundaries, with explicit list-mutation controls.
 ``--conceal-area`` executes Action101, Map567F70 and the complete578100 sweep
 on a small allocated diamond. Native projection, radius read and Cell/cache
 effects run; only the existing no-dirty-screen world prior excludes rendering.
+
+``--music-theme`` executes Action20 Read/Execute and the shared Theme queue,
+with declared catalog/stream priors and recorded device transports.
 """
 from pathlib import Path
 import hashlib
@@ -4293,6 +4296,157 @@ def conceal_area_metadata():
             radius_ctor=0x665EDE, radius_read=0x67181C, resident_notify=0x5865F0))
 
 
+MUSIC_THEME_KEYS = ('INTRO', 'LOADING', 'CREDITS', 'SCORE', 'BrainFreeze', 'Drok', 'Deceiver', 'PhatAttack')
+MUSIC_THEME_INI = '[Themes]\n' + ''.join(f'{i}={key}\n' for i, key in enumerate(MUSIC_THEME_KEYS)) + ''.join(f'[{key}]\nSound={"BrainFre" if key == "BrainFreeze" else key}\n' for key in MUSIC_THEME_KEYS)
+
+def music_theme_case(spec):
+    f = ActionFixture()
+    # Preserve the original bodies as well as the inherited action reader.
+    for begin, end in ((0x720B20, 0x720BA6), (0x721210, 0x721263),
+                       (0x407100, 0x4072C0), (0x4080C0, 0x4080EC),
+                       (0x720FD0, 0x721006)):
+        f.ranges.append((begin, end))
+        f.original.append(bytes(f.u.mem_read(begin, end - begin)))
+    u = f.u
+    theme = 0xA83D10
+    u.mem_write(theme, bytes(0x30))
+    u.mem_write(theme, dwords(2, spec.get('retained', 2), -2, spec.get('volume', 255)))
+    u.mem_write(theme + 0x11, bytes([spec.get('fading', False)]))
+    entries = []
+    for key in MUSIC_THEME_KEYS:
+        pointer = f.allocate(0x2A0)
+        u.mem_write(pointer, key.encode('ascii') + b'\0')
+        entries.append(pointer)
+    vector = f.allocate(4 * len(entries))
+    u.mem_write(vector, dwords(*entries))
+    u.mem_write(theme + 0x18, dwords(vector))
+    u.mem_write(theme + 0x24, dwords(len(entries)))
+    stream = f.allocate(0x100) if spec.get('stream', False) else 0
+    u.mem_write(theme + 0x2C, dwords(stream))
+    timed = 'wall_times' in spec
+    now = 0
+    sample = None
+    if timed:
+        assert stream and len(spec['wall_times']) == len(spec['actions'])
+        sample = f.allocate(0x100)
+        u.mem_write(sample, bytes(0x100))
+        u.mem_write(stream, bytes(0x100))
+        u.mem_write(stream + 0xC, dwords(1))
+        u.mem_write(stream + 0x14, dwords(sample))
+    u.mem_write(0xA8EC74, bytes([spec.get('scores', True)]))
+    u.mem_write(0xA8ED64, bytes([spec.get('suppressed', False)]))
+    for pointer in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+        f.call(0x65C6D0, [31], ecx=pointer)
+    before = f.rng_hashes()
+    calls, queues, draws = [], [], []
+    playing = spec.get('playing', bool(stream))
+    def observe(_u, pc, _size, _data):
+        nonlocal playing
+        if pc == 0x720B20:
+            queues.append(f.integer(u.reg_read(UC_X86_REG_ESP) + 4))
+        elif pc == 0x407000:
+            return_from_sink(u, 0, int(spec.get('device', True)))
+        elif pc == 0x4068E0:
+            return_from_sink(u, 0, 0)
+        elif pc == 0x4093B0 and timed:
+            u.reg_write(UC_X86_REG_EDX, now >> 32)
+            return_from_sink(u, 0, now & 0xFFFFFFFF)
+        elif pc == 0x4080D0 and not timed:
+            return_from_sink(u, 0, int(spec.get('interpolating', True)))
+        elif pc == 0x408070:
+            return_from_sink(u, 0, int(playing))
+        elif pc == 0x407F40:
+            calls.append('stop'); playing = False
+            return_from_sink(u, 0, 0)
+        elif pc == 0x4080C0:
+            calls.append('fade_target_zero')
+            if not timed:
+                return_from_sink(u, 0, 0)
+        elif pc in (0x65C780, 0x65C7E0):
+            draws.append(hex(pc))
+    u.hook_add(UC_HOOK_CODE, observe)
+    if timed:
+        # PlayFile407E7D supplies this full-scale initial value. Original
+        # Init/SetTarget/Tick run; the clock import is the only time input.
+        u.reg_write(UC_X86_REG_EDX, 0x4000)
+        f.call(0x407100, [], ecx=sample + 0x10)
+    parsed, returned, ramp_history = [], [], []
+    for index, raw in enumerate(spec['actions']):
+        if timed:
+            now = spec['wall_times'][index]
+            f.call(0x4071C0, [], ecx=sample + 0x10)
+        parsed.append(f.read_action(raw)['value'])
+        returned.append(f.call(0x6DD8B0, [0, 0, 0, 0], ecx=ACTION) & 255)
+        if timed:
+            ramp_history.append(dict(wall_ms=now, current=f.integer(sample + 0x14),
+                target=f.integer(sample + 0x18),
+                last_ms=struct.unpack('<Q', u.mem_read(sample + 0x28, 8))[0]))
+    settled = None
+    if timed:
+        now = spec['settle_at_ms']
+        f.call(0x4071C0, [], ecx=sample + 0x10)
+        mark = len(calls)
+        query = bool(f.call(0x720FD0, [], ecx=theme) & 255)
+        settled = dict(wall_ms=now, playing=query, stopped='stop' in calls[mark:])
+    f.check_code()
+    after = f.rng_hashes()
+    assert before == after and not draws
+    result = dict(input=spec, parsed=parsed, returned=returned, queue_requests=queues,
+                slots=[f.integer(theme + offset) for offset in (0, 4, 8)],
+                fading=bool(u.mem_read(theme + 0x11, 1)[0]), stream_calls=calls,
+                rng_draws=draws, rng_unchanged=before == after)
+    if timed:
+        result.update(ramp_history=ramp_history, settled=settled)
+    return result
+
+def music_theme_generate():
+    def named(name, **prior):
+        return dict(actions=[f'20,8,{name},0,0,0,0,A'], **prior)
+    cases = [
+        named('Drok'), named('dRoK', stream=True), named('BrainFreeze', stream=True),
+        named('BrainFre', stream=True), named(' Drok ', stream=True), named('unknown'),
+        dict(actions=['20,0,-3,0,0,0,0,A'], stream=True),
+        dict(actions=['20,0,-2,0,0,0,0,A'], stream=True),
+        dict(actions=['20,0,1,0,0,0,0,A']),
+        named('Drok', scores=False), named('Drok', device=False),
+        named('Drok', suppressed=True), named('Drok', retained=5, stream=True),
+        named('Drok', volume=0),
+        dict(actions=['20,8,Drok,0,0,0,0,A', '20,8,BrainFreeze,0,0,0,0,A',
+                      '20,0,-3,0,0,0,0,A'], stream=True),
+        dict(actions=['20,11,3,0,0,0,0,29']),
+        dict(actions=['20,0,5,0,0,0,0,A', '20,0,4,0,0,0,0,A',
+                      '20,0,-3,0,0,0,0,A'], stream=True,
+             wall_times=[100, 600, 950], settle_at_ms=1200),
+    ]
+    return dict(default_prior=dict(slots=[2, 2, -2], volume=255, fading=False,
+                                   scores=True, device=True, suppressed=False,
+                                   stream=False, interpolating=True),
+                theme_ini=MUSIC_THEME_INI, theme_keys=list(MUSIC_THEME_KEYS),
+                controls=[music_theme_case(case) for case in cases])
+
+
+def music_theme_metadata():
+    return provenance(
+        scope='Seventeen original TAction20 constructor/read/dispatch and Theme queue controls; names, scalar operands, sentinels, ordering, audio gates and one repeated-request fade history. No physical audio claim.',
+        assumptions=[
+            'The eight declared Theme keys and preexisting slots/stream flags are supplied priors, not a replay of Init_Game or Theme ReadINI. Rust reads the accompanying synthetic INI through its production catalog reader. Native From_Name721210 and the actual CRT case-insensitive compare execute; Sound= stems are not name aliases.',
+            'Original6DD000 constructor,6DD5B0 counted action reader and full6DD8B0 Execute run. Parameter8 resolves its untrimmed name into+90; scalar0/11 reads preserve signed values independently of the trailing waypoint/auxiliary token. All requests reach original720B20, including its process/device/startup gates, retained comparison, pending write and fading byte.',
+            'The existing ActionFixture supplies CRT thread data/heap/INI transport. No action, name lookup or queue instruction is patched. In the first16 controls, stream playing/interpolating/stop/target-zero are recorded transports, without decoding or output-device callbacks.',
+            'The timed history supplies a full-scale sample shell, then executes original VolumeInterp Init407100, Tick4071C0, target-zero4080C0, SetTarget407170 and stream interpolation4080D0. Timestamp4093B0 returns declared milliseconds. Repeated queue requests at100/600/950 finish fading by1200; no call restarts the current ramp. Rust retains its documented linear-fade/1ms residual and compares the post-fade stop, not exact gain samples. This is not a Windows audio-pump cadence or waveform comparison.',
+            'Three original RNG constructors seed31 before each control. Read/Execute/Queue leave the complete states unchanged and reach neither original draw entry. This control does not run later Theme AI/NextSong and makes no automatic-playlist RNG claim.',
+            'No gameplay timer or detach belongs to this dispatcher leaf. Its ordered queue requests return AL1 even when audio admission rejects them. Numeric sentinels pass unfiltered; missing/unknown names resolve-1. Non-theme named metadata types6/7 on Action20 and malformed/truncated action authoring are outside this ordinary music-parameter chain.',
+            'VERA retains type8 names until the process Theme owner receives the ordered effect. Its catalog is immutable after initial selection, so this uses the same lookup without copying a catalog into deterministic simulation. The existing intentional RA2 playlist append policy is unchanged; native controls use only the declared YR-shaped prefix.'
+        ],
+        substitutions=[
+            'Audio device407000, stream playing408070 and stop407F40 return declared/recorded transport results. Interpolation4080D0 and fade target4080C0 are transports only in untimed controls; timed controls execute them unchanged and supply Timestamp4093B0. Diagnostic4068E0 is a no-op. No Theme AI or actual hardware output is included.'
+        ],
+        entry_points=dict(action_constructor=0x6DD000, action_read=0x6DD5B0,
+                          action_execute=0x6DD8B0, action20=0x6DE8E4,
+                          theme_from_name=0x721210, theme_queue=0x720B20,
+                          interp_init=0x407100, interp_target=0x407170,
+                          interp_tick=0x4071C0, still_playing=0x720FD0))
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -4310,9 +4464,16 @@ if __name__=='__main__':
     selected_modes.add_argument('--chrono-house', action='store_true')
     selected_modes.add_argument('--all-change-house', action='store_true')
     selected_modes.add_argument('--conceal-area', action='store_true')
+    selected_modes.add_argument('--music-theme', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.conceal_area:
+    if selected.music_theme:
+        if selected.inputs is not None:
+            selector.error('--music-theme uses its declared Theme priors, not --inputs')
+        finish_vectors(music_theme_generate,
+            Path(__file__).with_name('trigger_music_theme.json'),
+            provenance=music_theme_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.conceal_area:
         if selected.inputs is not None:
             selector.error('--conceal-area reads configured retail RULESMD/SOV01, not --inputs')
         finish_vectors(conceal_area_generate,

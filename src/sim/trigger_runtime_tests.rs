@@ -16,6 +16,51 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
 
 #[test]
+fn music_action_reaches_the_ordered_presentation_effects() {
+    let (mut sim, rules, overlay, _) = event_ingress_fixture();
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nMUSIC=Country0,<none>,Music,0,1,1,1,0\n\
+         [Events]\nMUSIC=1,8,0,0\n\
+         [Actions]\nMUSIC=3,20,8,DROK,0,0,0,0,A,20,0,-3,0,0,0,0,A,11,4,AFTER_MUSIC,0,0,0,0,A\n",
+    );
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_type("MUSIC")
+        .unwrap();
+    let actions = sim.trigger_runtime.definitions.trigger_types[source]
+        .actions
+        .clone();
+    let mut effects = Vec::new();
+    for action in &actions {
+        assert!(sim.apply_live_trigger_action(
+            action,
+            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            &mut effects,
+            Some(&rules),
+            Some(&overlay),
+            FrameEffects::default(),
+        ));
+    }
+    assert_eq!(
+        effects,
+        [
+            TriggerEffect::MusicTheme {
+                request: ThemeRequest::Name("DROK".into()),
+            },
+            TriggerEffect::MusicTheme {
+                request: ThemeRequest::Index(-3),
+            },
+            TriggerEffect::LocalizedMessage {
+                csf_label: "AFTER_MUSIC".into(),
+            },
+        ]
+    );
+}
+
+#[test]
 fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
     let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
         return;
