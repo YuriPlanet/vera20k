@@ -10,6 +10,327 @@ fn integer(value: &Value) -> i32 {
     value.as_i64().unwrap() as i32
 }
 
+fn funds_event_corpus() -> Value {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_funds_events.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        corpus["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    corpus
+}
+
+#[test]
+fn funds_events_match_original_signed_wallet_predicates() {
+    use super::tests::{
+        event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit,
+    };
+    let corpus = funds_event_corpus();
+    let cases = corpus["predicate_controls"].as_array().unwrap();
+    assert_eq!(cases.len(), 32);
+    for case in cases {
+        let (mut sim, rules, _, houses) = event_ingress_fixture();
+        let owner = case["incoming_house"]
+            .as_u64()
+            .map(|index| houses[index as usize]);
+        if let Some(owner) = owner {
+            crate::sim::credit_income::add_credits(&mut sim, owner, integer(&case["balance"]));
+        }
+        let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nFUNDS=Country0,<none>,Funds,0,1,1,1,0\n\
+                 [Events]\nFUNDS=1,{},0,{}\n[Tags]\nTAG=2,Funds,FUNDS\n",
+                integer(&case["kind"]),
+                integer(&case["threshold"])
+            ),
+        );
+        let typ = sim.trigger_runtime.definitions.tag_type("TAG").unwrap();
+        let tag = sim.shared_trigger_tag(typ);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let trigger_type = sim.trigger_runtime.trigger(live).unwrap().type_index;
+        sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house =
+            Some(houses[2]);
+        let timer = sim.trigger_runtime.trigger(live).unwrap().timer;
+        let rng_before = (
+            sim.scenario_rng.logical_state(),
+            sim.main_rng.logical_state(),
+            sim.mapgen_rng.logical_state(),
+        );
+        let mut persistence = integer(&case["initial_persistence"]) != 0;
+        let mut predicate = |sim: &mut Simulation| {
+            sim.has_occurred(
+                0,
+                TagEventInput {
+                    kind: integer(&case["raised"]),
+                    actor: Some(actor),
+                    source: None,
+                    cell: (0, 0),
+                    force: false,
+                },
+                owner,
+                &mut persistence,
+                Some(&rules),
+                live,
+            )
+        };
+        let result = if case["scenario_init"].as_bool().unwrap() {
+            sim.with_buildup_bypass(predicate)
+        } else {
+            predicate(&mut sim)
+        };
+        assert_eq!(result, integer(&case["result"]) != 0, "{case}");
+        assert_eq!(persistence, integer(&case["persistence"]) != 0, "{case}");
+        assert_eq!(sim.trigger_runtime.trigger(live).unwrap().timer, timer);
+        assert_eq!(
+            sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house,
+            Some(houses[2]),
+            "funds conditions must not replace the retained House: {case}"
+        );
+        assert_eq!(
+            (
+                sim.scenario_rng.logical_state(),
+                sim.main_rng.logical_state(),
+                sim.mapgen_rng.logical_state(),
+            ),
+            rng_before,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn funds_events_match_original_house_logic_and_cleanup_histories() {
+    use super::tests::{event_ingress_fixture, install_event_ingress_map};
+    let corpus = funds_event_corpus();
+    let histories = corpus["histories"].as_array().unwrap();
+    assert_eq!(histories.len(), 5);
+    for case in histories {
+        let (mut sim, rules, overlay, houses) = event_ingress_fixture();
+        let events = format!(
+            "{},0,{}",
+            integer(&case["kind"]),
+            integer(&case["threshold"])
+        );
+        let mixed = case["with_elapsed"].as_bool().unwrap();
+        let events = if mixed {
+            format!("2,13,0,250,{events}")
+        } else {
+            format!("1,{events}")
+        };
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nFUNDS=Country0,<none>,Funds,0,1,1,1,0\n\
+                 [Events]\nFUNDS={events}\n[Actions]\nFUNDS=1,28,0,7,0,0,0,0,A\n\
+                 [Tags]\nTAG={},Funds,FUNDS\n",
+                integer(&case["repeat"])
+            ),
+        );
+        crate::sim::credit_income::add_credits(&mut sim, houses[0], integer(&case["initial"]));
+        let tag = sim.trigger_runtime.house_tags[&houses[0]][0];
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        // The two other registered Houses include a second Country0 instance.
+        // Registration and RegisterEvent must keep using its first House.
+        assert!(!sim.trigger_runtime.house_tags.contains_key(&houses[2]));
+        let rng_before = (
+            sim.scenario_rng.logical_state(),
+            sim.main_rng.logical_state(),
+            sim.mapgen_rng.logical_state(),
+        );
+        for step in case["steps"].as_array().unwrap() {
+            sim.session.binary_frame = integer(&step["frame"]) as u32;
+            if let Some(mutation) = step["mutation"].as_array() {
+                let amount = integer(&mutation[1]);
+                match mutation[0].as_str().unwrap() {
+                    "spend_money" => {
+                        crate::sim::credit_income::spend_money(&mut sim, houses[0], amount)
+                    }
+                    "add_credits" => {
+                        crate::sim::credit_income::add_credits(&mut sim, houses[0], amount)
+                    }
+                    other => panic!("unknown native wallet operation {other}"),
+                }
+            }
+            if mixed {
+                // Logic runs before House; the original mixed trigger can
+                // succeed on frame3750, which is not an eighth-frame poll.
+                sim.advance_triggers(
+                    TriggerInputs {
+                        events: &Default::default(),
+                        actions: &Default::default(),
+                        rules: Some(&rules),
+                    },
+                    Some(&overlay),
+                    FrameEffects::default(),
+                );
+            }
+            sim.raise_house_tags(
+                houses[0],
+                Some(&rules),
+                Some(&overlay),
+                FrameEffects::default(),
+            );
+            let runtime = &sim.trigger_runtime;
+            let trigger = runtime.trigger(live).unwrap();
+            let actual = json!({
+                "wallet": crate::sim::credit_income::available_money(&sim, houses[0]),
+                "spent": sim.houses[&houses[0]].economy.spent_credits(),
+                "actions": runtime.action_trace.len(),
+                "house_tag_count": runtime.house_tags.get(&houses[0]).map_or(0, Vec::len),
+                "logic_tag_count": runtime.logic_tags.len(),
+                "tag_pending": i32::from(runtime.tag(tag).unwrap().pending),
+                "trigger_pending": i32::from(trigger.pending),
+                "timer_start": trigger.timer.start_frame(),
+                "timer_duration": trigger.timer.duration(),
+                "completed": trigger.completed,
+                "pending_count": sim.substrate.pending_delete.len()
+            });
+            for (key, value) in actual.as_object().unwrap() {
+                assert_eq!(
+                    value, &step[key],
+                    "{} frame{}: {key}",
+                    case["name"], step["frame"]
+                );
+            }
+        }
+        if integer(&case["repeat"]) == 0 {
+            sim.process_pending_delete_with(
+                Some(&rules),
+                Some(&overlay),
+                FrameEffects::default(),
+                0,
+                false,
+            );
+            sim.session.binary_frame = 40;
+            sim.raise_house_tags(
+                houses[0],
+                Some(&rules),
+                Some(&overlay),
+                FrameEffects::default(),
+            );
+        }
+        let cleanup = json!({
+            "wallet": crate::sim::credit_income::available_money(&sim, houses[0]),
+            "spent": sim.houses[&houses[0]].economy.spent_credits(),
+            "house_tag_count": sim.trigger_runtime.house_tags.get(&houses[0]).map_or(0, Vec::len),
+            "logic_tag_count": sim.trigger_runtime.logic_tags.len(),
+            "pending_count": sim.substrate.pending_delete.len(),
+            "free_order": sim.trigger_runtime.freed_trace,
+            "tags_remaining": sim.trigger_runtime.tag_order.len()
+        });
+        assert_eq!(cleanup, case["cleanup"], "{}", case["name"]);
+        assert_eq!(
+            (
+                sim.scenario_rng.logical_state(),
+                sim.main_rng.logical_state(),
+                sim.mapgen_rng.logical_state()
+            ),
+            rng_before,
+            "{} must preserve all three RNG streams",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let raw = assets.get_ref("SOV06LMD.MAP").unwrap();
+    assert_eq!(
+        crate::util::sha256::sha256_hex(raw),
+        "f55b65fd33a53dd03f61b48259d7732d260a4f97170e6dcf0767a61af82403a4"
+    );
+    let map = crate::map::map_file::MapFile::from_bytes(raw).unwrap();
+    let named = assets.resolve_ref("SOV06LMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "SOV06LMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut rules_owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = rules_owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let eva = crate::rules::sound_ini::EvaRegistry::from_ini(
+        &IniFile::from_bytes(assets.get_ref("EVAMD.INI").unwrap()).unwrap(),
+    );
+    let cue = eva.index_of("Mis_xs6_YuriCashTaunt").unwrap();
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let mut sim = Simulation::with_seed(31);
+    // Use the production roster and Credits reader without a campaign option
+    // adjustment. This isolates the retail taunt, not the whole mission.
+    crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+        &mut sim,
+        &roster,
+        Some(&rules),
+        Some(&map.ini),
+    );
+    let owner = sim.interner.get("Russians").unwrap();
+    assert_eq!(
+        crate::sim::credit_income::available_money(&sim, owner),
+        70000
+    );
+    sim.initialize_trigger_definitions(&map, &Default::default(), Some(&eva), None);
+    let typ = sim
+        .trigger_runtime
+        .definitions
+        .tag_type("0D6BF7EC")
+        .unwrap();
+    let tag = sim.shared_trigger_tag(typ);
+    let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+    let definition = &sim.trigger_runtime.definitions.trigger_types
+        [sim.trigger_runtime.trigger(live).unwrap().type_index];
+    assert_eq!(definition.id, "0D6BF95C");
+    assert_eq!(
+        (
+            definition.events[0].condition.kind,
+            definition.events[0].condition.value
+        ),
+        (52, 10000)
+    );
+    for (spend, expected_cues) in [(59999, 0), (1, 1), (0, 1)] {
+        crate::sim::credit_income::spend_money(&mut sim, owner, spend);
+        sim.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: EVENT_ANY,
+                actor: None,
+                source: None,
+                cell: (0, 0),
+                force: false,
+            },
+            &mut Vec::new(),
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        );
+        assert_eq!(
+            sim.sound_events
+                .iter()
+                .filter(
+                    |event| matches!(event, SimSoundEvent::TriggerEva { index } if *index == cue)
+                )
+                .count(),
+            expected_cues
+        );
+    }
+    assert_eq!(sim.trigger_runtime.action_trace, [(21, cue)]);
+}
+
 #[test]
 fn damage_source_event44_matches_original_registered_house_index() {
     use super::tests::{

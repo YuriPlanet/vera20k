@@ -470,6 +470,21 @@ def execute(case):
     u.mem_write(SCRATCH+0x4F000, dwords(HOUSE))
     u.mem_write(HOUSE+0x34, dwords(HOUSE_TYPE))
     u.mem_write(HOUSE_TYPE+0xB4, dwords(0,0))
+    house_funds = case.get('house_funds')
+    if house_funds is not None:
+        # Supplied empty-storage House priors, not a House constructor or a
+        # silo-initialization result. The actual IHouse money getter executes.
+        u.mem_write(HOUSE,dwords(0x7EA8A0))
+        assert u32(u,0x7EA8A0+0x28)==0x4FB9B0
+        u.mem_write(HOUSE+0x24,dwords(0x7EA834))
+        u.mem_write(HOUSE+0x38,dwords(0x7EB6D4,SCRATCH+0x4E000,128,1,0,10))
+        u.mem_write(HOUSE+0x2FC,bytes(16))
+        u.mem_write(HOUSE+0x30C,dwords(house_funds))
+        u.mem_write(HOUSE_TYPE+0x148,struct.pack('<f',1.0))
+        from tools.spatial_oracle.house_tag_raise import RAISE_CELL
+        u.mem_write(RAISE_CELL,dwords(0))
+        for pointer in (0x886B88,0xABE890):
+            f.call(0x65C6D0,pointer,[case.get('seed',31)])
     if case.get('active_cleanup',False):
         u.mem_write(HOUSE+0x27C,dwords(case.get('allow_win_count',3)))
         u.mem_write(HOUSE+0x298,dwords(-1,0x11223344,99))
@@ -561,7 +576,22 @@ def execute(case):
               (0x6DD8B0,0x6E45D0),(0x689670,0x689A90)]
     if case.get('mixed_deferred_queue',False):
         ranges.extend(((0x5F3B80,0x5F3E00),(0x5F6690,0x5F66A0),(0x5F6DC0,0x5F6DF0)))
+    if house_funds is not None:
+        from tools.spatial_oracle.house_tag_raise import RAISE_BEGIN, RAISE_END
+        ranges.extend(((RAISE_BEGIN,RAISE_END),(0x684D47,0x684EC1),
+                       (0x4F5F99,0x4F5FB1),(0x4FB9B0,0x4FBB50),
+                       (0x4F6990,0x4F69CA),(0x4F9790,0x4F99D0),
+                       (0x6C9600,0x6C964F),(0x7C5F00,0x7C5F38)))
     code = [bytes(u.mem_read(a,b-a)) for a,b in ranges]
+    if house_funds is not None:
+        # Execute the genuine House constructor's listener append. This lets
+        # the original PointerExpired remove a deleted Tag from House+38.
+        u.reg_write(UC_X86_REG_EBP,HOUSE)
+        u.reg_write(UC_X86_REG_ESP,f.sp)
+        run_checked(u,0x4F5F99,0x4F5FB1)
+        assert u.reg_read(UC_X86_REG_ESP)==f.sp
+        rng_before={pointer:bytes(u.mem_read(pointer,0x3F4))
+                    for pointer in (SCENARIO+0x218,0x886B88,0xABE890)}
     history = []
     def snapshot(returned):
         tag_states = []
@@ -600,6 +630,10 @@ def execute(case):
             state.update(logic_cursor=i32(u,0xA83CDC),map_cursor=i32(u,0xA83DBC),
                          allow_win_count=i32(u,HOUSE+0x27C),
                          allow_win_timer=[i32(u,HOUSE+off) for off in (0x298,0x2A0)])
+        if house_funds is not None:
+            state['funds']=dict(wallet=i32(u,HOUSE+0x30C),spent=i32(u,HOUSE+0x2DC),
+                                house_tag_count=i32(u,HOUSE+0x48),
+                                logic_tag_count=i32(u,REGISTRIES['logic_tags']+16))
         return state
     for op in case.get('operations',[['shared'],['dispatch',0,13],['dispatch',0,13]]):
         kind, *args = op
@@ -619,6 +653,25 @@ def execute(case):
             returned = tags.index(tag)
         elif kind=='frame':
             u.mem_write(0xA8ED84,dwords(args[0]))
+        elif kind=='classify_house_tags':
+            # Supplied TagType identities, original Fill classification and
+            # registration. No hand-authored House/Logic membership list.
+            assert house_funds is not None and len(args)<=128
+            array=SCRATCH+0x4E800
+            u.mem_write(array,dwords(*(TAG_TYPES[n] for n in args)))
+            u.mem_write(0xB0E780+4,dwords(array,128,1,len(args),10))
+            u.reg_write(UC_X86_REG_ESP,f.sp)
+            run_checked(u,0x684D47,0x684EC1)
+            assert u.reg_read(UC_X86_REG_ESP)==f.sp
+        elif kind in ('spend_money','add_credits'):
+            assert house_funds is not None and len(args)==1
+            f.call(0x4F9790 if kind=='spend_money' else 0x4F9950,HOUSE,args)
+        elif kind=='house_poll':
+            assert house_funds is not None
+            u.reg_write(UC_X86_REG_ESP,f.sp)
+            u.reg_write(UC_X86_REG_ESI,HOUSE)
+            run_checked(u,RAISE_BEGIN,RAISE_END)
+            assert u.reg_read(UC_X86_REG_ESP)==f.sp
         elif kind=='attach_cell':
             f.call(0x485250,cell(args[1],args[2]),[tags[args[0]]])
         elif kind=='object':
@@ -692,8 +745,16 @@ def execute(case):
         history.append(snapshot(returned))
     u.hook_del(hook)
     assert code == [bytes(u.mem_read(a,b-a)) for a,b in ranges]
-    return dict(input=case,history=history,allocations=allocations,calls=calls,
-                next_random=f.call(0x65C780,SCENARIO+0x218,[]))
+    result=dict(input=case,history=history,allocations=allocations,calls=calls)
+    if house_funds is not None:
+        rng_after={pointer:bytes(u.mem_read(pointer,0x3F4)) for pointer in rng_before}
+        assert rng_after==rng_before
+        assert not draws
+        result.update(rng_before={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_before.items()},
+                      rng_after_history={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_after.items()})
+    # This terminal continuation probe is deliberately outside saved history.
+    result['next_random']=f.call(0x65C780,SCENARIO+0x218,[])
+    return result
 
 
 def inputs():
@@ -900,13 +961,14 @@ class PowerEventControls:
              (0x502D30,0x502D60),(0x4FCE30,0x4FCE73),(0x6F9DB0,0x6F9DC7),
              (0x7264C0,0x7265BD),(0x71FA30,0x71FA34)]
 
-    def __init__(self):
+    def __init__(self,reader_inputs=None,extra_calls=()):
         from tools.native_oracle import NATIVE_FPCW
         from tools.spatial_oracle.trigger_type_flags import FlagsFixture
         from tools.spatial_oracle.infantry_deploy_rules import HEAP, CURSOR, PTD
         from tools.spatial_oracle.engineer_repair_admission import INF_VTABLE
         from unicorn.x86_const import UC_X86_REG_FPCW
         self.fixture = FlagsFixture()
+        self.extra_calls=extra_calls
         self.u = u = self.fixture.u
         self.arena = HEAP
         self.event, self.persist, self.timer = HEAP+0x70000, HEAP+0x70100, HEAP+0x70110
@@ -939,9 +1001,11 @@ class PowerEventControls:
         self.original = [bytes(u.mem_read(a,b-a)) for a,b in self.SPANS]
         self.calls, self.admission_calls, self.predicates, self.registers = [], [], [], []
         u.hook_add(UC_HOOK_CODE,self.observe)
-        self.readers = {raw:self.read_event(raw) for raw in (
+        defaults=(
             '1,32,0,402','1,32,0,7','1,57,0,7','1,58,0,0','1,58,0,7',
-            '1,58,0,999','1,30,0,0','1,1,0,0','1,1,0,7','1,1,0,-1')}
+            '1,58,0,999','1,30,0,0','1,1,0,0','1,1,0,7','1,1,0,-1')
+        self.readers = {raw:self.read_event(raw) for raw in
+                        (defaults if reader_inputs is None else reader_inputs)}
 
     def integer(self,address):
         return struct.unpack('<i',self.u.mem_read(address,4))[0]
@@ -954,7 +1018,7 @@ class PowerEventControls:
         return row['conditions'][0]
 
     def observe(self,vm,pc,size,data):
-        if pc in (0x49FAE0,0x49FB60,0x502D30,0x4FCE30,0x6F9DB0,0x6F9DC0,0x65C780,0x65C7E0):
+        if pc in (0x49FAE0,0x49FB60,0x502D30,0x4FCE30,0x6F9DB0,0x6F9DC0,0x65C780,0x65C7E0)+self.extra_calls:
             sp = vm.reg_read(UC_X86_REG_ESP)
             self.calls.append(dict(pc=f'0x{pc:08X}',ecx=vm.reg_read(UC_X86_REG_ECX),
                 arg0=struct.unpack('<I',vm.mem_read(sp+4,4))[0]))
@@ -966,14 +1030,14 @@ class PowerEventControls:
     def predicate(self,name,raw,house_index=0,raised=8,actor_index=None,
                   scenario_init=False,counts=(0,0,0),
                   power=((100,200),(300,200),(0,200)),order=(0,1,2),
-                  destruction_counts=None,source_index=None):
+                  destruction_counts=None,source_index=None,initial_persistence=0):
         # Preserve historical key scenario_init; it denotes A8ED6B, NOT the
         # A8E7AC placement scope. See this selected mode's metadata.
         if raw not in self.readers:
             self.readers[raw] = self.read_event(raw)
         u,p = self.u,self.readers[raw]
         u.mem_write(self.event+0x2C,dwords(p['kind']));u.mem_write(self.event+0x34,dwords(p['value']))
-        u.mem_write(self.event+0x54,dwords(0xABCD1234));u.mem_write(self.persist,b'\0')
+        u.mem_write(self.event+0x54,dwords(0xABCD1234));u.mem_write(self.persist,bytes([initial_persistence]))
         u.mem_write(self.house_array,dwords(*(self.houses[i] for i in order)))
         u.mem_write(0xA8ED6B,bytes([scenario_init]))
         for counter,value in zip(self.counters,counts):
@@ -1362,10 +1426,146 @@ def line_event_metadata():
             'packed_map_lookup':0x5657A0,'map_coords':0x41BEA0,'tag_callout':0x6E53A0})
 
 
+def funds_event_history(kind,repeat,with_elapsed=False):
+    """Compose existing original Fill, Logic, House and lifecycle owners."""
+    if with_elapsed:
+        initial,threshold=1501,1500
+        steps=[(0,None),(3744,['spend_money',1]),(3750,None),(3752,None),
+               (7504,['add_credits',1]),(7512,['spend_money',1])]
+    elif kind==52:
+        initial,threshold=70000,10000
+        steps=[(0,None),(7,['spend_money',60000]),(8,None),
+               (16,['add_credits',1]),(24,['spend_money',1]),(32,None)]
+    else:
+        initial,threshold=9999,10000
+        steps=[(0,None),(7,['add_credits',1]),(8,None),
+               (16,['spend_money',1]),(24,['add_credits',1]),(32,None)]
+    operations=[['shared'],['classify_house_tags',0]]
+    row_indices=[]
+    for frame,mutation in steps:
+        operations.append(['frame',frame])
+        if mutation:operations.append(mutation)
+        if with_elapsed:operations.append(['poll'])
+        operations.append(['house_poll'])
+        row_indices.append(len(operations)-1)
+    if repeat==0:
+        operations.extend([['drain'],['frame',40],['house_poll']])
+    case=dict(name=f'funds{kind}_repeat{repeat}'+('_elapsed13' if with_elapsed else ''),
+              repeat=repeat,frame=0,game_mode=0,lifecycle=True,active_cleanup=True,
+              live_flags=[1,1],house_funds=initial,
+              triggers=[dict(events=[[kind,threshold]]+([[13,250]] if with_elapsed else []),
+                             actions=[[28,7]])],operations=operations)
+    receipt=execute(case)
+    rows=[]
+    for (frame,mutation),index in zip(steps,row_indices):
+        state=receipt['history'][index]
+        tag=state['tags'][0]
+        trigger=tag['triggers'][0]
+        rows.append(dict(frame=frame,mutation=mutation,actions=len(state['actions']),
+            **state['funds'],tag_pending=tag['pending'],trigger_pending=trigger['pending'],
+            timer_start=trigger['start'],timer_duration=trigger['duration'],
+            completed=trigger['completed'],pending_count=state['pending_count']))
+    final=receipt['history'][-1]
+    cleanup=dict(**final['funds'],pending_count=final['pending_count'],
+                 free_order=final['frees'],tags_remaining=sum(t is not None for t in final['tags']))
+    return dict(name=case['name'],kind=kind,repeat=repeat,initial=initial,threshold=threshold,
+                with_elapsed=with_elapsed,steps=rows,cleanup=cleanup,
+                rng_before=receipt['rng_before'],rng_after_history=receipt['rng_after_history'])
+
+
+def generate_funds_events():
+    """Signed funds predicates and five original production-caller histories."""
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    m=PowerEventControls(reader_inputs=(),extra_calls=(0x4F6990,0x6C9600,0x7C5F00))
+    u=m.u
+    for house,typ in zip(m.houses,m.types):
+        u.mem_write(house+0x24,dwords(0x7EA834))
+        u.mem_write(typ+0x148,struct.pack('<f',1.0))
+    # The existing FlagsFixture owns this arena/transport. Supply one Scenario
+    # state for three genuine original RNG constructors; no draw is simulated.
+    scenario=m.arena+0xB0000
+    u.mem_write(0xA8B230,dwords(scenario))
+    streams=(scenario+0x218,0x886B88,0xABE890)
+    for pointer in streams:m.fixture.call(0x65C6D0,[31],ecx=pointer)
+    rng_before={p:bytes(u.mem_read(p,0x3F4)) for p in streams}
+    spans=[(0x4F6990,0x4F69CA),(0x6C9600,0x6C964F),(0x7C5F00,0x7C5F38),
+           (0x71F950,0x71FA40)]
+    code=[bytes(u.mem_read(a,b-a)) for a,b in spans]
+    predicates,classifiers=[],[]
+
+    def probe(name,kind,balance,threshold,house=0,raised=13,buildup=False,persistence=0):
+        for pointer in m.houses:u.mem_write(pointer+0x30C,dwords(0))
+        if house is not None:u.mem_write(m.houses[house]+0x30C,dwords(balance))
+        before=list(struct.unpack('<iii',u.mem_read(m.timer,12)))
+        m.predicate(name,f'1,{kind},0,{threshold}',house_index=house,raised=raised,
+                    actor_index=2,scenario_init=buildup,initial_persistence=persistence)
+        row=m.predicates[-1]
+        after=list(struct.unpack('<iii',u.mem_read(m.timer,12)))
+        assert after==before and row['persistence']==persistence
+        assert row['event54']==struct.unpack('<i',dwords(0xABCD1234))[0]
+        predicates.append(dict(name=name,kind=kind,balance=balance,threshold=threshold,
+            incoming_house=house,raised=raised,scenario_init=buildup,
+            initial_persistence=persistence,result=row['result'],persistence=row['persistence'],
+            event54=row['event54'],timer_before=before,timer_after=after,
+            calls=[call['pc'] for call in row['calls']]))
+
+    pairs=[(699,700),(700,700),(701,700),(-51,-50),(-50,-50),(-49,-50),(0,0),
+           (2147483647,-1),(-2147483648,0),(-2147483648,2147483647),
+           (2147483647,-2147483648)]
+    for kind in (12,52):
+        for index,(balance,threshold) in enumerate(pairs):
+            probe(f'funds{kind}_signed{index}',kind,balance,threshold)
+        for flag in (False,True):
+            probe(f'funds{kind}_wrong_raise_buildup{int(flag)}',kind,700,700,
+                  raised=99,buildup=flag)
+        probe(f'funds{kind}_null_house',kind,0,0,house=None)
+        probe(f'funds{kind}_retained_persistence',kind,10000,10000,persistence=1)
+        probe(f'funds{kind}_incoming_not_country',kind,8,7,house=1)
+        u.mem_write(m.event+0x2C,dwords(kind))
+        classifiers.append(dict(kind=kind,
+            state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+            state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255))
+    m.assert_unchanged()
+    assert code==[bytes(u.mem_read(a,b-a)) for a,b in spans]
+    rng_after={p:bytes(u.mem_read(p,0x3F4)) for p in streams}
+    assert rng_before==rng_after
+    histories=[funds_event_history(kind,repeat) for kind in (12,52) for repeat in (0,2)]
+    histories.append(funds_event_history(52,2,with_elapsed=True))
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        predicate_controls=predicates,classifiers=classifiers,histories=histories,
+        code_unchanged=True,
+        predicate_rng_before={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_before.items()},
+        predicate_rng_after={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_after.items()})
+
+
+def funds_event_metadata():
+    return provenance(
+        scope='32 original funds12/52 predicate controls, four StateA/StateB calls, four pure House-poll histories and one mixed funds52/elapsed13 Logic-before-House history. Not whole economy, world, campaign or nonempty-silo parity.',
+        assumptions=[
+            'PowerEventControls and execute reuse their existing native-image/platform owners. The selected scalar mode omits unrelated preloaded power readers; actual counted TEvent Read, HasOccurred71E940, AvailableMoney4F6990, Storage6C9600 and ftol7C5F00 execute unchanged.',
+            'Minimal House+2FC storage is zero and HouseType IncomeMult is1.0; signed wallet+30C is the supplied balance. Each scalar control clears all wallets then sets only its selected incoming House. Country bindings0/7/0 and a distinct Country0 actor distinguish wallet identity from threshold and actor. Neither nonempty storage nor FillSilos initialization is claimed.',
+            'Histories supply one resolved TagType/TriggerType/event/action chain and run real Tag/Trigger constructors. Original Fill684D47..684EC1 registers the actual Tag in House and, for mixed13, Logic vectors. Original House constructor listener append4F5F99..4F5FB1 and actual primary vtable PointerExpired4FB9B0 admit native Tag detach notifications. No complete House or physical map construction is claimed.',
+            'Original AddCredits4F9950/SpendMoney4F9790 cross thresholds. House4F8F87..4F8FBE executes original Tag6E53A0/Register7264C0/predicate/Spring/Action28 SetGlobal7. Pure events are nonlatching and repeat2 refires at each still-true eighth-frame poll. Repeat0 queues Trigger and zero-ref Tag and immediately removes House membership through the original notification path. Later real725C70 frees trigger then tag and clears the pending queue; a final House poll sees no tag.',
+            'The mixed native event order52/1500 then13/250 models the ALL04 counted-reader linked order. Original Logic55AFB0..55B205 runs before the selected House slice; intervening world/House AI is excluded. It fires at non-eighth frame3750 and rearms the original elapsed timer; later successful7512 rearms again. This is a composed caller comparison, not a complete-frame schedule.',
+            'Three genuine RNG constructors seed31. Complete0x3F4-byte Scenario/Main/Map states are compared unchanged across predicates and each history. The reused execute owner draws one terminal Scenario continuation only after the recorded history; it is outside these equality checks. Funds predicates write no timer, Event+54, persistence or detach. RegisterEvent may call ResetTimers on repeat2; actual timers and deferred pending/free order remain recorded.',
+            'Event12/52 thresholds are literal signed INI values, with inclusive >=/<=. Both accept unrelated raised kind and A8ED6B true, and null incoming House succeeds. Boundaries include INT_MIN/MAX, equality, negatives, persistence initially1 and a nonzero incoming House whose Country matches the threshold; retained Event+54 sentinel and timer remain unchanged.'],
+        substitutions=['Existing allocator/CRT/TLS and validated Windows pointer-probe transports only. Minimal storage, vector capacities and resolved definition priors are declared. No selected gameplay predicate, money getter/mutation, Tag action, classification, poll or cleanup body is replaced.'],
+        entry_points={'has_occurred':0x71E940,'funds12_compare':0x71EF01,'funds52_compare':0x71EF20,
+            'available_money':0x4F6990,'storage_total':0x6C9600,'ftol':0x7C5F00,
+            'state_a':0x71F950,'state_b':0x71F9C0,'classify':0x684D47,
+            'house_tag_listener':0x4F5F99,'house_poll':0x4F8F87,'logic_poll':0x55AFB0,
+            'add_credits':0x4F9950,'spend_money':0x4F9790,'register_event':0x7264C0,
+            'action_execute':0x6DD8B0,'deferred_drain':0x725C70,'house_pointer_expired':0x4FB9B0})
+
+
 if __name__=='__main__':
     import sys
     args=sys.argv[1:]
-    if '--damage-source-events' in args:
+    if '--funds-events' in args:
+        args.remove('--funds-events')
+        finish_vectors(generate_funds_events,Path(__file__).with_name('trigger_funds_events.json'),
+                       provenance=funds_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--damage-source-events' in args:
         args.remove('--damage-source-events')
         finish_vectors(generate_damage_source_events,Path(__file__).with_name('trigger_damage_source_events.json'),
                        provenance=damage_source_event_metadata,source_paths=power_event_source_paths(),argv=args)

@@ -16,6 +16,53 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
 
 #[test]
+fn funds_event_runs_from_house_rung_after_a_spend() {
+    let (mut sim, rules, overlay, houses) = event_ingress_fixture();
+    sim.session.game_mode_nonzero = false;
+    for house in sim.houses.values_mut() {
+        house.is_human = true;
+    }
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nFUNDS=Country0,<none>,Funds,0,1,1,1,0\n\
+         [Events]\nFUNDS=1,52,0,10000\n\
+         [Actions]\nFUNDS=1,28,0,7,0,0,0,0,A\n\
+         [Tags]\nFUNDS_TAG=0,Funds,FUNDS\n",
+    );
+    crate::sim::credit_income::add_credits(&mut sim, houses[0], 70000);
+    sim.session.binary_frame = 0;
+    for frame in 0..=8 {
+        assert_eq!(sim.session.binary_frame, frame);
+        if frame == 7 {
+            crate::sim::credit_income::spend_money(&mut sim, houses[0], 60000);
+        }
+        sim.advance_master_frame(
+            &[],
+            Some(&rules),
+            Some(&overlay),
+            67,
+            TickLane::Ordinary,
+            None,
+            FrameEffects::default(),
+        )
+        .expect("the ordinary frame reaches its House rung");
+        // Native House4F8F87 -> Tag/RegisterEvent -> HasOccurred52:
+        // equality after spending admits the next eighth-frame poll.
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&7),
+            frame == 8,
+            "frame {frame}"
+        );
+    }
+    assert_eq!(
+        crate::sim::credit_income::available_money(&sim, houses[0]),
+        10000
+    );
+    assert!(sim.trigger_runtime.tag_order.is_empty());
+}
+
+#[test]
 fn music_action_reaches_the_ordered_presentation_effects() {
     let (mut sim, rules, overlay, _) = event_ingress_fixture();
     install_event_ingress_map(
