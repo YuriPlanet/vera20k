@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Action1286E1A40/House50D6D0 reverse Foot traversal, owner/class/transporter gates and shared351-offset cursor with bounded virtual leaf inputs; not complete teleport or placement parity.",
+  "assumptions": [
+    "Reuse ActionFixture and initialize_waypoint_map original startup/slope transport. Original561910 initializes the CellSpread table; the first351 signed pairs are retained as native outputs. Original47BBF0 constructs the351 flat level0/slope0 Cells on an explicitly supplied sparse512-stride map.",
+    "Each row supplies a Foot array in storage order, incoming House identity, RTTI virtual answers, owner pointers, transporter-null/non-null priors and per-offset CanEnter virtual answers. Original dispatcher6DD8B0 invokes6E1A40, original68BCC0 reads waypointA, original50D6D0 computes candidate cells, walks actors backwards and owns the single shared offset cursor.",
+    "Original5657A0 and Cell486840 execute for map lookup and ground coordinates. Native selected runtime startup/ground code supplies their flat Z values; no host formula supplies expected candidate coordinates. Infantry481180 identity is an explicit boundary, not a native subcell-position claim.",
+    "visits rows are [actor-storage-index,current-offset-index]; can_enter rows are [actor-index,offset-index,supplied-return]. Warp entries retain native caller coordinates and identify supplied return versus original rejection. CanEnter arguments after Cell must be[-1,-1,0,1]. No source array mutation/reentrant callback is supplied.",
+    "The original_foot_refusal row really executes Foot4DF7F0 with+27C=1 and the two earlier status virtual answers false; its original return0 leaves the next actor on the same offset. Other Warp returns are explicit supplied leaf results; no COM locomotor, detach, occupation, interpolation, cooldown or WarpIn implementation is certified.",
+    "The last-offset and all-blocked controls execute up to the original ABD A08/15E guards, covering exactly candidate indices0..350, then exit before the earlier actor. Original static initializer4F50A0 executes on deliberately poisoned A8EF98 and produces the empty Cell(0,0); the invalid-waypoint control uses that observed sentinel. Null Foot pointers, arbitrary out-of-bounds waypoints and loaded native registry construction are excluded.",
+    "Existing three RNG streams start with native seed31; hashes and actual draw entries are recorded. Selected caller bodies contain no timer/detach producer. Hidden effects/RNG behind virtual boundary callbacks are excluded."
+  ],
+  "substitutions": [
+    "Inherited heap/CRT/VM transport; no new mapper or VM. RTTI returns each declared actor class, CanEnterCell vslot1AC returns the declared offset admission, and status vslots54/160/1D4/1D8 return false.",
+    "Foot4DF7F0 is an observed RET12 sink returning the declared result except the original+27C-refusal control, which executes the original body. Positive teleport effects, live ownership/list mutations and occupied-cell changes do not occur at this boundary.",
+    "Infantry481180 records its request and copies the already native-derived incoming coordinate to its caller output, RET20. Native subcell availability, priority selection and RNG are excluded rather than approximated as verified behavior."
+  ],
+  "entry_points": {
+    "dispatch": "0x006DD8B0",
+    "action128": "0x006E1A40",
+    "waypoint": "0x0068BCC0",
+    "chrono_house": "0x0050D6D0",
+    "cell_spread_init": "0x00561910",
+    "empty_cell_init": "0x004F50A0",
+    "cell_constructor": "0x0047BBF0",
+    "cell_lookup": "0x005657A0",
+    "cell_coords": "0x00486840",
+    "infantry_subcell_boundary": "0x00481180",
+    "foot_warp": "0x004DF7F0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --chrono-house",
+  "payload_sha256": "bc6f0da1ba4280d8431f642f953a0a3679996f3a71721b78ff8f0bc109a891e0"
+}

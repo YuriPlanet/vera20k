@@ -180,6 +180,26 @@ impl Simulation {
         }
         // `0x0043FB6D..0x0043FBE3`: the working sound precedes the dispatcher.
         self.building_working_sound_edge(id, operational, rules, frame_effects);
+        self.dispatch_building_operational(id, rules, registry, frame_effects);
+        //43FBEF stores the caller's sample, independently of the dispatcher's
+        //fresh vt350 read. Action36 also calls4549B0 but does not store6C8.
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.building_last_operational.operational = operational;
+        }
+    }
+
+    /// Original4549B0: a direct caller dispatches even without a43FB20 edge.
+    /// The first virtual350 read is the shared4555D0 operational predicate.
+    pub(crate) fn dispatch_building_operational(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(operational) = self.building_operational_state(id, rules) else {
+            return;
+        };
         // The dispatcher opens with its `PowersUnit=` arms
         // (`sim::powered_unit`).
         self.powered_center_edge(id, operational, rules, frame_effects);
@@ -195,14 +215,6 @@ impl Simulation {
             }
         }
         self.update_building_anim_power(id, operational, rules);
-        //43FBEF stores6C8 after the dispatcher returns. A SpySat bracket does
-        //not change this sample, even when it changes one viewer's269.
-        self.substrate
-            .entities
-            .get_mut(id)
-            .unwrap()
-            .building_last_operational
-            .operational = operational;
     }
 
     /// One viewer's gap add `0x006FB170` or removal `0x006FB470` (latch `+0x269`,

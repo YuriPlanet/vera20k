@@ -97,6 +97,130 @@ const CHRONO_WARP_OUT_FRAMES: i32 = 0x3C;
 const CELL_FLAG_BRIDGE: u32 = 0x100;
 const CELL_FLAG_BRIDGE_DECK: u32 = 0x200;
 
+impl Simulation {
+    /// Foot4DF7F0 / Infantry522FE0, virtual508. Source: unchanged active-YR
+    /// bodies, Steam3e81a617..08600 (tools.native_inspect). Reuses the single
+    /// Teleport/piggyback warp owner; no action-specific position/state copy.
+    /// No own RNG/timer/detach: class destination and Walk sub-cell consumers
+    /// retain theirs, and subsequent Teleport Process owns warp timers.
+    pub(crate) fn foot_chrono_warp_to(
+        &mut self,
+        id: u64,
+        mut coord: DriveCoord,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        let actor = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("ChronoWarpTo missing actor")?;
+        if super::air_movement::is_high_flying(
+            actor,
+            self.resolved_terrain.as_ref(),
+            Some((rules, &self.interner)),
+        ) || crate::sim::superweapon::invulnerability::is_invulnerable(
+            actor.invulnerability.as_ref(),
+            self.session.binary_frame,
+        ) || actor.chrono_warp_latch()
+            || actor.is_warped_out()
+            || actor.is_warping_in()
+        {
+            return Ok(false);
+        }
+        let category = actor.category();
+        let infantry = category == EntityCategory::Infantry;
+        if actor.locomotor.is_none() {
+            return Err("ChronoWarpTo actor has no locomotor".into());
+        }
+        let mut cell = super::coord_cell(coord);
+        //Infantry prepares its old Walk head before creating the Teleport;
+        //Foot adjusts the bridge first, then prepares Unit Force_Track.
+        if infantry {
+            self.locomotor_mark_all_occupation_bits(id, false);
+            self.object_raw_receiver_at(id, coord, false);
+            let Some(actor) = self.substrate.entities.get_mut(id) else {
+                return Ok(false);
+            };
+            actor.set_foot_occupation_enabled(true);
+            self.assign_destination_represented(
+                id,
+                Some(crate::sim::components::NavTargetRef::cell(
+                    cell.0 as u16,
+                    cell.1 as u16,
+                )),
+                Some(rules),
+                registry,
+                effects,
+            )
+            .map_err(|error| error.to_string())?;
+            self.foot_force_immediate_destination(id, Some(coord), Some(rules), registry, effects)?;
+        }
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("ChronoWarpTo needs map cells")?;
+        let cells = NativeCellQuery::canonical(terrain);
+        if cells.flags(cells.lookup_world(coord.x, coord.y)) & CELL_FLAG_BRIDGE != 0 {
+            coord.z = coord
+                .z
+                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        }
+        if category == EntityCategory::Unit {
+            self.locomotor_mark_all_occupation_bits(id, false);
+            self.force_track(id, -1, coord, Some(rules), registry, effects);
+            self.object_raw_receiver_at(id, coord, false);
+            let Some(actor) = self.substrate.entities.get_mut(id) else {
+                return Ok(false);
+            };
+            actor.set_foot_occupation_enabled(true);
+            self.assign_destination_represented(
+                id,
+                Some(crate::sim::components::NavTargetRef::cell(
+                    cell.0 as u16,
+                    cell.1 as u16,
+                )),
+                Some(rules),
+                registry,
+                effects,
+            )
+            .map_err(|error| error.to_string())?;
+            self.assign_destination_represented(id, None, Some(rules), registry, effects)
+                .map_err(|error| error.to_string())?;
+        }
+        let frame = self.session.binary_frame;
+        let Some(loco) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|actor| actor.locomotor.as_mut())
+        else {
+            return Ok(false);
+        };
+        loco.begin_piggyback(crate::rules::locomotor_type::LocomotorKind::Teleport, frame);
+        loco.teleport_runtime_mut()
+            .ok_or("ChronoWarpTo Teleport construction failed")?
+            .arm_chrono(ChronoWarp::new(coord, frame));
+        cell = super::coord_cell(coord);
+        self.assign_destination_represented(
+            id,
+            Some(crate::sim::components::NavTargetRef::cell(
+                cell.0 as u16,
+                cell.1 as u16,
+            )),
+            Some(rules),
+            registry,
+            effects,
+        )
+        .map_err(|error| error.to_string())?;
+        if infantry {
+            self.locomotor_mark_all_occupation_bits(id, false);
+        }
+        Ok(true)
+    }
+}
+
 fn foot(category: EntityCategory) -> bool {
     matches!(
         category,

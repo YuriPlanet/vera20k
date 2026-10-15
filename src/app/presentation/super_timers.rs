@@ -6,9 +6,8 @@
 //! Native comparisons: the `tactical_timers` and `timer_lines` sections of
 //! `tools/superweapon_oracle.py`.
 //!
-//! RESIDUALS: VERA keeps no Scenario timer (`+0x11E8`), so its line, which
-//! takes index 0 while it runs, is never drawn. Text is drawn in the scheme's
-//! 8-bit colour, not packed to the native RGB565 surface's.
+//! Text is drawn in the scheme's 8-bit colour, not packed to the native
+//! RGB565 surface's.
 
 use std::collections::HashMap;
 
@@ -224,7 +223,13 @@ pub(crate) fn build_super_timer_instances(
             .map_or(0, |power| power.blackout_remaining(frame));
         (house, left)
     });
-    let lines = timer_lines(None, &supers, blackouts, !sim.session.game_mode_nonzero);
+    let scenario = sim.session.scenario_timer_view();
+    let lines = timer_lines(
+        scenario.map(|(left, _)| left),
+        &supers,
+        blackouts,
+        !sim.session.game_mode_nonzero,
+    );
     if lines.is_empty() {
         return (Vec::new(), Vec::new());
     }
@@ -248,9 +253,12 @@ pub(crate) fn build_super_timer_instances(
         .into_iter()
         .map(|line| {
             let (house, label) = match line.source {
-                // VERA passes no Scenario timer, so it has no label either;
-                // its line would take the player's scheme (`0x00A83D4C`).
-                TimerSource::Scenario => (sim.session.current_house, String::new()),
+                TimerSource::Scenario => (
+                    sim.session.current_house,
+                    scenario
+                        .filter(|(_, caption)| !caption.is_empty())
+                        .map_or_else(String::new, |(_, caption)| localized(csf, caption)),
+                ),
                 TimerSource::Super(view) => (
                     Some(view.owner()),
                     type_ui_name(

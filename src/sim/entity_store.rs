@@ -60,6 +60,11 @@ pub struct EntityStore {
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
     infantry_registry: Vec<u64>,
+    /// FootClass array8B3DC4, including Aircraft and stored limbo objects.
+    /// Derived from the same monotonic constructor IDs as Techno below;
+    /// parent Foot registration precedes its constructor-manager children.
+    /// UnInit retains rows; removal/replacement/restore update this cache.
+    foot_registry: Vec<u64>,
     /// Derived TechnoClass registration index from monotonic constructor IDs.
     /// Production construction stores each parent before manager children;
     /// see construction33/55,world_spawn::store_with_constructor_managers,
@@ -140,6 +145,7 @@ impl Clone for EntityStore {
             slot_of: self.slot_of.clone(),
             owners: self.owners.clone(),
             infantry_registry: self.infantry_registry.clone(),
+            foot_registry: self.foot_registry.clone(),
             techno_registry: self.techno_registry.clone(),
             touched: TouchLogs::everything(),
         }
@@ -166,6 +172,7 @@ impl EntityStore {
             slot_of: HashMap::default(),
             owners: Vec::new(),
             infantry_registry: Vec::new(),
+            foot_registry: Vec::new(),
             techno_registry: Vec::new(),
             touched: TouchLogs::everything(),
         }
@@ -178,6 +185,7 @@ impl EntityStore {
         self.touched.note(id, self.len());
         let infantry = entity.category() == crate::map::entities::EntityCategory::Infantry;
         let owner = entity.owner();
+        let foot = entity.category().is_foot();
         let entity = Some(Box::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
             self.entities[slot as usize] = entity;
@@ -211,6 +219,15 @@ impl EntityStore {
                 .partition_point(|&existing| existing < id);
             self.infantry_registry.insert(index, id);
         }
+        if let Ok(index) = self.foot_registry.binary_search(&id) {
+            self.foot_registry.remove(index);
+        }
+        if foot {
+            let index = self
+                .foot_registry
+                .partition_point(|&existing| existing < id);
+            self.foot_registry.insert(index, id);
+        }
         id
     }
 
@@ -220,6 +237,9 @@ impl EntityStore {
         let removed = self.entities[slot].take().map(|entity| *entity);
         self.touched.note(stable_id, self.len());
         self.remove_infantry_index(stable_id);
+        if let Ok(index) = self.foot_registry.binary_search(&stable_id) {
+            self.foot_registry.remove(index);
+        }
         if let Ok(index) = self.techno_registry.binary_search(&stable_id) {
             self.techno_registry.remove(index);
         }
@@ -399,6 +419,14 @@ impl EntityStore {
         self.techno_registry.len()
     }
 
+    pub(crate) fn foot_registry_at(&self, index: usize) -> Option<u64> {
+        self.foot_registry.get(index).copied()
+    }
+
+    pub(crate) fn foot_registry_len(&self) -> usize {
+        self.foot_registry.len()
+    }
+
     /// Native InfantryClass array index. Read afresh after a callback: removing
     /// a row shifts successors left, while a newly constructed row is visible.
     /// This is distinct from the live Logic vector and includes dead/limbo rows.
@@ -455,9 +483,9 @@ impl EntityStore {
         }
     }
 
-    /// Rebuild the infantry registry from primary storage. Owned by
+    /// Rebuild class registries from primary storage. Owned by
     /// Deserialize; synthetic fixtures may also rebuild after raw setup.
-    pub(crate) fn rebuild_infantry_registry(&mut self) {
+    pub(crate) fn rebuild_class_registries(&mut self) {
         let infantry: Vec<u64> = self
             .stored()
             .filter(|(_, entity)| {
@@ -468,6 +496,12 @@ impl EntityStore {
         // Storage iterates in ascending stable_id order, so the infantry
         // registry comes out sorted.
         self.infantry_registry = infantry;
+        self.foot_registry = self
+            .stored()
+            .filter(|(_, entity)| entity.category().is_foot())
+            .map(|(id, _)| id)
+            .collect();
+        self.techno_registry = self.stored().map(|(id, _)| id).collect();
     }
 }
 
@@ -539,8 +573,7 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
             store.owners.push(entity.owner());
             store.entities.push(Some(entity));
         }
-        store.rebuild_infantry_registry();
-        store.techno_registry = store.ids.clone();
+        store.rebuild_class_registries();
         Ok(store)
     }
 }
@@ -775,6 +808,12 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&store).unwrap()).unwrap();
         assert_eq!(restored.infantry_registry, [2, 4]);
         assert_eq!(restored.infantry_registry_at(2), None);
+        assert_eq!(store.foot_registry, [2, 3, 4]);
+        assert_eq!(restored.foot_registry, store.foot_registry);
+        let mut building = make_entity(3);
+        building.set_category_for_test(EntityCategory::Structure);
+        store.insert(building);
+        assert_eq!(store.foot_registry, [2, 4]);
     }
 
     #[test]

@@ -1628,6 +1628,7 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            14 => self.session.scenario_timer_elapsed(),
             1 | 24 | 25 | 26 | 59 => {
                 //71ECAF ->71F1BD compares actor6F9DB0's House ArrayIndex
                 //with Country502D30's first matching House+30, then retains
@@ -2437,22 +2438,62 @@ impl Simulation {
         effects
     }
 
-    /// Shared country selection in6E0B40/6E3120/6E3180..6E32A0.
-    ///9001 invokes original726910's retained live+2C getter, not Spring's
+    /// Shared country selection in6E0AA0/6E0B60/6E3120/6E3180..6E32A0.
+    ///0x2325 (8997) invokes original726910's retained live+2C getter, not Spring's
     ///incoming authored House. The special/Country lookup has one world owner.
+    /// Executed controls: trigger_all_change_house.json (Steam3e81a617..08600).
     fn live_action_house(
         &self,
         live: usize,
         value: i32,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<crate::sim::intern::InternedId> {
-        if value == 9001 {
+        if value == 0x2325 {
             self.trigger_runtime.trigger(live)?.retained_house
         } else if value == -1 {
             None
         } else {
             self.house_by_trigger_selector(value, rules)
         }
+    }
+
+    /// Action36/6E0B60..6E0C91, Steam3e81a617..08600. Two forward mutable
+    /// Techno-array passes put Powered/PoweredSpecial Buildings last, then
+    /// run their original4549B0 dispatcher even for a same-owner callback.
+    /// No own RNG, timer or detach; ChangeOwner and operational consumers
+    /// retain their lifecycle/side effects. No extra Alive/limbo filter here.
+    fn trigger_change_all_house_objects(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        target: crate::sim::intern::InternedId,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let mut found = false;
+        for powered_pass in [false, true] {
+            let mut ordinal = 0;
+            while ordinal < self.substrate.entities.techno_registry_len() {
+                let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
+                    let powered = entity.category()
+                        == crate::map::entities::EntityCategory::Structure
+                        && rules
+                            .object(self.interner.resolve(entity.type_ref()))
+                            .is_some_and(|object| object.powered || object.powered_special);
+                    entity.owner() == owner && powered == powered_pass
+                });
+                if eligible {
+                    self.change_owner_with_rules(id, target, rules, registry, effects);
+                    if powered_pass {
+                        self.dispatch_building_operational(id, rules, registry, effects);
+                    }
+                    found = true;
+                }
+                ordinal += 1;
+            }
+        }
+        found
     }
 
     ///Tag6E5380: identity membership of a live Trigger in the Tag's chain.
@@ -2563,13 +2604,26 @@ impl Simulation {
         let sound = action.sound.as_deref();
         let action = &action.entry;
         match action.kind {
+            23..=27 => {
+                use crate::sim::scenario_session::ScenarioTimerAction;
+                let seconds = value.unwrap_or(0);
+                self.session.change_scenario_timer(match action.kind {
+                    23 => ScenarioTimerAction::Start,
+                    24 => ScenarioTimerAction::Stop,
+                    25 => ScenarioTimerAction::Extend(seconds),
+                    26 => ScenarioTimerAction::Shorten(seconds),
+                    27 => ScenarioTimerAction::Set(seconds),
+                    _ => unreachable!(),
+                });
+            }
+            103 => self.session.set_scenario_timer_caption(action.csf_label()),
             0 => {
                 //Unsigned kind-1 falls through6DFDDD with the Execute
                 //entry's AL1. ALL01 has nine authored no-op tail records.
             }
             3 => {
                 //6DEA97 ->6E45E0 writes only selected House+1EE. The
-                //retained live selector owns9001 and Country/Player lookup.
+                //retained live selector owns8997 and Country/Player lookup.
                 let (Some(live), Some(rules), Some(value)) = (context.live_index, rules, value)
                 else {
                     return false;
@@ -2824,7 +2878,7 @@ impl Simulation {
             }
             119..=122 => {
                 //6E3180/31E0/3240/32A0 require a live Trigger context.
-                //9001 resolves its retained House via726910; other values
+                //8997 resolves its retained House via726910; other values
                 //use the existing510F60/510ED0/502D30 selector owner.
                 let (Some(live), Some(rules), Some(value)) = (context.live_index, rules, value)
                 else {
@@ -2844,8 +2898,25 @@ impl Simulation {
                 };
                 self.house_blowup(owner, subset, rules, overlay_registry, frame_effects);
             }
+            36 => {
+                let (Some(live), Some(owner), Some(value), Some(rules)) =
+                    (context.live_index, context.incoming_house, value, rules)
+                else {
+                    return false;
+                };
+                let Some(target) = self.live_action_house(live, value, rules) else {
+                    return false;
+                };
+                return self.trigger_change_all_house_objects(
+                    owner,
+                    target,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
             14 => {
-                //6E0AA0 ->6E0B40 dynamic Techno array;9001 is only726910's
+                //6E0AA0 ->6E0B40 dynamic Techno array;8997 is only726910's
                 //live+2C. Never substitute the authored incoming House.
                 let (Some(live_index), Some(rules), Some(value)) =
                     (context.live_index, rules, value)
@@ -3037,6 +3108,27 @@ impl Simulation {
                     .entry(owner)
                     .or_default()
                     .start_radar_outage(self.session.binary_frame, value.unwrap_or(0));
+            }
+            128 => {
+                //Execute6DFAD9 ->6E1A40 ->House50D6D0. Only +44 waypoint
+                //and incoming House are read: the numeric +90 is ignored.
+                let (Some(owner), Some(waypoint), Some(rules)) =
+                    (context.incoming_house, action.waypoint_index, rules)
+                else {
+                    return false;
+                };
+                let Some(cell) = self.session.waypoint_cell(waypoint as i32) else {
+                    return false;
+                };
+                return self
+                    .chronoshift_house_to(owner, cell, rules, overlay_registry, frame_effects)
+                    .map_or_else(
+                        |error| {
+                            log::debug!("Action128: {error}");
+                            false
+                        },
+                        |_| true,
+                    );
             }
             127 => {
                 // Execute6DFABF -> ChronoScreen53B460. A nonpositive duration

@@ -16,6 +16,345 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
 
 #[test]
+fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
+    let Some((mut sim, rules, overlay, _map)) = retail_sov01_script_context() else {
+        return;
+    };
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .position(|trigger| trigger.id == "0952F87C")
+        .unwrap();
+    let actions = sim.trigger_runtime.definitions.trigger_types[source]
+        .actions
+        .clone();
+    sim.session.binary_frame = 123;
+    for action in actions
+        .iter()
+        .filter(|action| matches!(action.entry.kind, 23..=27 | 103))
+    {
+        assert!(sim.apply_live_trigger_action(
+            action,
+            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            &mut Vec::new(),
+            Some(&rules),
+            Some(&overlay),
+            FrameEffects::default(),
+        ));
+    }
+    assert_eq!(
+        sim.session.scenario_timer_view(),
+        Some((1800, "MISSION:TmeTimer"))
+    );
+    sim.classify_map_triggers(Some(&rules));
+    let destination = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .position(|trigger| trigger.id == "0BDE333C")
+        .unwrap();
+    let live = sim
+        .trigger_runtime
+        .triggers
+        .iter()
+        .position(|trigger| {
+            trigger
+                .as_ref()
+                .is_some_and(|trigger| trigger.type_index == destination)
+        })
+        .unwrap();
+    for (frame, elapsed) in [(1922, false), (1923, true)] {
+        sim.session.binary_frame = frame;
+        assert_eq!(
+            sim.has_occurred(
+                0,
+                TagEventInput::default(),
+                None,
+                &mut false,
+                Some(&rules),
+                live,
+            ),
+            elapsed
+        );
+    }
+}
+
+#[test]
+fn all_change_house_dispatch_matches_original_selector_controls() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_all_change_house.json",
+    ))
+    .unwrap();
+    for row in corpus["rows"].as_array().unwrap() {
+        let input = &row["input"];
+        let actors = input["actors"].as_array().unwrap();
+        // These execute real ChangeOwner. Reentrant supplied native sinks and
+        // powered-class dispatch are covered separately, not simulated here.
+        if actors.len() != 1
+            || actors[0]["class"] != 1
+            || actors[0].get("callback_effect").is_some()
+        {
+            continue;
+        }
+        let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+        let order = input
+            .get("house_order")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([1, 2, 0]));
+        sim.session.house_order = order
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| houses[index.as_u64().unwrap() as usize])
+            .collect();
+        for (slot, house_index) in [(0, 1), (1, 0)] {
+            sim.session
+                .start_slot_houses
+                .insert(slot, sim.session.house_order[house_index]);
+        }
+        let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nSHIFT=Country0,<none>,Shift,0,1,1,1,0\n\
+             [Tags]\nTAG=2,Shift,SHIFT\n[Events]\nSHIFT=1,8,0,0\n\
+             [Actions]\nSHIFT=1,{}\n",
+                row["read"]["raw"].as_str().unwrap(),
+            ),
+        );
+        let tag_type = sim.trigger_runtime.definitions.tag_type("TAG").unwrap();
+        let tag = sim.shared_trigger_tag(tag_type);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        sim.trigger_runtime.triggers[live]
+            .as_mut()
+            .unwrap()
+            .retained_house = input.get("trigger_owner").map_or(Some(houses[2]), |index| {
+            index.as_u64().map(|index| houses[index as usize])
+        });
+        let typ = sim.trigger_runtime.trigger(live).unwrap().type_index;
+        let action = sim.trigger_runtime.definitions.trigger_types[typ].actions[0].clone();
+        let result = sim.apply_live_trigger_action(
+            &action,
+            TriggerActionContext {
+                live_index: (input["null_trigger"] != true).then_some(live),
+                incoming_house: Some(houses[input["source_owner"].as_u64().unwrap_or(0) as usize]),
+                input: TagEventInput::default(),
+            },
+            &mut Vec::new(),
+            Some(&rules),
+            Some(&overlays),
+            FrameEffects::default(),
+        );
+        assert_eq!(result, row["result"] == 1, "{}", input["name"]);
+        assert_eq!(
+            sim.substrate.entities.get(actor).unwrap().owner(),
+            houses[row["owners"][0].as_u64().unwrap() as usize],
+            "{}",
+            input["name"]
+        );
+    }
+}
+
+#[test]
+fn all_change_house_retail_sov01_handoff_transfers_units_and_powered_buildings() {
+    use crate::sim::house_state::HouseState;
+    let Some((_, rules, _, map)) = retail_sov01_script_context() else {
+        return;
+    };
+    let (rules, mut sim, owner) =
+        crate::sim::superweapon::chronosphere_tests::world_with(rules, 128, &[]);
+    // Match the map's Country/House identity, using the production layered
+    // rules and action reader; the flat arena is not retail terrain evidence.
+    for name in ["Americans", "Russians"] {
+        let id = sim.interner.intern(name);
+        sim.houses.get_mut(&id).unwrap().country = Some(id);
+    }
+    let target = sim.interner.intern("PowerHouse");
+    let country = sim.interner.intern("PowerHouse Country");
+    sim.houses.insert(
+        target,
+        HouseState::new(target, 2, Some(country), false, 0, 10),
+    );
+    sim.session.house_order.push(target);
+    assert_eq!(sim.house_by_trigger_selector(14, &rules), Some(target));
+    let actors: Vec<_> = [("GAGAP", 20, 20), ("MTNK", 25, 25), ("GAPOWR", 30, 30)]
+        .into_iter()
+        .map(|(name, x, y)| {
+            sim.spawn_object_at_height(name, "Americans", x, y, 0, 0, &rules)
+                .unwrap()
+        })
+        .collect();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.classify_map_triggers(Some(&rules));
+    let typ = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .position(|typ| typ.id == "07F2978C")
+        .unwrap();
+    let live = sim
+        .trigger_runtime
+        .triggers
+        .iter()
+        .position(|trigger| {
+            trigger
+                .as_ref()
+                .is_some_and(|trigger| trigger.type_index == typ)
+        })
+        .unwrap();
+    let action = sim.trigger_runtime.definitions.trigger_types[typ].actions[0].clone();
+    assert_eq!((action.entry.kind, action.value), (36, Some(14)));
+    let context =
+        sim.trigger_action_context(typ, Some(live), TagEventInput::default(), Some(&rules));
+    assert_eq!(context.incoming_house, Some(owner));
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        context,
+        &mut Vec::new(),
+        Some(&rules),
+        None,
+        FrameEffects::default()
+    ));
+    for actor in actors {
+        assert_eq!(sim.substrate.entities.get(actor).unwrap().owner(), target);
+    }
+}
+
+#[test]
+fn action128_retail_foots_use_reverse_shared_sweep_and_finish_the_warp() {
+    use crate::sim::superweapon::chronosphere_tests::{retail_world, step, world_with};
+    use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
+    let Some((rules, _, _)) = retail_world() else {
+        return;
+    };
+    let (rules, mut sim, owner) = world_with(rules, 128, &[]);
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_chrono_house.json",
+    ))
+    .unwrap();
+    let offsets: Vec<(i16, i16)> =
+        serde_json::from_value(native["native_offset_pairs"].clone()).unwrap();
+    assert_eq!(&crate::sim::combat::cell_spread::sweep(11)[..=350], offsets);
+    let mixed = native["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "reverse_mixed_classes")
+        .unwrap();
+    // Declared flat production arena: map reader/dispatch and real movement
+    // consumers are tested here, not SOV01 terrain or whole-scene parity.
+    let first = sim
+        .spawn_object_at_height("MTNK", "Americans", 20, 20, 0, 0, &rules)
+        .unwrap();
+    let infantry = sim
+        .spawn_object_at_height("E1", "Americans", 22, 20, 0, 0, &rules)
+        .unwrap();
+    let last = sim
+        .spawn_object_at_height("MTNK", "Americans", 24, 20, 0, 0, &rules)
+        .unwrap();
+    let immune = sim
+        .spawn_object_at_height("MTNK", "Americans", 26, 20, 0, 0, &rules)
+        .unwrap();
+    let other = sim
+        .spawn_object_at_height("HTNK", "Russians", 10, 10, 0, 0, &rules)
+        .unwrap();
+    apply_invulnerability(
+        sim.substrate.entities.get_mut(immune).unwrap(),
+        0,
+        900,
+        InvulnKind::IronCurtain,
+    );
+    let map = install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Waypoints]\n15=50075\n[Triggers]\nSHIFT=Americans,<none>,Shift,0,1,1,1,0\n\
+         [Events]\nSHIFT=1,8,0,0\n[Actions]\nSHIFT=1,128,0,478,0,0,0,0,P\n",
+    );
+    sim.session.install_waypoints(&map.waypoints);
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .position(|trigger| trigger.id == "SHIFT")
+        .unwrap();
+    let action = sim.trigger_runtime.definitions.trigger_types[source].actions[0].clone();
+    assert_eq!(action.entry.waypoint_index, Some(15));
+    let before_other = crate::sim::movement::ground_pose::object_get_coords(
+        sim.substrate.entities.get(other).unwrap(),
+        sim.resolved_terrain.as_ref(),
+    );
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        TriggerActionContext {
+            live_index: None,
+            input: TagEventInput::default(),
+            incoming_house: Some(owner)
+        },
+        &mut Vec::new(),
+        Some(&rules),
+        None,
+        FrameEffects::default(),
+    ));
+    for id in [immune, other] {
+        assert!(!sim.substrate.entities.get(id).unwrap().chrono_warp_latch());
+    }
+    let destination = |id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .chrono_warp()
+            .unwrap()
+            .destination()
+    };
+    for (id, row) in [(last, &mixed["warp"][0]), (first, &mixed["warp"][2])] {
+        let coord = destination(id);
+        assert_eq!(serde_json::json!([coord.x, coord.y, coord.z]), row["coord"]);
+    }
+    assert!(
+        sim.substrate
+            .entities
+            .get(infantry)
+            .unwrap()
+            .chrono_warp_latch(),
+        "Action128 warps ordinary infantry; Super Organic-kill admission does not apply"
+    );
+    for _ in 0..180 {
+        step(&mut sim, &rules);
+    }
+    for id in [first, infantry, last] {
+        let entity = sim
+            .substrate
+            .entities
+            .get(id)
+            .expect("survives ordinary ground warp");
+        assert!(
+            !entity.chrono_warp_latch() && !entity.is_warped_out() && !entity.is_warping_in(),
+            "warp finishes for {id}"
+        );
+        assert!(entity.position.rx().abs_diff(75) <= 2 && entity.position.ry().abs_diff(50) <= 2);
+    }
+    assert_eq!(
+        crate::sim::movement::ground_pose::object_get_coords(
+            sim.substrate.entities.get(other).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        ),
+        before_other
+    );
+}
+
+#[test]
 fn script40_clears_local_through_trigger_owner_and_advances_on_rejected_indices() {
     use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
     let rules =
@@ -773,7 +1112,7 @@ fn fatal_receiver_does_not_raise_surviving_damage_event44() {
 }
 
 #[test]
-fn entered_cell_retains_the_actual_duplicate_country_house_for_9001_actions() {
+fn entered_cell_retains_the_actual_duplicate_country_house_for_8997_actions() {
     let (mut sim, rules, overlays, houses) = event_ingress_fixture();
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
     let other = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (17, 15));
@@ -782,7 +1121,7 @@ fn entered_cell_retains_the_actual_duplicate_country_house_for_9001_actions() {
         &rules,
         "[Triggers]\nENTER=Country0,<none>,Enter,0,1,1,1,0\n\
          [Tags]\nTAG=2,Enter,ENTER\n[Events]\nENTER=1,1,0,-1\n\
-         [Actions]\nENTER=2,14,0,9001,0,0,0,0,A,3,0,9001,0,0,0,0,A\n\
+         [Actions]\nENTER=2,14,0,8997,0,0,0,0,A,3,0,8997,0,0,0,0,A\n\
          [CellTags]\n15015=TAG\n",
     );
     sim.attach_object_trigger_tag(actor, Some("TAG"));
@@ -807,7 +1146,14 @@ fn entered_cell_retains_the_actual_duplicate_country_house_for_9001_actions() {
         sim.trigger_runtime.trigger(live).unwrap().retained_house,
         Some(houses[2])
     );
-    assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 1), (tag, 59)]);
+    assert_eq!(sim.live_action_house(live, 8997, &rules), Some(houses[2]));
+    assert_eq!(sim.live_action_house(live, 9001, &rules), None);
+    // ChangeOwner's null-killer Unit E0 callback744720 raises48/29 before
+    // the retained PerCell tail59; see unit_record_kill_ native-prefix checks.
+    assert_eq!(
+        sim.trigger_runtime.dispatch_trace,
+        [(tag, 1), (tag, 48), (tag, 29), (tag, 59)]
+    );
 }
 
 #[test]

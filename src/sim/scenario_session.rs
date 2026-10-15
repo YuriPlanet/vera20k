@@ -13,6 +13,10 @@ use crate::sim::house_state::HouseDifficulty;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 
+#[path = "scenario_countdown.rs"]
+mod countdown;
+pub(crate) use countdown::ScenarioTimerAction;
+
 /// NukeLevel (`ScenarioClass+0x3574`): Set_Defaults stores 100 (`0x00683920`,
 /// the binary's only store to it) and no INI key reads it.
 pub const NUKE_LEVEL_UNITS: i32 = 100;
@@ -525,6 +529,10 @@ pub struct ScenarioSession {
     input_locked: bool,
     /// Native ChronoScreenEffect globals; GPU surface/handle remain app-local.
     chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState,
+    /// Scenario+11E8 countdown and authored+11F4/+11F8 caption. Mutations
+    /// belong to the countdown owner; UI consumes only its retained view.
+    #[serde(default)]
+    scenario_countdown: countdown::ScenarioCountdown,
     /// Process scenario-active byte A8ED5C. StartScenario683E75 publishes1;
     /// MainGame48CEBF clears it on exit, and LoadGame67E6C4 republishes1.
     /// It is reconstructed by the committed load/start route, not inferred
@@ -753,6 +761,10 @@ impl ScenarioSession {
             b"scenario-chrono-screen-v1".hash(hasher);
             s.chrono_screen.hash(hasher);
         }
+        if !s.scenario_countdown.is_default() {
+            b"scenario-countdown-v1".hash(hasher);
+            s.scenario_countdown.hash(hasher);
+        }
         if !s.waypoints.is_empty() {
             b"scenario-waypoints-v1".hash(hasher);
             s.waypoints.hash(hasher);
@@ -881,6 +893,7 @@ impl ScenarioSession {
             campaign: None,
             input_locked: false,
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
+            scenario_countdown: countdown::ScenarioCountdown::default(),
             started: false,
             no_damage: desc.no_damage,
             free_radar: desc.free_radar,

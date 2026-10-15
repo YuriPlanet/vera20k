@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Action36 AllChangeHouse target selector and two mutable forward Techno passes; callback effects are declared boundaries, not full ChangeOwner/power parity.",
+  "assumptions": [
+    "ActionFixture executes original TAction constructor/read/full dispatch6DD8B0 into6E0B60. Minimal House Country storage follows existing PowerEventControls(0,7,0); Player@ Scenario1180 slot storage follows team_creation. Original510F60/510ED0/68C030/502D30/726910 execute target resolution, with supplied canonical House order, slot map and live Trigger+2C.",
+    "Incoming Execute House is source owner0 unless stated; target defaults to Country7, whose first registered matching House is1. The live Trigger pointer is present unless stated. Negative/unknown Country, unmapped Player@, duplicate-Country order, same-owner target,0x2325(8997) live owner and null Trigger controls are bounded by their supplied inputs.9001/9005 are separate unknown-Country negative controls, not aliases for0x2325. Original Player@ range is0x117B..0x1182(4475..4482);4507 is a separate unknown-Country negative control.",
+    "Techno storage supplies class RTTI answers, owner pointers, BuildingType nullable pointer and Powered/PoweredSpecial bytes at1573/1574. Actor Alive/limbo bytes are independent priors; the original caller reads neither as admission gates. No complete Techno/Building/House constructors or scenario registry loading run.",
+    "visits entries are [pass-number,live-array-index,stable-actor-index]. The original body reloads the mutable Techno base/count and runs ordinary objects before Powered-or-PoweredSpecial Buildings. Callback removal/append controls explicitly mutate the supplied registry; resulting iteration order comes only from original instructions.",
+    "ChangeOwner callback writes owner by default and can explicitly return0 without writing, remove its current registry slot or append a supplied actor. The second-pass Building4549B0 call is recorded even when ChangeOwner returns0; same-owner calls are retained. These are caller dispatch/ordering witnesses, not native ChangeOwner results.",
+    "Three native RNG streams start with seed31 and retain hash comparisons/draw-entry observations. Selected caller performs no numerical timer or detach operation. RNG, timers, detach and world side effects hidden behind ChangeOwner and Building4549B0 boundaries remain excluded."
+  ],
+  "substitutions": [
+    "Reuse ActionFixture shared PE/VM/heap/CRT transport. RTTI virtual slot2C answers supplied class. ChangeOwner slot3D4 is an explicit RET8 callback boundary with declared state/list effects and result; real tracking, ownership, Team and detach lifecycles are not executed.",
+    "Building4549B0 is a recorded RET0 sink; operational power state, animation, sound and nested callbacks are excluded. No target-selector, caller-loop, power-classification or dispatch instruction is replaced."
+  ],
+  "entry_points": {
+    "dispatch": "0x006DD8B0",
+    "action36_dispatch": "0x006DE07B",
+    "all_change_house": "0x006E0B60",
+    "country_house": "0x00502D30",
+    "player_at_test": "0x00510F60",
+    "player_at_resolve": "0x00510ED0",
+    "scenario_slot": "0x0068C030",
+    "trigger_house": "0x00726910",
+    "building_refresh_boundary": "0x004549B0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --all-change-house",
+  "payload_sha256": "5eb883fdcf8d3b893592f4b4143ffd71e9e371e2ee81b83f9c7706e34d6948e3"
+}

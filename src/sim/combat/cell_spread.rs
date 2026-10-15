@@ -9,9 +9,9 @@
 //! The offset sweep is transcribed verbatim from the startup initializer (the static table
 //! lives in BSS and is zero in the image; the initializer is the only ground truth). The
 //! R=11 duplicate entry — index 322 repeats index 319 = `(-3, 11)`, and the mirror `(3, -11)`
-//! is never written — is the real gamemd data defect, preserved verbatim. It is unreachable in
-//! stock play (max stock CellSpread = 10 → index ≤ 10) and is kept as a regression guard, not a
-//! bug to "fix".
+//! is never written — is the real gamemd data defect, preserved verbatim.
+//! Damage caps its band at10; House50D6D0's campaign placement sweep may
+//! visit the first351 entries, including that original duplicate.
 //!
 //! Pure, read-only, deterministic. No allocation, no state.
 //!

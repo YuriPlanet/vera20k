@@ -28,7 +28,7 @@ impl Simulation {
         match self.team_script_vm.team_type_ini.get(&team_type)?.house? {
             TeamTypeHouse::Country(country) => self.house_by_country_index(country, rules),
             TeamTypeHouse::PlayerAt(slot) => {
-                self.house_by_trigger_selector(4507 + i32::from(slot), rules)
+                self.house_by_trigger_selector(0x117B + i32::from(slot), rules)
             }
         }
     }

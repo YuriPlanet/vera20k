@@ -36,6 +36,19 @@ this mode nor those scalar controls certify rendered campaign output.
 allocated iterator578290 on explicit sparse map/House priors. Sight/gap
 release/reentry and presentation calls are recorded sinks, not invented world
 callbacks. No earlier corpus is regenerated.
+
+``--scenario-timer`` executes original Actions23..27/103 and Event14 against
+the same small Scenario timer. The reader, timer arithmetic and predicate run
+unchanged; only the tactical redraw is a recorded sink. Earlier corpora are
+not regenerated.
+
+``--chrono-house`` bounds original Action128/House50D6D0 traversal with the
+original initialized CellSpread table. Virtual CanEnter/Warp and infantry
+subcell choices are explicit boundaries; original Foot refusal has a control.
+
+``--all-change-house`` bounds Action36's original target selection and mutable
+two-pass Techno traversal. ChangeOwner and powered-building refresh are
+recorded callback boundaries, with explicit list-mutation controls.
 """
 from pathlib import Path
 import hashlib
@@ -3412,6 +3425,543 @@ def reshroud_metadata():
             iterator_next=0x578290, release=0x4ADEE0, reentry=0x4ADCD0))
 
 
+class ScenarioTimerFixture(ActionFixture):
+    """Original Scenario timer actions/predicate; UI redraw is excluded."""
+
+    def __init__(self):
+        super().__init__()
+        u = self.u
+        self.events, self.rng_calls = [], []
+        self.timer = SCENARIO + 0x11E8
+        # Pin irrelevant native temporary/unused timer storage without giving
+        # it a gameplay interpretation. Frame, duration and label are native.
+        u.mem_write(SP - 0x400, bytes(0x800))
+        u.mem_write(SCENARIO, b'\xA5' * 0x5000)
+        u.mem_write(0xA8ED84, dwords(123))
+        u.reg_write(UC_X86_REG_EBP, SCENARIO)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x683302, 0x683319)
+        self.constructor_prefix = dict(
+            frame=123, start=self.integer(self.timer),
+            unused_word=self.integer(self.timer + 4),
+            duration=self.integer(self.timer + 8),
+            label_first_byte=u.mem_read(SCENARIO + 0x11F8, 1)[0])
+        # Execute the Reset683610 timer/label block after declaring the
+        # incoming registers and the unrelated+4 local to be zero.
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, 0xFFFFFFFF)
+        run_checked(u, 0x6836CC, 0x68375F)
+        for stream in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            self.call(0x65C6D0, [31], ecx=stream)
+        for i, base in enumerate((0xB0F1A0, 0xB0F658, 0xB0F670)):
+            u.mem_write(base + 4, dwords(HEAP + 0x8000 + i * 0x400, 128, 0, 0, 128))
+        self.event, self.persist, self.other_timer = (
+            self.allocate(size) for size in (0x58, 1, 12))
+        self.call(0x71E6A0, [], ecx=self.event)
+        u.mem_write(BUFFER, b'1,14,0,0\0')
+        self.call(0x7C9CC2, [BUFFER, 0x817F70], cdecl=True)
+        self.call(0x71F4E0, [], ecx=self.event)
+        self.event_read = dict(raw='1,14,0,0', kind=self.integer(self.event + 0x2C),
+                               value=self.integer(self.event + 0x34))
+        u.mem_write(self.other_timer, dwords(-1, 0, 999))
+        self.csf = install_csf(SimpleNamespace(u=u, alloc=self.allocate), ['DESC:SOV1'])
+        for begin, end in ((0x426630, 0x42664C), (0x46B640, 0x46B654),
+                           (0x71E6A0, 0x71E7FA), (0x71E940, 0x71F216),
+                           (0x71F4E0, 0x71F5B0), (0x6E4790, 0x6E47E7),
+                           (0x683302, 0x683319), (0x6836CC, 0x68375F)):
+            self.ranges.append((begin, end))
+            self.original.append(bytes(u.mem_read(begin, end - begin)))
+        self.timer_hook = u.hook_add(UC_HOOK_CODE, self.observe_timer)
+
+    def key(self):
+        return bytes(self.u.mem_read(SCENARIO + 0x11F8, 32)).split(b'\0', 1)[0].decode('ascii')
+
+    def reset(self):
+        # Reuse one loaded image: native Reset owns the state transition;
+        # allocating a separate VM for each scalar history is unnecessary.
+        u = self.u
+        u.mem_write(SP - 0x400, bytes(0x800))
+        u.mem_write(0xA8ED84, dwords(123))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBP, SCENARIO)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        u.reg_write(UC_X86_REG_ESI, 0xFFFFFFFF)
+        run_checked(u, 0x6836CC, 0x68375F)
+        self.events, self.rng_calls = [], []
+
+    def title(self):
+        pointer = self.read32(SCENARIO + 0x11F4)
+        if pointer == 0x887734:
+            # This is the original default sentinel pointer, not an asserted
+            # file-backed empty-string literal. The VM maps its BSS as zero.
+            return dict(kind='default_sentinel', pointer=pointer)
+        words = []
+        while (word := bytes(self.u.mem_read(pointer + len(words) * 2, 2))) != b'\0\0':
+            words.append(word)
+            assert len(words) < 2048
+        return dict(kind='csf', pointer=pointer, text=b''.join(words).decode('utf-16-le'))
+
+    def observe_timer(self, u, pc, _size, _data):
+        if pc in (0x65C780, 0x65C7E0):
+            self.rng_calls.append(f'{pc:08X}')
+        if pc == 0x734E60:
+            self.events.append(dict(call='csf_lookup', key=self.string(u.reg_read(UC_X86_REG_ECX))))
+        elif pc == 0x6E47C0 and u.reg_read(UC_X86_REG_ECX) == SCENARIO + 0x11F8:
+            source = self.read32(u.reg_read(UC_X86_REG_ESP) + 8)
+            self.events.append(dict(call='assign_key', title=self.title(),
+                key=bytes(u.mem_read(source, 32)).split(b'\0', 1)[0].decode('ascii')))
+        elif pc == 0x6D0F00:
+            self.events.append(dict(call='redraw_sink', start=self.integer(self.timer),
+                duration=self.integer(self.timer + 8), title=self.title(), key=self.key()))
+            return_from_sink(u, 0, 0)
+
+    def snapshot(self):
+        remaining = self.call(0x426630, [], ecx=self.timer)
+        self.u.mem_write(self.persist, b'\0')
+        occurred = self.call(0x71E940, [8, 0, 0, self.other_timer, self.persist, 0],
+                             ecx=self.event) & 255
+        return dict(frame=self.integer(0xA8ED84), start=self.integer(self.timer),
+            unused_word=self.integer(self.timer + 4), duration=self.integer(self.timer + 8),
+            remaining=struct.unpack('<i', dwords(remaining))[0],
+            event14=occurred, event_persistence=self.u.mem_read(self.persist, 1)[0],
+            title=self.title(), key=self.key())
+
+    def step(self, name, frame, action=None, value=0):
+        self.u.mem_write(0xA8ED84, dwords(frame))
+        self.events = []
+        row = dict(name=name, frame=frame)
+        if action is not None:
+            raw = (f'103,4,{value},0,0,0,0,A' if action == 103 and isinstance(value, str)
+                   else f'{action},0,{value},0,0,0,0,A')
+            row['read'] = self.read_action(raw)
+            row['label_read'] = bytes(self.u.mem_read(ACTION + 0x6D, 32)).split(b'\0', 1)[0].decode('ascii')
+            row['action_result'] = self.call(0x6DD8B0, [0, 0, 0, 0], ecx=ACTION) & 255
+        row.update(state=self.snapshot(), calls=list(self.events))
+        return row
+
+
+def scenario_timer_generate():
+    histories = [
+        ('ordinary_expiry', [('start', 123, 27, 120), ('one_frame_left', 1922),
+                             ('expired', 1923), ('later', 2000)]),
+        ('pause_resume', [('start', 123, 27, 120), ('pause', 423, 24),
+                          ('pause_again', 500, 24), ('still_paused', 5000),
+                          ('resume', 5000, 23), ('resume_again', 5001, 23),
+                          ('one_frame_left', 6499), ('expired', 6500)]),
+        ('restart_and_labels', [('title', 123, 103, 'DESC:SOV1'), ('start', 123, 27, 120),
+                                ('title_again', 200, 103, 'DESC:SOV1'),
+                                ('restart', 423, 27, 2), ('expired', 453),
+                                ('clear_title', 453, 103, 0)]),
+        ('paused_extend', [('start', 123, 27, 10), ('pause', 153, 24),
+                            ('extend', 999, 25, 2), ('expired', 1149)]),
+        ('paused_shorten', [('start', 123, 27, 10), ('pause', 153, 24),
+                             ('shorten', 999, 26, 2), ('expired', 1089)]),
+        ('shorten_to_zero', [('start', 123, 27, 2), ('equal', 123, 26, 2),
+                             ('pause_zero', 123, 24), ('resume_zero', 124, 23),
+                             ('larger', 124, 26, 3)]),
+        ('zero_start', [('start', 123, 27, 0), ('pause', 124, 24)]),
+        ('negative_start', [('start', 123, 27, -1)]),
+        ('negative_adjustments', [('start', 123, 27, 2), ('shorten_negative', 123, 26, -1),
+                                  ('extend_negative', 123, 25, -4)]),
+        ('positive_product_limit', [('start', 123, 27, 143165576), ('extend_wrap', 123, 25, 1)]),
+        ('product_wrap_negative', [('start', 123, 27, 143165577)]),
+        ('i32_max_parameter', [('start', 123, 27, 2147483647)]),
+        ('i32_min_parameter', [('start', 123, 27, -2147483648)]),
+        ('signed_frame_wrap', [('start', 0x7FFFFFF0, 27, 4), ('wrapped', 0x80000000),
+                              ('expired', 0x8000002C)]),
+        ('full_frame_wrap', [('start', 0xFFFFFFFA, 27, 2), ('wrapped', 4), ('expired', 24)]),
+        ('sentinel_frame', [('start', 0xFFFFFFFF, 27, 1), ('resume', 0, 23)]),
+        ('signed_elapsed_boundary', [('start', 0, 27, 1), ('half_cycle', 0x80000000)]),
+    ]
+    rows = []
+    f = ScenarioTimerFixture()
+    for name, steps in histories:
+        f.reset()
+        before = f.rng_hashes()
+        initial = f.snapshot()
+        rows.append(dict(name=name, initial=initial,
+            steps=[f.step(*step) for step in steps],
+            rng_before=before, rng_after=f.rng_hashes(), rng_calls=f.rng_calls))
+        f.check_code()
+    label_read_controls = []
+    for raw in ('103,4,DESC:SOV1,0,0,0,0,A',
+                '103,4,DESC:' + 'A' * 40 + ',0,0,0,0,A',
+                '103,0,0,0,0,0,0,A'):
+        label_read_controls.append(dict(read=f.read_action(raw),
+            key=bytes(f.u.mem_read(ACTION + 0x6D, 32)).split(b'\0', 1)[0].decode('ascii')))
+    f.check_code()
+    return dict(schema_version=1, constructor_prefix=f.constructor_prefix,
+                event_read=f.event_read, csf=f.csf, histories=rows,
+                label_read_controls=label_read_controls)
+
+
+def scenario_timer_metadata():
+    return provenance(
+        scope='Original TAction23/24/25/26/27/103 reader/dispatch, Scenario timer arithmetic and Event14 predicate; no UI rendering or mission-level timer scheduler claim.',
+        assumptions=[
+            'Every action executes its original constructor6DD000, counted read6DD5B0/strtok/atoi, and full dispatch6DD8B0. Event14 executes original constructor71E6A0 and reader71F4E0 once per fixture, then original HasOccurred71E940 with raised8, null House/Object/source, a separate unrelated paused timer and zero persistence byte.',
+            'Constructor block683302..683319 executes with EBP=Scenario, EBX=0 and frame123 on A5-poisoned storage. It initializes duration0/start123/label-key first byte0; the unused+4 word remains poison and the title pointer is not initialized by that block. This is selected native body execution, not a full Scenario constructor claim.',
+            'Fresh state executes original Reset6836CC..68375F with EBP=Scenario, EBX=0, ESI=-1 and zeroed incoming stack. It pauses zero duration, sets title pointer887734 and copies an empty key. Other ScenarioReset state/lifecycle is excluded. The unused timer+4 word and unused copied label suffixes are not semantic state.',
+            'Frame priors, action strings and observation frames are declared inputs. All remaining values, i32 multiplication/addition/subtraction wrapping, signed comparisons, pause/restart and Event14 results come from original instructions, not Python formulas.',
+            'Action103 uses the existing physical stock-CSF transport for DESC:SOV1; source SHA/text are pinned. Three reader-only controls include a long key truncated to31 bytes; the deliberately absent long key is not dispatched or assigned an invented translation. Numeric parameter mode supplies its original constructor-empty key for the clear control. Empty comma fields would be skipped by native strtok and are not an empty-key input.',
+            'Default title pointer887734 is recorded as a sentinel identity, not a file-backed empty-string assertion: its mapped BSS zero contents are not retail bytes. Native key/string copy and CSF lookup execute. Setter-call observations establish that title assignment precedes key assignment, then redraw.',
+            'Three existing RNG streams are initialized with original seed31 transport before histories; unchanged state hashes and observed65C780/65C7E0 entries bound absence of draws. No detach calls occur in the selected bodies.'],
+        substitutions=[
+            'Reuse ActionFixture VM/PE/heap/CRT and existing install_csf physical translation-record transport. Scenario, UI and CSF startup constructors are not executed; only the explicitly described Scenario constructor/reset blocks and Event/Action constructors are executed.',
+            'Tactical redraw6D0F00 is a recorded RET0 sink. Actual sidebar layout, countdown text rendering, window/device updates and scheduling of trigger polls are excluded. No reader, timer arithmetic, dispatch branch or predicate instruction is replaced.'],
+        entry_points=dict(action_constructor=0x6DD000, action_read=0x6DD5B0,
+            dispatch=0x6DD8B0, resume=0x6DE418, pause=0x6DE457,
+            extend=0x6DE4A0, shorten=0x6DE501, start=0x6DE5C9,
+            set_label=0x6DE66A, timer_start=0x46B640, timer_remaining=0x426630,
+            event_constructor=0x71E6A0, event_reader=0x71F4E0,
+            event_predicate=0x71E940, event14=0x71EBE9,
+            scenario_ctor_prefix=0x683302, scenario_reset_timer=0x6836CC,
+            redraw_sink=0x6D0F00))
+
+
+class ChronoHouseFixture(ActionFixture):
+    """Original128 caller with explicitly admitted virtual leaf inputs."""
+
+    def __init__(self):
+        super().__init__()
+        from tools.spatial_oracle.reveal_area import CELL_OFFSETS_INIT
+        u = self.u
+        self.constants = initialize_waypoint_map(self)
+        self.call(CELL_OFFSETS_INIT, [], cdecl=True)
+        self.offsets = list(struct.iter_unpack('<hh', u.mem_read(0xABD490, 351 * 4)))
+        self.house, self.other_house = self.allocate(4), self.allocate(4)
+        self.vtable = self.allocate(0x600)
+        self.what_sink, self.enter_sink, self.false_sink = (self.allocate(4) for _ in range(3))
+        u.mem_write(self.vtable, bytes(0x600))
+        for slot, pointer in ((0x2C, self.what_sink), (0x1AC, self.enter_sink),
+                              (0x508, 0x4DF7F0), (0x54, self.false_sink),
+                              (0x160, self.false_sink), (0x1D4, self.false_sink),
+                              (0x1D8, self.false_sink)):
+            u.mem_write(self.vtable + slot, dwords(pointer))
+        self.pool = [self.allocate(0x300) for _ in range(12)]
+        self.foot_array = self.allocate(12 * 4)
+        u.mem_write(0x8B3DC4, dwords(self.foot_array))
+        # Deliberately poison, then run the real static initializer instead
+        # of assigning a guessed invalid Cell prior to this shared global.
+        u.mem_write(0xA8EF98, packed(-1, -1))
+        self.call(0x4F50A0, [], cdecl=True)
+        self.empty_cell = list(struct.unpack('<hh', u.mem_read(0xA8EF98, 4)))
+        self.cells, self.cell_indices = {}, {}
+        for index, (dx, dy) in enumerate(self.offsets):
+            cell = self.allocate(0x200)
+            self.call(0x47BBF0, [], ecx=cell)
+            xy = 75 + dx, 50 + dy
+            u.mem_write(cell + 0x24, packed(*xy))
+            u.mem_write(cell + 0x11B, b'\0\0')
+            u.mem_write(self.table + (xy[1] * 512 + xy[0]) * 4, dwords(cell))
+            self.cells[tuple(xy)], self.cell_indices[cell] = cell, index
+        for stream in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            self.call(0x65C6D0, [31], ecx=stream)
+        for begin, end in ((0x6E1A40, 0x6E1A67), (0x50D6D0, 0x50D9B1),
+                           (0x4DF7F0, 0x4DFA49), (0x68BCC0, 0x68BCD4),
+                           (0x5657A0, 0x5657D8), (0x486840, 0x486887),
+                           (0x4F50A0, 0x4F50AF)):
+            self.ranges.append((begin, end))
+            self.original.append(bytes(u.mem_read(begin, end - begin)))
+        self.chrono_hook = u.hook_add(UC_HOOK_CODE, self.observe_chrono)
+
+    def observe_chrono(self, u, pc, _size, _data):
+        sp, actor = u.reg_read(UC_X86_REG_ESP), u.reg_read(UC_X86_REG_ECX)
+        if pc in (0x65C780, 0x65C7E0):
+            self.rng_calls.append(f'{pc:08X}')
+        if pc == 0x50D72C:
+            self.visits.append([self.actor_index[u.reg_read(UC_X86_REG_ESI)],
+                                u.reg_read(UC_X86_REG_EAX)])
+        elif pc in (0x50D850, 0x50D984):
+            # Observe the actual callee return in the original caller,
+            # including the refusal whose Foot body was not substituted.
+            self.warp_calls[-1]['accepted'] = bool(u.reg_read(UC_X86_REG_EAX) & 255)
+        elif pc == self.what_sink:
+            return_from_sink(u, 0, self.actors[self.actor_index[actor]]['class'])
+        elif pc == self.false_sink:
+            return_from_sink(u, 0, 0)
+        elif pc == self.enter_sink:
+            index = self.actor_index[actor]
+            cell = self.read32(sp + 4)
+            offset = self.cell_indices[cell]
+            self.last_cell[index] = offset
+            args = [self.integer(sp + n) for n in (8, 12, 16, 20)]
+            assert args == [-1, -1, 0, 1]
+            result = self.case.get('blocked_result', 1) if offset in self.blocked else 0
+            self.enter_calls.append([index, offset, result])
+            return_from_sink(u, 20, result)
+        elif pc == 0x481180:
+            # A declared identity subcell boundary: the original caller and
+            # native Cell486840 already supply its requested coordinate.
+            output, incoming = self.read32(sp + 4), self.read32(sp + 8)
+            assert [self.read32(sp + n) for n in (12, 16, 20)] == [0, 0, 0]
+            raw = bytes(u.mem_read(incoming, 12))
+            u.mem_write(output, raw)
+            self.subcell_calls.append(list(struct.unpack('<iii', raw)))
+            return_from_sink(u, 20, output)
+        elif pc == 0x4DF7F0:
+            index = self.actor_index[actor]
+            row = self.actors[index]
+            coord = list(struct.unpack('<iii', u.mem_read(sp + 4, 12)))
+            actual = bool(row.get('native_warp_refusal', False))
+            accepted = False if actual else row.get('accept', True)
+            self.warp_calls.append(dict(actor=index, offset=self.last_cell[index],
+                coord=coord,
+                boundary='original_27c_refusal' if actual else 'supplied_warp_result'))
+            if not actual:
+                return_from_sink(u, 12, int(accepted))
+
+    def execute_case(self, case):
+        u = self.u
+        self.case, self.actors = case, case['actors']
+        assert len(self.actors) <= len(self.pool)
+        self.blocked = set(case.get('blocked_offsets', []))
+        self.actor_index = {pointer: index for index, pointer in enumerate(self.pool[:len(self.actors)])}
+        self.visits, self.enter_calls, self.warp_calls = [], [], []
+        self.subcell_calls, self.last_cell, self.rng_calls = [], {}, []
+        u.mem_write(self.foot_array, dwords(*self.pool[:len(self.actors)]))
+        u.mem_write(0x8B3DD0, dwords(len(self.actors)))
+        for pointer, row in zip(self.pool, self.actors):
+            u.mem_write(pointer, bytes(0x300))
+            u.mem_write(pointer, dwords(self.vtable))
+            u.mem_write(pointer + 0x21C, dwords(self.other_house if row.get('foreign') else self.house))
+            u.mem_write(pointer + 0x11C, dwords(int(row.get('transported', False))))
+            u.mem_write(pointer + 0x27C, bytes((int(row.get('native_warp_refusal', False)),)))
+        target = case.get('target', [75, 50])
+        u.mem_write(SCENARIO + 0x632, packed(*target))
+        read = self.read_action('128,0,7,0,0,0,0,A')
+        before = self.rng_hashes()
+        result = self.call(0x6DD8B0, [self.house, 0, 0, 0], ecx=ACTION) & 255
+        self.check_code()
+        return dict(input=case, read=read, action_result=result,
+            visits=self.visits, can_enter=self.enter_calls, warp=self.warp_calls,
+            subcell_identity_calls=self.subcell_calls, rng_before=before,
+            rng_after=self.rng_hashes(), rng_calls=self.rng_calls)
+
+
+def chrono_house_generate():
+    f = ChronoHouseFixture()
+    cases = [
+        dict(name='reverse_mixed_classes', actors=[{'class': 1}, {'class': 15}, {'class': 1}]),
+        dict(name='owner_class_and_transporter', actors=[{'class': 1}, {'class': 2},
+            {'class': 6}, {'class': 1, 'foreign': True}, {'class': 15, 'transported': True},
+            {'class': 1, 'transported': True}, {'class': 15}]),
+        dict(name='nonzero_can_enter_skips_shared_offset', actors=[{'class': 15}, {'class': 1}],
+             blocked_offsets=[0, 2], blocked_result=2),
+        dict(name='supplied_warp_refusal_reuses_offset', actors=[{'class': 1}, {'class': 15, 'accept': False}]),
+        dict(name='original_foot_refusal_reuses_offset', actors=[{'class': 1}, {'class': 1, 'native_warp_refusal': True}]),
+        dict(name='last_unit_offset_stops_before_next_actor', actors=[{'class': 1}, {'class': 1}],
+             blocked_offsets=list(range(350))),
+        dict(name='last_infantry_offset_stops_before_next_actor', actors=[{'class': 1}, {'class': 15}],
+             blocked_offsets=list(range(350))),
+        dict(name='all351_blocked', actors=[{'class': 1}, {'class': 1}], blocked_offsets=list(range(351))),
+        dict(name='empty_foot_array', actors=[]),
+        dict(name='invalid_waypoint_sentinel', target=f.empty_cell, actors=[{'class': 1}]),
+    ]
+    return dict(schema_version=1, native_offset_pairs=f.offsets,
+                empty_cell=f.empty_cell, map_constants=f.constants,
+                rows=[f.execute_case(case) for case in cases])
+
+
+def chrono_house_metadata():
+    return provenance(
+        scope='Original Action1286E1A40/House50D6D0 reverse Foot traversal, owner/class/transporter gates and shared351-offset cursor with bounded virtual leaf inputs; not complete teleport or placement parity.',
+        assumptions=[
+            'Reuse ActionFixture and initialize_waypoint_map original startup/slope transport. Original561910 initializes the CellSpread table; the first351 signed pairs are retained as native outputs. Original47BBF0 constructs the351 flat level0/slope0 Cells on an explicitly supplied sparse512-stride map.',
+            'Each row supplies a Foot array in storage order, incoming House identity, RTTI virtual answers, owner pointers, transporter-null/non-null priors and per-offset CanEnter virtual answers. Original dispatcher6DD8B0 invokes6E1A40, original68BCC0 reads waypointA, original50D6D0 computes candidate cells, walks actors backwards and owns the single shared offset cursor.',
+            'Original5657A0 and Cell486840 execute for map lookup and ground coordinates. Native selected runtime startup/ground code supplies their flat Z values; no host formula supplies expected candidate coordinates. Infantry481180 identity is an explicit boundary, not a native subcell-position claim.',
+            'visits rows are [actor-storage-index,current-offset-index]; can_enter rows are [actor-index,offset-index,supplied-return]. Warp entries retain native caller coordinates and identify supplied return versus original rejection. CanEnter arguments after Cell must be[-1,-1,0,1]. No source array mutation/reentrant callback is supplied.',
+            'The original_foot_refusal row really executes Foot4DF7F0 with+27C=1 and the two earlier status virtual answers false; its original return0 leaves the next actor on the same offset. Other Warp returns are explicit supplied leaf results; no COM locomotor, detach, occupation, interpolation, cooldown or WarpIn implementation is certified.',
+            'The last-offset and all-blocked controls execute up to the original ABD A08/15E guards, covering exactly candidate indices0..350, then exit before the earlier actor. Original static initializer4F50A0 executes on deliberately poisoned A8EF98 and produces the empty Cell(0,0); the invalid-waypoint control uses that observed sentinel. Null Foot pointers, arbitrary out-of-bounds waypoints and loaded native registry construction are excluded.',
+            'Existing three RNG streams start with native seed31; hashes and actual draw entries are recorded. Selected caller bodies contain no timer/detach producer. Hidden effects/RNG behind virtual boundary callbacks are excluded.'],
+        substitutions=[
+            'Inherited heap/CRT/VM transport; no new mapper or VM. RTTI returns each declared actor class, CanEnterCell vslot1AC returns the declared offset admission, and status vslots54/160/1D4/1D8 return false.',
+            'Foot4DF7F0 is an observed RET12 sink returning the declared result except the original+27C-refusal control, which executes the original body. Positive teleport effects, live ownership/list mutations and occupied-cell changes do not occur at this boundary.',
+            'Infantry481180 records its request and copies the already native-derived incoming coordinate to its caller output, RET20. Native subcell availability, priority selection and RNG are excluded rather than approximated as verified behavior.'],
+        entry_points=dict(dispatch=0x6DD8B0, action128=0x6E1A40, waypoint=0x68BCC0,
+            chrono_house=0x50D6D0, cell_spread_init=0x561910,
+            empty_cell_init=0x4F50A0,
+            cell_constructor=0x47BBF0, cell_lookup=0x5657A0,
+            cell_coords=0x486840, infantry_subcell_boundary=0x481180,
+            foot_warp=0x4DF7F0))
+
+
+class AllChangeHouseFixture(ActionFixture):
+    """Original36 selection/iteration; supplied owner callbacks are explicit."""
+
+    def __init__(self):
+        super().__init__()
+        u = self.u
+        # Same three-House Country priors as PowerEventControls, and the
+        # same Scenario Player@ slot storage as team_creation's native calls.
+        self.houses = [self.allocate(0x100) for _ in range(3)]
+        self.house_types = [self.allocate(0x100) for _ in range(3)]
+        self.house_array, self.live = self.allocate(12), self.allocate(0x48)
+        for house, typ, country in zip(self.houses, self.house_types, (0, 7, 0)):
+            u.mem_write(house, bytes(0x100))
+            u.mem_write(typ, bytes(0x100))
+            u.mem_write(house + 0x34, dwords(typ))
+            u.mem_write(typ + 0xB8, dwords(country))
+        u.mem_write(0xA8022C, dwords(self.house_array))
+        u.mem_write(0xA80238, dwords(3))
+        self.vtable = self.allocate(0x400)
+        self.what_sink, self.change_sink = self.allocate(4), self.allocate(4)
+        u.mem_write(self.vtable, bytes(0x400))
+        u.mem_write(self.vtable + 0x2C, dwords(self.what_sink))
+        u.mem_write(self.vtable + 0x3D4, dwords(self.change_sink))
+        self.pool = [self.allocate(0x600) for _ in range(12)]
+        self.types = [self.allocate(0x1600) for _ in range(12)]
+        self.techno_array = self.allocate(12 * 4)
+        for stream in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            self.call(0x65C6D0, [31], ecx=stream)
+        for begin, end in ((0x6E0B60, 0x6E0C92), (0x502D30, 0x502D60),
+                           (0x510ED0, 0x510FA6), (0x68C030, 0x68C04D),
+                           (0x726910, 0x726914)):
+            self.ranges.append((begin, end))
+            self.original.append(bytes(u.mem_read(begin, end - begin)))
+        self.owner_hook = u.hook_add(UC_HOOK_CODE, self.observe_owner)
+
+    def house_index(self, pointer):
+        return self.houses.index(pointer) if pointer else None
+
+    def publish(self):
+        self.u.mem_write(0xA8EC7C, dwords(self.techno_array))
+        self.u.mem_write(0xA8EC88, dwords(len(self.active)))
+        self.u.mem_write(self.techno_array, dwords(*(self.pool[i] for i in self.active)))
+
+    def observe_owner(self, u, pc, _size, _data):
+        sp, pointer = u.reg_read(UC_X86_REG_ESP), u.reg_read(UC_X86_REG_ECX)
+        if pc in (0x65C780, 0x65C7E0):
+            self.rng_calls.append(f'{pc:08X}')
+        if pc == 0x6E0BAE:
+            self.phase = 1
+        elif pc == 0x6E0C1D:
+            self.phase = 2
+        elif pc in (0x6E0BC2, 0x6E0C2F):
+            actor = self.actor_index[u.reg_read(UC_X86_REG_ESI)]
+            self.visits.append([self.phase, u.reg_read(UC_X86_REG_EDI), actor])
+        elif pc in (0x510F60, 0x510ED0, 0x502D30, 0x726910):
+            self.selectors.append(dict(entry=f'{pc:08X}', argument=self.integer_reg(UC_X86_REG_ECX)
+                if pc != 0x726910 else 'live_trigger'))
+        elif pc == self.what_sink:
+            return_from_sink(u, 0, self.actors[self.actor_index[pointer]]['class'])
+        elif pc == self.change_sink:
+            index = self.actor_index[pointer]
+            target, announce = self.read32(sp + 4), self.read32(sp + 8)
+            assert announce == 0
+            before = self.house_index(self.read32(pointer + 0x21C))
+            row = self.actors[index]
+            if row.get('change_writes_owner', True):
+                u.mem_write(pointer + 0x21C, dwords(target))
+            effect = row.get('callback_effect')
+            if effect == 'remove_self' and index in self.active:
+                self.active.remove(index)
+            elif effect == 'append' and row['append_actor'] not in self.active:
+                self.active.append(row['append_actor'])
+            self.publish()
+            result = row.get('callback_result', 1)
+            self.calls.append(dict(call='change_owner', phase=self.phase, actor=index,
+                target=self.house_index(target), announce=announce, before=before,
+                after=self.house_index(self.read32(pointer + 0x21C)), supplied_result=result,
+                active=list(self.active)))
+            return_from_sink(u, 8, result)
+        elif pc == 0x4549B0:
+            self.calls.append(dict(call='powered_refresh', phase=self.phase,
+                actor=self.actor_index[pointer], active=list(self.active)))
+            return_from_sink(u, 0, 0)
+
+    def execute_case(self, case):
+        u = self.u
+        self.actors = case['actors']
+        self.actor_index = {p: i for i, p in enumerate(self.pool[:len(self.actors)])}
+        self.active = list(case.get('active', range(len(self.actors))))
+        self.phase = 0
+        self.calls, self.visits, self.selectors, self.rng_calls = [], [], [], []
+        order = case.get('house_order', [1, 2, 0])
+        u.mem_write(self.house_array, dwords(*(self.houses[i] for i in order)))
+        u.mem_write(SCENARIO + 0x1180, dwords(*case.get('slots', [1, 0, -1, -1, -1, -1, -1, -1])))
+        u.mem_write(self.live, bytes(0x48))
+        trigger_owner = case.get('trigger_owner', 2)
+        u.mem_write(self.live + 0x2C, dwords(self.houses[trigger_owner] if trigger_owner is not None else 0))
+        for i, row in enumerate(self.actors):
+            pointer, typ = self.pool[i], self.types[i]
+            u.mem_write(pointer, bytes(0x600))
+            u.mem_write(typ, bytes(0x1600))
+            u.mem_write(pointer, dwords(self.vtable))
+            u.mem_write(pointer + 0x21C, dwords(self.houses[row.get('owner', 0)]))
+            u.mem_write(pointer + 0x520, dwords(0 if row.get('null_type') else typ))
+            u.mem_write(pointer + 0x90, bytes((int(row.get('alive', True)),)))
+            u.mem_write(pointer + 0x81, bytes((int(row.get('limbo', False)),)))
+            u.mem_write(typ + 0x1573, bytes((int(row.get('powered', False)), int(row.get('powered_special', False)))))
+        self.publish()
+        read = self.read_action(f"36,0,{case.get('selector', 7)},0,0,0,0,A")
+        before = self.rng_hashes()
+        result = self.call(0x6DD8B0, [self.houses[case.get('source_owner', 0)], 0,
+            0 if case.get('null_trigger') else self.live, 0], ecx=ACTION) & 255
+        self.check_code()
+        return dict(input=case, read=read, result=result, visits=self.visits,
+            selectors=self.selectors, calls=self.calls, active=list(self.active),
+            owners=[self.house_index(self.read32(p + 0x21C)) for p in self.pool[:len(self.actors)]],
+            rng_before=before, rng_after=self.rng_hashes(), rng_calls=self.rng_calls)
+
+
+def all_change_house_generate():
+    f = AllChangeHouseFixture()
+    ordinary = [{'class': 1}]
+    cases = [
+        dict(name='ordinary_before_powered_two_passes', actors=[
+            {'class': 6, 'powered': True}, {'class': 1}, {'class': 6},
+            {'class': 6, 'powered_special': True}, {'class': 1, 'owner': 1},
+            {'class': 15, 'alive': False, 'limbo': True}, {'class': 6, 'null_type': True}]),
+        dict(name='same_owner_still_calls', selector=0, house_order=[0, 1, 2], actors=[
+            {'class': 1}, {'class': 6, 'powered': True}]),
+        dict(name='callback_failure_still_refreshes_powered', actors=[
+            {'class': 6, 'powered': True, 'callback_result': 0, 'change_writes_owner': False}]),
+        dict(name='compacted_first_pass_is_not_a_snapshot', actors=[
+            {'class': 1, 'callback_effect': 'remove_self'}, {'class': 1},
+            {'class': 1}, {'class': 6, 'powered': True}]),
+        dict(name='appended_first_pass_is_visited', active=[0], actors=[
+            {'class': 1, 'callback_effect': 'append', 'append_actor': 1}, {'class': 1}]),
+        dict(name='appended_powered_second_pass_is_visited', active=[0], actors=[
+            {'class': 6, 'powered': True, 'callback_effect': 'append', 'append_actor': 1},
+            {'class': 6, 'powered_special': True}]),
+        dict(name='country_first_registered_duplicate', selector=0, actors=ordinary),
+        dict(name='player_at_0x117b_slot', selector=0x117B, actors=ordinary),
+        dict(name='player_at_0x117d_unmapped', selector=0x117D, actors=ordinary),
+        dict(name='4507_is_not_0x117b', selector=4507, actors=ordinary),
+        dict(name='live_trigger_house_0x2325', selector=0x2325, actors=ordinary),
+        dict(name='live_trigger_house_null', selector=0x2325, trigger_owner=None, actors=ordinary),
+        dict(name='9001_is_not_0x2325', selector=9001, actors=ordinary),
+        dict(name='9005_is_not_0x2325', selector=9005, actors=ordinary),
+        dict(name='null_trigger_rejects_even_country', null_trigger=True, actors=ordinary),
+        dict(name='minus_one_target', selector=-1, actors=ordinary),
+        dict(name='unknown_country', selector=999, actors=ordinary),
+        dict(name='no_matching_source', source_owner=2, actors=ordinary),
+        dict(name='empty_techno_array', actors=[]),
+    ]
+    return dict(schema_version=1, house_countries=[0, 7, 0], rows=[f.execute_case(case) for case in cases])
+
+
+def all_change_house_metadata():
+    return provenance(
+        scope='Original Action36 AllChangeHouse target selector and two mutable forward Techno passes; callback effects are declared boundaries, not full ChangeOwner/power parity.',
+        assumptions=[
+            'ActionFixture executes original TAction constructor/read/full dispatch6DD8B0 into6E0B60. Minimal House Country storage follows existing PowerEventControls(0,7,0); Player@ Scenario1180 slot storage follows team_creation. Original510F60/510ED0/68C030/502D30/726910 execute target resolution, with supplied canonical House order, slot map and live Trigger+2C.',
+            'Incoming Execute House is source owner0 unless stated; target defaults to Country7, whose first registered matching House is1. The live Trigger pointer is present unless stated. Negative/unknown Country, unmapped Player@, duplicate-Country order, same-owner target,0x2325(8997) live owner and null Trigger controls are bounded by their supplied inputs.9001/9005 are separate unknown-Country negative controls, not aliases for0x2325. Original Player@ range is0x117B..0x1182(4475..4482);4507 is a separate unknown-Country negative control.',
+            'Techno storage supplies class RTTI answers, owner pointers, BuildingType nullable pointer and Powered/PoweredSpecial bytes at1573/1574. Actor Alive/limbo bytes are independent priors; the original caller reads neither as admission gates. No complete Techno/Building/House constructors or scenario registry loading run.',
+            'visits entries are [pass-number,live-array-index,stable-actor-index]. The original body reloads the mutable Techno base/count and runs ordinary objects before Powered-or-PoweredSpecial Buildings. Callback removal/append controls explicitly mutate the supplied registry; resulting iteration order comes only from original instructions.',
+            'ChangeOwner callback writes owner by default and can explicitly return0 without writing, remove its current registry slot or append a supplied actor. The second-pass Building4549B0 call is recorded even when ChangeOwner returns0; same-owner calls are retained. These are caller dispatch/ordering witnesses, not native ChangeOwner results.',
+            'Three native RNG streams start with seed31 and retain hash comparisons/draw-entry observations. Selected caller performs no numerical timer or detach operation. RNG, timers, detach and world side effects hidden behind ChangeOwner and Building4549B0 boundaries remain excluded.'],
+        substitutions=[
+            'Reuse ActionFixture shared PE/VM/heap/CRT transport. RTTI virtual slot2C answers supplied class. ChangeOwner slot3D4 is an explicit RET8 callback boundary with declared state/list effects and result; real tracking, ownership, Team and detach lifecycles are not executed.',
+            'Building4549B0 is a recorded RET0 sink; operational power state, animation, sound and nested callbacks are excluded. No target-selector, caller-loop, power-classification or dispatch instruction is replaced.'],
+        entry_points=dict(dispatch=0x6DD8B0, action36_dispatch=0x6DE07B,
+            all_change_house=0x6E0B60, country_house=0x502D30,
+            player_at_test=0x510F60, player_at_resolve=0x510ED0,
+            scenario_slot=0x68C030, trigger_house=0x726910,
+            building_refresh_boundary=0x4549B0))
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -3424,9 +3974,30 @@ if __name__=='__main__':
     selected_modes.add_argument('--inline-type', action='store_true')
     selected_modes.add_argument('--flash-team', action='store_true')
     selected_modes.add_argument('--reshroud', action='store_true')
+    selected_modes.add_argument('--scenario-timer', action='store_true')
+    selected_modes.add_argument('--chrono-house', action='store_true')
+    selected_modes.add_argument('--all-change-house', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.reshroud:
+    if selected.all_change_house:
+        if selected.inputs is not None:
+            selector.error('--all-change-house uses declared House/Techno priors, not --inputs')
+        finish_vectors(all_change_house_generate,
+            Path(__file__).with_name('trigger_all_change_house.json'),
+            provenance=all_change_house_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.chrono_house:
+        if selected.inputs is not None:
+            selector.error('--chrono-house uses declared Foot/map priors, not --inputs')
+        finish_vectors(chrono_house_generate,
+            Path(__file__).with_name('trigger_chrono_house.json'),
+            provenance=chrono_house_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.scenario_timer:
+        if selected.inputs is not None:
+            selector.error('--scenario-timer uses declared timer priors, not --inputs')
+        finish_vectors(scenario_timer_generate,
+            Path(__file__).with_name('scenario_timer.json'),
+            provenance=scenario_timer_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.reshroud:
         if selected.inputs is not None:
             selector.error('--reshroud uses declared sparse priors, not --inputs')
         finish_vectors(reshroud_generate,

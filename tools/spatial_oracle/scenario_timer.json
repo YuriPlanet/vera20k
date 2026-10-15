@@ -1,0 +1,2719 @@
+{
+  "constructor_prefix": {
+    "duration": 0,
+    "frame": 123,
+    "label_first_byte": 0,
+    "start": 123,
+    "unused_word": -1515870811
+  },
+  "csf": {
+    "entries": {
+      "DESC:SOV1": "Soviet Campaign - March of Destruction"
+    },
+    "source_sha256": "f3382231d7eb3bd713bf3908ecdba175a1b2e20d9d80fa2702e9ab84c3a79deb"
+  },
+  "event_read": {
+    "kind": 14,
+    "raw": "1,14,0,0",
+    "value": 0
+  },
+  "histories": [
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "ordinary_expiry",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 1800,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,120,0,0,0,0,A",
+            "read": "1,27,0,120,0,0,0,0,A",
+            "value": 120,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1800,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 1800,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 1922,
+          "name": "one_frame_left",
+          "state": {
+            "duration": 1800,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 1922,
+            "key": "",
+            "remaining": 1,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 1923,
+          "name": "expired",
+          "state": {
+            "duration": 1800,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 1923,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 2000,
+          "name": "later",
+          "state": {
+            "duration": 1800,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 2000,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "pause_resume",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 1800,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,120,0,0,0,0,A",
+            "read": "1,27,0,120,0,0,0,0,A",
+            "value": 120,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1800,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 1800,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 1500,
+              "key": "",
+              "start": -1,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 423,
+          "label_read": "",
+          "name": "pause",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 24,
+            "raw": "24,0,0,0,0,0,0,A",
+            "read": "1,24,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1500,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 423,
+            "key": "",
+            "remaining": 1500,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [],
+          "frame": 500,
+          "label_read": "",
+          "name": "pause_again",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 24,
+            "raw": "24,0,0,0,0,0,0,A",
+            "read": "1,24,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1500,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 500,
+            "key": "",
+            "remaining": 1500,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 5000,
+          "name": "still_paused",
+          "state": {
+            "duration": 1500,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 5000,
+            "key": "",
+            "remaining": 1500,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 1500,
+              "key": "",
+              "start": 5000,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 5000,
+          "label_read": "",
+          "name": "resume",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 23,
+            "raw": "23,0,0,0,0,0,0,A",
+            "read": "1,23,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1500,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 5000,
+            "key": "",
+            "remaining": 1500,
+            "start": 5000,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [],
+          "frame": 5001,
+          "label_read": "",
+          "name": "resume_again",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 23,
+            "raw": "23,0,0,0,0,0,0,A",
+            "read": "1,23,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1500,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 5001,
+            "key": "",
+            "remaining": 1499,
+            "start": 5000,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 6499,
+          "name": "one_frame_left",
+          "state": {
+            "duration": 1500,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 6499,
+            "key": "",
+            "remaining": 1,
+            "start": 5000,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 6500,
+          "name": "expired",
+          "state": {
+            "duration": 1500,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 6500,
+            "key": "",
+            "remaining": 0,
+            "start": 5000,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "restart_and_labels",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "csf_lookup",
+              "key": "DESC:SOV1"
+            },
+            {
+              "call": "assign_key",
+              "key": "DESC:SOV1",
+              "title": {
+                "kind": "csf",
+                "pointer": 538181840,
+                "text": "Soviet Campaign - March of Destruction"
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "DESC:SOV1",
+              "start": -1,
+              "title": {
+                "kind": "csf",
+                "pointer": 538181840,
+                "text": "Soviet Campaign - March of Destruction"
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "DESC:SOV1",
+          "name": "title",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 103,
+            "raw": "103,4,DESC:SOV1,0,0,0,0,A",
+            "read": "1,103,4,DESC:SOV1,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "DESC:SOV1",
+            "remaining": 0,
+            "start": -1,
+            "title": {
+              "kind": "csf",
+              "pointer": 538181840,
+              "text": "Soviet Campaign - March of Destruction"
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 1800,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,120,0,0,0,0,A",
+            "read": "1,27,0,120,0,0,0,0,A",
+            "value": 120,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1800,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 1800,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "csf_lookup",
+              "key": "DESC:SOV1"
+            },
+            {
+              "call": "assign_key",
+              "key": "DESC:SOV1",
+              "title": {
+                "kind": "csf",
+                "pointer": 538181840,
+                "text": "Soviet Campaign - March of Destruction"
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 1800,
+              "key": "DESC:SOV1",
+              "start": 123,
+              "title": {
+                "kind": "csf",
+                "pointer": 538181840,
+                "text": "Soviet Campaign - March of Destruction"
+              }
+            }
+          ],
+          "frame": 200,
+          "label_read": "DESC:SOV1",
+          "name": "title_again",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 103,
+            "raw": "103,4,DESC:SOV1,0,0,0,0,A",
+            "read": "1,103,4,DESC:SOV1,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 1800,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 200,
+            "key": "DESC:SOV1",
+            "remaining": 1723,
+            "start": 123,
+            "title": {
+              "kind": "csf",
+              "pointer": 538181840,
+              "text": "Soviet Campaign - March of Destruction"
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 30,
+              "key": "",
+              "start": 423,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 423,
+          "label_read": "",
+          "name": "restart",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,2,0,0,0,0,A",
+            "read": "1,27,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 30,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 423,
+            "key": "",
+            "remaining": 30,
+            "start": 423,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 453,
+          "name": "expired",
+          "state": {
+            "duration": 30,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 453,
+            "key": "",
+            "remaining": 0,
+            "start": 423,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 30,
+              "key": "",
+              "start": 423,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 453,
+          "label_read": "",
+          "name": "clear_title",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 103,
+            "raw": "103,0,0,0,0,0,0,A",
+            "read": "1,103,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 30,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 453,
+            "key": "",
+            "remaining": 0,
+            "start": 423,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "paused_extend",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 150,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,10,0,0,0,0,A",
+            "read": "1,27,0,10,0,0,0,0,A",
+            "value": 10,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 150,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 150,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 120,
+              "key": "",
+              "start": -1,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 153,
+          "label_read": "",
+          "name": "pause",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 24,
+            "raw": "24,0,0,0,0,0,0,A",
+            "read": "1,24,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 120,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 153,
+            "key": "",
+            "remaining": 120,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 150,
+              "key": "",
+              "start": 999,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 999,
+          "label_read": "",
+          "name": "extend",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 25,
+            "raw": "25,0,2,0,0,0,0,A",
+            "read": "1,25,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 150,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 999,
+            "key": "",
+            "remaining": 150,
+            "start": 999,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 1149,
+          "name": "expired",
+          "state": {
+            "duration": 150,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 1149,
+            "key": "",
+            "remaining": 0,
+            "start": 999,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "paused_shorten",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 150,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,10,0,0,0,0,A",
+            "read": "1,27,0,10,0,0,0,0,A",
+            "value": 10,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 150,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 150,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 120,
+              "key": "",
+              "start": -1,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 153,
+          "label_read": "",
+          "name": "pause",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 24,
+            "raw": "24,0,0,0,0,0,0,A",
+            "read": "1,24,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 120,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 153,
+            "key": "",
+            "remaining": 120,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 90,
+              "key": "",
+              "start": 999,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 999,
+          "label_read": "",
+          "name": "shorten",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 26,
+            "raw": "26,0,2,0,0,0,0,A",
+            "read": "1,26,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 90,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 999,
+            "key": "",
+            "remaining": 90,
+            "start": 999,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 1089,
+          "name": "expired",
+          "state": {
+            "duration": 90,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 1089,
+            "key": "",
+            "remaining": 0,
+            "start": 999,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "shorten_to_zero",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 30,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,2,0,0,0,0,A",
+            "read": "1,27,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 30,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 30,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "equal",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 26,
+            "raw": "26,0,2,0,0,0,0,A",
+            "read": "1,26,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "",
+              "start": -1,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "pause_zero",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 24,
+            "raw": "24,0,0,0,0,0,0,A",
+            "read": "1,24,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "",
+              "start": 124,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 124,
+          "label_read": "",
+          "name": "resume_zero",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 23,
+            "raw": "23,0,0,0,0,0,0,A",
+            "read": "1,23,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 124,
+            "key": "",
+            "remaining": 0,
+            "start": 124,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "",
+              "start": 124,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 124,
+          "label_read": "",
+          "name": "larger",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 26,
+            "raw": "26,0,3,0,0,0,0,A",
+            "read": "1,26,0,3,0,0,0,0,A",
+            "value": 3,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 124,
+            "key": "",
+            "remaining": 0,
+            "start": 124,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "zero_start",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,0,0,0,0,0,A",
+            "read": "1,27,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 0,
+              "key": "",
+              "start": -1,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 124,
+          "label_read": "",
+          "name": "pause",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 24,
+            "raw": "24,0,0,0,0,0,0,A",
+            "read": "1,24,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 0,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 124,
+            "key": "",
+            "remaining": 0,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "negative_start",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": -15,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,-1,0,0,0,0,A",
+            "read": "1,27,0,-1,0,0,0,0,A",
+            "value": -1,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": -15,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "negative_adjustments",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 30,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,2,0,0,0,0,A",
+            "read": "1,27,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 30,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 30,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 45,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "shorten_negative",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 26,
+            "raw": "26,0,-1,0,0,0,0,A",
+            "read": "1,26,0,-1,0,0,0,0,A",
+            "value": -1,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 45,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 45,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": -15,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "extend_negative",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 25,
+            "raw": "25,0,-4,0,0,0,0,A",
+            "read": "1,25,0,-4,0,0,0,0,A",
+            "value": -4,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": -15,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "positive_product_limit",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 2147483640,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,143165576,0,0,0,0,A",
+            "read": "1,27,0,143165576,0,0,0,0,A",
+            "value": 143165576,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 2147483640,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 2147483640,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": -2147483641,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "extend_wrap",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 25,
+            "raw": "25,0,1,0,0,0,0,A",
+            "read": "1,25,0,1,0,0,0,0,A",
+            "value": 1,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": -2147483641,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "product_wrap_negative",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": -2147483641,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,143165577,0,0,0,0,A",
+            "read": "1,27,0,143165577,0,0,0,0,A",
+            "value": 143165577,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": -2147483641,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "i32_max_parameter",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 2147483633,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,2147483647,0,0,0,0,A",
+            "read": "1,27,0,2147483647,0,0,0,0,A",
+            "value": 2147483647,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 2147483633,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 2147483633,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "i32_min_parameter",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": -2147483648,
+              "key": "",
+              "start": 123,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 123,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,-2147483648,0,0,0,0,A",
+            "read": "1,27,0,-2147483648,0,0,0,0,A",
+            "value": -2147483648,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": -2147483648,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 123,
+            "key": "",
+            "remaining": 0,
+            "start": 123,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "signed_frame_wrap",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 60,
+              "key": "",
+              "start": 2147483632,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 2147483632,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,4,0,0,0,0,A",
+            "read": "1,27,0,4,0,0,0,0,A",
+            "value": 4,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 60,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 2147483632,
+            "key": "",
+            "remaining": 60,
+            "start": 2147483632,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 2147483648,
+          "name": "wrapped",
+          "state": {
+            "duration": 60,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": -2147483648,
+            "key": "",
+            "remaining": 44,
+            "start": 2147483632,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 2147483692,
+          "name": "expired",
+          "state": {
+            "duration": 60,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": -2147483604,
+            "key": "",
+            "remaining": 0,
+            "start": 2147483632,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "full_frame_wrap",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 30,
+              "key": "",
+              "start": -6,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 4294967290,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,2,0,0,0,0,A",
+            "read": "1,27,0,2,0,0,0,0,A",
+            "value": 2,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 30,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": -6,
+            "key": "",
+            "remaining": 30,
+            "start": -6,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 4,
+          "name": "wrapped",
+          "state": {
+            "duration": 30,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 4,
+            "key": "",
+            "remaining": 20,
+            "start": -6,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 24,
+          "name": "expired",
+          "state": {
+            "duration": 30,
+            "event14": 1,
+            "event_persistence": 0,
+            "frame": 24,
+            "key": "",
+            "remaining": 0,
+            "start": -6,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "sentinel_frame",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 15,
+              "key": "",
+              "start": -1,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 4294967295,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,1,0,0,0,0,A",
+            "read": "1,27,0,1,0,0,0,0,A",
+            "value": 1,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 15,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": -1,
+            "key": "",
+            "remaining": 15,
+            "start": -1,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "redraw_sink",
+              "duration": 15,
+              "key": "",
+              "start": 0,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 0,
+          "label_read": "",
+          "name": "resume",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 23,
+            "raw": "23,0,0,0,0,0,0,A",
+            "read": "1,23,0,0,0,0,0,0,A",
+            "value": 0,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 15,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 0,
+            "key": "",
+            "remaining": 15,
+            "start": 0,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    },
+    {
+      "initial": {
+        "duration": 0,
+        "event14": 0,
+        "event_persistence": 0,
+        "frame": 123,
+        "key": "",
+        "remaining": 0,
+        "start": -1,
+        "title": {
+          "kind": "default_sentinel",
+          "pointer": 8943412
+        },
+        "unused_word": 0
+      },
+      "name": "signed_elapsed_boundary",
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "a19d33aea6ef62dd917a6ee5ddf2cce7c0d3a80d92720b311f11ce49ce1cb731"
+      },
+      "rng_calls": [],
+      "steps": [
+        {
+          "action_result": 1,
+          "calls": [
+            {
+              "call": "assign_key",
+              "key": "",
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            },
+            {
+              "call": "redraw_sink",
+              "duration": 15,
+              "key": "",
+              "start": 0,
+              "title": {
+                "kind": "default_sentinel",
+                "pointer": 8943412
+              }
+            }
+          ],
+          "frame": 0,
+          "label_read": "",
+          "name": "start",
+          "read": {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "kind": 27,
+            "raw": "27,0,1,0,0,0,0,A",
+            "read": "1,27,0,1,0,0,0,0,A",
+            "value": 1,
+            "waypoint": 0
+          },
+          "state": {
+            "duration": 15,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": 0,
+            "key": "",
+            "remaining": 15,
+            "start": 0,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        },
+        {
+          "calls": [],
+          "frame": 2147483648,
+          "name": "half_cycle",
+          "state": {
+            "duration": 15,
+            "event14": 0,
+            "event_persistence": 0,
+            "frame": -2147483648,
+            "key": "",
+            "remaining": -2147483633,
+            "start": 0,
+            "title": {
+              "kind": "default_sentinel",
+              "pointer": 8943412
+            },
+            "unused_word": 0
+          }
+        }
+      ]
+    }
+  ],
+  "label_read_controls": [
+    {
+      "key": "DESC:SOV1",
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 103,
+        "raw": "103,4,DESC:SOV1,0,0,0,0,A",
+        "read": "1,103,4,DESC:SOV1,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      }
+    },
+    {
+      "key": "DESC:AAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 103,
+        "raw": "103,4,DESC:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,0,0,0,0,A",
+        "read": "1,103,4,DESC:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      }
+    },
+    {
+      "key": "",
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 103,
+        "raw": "103,0,0,0,0,0,0,A",
+        "read": "1,103,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      }
+    }
+  ],
+  "schema_version": 1
+}

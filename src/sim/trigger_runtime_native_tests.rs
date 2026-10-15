@@ -281,7 +281,7 @@ fn entered_cell_predicates_match_original_country_and_retained_house_identity() 
         compared += 1;
     }
     // Native HasOccurred71E940 only, with explicit House/actor storage priors.
-    // Actual PerCell -> Tag -> 9001 actions are covered in the sibling test.
+    // Actual PerCell -> Tag -> 8997 actions are covered in the sibling test.
     assert_eq!(compared, 16);
 }
 
