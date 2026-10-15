@@ -33,7 +33,7 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 use serde_json::{Value, json};
 
 const TARGET: (u16, u16) = (40, 40);
-/// `NUKEBALL.SHP`'s frame count.
+/// The lib fixture's supplied `NUKEBALL.SHP` frame bound; no SHP is loaded.
 const NUKE_BALL_FRAMES: i32 = 20;
 
 fn oracle() -> Value {
@@ -322,12 +322,12 @@ fn impact_effects_match_native() {
 }
 
 /// The head of `BulletClass::AI` against the native rows: a waiting bullet
-/// returns while its anim lives, and once it is gone (expired, or never
-/// constructed) detonates where it stands with the impact flag clear; one
+/// returns while its awaited pointer is non-null, and once it is null
+/// (expired, or never constructed) detonates where it stands with the impact flag clear; one
 /// that does not wait flies on. VERA's store holds no dead bullet (a
 /// detonated one leaves at its commit), so the rows with IsAlive clear are
-/// not compared, and the holder list (`0x00B0F5B8`) is not modelled: the
-/// anim's liveness answers for its PointerExpired.
+/// not compared. These rows supply the head's pointer/null input, with
+/// stubbed callbacks; the production lifetime tests below cover Anim expiry.
 #[test]
 fn wait_matches_native() {
     let oracle = oracle();
@@ -341,68 +341,61 @@ fn wait_matches_native() {
         }
         let waits = row["waits"].as_bool().unwrap();
         let live = row["anim"].as_bool().unwrap();
-        // A waiting bullet holds its anim, or none when it was never built.
-        let held: &[Option<AnimId>] = if waits && !live {
-            &[Some(anim), None]
-        } else {
-            &[Some(anim)]
-        };
-        for &held in held {
-            let mut interner = StringInterner::new();
-            let mut store = ProjectileStore::new();
-            let at = ProjectileCoord::new(2660, 3122, 1000);
-            let id = store.spawn(1, nuke_spawn(&mut interner, "NUKE", at, None));
-            let anim_live = |id: AnimId| live && id == anim;
-            let context = NukeImpactContext::new(&interner, &|| true);
-            let dummy = SharedCellDummy::fresh();
-            if waits {
-                let bullet = store.get_mut(id).unwrap();
-                bullet.nuke_impact(&context, None, &dummy, at).unwrap();
-                store.await_anim(id, held);
-            }
+        // Native46670F tests +154 directly; the corpus supplies pointer/null.
+        let held = live.then_some(anim);
+        let mut interner = StringInterner::new();
+        let mut store = ProjectileStore::new();
+        let at = ProjectileCoord::new(2660, 3122, 1000);
+        let id = store.spawn(1, nuke_spawn(&mut interner, "NUKE", at, None));
+        let context = NukeImpactContext::new(&interner, &|| true);
+        let dummy = SharedCellDummy::fresh();
+        if waits {
+            let bullet = store.get_mut(id).unwrap();
+            bullet.nuke_impact(&context, None, &dummy, at).unwrap();
+            store.await_anim(id, held);
+        }
 
-            let head = store.begin_ai_visit(id, anim_live).unwrap();
-            let result = store
-                .advance_after_head(
-                    head,
-                    1,
-                    |_, _| None,
-                    None,
-                    &dummy,
-                    6,
-                    false,
-                    false,
-                    0,
-                    |_, _, _| None,
-                    Some(&context),
-                )
-                .unwrap();
+        let head = store.begin_ai_visit(id).unwrap();
+        let result = store
+            .advance_after_head(
+                head,
+                1,
+                |_, _| None,
+                None,
+                &dummy,
+                6,
+                false,
+                false,
+                0,
+                |_, _, _| None,
+                Some(&context),
+            )
+            .unwrap();
 
-            let bullet = store.get(id).unwrap();
-            match row["end"].as_str().unwrap() {
-                "returns" => {
-                    assert!(result.detonations.is_empty(), "{row}");
-                    assert!(bullet.awaiting_anim());
-                    assert_eq!(bullet.position, at);
-                }
-                "detonated" => {
-                    assert!(has_event(row, "uninit"));
-                    assert_eq!(result.detonations.len(), 1, "{row}");
-                    assert_eq!(
-                        result.detonations[0].reason,
-                        ProjectileDetonationReason::AnimEnded
-                    );
-                    assert_eq!(int(&row["events"][1][1]), 0, "the impact flag");
-                    assert!(!bullet.awaiting_anim());
-                    assert_eq!(int(&row["waits_after"]), 0);
-                }
-                "flies" => {
-                    assert!(result.detonations.is_empty(), "{row}");
-                    assert!(result.nuke_impacts().is_empty(), "{row}");
-                    assert_ne!(bullet.position, at, "the flight ran");
-                }
-                other => panic!("{other}"),
+        let bullet = store.get(id).unwrap();
+        match row["end"].as_str().unwrap() {
+            "returns" => {
+                assert!(result.detonations.is_empty(), "{row}");
+                assert!(bullet.awaiting_anim());
+                assert_eq!(bullet.position, at);
             }
+            "detonated" => {
+                assert!(has_event(row, "uninit"));
+                assert_eq!(result.detonations.len(), 1, "{row}");
+                assert_eq!(
+                    result.detonations[0].reason,
+                    ProjectileDetonationReason::AnimEnded
+                );
+                assert_eq!(int(&row["events"][1][1]), 0, "the impact flag");
+                assert!(!bullet.awaiting_anim());
+                assert_eq!(int(&row["waits_after"]), 0);
+            }
+            "flies" => {
+                assert!(result.detonations.is_empty(), "{row}");
+                assert!(result.nuke_impacts().is_empty(), "{row}");
+                assert_ne!(bullet.position, at, "the flight ran");
+            }
+            other => panic!("{other}"),
         }
     }
 }
@@ -950,6 +943,27 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         }
         if ball_ended_after.is_none() && !ball_live(&sim) {
             ball_ended_after = Some(frames);
+            assert!(sim.anim(ball).is_none(), "natural retirement completed");
+            let bullet = sim
+                .projectiles
+                .get(warhead)
+                .expect("the waiting warhead precedes NUKEBALL in Logic");
+            assert!(
+                bullet.awaiting_anim(),
+                "only the next Bullet AI ends the wait"
+            );
+            assert_eq!(
+                sim.substrate.entities.get(tank).unwrap().health.current(),
+                tank_health,
+                "Anim retirement does not detonate the waiting warhead"
+            );
+            // Bullet PointerExpired4685BE..4685C6 clears +154 during the
+            // Anim's retirement; +158 stays set until the next Bullet AI.
+            assert_eq!(
+                bullet.awaited_anim(),
+                None,
+                "NUKEBALL retirement synchronously clears the held reference"
+            );
         }
         if detonated_after.is_none() && sim.projectiles.get(warhead).is_none() {
             detonated_after = Some(frames);
@@ -975,6 +989,452 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         sim.radiation.site_at(TARGET).is_some(),
         "NukePayload's RadLevel"
     );
+}
+
+/// A real impact owns the first waiter and constructs its NUKEBALL through
+/// the production creator. The image bound remains a lib fixture input.
+fn impact_waiting_nuke(sim: &mut Simulation, rules: &RuleSet) -> (u64, AnimId) {
+    let at = ProjectileCoord::new(8 * 256 + 128, 8 * 256 + 128, 0);
+    let id = sim.allocate_stable_id();
+    let mut spawn = nuke_spawn(&mut sim.interner, "NUKE", at, rules.weapon("NukePayload"));
+    // The shared head fixture aims ten cells east. This local impact must
+    // instead retain its own target/reference: the real post-wait ladder
+    //468D80(impactFlag0) reads that reference before handing off damage.
+    spawn.target = ProjectileTarget::Cell { rx: 8, ry: 8 };
+    spawn.initial_target_position = at;
+    sim.admit_projectile(id, spawn);
+    // Fire's placement owner (BulletType46C4F0) may raise the original
+    // coordinate above the floor. Preserve its admitted Location; FireCoord
+    // and the proximity reference remain the supplied ground coordinate.
+    let admitted = sim.projectiles.get(id).unwrap().position;
+    assert_eq!((admitted.x, admitted.y), (at.x, at.y));
+    assert_eq!(sim.projectiles.get(id).unwrap().launch_origin, at);
+    let context = NukeImpactContext::new(&sim.interner, &|| true);
+    let impact = sim
+        .projectiles
+        .get_mut(id)
+        .unwrap()
+        .nuke_impact(
+            &context,
+            sim.resolved_terrain.as_ref(),
+            &SharedCellDummy::fresh(),
+            admitted,
+        )
+        .unwrap();
+    super::nuke::impact(sim, rules, impact);
+    let bullet = sim.projectiles.get(id).unwrap();
+    assert_eq!(bullet.target, ProjectileTarget::Cell { rx: 8, ry: 8 });
+    assert_eq!(
+        bullet.proximity_reference, at,
+        "the continuation's strike input"
+    );
+    assert_eq!(
+        bullet.position, admitted,
+        "the impact retains its admitted Location"
+    );
+    assert!(bullet.awaiting_anim());
+    let ball = bullet
+        .awaited_anim()
+        .expect("the real impact constructed NUKEBALL");
+    assert_eq!(
+        sim.interner.resolve(sim.anim(ball).unwrap().type_id),
+        "NUKEBALL"
+    );
+    (id, ball)
+}
+
+#[test]
+fn nuke_awaited_pointer_expiry_is_independent_and_idempotent() {
+    for scalable_control in [false, true] {
+        let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+            return;
+        };
+        let (rules, mut sim, _) = world_with(rules, 64, &[]);
+        let (id, ball) = impact_waiting_nuke(&mut sim, &rules);
+        let before = serde_json::to_value(sim.projectiles.get(id).unwrap()).unwrap();
+        let hash = sim.state_hash();
+        let sounds = sim.sound_events.len();
+        let rng = serde_json::to_value(&sim.scenario_rng).unwrap();
+        assert_eq!(
+            sim.projectiles.pointer_expired(
+                id,
+                ball + 1000,
+                ProjectileTarget::None,
+                scalable_control
+            ),
+            Some((false, false)),
+            "an unrelated Anim changes nothing"
+        );
+        assert_eq!(
+            serde_json::to_value(sim.projectiles.get(id).unwrap()).unwrap(),
+            before
+        );
+        assert_eq!(
+            sim.projectiles
+                .pointer_expired(id, ball, ProjectileTarget::None, scalable_control),
+            Some((true, false)),
+            "an awaited-only clear must report a change under either control gate"
+        );
+        let mut expected = before;
+        expected["awaited_anim"] = Value::Null;
+        assert_eq!(
+            serde_json::to_value(sim.projectiles.get(id).unwrap()).unwrap(),
+            expected,
+            "the callback changes no timer, velocity, payload, source, target or wait flag"
+        );
+        assert_eq!(
+            sim.projectiles
+                .pointer_expired(id, ball, ProjectileTarget::None, scalable_control),
+            Some((false, false))
+        );
+        assert!(
+            sim.anim(ball).is_some(),
+            "callback alone does not retire the Anim"
+        );
+        assert_eq!(sim.sound_events.len(), sounds);
+        assert_eq!(serde_json::to_value(&sim.scenario_rng).unwrap(), rng);
+        assert_ne!(
+            sim.state_hash(),
+            hash,
+            "the held pointer remains hash authority"
+        );
+    }
+}
+
+#[test]
+fn nuke_awaited_anim_retirement_routes_release_before_next_bullet_visit() {
+    for route in [
+        "Destroy",
+        "building scalar",
+        "terrain scalar",
+        "deferred finalizer",
+    ] {
+        let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+            return;
+        };
+        let (rules, mut sim, _) = world_with(rules, 64, &[]);
+        let tank = sim
+            .spawn_object_at_height("MTNK", "Americans", 8, 8, 0, 0, &rules)
+            .unwrap();
+        let health = sim.substrate.entities.get(tank).unwrap().health.current();
+        let (id, ball) = impact_waiting_nuke(&mut sim, &rules);
+        // Authored sentinel: a generic Object broadcast would incorrectly
+        // visit this entity. Anim4 has only its dedicated holders route.
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(ball)));
+        let rng = serde_json::to_value(&sim.scenario_rng).unwrap();
+        let before = sim.projectiles.get(id).unwrap().clone();
+        sim.sound_events.clear();
+        match route {
+            "Destroy" => {
+                sim.destroy_anim(ball, &rules);
+                assert!(
+                    sim.anim(ball).is_some(),
+                    "both records exist at the callback"
+                );
+                assert!(sim.substrate.pending_delete.contains_object(&ball));
+                let events = sim.sound_events.len();
+                sim.destroy_anim(ball, &rules);
+                assert_eq!(sim.sound_events.len(), events, "repeat Destroy is inert");
+            }
+            "building scalar" => sim.scalar_delete_building_anim(ball),
+            "terrain scalar" => {
+                sim.substrate.anims.get_mut(ball).unwrap().terrain_attached = true;
+                assert_eq!(sim.scalar_delete_load_terrain_anims(), 1);
+            }
+            "deferred finalizer" => {
+                // Exercise the defensive finalizer without the ordinary
+                // earlier Destroy announcement, using its real ready queue.
+                sim.conceal_anim(ball);
+                sim.substrate.pending_delete.queue_object(ball);
+                sim.process_pending_delete();
+            }
+            _ => unreachable!(),
+        }
+        let bullet = sim
+            .projectiles
+            .get(id)
+            .expect("expiry alone never detonates");
+        assert!(bullet.awaiting_anim(), "{route}");
+        assert_eq!(bullet.awaited_anim(), None, "{route}");
+        assert_eq!(bullet.position, before.position);
+        assert_eq!(bullet.arm_timer, before.arm_timer);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(tank)
+                .unwrap()
+                .attack_target
+                .target(),
+            Some(crate::sim::combat::TargetKind::Entity(ball)),
+            "{route}: no generic Object broadcast"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(tank).unwrap().health.current(),
+            health
+        );
+        assert_eq!(serde_json::to_value(&sim.scenario_rng).unwrap(), rng);
+        assert!(
+            !sim.sound_events
+                .iter()
+                .any(|event| matches!(event, SimSoundEvent::RadarEvent { .. }))
+        );
+        sim.clear_lifecycle_test_events_for_test();
+        step(&mut sim, &rules);
+        assert!(
+            sim.projectiles.get(id).is_none(),
+            "{route}: actual next Logic visit retires"
+        );
+        assert!(
+            sim.substrate
+                .entities
+                .get(tank)
+                .is_none_or(|tank| tank.health.current() == 0),
+            "{route}: target health {:?}; radiation at the retained strike cell8,8={}",
+            sim.substrate
+                .entities
+                .get(tank)
+                .map(|tank| tank.health.current()),
+            sim.radiation.site_at((8, 8)).is_some()
+        );
+        assert!(
+            sim.radiation.site_at((8, 8)).is_some(),
+            "{route}: actual strike receiver"
+        );
+        assert_eq!(sim.lifecycle_test_events_for_test().iter().filter(|event| matches!(event,
+            crate::sim::world::LifecycleTestEvent::PendingDeleteQueued { stable_id } if *stable_id == id
+        )).count(), 1, "{route}: one Bullet retirement");
+        step(&mut sim, &rules);
+        assert!(sim.projectiles.get(id).is_none());
+        assert!(
+            !sim.substrate
+                .anims
+                .iter()
+                .any(|(_, anim)| sim.interner.resolve(anim.type_id) == "NUKEBALL")
+        );
+        assert!(
+            !sim.sound_events
+                .iter()
+                .any(|event| matches!(event, SimSoundEvent::RadarEvent { .. })),
+            "the continuation does not repeat the impact creator"
+        );
+    }
+}
+
+#[test]
+fn nuke_awaited_anim_expiry_after_waiter_retirement_is_safe() {
+    let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+        return;
+    };
+    let (rules, mut sim, _) = world_with(rules, 64, &[]);
+    let (id, ball) = impact_waiting_nuke(&mut sim, &rules);
+    // Warm the shared index, then retire the actual admitted waiter first.
+    sim.spawn_named_anim(
+        &rules,
+        "NUKEBALL",
+        crate::sim::anim_class::AnimWorldCoord {
+            x: 20 * 256,
+            y: 20 * 256,
+            z: 0,
+        },
+        1,
+        0x600,
+        0,
+    );
+    let unrelated = sim
+        .anims()
+        .find(|(other, anim)| **other != ball && sim.interner.resolve(anim.type_id) == "NUKEBALL")
+        .map(|(&id, _)| id)
+        .unwrap();
+    sim.notify_anim_pointer_expired(unrelated);
+    assert_eq!(sim.projectiles.get(id).unwrap().awaited_anim(), Some(ball));
+    sim.scalar_delete_building_anim(unrelated);
+    assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::with_rules(&rules)));
+    sim.process_pending_delete();
+    assert!(sim.projectiles.get(id).is_none());
+    assert!(sim.anim(ball).is_some());
+    sim.destroy_anim(ball, &rules);
+    sim.process_pending_delete();
+    assert!(sim.anim(ball).is_none());
+    assert!(sim.projectiles.is_empty());
+}
+
+/// The shared-Anim relation and Logic order are authored. The first waiter
+/// and the retiring Anim still originate in the real nuclear impact.
+#[test]
+fn nuke_shared_anim_waiters_keep_live_cursor_compaction() {
+    for spacer in [false, true] {
+        let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+            return;
+        };
+        let (rules, mut sim, _) = world_with(rules, 64, &[]);
+        let (early, ball) = impact_waiting_nuke(&mut sim, &rules);
+        let (late, unused_ball) = impact_waiting_nuke(&mut sim, &rules);
+        sim.projectiles.await_anim(late, Some(ball));
+        sim.scalar_delete_building_anim(unused_ball);
+        let middle = if spacer {
+            Some(
+                sim.spawn_object_at_height("COW", "Americans", 30, 30, 0, 0, &rules)
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let mut order = vec![early, ball];
+        order.extend(middle);
+        order.push(late);
+        sim.set_logic_order_for_test(order);
+        // Reach natural retirement; do not force an AI, timer or frame field.
+        run_until(&mut sim, &rules, 100, |sim| sim.anim(ball).is_none());
+        let first = sim
+            .projectiles
+            .get(early)
+            .expect("earlier waiter already visited");
+        assert!(first.awaiting_anim());
+        assert_eq!(first.awaited_anim(), None);
+        if spacer {
+            assert!(
+                sim.projectiles.get(late).is_none(),
+                "spacer is skipped; later waiter strikes this pass"
+            );
+        } else {
+            let skipped = sim
+                .projectiles
+                .get(late)
+                .expect("adjacent waiter shifted behind live cursor");
+            assert!(skipped.awaiting_anim());
+            assert_eq!(
+                skipped.awaited_anim(),
+                None,
+                "callback preceded the skipped visit"
+            );
+        }
+        // Early retirement can itself compact over an adjacent late waiter.
+        run_until(&mut sim, &rules, 3, |sim| sim.projectiles.is_empty());
+        assert!(
+            !sim.anims()
+                .any(|(_, anim)| sim.interner.resolve(anim.type_id) == "NUKEBALL")
+        );
+    }
+}
+
+#[test]
+fn nuke_awaited_anim_reference_restore_validates_without_wait_flag() {
+    let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+        return;
+    };
+    let (rules, mut sim, _) = world_with(rules, 64, &[]);
+    // A non-waiting Bullet holding +154 remains a strong native load reference.
+    let id = sim.allocate_stable_id();
+    let at = ProjectileCoord::new(8 * 256 + 128, 8 * 256 + 128, 0);
+    let spawn = nuke_spawn(&mut sim.interner, "NUKE", at, rules.weapon("NukePayload"));
+    sim.admit_projectile(id, spawn);
+    assert!(!sim.projectiles.get(id).unwrap().awaiting_anim());
+    sim.projectiles.await_anim(id, Some(9999));
+    let before = bincode::serialize(&sim.projectiles).unwrap();
+    assert_eq!(
+        sim.restore_after_snapshot_load(),
+        Err(
+            crate::sim::snapshot::SnapshotRestoreError::UnresolvedObjectReference {
+                source_registry: "ProjectileStore",
+                source_id: id,
+                field: "awaited_anim",
+                target_registry: "AnimStore",
+                target_id: 9999,
+            }
+        )
+    );
+    assert_eq!(
+        bincode::serialize(&sim.projectiles).unwrap(),
+        before,
+        "invalid restore leaves Bullet state atomic"
+    );
+    let (_, ball) = impact_waiting_nuke(&mut sim, &rules);
+    sim.projectiles.await_anim(id, Some(ball));
+    sim.restore_after_snapshot_load().unwrap();
+    assert!(!sim.projectiles.get(id).unwrap().awaiting_anim());
+    assert_eq!(sim.projectiles.get(id).unwrap().awaited_anim(), Some(ball));
+    sim.destroy_anim(ball, &rules);
+    assert_eq!(
+        sim.projectiles.get(id).unwrap().awaited_anim(),
+        None,
+        "a restored non-waiting holder is indexed independently of the wait flag"
+    );
+}
+
+#[test]
+fn nuke_pending_anim_snapshot_retains_the_notified_null_waiter() {
+    let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+        return;
+    };
+    let mut sim = Simulation::with_seed(17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let (id, ball) = impact_waiting_nuke(&mut sim, &rules);
+    sim.destroy_anim(ball, &rules);
+    assert!(sim.anim(ball).is_some());
+    assert!(sim.substrate.pending_delete.contains_object(&ball));
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&sim, 1, 2, "pending nuke anim", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
+    assert!(restored.anim(ball).is_some());
+    assert!(restored.substrate.pending_delete.contains_object(&ball));
+    let bullet = restored.projectiles.get(id).unwrap();
+    assert!(bullet.awaiting_anim());
+    assert_eq!(bullet.awaited_anim(), None);
+    step(&mut restored, &rules);
+    assert!(restored.projectiles.get(id).is_none());
+    assert!(restored.anim(ball).is_none());
+    assert!(restored.radiation.site_at((8, 8)).is_some());
+}
+
+#[test]
+fn nuke_natural_retirement_boundary_snapshot_continues_once() {
+    let Some(rules) = retail_rules_binding(&[("NUKEBALL", NUKE_BALL_FRAMES)]) else {
+        return;
+    };
+    let mut sim = Simulation::with_seed(17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let (id, ball) = impact_waiting_nuke(&mut sim, &rules);
+    run_until(&mut sim, &rules, 100, |sim| sim.anim(ball).is_none());
+    let bullet = sim.projectiles.get(id).unwrap();
+    assert!(bullet.awaiting_anim());
+    assert_eq!(bullet.awaited_anim(), None);
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&sim, 1, 2, "nuke retirement", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
+    // Same native load normalization as the live-wait save test below.
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let frame = sim.session.binary_frame as i32;
+    for (_, bullet) in sim.projectiles.iter_mut() {
+        bullet.arm_timer.start(frame, 0);
+    }
+    assert_eq!(restored.state_hash(), sim.state_hash());
+    for _ in 0..3 {
+        step(&mut sim, &rules);
+        step(&mut restored, &rules);
+        assert_eq!(restored.state_hash(), sim.state_hash());
+        assert!(
+            sim.projectiles.get(id).is_none(),
+            "the first resumed visit strikes once"
+        );
+    }
+    assert!(sim.radiation.site_at((8, 8)).is_some());
 }
 
 /// A save in the middle of the wait and the flash restores both: the

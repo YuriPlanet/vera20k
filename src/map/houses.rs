@@ -170,14 +170,20 @@ pub fn are_houses_friendly(alliances: &HouseAllianceMap, a: &str, b: &str) -> bo
 /// always allied with itself. [`are_houses_friendly`] keeps its symmetric OR
 /// for the call sites not yet traced to their native asker (#582).
 pub fn is_allied_with(alliances: &HouseAllianceMap, asker: &str, other: &str) -> bool {
-    if asker.eq_ignore_ascii_case(other) {
-        return true;
+    ally_test(alliances, asker)(other)
+}
+
+/// [`is_allied_with`] for one `asker`, to ask of many others: the asker's ally
+/// set is looked up once.
+pub fn ally_test<'a>(
+    alliances: &'a HouseAllianceMap,
+    asker: &'a str,
+) -> impl Fn(&str) -> bool + 'a {
+    let allies = with_house_key(asker, |asker| alliances.get(asker));
+    move |other| {
+        asker.eq_ignore_ascii_case(other)
+            || allies.is_some_and(|set| with_house_key(other, |other| set.contains(other)))
     }
-    with_house_key(asker, |asker| {
-        alliances
-            .get(asker)
-            .is_some_and(|set| with_house_key(other, |other| set.contains(other)))
-    })
 }
 
 /// Mutual-alliance test — both houses must name each other.

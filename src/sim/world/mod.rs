@@ -161,6 +161,8 @@ mod projectile_trailer_tests;
 #[cfg(test)]
 mod aegis_distributed_fire_tests;
 #[cfg(test)]
+mod brute_smash_debris_tests;
+#[cfg(test)]
 pub(crate) use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
 mod team_script_vm_tests;

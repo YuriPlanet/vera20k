@@ -1180,6 +1180,64 @@ def destroyed_house_event_metadata():
             'has_occurred':0x71E940,'country_house':0x502D30,'counter_total':0x49FB60})
 
 
+def generate_building_loss_events():
+    """Event10 uses the selected Country's signed tracked-building scalar."""
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    m=PowerEventControls()
+    m.SPANS=[*m.SPANS,(0x71F950,0x71FA40)]
+    m.original.append(bytes(m.u.mem_read(0x71F950,0xF0)))
+    controls=[]
+
+    def probe(name,buildings,value=0,house=0,actor=None,raised=99,
+              order=(0,1,2),buildup=False,persistence=0):
+        before=list(struct.unpack('<iii',m.u.mem_read(m.timer,12)))
+        m.predicate(name,f'1,10,0,{value}',house_index=house,actor_index=actor,
+                    raised=raised,order=order,scenario_init=buildup,
+                    destruction_counts=tuple((count,0,0,0) for count in buildings),
+                    initial_persistence=persistence)
+        row=m.predicates[-1]
+        after=list(struct.unpack('<iii',m.u.mem_read(m.timer,12)))
+        assert after==before and row['persistence']==persistence
+        assert row['event54']==struct.unpack('<i',dwords(0xABCD1234))[0]
+        controls.append(dict(name=name,value=value,tracked_buildings=list(buildings),
+            house_order=list(order),incoming_house=house,actor_owner=actor,raised=raised,
+            scenario_init=buildup,initial_persistence=persistence,result=row['result'],
+            persistence=row['persistence'],event54=row['event54'],
+            timer_before=before,timer_after=after))
+
+    for count in (-2147483648,-1,0,1,2147483647):
+        probe(f'tracked_buildings_{count}',(count,5,7),raised=8)
+    for order in ((0,1,2),(2,1,0)):
+        probe(f'first_country_order_{order}',(0,0,7),house=1,actor=1,order=order)
+    for value in (-1,999):
+        probe(f'no_country_{value}',(7,5,9),value=value)
+    for incoming in (0,None):
+        for buildup in (False,True):
+            probe(f'input_house_{incoming}_bypass_{buildup}',(0,5,7),
+                  house=incoming,buildup=buildup)
+    probe('retained_persistence_one',(0,5,7),house=1,raised=8,persistence=1)
+    classification=dict(state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+                        state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255)
+    m.assert_unchanged()
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+                country_indices=[0,7,0],controls=controls,classification=classification,
+                code_unchanged=True,zero_rng_calls=True)
+
+
+def building_loss_event_metadata():
+    return provenance(
+        scope='Fourteen original HasOccurred10 controls and two StateA/StateB calls. Covers the tracked-building predicate and first-Country resolution, not a complete House destruction or campaign mechanism.',
+        assumptions=[
+            'Reuse PowerEventControls/FlagsFixture native image, cached counted TEvent reader and minimal three-House arena. Country bindings0/7/0, registered order, signed House+2F0 tracked-building counts and actor/incoming House identities are supplied priors. No House or Building constructor, tracking writer, Limbo, UnInit or destructor runs here.',
+            'Original HasOccurred71E940 executes Country lookup502D30 with Event+34 and Event10 branch71F115..71F12E. It tests the first matched House tracked+2F0 <=0 signed; absent Country returns true. The declared INT_MIN/-1/0/1/INT_MAX and reversed duplicate-Country controls distinguish signed scalar and registration-order semantics.',
+            'Wrong raised99, distinct actor/incoming House1, null incoming House and both A8ED6B values are executed. Event+54 starts0xABCD1234 and persistence starts0 or1; both and the supplied timer remain unchanged. StateA71F950 returns0 and StateB71F9C0 returns1. Existing observers see neither RNG draw entry; this predicate has no timer write or detach.',
+            'The corpus deliberately omits unrelated power reader rows and active/per-type counters. Existing house_tracking.py evidence owns Add/RemoveTracking behavior; existing house_tag_raise.py and tag_lifecycle.py evidence own polling, registration and cleanup. These scalar controls do not extend their declared coverage or certify a whole ALL04 rescue sequence.'],
+        substitutions=['Existing FlagsFixture allocator/CRT/TLS transports and explicit House/actor storage priors only. Original counted TEvent reader, predicate, Country lookup and StateA/StateB instructions run unchanged; no selected gameplay return is supplied.'],
+        entry_points={'event_constructor':0x71E6A0,'event_counted_read':0x7274DC,
+            'has_occurred':0x71E940,'country_house':0x502D30,'building_compare':0x71F115,
+            'state_a':0x71F950,'state_b':0x71F9C0})
+
+
 def generate_damage_source_events():
     """Event44 compares source House+30, independently of actor/Country."""
     from tools.native_oracle import image_sha256, NATIVE_FPCW
@@ -1652,6 +1710,10 @@ if __name__=='__main__':
         args.remove('--funds-events')
         finish_vectors(generate_funds_events,Path(__file__).with_name('trigger_funds_events.json'),
                        provenance=funds_event_metadata,source_paths=power_event_source_paths(),argv=args)
+    elif '--building-loss-events' in args:
+        args.remove('--building-loss-events')
+        finish_vectors(generate_building_loss_events,Path(__file__).with_name('trigger_building_loss_events.json'),
+                       provenance=building_loss_event_metadata,source_paths=power_event_source_paths(),argv=args)
     elif '--damage-source-events' in args:
         args.remove('--damage-source-events')
         finish_vectors(generate_damage_source_events,Path(__file__).with_name('trigger_damage_source_events.json'),

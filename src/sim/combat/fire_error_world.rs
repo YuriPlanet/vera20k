@@ -26,7 +26,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::{
     object_center_xy, position_world_coord, query_object_cell,
 };
-use crate::sim::vision::FogState;
+use crate::sim::vision::FireFog;
 use crate::sim::world::Simulation;
 
 /// One firer, target and weapon slot, as GetFireError sees them.
@@ -34,7 +34,7 @@ pub(crate) struct FireSubject<'a> {
     pub world: &'a Simulation,
     pub rules: &'a RuleSet,
     pub overlay_registry: Option<&'a OverlayTypeRegistry>,
-    pub fog: Option<&'a FogState>,
+    pub fog: Option<FireFog<'a>>,
     pub firer: &'a GameEntity,
     pub obj: &'a ObjectType,
     pub target: Option<TargetKind>,
@@ -502,7 +502,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
-                        alliances: subject.fog.map(|fog| &fog.alliances),
+                        alliances: subject.fog.map(|fog| fog.alliances),
                     },
                 )
                 .unwrap_or(false)
@@ -528,7 +528,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
-                        alliances: subject.fog.map(|fog| &fog.alliances),
+                        alliances: subject.fog.map(|fog| fog.alliances),
                     },
                 )
             }),
@@ -806,7 +806,7 @@ impl WorldQuery<'_, '_> {
         other: crate::sim::intern::InternedId,
     ) -> bool {
         combat_weapon::is_ally_by_object(
-            self.subject.fog.map(|fog| &fog.alliances),
+            self.subject.fog.map(|fog| fog.alliances),
             &self.subject.world.interner,
             asker,
             other,

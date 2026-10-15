@@ -2384,10 +2384,21 @@ fn restore_object_references(
     }
 
     // BulletClass__Load @ 0x0046AE70 queues the non-null source/firer pointer
-    // at +0xB0 and target pointer at +0x10C for global swizzling. VERA's zero
+    // at +0xB0, target at +0x10C and awaited Anim at +0x154 for global
+    // swizzling (46AF8B), independently of the wait flag. VERA's zero
     // source sentinel and Cell/null targets are the corresponding
     // null/non-pointer representations and therefore need no object lookup.
     for (&projectile_id, projectile) in sim.projectiles.iter() {
+        if let Some(anim_id) = projectile.awaited_anim() {
+            require_resolved_reference(
+                anim_ids.contains(&anim_id),
+                "ProjectileStore",
+                projectile_id,
+                "awaited_anim",
+                "AnimStore",
+                anim_id,
+            )?;
+        }
         if projectile.source_id != crate::sim::combat::RAD_NO_ATTACKER {
             require_resolved_reference(
                 entity_ids.contains(&projectile.source_id),

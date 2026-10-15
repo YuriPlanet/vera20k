@@ -43,9 +43,6 @@
 //! - `DigSound=` plays at the cell (the launch event carries it); native's
 //!   coordinate has the cell's floor height (`0x00578080`). Presentation
 //!   only.
-//! - The impact's wait reads the anim's liveness (`begin_ai_visit`)
-//!   instead of the holder list `0x00B0F5B8` whose PointerExpired clears
-//!   `+0x154`; VERA reuses no anim id, so the two answer alike.
 //! - A `NUKEBALL` VERA cannot construct (a type without its SHP, as in lib
 //!   tests) holds no anim, and the bullet detonates at its next AI; retail
 //!   binds `NUKEBALL.SHP`.

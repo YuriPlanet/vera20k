@@ -980,7 +980,7 @@ impl Simulation {
     #[cfg(test)]
     pub(crate) fn reveal(&mut self, stable_id: u64) -> RevealOutcome {
         if self.substrate.anims.contains_key(stable_id) {
-            let registered = self.reveal_anim(stable_id, None);
+            let registered = self.reveal_anim(stable_id, None, true);
             return RevealOutcome::Revealed {
                 logic_registered: registered,
             };
@@ -2778,7 +2778,15 @@ impl Simulation {
         self.unregister_logic_object(stable_id)
     }
 
-    pub(crate) fn reveal_anim(&mut self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    /// Reveal, leaving out the Display submit when `submit` is false: the
+    /// constructor's attach submits the Anim before anything reads Display
+    /// (`spawn_anim_at_world_with_constructor`).
+    pub(crate) fn reveal_anim(
+        &mut self,
+        stable_id: u64,
+        rules: Option<&RuleSet>,
+        submit: bool,
+    ) -> bool {
         // A physically retained Destroy/UnInit object has already left Logic
         // and Display. Its independent19B byte can still be zero, so it cannot
         // be resurrected through Reveal before the common deferred drain.
@@ -2792,7 +2800,9 @@ impl Simulation {
             return false;
         }
         self.mark_anim_display(stable_id, true);
-        self.submit_anim_display(stable_id, rules);
+        if submit {
+            self.submit_anim_display(stable_id, rules);
+        }
         self.register_logic_object(stable_id)
     }
 
@@ -3866,14 +3876,13 @@ impl Simulation {
     }
 
     /// What `listener` holds that its pointer-expiry forwards can change:
-    /// `name` gets each id a field [`Self::notify_entity_pointer_expired`]
-    /// compares (repeats possible), and the result says whether it holds an
-    /// object a forward reaches whatever expires (SpawnManager,
-    /// CaptureManager, TemporalClass, its parasite). A superset of each
-    /// forward's own test, so passing over a listener that is not the
-    /// expiring object, names nothing expiring and returns false matches
-    /// visiting it. A field or forward added to the broadcast must be added
-    /// here too.
+    /// `name` gets each id a field [`Self::notify_entity_pointer_expired`] or
+    /// a forward compares (repeats possible), and the result says whether it
+    /// holds an object a forward reaches whatever expires (an airstrike
+    /// manager, its parasite). A superset of each forward's own test, so
+    /// passing over a listener that is not the expiring object, names nothing
+    /// expiring and returns false matches visiting it. A field or forward
+    /// added to the broadcast must be added here too.
     /// VERA-only: feeds the expiry-listener index (`ExpiryListeners`) so the
     /// `0x007258D0` broadcast skips entities; the listener's fields are the truth.
     pub(super) fn entity_expiry_holds(listener: &GameEntity, mut name: impl FnMut(u64)) -> bool {
@@ -3925,11 +3934,20 @@ impl Simulation {
         .for_each(&mut name);
         listener.mega_mission.referenced_ids().for_each(&mut name);
         listener.distributed_fire_references().for_each(&mut name);
-        listener.airstrike.owns_manager()
-            || listener.spawn_manager.is_some()
-            || listener.capture_manager.is_some()
-            || listener.temporal.has_link()
-            || listener.parasite.eater().is_some()
+        // The SpawnManager, CaptureManager and TemporalClass forwards act on
+        // the listener's own expiry and on the ids they hold.
+        if let Some(manager) = &listener.spawn_manager {
+            manager.expiry_names().for_each(&mut name);
+        }
+        if let Some(manager) = &listener.capture_manager {
+            manager.victims().for_each(&mut name);
+        }
+        listener
+            .temporal
+            .warp_target()
+            .into_iter()
+            .for_each(&mut name);
+        listener.airstrike.owns_manager() || listener.parasite.eater().is_some()
     }
 
     /// Whether the pointer-expiry forwards an entity listener receives can
@@ -4716,6 +4734,39 @@ impl Simulation {
         }
     }
 
+    /// Anim4's dedicated holder announcement725A16..725A4C, before Anim
+    /// conceal/removal (UnInit42561F, destructor422906). It does not enter
+    /// the generic Object/bomb/factory/team broadcast. This dispatches the
+    /// Bullet subset; Building receivers stay at their existing boundaries,
+    /// including their distinct ordinary-UnInit versus scalar slot handling.
+    pub(crate) fn notify_anim_pointer_expired(&mut self, expired_id: u64) {
+        if !self.substrate.anims.contains_key(expired_id) {
+            return;
+        }
+        let acting = self
+            .expiry_listeners
+            .projectiles_reached_by(&mut self.projectiles, expired_id);
+        if crate::sim::touch_log::live_read_check_enabled() {
+            let expected: Vec<u64> = self
+                .projectiles
+                .iter()
+                .filter(|(_, bullet)| bullet.expiry_names().contains(&Some(expired_id)))
+                .map(|(&id, _)| id)
+                .collect();
+            assert_eq!(
+                acting, expected,
+                "Anim expiry listeners diverged from a live read"
+            );
+        }
+        for id in acting {
+            // A held Anim cannot be a Techno/terrain target or firer. The
+            // expired RTTI is Anim4, so the Scalable Bullet arm stays off.
+            self.projectiles
+                .pointer_expired(id, expired_id, ProjectileTarget::None, false)
+                .expect("indexed Bullet remains stored during Anim expiry");
+        }
+    }
+
     /// The pointer-expiry listener index, with the stores it reads.
     fn expiry_listener_index(&mut self) -> (&mut ExpiryListeners, ListenerStores<'_>) {
         (
@@ -5032,13 +5083,15 @@ impl Simulation {
                 // The CaptureManager forward — `0x00707B14 CALL 0x00471F90` —
                 // sits inside the `if (control != 0)` block opened at
                 // `0x00707AE7`, so a dive leaves mind-control links alone while
-                // a death drops them.
+                // a death drops them. It changes nothing unless a node names
+                // the expiring object, so only then is the listener handed out.
                 if control == PointerExpiryControl::Uninit
                     && self
                         .substrate
                         .entities
                         .get(listener_id)
-                        .is_some_and(|entity| entity.capture_manager.is_some())
+                        .and_then(|entity| entity.capture_manager.as_ref())
+                        .is_some_and(|manager| manager.victims().any(|victim| victim == expired_id))
                     && let Some(manager) = self
                         .substrate
                         .entities
@@ -5610,6 +5663,7 @@ impl Simulation {
         }
         self.destroy_building_light(stable_id);
         if self.substrate.anims.contains_key(stable_id) {
+            self.notify_anim_pointer_expired(stable_id);
             self.clear_damage_fire_anim_reference(stable_id);
             self.conceal_anim(stable_id);
             self.release_anim_owner_reference(stable_id);

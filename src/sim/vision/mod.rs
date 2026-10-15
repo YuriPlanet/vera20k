@@ -589,6 +589,52 @@ pub(crate) struct GapGeneratorSource {
     pub radius: i32,
 }
 
+/// What a fire check (GetFireError and its range and line-of-fire questions)
+/// reads of a [`FogState`]: its alliance copy and its sensor counts, borrowed
+/// from a live fog ([`FogState::fire_view`]) or from a [`FireFogCopy`].
+#[derive(Clone, Copy)]
+pub(crate) struct FireFog<'a> {
+    pub(crate) alliances: &'a HouseAllianceMap,
+    sensors_by_house: &'a BTreeMap<InternedId, Vec<i16>>,
+    width: u16,
+    height: u16,
+}
+
+impl FireFog<'_> {
+    /// Whether `house` holds a sensor count on cell (`rx`, `ry`)
+    /// ([`FogState::has_sensor_for_house`]).
+    pub(crate) fn has_sensor_for_house(&self, house: InternedId, rx: u16, ry: u16) -> bool {
+        if rx >= self.width || ry >= self.height {
+            return false;
+        }
+        let index = usize::from(ry) * usize::from(self.width) + usize::from(rx);
+        self.sensors_by_house
+            .get(&house)
+            .and_then(|counters| counters.get(index))
+            .is_some_and(|count| *count > 0)
+    }
+}
+
+/// A [`FireFog`]'s parts copied ([`FogState::fire_copy`]), for fire checks
+/// that ask the fog as a phase found it after the phase has changed it.
+pub(crate) struct FireFogCopy {
+    alliances: HouseAllianceMap,
+    sensors_by_house: BTreeMap<InternedId, Vec<i16>>,
+    width: u16,
+    height: u16,
+}
+
+impl FireFogCopy {
+    pub(crate) fn view(&self) -> FireFog<'_> {
+        FireFog {
+            alliances: &self.alliances,
+            sensors_by_house: &self.sensors_by_house,
+            width: self.width,
+            height: self.height,
+        }
+    }
+}
+
 /// Global fog/shroud state keyed by owner name.
 ///
 /// Stores per-viewer knowledge grids. Direct alliance admission happens at
@@ -1129,14 +1175,27 @@ impl FogState {
     }
 
     pub fn has_sensor_for_house(&self, house: InternedId, rx: u16, ry: u16) -> bool {
-        if rx >= self.width || ry >= self.height {
-            return false;
+        self.fire_view().has_sensor_for_house(house, rx, ry)
+    }
+
+    /// What a fire check reads of this fog.
+    pub(crate) fn fire_view(&self) -> FireFog<'_> {
+        FireFog {
+            alliances: &self.alliances,
+            sensors_by_house: &self.sensors_by_house,
+            width: self.width,
+            height: self.height,
         }
-        let index = usize::from(ry) * usize::from(self.width) + usize::from(rx);
-        self.sensors_by_house
-            .get(&house)
-            .and_then(|counters| counters.get(index))
-            .is_some_and(|count| *count > 0)
+    }
+
+    /// A copy of what a fire check reads of this fog.
+    pub(crate) fn fire_copy(&self) -> FireFogCopy {
+        FireFogCopy {
+            alliances: self.alliances.clone(),
+            sensors_by_house: self.sensors_by_house.clone(),
+            width: self.width,
+            height: self.height,
+        }
     }
 
     fn disguise_detect_counter_mut(&mut self, house: InternedId, rx: u16, ry: u16) -> &mut i16 {
@@ -2692,38 +2751,37 @@ fn fire_reveal_cells(fog: &mut FogState, owner: InternedId, cells: Vec<(u16, u16
     }
 }
 
-/// Every house with a map or an alliance entry, and `owner`: the houses a
-/// reveal by `owner` can reach.
+/// The houses a reveal by `owner` can reach (every house with a map or an
+/// alliance entry, and `owner`) that are `owner` itself, when `with_owner`,
+/// or whose name `admits` passes; ascending, without repeats.
 fn reveal_candidates(
     fog: &FogState,
     owner: InternedId,
     interner: &StringInterner,
-) -> std::collections::BTreeSet<InternedId> {
-    let mut candidates: std::collections::BTreeSet<_> = fog.by_owner.keys().copied().collect();
-    candidates.insert(owner);
+    with_owner: bool,
+    admits: impl Fn(&str) -> bool,
+) -> Vec<InternedId> {
+    let mut viewers: Vec<InternedId> = fog
+        .by_owner
+        .keys()
+        .copied()
+        .chain(std::iter::once(owner))
+        .filter(|&viewer| (with_owner && viewer == owner) || admits(interner.resolve(viewer)))
+        .collect();
+    // An alliance entry's house is the interned name itself; `owner` is
+    // already in when `with_owner` keeps it.
     for (house, allies) in &fog.alliances {
         for name in std::iter::once(house).chain(allies) {
-            if let Some(id) = interner.get(name) {
-                candidates.insert(id);
+            if admits(name)
+                && let Some(id) = interner.get(name)
+            {
+                viewers.push(id);
             }
         }
     }
-    candidates
-}
-
-/// `HouseClass::IsAlliedWith @ 0x004F9A50` asked of `owner` about `viewer`:
-/// `owner`'s own ally bits (`+0x5788`), one-way; a house is its own ally.
-fn owner_allied_with(
-    fog: &FogState,
-    owner: InternedId,
-    viewer: InternedId,
-    interner: &StringInterner,
-) -> bool {
-    crate::map::houses::is_allied_with(
-        &fog.alliances,
-        interner.resolve(owner),
-        interner.resolve(viewer),
-    )
+    viewers.sort_unstable();
+    viewers.dedup();
+    viewers
 }
 
 /// The house gate of `MapClass::RevealArea @ 0x005678E0`
@@ -2741,7 +2799,19 @@ fn reveal_admits(
     config: &VisionConfig,
     interner: &StringInterner,
 ) -> bool {
-    viewer == owner || (config.ally_reveal && owner_allied_with(fog, owner, viewer, interner))
+    viewer == owner || ally_reveal_test(fog, owner, config, interner)(interner.resolve(viewer))
+}
+
+/// [`reveal_admits`]'s allied arm for one `owner`, to ask of many viewers by
+/// name: `AllyReveal=` and `owner`'s IsAlliedWith ([`allied_viewers`]).
+fn ally_reveal_test<'a>(
+    fog: &'a FogState,
+    owner: InternedId,
+    config: &'a VisionConfig,
+    interner: &'a StringInterner,
+) -> impl Fn(&str) -> bool + 'a {
+    let allied = crate::map::houses::ally_test(&fog.alliances, interner.resolve(owner));
+    move |viewer| config.ally_reveal && allied(viewer)
 }
 
 /// The maps a reveal by `owner` writes ([`reveal_admits`]).
@@ -2751,23 +2821,25 @@ pub(crate) fn direct_reveal_viewers(
     config: &VisionConfig,
     interner: &StringInterner,
 ) -> Vec<InternedId> {
-    reveal_candidates(fog, owner, interner)
-        .into_iter()
-        .filter(|&viewer| reveal_admits(fog, owner, viewer, config, interner))
-        .collect()
+    reveal_candidates(
+        fog,
+        owner,
+        interner,
+        true,
+        ally_reveal_test(fog, owner, config, interner),
+    )
 }
 
-/// `owner` and every house `owner`'s IsAlliedWith names ([`owner_allied_with`]),
-/// whatever `AllyReveal=` says.
+/// `owner` and every house `owner`'s IsAlliedWith names, whatever `AllyReveal=`
+/// says. `HouseClass::IsAlliedWith @ 0x004F9A50` reads `owner`'s own ally bits
+/// (`+0x5788`), one-way; a house is its own ally.
 pub(crate) fn allied_viewers(
     fog: &FogState,
     owner: InternedId,
     interner: &StringInterner,
 ) -> Vec<InternedId> {
-    reveal_candidates(fog, owner, interner)
-        .into_iter()
-        .filter(|&viewer| owner_allied_with(fog, owner, viewer, interner))
-        .collect()
+    let allied = crate::map::houses::ally_test(&fog.alliances, interner.resolve(owner));
+    reveal_candidates(fog, owner, interner, false, allied)
 }
 
 /// Materialize active SpySat house latches by marking every synthetic-grid cell

@@ -231,6 +231,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::terrain_object::TerrainAreaReceiveResult;
 #[cfg(test)]
 use crate::sim::terrain_object::TerrainAreaState;
+#[cfg(test)]
 use crate::sim::vision::FogState;
 use crate::sim::world::{FireOriginSnapshot, SimFireEvent, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;

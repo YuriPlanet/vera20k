@@ -564,6 +564,7 @@ pub(crate) fn spawn_terrain_tile_animations(
             use_cell_drawer: true,
             terrain_attached: true,
             draw_runtime: AnimDrawRuntime::default(),
+            owner: None,
         };
         let id = sim
             .spawn_anim_at_world(

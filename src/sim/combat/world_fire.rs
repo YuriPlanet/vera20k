@@ -250,7 +250,7 @@ fn admit_attacker_fire<'r>(
                 world,
                 rules,
                 overlay_registry,
-                fog: fog_enabled.then_some(&world.fog),
+                fog: fog_enabled.then(|| world.fog.fire_view()),
                 firer,
                 obj,
                 target: Some(snap.target),
@@ -471,7 +471,7 @@ fn admit_attacker_fire<'r>(
             world,
             rules,
             overlay_registry,
-            fog: fog_enabled.then_some(&world.fog),
+            fog: fog_enabled.then(|| world.fog.fire_view()),
             firer: actor,
             obj,
             target,
@@ -681,7 +681,7 @@ pub(super) fn retaliation_reaches(
         world,
         rules,
         overlay_registry,
-        fog: Some(&world.fog),
+        fog: Some(world.fog.fire_view()),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),
@@ -2210,10 +2210,13 @@ pub(crate) fn tick_combat(
     let sound_enabled = sound_enabled(world);
 
     let binary_frame = world.session.binary_frame;
-    // Only the aircraft release visit reads this frame-start copy of the fog.
-    let fog_snapshot = (!fire_requests.aircraft.is_empty()).then(|| world.fog.clone());
+    // The aircraft release visits ask GetFireError of the fog as this phase
+    // began; its detonations and strikes can move the sensor counts. Only
+    // what GetFireError reads is copied.
     let fog_enabled = fog_enabled(world);
-    let fog = fog_snapshot.as_ref().filter(|_| fog_enabled);
+    let fog_copy =
+        (fog_enabled && !fire_requests.aircraft.is_empty()).then(|| world.fog.fire_copy());
+    let fog = fog_copy.as_ref().map(crate::sim::vision::FireFogCopy::view);
     let active_wave_owners: BTreeSet<_> = world.active_wave_links.keys().copied().collect();
 
     if tick_ms == 0 {

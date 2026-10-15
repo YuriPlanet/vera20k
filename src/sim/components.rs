@@ -585,6 +585,10 @@ pub struct AnimClassSpawnDescriptor {
     pub terrain_attached: bool,
     /// Instance draw-state bytes supplied by the native producer.
     pub draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
+    /// The object the producer attaches the new Anim to right after the
+    /// constructor (`AnimClass::SetOwnerObject @ 0x00424B50`), if any.
+    #[serde(default)]
+    pub owner: Option<u64>,
 }
 
 impl AnimClassSpawnDescriptor {
@@ -611,6 +615,7 @@ impl AnimClassSpawnDescriptor {
             use_cell_drawer: false,
             terrain_attached: false,
             draw_runtime: crate::sim::anim_class::AnimDrawRuntime::default(),
+            owner: None,
         }
     }
 }

@@ -191,15 +191,13 @@ impl crate::sim::world::Simulation {
             draw_flags: PARACHUTE_ANIM_DRAW_FLAGS,
             z_adjust: 0,
             reverse: false,
+            owner: Some(owner_id),
             ..crate::sim::components::AnimClassSpawnDescriptor::new(
                 type_name, rx, ry, sub_x, sub_y, level,
             )
         };
         match self.spawn_anim_at_world(rules, descriptor, coord) {
-            Ok(anim_id) => {
-                self.set_anim_owner_object(anim_id, Some(owner_id), rules);
-                Some(anim_id)
-            }
+            Ok(anim_id) => Some(anim_id),
             Err(error) => {
                 // An art type that never bound draws nothing natively either.
                 log::debug!("parachute anim did not construct: {error}");

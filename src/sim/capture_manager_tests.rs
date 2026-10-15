@@ -564,7 +564,7 @@ fn get_fire_error_refuses_an_uncapturable_target() {
             world: &sim,
             rules: &rules,
             overlay_registry: None,
-            fog: Some(&sim.fog),
+            fog: Some(sim.fog.fire_view()),
             firer: sim.substrate.entities.get(yuri).unwrap(),
             obj: rules.object("YURI").unwrap(),
             target: Some(crate::sim::combat::TargetKind::Entity(target)),

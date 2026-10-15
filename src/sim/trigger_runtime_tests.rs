@@ -183,6 +183,70 @@ fn funds_event_runs_from_house_rung_after_a_spend() {
 }
 
 #[test]
+fn building_loss_event_waits_for_the_real_destructor_and_house_poll() {
+    let (mut sim, rules, overlay, houses) = event_ingress_fixture();
+    sim.session.game_mode_nonzero = false;
+    for house in sim.houses.values_mut() {
+        house.is_human = true;
+    }
+    let building = sim
+        .spawn_object_at_height("CABHUT", "House0", 15, 15, 0, 0, &rules)
+        .expect("the shared fixture admits ordinary Building construction");
+    assert_eq!(sim.houses[&houses[0]].tracking.buildings(), 1);
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nLOSS=Country7,<none>,Buildings gone,0,1,1,1,0\nFOLLOW=Country7,<none>,Follow,0,1,1,1,0\n\
+         [Events]\nLOSS=1,10,0,0\nFOLLOW=1,36,0,10\n\
+         [Actions]\nLOSS=1,56,0,10,0,0,0,0,A\nFOLLOW=1,28,0,7,0,0,0,0,A\n\
+         [Tags]\nLOSS_TAG=0,Loss,LOSS\nFOLLOW_TAG=0,Follow,FOLLOW\n",
+    );
+    let frame = |sim: &mut Simulation| {
+        sim.advance_master_frame(
+            &[],
+            Some(&rules),
+            Some(&overlay),
+            67,
+            TickLane::Ordinary,
+            Some(TriggerInputs {
+                events: &Default::default(),
+                actions: &Default::default(),
+                rules: Some(&rules),
+            }),
+            FrameEffects::default(),
+        )
+        .unwrap();
+    };
+    frame(&mut sim);
+    assert!(!sim.trigger_runtime.locals_set.contains(&10));
+    sim.session.binary_frame = 8;
+    sim.uninit_with_rules(building, &rules);
+    assert!(
+        sim.substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+    assert_eq!(sim.houses[&houses[0]].tracking.buildings(), 1);
+    frame(&mut sim);
+    // House polls before the shared pending-delete drain. Limbo alone must
+    // not report all buildings destroyed, even with no live map building.
+    assert!(!sim.trigger_runtime.locals_set.contains(&10));
+    assert!(sim.substrate.entities.get(building).is_none());
+    assert_eq!(sim.houses[&houses[0]].tracking.buildings(), 0);
+    sim.session.binary_frame = 16;
+    frame(&mut sim);
+    assert!(sim.trigger_runtime.locals_set.contains(&10));
+    assert!(!sim.trigger_runtime.globals_set.contains(&7));
+    frame(&mut sim);
+    assert!(sim.trigger_runtime.globals_set.contains(&7));
+    assert_eq!(sim.trigger_runtime.action_trace, [(56, 10), (28, 7)]);
+    assert!(sim.trigger_runtime.tag_order.is_empty());
+}
+
+#[test]
 fn music_action_reaches_the_ordered_presentation_effects() {
     let (mut sim, rules, overlay, _) = event_ingress_fixture();
     install_event_ingress_map(

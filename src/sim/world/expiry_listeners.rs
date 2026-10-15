@@ -19,7 +19,6 @@ use super::Simulation;
 use super::substrate::ObjectKind;
 use crate::sim::anim_class::{AnimStore, AnimTouchReader};
 use crate::sim::entity_store::{EntityStore, TouchReader};
-use crate::sim::game_entity::GameEntity;
 use crate::sim::particles::ParticleSystemStore;
 use crate::sim::projectile::ProjectileStore;
 use crate::sim::touch_log::Touched;
@@ -55,19 +54,18 @@ impl Holds {
         names.dedup();
         (every || !names.is_empty()).then_some(Self { names, every })
     }
+}
 
-    /// What `entity` holds.
-    fn of_entity(entity: &GameEntity) -> Option<Self> {
-        let mut names = Vec::new();
-        let every = Simulation::entity_expiry_holds(entity, |id| names.push(id));
-        Self::new(names, every)
-    }
+/// An object's re-read whose callback compares `held`: it names those ids,
+/// and no object but an entity holds something any expiry reaches.
+fn named<const N: usize>(names: &mut Vec<u64>, held: [Option<u64>; N]) -> bool {
+    names.extend(held.into_iter().flatten());
+    false
+}
 
-    /// What an object whose callback compares `names` holds. No object but
-    /// an entity holds something any expiry reaches.
-    fn of_names(names: [Option<u64>; 2]) -> Option<Self> {
-        Self::new(names.into_iter().flatten().collect(), false)
-    }
+thread_local! {
+    /// A thread's scratch for the ids a re-read listener names.
+    static NAMES: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[derive(Debug, Clone, Default)]
@@ -117,70 +115,38 @@ impl ExpiryListeners {
             || entities.keys_sorted(),
         );
         let entities = &*entities;
-        let read = |&id: &u64| entities.get(id).and_then(Holds::of_entity);
-        // Handing a few ids to the worker pool costs more than reading them.
-        let now = if ids.len() < PARALLEL_FROM {
-            ids.iter().map(read).collect()
-        } else {
-            crate::sim::parallel::map(&ids, read)
-        };
-        self.entities.update(ids, now);
-        // The other listeners each hold two ids at most: reading them costs
+        self.entities.reread_pooled(ids, |id, names| {
+            entities
+                .get(id)
+                .map(|entity| Simulation::entity_expiry_holds(entity, |name| names.push(name)))
+        });
+        // The other listeners hold only a few ids: reading them costs
         // less than handing them to the worker pool.
         let ids = self.anims.rereads(
             anims.take_touched(AnimTouchReader::ExpiryListeners),
             anims.len(),
             || anims.iter().map(|(&id, _)| id).collect(),
         );
-        let now = ids
-            .iter()
-            .map(|&id| {
-                anims
-                    .get(id)
-                    .and_then(|anim| Holds::of_names(anim.expiry_names()))
-            })
-            .collect();
-        self.anims.update(ids, now);
+        self.anims.reread(ids, |id, names| {
+            anims.get(id).map(|anim| named(names, anim.expiry_names()))
+        });
         let ids = self.particle_systems.rereads(
             particle_systems.take_touched(),
             particle_systems.len(),
             || particle_systems.iter().map(|(&id, _)| id).collect(),
         );
-        let now = ids
-            .iter()
-            .map(|&id| {
-                particle_systems
-                    .get(id)
-                    .and_then(|system| Holds::of_names(system.expiry_names()))
-            })
-            .collect();
-        self.particle_systems.update(ids, now);
-        let ids = self
-            .projectiles
-            .rereads(projectiles.take_touched(), projectiles.len(), || {
-                projectiles.iter().map(|(&id, _)| id).collect()
-            });
-        let now = ids
-            .iter()
-            .map(|&id| {
-                projectiles
-                    .get(id)
-                    .and_then(|bullet| Holds::of_names(bullet.expiry_names()))
-            })
-            .collect();
-        self.projectiles.update(ids, now);
+        self.particle_systems.reread(ids, |id, names| {
+            particle_systems
+                .get(id)
+                .map(|system| named(names, system.expiry_names()))
+        });
+        self.refresh_projectiles(projectiles);
         let ids = self.waves.rereads(waves.take_touched(), waves.len(), || {
             waves.iter().map(|(&id, _)| id).collect()
         });
-        let now = ids
-            .iter()
-            .map(|&id| {
-                waves
-                    .get(id)
-                    .and_then(|wave| Holds::of_names(wave.expiry_names()))
-            })
-            .collect();
-        self.waves.update(ids, now);
+        self.waves.reread(ids, |id, names| {
+            waves.get(id).map(|wave| named(names, wave.expiry_names()))
+        });
 
         let mut reached: Vec<(u64, ObjectKind)> = self
             .entities
@@ -211,7 +177,7 @@ impl ExpiryListeners {
         stores: &ListenerStores<'_>,
         expired: u64,
     ) -> Vec<(u64, ObjectKind)> {
-        let names = |names: [Option<u64>; 2]| names.contains(&Some(expired));
+        let names = |names: &[Option<u64>]| names.contains(&Some(expired));
         let mut reached: Vec<(u64, ObjectKind)> = stores
             .entities
             .par_select(|id, entity| Simulation::entity_expiry_listener_acts(entity, id, expired))
@@ -222,32 +188,56 @@ impl ExpiryListeners {
             stores
                 .anims
                 .iter()
-                .filter(|(_, anim)| names(anim.expiry_names()))
+                .filter(|(_, anim)| names(&anim.expiry_names()))
                 .map(|(&id, _)| (id, ObjectKind::Anim)),
         );
         reached.extend(
             stores
                 .particle_systems
                 .iter()
-                .filter(|(_, system)| names(system.expiry_names()))
+                .filter(|(_, system)| names(&system.expiry_names()))
                 .map(|(&id, _)| (id, ObjectKind::ParticleSystem)),
         );
         reached.extend(
             stores
                 .projectiles
                 .iter()
-                .filter(|(_, bullet)| names(bullet.expiry_names()))
+                .filter(|(_, bullet)| names(&bullet.expiry_names()))
                 .map(|(&id, _)| (id, ObjectKind::Projectile)),
         );
         reached.extend(
             stores
                 .waves
                 .iter()
-                .filter(|(_, wave)| names(wave.expiry_names()))
+                .filter(|(_, wave)| names(&wave.expiry_names()))
                 .map(|(&id, _)| (id, ObjectKind::Wave)),
         );
         reached.sort_unstable_by_key(|&(id, _)| id);
         reached
+    }
+
+    /// The Bullet subset of the same index, for Anim4's dedicated holder
+    /// dispatch725A16..725A4C. No generic Object callbacks run on this route.
+    pub(crate) fn projectiles_reached_by(
+        &mut self,
+        projectiles: &mut ProjectileStore,
+        expired: u64,
+    ) -> Vec<u64> {
+        self.refresh_projectiles(projectiles);
+        self.projectiles.reaching(expired).collect()
+    }
+
+    fn refresh_projectiles(&mut self, projectiles: &mut ProjectileStore) {
+        let ids = self
+            .projectiles
+            .rereads(projectiles.take_touched(), projectiles.len(), || {
+                projectiles.iter().map(|(&id, _)| id).collect()
+            });
+        self.projectiles.reread(ids, |id, names| {
+            projectiles
+                .get(id)
+                .map(|bullet| named(names, bullet.expiry_names()))
+        });
     }
 }
 
@@ -286,10 +276,65 @@ impl StoreIndex {
         }
     }
 
-    /// Record what each re-read listener holds now.
-    fn update(&mut self, ids: Vec<u64>, now: Vec<Option<Holds>>) {
-        for (id, now) in ids.into_iter().zip(now) {
-            self.replace(id, now);
+    /// Re-read `ids` with `read`, which pushes the ids a stored listener
+    /// names (repeats possible) and says whether any expiry reaches it, or
+    /// answers `None` for a removed one, and record what changed.
+    fn reread(&mut self, ids: Vec<u64>, read: impl Fn(u64, &mut Vec<u64>) -> Option<bool>) {
+        let index = &*self;
+        let changes: Vec<_> = NAMES.with_borrow_mut(|names| {
+            ids.iter()
+                .map(|&id| index.change(id, names, |names| read(id, names)))
+                .collect()
+        });
+        self.record(ids, changes);
+    }
+
+    /// [`Self::reread`], on the worker pool when there are many.
+    fn reread_pooled(
+        &mut self,
+        ids: Vec<u64>,
+        read: impl Fn(u64, &mut Vec<u64>) -> Option<bool> + Sync,
+    ) {
+        // Handing a few ids to the worker pool costs more than reading them.
+        if ids.len() < PARALLEL_FROM {
+            return self.reread(ids, read);
+        }
+        let index = &*self;
+        let changes = crate::sim::parallel::map(&ids, |&id| {
+            NAMES.with_borrow_mut(|names| index.change(id, names, |names| read(id, names)))
+        });
+        self.record(ids, changes);
+    }
+
+    /// What re-reading listener `id` with `read` changes: `None` when it
+    /// holds what the index holds for it, else what it holds now. A listener
+    /// that holds what it held allocates nothing; `names` is scratch.
+    fn change(
+        &self,
+        id: u64,
+        names: &mut Vec<u64>,
+        read: impl FnOnce(&mut Vec<u64>) -> Option<bool>,
+    ) -> Option<Option<Holds>> {
+        names.clear();
+        let every = read(names);
+        names.sort_unstable();
+        names.dedup();
+        let held = self.holds.get(&id);
+        let unchanged = match every {
+            Some(every) => held.map_or(!every && names.is_empty(), |held| {
+                held.every == every && held.names == *names
+            }),
+            None => held.is_none(),
+        };
+        (!unchanged).then(|| every.and_then(|every| Holds::new(names.clone(), every)))
+    }
+
+    /// Record what each re-read listener whose holdings changed holds now.
+    fn record(&mut self, ids: Vec<u64>, changes: Vec<Option<Option<Holds>>>) {
+        for (id, now) in ids.into_iter().zip(changes) {
+            if let Some(now) = now {
+                self.replace(id, now);
+            }
         }
     }
 
@@ -333,9 +378,12 @@ mod tests {
     use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
     use crate::sim::capture_manager::CaptureManagerState;
     use crate::sim::combat::{RAD_NO_ATTACKER, TargetKind};
+    use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::InternedId;
     use crate::sim::particles::ParticleSystem;
     use crate::sim::projectile::{ProjectileCoord, ProjectilePayload, ProjectileTarget};
+    use crate::sim::spawn_manager::{SpawnManagerState, SpawnSlot, SpawnSlotState};
+    use crate::sim::timer::CdTimer;
     use crate::sim::wave::Wave;
 
     /// Every listener store.
@@ -416,22 +464,25 @@ mod tests {
         entities.insert(attacker(1, 3));
         let mut controller = GameEntity::test_default(2, "YURI", "Russians", 12, 12);
         controller.capture_manager =
-            Some(CaptureManagerState::with_victims_for_test(3, false, &[]));
+            Some(CaptureManagerState::with_victims_for_test(3, false, &[3]));
         entities.insert(controller);
         entities.insert(GameEntity::test_default(3, "HTNK", "Russians", 14, 14));
         let mut docked = attacker(4, 3);
         docked.mark_live_contact_with(3);
         entities.insert(docked);
+        let mut infested = GameEntity::test_default(6, "HTNK", "Russians", 16, 16);
+        infested.parasite.set_eater_for_test(Some(8));
+        entities.insert(infested);
         let mut stores = Stores {
             entities,
             ..Stores::default()
         };
         let mut index = ExpiryListeners::default();
 
-        // Itself, the entities naming it once or twice, and the one that any
-        // expiry reaches.
-        assert_eq!(reach(&mut index, &mut stores, 3), [1, 2, 3, 4]);
-        assert_eq!(reach(&mut index, &mut stores, 9), [2]);
+        // Itself, the entities naming it once or twice (one through its
+        // CaptureManager), and the one that any expiry reaches.
+        assert_eq!(reach(&mut index, &mut stores, 3), [1, 2, 3, 4, 6]);
+        assert_eq!(reach(&mut index, &mut stores, 9), [6]);
         // A retarget is read back on the next expiry.
         stores
             .entities
@@ -439,21 +490,61 @@ mod tests {
             .unwrap()
             .attack_target
             .set_for_test(Some(TargetKind::Entity(4)));
-        assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 4]);
-        assert_eq!(reach(&mut index, &mut stores, 4), [1, 2, 4]);
+        assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 4, 6]);
+        assert_eq!(reach(&mut index, &mut stores, 4), [1, 4, 6]);
         // An entity inserted after the index was built.
         stores.entities.insert(attacker(5, 3));
-        assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 4, 5]);
+        assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 4, 5, 6]);
         // A removed entity reaches nothing and is no listener itself.
         stores.entities.remove(4);
-        assert_eq!(reach(&mut index, &mut stores, 4), [1, 2]);
-        assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 5]);
+        assert_eq!(reach(&mut index, &mut stores, 4), [1, 6]);
+        assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 5, 6]);
         // A walk over every entity makes it re-read them all.
         for entity in stores.entities.values_mut() {
             entity.capture_manager = None;
+            entity.parasite.set_eater_for_test(None);
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3, 5]);
         assert_eq!(reach(&mut index, &mut stores, 4), [1]);
+    }
+
+    #[test]
+    fn a_spawn_manager_reaches_its_owner_by_its_targets_and_children() {
+        let mut launcher = GameEntity::test_default(1, "V3", "Russians", 10, 10);
+        let mut manager = SpawnManagerState::for_test(
+            InternedId::from_index(0),
+            vec![SpawnSlot::for_test(
+                Some(5),
+                SpawnSlotState::InFlight,
+                CdTimer::default(),
+                true,
+            )],
+        );
+        manager.set_current_target_for_test(Some(TargetKind::Entity(6)));
+        manager.set_queued_target_for_test(Some(TargetKind::Cell(3, 3)));
+        launcher.spawn_manager = Some(manager);
+        let mut entities = EntityStore::new();
+        entities.insert(launcher);
+        let mut stores = Stores {
+            entities,
+            ..Stores::default()
+        };
+        let mut index = ExpiryListeners::default();
+
+        assert_eq!(reach(&mut index, &mut stores, 1), [1]);
+        assert_eq!(reach(&mut index, &mut stores, 5), [1]);
+        assert_eq!(reach(&mut index, &mut stores, 6), [1]);
+        assert!(reach(&mut index, &mut stores, 7).is_empty());
+        // A queued entity target is read back on the next expiry.
+        stores
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .spawn_manager
+            .as_mut()
+            .unwrap()
+            .set_queued_target_for_test(Some(TargetKind::Entity(7)));
+        assert_eq!(reach(&mut index, &mut stores, 7), [1]);
     }
 
     #[test]
@@ -551,5 +642,62 @@ mod tests {
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3]);
         assert_eq!(reach(&mut index, &mut stores, 6), [30, 31]);
+    }
+
+    #[test]
+    fn awaited_anim_names_share_the_existing_bullet_index_and_rebuilds() {
+        let mut stores = Stores::default();
+        // An awaited-only holder, and one with all three compared fields
+        // aliasing. Membership follows +154 independently of the wait flag.
+        bullet(&mut stores, 30, RAD_NO_ATTACKER, ProjectileTarget::None);
+        bullet(&mut stores, 31, 7, ProjectileTarget::Entity(7));
+        stores.projectiles.await_anim(30, Some(7));
+        stores.projectiles.await_anim(31, Some(7));
+        let mut index = ExpiryListeners::default();
+        assert_eq!(reach(&mut index, &mut stores, 7), [30, 31]);
+        assert_eq!(
+            index.projectiles_reached_by(&mut stores.projectiles, 7),
+            [30, 31]
+        );
+        assert!(
+            index
+                .projectiles_reached_by(&mut stores.projectiles, 8)
+                .is_empty()
+        );
+        // Replacement removes the old relation, and an awaited-only clear
+        // reports changed. The aliased holder occurs just once.
+        stores.projectiles.await_anim(30, Some(8));
+        assert_eq!(reach(&mut index, &mut stores, 7), [31]);
+        assert_eq!(reach(&mut index, &mut stores, 8), [30]);
+        assert_eq!(
+            stores
+                .projectiles
+                .pointer_expired(30, 8, ProjectileTarget::None, false),
+            Some((true, false))
+        );
+        assert!(reach(&mut index, &mut stores, 8).is_empty());
+        assert_eq!(
+            stores
+                .projectiles
+                .pointer_expired(31, 7, ProjectileTarget::None, false),
+            Some((true, false))
+        );
+        assert!(reach(&mut index, &mut stores, 7).is_empty());
+        stores.projectiles.await_anim(30, Some(9));
+        assert_eq!(reach(&mut index, &mut stores, 9), [30]);
+        stores.projectiles.remove(30);
+        assert!(reach(&mut index, &mut stores, 9).is_empty());
+        stores.projectiles.await_anim(31, Some(10));
+        let restored: ProjectileStore =
+            bincode::deserialize(&bincode::serialize(&stores.projectiles).unwrap()).unwrap();
+        stores.projectiles.await_anim(31, None);
+        assert!(reach(&mut index, &mut stores, 10).is_empty());
+        stores.projectiles = restored;
+        assert_eq!(reach(&mut index, &mut stores, 10), [31]);
+        let cloned = stores.projectiles.clone();
+        stores.projectiles.await_anim(31, None);
+        assert!(reach(&mut index, &mut stores, 10).is_empty());
+        stores.projectiles = cloned;
+        assert_eq!(reach(&mut index, &mut stores, 10), [31]);
     }
 }

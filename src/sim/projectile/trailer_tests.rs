@@ -168,7 +168,7 @@ fn projectile_trailer_header_matches_original_signed_cadence_and_wait_gates() {
         let projectile = store.projectiles.get_mut(&id).unwrap();
         projectile.awaiting_anim = waiting != "no";
         projectile.awaited_anim = (waiting == "attached").then_some(99);
-        let head = store.begin_ai_visit(id, |anim| anim == 99).unwrap();
+        let head = store.begin_ai_visit(id).unwrap();
         assert_eq!(
             store.get(id).unwrap().awaiting_anim,
             row["waiting_after"].as_bool().unwrap(),
@@ -293,7 +293,7 @@ fn scalable_members_type_cadence_and_callbacks_match_original() {
                         .iter()
                         .find(|kind| ids[kind.id.as_str()] == type_id)
                         .unwrap();
-                    let head = store.begin_ai_visit(id, |_| false).unwrap();
+                    let head = store.begin_ai_visit(id).unwrap();
                     let actual: Vec<_> = store
                         .trailer(
                             &head,
@@ -406,7 +406,7 @@ fn scalable_expiry_removes_one_duplicate_per_present_bullet_callback() {
     );
     let mut no_longer_scalable = kind.clone();
     no_longer_scalable.scalable = false;
-    let head = store.begin_ai_visit(1, |_| false).unwrap();
+    let head = store.begin_ai_visit(1).unwrap();
     assert!(
         store.trailer(&head, &no_longer_scalable, 3).is_some(),
         "header reads retained override without a Scalable flag gate"

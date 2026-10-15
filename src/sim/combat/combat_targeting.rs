@@ -441,7 +441,7 @@ pub(crate) fn should_retaliate(
         world,
         rules,
         overlay_registry: None,
-        fog: Some(&world.fog),
+        fog: Some(world.fog.fire_view()),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),

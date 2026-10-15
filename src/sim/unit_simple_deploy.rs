@@ -260,6 +260,7 @@ impl Simulation {
         let descriptor = AnimClassSpawnDescriptor {
             draw_flags: 0x600,
             reverse,
+            owner: Some(id),
             ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sx, sy, z)
         };
         let anim = self
@@ -278,7 +279,6 @@ impl Simulation {
             .get_mut(id)
             .expect("same Unit")
             .retain_deploy_anim(anim);
-        self.set_anim_owner_object(anim, Some(id), rules);
         self.set_anim_house_remap(anim, remap_house);
         Ok(anim)
     }

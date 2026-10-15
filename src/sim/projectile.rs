@@ -1128,14 +1128,15 @@ pub struct Projectile {
 
 impl Projectile {
     /// The ids [`ProjectileStore::pointer_expired`] compares: the source
-    /// (Owner `+0xB0`) and the target object (`+0x10C`). A source already
+    /// (Owner `+0xB0`), target object (`+0x10C`) and awaited Anim (`+0x154`). A source already
     /// `RAD_NO_ATTACKER` stays so, which changes nothing. VERA-only: feeds the
     /// pointer-expiry listener index (`ExpiryListeners`); a field that
     /// callback compares must be named here too.
-    pub(crate) fn expiry_names(&self) -> [Option<u64>; 2] {
+    pub(crate) fn expiry_names(&self) -> [Option<u64>; 3] {
         [
             (self.source_id != crate::sim::combat::RAD_NO_ATTACKER).then_some(self.source_id),
             self.target.object_id(),
+            self.awaited_anim,
         ]
     }
 
@@ -1529,14 +1530,14 @@ impl ProjectileStore {
     }
 
     /// Apply `BulletClass::PointerExpired @ 0x004684E0` to one stored Bullet,
-    /// or `None` when it is not stored: whether its source or target changed,
+    /// or `None` when it is not stored: whether any retained reference changed,
     /// and whether another scalable-list match remains after this callback's
     /// first removal, when that arm was enabled. Once false, the same
     /// broadcast can skip further scans; a disabled arm reports false
     /// without scanning.
     ///
-    /// Source and target are independent arms: when both match the expired
-    /// object, both change in the same synchronous callback. The projectile
+    /// Source, target and awaited Anim are independent arms: all matching
+    /// references change in the same synchronous callback. The projectile
     /// itself remains stored and registered; repeated callbacks are no-ops.
     pub(crate) fn pointer_expired(
         &mut self,
@@ -1553,6 +1554,12 @@ impl ProjectileStore {
         }
         if projectile.target.object_id() == Some(expired_id) {
             projectile.target = replacement_target;
+            changed = true;
+        }
+        // Original4685BE..4685C6, before the control gate: expiry clears
+        // +154 synchronously, but only the next AI clears wait byte+158.
+        if projectile.awaited_anim == Some(expired_id) {
+            projectile.awaited_anim = None;
             changed = true;
         }
         //4685CC..46865D: only a PRESENT Bullet subscriber, control!=0,
@@ -1806,18 +1813,12 @@ impl ProjectileStore {
 
     /// Original Bullet466705..466822. No target or Cell query precedes the
     /// optional Trailer constructor at the resulting Flight boundary.
-    /// `anim_live` answers whether the awaited anim still lives. Its UnInit
-    /// clears a waiting bullet's `+0x154` (`BulletClass::PointerExpired
-    /// 0x004685BE`, reached through the holder list `0x00B0F5B8`); VERA
-    /// reuses no anim id, so a dead one's id finds nothing.
-    pub(crate) fn begin_ai_visit(
-        &mut self,
-        id: u64,
-        anim_live: impl FnOnce(AnimId) -> bool,
-    ) -> Option<ProjectileAiHead> {
+    /// Original46670F tests the retained pointer, without querying Anim
+    /// liveness. PointerExpired4685BE clears it at the Anim's retirement.
+    pub(crate) fn begin_ai_visit(&mut self, id: u64) -> Option<ProjectileAiHead> {
         let projectile = self.get_mut(id)?;
         let phase = if projectile.awaiting_anim {
-            if projectile.awaited_anim.is_some_and(anim_live) {
+            if projectile.awaited_anim.is_some() {
                 ProjectileAiPhase::Waiting
             } else {
                 projectile.awaiting_anim = false;
@@ -1832,8 +1833,7 @@ impl ProjectileStore {
 
     /// Test adapter joining the shared AI head and continuation without the
     /// world's intervening Trailer constructor or retirement transaction. An
-    /// awaited anim counts as dead; a test needing a live one calls
-    /// [`Self::begin_ai_visit`] itself. Supplied coordinates serve every query;
+    /// awaited pointer obeys [`Self::begin_ai_visit`]. Supplied coordinates serve every query;
     /// world integration tests cover the separate target virtuals.
     #[cfg(test)]
     pub(crate) fn advance_one(
@@ -1854,7 +1854,7 @@ impl ProjectileStore {
         ) -> Option<ProjectileCollisionResponse>,
         nuke: Option<&NukeImpactContext<'_>>,
     ) -> Option<ProjectileAdvanceResult> {
-        let head = self.begin_ai_visit(id, |_| false)?;
+        let head = self.begin_ai_visit(id)?;
         self.advance_after_head(
             head,
             binary_frame,

@@ -348,10 +348,7 @@ impl Simulation {
         if self.projectiles.get(id).is_some() {
             let head = self
                 .projectiles
-                .begin_ai_visit(id, |anim| {
-                    self.substrate.anims.contains_key(anim)
-                        && !self.substrate.pending_delete.contains_object(&anim)
-                })
+                .begin_ai_visit(id)
                 .expect("live Bullet has an AI prefix");
             // Bullet466826..4668B8 constructs at the old Location after its
             // visual update, before target/floor queries or flight. Registering

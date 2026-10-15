@@ -2780,7 +2780,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
             world: &sim,
             rules,
             overlay_registry: Some(&registry),
-            fog: Some(&sim.fog),
+            fog: Some(sim.fog.fire_view()),
             firer: actor,
             obj: sniper,
             target: Some(TargetKind::Entity(source)),

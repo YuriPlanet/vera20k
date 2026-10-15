@@ -2386,6 +2386,87 @@ fn bullet_location(
     }
 }
 
+/// Bullet469D06..469EBA's fallback SHP arm. The typed VoxelAnim arm
+/// 469D40..469E18 remains an authored-rule residual: it consumes the budget
+/// request but must never be replaced by a MetallicDebris fallback. Stock
+/// Smashing/TRexWH retain an empty typed list and use this complete SHP path.
+fn emit_warhead_debris(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
+    out: &mut CombatEmit,
+) {
+    use crate::sim::voxel_anim::{ShpDebrisSource, debris_budget, throw_shp_debris};
+
+    let budget = debris_budget(
+        warhead.min_debris,
+        warhead.max_debris,
+        &mut world.scenario_rng,
+    );
+    if budget <= 0 || !warhead.debris_types.is_empty() {
+        return;
+    }
+    let mut host = WarheadShpDebrisHost {
+        world,
+        rules,
+        detonation: *detonation,
+        anims: &mut out.effects.explosion_effects,
+    };
+    if let Err(error) = throw_shp_debris(
+        budget,
+        ShpDebrisSource::RulesMetallicDebris,
+        rules.general.metallic_debris.len(),
+        &mut host,
+    ) {
+        // Preserve earlier synchronous births on unsupported authored launch
+        // arithmetic, as the existing Techno debris entry does.
+        log::debug!("warhead debris stopped outside verified numeric domain: {error}");
+    }
+}
+
+struct WarheadShpDebrisHost<'w, 'r> {
+    world: &'w mut Simulation,
+    rules: &'r RuleSet,
+    detonation: ProjectileDetonation,
+    anims: &'w mut Vec<ExplosionEffect>,
+}
+
+impl crate::sim::voxel_anim::ShpDebrisHost for WarheadShpDebrisHost<'_, '_> {
+    fn rng(&mut self) -> &mut SimRng {
+        &mut self.world.scenario_rng
+    }
+
+    fn construct_anim(
+        &mut self,
+        source: crate::sim::voxel_anim::ShpDebrisSource,
+        index: usize,
+    ) -> Result<(), crate::util::native_x87::NativeX87Error> {
+        debug_assert_eq!(
+            source,
+            crate::sim::voxel_anim::ShpDebrisSource::RulesMetallicDebris
+        );
+        //469E50 reads live GetCoords per piece, independently of the
+        // impact argument and Inviso-scattered explosion placement.
+        let location = bullet_location(self.world, &self.detonation).0;
+        let coord = crate::sim::anim_class::AnimWorldCoord {
+            x: location.x,
+            y: location.y,
+            z: location.z.wrapping_add(20),
+        };
+        self.world.emit_debris_anim(
+            self.rules,
+            self.rules
+                .general
+                .metallic_debris
+                .get(index)
+                .map(String::as_str),
+            coord,
+            self.anims,
+        )
+    }
+}
+
 /// `LAB_00469AA4`, reached by the ordinary arm and every special arm after
 /// their receivers: an `Inviso=` bullet first scatters the anim coordinate
 /// by one raw Scenario draw (`0x0049F420`, radius 0x20; the damage keeps the
@@ -2522,6 +2603,10 @@ pub(crate) fn commit_projectile_detonations_inline(
             _ => (1, false),
         };
         let mut coordinate = detonation.impact;
+        // Production impacts retain their Bullet until this transaction ends.
+        // Bare death weapons and explicit component fixtures may supply only
+        // the temporary Bullet packet; do not invent a second alive flag.
+        let represented_bullet = world.projectiles.get(detonation.projectile_id).is_some();
         for _ in 0..clusters {
             let clustered = world.projectiles.current_detonation(ProjectileDetonation {
                 impact: coordinate,
@@ -2570,6 +2655,26 @@ pub(crate) fn commit_projectile_detonations_inline(
                 .explosion_effects
                 .extend(outer_explosion_effects);
             under_attack_events.append(&mut pings);
+            //469A88..469A94: ordinary AreaDamage may synchronously remove
+            // its Bullet. Return before Inviso/selection/debris; the outer
+            //469038 alive gate also skips all remaining cluster draws.
+            if area_wall_route.is_some()
+                && represented_bullet
+                && (world.projectiles.get(detonation.projectile_id).is_none()
+                    || world
+                        .substrate
+                        .pending_delete
+                        .contains_object(&detonation.projectile_id))
+            {
+                commit_smudges(
+                    world,
+                    rules,
+                    overlay_registry,
+                    outer_anim_requests,
+                    &mut emit.effects.smudge_spawn_requests,
+                );
+                break;
+            }
             let anim_start = emit.effects.smudge_spawn_requests.len();
             let live_tail = world.projectiles.current_detonation(clustered);
             let inviso = live_tail
@@ -2596,6 +2701,11 @@ pub(crate) fn commit_projectile_detonations_inline(
                 anim_requests,
                 &mut emit.effects.smudge_spawn_requests,
             );
+            //46A2A1..46A2FB returns immediately after the nullify Anim.
+            // The ordinary outer cluster successor still follows that return.
+            if area_wall_route.is_none() || area_result != AreaDamageResult::IronCurtain {
+                emit_warhead_debris(world, rules, &live_tail, warhead, emit);
+            }
             if cluster_draws {
                 coordinate =
                     projectile_next_cluster_coord(detonation.impact, &mut world.scenario_rng);

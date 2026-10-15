@@ -307,6 +307,19 @@ impl SpawnManagerState {
         self.queued_target
     }
 
+    /// The objects whose expiry [`pointer_expired`] acts on besides its
+    /// owner's own: the live and queued target and each slot's child. The
+    /// pointer-expiry index (`ExpiryListeners`) reaches the owner by these.
+    pub(crate) fn expiry_names(&self) -> impl Iterator<Item = u64> + '_ {
+        [self.current_target, self.queued_target]
+            .into_iter()
+            .filter_map(|target| match target {
+                Some(TargetKind::Entity(id)) => Some(id),
+                Some(TargetKind::Cell(..)) | None => None,
+            })
+            .chain(self.slots.iter().filter_map(SpawnSlot::spawn))
+    }
+
     /// The ManagerMode (`+0x70`).
     pub fn mode(&self) -> SpawnManagerMode {
         self.mode
@@ -847,6 +860,9 @@ fn manager_status(host: &mut impl SpawnHost, frame: i32) {
 /// The slot guard (`0x006B7CDD..0x006B7CF2`) exists because Limbo broadcasts
 /// (`0x005F4D61`): a docking Hornet's Limbo would otherwise expire its own
 /// slot and strand it in limbo.
+///
+/// Every id compared here but the owner's is named by
+/// [`SpawnManagerState::expiry_names`].
 fn pointer_expired(host: &mut impl SpawnHost, expired: u64) {
     let frame = host.frame();
     let expired_target = Some(TargetKind::Entity(expired));
