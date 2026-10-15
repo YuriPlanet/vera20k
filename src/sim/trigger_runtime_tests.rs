@@ -736,15 +736,9 @@ fn retail_sov01_script_context() -> Option<(
         retail_archive_bytes, retail_ini, retail_rules_and_art,
     };
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
-    let Some(raw_map) = retail_archive_bytes("SOV01UMD.MAP") else {
-        return None;
-    };
-    let Some((retail, art)) = retail_rules_and_art() else {
-        return None;
-    };
-    let Some(ai) = retail_ini("aimd.ini") else {
-        return None;
-    };
+    let raw_map = retail_archive_bytes("SOV01UMD.MAP")?;
+    let (retail, art) = retail_rules_and_art()?;
+    let ai = retail_ini("aimd.ini")?;
     let map = crate::map::map_file::MapFile::from_bytes(&raw_map).unwrap();
     assert_eq!(
         crate::util::sha256::sha256_hex(&raw_map),
@@ -775,8 +769,8 @@ fn retail_sov01_script_context() -> Option<(
             cell.base_yr_cell_land_type = 2;
             cell.terrain_class = water.terrain_class;
             cell.base_terrain_class = water.terrain_class;
-            cell.speed_costs = water.speed_costs.clone();
-            cell.base_speed_costs = water.speed_costs.clone();
+            cell.speed_costs = water.speed_costs;
+            cell.base_speed_costs = water.speed_costs;
             cell.is_water = true;
             cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
             cell
