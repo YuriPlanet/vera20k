@@ -85,6 +85,66 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
 }
 
 #[test]
+fn delete_tag_returns_safely_through_its_active_dispatcher() {
+    // Rust safety regression, not a native self-deletion parity claim: the
+    // original Action70 destructor frees the caller's retained raw pointer.
+    for repeat in [0, 1, 2] {
+        for nested in [false, true] {
+            let (mut sim, rules, overlays, _) = event_ingress_fixture();
+            let killer = if nested {
+                "22,2,NESTED,0,0,0,0,A"
+            } else {
+                "70,3,ACTIVE,0,0,0,0,A"
+            };
+            install_event_ingress_map(
+                &mut sim,
+                &rules,
+                &format!(
+                    "[Triggers]\nTAIL=Country0,KILLER,Tail,0,1,1,1,0\n\
+                     KILLER=Country0,<none>,Killer,0,1,1,1,0\n\
+                     NESTED=Country0,<none>,Nested,0,1,1,1,0\n\
+                     [Tags]\nACTIVE={repeat},Active,TAIL\nOTHER=2,Other,NESTED\n\
+                     [Events]\nTAIL=1,8,0,0\nKILLER=1,8,0,0\nNESTED=1,8,0,0\n\
+                     [Actions]\nTAIL=1,28,0,7,0,0,0,0,A\nKILLER=1,{killer}\n\
+                     NESTED=1,70,3,ACTIVE,0,0,0,0,A\n"
+                ),
+            );
+            let active_type = sim.trigger_runtime.definitions.tag_type("ACTIVE").unwrap();
+            let active = sim.shared_trigger_tag(active_type);
+            let other_type = sim.trigger_runtime.definitions.tag_type("OTHER").unwrap();
+            let other = sim.shared_trigger_tag(other_type);
+            let cell = sim.trigger_cell_identity((15, 15));
+            sim.replace_cell_trigger_tag(cell, Some(active));
+            assert_eq!(sim.trigger_runtime.tag(active).unwrap().refs, 1);
+            assert!(sim.dispatch_live_tag_event(
+                active,
+                TagEventInput {
+                    force: true,
+                    cell: (15, 15),
+                    ..TagEventInput::default()
+                },
+                &mut Vec::new(),
+                Some(&rules),
+                Some(&overlays),
+                FrameEffects::default(),
+            ));
+            assert!(sim.trigger_runtime.tag(active).is_none());
+            assert!(!sim.trigger_runtime.cell_tags.contains_key(&cell));
+            assert!(!sim.trigger_runtime.locals_set.contains(&7));
+            assert!(!sim.trigger_runtime.tag(other).unwrap().dispatch_guard);
+            sim.process_pending_delete_with(
+                Some(&rules),
+                Some(&overlays),
+                FrameEffects::default(),
+                1,
+                true,
+            );
+            sim.validate_restored_trigger_runtime().unwrap();
+        }
+    }
+}
+
+#[test]
 fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
     let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
         return;

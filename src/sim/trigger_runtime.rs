@@ -2259,6 +2259,13 @@ impl Simulation {
                 }
                 _ => {}
             }
+            // Action70 (6DF094 ->6E58B0) can immediately destroy this Tag,
+            // including through a nested Force22. Native retains a stale
+            // pointer here; safe storage must stop this dispatch rather than
+            // reading the freed Tag or executing another linked Trigger.
+            if self.trigger_runtime.tag(index).is_none() {
+                return result;
+            }
         }
         self.trigger_runtime.tags[index]
             .as_mut()
