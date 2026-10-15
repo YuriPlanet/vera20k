@@ -1636,10 +1636,6 @@ pub(super) fn emit_admitted_fire(
 /// `Assign_Target(NULL)`. It runs after both successful and failed launches.
 /// Native execution: `tools/projectile_oracle/fire_once.py`.
 ///
-/// RESIDUAL, pre-existing and not ported:
-/// - DistributedFire (TechnoType `+0x6B0`, `0x006FF872..0x006FF8EB`): the
-///   target is remembered at `+0x470`, then dropped. Trigger: the Aegis
-///   Cruiser. Effect: VERA's Aegis keeps its target.
 fn fireat_tail(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1659,6 +1655,33 @@ fn fireat_tail(
             overlay_registry,
             effects,
         );
+    }
+    // FireAt6FF872..6FF8EB uses its explicit argument, on both successful
+    // and failed-launch tails. Unit mission Attack(1) bypasses this arm;
+    // Buildings take it even on Attack. Keep the real class setter's burst,
+    // passive-acquisition and SpawnManager side effects in that owner.
+    let distributed = world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .is_some_and(|entity| {
+            rules
+                .object(world.interner.resolve(entity.type_ref()))
+                .is_some_and(|kind| kind.distributed_fire)
+                && (entity.category() == EntityCategory::Structure
+                    || entity.mission.current().known()
+                        != Some(crate::sim::mission::MissionType::Attack))
+        });
+    if distributed {
+        world
+            .substrate
+            .entities
+            .get_mut(snap.stable_id)
+            .unwrap()
+            .remember_distributed_fire_target(snap.target);
+        world
+            .assign_target_represented(snap.stable_id, None, Some(rules), overlay_registry, effects)
+            .expect("DistributedFire firer retains its concrete target receiver");
     }
     if weapon.fire_once {
         // Native Abstract+0x14 bit 4 admits Foot receivers, not buildings.

@@ -64,9 +64,10 @@
 //!
 //! ## Other residuals
 //!
-//! - The `DistributedFire=` candidate/history assignment (`0x00709550`) is
-//!   not represented here. It is reachable for human-owned stock AEGIS;
-//!   its complete collection, firing-history and detach owners remain pending.
+//! DistributedFire collects accepted air/ring scores here; its private
+//! GameEntity owner implements709550 and the world commits class assignment.
+//! Flat scans deliberately clear candidates without appending.
+//!
 //! - The ring walk's wall fallback (`0x006F8C10`, per ring cell, read not
 //!   executed) is not ported: for a computer house it can return a cell
 //!   holding a `Wall=` overlay that the scanner's `Wall=` warhead and AG
@@ -81,7 +82,6 @@
 //! - Part of sim/ — depends on rules/, map/ and sim/ only.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use std::collections::BTreeMap;
 use std::ops::ControlFlow;
 
 use super::combat_targeting::AttackerSnapshot;
@@ -103,7 +103,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::components::DriveCoord;
 use crate::sim::entity_store::EntityStore;
-use crate::sim::game_entity::GameEntity;
+use crate::sim::game_entity::{DistributedFireCandidate, GameEntity};
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 use crate::sim::movement::ground_pose::{object_get_coords, position_world_coord};
@@ -560,28 +560,6 @@ fn scan_radius_cells(
     }
 }
 
-/// The air pre-pass's temporary coordinate lookup, built from the separately
-/// owned airborne registrations (the store keeps them in enter order); its
-/// sweep-order residual is below.
-fn airborne_index(
-    entities: &EntityStore,
-    min: (i32, i32),
-    max: (i32, i32),
-) -> BTreeMap<(u16, u16), Vec<u64>> {
-    let mut airborne: BTreeMap<(u16, u16), Vec<u64>> = BTreeMap::new();
-    for entity in entities.airborne() {
-        let (rx, ry) = (entity.position.rx(), entity.position.ry());
-        let (x, y) = (i32::from(rx), i32::from(ry));
-        if x >= min.0 && x <= max.0 && y >= min.1 && y <= max.1 {
-            airborne
-                .entry((rx, ry))
-                .or_default()
-                .push(entity.stable_id());
-        }
-    }
-    airborne
-}
-
 /// Everything one scan needs that does not change between candidates.
 struct ScanContext<'a> {
     entities: &'a EntityStore,
@@ -965,18 +943,23 @@ impl<'a> ScannerStanding<'a> {
 /// Result of the concrete Greatest_Threat dispatch. World callers use the
 /// entry fact to apply Foot4D9955's latch write without clearing it when an
 /// Infantry class gate returned before reaching Foot4D9920.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct ThreatScanOutcome {
     target: Option<u64>,
     foot_wrapper_entered: bool,
+    collected: Option<Vec<DistributedFireCandidate>>,
 }
 
 impl ThreatScanOutcome {
-    pub(crate) const fn target(self) -> Option<u64> {
+    pub(crate) fn take_collected(&mut self) -> Option<Vec<DistributedFireCandidate>> {
+        self.collected.take()
+    }
+
+    pub(crate) const fn target(&self) -> Option<u64> {
         self.target
     }
 
-    pub(crate) const fn foot_wrapper_entered(self) -> bool {
+    pub(crate) const fn foot_wrapper_entered(&self) -> bool {
         self.foot_wrapper_entered
     }
 }
@@ -1097,13 +1080,18 @@ pub(crate) fn greatest_threat(
             return ThreatScanOutcome {
                 target,
                 foot_wrapper_entered: false,
+                collected: None,
             };
         }
     };
-    let result = |target| ThreatScanOutcome {
+    let result = |target, collected| ThreatScanOutcome {
         target,
         foot_wrapper_entered,
+        collected,
     };
+    // Base GreatestThreat6F8F80..6F8FA5 clears these two lists, retaining
+    // history. Class returns before the base must preserve the prior lists.
+    let mut collected = attacker_obj.distributed_fire.then(Vec::new);
     // Only a radius path without GuardRange needs the live range readers:
     // Threat_Range707ED0 or the zero-radius walk bound6F90DE. Mask0 and a
     // retained GuardRange bypass them. Do not duplicate GetWeaponRange's
@@ -1193,13 +1181,13 @@ pub(crate) fn greatest_threat(
     };
 
     if flat {
-        return result(global_list_scan(&ctx, flags, scanner_zone));
+        return result(global_list_scan(&ctx, flags, scanner_zone), collected);
     }
 
     let radius = scan_radius_cells(scanner, attacker_obj, rules, range, weapon_ranges);
     if radius <= 0 {
         // `for (r = 0; r < radius; r++)` never executes.
-        return result(None);
+        return result(None, collected);
     }
 
     //6F9148..6F9179: arg2 is converted with signed /256 then packed to
@@ -1209,18 +1197,6 @@ pub(crate) fn greatest_threat(
     // `AND EBX,0x4 @ 0x006F8F3A` gates the whole airborne pre-pass
     // (`TEST EBX,EBX @ 0x006F91A7`).
     let scan_air = mask & 4 != 0;
-    // An AG-only scan walks no airborne subset: it neither walks the entity
-    // store nor allocates and sorts one.
-    let airborne = if scan_air {
-        airborne_index(
-            entities,
-            (cx - radius, cy - radius),
-            (cx + radius, cy + radius),
-        )
-    } else {
-        BTreeMap::new()
-    };
-
     let mut best: Option<u64> = None;
     // `local_50 = -1` — the keep test is strictly greater, so a score of 0 (the
     // lowest an accepted candidate can carry, and itself a rejection) can never
@@ -1244,55 +1220,61 @@ pub(crate) fn greatest_threat(
     // although its path layer stays Air. Touchdown untracks it (54C9DC).
     // Never rewrite stored Cell lists or AirTracker membership from this gate.
     //
-    // DRIFT — sweep order. Native iterates a 20x20 bucket grid
-    // (`FUN_00412B40`/`FUN_004137A0`); this sweeps the same ring order the
-    // ground walk uses. It selects the same aircraft except when two tie on
-    // score, where the winner can differ. Frequency: two identical aircraft at
-    // the same range and health, on the same tick.
-    if scan_air && let Some(terrain) = terrain {
-        // GreatestThreat6F91C8 resolves the scanner's Cell before asking the
-        // AirTracker, even when its airborne buckets contain no candidates.
-        terrain.native_cell_identity((cx as i16, cy as i16));
-    }
+    // One shared retained-bucket query serves this scanner and area damage.
+    //6F91C8's Map5657A0 returns a real alias or the live Dummy. The shared
+    // query owns CellGetCoords486840 ->413A30 conversion for both consumers.
+    let air_center =
+        scan_air.then(|| crate::sim::cell_rect::get_cellclass_fallback(terrain, cx, cy));
     // `OR EBX,0x8002 @ 0x006F91C2`: airborne infantry and units pass the
     // class gate whatever the mask.
     let air_walk = WalkArgs {
         flags: flags | 0x8002,
         ..walk
     };
-    for ring in 0..if scan_air { radius } else { 0 } {
-        for (x, y) in square_ring_cells((cx, cy), ring) {
-            let (Ok(rx), Ok(ry)) = (u16::try_from(x), u16::try_from(y)) else {
-                continue;
-            };
-            let Some(occupants) = airborne.get(&(rx, ry)) else {
-                continue;
-            };
-            for &candidate_id in occupants {
-                if candidate_id == attacker.stable_id {
-                    continue;
-                }
-                let Some(candidate) = entities.get(candidate_id) else {
-                    continue;
-                };
-                // `0x006F91FB..0x006F9267`: the ally test spares the same
-                // scanners as the flat walk's aircraft walk.
-                if (ctx.is_ally(candidate) && !ctx.attacks_allies())
-                    || !ctx.house_gates_admit(candidate)
-                    || !candidate.lifecycle.cell_marked()
-                    || crate::sim::occupancy::cell_list_layer_for_entity(candidate, terrain)
-                        .is_some()
-                {
-                    continue;
-                }
-                let Some(score) = evaluate_candidate(&ctx, air_walk, candidate) else {
-                    continue;
-                };
-                if score > best_score {
-                    best_score = score;
-                    best = Some(candidate_id);
-                }
-            }
+    let air_extent = terrain
+        .map(|terrain| (terrain.width(), terrain.height()))
+        .or_else(|| fire_world.map(|world| (world.session.map_width, world.session.map_height)));
+    let airborne = if scan_air {
+        air_extent
+            .map(|extent| {
+                entities.airborne_in_query_order(
+                    air_center.as_ref().expect("AA source Cell"),
+                    radius,
+                    extent,
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    for candidate_id in airborne {
+        if candidate_id == attacker.stable_id {
+            continue;
+        }
+        let Some(candidate) = entities.get(candidate_id) else {
+            continue;
+        };
+        //6F91FB..6F9267: tracker membership does not bypass live layer/gates.
+        if (ctx.is_ally(candidate) && !ctx.attacks_allies())
+            || !ctx.house_gates_admit(candidate)
+            || !candidate.lifecycle.cell_marked()
+            || crate::sim::occupancy::cell_list_layer_for_entity(candidate, terrain).is_some()
+        {
+            continue;
+        }
+        let Some(score) = evaluate_candidate(&ctx, air_walk, candidate) else {
+            continue;
+        };
+        //6F92B9..6F9363 append every accepted score before the best keep.
+        if let Some(entries) = &mut collected {
+            entries.push(DistributedFireCandidate {
+                target: Some(super::TargetKind::Entity(candidate_id)),
+                score,
+            });
+        }
+        if score > best_score {
+            best_score = score;
+            best = Some(candidate_id);
         }
     }
 
@@ -1302,7 +1284,7 @@ pub(crate) fn greatest_threat(
         walk.flags |= 4;
     }
     if mask == 5 {
-        return result(best);
+        return result(best, collected);
     }
 
     for ring in 0..radius {
@@ -1328,16 +1310,24 @@ pub(crate) fn greatest_threat(
             else {
                 continue;
             };
+            //6F94A7/6F9654/6F9839/6F99ED: ring append points. Flat
+            //6F9B6E..6F9DA1 deliberately has no corresponding collection.
+            if let Some(entries) = &mut collected {
+                entries.push(DistributedFireCandidate {
+                    target: Some(super::TargetKind::Entity(candidate_id)),
+                    score,
+                });
+            }
             if score > best_score {
                 best_score = score;
                 best = Some(candidate_id);
             }
         }
         if best.is_some() && is_early_return_ring(ring, radius) {
-            return result(best);
+            return result(best, collected);
         }
     }
-    result(best)
+    result(best, collected)
 }
 
 /// `Greatest_Threat`'s mask: the caller's literal through the scanner's
@@ -1474,7 +1464,7 @@ fn scanner_mask<'r>(
 /// COST — this walks every live entity once per flat scan, which is the shape
 /// native has (`[0x00A8EC88]` is the global object count) and is bounded by the
 /// object count rather than by the map. The ring path borrows maintained Cell
-/// lists, while its airborne pre-pass still builds a temporary index. A hunting
+/// lists, while its airborne pre-pass uses the shared retained-bucket query. A hunting
 /// object scans only when it holds
 /// no target and its `NormalTargetingDelay` timer has expired, so at charter
 /// scale the cost is one N-pass per hunting object per cadence — not per tick,

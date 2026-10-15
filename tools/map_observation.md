@@ -1771,6 +1771,92 @@ The 6500-step run ends with state hash `9448992596267329062` and BGRA SHA-256
 The native comparisons are as for the V3 observation, with
 `spawn_manager::oracle_tests` covering the volley; no whole-run equivalence is claimed.
 
+## Human Guard Aegis distributed-fire observation
+
+[`map_observation.aegis-distributed-fire.example.json`](map_observation.aegis-distributed-fire.example.json)
+loads a human AEGIS on legal water at (40,48), initially on ordinary Guard with
+no target, and two hostile stock ZEP at (44,44) and (45,44). It queues no commands.
+The computer's ordinary mission/Jumpjet updates make the aircraft airborne; the
+profile does not assign altitude, AirTracker membership, candidates or history.
+It retains projectiles and both aircraft for 360 completed steps, with an
+explicit short-game-off, no-bases, no-shroud session. No type, weapon, timer or
+health rules are changed.
+
+Materialize a scratch map and profile from the checkout. This reuses the
+[Dreadnought fixture's water terrain](map_observation/examples/ai_dred_bombard.map)
+without adding another terrain copy or map generator:
+
+```sh
+python - /absolute/evidence/aegis-distributed-fire.map /absolute/evidence/aegis-profile.json <<'PYGEN'
+from pathlib import Path
+import json, re, sys
+
+map_path, profile_path = map(Path, sys.argv[1:])
+assert all(path.is_absolute() and not path.exists() for path in (map_path, profile_path))
+mission = Path('tools/map_observation/examples/ai_dred_bombard.map').read_text()
+mission = mission.replace('Name=Computer Dreadnought Bombard Observation',
+                          'Name=Human Guard Aegis Distributed Fire Observation')
+mission = mission.replace('IgnoreGlobalAITriggers=no', 'IgnoreGlobalAITriggers=yes')
+mission = mission.replace('HomeCell=49043', 'HomeCell=46043')
+mission = mission.replace('AltHomeCell=49043', 'AltHomeCell=46043')
+sections = {
+    'Structures': '',
+    'Infantry': '',
+    'AITriggerTypes': '',
+    'Waypoints': '0=48038\n1=62062',
+    'Units': ('0=VERA-OBSERVER,AEGIS,256,40,48,64,Guard,None,0,-1,0,-1,1,1\n'
+              '1=Computer1,ZEP,256,44,44,64,Sleep,None,0,-1,0,-1,1,1\n'
+              '2=Computer1,ZEP,256,45,44,64,Sleep,None,0,-1,0,-1,1,1'),
+}
+for name, body in sections.items():
+    mission, count = re.subn(
+        r'(?ms)^\[' + re.escape(name) + r'\]\n.*?(?=^\[|\Z)',
+        lambda match: f'[{name}]\n{body}\n\n', mission)
+    assert count == 1, (name, count)
+map_path.write_text(mission, encoding='ascii')
+profile = json.loads(Path('tools/map_observation.aegis-distributed-fire.example.json').read_text())
+profile['launch']['selected_map_file'] = str(map_path)
+profile_path.write_text(json.dumps(profile, indent=2) + '\n')
+PYGEN
+```
+
+Run that profile with the existing production capture command, then inspect the
+sealed run:
+
+```sh
+python -m tools.map_observation inspect --run /absolute/evidence/aegis-run \
+  --type AEGIS --type ZEP --max-rows 1000 \
+  --field health --field physical_leptons --field target --field mission.effective \
+  --field foot.air.spatial_bucket \
+  --expect /absolute/checkout/tools/map_observation.aegis-distributed-fire.expectations.json \
+  --output /absolute/evidence/aegis-inspection.json
+```
+
+The [expectations](map_observation.aegis-distributed-fire.expectations.json) bind
+the two aircraft by their L0 cells, follow their stable identities, require
+initial Guard/no target, airborne-index entry, damage to each stock 2000-health
+ZEP and both remaining alive. The 2000 threshold is the stock RULESMD Strength,
+not a native damage or timing golden; recheck it through the production reader
+before adapting the fixture to other rules. Establish engagement of both aircraft
+by inspecting their actual health changes alongside first appearances of
+`effects.projectiles` with the AEGIS `source_id` and `weapon: "Medusa"`.
+Post-Logic actor samples can retain a null target throughout: acquisition, firing
+and target clear can occur inside one pass. A nonnull post-Logic target is
+therefore not required by these expectations. Projectile rows retain physical
+coordinates, but not their target identity; exact firing order/history and the
+Bullet's retained target after the shooter's target clears remain focused
+production Rust-test evidence. The capture alone does not establish target order.
+
+The final GPU frame is the rendered output for step 360. To see missiles during
+an earlier volley, copy the materialized profile with `ticks` set to an observed
+missile-live step and capture again; check that its trajectory matches the full
+run's prefix. Keep images and validation reports outside the repository and the
+sealed child-output directory. An elite variant may change only the map AEGIS
+veterancy field from 0 to 200 and use `MedusaE`; an explicit-Attack control must
+use a separate profile. Neither control substitutes for the command-free Guard
+witness. These are Rust production integration observations, not a native
+encounter, native RGB comparison or whole-mechanism parity certification.
+
 ## Siege Chopper deployment observation
 
 [`map_observation.siege-chopper.example.json`](map_observation.siege-chopper.example.json)

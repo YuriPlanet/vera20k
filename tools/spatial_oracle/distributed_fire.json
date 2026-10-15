@@ -1,4 +1,653 @@
 {
+  "air_query": [
+    {
+      "copied_bucket_order": [
+        126,
+        127,
+        146,
+        147
+      ],
+      "copied_ids": [
+        41,
+        7,
+        100,
+        3
+      ],
+      "drained_ids": [
+        41,
+        7,
+        100,
+        3
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 126,
+            "ids": [
+              41,
+              7
+            ]
+          },
+          {
+            "bucket": 127,
+            "ids": [
+              100
+            ]
+          },
+          {
+            "bucket": 146,
+            "ids": [
+              3
+            ]
+          }
+        ],
+        "center_cell": [
+          20,
+          20
+        ],
+        "map_extent": [
+          64,
+          64
+        ],
+        "radius_cells": 0
+      },
+      "name": "radius_zero",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    },
+    {
+      "copied_bucket_order": [
+        126,
+        127,
+        146,
+        147
+      ],
+      "copied_ids": [
+        41,
+        7,
+        100,
+        3
+      ],
+      "drained_ids": [
+        41,
+        7,
+        100,
+        3
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 126,
+            "ids": [
+              41,
+              7
+            ]
+          },
+          {
+            "bucket": 127,
+            "ids": [
+              100
+            ]
+          },
+          {
+            "bucket": 146,
+            "ids": [
+              3
+            ]
+          }
+        ],
+        "center_cell": [
+          20,
+          20
+        ],
+        "map_extent": [
+          64,
+          64
+        ],
+        "radius_cells": 1
+      },
+      "name": "radius_one",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    },
+    {
+      "copied_bucket_order": [
+        126,
+        131,
+        130,
+        129,
+        128,
+        127,
+        46,
+        66,
+        86,
+        106,
+        226,
+        206,
+        186,
+        166,
+        146,
+        122,
+        123,
+        124,
+        125,
+        105,
+        84,
+        63,
+        42,
+        104,
+        85,
+        145,
+        164,
+        183,
+        202,
+        144,
+        165,
+        107,
+        88,
+        69,
+        50,
+        108,
+        87,
+        147,
+        168,
+        189,
+        210,
+        231,
+        148,
+        167
+      ],
+      "copied_ids": [
+        41,
+        7,
+        5,
+        6,
+        2,
+        8
+      ],
+      "drained_ids": [
+        41,
+        7,
+        5,
+        6,
+        2,
+        8
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 126,
+            "ids": [
+              41,
+              7
+            ]
+          },
+          {
+            "bucket": 84,
+            "ids": [
+              2
+            ]
+          },
+          {
+            "bucket": 110,
+            "ids": [
+              3
+            ]
+          },
+          {
+            "bucket": 120,
+            "ids": [
+              4
+            ]
+          },
+          {
+            "bucket": 127,
+            "ids": [
+              5
+            ]
+          },
+          {
+            "bucket": 146,
+            "ids": [
+              6
+            ]
+          },
+          {
+            "bucket": 210,
+            "ids": [
+              8
+            ]
+          }
+        ],
+        "center_cell": [
+          20,
+          20
+        ],
+        "map_extent": [
+          64,
+          64
+        ],
+        "radius_cells": 14
+      },
+      "name": "interior_cardinals_corners",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    },
+    {
+      "copied_bucket_order": [
+        230,
+        231,
+        170,
+        190,
+        210,
+        290,
+        270,
+        250,
+        228,
+        229,
+        209,
+        188,
+        208,
+        189,
+        249,
+        268,
+        248,
+        269,
+        211,
+        251
+      ],
+      "copied_ids": [
+        41,
+        7,
+        3,
+        2,
+        4,
+        5,
+        6
+      ],
+      "drained_ids": [
+        41,
+        7,
+        3,
+        2,
+        4,
+        5,
+        6
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 230,
+            "ids": [
+              41,
+              7
+            ]
+          },
+          {
+            "bucket": 210,
+            "ids": [
+              2
+            ]
+          },
+          {
+            "bucket": 231,
+            "ids": [
+              3
+            ]
+          },
+          {
+            "bucket": 250,
+            "ids": [
+              4
+            ]
+          },
+          {
+            "bucket": 229,
+            "ids": [
+              5
+            ]
+          },
+          {
+            "bucket": 188,
+            "ids": [
+              6
+            ]
+          }
+        ],
+        "center_cell": [
+          60,
+          45
+        ],
+        "map_extent": [
+          127,
+          95
+        ],
+        "radius_cells": 11
+      },
+      "name": "nonsquare_nondivisible",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    },
+    {
+      "copied_bucket_order": [
+        0,
+        2,
+        1,
+        40,
+        20,
+        21,
+        42,
+        22,
+        41
+      ],
+      "copied_ids": [
+        41,
+        7,
+        2,
+        3,
+        4,
+        5
+      ],
+      "drained_ids": [
+        41,
+        7,
+        2,
+        3,
+        4,
+        5
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 0,
+            "ids": [
+              41,
+              7
+            ]
+          },
+          {
+            "bucket": 1,
+            "ids": [
+              2
+            ]
+          },
+          {
+            "bucket": 20,
+            "ids": [
+              3
+            ]
+          },
+          {
+            "bucket": 21,
+            "ids": [
+              4
+            ]
+          },
+          {
+            "bucket": 42,
+            "ids": [
+              5
+            ]
+          }
+        ],
+        "center_cell": [
+          0,
+          0
+        ],
+        "map_extent": [
+          64,
+          64
+        ],
+        "radius_cells": 7
+      },
+      "name": "lower_edge",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    },
+    {
+      "copied_bucket_order": [
+        399,
+        379,
+        398,
+        378
+      ],
+      "copied_ids": [
+        41,
+        7,
+        3,
+        2,
+        4
+      ],
+      "drained_ids": [
+        41,
+        7,
+        3,
+        2,
+        4
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 399,
+            "ids": [
+              41,
+              7
+            ]
+          },
+          {
+            "bucket": 398,
+            "ids": [
+              2
+            ]
+          },
+          {
+            "bucket": 379,
+            "ids": [
+              3
+            ]
+          },
+          {
+            "bucket": 378,
+            "ids": [
+              4
+            ]
+          }
+        ],
+        "center_cell": [
+          63,
+          63
+        ],
+        "map_extent": [
+          64,
+          64
+        ],
+        "radius_cells": 7
+      },
+      "name": "upper_edge",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    },
+    {
+      "copied_bucket_order": [
+        210,
+        213,
+        212,
+        211,
+        170,
+        190,
+        270,
+        250,
+        230,
+        208,
+        209,
+        189,
+        168,
+        188,
+        169,
+        229,
+        248,
+        228,
+        249,
+        191,
+        172,
+        192,
+        171,
+        231,
+        252,
+        273,
+        232,
+        251
+      ],
+      "copied_ids": [
+        9,
+        2,
+        9,
+        4,
+        3
+      ],
+      "drained_ids": [
+        9,
+        2,
+        9,
+        4,
+        3
+      ],
+      "input": {
+        "buckets": [
+          {
+            "bucket": 210,
+            "ids": [
+              9,
+              2
+            ]
+          },
+          {
+            "bucket": 211,
+            "ids": [
+              9
+            ]
+          },
+          {
+            "bucket": 209,
+            "ids": [
+              3
+            ]
+          },
+          {
+            "bucket": 230,
+            "ids": [
+              4
+            ]
+          }
+        ],
+        "center_cell": [
+          64,
+          64
+        ],
+        "map_extent": [
+          128,
+          128
+        ],
+        "radius_cells": 14
+      },
+      "name": "retained_order_duplicate_tokens",
+      "original_bytes_unchanged": true,
+      "remaining_count": 0,
+      "scenario_rng_unchanged": true,
+      "source_cell_unchanged": true,
+      "visited_boundaries": [
+        "00412B40",
+        "00486840",
+        "00413A30",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0",
+        "004137A0"
+      ]
+    }
+  ],
   "pointers": {
     "a": 536915968,
     "b": 536916224,

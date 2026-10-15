@@ -3924,6 +3924,7 @@ impl Simulation {
         .flatten()
         .for_each(&mut name);
         listener.mega_mission.referenced_ids().for_each(&mut name);
+        listener.distributed_fire_references().for_each(&mut name);
         listener.airstrike.owns_manager()
             || listener.spawn_manager.is_some()
             || listener.capture_manager.is_some()
@@ -5069,6 +5070,16 @@ impl Simulation {
                     context.registry(),
                     context.effects(),
                 );
+                // Techno707BCE..707CA4 first-removes one candidate/paired
+                // score and one history occurrence, outside control/allowClear.
+                // This must precede the subclass Foot parasite forward.
+                if let Some(entity) = self.substrate.entities.get_mut_if(listener_id, |entity| {
+                    entity
+                        .distributed_fire_references()
+                        .any(|id| id == expired_id)
+                }) {
+                    entity.distributed_fire_pointer_expired(expired_id);
+                }
                 // FootClass::PointerExpired 0x004D998C..0x004D99CD follows the
                 // Techno body: the parasite link and its forward.
                 self.foot_parasite_pointer_expired(

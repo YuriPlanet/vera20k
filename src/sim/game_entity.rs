@@ -33,7 +33,9 @@ use crate::sim::radio::Contacts;
 use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::sim::world::ObjectLifecycle;
 
+mod distributed_fire;
 mod foot_air;
+pub(crate) use distributed_fire::DistributedFireCandidate;
 
 /// ObjectClass's retained fall words: +2C, +84, +8D and +8F.
 /// DropAsBomb5F4160 preserves the rate and parachute byte; landing5F3F86
@@ -305,6 +307,10 @@ pub struct GameEntity {
     /// airborne-vector membership. Only the shared Foot air owner writes them.
     #[serde(default)]
     foot_air: foot_air::FootAirState,
+    /// Techno's runtime accepted candidate/score pairs and fired history.
+    /// The private owner writes them; normal native-like Load clears them.
+    #[serde(default)]
+    distributed_fire: distributed_fire::DistributedFireState,
 
     // --- Optional subsystem components ---
     /// Locomotor state — present on moving types and on zero-speed Foot
@@ -1404,6 +1410,7 @@ impl GameEntity {
             removal_facts: Default::default(),
             kill_record: Default::default(),
             foot_air: foot_air::FootAirState::new(stable_id),
+            distributed_fire: Default::default(),
             locomotor: None,
             navigation: NavigationState::at_frame(construction_frame),
             foot_speed: crate::sim::components::FootSpeedState::default(),

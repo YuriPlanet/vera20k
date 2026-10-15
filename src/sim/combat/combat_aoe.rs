@@ -27,7 +27,7 @@ use crate::sim::map::bridge_topology::{CellBridgeView, ListLayer};
 use crate::sim::mission::authority::restore_entity_after_target_expiry;
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::occupancy::{OccupancyGrid, air_spatial_query_bucket_order};
+use crate::sim::occupancy::OccupancyGrid;
 #[cfg(test)]
 use crate::sim::overlay_grid::WallMutation;
 use crate::sim::overlay_grid::{
@@ -461,14 +461,18 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
             // spread cell loop. Damage dispatch happens only after collection,
             // so walls still mutate during the later cell walk before any
             // receiver runs.
-            for entity_id in airborne_ids_in_spatial_order(
-                entities,
-                impact_rx,
-                impact_ry,
+            let center = crate::sim::cell_rect::get_cellclass_fallback(
+                layer_context.terrain.as_deref(),
+                i32::from(impact_rx as i16),
+                i32::from(impact_ry as i16),
+            );
+            for entity_id in entities.airborne_in_query_order(
+                &center,
                 cell_spread::whole_cells(cell_spread),
                 layer_context
                     .terrain
                     .as_deref()
+                    .map(|terrain| (terrain.width(), terrain.height()))
                     .expect("checked terrain Apply_area_damage context"),
             ) {
                 let terrain = layer_context
@@ -788,43 +792,6 @@ fn offset_cell_coord(origin: u16, delta: i16) -> Option<u16> {
     } else {
         None
     }
-}
-
-/// Materialize gamemd's global airborne-vector query without replacing its
-/// producer order with entity IDs or geometric distance. Repeated bucket IDs,
-/// if emitted by the native-shaped query walk, deliberately copy that vector
-/// again; this collector has no deduplication stage.
-fn airborne_ids_in_spatial_order(
-    entities: &EntityStore,
-    impact_rx: u16,
-    impact_ry: u16,
-    radius_cells: i32,
-    terrain: &ResolvedTerrainGrid,
-) -> Vec<u64> {
-    let (map_width, map_height) = (terrain.width(), terrain.height());
-    // The store yields the tracked entities in enter order, each bucket's
-    // vector order.
-    let mut buckets: BTreeMap<u16, Vec<u64>> = BTreeMap::new();
-    for entity in entities.airborne() {
-        buckets
-            .entry(
-                entity
-                    .air_spatial_bucket()
-                    .expect("a tracked entity has a bucket"),
-            )
-            .or_default()
-            .push(entity.stable_id());
-    }
-
-    let mut ordered = Vec::new();
-    for bucket in
-        air_spatial_query_bucket_order(impact_rx, impact_ry, radius_cells, map_width, map_height)
-    {
-        if let Some(entries) = buckets.get(&bucket) {
-            ordered.extend_from_slice(entries);
-        }
-    }
-    ordered
 }
 
 fn impact_is_above_ground(

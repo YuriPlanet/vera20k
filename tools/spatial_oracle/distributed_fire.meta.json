@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Original DistributedFire709550 selection/history/vector operations and bounded707BCE..707CA4 pointer-expiry loops",
+  "scope": "Original DistributedFire709550 selection/history/vector operations and bounded707BCE..707CA4 pointer-expiry loops; seven additive populated412B40 query/front-drain controls",
   "assumptions": [
     "Acceptance is recorded in module docstring before implementation. Inputs use equal candidate/score counts, valid native vector headers, capacity64, owned fixture backing, and identity sentinels which selection does not dereference.",
     "Full709550 executes unchanged with native constructors4E0E80/477BE0, grows4E04A0/477E10, clear4E0190 and original CRT new/delete/malloc/free/locking wrappers. Native vector vtables remain untouched. Owner uses copied retail Unit vtable with only AssignTarget slot replaced.",
@@ -16,7 +16,10 @@
     "Original native hooks are observation only. Code and retail vtable bytes are checked unchanged. Results retain callback arguments, before/after vectors, selected-pointer writes, native removal writes, raw backing arrays, original visit counts and raw EAX (not a boolean result).",
     "Expiry slice supplies ESI owner, EBP expired pointer and EBX0 established by the enclosing7077C0 prologue. It stops before707CA4 epilogue; earlier lifecycle logic and callers are excluded. Original4E0550 find runs; native loops remove only first matching candidate/parallel score and first history occurrence.",
     "Rows cover empty/history absent/all seen/subsets/stale/duplicates/null sentinel, signed nonpositive and extreme scores, first ties, candidate order, native temporary growth beyond ten, and live memory mutations. This is finite comparison evidence, not exhaustive input or production reachability proof.",
-    "GreatestThreat candidate production, scanner dispatch, actual target setter, FireAt history append/mission exception, enclosing PointerExpired, save/hash/backing serialization, AI estimate recovery and Rust parity are not executed or claimed."
+    "GreatestThreat candidate production, scanner dispatch, actual target setter, FireAt history append/mission exception, enclosing PointerExpired, save/hash/backing serialization, AI estimate recovery and Rust parity are not executed or claimed.",
+    "Additive air_query uses fly_landing_phase initialize_air_tracker/aircraft_fire_location Fixture; original412870..4128D6 startup prefix stops before CRT atexit.400 bucket headers and current-vector+2580 keep original vtables/flags/growth with explicit spare-capacity backing. No query or coordinate callback is replaced.",
+    "Air query inputs are supplied sparse opaque bucket tokens, not native actor admission. Whole412B40 executes original Cell486840/413A30 coordinate getters, signed span division, packed16 endpoint clamp and vector copies;4137A0 drains front. Copy order includes empty/repeated buckets, ordered token copies include repeats. Normal map spans64..128 and admitted nonnegative centers; no map<20 divide fault or off-map signed16 wrapping claim.",
+    "Air query hooks observe original copy-body count reads and current-buffer writes, reject RNG calls, check source Cell/Scenario RNG unchanged, and verify original instructions/vtables. Full GreatestThreat and populated lifecycle/migration remain production integration checks."
   ],
   "substitutions": [
     "Only fixture copied owner+3C8 points at external setter; imported HeapAlloc7E1278, HeapFree7E127C, EnterCriticalSection7E11E8 and LeaveCriticalSection7E11EC point at external x86 stubs. Native executable instructions and retail vtables are never patched.",
@@ -27,7 +30,12 @@
     "expiry_slice": "0x00707BCE",
     "expiry_stop": "0x00707CA4",
     "pointer_find": "0x004E0550",
-    "pointer_clear": "0x004E0190"
+    "pointer_clear": "0x004E0190",
+    "air_query": "0x00412B40",
+    "air_front": "0x004137A0",
+    "air_init": "0x00412870",
+    "air_init_stop": "0x004128D6",
+    "air_cell_coords": "0x00486840"
   },
   "row_counts": {
     "select": 126,
@@ -94,5 +102,6 @@
     "007E4E78": "107b4700307c4700107e470040784700107f4700707847009078470000000000",
     "007E4DB8": "30864700307c4700707c4700207d4700507d4700907d47009078470030ce7f00"
   },
-  "payload_sha256": "48694943bdbb66869784f16c0495df303c6def0dc7ca2850168bf3fb93982d9a"
+  "replay_command": "python -m tools.spatial_oracle.distributed_fire",
+  "payload_sha256": "568ddd47f0561ede8c4b43d4b23f7bf51e9069584cb039ba7bc8e8a7ba97edd1"
 }

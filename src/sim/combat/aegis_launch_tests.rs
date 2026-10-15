@@ -60,6 +60,18 @@ impl AegisScene {
                 )
                 .is_ok()
         );
+        // These launch/burst controls retain an explicit Attack target. Guard
+        // DistributedFire's history/null setter is exercised by the joined
+        // world::aegis_distributed_fire_tests production frame fixture.
+        world
+            .mission_assign_exact(
+                aegis,
+                crate::sim::mission::MissionId::from_known(
+                    crate::sim::mission::MissionType::Attack,
+                ),
+                world.session.binary_frame,
+            )
+            .unwrap();
         Some(Self {
             world,
             rules,

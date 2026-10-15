@@ -1,0 +1,1591 @@
+{
+  "classifiers": [
+    {
+      "kind": 12,
+      "state_a": 0,
+      "state_b": 1
+    },
+    {
+      "kind": 52,
+      "state_a": 0,
+      "state_b": 1
+    }
+  ],
+  "code_unchanged": true,
+  "histories": [
+    {
+      "cleanup": {
+        "free_order": [
+          "trigger",
+          "tag"
+        ],
+        "house_tag_count": 0,
+        "logic_tag_count": 0,
+        "pending_count": 0,
+        "spent": 1,
+        "tags_remaining": 0,
+        "wallet": 10000
+      },
+      "initial": 9999,
+      "kind": 12,
+      "name": "funds12_repeat0",
+      "repeat": 0,
+      "rng_after_history": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "steps": [
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 0,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 9999
+        },
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 7,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 8,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 2,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 16,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": [
+            "spend_money",
+            1
+          ],
+          "pending_count": 2,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 9999
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 24,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 2,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 32,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 2,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10000
+        }
+      ],
+      "threshold": 10000,
+      "with_elapsed": false
+    },
+    {
+      "cleanup": {
+        "free_order": [],
+        "house_tag_count": 1,
+        "logic_tag_count": 0,
+        "pending_count": 0,
+        "spent": 1,
+        "tags_remaining": 1,
+        "wallet": 10000
+      },
+      "initial": 9999,
+      "kind": 12,
+      "name": "funds12_repeat2",
+      "repeat": 2,
+      "rng_after_history": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "steps": [
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 0,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 9999
+        },
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 7,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 8,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 16,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "spend_money",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 9999
+        },
+        {
+          "actions": 2,
+          "completed": 0,
+          "frame": 24,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 3,
+          "completed": 0,
+          "frame": 32,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        }
+      ],
+      "threshold": 10000,
+      "with_elapsed": false
+    },
+    {
+      "cleanup": {
+        "free_order": [
+          "trigger",
+          "tag"
+        ],
+        "house_tag_count": 0,
+        "logic_tag_count": 0,
+        "pending_count": 0,
+        "spent": 60001,
+        "tags_remaining": 0,
+        "wallet": 10000
+      },
+      "initial": 70000,
+      "kind": 52,
+      "name": "funds52_repeat0",
+      "repeat": 0,
+      "rng_after_history": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "steps": [
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 0,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 70000
+        },
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 7,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "spend_money",
+            60000
+          ],
+          "pending_count": 0,
+          "spent": 60000,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 8,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 2,
+          "spent": 60000,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 16,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 2,
+          "spent": 60000,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10001
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 24,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": [
+            "spend_money",
+            1
+          ],
+          "pending_count": 2,
+          "spent": 60001,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 32,
+          "house_tag_count": 0,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 2,
+          "spent": 60001,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 1,
+          "wallet": 10000
+        }
+      ],
+      "threshold": 10000,
+      "with_elapsed": false
+    },
+    {
+      "cleanup": {
+        "free_order": [],
+        "house_tag_count": 1,
+        "logic_tag_count": 0,
+        "pending_count": 0,
+        "spent": 60001,
+        "tags_remaining": 1,
+        "wallet": 10000
+      },
+      "initial": 70000,
+      "kind": 52,
+      "name": "funds52_repeat2",
+      "repeat": 2,
+      "rng_after_history": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "steps": [
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 0,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 70000
+        },
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 7,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "spend_money",
+            60000
+          ],
+          "pending_count": 0,
+          "spent": 60000,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 8,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 60000,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 16,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 60000,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10001
+        },
+        {
+          "actions": 2,
+          "completed": 0,
+          "frame": 24,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": [
+            "spend_money",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 60001,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        },
+        {
+          "actions": 3,
+          "completed": 0,
+          "frame": 32,
+          "house_tag_count": 1,
+          "logic_tag_count": 0,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 60001,
+          "tag_pending": 0,
+          "timer_duration": 0,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 10000
+        }
+      ],
+      "threshold": 10000,
+      "with_elapsed": false
+    },
+    {
+      "cleanup": {
+        "free_order": [],
+        "house_tag_count": 1,
+        "logic_tag_count": 1,
+        "pending_count": 0,
+        "spent": 2,
+        "tags_remaining": 1,
+        "wallet": 1500
+      },
+      "initial": 1501,
+      "kind": 52,
+      "name": "funds52_repeat2_elapsed13",
+      "repeat": 2,
+      "rng_after_history": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "steps": [
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 0,
+          "house_tag_count": 1,
+          "logic_tag_count": 1,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 0,
+          "tag_pending": 0,
+          "timer_duration": 3750,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 1501
+        },
+        {
+          "actions": 0,
+          "completed": 0,
+          "frame": 3744,
+          "house_tag_count": 1,
+          "logic_tag_count": 1,
+          "mutation": [
+            "spend_money",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 3750,
+          "timer_start": 0,
+          "trigger_pending": 0,
+          "wallet": 1500
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 3750,
+          "house_tag_count": 1,
+          "logic_tag_count": 1,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 3750,
+          "timer_start": 3750,
+          "trigger_pending": 0,
+          "wallet": 1500
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 3752,
+          "house_tag_count": 1,
+          "logic_tag_count": 1,
+          "mutation": null,
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 3750,
+          "timer_start": 3750,
+          "trigger_pending": 0,
+          "wallet": 1500
+        },
+        {
+          "actions": 1,
+          "completed": 0,
+          "frame": 7504,
+          "house_tag_count": 1,
+          "logic_tag_count": 1,
+          "mutation": [
+            "add_credits",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 1,
+          "tag_pending": 0,
+          "timer_duration": 3750,
+          "timer_start": 3750,
+          "trigger_pending": 0,
+          "wallet": 1501
+        },
+        {
+          "actions": 2,
+          "completed": 0,
+          "frame": 7512,
+          "house_tag_count": 1,
+          "logic_tag_count": 1,
+          "mutation": [
+            "spend_money",
+            1
+          ],
+          "pending_count": 0,
+          "spent": 2,
+          "tag_pending": 0,
+          "timer_duration": 3750,
+          "timer_start": 7512,
+          "trigger_pending": 0,
+          "wallet": 1500
+        }
+      ],
+      "threshold": 1500,
+      "with_elapsed": true
+    }
+  ],
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "predicate_controls": [
+    {
+      "balance": 699,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed0",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 700,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed1",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 701,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed2",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -51,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed3",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": -50,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -50,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed4",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": -50,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -49,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed5",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": -50,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 0,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed6",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 0,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 2147483647,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed7",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": -1,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -2147483648,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed8",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": 0,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -2147483648,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed9",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": 2147483647,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 2147483647,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_signed10",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": -2147483648,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 700,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_wrong_raise_buildup0",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 700,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_wrong_raise_buildup1",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 0,
+      "calls": [
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_null_house",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 0,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 10000,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 1,
+      "kind": 12,
+      "name": "funds12_retained_persistence",
+      "persistence": 1,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 10000,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 8,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 12,
+      "name": "funds12_incoming_not_country",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 7,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 699,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed0",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 700,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed1",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 701,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed2",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -51,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed3",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": -50,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -50,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed4",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": -50,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -49,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed5",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": -50,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 0,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed6",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 0,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 2147483647,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed7",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": -1,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -2147483648,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed8",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 0,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": -2147483648,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed9",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 2147483647,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 2147483647,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_signed10",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": -2147483648,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 700,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_wrong_raise_buildup0",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 700,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_wrong_raise_buildup1",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "threshold": 700,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 0,
+      "calls": [
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_null_house",
+      "persistence": 0,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 0,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 10000,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00",
+        "0x00502D30"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 0,
+      "initial_persistence": 1,
+      "kind": 52,
+      "name": "funds52_retained_persistence",
+      "persistence": 1,
+      "raised": 13,
+      "result": 1,
+      "scenario_init": false,
+      "threshold": 10000,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "balance": 8,
+      "calls": [
+        "0x004F6990",
+        "0x006C9600",
+        "0x007C5F00"
+      ],
+      "event54": -1412623820,
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 52,
+      "name": "funds52_incoming_not_country",
+      "persistence": 0,
+      "raised": 13,
+      "result": 0,
+      "scenario_init": false,
+      "threshold": 7,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ]
+    }
+  ],
+  "predicate_rng_after": {
+    "0x201b0218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+    "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+    "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+  },
+  "predicate_rng_before": {
+    "0x201b0218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+    "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+    "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+  },
+  "schema_version": 1
+}

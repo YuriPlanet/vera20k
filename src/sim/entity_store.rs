@@ -15,7 +15,8 @@
 //!   (every hand-out enters the touch logs; see `touched`)
 //!
 //! ## Dependency rules
-//! - Part of sim/ — depends only on sim/game_entity.
+//! - Part of sim/ — stores sim/game_entity; the shared AirTracker query reads
+//!   existing Cell geometry and bucket kernels, never app/presentation state.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -508,6 +509,47 @@ impl EntityStore {
         self.airborne.iter().filter_map(|&(_, id)| self.get(id))
     }
 
+    /// Materialize AircraftTracker412B40/4137A0 in retained per-bucket entry
+    /// order. Shared by GreatestThreat6F91D3 and area damage4892D8. Current
+    /// object coordinates do not relocate entries; FootAir owns that update.
+    /// Repeated query buckets deliberately copy their vectors again.
+    pub(crate) fn airborne_in_query_order(
+        &self,
+        center_cell: &crate::sim::cell_rect::CellRef<'_>,
+        radius_cells: i32,
+        map_extent: (u16, u16),
+    ) -> Vec<u64> {
+        //412B6E calls Cell vt+48;413A30 truncates the returned XYZ's
+        // X/Y toward zero and packs16. Read the resolved live Cell rather
+        // than its lookup argument: aliases and the shared Dummy can differ.
+        let point = crate::sim::cell_kernel::cell_ref_own_coords(center_cell)
+            .expect("admitted Cell ground coordinate");
+        let center = (
+            crate::util::lepton::lepton_to_cell_packed(point.x) as u16,
+            crate::util::lepton::lepton_to_cell_packed(point.y) as u16,
+        );
+        let mut buckets: BTreeMap<u16, Vec<u64>> = BTreeMap::new();
+        for entity in self.airborne() {
+            buckets
+                .entry(entity.air_spatial_bucket().expect("tracked bucket"))
+                .or_default()
+                .push(entity.stable_id());
+        }
+        let mut ordered = Vec::new();
+        for bucket in crate::sim::occupancy::air_spatial_query_bucket_order(
+            center.0,
+            center.1,
+            radius_cells,
+            map_extent.0,
+            map_extent.1,
+        ) {
+            if let Some(entries) = buckets.get(&bucket) {
+                ordered.extend_from_slice(entries);
+            }
+        }
+        ordered
+    }
+
     /// `(enter order, stable_id)` of every stored entity the tracker holds.
     fn walk_airborne(&self) -> BTreeSet<(u64, u64)> {
         self.values()
@@ -622,6 +664,79 @@ impl Default for EntityStore {
 mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
+
+    /// Populated original412B40 ->4137A0 controls. Buckets hold opaque
+    /// tokens; the last numeric row deliberately repeats a token in two
+    /// buckets, which is not a legal EntityStore membership. Its bucket walk
+    /// is still compared, without fabricating two actors with the same ID.
+    #[test]
+    fn shared_air_query_bucket_and_entity_order_match_original() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/distributed_fire.json",
+        ))
+        .unwrap();
+        let rows = corpus["air_query"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        let mut materialized = 0;
+        for row in rows {
+            let input = &row["input"];
+            let point = |name: &str| {
+                (
+                    input[name][0].as_u64().unwrap() as u16,
+                    input[name][1].as_u64().unwrap() as u16,
+                )
+            };
+            let center = point("center_cell");
+            let extent = point("map_extent");
+            let radius = input["radius_cells"].as_i64().unwrap() as i32;
+            let actual = crate::sim::occupancy::air_spatial_query_bucket_order(
+                center.0, center.1, radius, extent.0, extent.1,
+            );
+            let expected: Vec<_> = row["copied_bucket_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u16)
+                .collect();
+            assert_eq!(actual, expected, "{}", row["name"]);
+            if row["name"] == "retained_order_duplicate_tokens" {
+                continue;
+            }
+            let mut store = EntityStore::new();
+            let mut order = 0;
+            for bucket in input["buckets"].as_array().unwrap() {
+                for token in bucket["ids"].as_array().unwrap() {
+                    order += 1;
+                    let id = token.as_u64().unwrap();
+                    store.insert(make_entity(id).with_air_spatial_membership_for_test(
+                        Some(bucket["bucket"].as_u64().unwrap() as u16),
+                        order,
+                    ));
+                }
+            }
+            let expected: Vec<_> = row["copied_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap())
+                .collect();
+            let cell = crate::map::resolved_terrain::test_flat_cell(center.0, center.1);
+            assert_eq!(
+                store.airborne_in_query_order(
+                    &crate::sim::cell_rect::CellRef::Real(&cell),
+                    radius,
+                    extent
+                ),
+                expected,
+                "{}",
+                row["name"]
+            );
+            assert_eq!(row["copied_ids"], row["drained_ids"]);
+            assert_eq!(row["remaining_count"], 0);
+            materialized += 1;
+        }
+        assert_eq!(materialized, 6);
+    }
 
     fn make_entity(id: u64) -> GameEntity {
         GameEntity::test_default(id, "HTNK", "Americans", 10, 10)

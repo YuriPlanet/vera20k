@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "32 original funds12/52 predicate controls, four StateA/StateB calls, four pure House-poll histories and one mixed funds52/elapsed13 Logic-before-House history. Not whole economy, world, campaign or nonempty-silo parity.",
+  "assumptions": [
+    "PowerEventControls and execute reuse their existing native-image/platform owners. The selected scalar mode omits unrelated preloaded power readers; actual counted TEvent Read, HasOccurred71E940, AvailableMoney4F6990, Storage6C9600 and ftol7C5F00 execute unchanged.",
+    "Minimal House+2FC storage is zero and HouseType IncomeMult is1.0; signed wallet+30C is the supplied balance. Each scalar control clears all wallets then sets only its selected incoming House. Country bindings0/7/0 and a distinct Country0 actor distinguish wallet identity from threshold and actor. Neither nonempty storage nor FillSilos initialization is claimed.",
+    "Histories supply one resolved TagType/TriggerType/event/action chain and run real Tag/Trigger constructors. Original Fill684D47..684EC1 registers the actual Tag in House and, for mixed13, Logic vectors. Original House constructor listener append4F5F99..4F5FB1 and actual primary vtable PointerExpired4FB9B0 admit native Tag detach notifications. No complete House or physical map construction is claimed.",
+    "Original AddCredits4F9950/SpendMoney4F9790 cross thresholds. House4F8F87..4F8FBE executes original Tag6E53A0/Register7264C0/predicate/Spring/Action28 SetGlobal7. Pure events are nonlatching and repeat2 refires at each still-true eighth-frame poll. Repeat0 queues Trigger and zero-ref Tag and immediately removes House membership through the original notification path. Later real725C70 frees trigger then tag and clears the pending queue; a final House poll sees no tag.",
+    "The mixed native event order52/1500 then13/250 models the ALL04 counted-reader linked order. Original Logic55AFB0..55B205 runs before the selected House slice; intervening world/House AI is excluded. It fires at non-eighth frame3750 and rearms the original elapsed timer; later successful7512 rearms again. This is a composed caller comparison, not a complete-frame schedule.",
+    "Three genuine RNG constructors seed31. Complete0x3F4-byte Scenario/Main/Map states are compared unchanged across predicates and each history. The reused execute owner draws one terminal Scenario continuation only after the recorded history; it is outside these equality checks. Funds predicates write no timer, Event+54, persistence or detach. RegisterEvent may call ResetTimers on repeat2; actual timers and deferred pending/free order remain recorded.",
+    "Event12/52 thresholds are literal signed INI values, with inclusive >=/<=. Both accept unrelated raised kind and A8ED6B true, and null incoming House succeeds. Boundaries include INT_MIN/MAX, equality, negatives, persistence initially1 and a nonzero incoming House whose Country matches the threshold; retained Event+54 sentinel and timer remain unchanged."
+  ],
+  "substitutions": [
+    "Existing allocator/CRT/TLS and validated Windows pointer-probe transports only. Minimal storage, vector capacities and resolved definition priors are declared. No selected gameplay predicate, money getter/mutation, Tag action, classification, poll or cleanup body is replaced."
+  ],
+  "entry_points": {
+    "has_occurred": "0x0071E940",
+    "funds12_compare": "0x0071EF01",
+    "funds52_compare": "0x0071EF20",
+    "available_money": "0x004F6990",
+    "storage_total": "0x006C9600",
+    "ftol": "0x007C5F00",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0",
+    "classify": "0x00684D47",
+    "house_tag_listener": "0x004F5F99",
+    "house_poll": "0x004F8F87",
+    "logic_poll": "0x0055AFB0",
+    "add_credits": "0x004F9950",
+    "spend_money": "0x004F9790",
+    "register_event": "0x007264C0",
+    "action_execute": "0x006DD8B0",
+    "deferred_drain": "0x00725C70",
+    "house_pointer_expired": "0x004FB9B0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --funds-events",
+  "payload_sha256": "2ecc574c371899f53e9b848eb5702275dea3caaa031f03017107219f4d085efe"
+}

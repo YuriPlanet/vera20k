@@ -2337,6 +2337,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // rides along in the same block.
     entity.passive_scan.last_scan_frame().hash(hasher);
     entity.passive_scan.acquired().hash(hasher);
+    entity.hash_distributed_fire(hasher);
     // Foot688 changes the next scan's topology/radius. Constructor
     // false preserves earlier streams; the retained true state is an
     // independent schema255 contribution, never inferred from TarCom.

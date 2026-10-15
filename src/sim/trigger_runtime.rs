@@ -1653,6 +1653,23 @@ impl Simulation {
             .clone();
         match condition.kind {
             14 => self.session.scenario_timer_elapsed(),
+            12 | 52 => {
+                // Steam3e81a617..08600: HasOccurred71EF01/71EF20 calls
+                // IHouse::AvailableMoney4F6990 on Register7264C0's incoming
+                // House, then compares the literal signed threshold inclusively.
+                // No raised-kind gate, persistence, retained-House or timer write.
+                // Executed: tag_lifecycle --funds-events. The shared Economy
+                // getter retains its documented empty-silo coverage boundary.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                let funds = crate::sim::credit_income::available_money(self, owner);
+                if condition.kind == 12 {
+                    funds >= condition.value
+                } else {
+                    funds <= condition.value
+                }
+            }
             1 | 24 | 25 | 26 | 59 => {
                 //71ECAF ->71F1BD compares actor6F9DB0's House ArrayIndex
                 //with Country502D30's first matching House+30, then retains

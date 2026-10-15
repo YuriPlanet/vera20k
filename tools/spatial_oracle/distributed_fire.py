@@ -25,6 +25,7 @@ from tools.native_oracle import (
     provenance, run_checked,
 )
 from tools.spatial_oracle.map_queries import dwords
+from tools.spatial_oracle.fly_landing_phase import air_query_controls
 
 OWNER, VTABLE = SCRATCH + 0x1000, SCRATCH + 0x2000
 SCORES, CANDIDATES, HISTORY = SCRATCH + 0x3000, SCRATCH + 0x4000, SCRATCH + 0x5000
@@ -232,14 +233,15 @@ def generate():
     inputs = cases()
     assert len({r['name'] for r in inputs}) == len(inputs)
     rows = [execute(row) for row in inputs]
-    return dict(schema_version=1, row_count=len(rows), pointers=dict(owner=OWNER,a=A,b=B,c=C,d=D), rows=rows)
+    return dict(schema_version=1, row_count=len(rows), pointers=dict(owner=OWNER,a=A,b=B,c=C,d=D),
+                rows=rows, air_query=air_query_controls())
 
 
 def metadata():
     u = Uc(UC_ARCH_X86, UC_MODE_32)
     load_image(u)
     result = provenance(
-        scope='Original DistributedFire709550 selection/history/vector operations and bounded707BCE..707CA4 pointer-expiry loops',
+        scope='Original DistributedFire709550 selection/history/vector operations and bounded707BCE..707CA4 pointer-expiry loops; seven additive populated412B40 query/front-drain controls',
         assumptions=[
             'Acceptance is recorded in module docstring before implementation. Inputs use equal candidate/score counts, valid native vector headers, capacity64, owned fixture backing, and identity sentinels which selection does not dereference.',
             'Full709550 executes unchanged with native constructors4E0E80/477BE0, grows4E04A0/477E10, clear4E0190 and original CRT new/delete/malloc/free/locking wrappers. Native vector vtables remain untouched. Owner uses copied retail Unit vtable with only AssignTarget slot replaced.',
@@ -249,13 +251,18 @@ def metadata():
             'Expiry slice supplies ESI owner, EBP expired pointer and EBX0 established by the enclosing7077C0 prologue. It stops before707CA4 epilogue; earlier lifecycle logic and callers are excluded. Original4E0550 find runs; native loops remove only first matching candidate/parallel score and first history occurrence.',
             'Rows cover empty/history absent/all seen/subsets/stale/duplicates/null sentinel, signed nonpositive and extreme scores, first ties, candidate order, native temporary growth beyond ten, and live memory mutations. This is finite comparison evidence, not exhaustive input or production reachability proof.',
             'GreatestThreat candidate production, scanner dispatch, actual target setter, FireAt history append/mission exception, enclosing PointerExpired, save/hash/backing serialization, AI estimate recovery and Rust parity are not executed or claimed.',
+            'Additive air_query uses fly_landing_phase initialize_air_tracker/aircraft_fire_location Fixture; original412870..4128D6 startup prefix stops before CRT atexit.400 bucket headers and current-vector+2580 keep original vtables/flags/growth with explicit spare-capacity backing. No query or coordinate callback is replaced.',
+            'Air query inputs are supplied sparse opaque bucket tokens, not native actor admission. Whole412B40 executes original Cell486840/413A30 coordinate getters, signed span division, packed16 endpoint clamp and vector copies;4137A0 drains front. Copy order includes empty/repeated buckets, ordered token copies include repeats. Normal map spans64..128 and admitted nonnegative centers; no map<20 divide fault or off-map signed16 wrapping claim.',
+            'Air query hooks observe original copy-body count reads and current-buffer writes, reject RNG calls, check source Cell/Scenario RNG unchanged, and verify original instructions/vtables. Full GreatestThreat and populated lifecycle/migration remain production integration checks.',
         ],
         substitutions=[
             'Only fixture copied owner+3C8 points at external setter; imported HeapAlloc7E1278, HeapFree7E127C, EnterCriticalSection7E11E8 and LeaveCriticalSection7E11EC point at external x86 stubs. Native executable instructions and retail vtables are never patched.',
             'External callbacks execute declared machine-code mutations and ABI returns. No hook changes memory/registers/control flow.',
         ],
         entry_points=dict(select=ENTRY, expiry_slice=EXPIRY, expiry_stop=EXPIRY_STOP,
-                          pointer_find=0x4E0550, pointer_clear=0x4E0190))
+                          pointer_find=0x4E0550, pointer_clear=0x4E0190,
+                          air_query=0x412B40, air_front=0x4137A0, air_init=0x412870,
+                          air_init_stop=0x4128D6, air_cell_coords=0x486840))
     result['row_counts'] = {entry:sum(r['entry']==entry for r in cases()) for entry in ('select','expiry')}
     result['original_code'] = {f'{a:08X}..{b:08X}':dict(hex=bytes(u.mem_read(a,b-a)).hex(),
                                 sha256=hashlib.sha256(bytes(u.mem_read(a,b-a))).hexdigest()) for a,b in RANGES}
@@ -263,5 +270,9 @@ def metadata():
     return result
 
 
+def main(argv=None):
+    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata, argv=argv)
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    main()

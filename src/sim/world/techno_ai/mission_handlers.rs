@@ -2062,17 +2062,6 @@ fn foot_building_entry_head(
 ///   plants; VERA's shoots it instead. Frequency: every Guard dispatch of such
 ///   a computer-owned infantryman with a building target.
 ///   `+0xEC2` is UNCHECKED.
-/// - **the second cadence-tail short-circuit ahead of the jitter draw**
-///   (past the rearm return). `GetTechnoType()->[+0x6B0]` — the **`DistributedFire`**
-///   bool, key string 0x00843A64, read by `TechnoTypeClass::ReadINI` at
-///   0x00714850/0x00714864 — combined with the object counter `+0x468 > 0`
-///   returns **0**, re-dispatching on the next frame and again drawing nothing.
-///   Trigger: a `DistributedFire` type on Guard with a live spread-fire count.
-///   Player effect: it re-evaluates every frame instead of every ~26. Frequency:
-///   the Aegis Cruiser is the only stock `DistributedFire` type, so naval maps
-///   with an Allied player only. Downstream risk: VERA implements no
-///   distributed-fire mechanism at all (recorded at `target_scan`), so
-///   the counter this gate reads has no VERA counterpart to bind to.
 pub(super) fn evaluate_foot_guard_cadence(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -2103,6 +2092,17 @@ pub(super) fn evaluate_foot_guard_cadence(
     });
     if rearm != 0 {
         return MissionHandlerEvaluation::cadence(rearm);
+    }
+    // FootGuard4D530B..4D5338: after the rearm early return, a retained
+    // DistributedFire candidate count skips the mission jitter and returns0.
+    // This does not alter709820's separate scan jitter or targeting timer.
+    if sim.substrate.entities.get(id).is_some_and(|entity| {
+        !entity.distributed_fire_candidates().is_empty()
+            && rules
+                .object(sim.interner.resolve(entity.type_ref()))
+                .is_some_and(|kind| kind.distributed_fire)
+    }) {
+        return MissionHandlerEvaluation::cadence(0);
     }
     MissionHandlerEvaluation::cadence(jittered_mission_cadence(sim, rules, mission))
 }
@@ -3046,6 +3046,88 @@ mod guard_rearm_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::game_entity::GameEntity;
+
+    /// Full original Guard tail plus native Random2 state, including skipped
+    /// jitter and rejection sampling's three raw words in the drawing rows.
+    #[test]
+    fn distributed_guard_cadence_and_rng_match_original() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::game_entity::DistributedFireCandidate;
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/rearm_timer.json",
+        ))
+        .unwrap();
+        let rows = vectors["guard_distributed_rng"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        for row in rows {
+            let input = &row["input"];
+            let field = |name: &str| input[name].as_i64().unwrap() as i32;
+            // The oracle starts after rate conversion with EBP=27, not an
+            // authored Rate. Supply that same boundary through the production
+            // reader away from an integer edge: .0301 converts to27. Native
+            // ReadDouble's float projection makes .03 convert to26 (the
+            // established mission_data owner), so that is a different input.
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TEST\n[TEST]\nDistributedFire={}\n[Guard]\nRate=.0301\n",
+                if input["distributed"] == true {
+                    "yes"
+                } else {
+                    "no"
+                },
+            )))
+            .unwrap();
+            assert_eq!(
+                mission_cadence(&rules, MissionType::Guard),
+                field("base_cadence")
+            );
+            let mut sim = Simulation::with_seed(1);
+            sim.session.binary_frame = field("frame") as u32;
+            let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+            entity.set_type_ref_for_test(sim.interner.intern("TEST"));
+            entity.set_owner_for_test(sim.interner.intern("Americans"));
+            entity
+                .rearm_timer
+                .set_for_test(crate::sim::timer::CdTimer::from_raw(
+                    field("rearm_start"),
+                    field("rearm_duration"),
+                ));
+            entity.replace_distributed_fire_candidates(
+                (0..field("candidate_count"))
+                    .map(|_| DistributedFireCandidate {
+                        target: Some(TargetKind::Entity(2)),
+                        score: 1,
+                    })
+                    .collect(),
+            );
+            sim.substrate.entities.insert(entity);
+            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+                row["rng_before_hex"].as_str().unwrap(),
+            );
+            let main = sim.main_rng.state();
+            let mapgen = sim.mapgen_rng.state();
+            let evaluation = evaluate_foot_guard_cadence(
+                &mut sim,
+                &rules,
+                1,
+                MissionType::Guard,
+                super::super::ObjectAiCtx::default(),
+            );
+            assert_eq!(
+                evaluation.delay,
+                row["returns"].as_i64().unwrap() as i32,
+                "{}",
+                row["name"]
+            );
+            assert_eq!(
+                sim.scenario_rng.native_state_hex(),
+                row["rng_after_hex"].as_str().unwrap(),
+                "{}",
+                row["name"]
+            );
+            assert_eq!(sim.main_rng.state(), main);
+            assert_eq!(sim.mapgen_rng.state(), mapgen);
+        }
+    }
 
     /// `FootClass::Mission_Guard 0x004D52A9`: for every timer state the oracle
     /// ran, the handler returns what native returns and draws only where

@@ -781,9 +781,19 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             .is_some_and(|obj| obj.distributed_fire)
     }
 
-    /// RESIDUAL: `DistributeFire @ 0x00709550` (the Aegis Cruiser's spread
-    /// fire) is not ported; such an object takes no target from a scan.
-    fn distribute_fire(&mut self) {}
+    fn distribute_fire(&mut self) {
+        let assignment = self
+            .sim
+            .substrate
+            .entities
+            .get_mut(self.id)
+            .and_then(|entity| entity.select_distributed_fire_target());
+        //709550's empty-list branch makes no setter call. Nonempty but
+        // nonpositive scores still call the concrete AssignTarget(NULL).
+        if let Some(target) = assignment {
+            self.assign_target(target);
+        }
+    }
 
     fn weapon(&mut self, index: i32) -> Option<&'r WeaponType> {
         weapon_at_index(self.sim, self.rules, self.id, index)
@@ -850,7 +860,7 @@ impl Simulation {
         scan_coord: Option<[i32; 3]>,
         entry: ScanEntry,
     ) -> Option<u64> {
-        let result = entry(
+        let mut result = entry(
             &self.substrate.entities,
             &self.substrate.occupancy,
             rules,
@@ -869,6 +879,11 @@ impl Simulation {
             Some(self),
             scan_coord,
         );
+        if let Some(collected) = result.take_collected()
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.replace_distributed_fire_candidates(collected);
+        }
         if result.foot_wrapper_entered()
             && let Some(entity) = self.substrate.entities.get_mut(id)
         {
