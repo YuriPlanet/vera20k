@@ -818,6 +818,65 @@ fn techno_ai_shell(
             // and BEFORE delayed fire/paid repair. Engineer701410 itself
             // deliberately does not invalidate the House.
             sim.sample_building_health_for_house_update(id);
+            // Building440072..4400F1 also retires a zero-HP map building that
+            // never entered ReceiveDamage (SOV01's collapsed CASANF10). Its
+            // constructor's shared C4 timer has duration0. Preserve an armed
+            // timer through its existing owner, then Limbo -> SpawnSurvivors
+            // -> UnInit -> AfterDestruction, without inventing a fatal hit.
+            // Steam gamemd3e81a617..08600 control: object_health.py
+            // --building-zero-health and building_zero_health.{json,meta.json}.
+            // This caller draws no RNG and writes no timer. Anim retirement,
+            // Limbo/detach, survivor draws/smudges and rubble stay with their
+            // existing owners. Damage-driven delayed destruction still follows
+            // the retained terminal-lifetime policy above.
+            if sim
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.health.current() == 0)
+            {
+                sim.clear_building_damage_fire_slots(id, rules);
+                let ready = sim.substrate.entities.get(id).is_some_and(|entity| {
+                    entity
+                        .pending_c4_detonation
+                        .pending()
+                        .is_none_or(|pending| {
+                            pending.timer().remaining(sim.session.binary_frame as i32) == 0
+                        })
+                });
+                if ready && let Some(rules) = rules {
+                    let context = super::UninitContext::new(Some(rules), ctx.overlay_registry)
+                        .with_effects(ctx.effects);
+                    sim.techno_limbo_with_context(id, context);
+                    // The no-survivor byte is constructor-clear on this entry;
+                    // damage-driven terminal objects were handled above.
+                    sim.spawn_building_survivors(
+                        rules,
+                        ctx.overlay_registry,
+                        id,
+                        false,
+                        |sim, (cell_rx, cell_ry)| {
+                            sim.commit_smudge_request_inline(
+                                rules,
+                                ctx.overlay_registry,
+                                crate::sim::combat::SmudgeSpawnRequest::BuildingSurvivor {
+                                    cell_rx,
+                                    cell_ry,
+                                },
+                            )
+                        },
+                        ctx.effects,
+                    );
+                    sim.apply_fatal_lifecycle_stage(
+                        rules,
+                        crate::sim::combat::FatalLifecycleStage::AfterDeathEffects,
+                        id,
+                        EntityCategory::Structure,
+                        context,
+                    );
+                }
+                return;
+            }
             // ProcessDelayedFire (`0x004400F4`), then
             // BuildingClass::UpdateRepairAndPower (`0x004401B6`): the
             // computer's low-credit sale or auto-repair start, then the
@@ -1228,19 +1287,20 @@ fn mission_counter_step(
 // handlers. The Unit/Infantry entry Ready/Commence precedes this bracket;
 // post-movement promotion stays with the corresponding leaf owner.
 
-/// `ObjectClass+0x90` IsAlive ([`GameEntity::is_ai_alive`]), which
+/// `ObjectClass+0x90` IsAlive ([`GameEntity::is_object_alive`]), which
 /// `TechnoClass::AI_Update` tests after the rocking update when `vt+0x298`
 /// answers true (`0x006FA23C`) and again after the bomb and the managers
 /// (`0x006FA735`), and `UnitClass::AI` before its fire update (`0x007365BB`).
-/// A crashing wreck keeps it at Health 0 until its impact, so it keeps running
-/// that AI while it falls.
+/// A crashing wreck and an authored zero-HP building keep it at Health 0:
+/// neither may skip its terminal AI by deriving this flag from Health. The
+/// separate Mission5B30A7 gate below still requires positive Health.
 ///
-/// [`GameEntity::is_ai_alive`]: crate::sim::game_entity::GameEntity::is_ai_alive
+/// [`GameEntity::is_object_alive`]: crate::sim::game_entity::GameEntity::is_object_alive
 pub(crate) fn ai_alive(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
         .get(id)
-        .is_some_and(|entity| entity.is_ai_alive())
+        .is_some_and(|entity| entity.is_object_alive())
 }
 
 /// `MissionClass::AI @ 0x005B3060`'s last gate before a mission handler: Health
@@ -2422,6 +2482,7 @@ mod tests {
         let mut e = entity_of(1, EntityCategory::Unit);
         // Killed, its UnInit deferred: native has already cleared IsAlive.
         e.health.set_for_test(0);
+        e.lifecycle.set_object_alive_for_test(false);
         sim.substrate.entities.insert(e);
         // Guard B (IsAlive) fires after the (empty) pre-block: a dead Unit runs
         // no mission work (counter stays 0).

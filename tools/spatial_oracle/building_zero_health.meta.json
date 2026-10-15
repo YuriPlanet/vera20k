@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eleven bounded original Building constructor timer/default-byte and AI Health==0 terminal-gate controls; ordered terminal callees are explicit observation sinks, not lifecycle or crew parity.",
+  "assumptions": [
+    "An already admitted Building, original copied Building vtable, valid supplied House, empty eight fire-Anim slots, and signed Health are input state. Full constructor, authored-health parser/Unlimbo, earlier AI and scheduling are excluded.",
+    "Constructor43B762..43B795 executes original frame-start/duration0/sourceNULL/sample0 writes with EBX0 from original43B754. Separate original43B95A..43B960 clears NoSurvivor+6E0. Constructor frame and current frame are explicit signed DWORD inputs.",
+    "Original440042..4400EA samples health and executes the exact-zero health gate, signed timer subtraction/comparison and ordered terminal calls. EBP=-1 is the preserved prior set by both upstream AI branches43FB73/43FBFD.",
+    "Original-vtable Limbo445880, UnInit5F65F0, direct SpawnSurvivors442D90 and AfterDestruction441F60 are recorded sinks returning0; none mutates the supplied Building. The observed terminal route does not establish occupancy removal, survivor admission/RNG/smudges, deferred destruction or rubble behavior.",
+    "No general damage receiver, Tag damage/kill callbacks, destruction anims, debris or death weapon executes in this bounded original gate. SpawnSurvivors is an independent existing owner and is not assumed a no-op when its source argument is NULL.",
+    "Stopped negative-duration controls retain native nonzero remaining behavior; positive-health control exits before timer consumption. No host calculation supplies the stop/call sequence outputs."
+  ],
+  "substitutions": [
+    "Four terminal call boundaries are supplied observation sinks with exact thiscall stack cleanup; caller instruction bytes are unchanged."
+  ],
+  "entry_points": {
+    "constructor_timer_slice": "0x0043B762",
+    "constructor_no_survivor": "0x0043B95A",
+    "building_health_sample": "0x00440042",
+    "building_zero_hp_gate": "0x00440072",
+    "limbo_call": "0x004400C5",
+    "spawn_survivors_call": "0x004400D4",
+    "uninit_call": "0x004400DD",
+    "after_destruction_call": "0x004400E5"
+  },
+  "original_code": {
+    "0043B762..0043B795": {
+      "hex": "8b1584eda80083c8ff899628050000899e30050000898634050000898638050000899e3c050000899e40050000899e44050000",
+      "sha256": "2f917d3f832d5e209babf0ecdaf97eeb8631a10cc850f44ebcd89bbe599d2134"
+    },
+    "0043B95A..0043B960": {
+      "hex": "889ee0060000",
+      "sha256": "8010c6d97ddb2d5fb1f89790cb812e9657b485c2fb2a40368f1b09dc17739ac0"
+    },
+    "00440042..004400F2": {
+      "hex": "8b466c8b8e440500003bc174238b861c020000c68078570000018b8e1c020000c68179570000018b466c89864405000085c0757c8dbec8050000bb080000008b0f85c9740e8b11ff92f8000000c7070000000083c7044b75e68b96280500008b86300500003bd5740e8b0d84eda8002bca3bc87d0a2bc185c00f85b20400008b068bceff90d40000008b8e40050000518bcee8b72c00008b168bceff92f80000008bcee8761e00005f5e5d5b83c43cc3",
+      "sha256": "c5adb8acec88403997de8f5fbfc50aab51374c5f212814be6db561ce427b6ab9"
+    }
+  },
+  "audit_bytes_not_executed": {
+    "0043B750..0043B762": {
+      "hex": "8b4c241433db898e20050000899e24050000",
+      "sha256": "39f1ffeaecc9f4e0002e10cb985d67bfc3981e4540f54c5468e570c1fba41d52"
+    },
+    "0043FB6D..0043FB7A": {
+      "hex": "8b88800e000083cdff3bcd7508",
+      "sha256": "b13c1337c3754fbb9df1aa878ae8d40d88f7178bbd23e845182c7664569d938c"
+    },
+    "0043FBF7..0043FC00": {
+      "hex": "8b88800e000083cdff",
+      "sha256": "57de963c171fcabaa865993451e0a8946691e13e091a4c9faf173a3824a33c62"
+    },
+    "0044FB67..0044FBD2": {
+      "hex": "8b4c2418b8000100008896cb0600003bc8889ec90600007c0489442418db4424188bbe20050000dc0d40177e00da8fa0000000e86163370089466c8bbfa00000008d4ffd3bc17e03897e6c0fbf4424140fbf4c24168b566cc744245800000000c1e0080580000000895670",
+      "sha256": "ab34c5ac063c7856cad8a64f5e951430b7d3ffb0c78a198d7aa886914f74f602"
+    }
+  },
+  "replay_command": "python -m tools.spatial_oracle.object_health --building-zero-health",
+  "payload_sha256": "1e5ba94de2697ee9d1c1b09dab7c44054b9af9bee3f6ead33457ed7afee679fa"
+}

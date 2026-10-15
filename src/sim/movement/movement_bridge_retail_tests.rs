@@ -47,6 +47,9 @@ mod bridge_restamp_retail_probe;
 #[path = "bridge_tile_retail_probe.rs"]
 mod bridge_tile_retail_probe;
 
+#[path = "sov01_bridge_retail_tests.rs"]
+mod sov01_bridge_retail_tests;
+
 /// Retail install root, or `None` to skip.
 fn retail_dir() -> Option<PathBuf> {
     let dir = match std::env::var("RA2_DIR") {

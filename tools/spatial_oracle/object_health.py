@@ -12,7 +12,8 @@ import struct
 
 from unicorn import Uc, UcError, UC_ERR_EXCEPTION, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (
-    UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP,
+    UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
+    UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP,
     UC_X86_REG_EIP, UC_X86_REG_FPCW,
 )
 from tools.native_oracle import (
@@ -41,6 +42,12 @@ BRANCHES = (0x5F53AA, 0x5F53B7, 0x5F544F, 0x5F545C,
             0x5F546A, 0x5F5478, 0x5F5480, 0x5F548C,
             0x5F54B8, 0x5F54C2, 0x5F54F9, 0x5F550D,
             0x5F578D, 0x5F579A, 0x5F57AF, 0x5F5830, 0x5F583E)
+BUILDING_ZERO_HP_RANGES = ((0x43B762, 0x43B795), (0x43B95A, 0x43B960),
+                           (0x440042, 0x4400F2))
+BUILDING_ZERO_HP_SINKS = {0x445880: ('limbo', 0),
+                          0x442D90: ('spawn_survivors', 4),
+                          0x5F65F0: ('uninit', 0),
+                          0x441F60: ('after_destruction', 0)}
 
 
 def i32(value):
@@ -81,6 +88,7 @@ class Fixture:
         self.damage_source, self.tag_context = 0, None
         self.tag_calls = []
         self.period = None
+        self.building_zero_hp_context = None
 
     def write(self, u, _access, address, size, value, _data):
         if address in (OBJ+0x6C, OBJ+0x70):
@@ -90,6 +98,20 @@ class Fixture:
                                    value=i32(value)))
 
     def code(self, u, address, _size, _data):
+        if self.building_zero_hp_context is not None and address in BUILDING_ZERO_HP_SINKS:
+            name, argument_bytes = BUILDING_ZERO_HP_SINKS[address]
+            sp = u.reg_read(UC_X86_REG_ESP)
+            assert u.reg_read(UC_X86_REG_ECX) == OBJ
+            row = dict(call=name, entry=f'{address:08X}', health=self.read(OBJ+0x6C))
+            if argument_bytes:
+                row['source_argument'] = self.read(sp+4)
+            self.building_zero_hp_context.append(row)
+            # Explicit ordered callout observations only. No world removal,
+            # crew/RNG, smudge or rubble behavior is supplied or certified.
+            u.reg_write(UC_X86_REG_EAX, 0)
+            u.reg_write(UC_X86_REG_ESP, sp+4+argument_bytes)
+            u.reg_write(UC_X86_REG_EIP, struct.unpack('<I', u.mem_read(sp, 4))[0])
+            return
         if address == 0x6E53A0 and self.tag_context is not None:
             sp = u.reg_read(UC_X86_REG_ESP)
             event,actor,xy,force,source = struct.unpack('<IIIII',u.mem_read(sp+4,20))
@@ -239,6 +261,48 @@ class Fixture:
         return dict(input=dict(kind=kind, strength=strength),
                     output=dict(actual=self.read(OBJ+0x6C), estimated=self.read(OBJ+0x70), writes=self.writes))
 
+    def building_zero_health(self, health, constructor_frame, frame, *, timer=None):
+        """Constructor timer/default-byte slices, then the original AI gate.
+
+        Empty fire-Anims and an admitted Building are supplied priors. The
+        original Health sampler executes, with a valid supplied House; full
+        constructor, Unlimbo, preceding AI, and terminal callees are excluded.
+        """
+        self.reset('building', health, 1000)
+        original = [bytes(self.u.mem_read(a, b-a)) for a, b in BUILDING_ZERO_HP_RANGES]
+        self.u.mem_write(OBJ+0x21C, dwords(SOURCE))
+        self.u.mem_write(0xA8ED84, dwords(constructor_frame))
+        self.u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(self.u, 0x43B762, 0x43B795, count=20,
+                    required_addresses=(0x43B76B, 0x43B771, 0x43B789))
+        # BL=0 is owned by the same constructor's 43B754, not a type default.
+        self.u.mem_write(OBJ+0x6E0, b'\x7f')
+        run_checked(self.u, 0x43B95A, 0x43B960, count=2)
+        defaults = dict(timer_start=self.read(OBJ+0x528),
+                        timer_duration=self.read(OBJ+0x530),
+                        source=self.read(OBJ+0x540),
+                        no_survivor=self.u.mem_read(OBJ+0x6E0, 1)[0])
+        if timer is not None:
+            self.u.mem_write(OBJ+0x528, dwords(timer[0], 0, timer[1]))
+        self.u.mem_write(0xA8ED84, dwords(frame))
+        # Both upstream AI arms establish EBP=-1 at 43FB73 / 43FBFD.
+        self.u.reg_write(UC_X86_REG_EBP, 0xFFFFFFFF)
+        self.building_zero_hp_context = []
+        stop = run_checked(self.u, 0x440042, (0x4400EA, 0x4400F2, 0x440573), count=200,
+                           required_addresses=(0x440072,))
+        assert self.u.reg_read(UC_X86_REG_ESP) == SP
+        assert original == [bytes(self.u.mem_read(a, b-a)) for a, b in BUILDING_ZERO_HP_RANGES]
+        self.unchanged()
+        return dict(input=dict(health=health, constructor_frame=constructor_frame,
+                               frame=frame, timer_override=timer),
+                    output=dict(constructor_defaults=defaults,
+                                timer_start=self.read(OBJ+0x528),
+                                timer_duration=self.read(OBJ+0x530),
+                                health=self.read(OBJ+0x6C),
+                                health_sample=self.read(OBJ+0x544),
+                                stop=f'{stop:08X}',
+                                terminal_callouts=self.building_zero_hp_context))
+
 
 def generate():
     f = Fixture()
@@ -360,10 +424,66 @@ def damage_tag_metadata():
         entry_points={'object_receive_damage':0x5F5390,'tag_callout':0x6E53A0})
 
 
+def generate_building_zero_health():
+    fixture = Fixture()
+    rows = []
+    for name, health, constructor_frame, frame, timer in (
+        ('default_zero_at_frame0', 0, 0, 0, None),
+        ('default_zero_same_frame', 0, 73, 73, None),
+        ('default_zero_next_frame', 0, 73, 74, None),
+        ('positive_health_continues', 1, 73, 74, None),
+        ('pending_timer_waits', 0, 73, 103, (100, 8)),
+        ('elapsed_timer_terminal', 0, 73, 108, (100, 8)),
+        ('stopped_zero_terminal', 0, 73, 108, (-1, 0)),
+        ('stopped_positive_waits', 0, 73, 108, (-1, 5)),
+        ('stopped_negative_waits', 0, 73, 108, (-1, -1)),
+        ('running_negative_terminal', 0, 73, 100, (100, -1)),
+        ('default_signed_frame_wrap', 0, 2147483647, 2147483648, None),
+    ):
+        row = fixture.building_zero_health(health, constructor_frame, frame, timer=timer)
+        row['name'] = name
+        rows.append(row)
+    return rows
+
+
+def building_zero_health_metadata():
+    fixture = Fixture()
+    result = provenance(
+        scope='Eleven bounded original Building constructor timer/default-byte and AI Health==0 terminal-gate controls; ordered terminal callees are explicit observation sinks, not lifecycle or crew parity.',
+        assumptions=[
+            'An already admitted Building, original copied Building vtable, valid supplied House, empty eight fire-Anim slots, and signed Health are input state. Full constructor, authored-health parser/Unlimbo, earlier AI and scheduling are excluded.',
+            'Constructor43B762..43B795 executes original frame-start/duration0/sourceNULL/sample0 writes with EBX0 from original43B754. Separate original43B95A..43B960 clears NoSurvivor+6E0. Constructor frame and current frame are explicit signed DWORD inputs.',
+            'Original440042..4400EA samples health and executes the exact-zero health gate, signed timer subtraction/comparison and ordered terminal calls. EBP=-1 is the preserved prior set by both upstream AI branches43FB73/43FBFD.',
+            'Original-vtable Limbo445880, UnInit5F65F0, direct SpawnSurvivors442D90 and AfterDestruction441F60 are recorded sinks returning0; none mutates the supplied Building. The observed terminal route does not establish occupancy removal, survivor admission/RNG/smudges, deferred destruction or rubble behavior.',
+            'No general damage receiver, Tag damage/kill callbacks, destruction anims, debris or death weapon executes in this bounded original gate. SpawnSurvivors is an independent existing owner and is not assumed a no-op when its source argument is NULL.',
+            'Stopped negative-duration controls retain native nonzero remaining behavior; positive-health control exits before timer consumption. No host calculation supplies the stop/call sequence outputs.',
+        ],
+        substitutions=['Four terminal call boundaries are supplied observation sinks with exact thiscall stack cleanup; caller instruction bytes are unchanged.'],
+        entry_points={'constructor_timer_slice':0x43B762, 'constructor_no_survivor':0x43B95A,
+                      'building_health_sample':0x440042, 'building_zero_hp_gate':0x440072,
+                      'limbo_call':0x4400C5, 'spawn_survivors_call':0x4400D4,
+                      'uninit_call':0x4400DD, 'after_destruction_call':0x4400E5})
+    # Selected upstream instructions establish fixture register priors; these
+    # bytes are static evidence and are not part of the executed narrow slices.
+    audit = ((0x43B750, 0x43B762), (0x43FB6D, 0x43FB7A),
+             (0x43FBF7, 0x43FC00), (0x44FB67, 0x44FBD2))
+    for key, ranges in (('original_code', BUILDING_ZERO_HP_RANGES),
+                        ('audit_bytes_not_executed', audit)):
+        result[key] = {f'{a:08X}..{b:08X}': dict(
+            hex=(raw := bytes(fixture.u.mem_read(a, b-a))).hex(),
+            sha256=hashlib.sha256(raw).hexdigest()) for a, b in ranges}
+    return result
+
+
 if __name__ == '__main__':
     import sys
     args = sys.argv[1:]
-    if '--damage-tags' in args:
+    if '--building-zero-health' in args:
+        args.remove('--building-zero-health')
+        finish_vectors(generate_building_zero_health,
+            Path(__file__).with_name('building_zero_health.json'),
+            provenance=building_zero_health_metadata, argv=args)
+    elif '--damage-tags' in args:
         args.remove('--damage-tags')
         finish_vectors(generate_damage_tags,Path(__file__).with_name('object_damage_tags.json'),
             provenance=damage_tag_metadata,argv=args)

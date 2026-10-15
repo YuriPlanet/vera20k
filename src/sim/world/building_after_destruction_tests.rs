@@ -159,6 +159,115 @@ fn overlay(sim: &Simulation, cell: (u16, u16)) -> crate::sim::overlay_grid::Over
     *sim.overlay_grid.as_ref().unwrap().cell(cell.0, cell.1)
 }
 
+/// Original440042..4400EA controls retain exact-zero timer expiry, including
+/// negative paused durations and signed frame wrap. The native terminal callees
+/// are observation sinks; occupancy/rubble below are Rust integration checks.
+#[test]
+fn zero_health_building_ai_matches_original_terminal_gate() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/building_zero_health.json",
+    ))
+    .unwrap();
+    let rules = rules();
+    let registry = registry();
+    for row in corpus.as_array().unwrap() {
+        let input = &row["input"];
+        let mut sim = sim();
+        sim.session.binary_frame = input["constructor_frame"].as_i64().unwrap() as u32;
+        let id = sim
+            .spawn_object_at_height("PLAIN", "Americans", 10, 12, 0, 0, &rules)
+            .unwrap();
+        let building = sim.substrate.entities.get_mut(id).unwrap();
+        building
+            .health
+            .set(input["health"].as_i64().unwrap() as i32);
+        if let Some(timer) = input["timer_override"].as_array() {
+            building.pending_c4_detonation.set_for_test(Some(
+                crate::sim::c4_plant::PendingC4Detonation::new(
+                    crate::sim::timer::CdTimer::from_raw(
+                        timer[0].as_i64().unwrap() as i32,
+                        timer[1].as_i64().unwrap() as i32,
+                    ),
+                    None,
+                ),
+            ));
+        }
+        sim.session.binary_frame = input["frame"].as_i64().unwrap() as u32;
+        sim.object_ai_visit_one(
+            id,
+            Some(&rules),
+            super::techno_ai::ObjectAiCtx {
+                overlay_registry: Some(&registry),
+                ..Default::default()
+            },
+        );
+        let terminal = !row["output"]["terminal_callouts"]
+            .as_array()
+            .unwrap()
+            .is_empty();
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .is_none_or(|e| e.lifecycle.in_limbo()),
+            terminal,
+            "{}",
+            row["name"]
+        );
+        assert_eq!(
+            sim.occupancy()
+                .first_building_on_layer(
+                    10,
+                    12,
+                    crate::sim::movement::locomotor::MovementLayer::Ground
+                )
+                .is_none(),
+            terminal,
+            "{}",
+            row["name"]
+        );
+    }
+}
+
+#[test]
+fn authored_zero_health_building_releases_its_foundation_without_a_damage_packet() {
+    let rules = rules();
+    let registry = registry();
+    let mut sim = sim();
+    let placements = crate::map::entities::parse_map_entities(&IniFile::from_str(
+        "[Structures]\n0=Americans,RUIN,0,10,12,0,None,0,0,1,0,0,None,None,None,0,0\n",
+    ));
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 1);
+    let id = sim
+        .substrate
+        .entities
+        .values()
+        .find(|e| sim.interner.resolve(e.type_ref()) == "RUIN")
+        .unwrap()
+        .stable_id();
+    assert_eq!(sim.substrate.entities.get(id).unwrap().health.current(), 0);
+    sim.object_ai_visit_one(
+        id,
+        Some(&rules),
+        super::techno_ai::ObjectAiCtx {
+            overlay_registry: Some(&registry),
+            ..Default::default()
+        },
+    );
+    for cell in [(10, 12), (11, 12), (10, 13), (11, 13)] {
+        assert!(
+            sim.occupancy()
+                .first_building_on_layer(
+                    cell.0,
+                    cell.1,
+                    crate::sim::movement::locomotor::MovementLayer::Ground
+                )
+                .is_none()
+        );
+        assert_eq!(overlay(&sim, cell).overlay_id, Some(RUBBLE_OVERLAY_INDEX));
+    }
+}
+
 /// Every foundation cell takes overlay 0xEF with its data byte kept; only the
 /// north-west cell records the type the overlay draws read.
 #[test]

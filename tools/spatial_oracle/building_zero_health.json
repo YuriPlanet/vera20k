@@ -1,0 +1,427 @@
+[
+  {
+    "input": {
+      "constructor_frame": 0,
+      "frame": 0,
+      "health": 0,
+      "timer_override": null
+    },
+    "name": "default_zero_at_frame0",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 0
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": 0,
+      "timer_start": 0
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 73,
+      "health": 0,
+      "timer_override": null
+    },
+    "name": "default_zero_same_frame",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": 0,
+      "timer_start": 73
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 74,
+      "health": 0,
+      "timer_override": null
+    },
+    "name": "default_zero_next_frame",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": 0,
+      "timer_start": 73
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 74,
+      "health": 1,
+      "timer_override": null
+    },
+    "name": "positive_health_continues",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 1,
+      "health_sample": 1,
+      "stop": "004400F2",
+      "terminal_callouts": [],
+      "timer_duration": 0,
+      "timer_start": 73
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 103,
+      "health": 0,
+      "timer_override": [
+        100,
+        8
+      ]
+    },
+    "name": "pending_timer_waits",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "00440573",
+      "terminal_callouts": [],
+      "timer_duration": 8,
+      "timer_start": 100
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 108,
+      "health": 0,
+      "timer_override": [
+        100,
+        8
+      ]
+    },
+    "name": "elapsed_timer_terminal",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": 8,
+      "timer_start": 100
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 108,
+      "health": 0,
+      "timer_override": [
+        -1,
+        0
+      ]
+    },
+    "name": "stopped_zero_terminal",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": 0,
+      "timer_start": -1
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 108,
+      "health": 0,
+      "timer_override": [
+        -1,
+        5
+      ]
+    },
+    "name": "stopped_positive_waits",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "00440573",
+      "terminal_callouts": [],
+      "timer_duration": 5,
+      "timer_start": -1
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 108,
+      "health": 0,
+      "timer_override": [
+        -1,
+        -1
+      ]
+    },
+    "name": "stopped_negative_waits",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "00440573",
+      "terminal_callouts": [],
+      "timer_duration": -1,
+      "timer_start": -1
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 73,
+      "frame": 100,
+      "health": 0,
+      "timer_override": [
+        100,
+        -1
+      ]
+    },
+    "name": "running_negative_terminal",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 73
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": -1,
+      "timer_start": 100
+    }
+  },
+  {
+    "input": {
+      "constructor_frame": 2147483647,
+      "frame": 2147483648,
+      "health": 0,
+      "timer_override": null
+    },
+    "name": "default_signed_frame_wrap",
+    "output": {
+      "constructor_defaults": {
+        "no_survivor": 0,
+        "source": 0,
+        "timer_duration": 0,
+        "timer_start": 2147483647
+      },
+      "health": 0,
+      "health_sample": 0,
+      "stop": "004400EA",
+      "terminal_callouts": [
+        {
+          "call": "limbo",
+          "entry": "00445880",
+          "health": 0
+        },
+        {
+          "call": "spawn_survivors",
+          "entry": "00442D90",
+          "health": 0,
+          "source_argument": 0
+        },
+        {
+          "call": "uninit",
+          "entry": "005F65F0",
+          "health": 0
+        },
+        {
+          "call": "after_destruction",
+          "entry": "00441F60",
+          "health": 0
+        }
+      ],
+      "timer_duration": 0,
+      "timer_start": 2147483647
+    }
+  }
+]

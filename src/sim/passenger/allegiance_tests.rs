@@ -294,15 +294,6 @@ fn building_ai_caller_admission_matches_native_unwarped_gates() {
         if input["warped_out"] == true || input["warping_in"] == true {
             continue;
         }
-        // The supplied live/negative-HP control reaches the original caller
-        //gate, but shared is_ai_alive currently treats nonpositive HP as dead
-        //unless crashing (the deferred-UnInit residual on that owner). Fixing
-        //that owner affects the excluded Foot/Fly lifecycle; this is not a
-        //native-matching frame control. Direct458200 still replays negative HP.
-        if integer(&input["health"]) < 0 {
-            assert_eq!(row["output"]["all_gates_allow"], true);
-            continue;
-        }
         let mut fixture_input = corpus["rows"][0]["input"].clone();
         fixture_input["current_hp"] = input["health"].clone();
         fixture_input["can_be_occupied"] = input["can_be_occupied"].clone();
@@ -317,14 +308,17 @@ fn building_ai_caller_admission_matches_native_unwarped_gates() {
         let old_owner = sim.substrate.entities.get(id).unwrap().owner();
         sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
         assert_eq!(
-            sim.substrate.entities.get(id).unwrap().owner() != old_owner,
+            sim.substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.owner() != old_owner),
             row["output"]["all_gates_allow"].as_bool().unwrap(),
             "{}",
             input["name"]
         );
         replayed += 1;
     }
-    assert_eq!(replayed, 6);
+    assert_eq!(replayed, 7);
 }
 
 #[test]
