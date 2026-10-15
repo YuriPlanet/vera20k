@@ -129,6 +129,11 @@ impl CameoKey {
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
     scroll_rows: [usize; 4],
+    /// Strip entry +88 survives key refresh and Mouse save/no-init. Entries
+    /// removed by Recalculate discard their deadline with their identity.
+    flash_deadlines: HashMap<CameoId, i32>,
+    redraw_until: i32,
+    frame: i32,
 }
 
 impl CameoStrips {
@@ -138,7 +143,76 @@ impl CameoStrips {
         Self {
             strips,
             scroll_rows,
+            ..Self::default()
         }
+    }
+
+    pub(crate) fn set_frame(&mut self, frame: i32) {
+        self.frame = frame;
+    }
+
+    /// Strip AI6A8CF3..6A8D02 requests drawing while Sidebar+53A0 is
+    /// strictly after the signed native frame. The extra deadline frame
+    /// written by6AC728 includes the entry's final clearing draw.
+    pub(crate) fn redraw_requested(&self, frame: i32) -> bool {
+        self.redraw_until > frame
+    }
+
+    /// TAction114 6E4100 -> Strip6ABAC0 admits only a nonempty strip.
+    pub(crate) fn selectable_tab(&self, index: i32) -> Option<SidebarTab> {
+        let tab = *SidebarTab::all().get(usize::try_from(index).ok()?)?;
+        (!self.items(tab).is_empty()).then_some(tab)
+    }
+
+    /// TAction115 -> Sidebar6AC5F0 matches the first retained numeric type
+    /// index, deliberately without comparing RTTI (Unit/Aircraft can collide).
+    /// Original-executed controls: tools/sidebar_oracle/trigger_cameos.json.
+    pub(crate) fn flash_type_index(
+        &mut self,
+        tab: SidebarTab,
+        type_index: i32,
+        duration: i32,
+        frame: i32,
+        mut index_of: impl FnMut(CameoId) -> Option<i32>,
+    ) {
+        let deadline = frame.wrapping_add(duration);
+        if let Some(entry) = self.strips[tab.tab_index()]
+            .iter()
+            .take(75)
+            .find(|entry| index_of(entry.id) == Some(type_index))
+        {
+            self.flash_deadlines.insert(entry.id, deadline);
+        }
+        self.redraw_until = deadline.wrapping_add(1);
+    }
+
+    /// StripDraw6A9B59..6A9B76 uses signed deadline/frame and signed IDIV,
+    /// not an unsigned clock or an elapsed-time approximation.
+    pub(crate) fn flash_darkened(&self, id: CameoId) -> bool {
+        self.flash_deadlines.get(&id).copied().unwrap_or(0) > self.frame && self.frame % 16 > 8
+    }
+
+    pub(crate) fn saved_flash(&self) -> ([Vec<i32>; 4], i32) {
+        (
+            std::array::from_fn(|index| {
+                self.strips[index]
+                    .iter()
+                    .map(|entry| self.flash_deadlines.get(&entry.id).copied().unwrap_or(0))
+                    .collect()
+            }),
+            self.redraw_until,
+        )
+    }
+
+    /// Called after the saved-order owner validates counts and identities.
+    pub(crate) fn restore_flash(&mut self, deadlines: [Vec<i32>; 4], redraw_until: i32) {
+        self.flash_deadlines.clear();
+        for (strip, deadlines) in self.strips.iter().zip(deadlines) {
+            for (entry, deadline) in strip.iter().zip(deadlines) {
+                self.flash_deadlines.insert(entry.id, deadline);
+            }
+        }
+        self.redraw_until = redraw_until;
     }
 
     pub(crate) fn scroll_rows(&self) -> [usize; 4] {
@@ -224,6 +298,8 @@ impl CameoStrips {
                 });
             }
         }
+        self.flash_deadlines
+            .retain(|id, _| self.strips.iter().flatten().any(|entry| entry.id == *id));
     }
 
     /// House4F927C..4F92FD adds ordinary cameos before recalculating the

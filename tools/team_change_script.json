@@ -1,0 +1,105 @@
+[
+  {
+    "advance_after": false,
+    "advance_before": false,
+    "cursor": -1,
+    "events": [
+      [
+        "destroy_old",
+        1
+      ],
+      "construct_new",
+      "reset_new"
+    ],
+    "focus_retained": true,
+    "instances": 1,
+    "next_action": -1,
+    "next_advance": false,
+    "next_cursor": -1,
+    "old_script": true,
+    "ordinal": 0,
+    "target_retained": true,
+    "target_type_matches": true
+  },
+  {
+    "advance_after": false,
+    "advance_before": false,
+    "cursor": -1,
+    "events": [
+      [
+        "destroy_old",
+        1
+      ],
+      "construct_new",
+      "reset_new"
+    ],
+    "focus_retained": true,
+    "instances": 1,
+    "next_action": -1,
+    "next_advance": false,
+    "next_cursor": -1,
+    "old_script": true,
+    "ordinal": 2,
+    "target_retained": true,
+    "target_type_matches": true
+  },
+  {
+    "advance_after": false,
+    "advance_before": false,
+    "cursor": -1,
+    "events": [
+      [
+        "destroy_old",
+        1
+      ],
+      "construct_new",
+      "reset_new"
+    ],
+    "focus_retained": true,
+    "instances": 1,
+    "next_action": -1,
+    "next_advance": false,
+    "next_cursor": -1,
+    "old_script": true,
+    "ordinal": 112,
+    "target_retained": true,
+    "target_type_matches": true
+  },
+  {
+    "advance_after": false,
+    "advance_before": false,
+    "cursor": -1,
+    "events": [
+      "construct_new",
+      "reset_new"
+    ],
+    "focus_retained": true,
+    "instances": 1,
+    "next_action": -1,
+    "next_advance": false,
+    "next_cursor": -1,
+    "old_script": false,
+    "ordinal": 1,
+    "target_retained": true,
+    "target_type_matches": true
+  },
+  {
+    "advance_after": true,
+    "advance_before": true,
+    "cursor": -1,
+    "events": [
+      [
+        "destroy_old",
+        1
+      ],
+      "construct_new",
+      "reset_new"
+    ],
+    "focus_retained": true,
+    "instances": 1,
+    "old_script": true,
+    "ordinal": 1,
+    "target_retained": true,
+    "target_type_matches": true
+  }
+]

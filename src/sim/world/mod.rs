@@ -6887,8 +6887,9 @@ impl Simulation {
 
         // Logic55B29A/55B2AD: consume prior pending conceal at the signed
         // pre-increment native frame boundary, before ore, Teams and live objects.
-        self.fog
-            .flush_pending_gap_conceal(self.session.binary_frame as i32);
+        self.tick_pending_shroud_conceal(
+            UninitContext::new(rules, overlay_registry).with_effects(effects),
+        );
 
         // Interleaved object-AI pass: each object's mission precedes its own
         // locomotion. Unit/Infantry firing and their class-specific tails run

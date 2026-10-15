@@ -348,6 +348,7 @@ pub(crate) fn build_sidebar_view_with_spec(
                 cost: entry.cost,
                 has_cameo_art: false,
                 alt_cameo: false,
+                flash_darkened: cameo_order.flash_darkened(entry.identity),
                 queue_category: entry.queue_category,
                 enabled: entry.enabled,
                 progress: entry.progress,

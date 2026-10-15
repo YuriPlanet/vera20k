@@ -97,11 +97,13 @@ impl SidebarProjectionState {
     /// identities and order. Sort keys remain derived from rules/House/CSF.
     pub(crate) fn saved_order(&self) -> Option<crate::sim::snapshot::SavedSidebarOrder> {
         self.cameos.as_ref().map(|(owner, strips)| {
+            let (deadlines, redraw_until) = strips.saved_flash();
             crate::sim::snapshot::SavedSidebarOrder::new(
                 *owner,
                 strips.saved_identities(),
                 strips.scroll_rows(),
             )
+            .with_flash(deadlines, redraw_until)
         })
     }
 
@@ -269,6 +271,64 @@ impl SidebarProjectionState {
             .as_ref()
             .expect("reconcile cameos before building the view")
             .1
+    }
+
+    pub(crate) fn selectable_tab(&self, index: i32) -> Option<crate::ui::sidebar::SidebarTab> {
+        self.cameos.as_ref()?.1.selectable_tab(index)
+    }
+
+    pub(crate) fn cameo_redraw_requested(&self, frame: i32) -> bool {
+        self.cameos
+            .as_ref()
+            .is_some_and(|(_, strips)| strips.redraw_requested(frame))
+    }
+
+    pub(crate) fn set_cameo_frame(&mut self, frame: i32) {
+        if let Some((_, strips)) = self.cameos.as_mut() {
+            strips.set_frame(frame);
+        }
+    }
+
+    /// The rules own typed-array identity; retained strip entries alone own
+    /// the flash deadline. TAction115 6E4150 / Sidebar6AC5F0.
+    pub(crate) fn flash_cameo(
+        &mut self,
+        type_id: InternedId,
+        duration: i32,
+        frame: i32,
+        interner: &crate::sim::intern::StringInterner,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let Some((_, strips)) = self.cameos.as_mut() else {
+            return;
+        };
+        let index_of = |id| {
+            match id {
+                CameoId::Object(id) => {
+                    let name = interner.try_resolve(id)?;
+                    let object = rules.object(name)?;
+                    rules.type_array_index(object.category, name)
+                }
+                // The native index-only search also admits a SuperWeapon
+                // entry already retained on the Defense strip.
+                CameoId::SuperWeapon(id) => {
+                    i32::try_from(rules.super_weapon_index(interner.try_resolve(id)?)?).ok()
+                }
+            }
+        };
+        let Some(object) = interner
+            .try_resolve(type_id)
+            .and_then(|id| rules.object(id))
+        else {
+            return;
+        };
+        let Some(index) = index_of(CameoId::Object(type_id)) else {
+            return;
+        };
+        let tab = crate::ui::sidebar::SidebarTab::for_category(
+            crate::sim::production::category_for_object(object),
+        );
+        strips.flash_type_index(tab, index, duration, frame, index_of);
     }
 
     pub(crate) fn set_scroll_row(&mut self, tab: crate::ui::sidebar::SidebarTab, row: usize) {
@@ -447,6 +507,10 @@ pub(crate) fn prepare_saved_order(
     let Some(saved) = saved else {
         return Ok(None);
     };
+    let (flash_deadlines, redraw_until) = {
+        let (deadlines, redraw_until) = saved.flash();
+        (deadlines.clone(), redraw_until)
+    };
     let (owner, saved_strips, scroll_rows) = saved.into_parts();
     if sim.session.current_house != Some(owner) || !sim.houses.contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
@@ -454,6 +518,11 @@ pub(crate) fn prepare_saved_order(
     let mut seen = std::collections::HashSet::new();
     let mut strips: [Vec<Cameo>; 4] = std::array::from_fn(|_| Vec::new());
     for (index, identities) in saved_strips.into_iter().enumerate() {
+        if flash_deadlines[index].len() != identities.len() {
+            return Err(format!(
+                "saved sidebar strip {index} has mismatched flash deadlines"
+            ));
+        }
         if identities.len() > 76 {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
@@ -495,10 +564,9 @@ pub(crate) fn prepare_saved_order(
             strips[index].push(item);
         }
     }
-    Ok(Some((
-        owner,
-        CameoStrips::from_retained(strips, scroll_rows),
-    )))
+    let mut strips = CameoStrips::from_retained(strips, scroll_rows);
+    strips.restore_flash(flash_deadlines, redraw_until);
+    Ok(Some((owner, strips)))
 }
 
 /// The `[AudioVisual] CreditTicks` cue for one changed step, or `None` when

@@ -159,6 +159,85 @@ fn native_history_world() -> (Simulation, RuleSet, InternedId, CsfFile, Value) {
 }
 
 #[test]
+fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/trigger_cameos.json",
+    ))
+    .unwrap();
+    let (sim, rules, owner, csf) = native_context_world(&serde_json::json!({
+        "current_side": 0, "types": native["catalog"]
+    }));
+    let options: Vec<_> = all_build_options_for_owner(&sim, &rules, "Americans")
+        .into_iter()
+        .filter(|item| sim.interner.resolve(item.type_id) != "UNLISTED")
+        .collect();
+    let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_cameos(owner, &candidates, 3);
+    let control = &native["flash_controls"][0];
+    projection.flash_cameo(
+        sim.interner.get("HTNK").unwrap(),
+        control["duration"].as_i64().unwrap() as i32,
+        control["frame"].as_i64().unwrap() as i32,
+        &sim.interner,
+        &rules,
+    );
+    projection.set_cameo_frame(control["frame"].as_i64().unwrap() as i32);
+    // Projection key refresh must not clobber entry+88. Native's numeric-only
+    // index collision flashes ORCA rather than the requested HTNK.
+    projection.reconcile_cameos(owner, &candidates, 3);
+    let vehicle_view = view(&sim, &options, &projection, SidebarTab::Vehicle, 600.);
+    assert_eq!(
+        vehicle_view
+            .items
+            .iter()
+            .filter(|item| item.flash_darkened)
+            .map(|item| item.type_id.as_str())
+            .collect::<Vec<_>>(),
+        ["ORCA"]
+    );
+    let saved = projection.saved_order().unwrap();
+    let bytes = bincode::serialize(&saved).unwrap();
+    let saved: crate::sim::snapshot::SavedSidebarOrder = bincode::deserialize(&bytes).unwrap();
+    let restored =
+        super::sidebar_projection::prepare_saved_order(Some(saved.clone()), &sim, &rules).unwrap();
+    let mut loaded = SidebarProjectionState::default();
+    loaded.restore_order(restored);
+    loaded.set_cameo_frame(123);
+    loaded.reconcile_cameos(owner, &candidates, 3);
+    assert_eq!(loaded.saved_order(), Some(saved));
+    assert!(
+        view(&sim, &options, &loaded, SidebarTab::Vehicle, 600.)
+            .items
+            .iter()
+            .any(|item| item.type_id == "ORCA" && item.flash_darkened)
+    );
+    let mut removed = candidates.clone();
+    removed
+        .iter_mut()
+        .find(|item| item.id == CameoId::Object(sim.interner.get("ORCA").unwrap()))
+        .unwrap()
+        .available = false;
+    loaded.reconcile_cameos(owner, &removed, 3);
+    loaded.reconcile_cameos(owner, &candidates, 3);
+    assert!(
+        !view(&sim, &options, &loaded, SidebarTab::Vehicle, 600.)
+            .items
+            .iter()
+            .any(|item| item.flash_darkened)
+    );
+    loaded.reset_cameo_seed();
+    loaded.reconcile_cameos(owner, &candidates, 3);
+    loaded.set_cameo_frame(123);
+    assert!(
+        !view(&sim, &options, &loaded, SidebarTab::Vehicle, 600.)
+            .items
+            .iter()
+            .any(|item| item.flash_darkened)
+    );
+}
+
+#[test]
 fn original_post_removal_scroll_reaches_view_and_hit_test() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/sidebar_oracle/cameo_order.json",

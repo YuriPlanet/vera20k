@@ -24,6 +24,140 @@ fn corpus() -> Value {
     corpus
 }
 
+fn trigger_corpus() -> Value {
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/trigger_cameos.json",
+    ))
+    .unwrap()
+}
+
+#[test]
+fn original_trigger_tabs_and_cameo_flash_deadlines() {
+    let native = trigger_corpus();
+    let fixture = Fixture::new(&serde_json::json!({
+        "current_side": 0, "types": native["catalog"]
+    }));
+    let candidates: Vec<_> = fixture
+        .candidates()
+        .into_iter()
+        .filter(|item| fixture.name(item.id) != "UNLISTED")
+        .collect();
+    let mut initial = CameoStrips::default();
+    initial.reconcile(&candidates, 3);
+    fixture.assert_order(&initial, &native["order"], "114/115 initial order");
+    for control in native["tab_controls"].as_array().unwrap() {
+        let mut strips = initial.clone();
+        let counts = control["counts"].as_array().unwrap();
+        strips.retain(3, |id| {
+            let item = candidates.iter().find(|item| item.id == id).unwrap();
+            counts[item.tab.tab_index()].as_u64().unwrap() != 0
+        });
+        assert_eq!(
+            strips
+                .selectable_tab(control["index"].as_i64().unwrap() as i32)
+                .map(|tab| tab.tab_index()),
+            control["selected"]
+                .as_array()
+                .unwrap()
+                .first()
+                .map(|value| value.as_u64().unwrap() as usize),
+            "114 native count admission: {control}"
+        );
+    }
+    let index_of = |id| match id {
+        CameoId::Object(id) => {
+            let name = fixture.interner.resolve(id);
+            let object = fixture.rules.object(name).unwrap();
+            fixture.rules.type_array_index(object.category, name)
+        }
+        CameoId::SuperWeapon(_) => None,
+    };
+    for control in native["flash_controls"].as_array().unwrap() {
+        let mut strips = initial.clone();
+        if control["result"] == 1 {
+            let name = control["type_name"].as_str().unwrap();
+            let id = fixture.interner.get(name).unwrap();
+            let object = fixture.rules.object(name).unwrap();
+            strips.flash_type_index(
+                SidebarTab::for_category(crate::sim::production::category_for_object(object)),
+                index_of(CameoId::Object(id)).unwrap(),
+                control["duration"].as_i64().unwrap() as i32,
+                control["frame"].as_i64().unwrap() as i32,
+                index_of,
+            );
+        }
+        let (deadlines, redraw_until) = strips.saved_flash();
+        let actual: serde_json::Map<String, Value> = SidebarTab::all()
+            .into_iter()
+            .flat_map(|tab| {
+                strips
+                    .items(tab)
+                    .iter()
+                    .zip(&deadlines[tab.tab_index()])
+                    .map(|(item, deadline)| {
+                        (fixture.name(item.id).to_owned(), Value::from(*deadline))
+                    })
+            })
+            .collect();
+        assert_eq!(
+            Value::Object(actual),
+            control["deadlines"],
+            "{}",
+            control["name"]
+        );
+        assert_eq!(
+            redraw_until,
+            control["redraw_until"].as_i64().unwrap() as i32
+        );
+        assert_eq!(control["rng_before"], control["rng_after"]);
+    }
+    let mut strips = initial;
+    for control in native["overwrite"].as_array().unwrap() {
+        strips.flash_type_index(
+            SidebarTab::Infantry,
+            0,
+            control["duration"].as_i64().unwrap() as i32,
+            control["frame"].as_i64().unwrap() as i32,
+            index_of,
+        );
+        let (deadlines, redraw_until) = strips.saved_flash();
+        assert_eq!(
+            deadlines[2][0],
+            control["deadline"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            redraw_until,
+            control["redraw_until"].as_i64().unwrap() as i32
+        );
+    }
+    assert!(native["rng_calls"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn original_flash_signed_frame_phase() {
+    let native = trigger_corpus();
+    let fixture = Fixture::new(&serde_json::json!({
+        "current_side": 0, "types": native["catalog"]
+    }));
+    let infantry = fixture
+        .candidates()
+        .into_iter()
+        .find(|item| fixture.name(item.id) == "E2")
+        .unwrap();
+    let mut strips = CameoStrips::default();
+    strips.insert(&infantry);
+    for control in native["draw_controls"].as_array().unwrap() {
+        let deadline = control[0].as_i64().unwrap() as i32;
+        strips.restore_flash([vec![], vec![], vec![deadline], vec![]], 0);
+        strips.set_frame(control[1].as_i64().unwrap() as i32);
+        assert_eq!(
+            strips.flash_darkened(infantry.id),
+            control[2].as_bool().unwrap(),
+            "original6A9B59 deadline/frame: {control}"
+        );
+    }
+}
+
 #[derive(Deserialize)]
 struct NativeType {
     id: String,

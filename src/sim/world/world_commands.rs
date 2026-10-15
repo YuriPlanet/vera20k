@@ -629,7 +629,10 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         match cmd {
-            Command::Select { entity_ids, .. } => self.apply_selection_snapshot(entity_ids, rules),
+            Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
+                entity_ids,
+                super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+            ),
             Command::Scatter { entity_id } => {
                 // Event7 4C7859..4C78D5: clear planning tokens, then Foot,
                 // alive, on-map and untethered. There is no HP/owner/mission
@@ -1940,7 +1943,11 @@ impl Simulation {
     /// selection, but does not retroactively remove an existing one.
     /// VERA-only: applies the local `Command::Select` snapshot, its source of truth, to
     /// IsSelected `Object+0x83` through `Deselect @ 0x005F44A0` and `Select @ 0x005F4520`.
-    fn apply_selection_snapshot(&mut self, stable_ids: &[u64], rules: Option<&RuleSet>) -> bool {
+    fn apply_selection_snapshot(
+        &mut self,
+        stable_ids: &[u64],
+        context: super::UninitContext<'_>,
+    ) -> bool {
         let requested: BTreeSet<u64> = stable_ids.iter().copied().collect();
         // Deselect only omitted old members. Requested old members remain set,
         // so the final-admission gates below are never reapplied to them.
@@ -1955,7 +1962,7 @@ impl Simulation {
         // Iterate the original payload, not the membership set: source order is
         // authoritative even though this sim layer stores only selected bits.
         for &stable_id in stable_ids {
-            self.try_select_object(stable_id, rules);
+            self.try_select_object(stable_id, context);
         }
         true
     }
@@ -2011,10 +2018,18 @@ impl Simulation {
             && !entity.is_warped_out()
     }
 
-    /// Commit one admitted Object5F4520 selection. Caller-specific owner gates
-    /// remain with the command producer; enemy click-selection is legitimate.
-    pub(crate) fn try_select_object(&mut self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
-        if !self.can_select_object(stable_id, rules)
+    /// Commit an input-admitted Techno selection through Object5F4520, then
+    /// its successful Techno6FBFD0..6FBFE4 Event33 callback (Steam3e81a617..08600).
+    /// The app's picking/navigation owner admits discovery+41B and House50B6F0
+    /// before emitting the ordered Select command. Keep the graphical-client
+    /// B73550 gate there: replaying this command must not depend on a renderer.
+    /// Raw lifecycle Select writers use Selection::select and do not raise33.
+    pub(crate) fn try_select_object(
+        &mut self,
+        stable_id: u64,
+        context: super::UninitContext<'_>,
+    ) -> bool {
+        if !self.can_select_object(stable_id, context.rules())
             || self
                 .substrate
                 .entities
@@ -2023,13 +2038,14 @@ impl Simulation {
         {
             return false;
         }
-        match self.substrate.entities.get_mut(stable_id) {
-            Some(entity) => {
-                entity.selection.select();
-                true
-            }
-            None => false,
-        }
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return false;
+        };
+        entity.selection.select();
+        // Selection has already changed when the synchronous Tag actions run.
+        // They may change ownership, remove the Tag, or retire the object.
+        self.dispatch_object_tag_event(stable_id, 33, Some(stable_id), None, context);
+        true
     }
 
     /// Check ownership using stable_id via EntityStore.

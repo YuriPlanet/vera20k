@@ -507,13 +507,29 @@ pub(crate) fn build_sidebar_cameo_instances(
                 gclock_instances.push(gclock_instance);
             }
         } else {
-            // Non-building items: single full cameo quad. No blinking.
+            // Flash darkening is a separate retained-entry overlay below.
             instances.push(SpriteInstance {
                 position: [cameo_rect.x, cameo_rect.y],
                 size: [cameo_rect.w, cameo_rect.h],
                 uv_origin: entry.uv_origin,
                 uv_size: entry.uv_size,
                 depth: 0.00044,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                ..Default::default()
+            });
+        }
+
+        // Native6A9BC0 overlays DARKEN.SHP during the retained entry's flash
+        // phase. Reuse the existing darken lane; numerical phase is pinned by
+        // trigger_cameos.json, while exact retail SHP raster parity is bounded.
+        if item.flash_darkened && state.renderer.bit_font.darken_texture().is_some() {
+            overlay_instances.push(SpriteInstance {
+                position: [slot.x + co[0], slot.y + co[1]],
+                size: [slot.w, slot.h],
+                uv_origin: [0.0, 0.0],
+                uv_size: [1.0, 1.0],
+                depth: 0.00043,
                 tint: [1.0, 1.0, 1.0],
                 alpha: 1.0,
                 ..Default::default()
@@ -787,6 +803,7 @@ mod tests {
             cost: Some(600),
             has_cameo_art: true,
             alt_cameo: false,
+            flash_darkened: false,
             queue_category: crate::sim::production::ProductionCategory::Building,
             enabled: true,
             progress: 0.5,
@@ -829,6 +846,7 @@ mod tests {
             cost: Some(700),
             has_cameo_art: true,
             alt_cameo: false,
+            flash_darkened: false,
             queue_category: crate::sim::production::ProductionCategory::Vehicle,
             enabled: true,
             progress: 0.0,

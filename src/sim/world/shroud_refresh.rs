@@ -34,6 +34,7 @@ impl SightHeights {
 struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
     discovery_queries: std::collections::BTreeSet<(u16, u16)>,
+    notifications: Vec<((u16, u16), bool)>,
 }
 
 #[cfg(test)]
@@ -61,6 +62,129 @@ fn trace_reveal_calls<T>(run: impl FnOnce() -> T) -> (T, RevealCalls) {
 }
 
 impl Simulation {
+    /// Original Execute1016DE8B7 ->6E1A70 ->567F70 ->578100. Action+90
+    /// names the waypoint; current Player+240 gates both local conceal and
+    /// the immediate whole-map update independently of the Trigger House.
+    /// The signed half-level and bridge100/400 receiver match Action17,
+    /// while conceal geometry and the complete two-pass sweep stay shared
+    /// with their own owners. Steam3e81a617, executed13 empty-resident
+    /// controls in tools/spatial_oracle/trigger_conceal_area.json. No own
+    /// RNG draw, timer or detach; resident callbacks use5865F0's owner.
+    pub(crate) fn trigger_conceal_at_waypoint(
+        &mut self,
+        index: i32,
+        context: UninitContext<'_>,
+    ) -> bool {
+        let Some(viewer) = self.session.current_house else {
+            return false;
+        };
+        if self.fog.whole_map_revealed_for_owner(viewer) {
+            return true;
+        }
+        let Some(rules) = context.rules() else {
+            return false;
+        };
+        let cell = self.session.waypoint_cell(index).unwrap_or((0, 0));
+        let coord = {
+            let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+                return false;
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let bridge = cells.flags(cells.lookup(cell)) & 0x100 != 0
+                || cells.flags(cells.lookup(cell)) & 0x400 != 0;
+            let level = i32::from(cells.ground_fields(cells.lookup(cell)).0 as i8)
+                + if bridge { 4 } else { 0 };
+            let half = (level / 2) as i16;
+            [
+                i32::from(cell.0.wrapping_sub(half))
+                    .wrapping_shl(8)
+                    .wrapping_add(128),
+                i32::from(cell.1.wrapping_sub(half))
+                    .wrapping_shl(8)
+                    .wrapping_add(128),
+                level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+            ]
+        };
+        let cells = vision::conceal_area_cells(coord, rules.reveal_trigger_radius());
+        #[cfg(test)]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.walks.push(cells.clone());
+            }
+        });
+        for cell in cells {
+            let native_cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            self.fog
+                .conceal_map_cell(viewer, cell, native_cells.as_ref());
+        }
+        self.update_shroud_edges(viewer, context);
+        true
+    }
+
+    /// Logic55B29A/55B2AD's admission is outside the578100 owner: Action101
+    /// invokes that same complete update immediately, at any frame. Each
+    /// represented viewer has its own native map plane and notification
+    /// history; another viewer's pending state never supplies this one.
+    pub(super) fn tick_pending_shroud_conceal(&mut self, context: UninitContext<'_>) {
+        if (self.session.binary_frame as i32) % 120 != 0 {
+            return;
+        }
+        // These scans can synchronously raise discovery Tags. HashMap order
+        // must never choose their cross-House effects or RNG order. Match the
+        // retained House registry; fixture-only planes have stable ID order.
+        let mut viewers: Vec<_> = self
+            .session
+            .house_order
+            .iter()
+            .copied()
+            .filter(|owner| self.fog.by_owner.contains_key(owner))
+            .collect();
+        let mut extra: Vec<_> = self
+            .fog
+            .by_owner
+            .keys()
+            .copied()
+            .filter(|owner| !self.session.house_order.contains(owner))
+            .collect();
+        extra.sort_unstable();
+        viewers.extend(extra);
+        for viewer in viewers {
+            self.update_shroud_edges(viewer, context);
+        }
+    }
+
+    /// Map578100's two complete allocated passes. A synchronous discovery
+    /// may modify shroud or reset the shared cursor; do not retain a cursor,
+    /// Cell snapshot or visibility borrow across its callback.
+    fn update_shroud_edges(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        context: UninitContext<'_>,
+    ) {
+        for second_pass in [false, true] {
+            self.for_each_allocated_map_cell(context, |sim, cell| {
+                let notify = {
+                    let cells = context
+                        .terrain()
+                        .or(sim.resolved_terrain.as_ref())
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    if second_pass {
+                        sim.fog
+                            .refresh_map_cell_ground_frame(viewer, cell, cells.as_ref())
+                    } else {
+                        sim.fog.sweep_pending_map_cell(viewer, cell, cells.as_ref())
+                    }
+                };
+                if let Some(notify) = notify {
+                    sim.notify_cell_change(notify.cell, viewer, notify.fresh, context);
+                }
+            });
+        }
+    }
+
     /// Original `TActionClass::RevealAroundWaypoint 0x006E0FE0`, called by
     /// Execute17 at6DE34E. This uses TAction+90 and PlayerPtr, independently
     /// of the trigger's House and the trailing+44 camera waypoint. The
@@ -318,6 +442,12 @@ impl Simulation {
         fresh: bool,
         context: UninitContext<'_>,
     ) {
+        #[cfg(test)]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.notifications.push((cell, fresh));
+            }
+        });
         for rung in 0..7i16 {
             let diagonal = (
                 (cell.0 as i16).wrapping_add(rung),
@@ -420,9 +550,19 @@ impl Simulation {
     ///different cell receivers; neither precollects cells before callbacks.
     ///Nested simulation reveals reset this same cursor, not an outer copy.
     fn reveal_allocated_map_cells(&mut self, forced: bool, context: UninitContext<'_>) {
+        self.for_each_allocated_map_cell(context, |sim, cell| {
+            sim.reveal_allocated_map_cell(cell, forced, context);
+        });
+    }
+
+    fn for_each_allocated_map_cell(
+        &mut self,
+        context: UninitContext<'_>,
+        mut receive: impl FnMut(&mut Self, (u16, u16)),
+    ) {
         if self.reset_allocated_map_cell_cursor() {
             while let Some(cell) = self.next_allocated_map_cell(context) {
-                self.reveal_allocated_map_cell(cell, forced, context);
+                receive(self, cell);
             }
             return;
         }
@@ -433,7 +573,7 @@ impl Simulation {
             None => self.fog.rectangular_cells(),
         };
         for cell in cells {
-            self.reveal_allocated_map_cell(cell, forced, context);
+            receive(self, cell);
         }
     }
 

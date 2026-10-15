@@ -1,0 +1,1011 @@
+{
+  "catalog": [
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "HTNK",
+      "kind": 40,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "E2",
+      "kind": 16,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "GAPOWR",
+      "kind": 7,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 5,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "GAPILL",
+      "kind": 7,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "ORCA",
+      "kind": 3,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "UNLISTED",
+      "kind": 40,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    }
+  ],
+  "darken_asset": "DARKEN.SHP",
+  "draw_controls": [
+    [
+      0,
+      -2147483648,
+      false
+    ],
+    [
+      0,
+      -17,
+      false
+    ],
+    [
+      0,
+      -10,
+      false
+    ],
+    [
+      0,
+      -1,
+      false
+    ],
+    [
+      0,
+      0,
+      false
+    ],
+    [
+      0,
+      8,
+      false
+    ],
+    [
+      0,
+      9,
+      false
+    ],
+    [
+      0,
+      15,
+      false
+    ],
+    [
+      0,
+      16,
+      false
+    ],
+    [
+      0,
+      19,
+      false
+    ],
+    [
+      0,
+      20,
+      false
+    ],
+    [
+      0,
+      24,
+      false
+    ],
+    [
+      0,
+      25,
+      false
+    ],
+    [
+      0,
+      31,
+      false
+    ],
+    [
+      0,
+      32,
+      false
+    ],
+    [
+      0,
+      175,
+      false
+    ],
+    [
+      0,
+      176,
+      false
+    ],
+    [
+      0,
+      182,
+      false
+    ],
+    [
+      0,
+      183,
+      false
+    ],
+    [
+      0,
+      2147483647,
+      false
+    ],
+    [
+      20,
+      -2147483648,
+      false
+    ],
+    [
+      20,
+      -17,
+      false
+    ],
+    [
+      20,
+      -10,
+      false
+    ],
+    [
+      20,
+      -1,
+      false
+    ],
+    [
+      20,
+      0,
+      false
+    ],
+    [
+      20,
+      8,
+      false
+    ],
+    [
+      20,
+      9,
+      true
+    ],
+    [
+      20,
+      15,
+      true
+    ],
+    [
+      20,
+      16,
+      false
+    ],
+    [
+      20,
+      19,
+      false
+    ],
+    [
+      20,
+      20,
+      false
+    ],
+    [
+      20,
+      24,
+      false
+    ],
+    [
+      20,
+      25,
+      false
+    ],
+    [
+      20,
+      31,
+      false
+    ],
+    [
+      20,
+      32,
+      false
+    ],
+    [
+      20,
+      175,
+      false
+    ],
+    [
+      20,
+      176,
+      false
+    ],
+    [
+      20,
+      182,
+      false
+    ],
+    [
+      20,
+      183,
+      false
+    ],
+    [
+      20,
+      2147483647,
+      false
+    ],
+    [
+      183,
+      -2147483648,
+      false
+    ],
+    [
+      183,
+      -17,
+      false
+    ],
+    [
+      183,
+      -10,
+      false
+    ],
+    [
+      183,
+      -1,
+      false
+    ],
+    [
+      183,
+      0,
+      false
+    ],
+    [
+      183,
+      8,
+      false
+    ],
+    [
+      183,
+      9,
+      true
+    ],
+    [
+      183,
+      15,
+      true
+    ],
+    [
+      183,
+      16,
+      false
+    ],
+    [
+      183,
+      19,
+      false
+    ],
+    [
+      183,
+      20,
+      false
+    ],
+    [
+      183,
+      24,
+      false
+    ],
+    [
+      183,
+      25,
+      true
+    ],
+    [
+      183,
+      31,
+      true
+    ],
+    [
+      183,
+      32,
+      false
+    ],
+    [
+      183,
+      175,
+      true
+    ],
+    [
+      183,
+      176,
+      false
+    ],
+    [
+      183,
+      182,
+      false
+    ],
+    [
+      183,
+      183,
+      false
+    ],
+    [
+      183,
+      2147483647,
+      false
+    ],
+    [
+      -2147483648,
+      -2147483648,
+      false
+    ],
+    [
+      -2147483648,
+      -17,
+      false
+    ],
+    [
+      -2147483648,
+      -10,
+      false
+    ],
+    [
+      -2147483648,
+      -1,
+      false
+    ],
+    [
+      -2147483648,
+      0,
+      false
+    ],
+    [
+      -2147483648,
+      8,
+      false
+    ],
+    [
+      -2147483648,
+      9,
+      false
+    ],
+    [
+      -2147483648,
+      15,
+      false
+    ],
+    [
+      -2147483648,
+      16,
+      false
+    ],
+    [
+      -2147483648,
+      19,
+      false
+    ],
+    [
+      -2147483648,
+      20,
+      false
+    ],
+    [
+      -2147483648,
+      24,
+      false
+    ],
+    [
+      -2147483648,
+      25,
+      false
+    ],
+    [
+      -2147483648,
+      31,
+      false
+    ],
+    [
+      -2147483648,
+      32,
+      false
+    ],
+    [
+      -2147483648,
+      175,
+      false
+    ],
+    [
+      -2147483648,
+      176,
+      false
+    ],
+    [
+      -2147483648,
+      182,
+      false
+    ],
+    [
+      -2147483648,
+      183,
+      false
+    ],
+    [
+      -2147483648,
+      2147483647,
+      false
+    ],
+    [
+      2147483647,
+      -2147483648,
+      false
+    ],
+    [
+      2147483647,
+      -17,
+      false
+    ],
+    [
+      2147483647,
+      -10,
+      false
+    ],
+    [
+      2147483647,
+      -1,
+      false
+    ],
+    [
+      2147483647,
+      0,
+      false
+    ],
+    [
+      2147483647,
+      8,
+      false
+    ],
+    [
+      2147483647,
+      9,
+      true
+    ],
+    [
+      2147483647,
+      15,
+      true
+    ],
+    [
+      2147483647,
+      16,
+      false
+    ],
+    [
+      2147483647,
+      19,
+      false
+    ],
+    [
+      2147483647,
+      20,
+      false
+    ],
+    [
+      2147483647,
+      24,
+      false
+    ],
+    [
+      2147483647,
+      25,
+      true
+    ],
+    [
+      2147483647,
+      31,
+      true
+    ],
+    [
+      2147483647,
+      32,
+      false
+    ],
+    [
+      2147483647,
+      175,
+      true
+    ],
+    [
+      2147483647,
+      176,
+      false
+    ],
+    [
+      2147483647,
+      182,
+      false
+    ],
+    [
+      2147483647,
+      183,
+      false
+    ],
+    [
+      2147483647,
+      2147483647,
+      false
+    ]
+  ],
+  "flash_controls": [
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 183
+      },
+      "duration": 60,
+      "frame": 123,
+      "name": "unit_index_collision",
+      "redraw_until": 184,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "HTNK"
+    },
+    {
+      "deadlines": {
+        "E2": 20,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": 0,
+      "name": "infantry",
+      "redraw_until": 21,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "E2"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 143,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": 123,
+      "name": "building",
+      "redraw_until": 144,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "GAPOWR"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 143,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": 123,
+      "name": "defense",
+      "redraw_until": 144,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "GAPILL"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 143
+      },
+      "duration": 20,
+      "frame": 123,
+      "name": "aircraft",
+      "redraw_until": 144,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "ORCA"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": 123,
+      "name": "type_without_entry",
+      "redraw_until": 144,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "UNLISTED"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": 123,
+      "name": "wrong_case",
+      "redraw_until": 0,
+      "result": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "htnk"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": 123,
+      "name": "unknown",
+      "redraw_until": 0,
+      "result": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "MISSING"
+    },
+    {
+      "deadlines": {
+        "E2": 0,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 0,
+      "frame": 0,
+      "name": "zero",
+      "redraw_until": 1,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "E2"
+    },
+    {
+      "deadlines": {
+        "E2": 118,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": -5,
+      "frame": 123,
+      "name": "negative",
+      "redraw_until": 119,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "E2"
+    },
+    {
+      "deadlines": {
+        "E2": -2147483648,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 1,
+      "frame": 2147483647,
+      "name": "signed_wrap",
+      "redraw_until": -2147483647,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "E2"
+    },
+    {
+      "deadlines": {
+        "E2": 10,
+        "GAPILL": 0,
+        "GAPOWR": 0,
+        "HTNK": 0,
+        "ORCA": 0
+      },
+      "duration": 20,
+      "frame": -10,
+      "name": "negative_frame",
+      "redraw_until": 11,
+      "result": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "type_name": "E2"
+    }
+  ],
+  "order": [
+    [
+      "GAPOWR"
+    ],
+    [
+      "GAPILL"
+    ],
+    [
+      "E2"
+    ],
+    [
+      "ORCA",
+      "HTNK"
+    ]
+  ],
+  "overwrite": [
+    {
+      "deadline": 60,
+      "duration": 60,
+      "frame": 0,
+      "redraw_until": 61
+    },
+    {
+      "deadline": 12,
+      "duration": 2,
+      "frame": 10,
+      "redraw_until": 13
+    },
+    {
+      "deadline": 9,
+      "duration": -1,
+      "frame": 10,
+      "redraw_until": 10
+    }
+  ],
+  "rng_calls": [],
+  "schema_version": 1,
+  "tab_controls": [
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ],
+      "index": -1,
+      "result": 0,
+      "selected": []
+    },
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ],
+      "index": 0,
+      "result": 1,
+      "selected": [
+        0
+      ]
+    },
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ],
+      "index": 1,
+      "result": 1,
+      "selected": [
+        1
+      ]
+    },
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ],
+      "index": 2,
+      "result": 1,
+      "selected": [
+        2
+      ]
+    },
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ],
+      "index": 3,
+      "result": 1,
+      "selected": [
+        3
+      ]
+    },
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ],
+      "index": 4,
+      "result": 0,
+      "selected": []
+    },
+    {
+      "counts": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "index": 3,
+      "result": 0,
+      "selected": []
+    }
+  ]
+}

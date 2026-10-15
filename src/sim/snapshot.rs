@@ -1030,7 +1030,8 @@ use crate::sim::world::Simulation;
 // 357 -> 358: the process-resident BuildingType retains TargetCoordOffset.
 // Its three signed dwords change the saved type-registry layout.
 // 358 -> 359: Scenario owns the campaign countdown and authored caption.
-const SNAPSHOT_VERSION: u32 = 359;
+// 359 -> 360: retain sidebar entry flash deadlines and redraw scheduling.
+const SNAPSHOT_VERSION: u32 = 360;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1056,6 +1057,8 @@ pub(crate) struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
     scroll_rows: [usize; 4],
+    flash_deadlines: [Vec<i32>; 4],
+    redraw_until: i32,
 }
 
 impl SavedSidebarOrder {
@@ -1064,11 +1067,24 @@ impl SavedSidebarOrder {
         strips: [Vec<SavedCameoId>; 4],
         scroll_rows: [usize; 4],
     ) -> Self {
+        let flash_deadlines = std::array::from_fn(|index| vec![0; strips[index].len()]);
         Self {
             owner,
             strips,
             scroll_rows,
+            flash_deadlines,
+            redraw_until: 0,
         }
+    }
+
+    pub(crate) fn with_flash(mut self, deadlines: [Vec<i32>; 4], redraw_until: i32) -> Self {
+        self.flash_deadlines = deadlines;
+        self.redraw_until = redraw_until;
+        self
+    }
+
+    pub(crate) fn flash(&self) -> (&[Vec<i32>; 4], i32) {
+        (&self.flash_deadlines, self.redraw_until)
     }
 
     #[cfg(test)]
@@ -4393,7 +4409,8 @@ mod tests {
         // 356 -> 357: no voxel HVA or OREGATH frame clock.
         // 357 -> 358: retained BuildingType TargetCoordOffset.
         // 358 -> 359: retained Scenario countdown and caption.
-        assert_eq!(super::SNAPSHOT_VERSION, 359);
+        // 359 -> 360: native sidebar cameo flash deadlines.
+        assert_eq!(super::SNAPSHOT_VERSION, 360);
     }
 
     #[test]

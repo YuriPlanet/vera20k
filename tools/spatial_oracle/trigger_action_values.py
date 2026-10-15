@@ -49,6 +49,10 @@ subcell choices are explicit boundaries; original Foot refusal has a control.
 ``--all-change-house`` bounds Action36's original target selection and mutable
 two-pass Techno traversal. ChangeOwner and powered-building refresh are
 recorded callback boundaries, with explicit list-mutation controls.
+
+``--conceal-area`` executes Action101, Map567F70 and the complete578100 sweep
+on a small allocated diamond. Native projection, radius read and Cell/cache
+effects run; only the existing no-dirty-screen world prior excludes rendering.
 """
 from pathlib import Path
 import hashlib
@@ -3962,6 +3966,214 @@ def all_change_house_metadata():
             building_refresh_boundary=0x4549B0))
 
 
+class ConcealAreaFixture(ActionFixture):
+    """Original101 plus real local conceal and full small-map cache sweep."""
+
+    def __init__(self):
+        super().__init__()
+        self.uc = u = self.u
+        self.constants = initialize_waypoint_map(self)
+        u.hook_del(self.waypoint_hook)
+        for entry in (0x6D1830, 0x6D18C0, 0x6D1BB0, 0x49F2F0,
+                      0x561710, 0x5617A0, 0x5617C0, 0x5617E0):
+            self.call(entry, [])
+        assert struct.unpack('<Q', u.mem_read(0xB0CD48, 8))[0] == STANDARD_Z_MULTIPLIER_BITS
+        self.constants.update(trigger_level_leptons=self.integer(0xB0E6E0),
+            area_level_leptons=self.integer(0xABDE88),
+            adjust_for_z_multiplier_hex=bytes(u.mem_read(0xB0CD48, 8)).hex())
+        self.size = (4, 4)
+        u.mem_write(DISCOVERY_MAP + 0xF4, dwords(*self.size))
+        # Same original no-dirty-screen branch used by execute_trigger_reveal.
+        # No gameplay/Cell/edge/notification method is replaced.
+        u.mem_write(DISCOVERY_MAP + 0xC, dwords(1))
+        u.mem_write(0x8871E0, dwords(RULES))
+        u.mem_write(0x887324, dwords(self.allocate(0x1000)))
+        self.player, self.foreign = self.allocate(0x300), self.allocate(0x300)
+        for p in (self.player, self.foreign):
+            u.mem_write(p, bytes(0x300))
+        u.mem_write(0xA83D4C, dwords(self.player))
+        self.cells = {}
+        for y in range(9):
+            for x in range(9):
+                if not in_diamond(self.size, x, y):
+                    continue
+                p = self.allocate(0x200)
+                self.call(0x47BBF0, [], ecx=p)
+                u.mem_write(p + 0x24, packed(x, y))
+                u.mem_write(self.table + (y * 512 + x) * 4, dwords(p))
+                self.cells[x, y] = p
+        self.call(0x47BBF0, [], ecx=0xABDC50)
+        self.constructor_cell = self.state(next(iter(self.cells.values())))
+        self.key = self.allocate(32)
+        for stream in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            self.call(0x65C6D0, [31], ecx=stream)
+        for begin, end in ((0x6E1A70, 0x6E1B7F), (0x567F70, 0x568140),
+                           (0x578100, 0x578343), (0x6D20E0, 0x6D211C),
+                           (0x47BBF0, 0x47BDA8), (0x6D8700, 0x6D8ADB),
+                           (0x5865F0, 0x5866BA)):
+            self.ranges.append((begin, end))
+            self.original.append(bytes(u.mem_read(begin, end - begin)))
+        self.conceal_hook = u.hook_add(UC_HOOK_CODE, self.observe_conceal)
+
+    def state(self, pointer):
+        p = DiscoveryFixture.pointer_state(self, pointer)
+        return [*p['cell'], p['level'], p['counter'], p['gap'], p['alt'], p['flags'],
+                *p['cache'], self.u.mem_read(pointer + 0x138, 1)[0]]
+
+    def states(self):
+        return {xy: self.state(p) for xy, p in sorted(self.cells.items())}
+
+    def read_radius(self, values, name):
+        self.ordered_ini(values)
+        for reg, value in ((UC_X86_REG_ESI, RULES), (UC_X86_REG_EDI, INI),
+                           (UC_X86_REG_ESP, SP)):
+            self.u.reg_write(reg, value)
+        run_checked(self.u, 0x67181C, 0x67183C, required_addresses=(0x5276D0,))
+        return dict(layer=name, value=self.integer(RULES + 0x62C))
+
+    def observe_conceal(self, u, pc, _size, _data):
+        if not getattr(self, 'capturing_conceal', False):
+            return
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in (0x65C780, 0x65C7E0):
+            self.rng_calls.append(f'{pc:08X}')
+        if pc == 0x68BCC0:
+            self.waypoint_calls.append(self.integer(sp + 8))
+        elif pc == 0x567F70:
+            self.map_calls.append(dict(coord=list(struct.unpack('<iii',
+                u.mem_read(self.read32(sp + 4), 12))), radius=self.integer(sp + 8)))
+        elif pc == 0x567FF5:
+            self.projected_cells.append(list(struct.unpack('<hh', u.mem_read(sp + 0x14, 4))))
+        elif pc == 0x56807B:
+            p = u.reg_read(UC_X86_REG_ECX)
+            self.probes.append([*struct.unpack('<hh', u.mem_read(p + 0x24, 4)), self.integer(p + 0x130)])
+        elif pc == 0x6E1B66:
+            self.after_conceal = self.states()
+        elif pc == 0x578100:
+            self.update_calls += 1
+        elif pc in (0x578148, 0x5781E8):
+            p = u.reg_read(UC_X86_REG_ESI)
+            if p:
+                self.update_visits[0 if pc == 0x578148 else 1].append(
+                    list(struct.unpack('<hh', u.mem_read(p + 0x24, 4))))
+        elif pc in (0x6DA7D0, 0x5865F0):
+            p = self.read32(sp + 4)
+            self.notifications.append([f'{pc:08X}', *struct.unpack('<hh', u.mem_read(p + 0x24, 4))])
+
+    def execute_case(self, case, layers):
+        u = self.u
+        self.capturing_conceal = False
+        # Execute the existing exact constructor/read scalar owner. These
+        # are declared per-layer caches, not an invented radius assignment.
+        u.reg_write(UC_X86_REG_ESI, RULES)
+        u.reg_write(UC_X86_REG_ESP, SP)
+        run_checked(u, 0x665EDE, 0x665EE8)
+        radius_reads = [self.read_radius(values, name) for name, values in layers]
+        if 'radius' in case:
+            radius_reads.append(self.read_radius({'General': {'RevealTriggerRadius': str(case['radius'])}}, 'case_override'))
+        for xy, p in self.cells.items():
+            u.mem_write(p + 0x11B, b'\0\0')
+            u.mem_write(p + 0x120, b'\xFE\xFE')
+            u.mem_write(p + 0x12C, dwords(0x12340018, 0, 0))
+            u.mem_write(p + 0x138, b'\0')
+            u.mem_write(p + 0x140, dwords(0))
+        for row in case.get('overrides', []):
+            p = self.cells[tuple(row['cell'])]
+            for field, offset in (('counter', 0x130), ('gap', 0x134), ('alt', 0x12C), ('flags', 0x140)):
+                if field in row:
+                    u.mem_write(p + offset, dwords(row[field]))
+        source = tuple(case.get('cell', (4, 4)))
+        p = self.cells[source]
+        u.mem_write(p + 0x11B, bytes((case.get('level', 0) & 255,)))
+        if 'flags' in case:
+            u.mem_write(p + 0x140, dwords(case['flags']))
+        u.mem_write(self.player + 0x240, bytes((case.get('latch', 0),)))
+        u.mem_write(self.foreign + 0x240, b'\1')
+        read = self.read_action('101,0,7,0,0,0,0,A')
+        u.mem_write(SCENARIO + 0x632 + 7 * 4, packed(*source))
+        u.mem_write(SCENARIO + 0x632, packed(1, 4))
+        before = self.states()
+        self.after_conceal = None
+        self.map_calls, self.projected_cells, self.probes = [], [], []
+        self.update_calls, self.update_visits = 0, [[], []]
+        self.waypoint_calls, self.notifications, self.rng_calls = [], [], []
+        rng_before = self.rng_hashes()
+        self.capturing_conceal = True
+        result = self.call(0x6DD8B0, [self.foreign, 0, 0, 0], ecx=ACTION) & 255
+        self.capturing_conceal = False
+        after_conceal = self.after_conceal or before
+        after = self.states()
+        self.check_code()
+        return dict(input=case, read=read, radius_reads=radius_reads, result=result,
+            waypoint_calls=self.waypoint_calls, map_calls=self.map_calls,
+            projected_cells=self.projected_cells, conceal_probes=self.probes,
+            after_conceal_delta=[state for xy, state in after_conceal.items() if state != before[xy]],
+            after_update_delta=[state for xy, state in after.items() if state != after_conceal[xy]],
+            update_calls=self.update_calls, update_visits=self.update_visits,
+            notifications=self.notifications, rng_before=rng_before,
+            rng_after=self.rng_hashes(), rng_calls=self.rng_calls)
+
+
+def conceal_area_generate():
+    root = configured_gamemd().parent
+    rules_raw = mix((root / 'expandmd01.mix').read_bytes())[mix_hash('RULESMD.INI')]
+    map_raw = mix((root / 'mapsmd03.mix').read_bytes())[mix_hash('SOV01UMD.MAP')]
+    # This retained scalar kernel reads exactly one key. Reuse its native
+    # cache/CRC transport for that key, without initializing hundreds of
+    # unrelated General entries and independent native CRC VMs.
+    layers = [(name, {'General': {key: value for key, value in sections(raw).get('General', {}).items()
+                                if key == 'RevealTriggerRadius'}})
+              for name, raw in (('retail_rulesmd', rules_raw), ('retail_sov01', map_raw))]
+    f = ConcealAreaFixture()
+    cases = [
+        dict(name='retail_radius_flat'),
+        dict(name='radius2_flat', radius=2),
+        dict(name='positive_odd_level3', radius=2, level=3),
+        dict(name='negative_odd_level3', radius=2, level=-3),
+        dict(name='bridge100', radius=2, level=3, flags=0x100),
+        dict(name='bridge400', radius=2, level=3, flags=0x400),
+        dict(name='radius_zero', radius=0),
+        dict(name='radius_negative1', radius=-1),
+        dict(name='counter_and_gap_controls', radius=2, overrides=[
+            dict(cell=[3, 4], counter=-1, gap=3), dict(cell=[4, 3], counter=1),
+            dict(cell=[5, 4], counter=2), dict(cell=[4, 5], gap=-2)]),
+        dict(name='global_pending_outside_local_circle', radius=0,
+             overrides=[dict(cell=[1, 4], counter=2, flags=0x12340023)]),
+        dict(name='player_latch_skips_conceal_and_update', radius=0, latch=1,
+             overrides=[dict(cell=[1, 4], counter=2, flags=0x12340023)]),
+        dict(name='signed_max_level', radius=0, level=127),
+        dict(name='signed_min_level', radius=0, level=-128),
+    ]
+    return dict(schema_version=1,
+        fields=['x', 'y', 'level', 'counter', 'gap', 'alt', 'flags', 'cache0', 'cache1', 'dirty138'],
+        fixture=dict(size=list(f.size), allocated_cells=[list(xy) for xy in sorted(f.cells)],
+            constructor_cell=f.constructor_cell,
+            default_prior=dict(level=0, counter=0, gap=0, alt=0x12340018, flags=0, cache=[-2, -2], dirty138=0)),
+        constants=f.constants,
+        physical_inputs=[dict(file=name, bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+            for name, raw in (('expandmd01.mix/RULESMD.INI', rules_raw), ('mapsmd03.mix/SOV01UMD.MAP', map_raw))],
+        controls=[f.execute_case(case, layers) for case in cases])
+
+
+def conceal_area_metadata():
+    return provenance(
+        scope='Original Action101/Map567F70 local conceal and full578100 two-pass sweep on a small complete allocated Size4x4 diamond; no occupied-object or rendered-pixel claim.',
+        assumptions=[
+            'Reuse ActionFixture, initialize_waypoint_map, DiscoveryFixture Cell observations, native Cell constructor47BBF0 and sparse512-stride table. All28 Size4x4 diamond Cells and shared Dummy execute original constructors. World priors explicitly replace only level/counter/gap/alt/flags/cache/dirty fields for selected histories; this is not retail scenario geometry.',
+            'Original TAction constructor/reader/full dispatch1016DE8B7->6E1A70 reads waypoint index from+90(7), independently of trailing tokenA/+44(0). Current Player+240, rather than incoming foreign Trigger House+240, gates both conceal and following update. Foreign latch is1 in all cases; only the declared local latch control skips.',
+            'Existing original projection6D1830/6D18C0/6D1BB0 and Cell/TAction/Map constant initializer groups run. Caller half-height,100/400 bridge flags, signed word arithmetic, native AdjustForZ6D20E0, original567F70 radius traversal, counter admission and both alt-bit stores execute without substitutions. No Python formula supplies a golden coordinate, distance, counter or bitmask.',
+            'RevealTriggerRadius uses original constructor store665EDE and existing General scalar read67181C..67183C/5276D0 on declared cached physical RULESMD then SOV01 General layers, cropped to the one exact key this body reads; optional case overrides use the same native reader. Physical hashes are pinned. Full INI loader/Process chronology, optional LANGRULE/mode passes and unrelated General keys/index collisions are excluded.',
+            'Original578100 and allocated578290 run to completion, including pending20 cleanup,138 dirty writes, both native edge-cache6D8700 recomputation and empty resident5865F0 notifications. The global-pending control lies outside radius0 and demonstrates this sweep is broader than the local circle. CellDelta arrays use the declared fields order and are native post-conceal then post-update differences.',
+            'Original6DA7D0 takes its no-dirty-screen branch from supplied Map+C=1; actual dirty-region publication/rendering is excluded. Cells have empty resident lists and no local Tags/units/buildings. Native neighbor/radar/empty-resident bodies execute; occupied knowledge callbacks, nested actions, renderer and full map/session loading remain outside scope.',
+            'Three native RNG streams start with seed31; original draw entry observations and full state hashes are retained. The selected path has no timer/detach producer; no gameplay callable is replaced.'],
+        substitutions=[
+            'Only inherited ActionFixture platform/CRT/heap/INI-cache boundaries; no Action101, Map567F70/578100/578290, projection, Cell writer, edge-cache or notification instruction is replaced.'],
+        entry_points=dict(dispatch=0x6DD8B0, execute101=0x6DE8B7, action101=0x6E1A70,
+            local_conceal=0x567F70, update=0x578100, allocated_next=0x578290,
+            edge_cache=0x6D8700, cell_constructor=0x47BBF0, adjust_for_z=0x6D20E0,
+            radius_ctor=0x665EDE, radius_read=0x67181C, resident_notify=0x5865F0))
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -3977,9 +4189,16 @@ if __name__=='__main__':
     selected_modes.add_argument('--scenario-timer', action='store_true')
     selected_modes.add_argument('--chrono-house', action='store_true')
     selected_modes.add_argument('--all-change-house', action='store_true')
+    selected_modes.add_argument('--conceal-area', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.all_change_house:
+    if selected.conceal_area:
+        if selected.inputs is not None:
+            selector.error('--conceal-area reads configured retail RULESMD/SOV01, not --inputs')
+        finish_vectors(conceal_area_generate,
+            Path(__file__).with_name('trigger_conceal_area.json'),
+            provenance=conceal_area_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.all_change_house:
         if selected.inputs is not None:
             selector.error('--all-change-house uses declared House/Techno priors, not --inputs')
         finish_vectors(all_change_house_generate,

@@ -92,6 +92,16 @@ pub enum TriggerEffect {
     LocalizedMessage {
         csf_label: String,
     },
+    /// Execute114 asks the retained client sidebar to select a nonempty strip.
+    SelectSidebarTab {
+        index: i32,
+    },
+    /// Execute115's named TechnoType cameo pulse, on the native frame clock.
+    FlashSidebarCameo {
+        type_id: crate::sim::intern::InternedId,
+        duration: i32,
+        frame: i32,
+    },
     /// A synchronous trigger receiver already published changed bridge state.
     /// The frame owner includes this receipt in its existing terrain refresh.
     BridgeStateChanged,
@@ -1764,7 +1774,7 @@ impl Simulation {
             //All secondary switch entries are the generic true tail; no
             //House-retention or persistence write. Original Steam identity:
             //3e81a617..08600; RecordKill702D40 publishes4/6/7/48/29 here.
-            2 | 4 | 6 | 7 | 29 | 48 => {
+            2 | 4 | 6 | 7 | 29 | 33 | 48 => {
                 input.kind == condition.kind && !self.buildup_bypass_active()
             }
             //71F28B selects the generic true tail71F1B4, no persistence write.
@@ -2604,6 +2614,60 @@ impl Simulation {
         let sound = action.sound.as_deref();
         let action = &action.entry;
         match action.kind {
+            12 => {
+                // Steam3e81a617..08600, Execute6DF051..6DF08F: reverse
+                // live Trigger array, then726720's deferred marker. No
+                // immediate detach, RNG or timer write belongs to this action.
+                if let Some(DefinitionReference::Trigger(target)) = reference {
+                    for ordinal in (0..self.trigger_runtime.trigger_order.len()).rev() {
+                        let live = self.trigger_runtime.trigger_order[ordinal];
+                        if self
+                            .trigger_runtime
+                            .trigger(live)
+                            .is_some_and(|trigger| trigger.type_index == target)
+                        {
+                            self.mark_live_trigger_for_delete(live);
+                        }
+                    }
+                }
+            }
+            70 => {
+                // Execute6DF094 -> Tag vt20=6E58B0 ->6E4F60 destroys each
+                // matching Tag immediately; linked Triggers remain deferred.
+                // Revisit the shifted entry after every destructor. Native
+                // captures the old count and can read stale slots past its
+                // contracted array; safe storage stops at the live end.
+                if let Some(DefinitionReference::Tag(target)) = reference {
+                    let mut ordinal = 0;
+                    while ordinal < self.trigger_runtime.tag_order.len() {
+                        let live = self.trigger_runtime.tag_order[ordinal];
+                        if self
+                            .trigger_runtime
+                            .tag(live)
+                            .is_some_and(|tag| tag.type_index == target)
+                        {
+                            self.delete_live_tag(live, rules, 1, self.session.started());
+                        } else {
+                            ordinal += 1;
+                        }
+                    }
+                }
+            }
+            38 => {
+                // Execute6DE189..6DE1C8 resolves6E45E0 once, then calls
+                // House4F9F90(source,target,0), followed by the reverse call.
+                // The diplomacy owner retains anger, fog and threat updates.
+                let (Some(live), Some(source), Some(value), Some(rules)) =
+                    (context.live_index, context.incoming_house, value, rules)
+                else {
+                    return false;
+                };
+                let Some(target) = self.live_action_house(live, value, rules) else {
+                    return false;
+                };
+                self.make_enemy(source, target, rules);
+                self.make_enemy(target, source, rules);
+            }
             23..=27 => {
                 use crate::sim::scenario_session::ScenarioTimerAction;
                 let seconds = value.unwrap_or(0);
@@ -3045,6 +3109,16 @@ impl Simulation {
                         .with_effects(frame_effects),
                 );
             }
+            101 => {
+                let (Some(rules), Some(waypoint)) = (rules, value) else {
+                    return false;
+                };
+                return self.trigger_conceal_at_waypoint(
+                    waypoint,
+                    crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
+                        .with_effects(frame_effects),
+                );
+            }
             18 => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
                     return false;
@@ -3093,6 +3167,38 @@ impl Simulation {
                 effects.push(TriggerEffect::RadarMovie {
                     index: value.unwrap_or(0),
                     pause_simulation: action.kind == 117,
+                });
+            }
+            114 => {
+                let index = value.unwrap_or(0);
+                if !(0..4).contains(&index) {
+                    return false;
+                }
+                effects.push(TriggerEffect::SelectSidebarTab { index });
+                //6E4100 ->6ABAC0/6A7590: presentation checks retained strip
+                //membership. Native's empty-strip AL0 is only a client
+                //receipt: all three Tag callers6E5439/6E5450/6E546D ignore
+                //Spring's AL, as does ForceTrigger. Keep that client result
+                //out of deterministic simulation; the UI owns actual admission.
+            }
+            115 => {
+                let Some(rules) = rules else { return false };
+                //6E4150 scans the common TechnoType array A8EB04 in reverse,
+                //with byte-exact names, then6AC5F0 dispatches its own class.
+                //Retail SOV01 uses the unique SAPC identity; duplicate names
+                //across type classes retain the rules owner's existing order.
+                let Some(object) = rules
+                    .all_objects()
+                    .filter(|object| object.id == action.inline_type_name())
+                    .last()
+                else {
+                    return false;
+                };
+                let type_id = self.interner.intern(&object.id);
+                effects.push(TriggerEffect::FlashSidebarCameo {
+                    type_id,
+                    duration: value.unwrap_or(0),
+                    frame: self.session.binary_frame as i32,
                 });
             }
             139 => {

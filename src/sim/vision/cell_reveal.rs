@@ -184,6 +184,80 @@ impl OwnerVisibility {
 }
 
 impl FogState {
+    /// Original Map567F70's cell receiver: only counter==0 is concealed.
+    /// Negative sustained sight and positive shroud/gap counters survive;
+    /// pending20, cache bits/frames and gap count are untouched.
+    pub(crate) fn conceal_map_cell(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        let vis = self
+            .by_owner
+            .entry(viewer)
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let (state, ground, _) = vis.map_cell_parts_mut(key);
+        if state.counter != 0 {
+            return;
+        }
+        state.counter = 1;
+        state.open = false;
+        *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+        if let VisibilityCell::Real(index) = key {
+            vis.tracked.complete = false;
+            vis.publish_knowledge(index);
+        }
+    }
+
+    /// First578100 pass, one allocated Cell: pending20 clears ground18 and
+    /// cache3/20 before its synchronous notification. Ground frame bytes do
+    /// not change until the second pass. Native notifies only old frame-2.
+    pub(crate) fn sweep_pending_map_cell(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> Option<MapCellNotification> {
+        let vis = self.by_owner.get_mut(&viewer)?;
+        let key = vis.visibility_cell(cell, native_cells);
+        let (state, ground, cache) = vis.map_cell_parts_mut(key);
+        if !state.pending {
+            return None;
+        }
+        state.sweep();
+        *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+        cache.initialized = false;
+        cache.fog_open = false;
+        let notify = cache.frames[0] == -2;
+        if let VisibilityCell::Real(index) = key {
+            vis.tracked.complete = false;
+            vis.publish_knowledge(index);
+        }
+        notify.then_some(MapCellNotification { cell, fresh: true })
+    }
+
+    /// Second578100 pass. Recompute every allocated Cell's ground channel
+    /// through the sole Tactical6D8700 owner; changed frame-2 synchronously
+    /// notifies. No counter, pending bit, fog channel or open-bit write.
+    pub(crate) fn refresh_map_cell_ground_frame(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> Option<MapCellNotification> {
+        let frame = self.map_cell_edge_frame(viewer, cell, false, native_cells);
+        let vis = self.by_owner.get_mut(&viewer)?;
+        let key = vis.visibility_cell(cell, native_cells);
+        let (_, _, cache) = vis.map_cell_parts_mut(key);
+        if frame == cache.frames[0] {
+            return None;
+        }
+        cache.frames[0] = frame;
+        (frame == -2).then_some(MapCellNotification { cell, fresh: true })
+    }
+
     /// Original Display4A9890, via Map653810/Execute16. Unlike4A9CA0 it
     /// does not touch sight/gap counters; unlike4AA050 it initializes both
     /// ground and fog edge channels. Fresh and changed are distinct: the
@@ -399,8 +473,8 @@ impl FogState {
     /// its pending conceal where native sets `0x10` instead.
     ///
     /// RESIDUAL (#1117): the two bits are read from `ground_flags`, which the
-    /// gap, conceal, fire and whole-map writers (`0x006FB170`, `0x006FB470`,
-    /// `0x00578100`, `0x004876F0`, `0x00577D90`, `0x00577AB0`) leave as they
+    /// gap, fire and some whole-map writers (`0x006FB170`, `0x006FB470`,
+    /// `0x004876F0`, `0x00577D90`, `0x00577AB0`) leave as they
     /// were. A cell a hostile gap re-hid still reads explored: its reveal is
     /// not fresh and, with its frame unchanged, sends no CellChangeNotify, and
     /// as a neighbor it is skipped when its stale `0x10` is set. A cell those

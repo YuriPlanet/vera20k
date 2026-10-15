@@ -701,6 +701,24 @@ fn advance_in_game_runtime_mode(
             frame_committed,
             tick_lane,
         );
+        // Native Strip AI6A8CF3 requests redraw throughout the authored
+        // flash window, even with no input. Reuse the one projection owner
+        // only in that window; ordinary idle ticks do not enumerate cameos.
+        if frame_committed
+            && state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| {
+                    state
+                        .match_state
+                        .match_presentation
+                        .sidebar_projection
+                        .cameo_redraw_requested(runtime.simulation.session.binary_frame as i32)
+                })
+        {
+            crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+        }
         if frame_committed && decision.admitted_by_pacer {
             let RuntimeAdvanceMode::WallClock { now_ms } = mode else {
                 unreachable!("only wall-clock admission records the frame pacer");
@@ -1256,6 +1274,7 @@ fn refresh_cell_lighting(state: &mut AppState) {
 }
 
 fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
+    let mut refresh_sidebar = false;
     for effect in effects {
         match effect {
             TriggerEffect::ChronoScreen { command } => {
@@ -1297,7 +1316,41 @@ fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
             TriggerEffect::LocalizedMessage { csf_label } => {
                 crate::app::input::messages::post_trigger_message(state, csf_label);
             }
+            TriggerEffect::SelectSidebarTab { index } => {
+                refresh_sidebar = true;
+                let presentation = &mut state.match_state.match_presentation;
+                if let Some(tab) = presentation.sidebar_projection.selectable_tab(*index) {
+                    // Trigger6E4100 bypasses the player-input lock, retaining
+                    // each strip's independent scroll state.
+                    presentation.active_sidebar_tab = tab;
+                }
+            }
+            TriggerEffect::FlashSidebarCameo {
+                type_id,
+                duration,
+                frame,
+            } => {
+                refresh_sidebar = true;
+                if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                    state
+                        .match_state
+                        .match_presentation
+                        .sidebar_projection
+                        .flash_cameo(
+                            *type_id,
+                            *duration,
+                            *frame,
+                            &runtime.simulation.interner,
+                            &runtime.resources.rules,
+                        );
+                }
+            }
         }
+    }
+    // Publish the tab and initial flash phase in this same ordered batch;
+    // input events are not required to expose trigger-authored UI changes.
+    if refresh_sidebar {
+        crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     }
 }
 

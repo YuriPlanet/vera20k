@@ -5,7 +5,7 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::house_state::HouseState;
-use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
+use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition, TeamScriptVm};
 
 fn patrol_corpus() -> serde_json::Value {
     serde_json::from_str(crate::test_fixture::text("tools/team_patrol.json")).unwrap()
@@ -407,6 +407,157 @@ fn rules() -> RuleSet {
         &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
     )
     .expect("team action rules")
+}
+
+#[test]
+fn script17_replacement_and_next_visit_match_original_controls() {
+    let native: serde_json::Value =
+        serde_json::from_str(crate::test_fixture::text("tools/team_change_script.json")).unwrap();
+    for row in native.as_array().unwrap() {
+        // A live Rust Team always owns a Script attachment; TeamAI clears
+        // StepCompleted before dispatch. The extra native controls establish
+        // the NULL old-Script gate and lack of a completion write separately.
+        if !row["old_script"].as_bool().unwrap() || row["advance_before"].as_bool().unwrap() {
+            continue;
+        }
+        let rules = rules();
+        let mut sim = Simulation::with_seed(0x6E972C);
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let ordinal = row["ordinal"].as_u64().unwrap() as usize;
+        let (team, members, _) = building_team(&mut sim, &rules, &[(17, ordinal as i32)], &[]);
+        while sim.team_script_vm.script_order.len() <= ordinal {
+            let id = sim
+                .interner
+                .intern(&format!("SCRIPT_{}", sim.team_script_vm.script_order.len()));
+            sim.team_script_vm.register_script(TeamScriptDefinition {
+                id,
+                actions: vec![TeamScriptAction {
+                    action_id: 2,
+                    argument: 0,
+                }],
+                source: TeamAiDefinitionSource::Scenario,
+            });
+        }
+        let target = TeamTarget::Cell { x: 20, y: 21 };
+        let expected_script = sim.team_script_vm.script_order[ordinal];
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = 0;
+        state.advance_pending = row["advance_before"].as_bool().unwrap();
+        state.mission_target = Some(target);
+        state.focus = Some(target);
+        let old_timer = state.guard_timer;
+        let rng_before = sim.scenario_rng.native_state_hex();
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        let state = sim.team_script_vm.team(team).unwrap();
+        assert_eq!(state.script_id(), expected_script, "{row}");
+        assert_eq!(i64::from(state.cursor()), row["cursor"].as_i64().unwrap());
+        assert_eq!(
+            state.advance_pending(),
+            row["advance_after"].as_bool().unwrap()
+        );
+        assert_eq!(state.mission_target, Some(target), "{row}");
+        assert_eq!(state.focus, Some(target), "{row}");
+        assert_eq!(state.guard_timer, old_timer, "{row}");
+        assert_eq!(state.members().collect::<Vec<_>>(), members, "{row}");
+        if !state.advance_pending() {
+            sim.team_step_script(team, &rules, None, FrameEffects::default());
+            let state = sim.team_script_vm.team(team).unwrap();
+            assert_eq!(
+                i64::from(state.cursor()),
+                row["next_cursor"].as_i64().unwrap()
+            );
+            assert_eq!(
+                state.advance_pending(),
+                row["next_advance"].as_bool().unwrap()
+            );
+            assert!(state.refusal().is_none());
+        }
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng_before);
+        let restored: TeamScriptVm =
+            bincode::deserialize(&bincode::serialize(&sim.team_script_vm).unwrap()).unwrap();
+        assert_eq!(restored.team(team), sim.team_script_vm.team(team));
+    }
+    assert!(action_is_ported(17));
+}
+
+#[test]
+fn retail_sov01_script17_uses_the_production_script_registry() {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let bytes = assets.get_ref("SOV01UMD.MAP").unwrap();
+    assert_eq!(
+        crate::util::sha256::sha256_hex(bytes),
+        "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
+    );
+    let map = crate::map::map_file::MapFile::from_bytes(bytes).unwrap();
+    let named = assets.resolve_ref("SOV01UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "SOV01UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut rules_owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = rules_owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let registry =
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
+            .unwrap();
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    let vm = &sim.team_script_vm;
+    let mut switches = Vec::new();
+    for (name, ordinal) in [
+        ("0442D4BC", 107),
+        ("0442F04C", 108),
+        ("0442D8DC", 109),
+        ("0442F52C", 110),
+        ("044340FC", 111),
+        ("0442D05C", 112),
+    ] {
+        let id = sim.interner.get(name).unwrap();
+        let script = &vm.scripts[&id];
+        assert_eq!(
+            script.actions,
+            [
+                TeamScriptAction {
+                    action_id: 50,
+                    argument: 120
+                },
+                TeamScriptAction {
+                    action_id: 17,
+                    argument: ordinal
+                },
+            ]
+        );
+        let target = vm.script_order[ordinal as usize];
+        assert!(vm.scripts.contains_key(&target));
+        switches.push((id, target));
+    }
+    // Resolve numeric references through the installed fixed+scenario owner,
+    // rather than treating 107..112 as map-local ScriptTypes list positions.
+    for (source, expected) in switches {
+        let owner = sim.interner.intern("Americans");
+        let team = sim.team_script_vm.create_team(owner, source, Vec::new(), 0);
+        {
+            let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+            state.cursor = 0;
+            state.advance_pending = true;
+        }
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        let state = sim.team_script_vm.team(team).unwrap();
+        assert_eq!(state.script_id(), expected);
+        assert_eq!(state.cursor(), -1);
+        assert!(!state.advance_pending());
+        assert!(state.refusal().is_none());
+    }
 }
 
 /// The building tests' power plants: the Russians' own, the Americans' near

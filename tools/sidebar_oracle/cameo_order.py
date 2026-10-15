@@ -1479,7 +1479,145 @@ def metadata():
     return record
 
 
+def trigger_cameo_generate():
+    """114/115 callers and original115 deadline/drawing-predicate controls.
+
+    Reuse the existing Sidebar machine/retained entry owner; action fields
+    are explicit reader-output priors. No second VM, mapper or flash formula.
+    """
+    catalog = [item('HTNK'), item('E2', 16), item('GAPOWR', 7),
+               item('GAPILL', 7, build_cat=5), item('ORCA', 3), item('UNLISTED')]
+    m = Sidebar(catalog)
+    u = m.u
+    for kind, address in ARRAYS.items():
+        count = sum((31 if row['kind'] in SUPER_KINDS else row['kind']) == kind
+                    for row in m.catalog.values())
+        put32(u, address + 12, count)
+    for name, pointer in m.pointers.items():
+        u.mem_write(pointer + 0x24, name.encode('ascii') + b'\0')
+        if name != 'UNLISTED':
+            m.add(name)
+    techno = m.alloc(len(catalog) * 4)
+    u.mem_write(techno, dwords(*(m.pointers[row['id']] for row in catalog)))
+    put32(u, 0xA8EB04, techno)
+    put32(u, 0xA8EB10, len(catalog))
+    action = m.alloc(0x94)
+    events, draws = [], []
+    def observe(_u, pc, _size, _data):
+        if pc in (0x65C780, 0x65C7E0):
+            draws.append(f'{pc:08X}')
+        if pc == 0x6A7590:
+            events.append(read(u, u.reg_read(UC_X86_REG_ESP) + 4)[0])
+            # Original114 admission executes; actual tab gadget registration,
+            # input event wiring and rendering are outside this boundary.
+            m.native_return(0, 4)
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    spans = ((0x6E4100, 0x6E41FE), (0x6AC5F0, 0x6AC733),
+             (0x6ABAC0, 0x6ABAD0), (0x6A9B4B, 0x6A9B78))
+    code = [bytes(u.mem_read(a, b-a)) for a, b in spans]
+    for stream in (m.scenario + 0x218, 0x886B88, 0xABE890):
+        m.invoke(0x65C6D0, stream, (31,))
+    def rng():
+        return [hashlib.sha256(u.mem_read(p, 0x3F4)).hexdigest()
+                for p in (m.scenario + 0x218, 0x886B88, 0xABE890)]
+    def deadlines():
+        return {name: read(u, strip + 0x88 + index * 0x34)[0]
+                for strip, names in zip(STRIPS, m.order()) for index, name in enumerate(names)}
+    def reset_deadlines():
+        for strip in STRIPS:
+            for index in range(75):
+                put32(u, strip + 0x88 + index * 0x34, 0)
+        put32(u, SIDEBAR + 0x53A0, 0)
+    tab_controls = []
+    for value, empty in ((-1, False), (0, False), (1, False), (2, False),
+                         (3, False), (4, False), (3, True)):
+        old_count = read(u, STRIPS[3] + 0x54)[0]
+        if empty:
+            put32(u, STRIPS[3] + 0x54, 0)
+        u.mem_write(action, bytes(0x94))
+        put32(u, action + 0x90, value)
+        events.clear()
+        m.invoke(0x6E4100, action, (0, 0, 0, 0))
+        tab_controls.append(dict(index=value, counts=[read(u, s + 0x54)[0] for s in STRIPS],
+            result=u.reg_read(UC_X86_REG_EAX) & 255, selected=list(events)))
+        put32(u, STRIPS[3] + 0x54, old_count)
+    specs = [
+        ('unit_index_collision', 'HTNK', 123, 60), ('infantry', 'E2', 0, 20),
+        ('building', 'GAPOWR', 123, 20), ('defense', 'GAPILL', 123, 20),
+        ('aircraft', 'ORCA', 123, 20), ('type_without_entry', 'UNLISTED', 123, 20),
+        ('wrong_case', 'htnk', 123, 20), ('unknown', 'MISSING', 123, 20),
+        ('zero', 'E2', 0, 0), ('negative', 'E2', 123, -5),
+        ('signed_wrap', 'E2', 2147483647, 1), ('negative_frame', 'E2', -10, 20),
+    ]
+    controls = []
+    for name, type_name, frame, duration in specs:
+        reset_deadlines()
+        put32(u, 0xA8ED84, frame)
+        u.mem_write(action, bytes(0x94))
+        u.mem_write(action + 0x54, type_name.encode('ascii') + b'\0')
+        put32(u, action + 0x90, duration)
+        before = rng()
+        m.invoke(0x6E4150, action, (0, 0, 0, 0))
+        result = u.reg_read(UC_X86_REG_EAX) & 255
+        controls.append(dict(name=name, type_name=type_name, frame=frame, duration=duration,
+            result=result, deadlines=deadlines(), redraw_until=read(u, SIDEBAR + 0x53A0)[0],
+            rng_before=before, rng_after=rng()))
+    reset_deadlines()
+    overwrite = []
+    for frame, duration in ((0, 60), (10, 2), (10, -1)):
+        put32(u, 0xA8ED84, frame)
+        m.invoke(0x6AC5F0, SIDEBAR, (m.pointers['E2'], duration))
+        overwrite.append(dict(frame=frame, duration=duration, deadline=deadlines()['E2'],
+                              redraw_until=read(u, SIDEBAR + 0x53A0)[0]))
+    draw_controls = []
+    # Native signed deadline comparison and signed frame%16 execute as one
+    # body crop, stopping before either its overlay setup or continuation.
+    for deadline in (0, 20, 183, -2147483648, 2147483647):
+        for frame in (-2147483648, -17, -10, -1, 0, 8, 9, 15, 16, 19, 20,
+                      24, 25, 31, 32, 175, 176, 182, 183, 2147483647):
+            put32(u, 0xA8ED84, frame)
+            put32(u, STRIPS[2] + 0x88, deadline)
+            put32(u, STACK + 0x3C, 0)
+            put32(u, STACK + 0x24, STRIPS[2])
+            reached = m.invoke(0x6A9B4B, ends=(0x6A9B78, 0x6A9BC5))
+            draw_controls.append([deadline, frame, reached == 0x6A9B78])
+    assert code == [bytes(u.mem_read(a, b-a)) for a, b in spans]
+    u.hook_del(hook)
+    return dict(schema_version=1, catalog=catalog, order=m.order(),
+        tab_controls=tab_controls, flash_controls=controls,
+        overwrite=overwrite, draw_controls=draw_controls, rng_calls=draws,
+        darken_asset=bytes(u.mem_read(0x83F92C, 32)).split(b'\0', 1)[0].decode('ascii'))
+
+
+def trigger_cameo_metadata():
+    return provenance(
+        scope='Original Actions114/115 helper admission, exact reverse TechnoType search, Sidebar6AC5F0 numeric-index deadline writes and StripDraw signed flash predicate; no native pixels or complete gadget registration.',
+        assumptions=[
+            'Reuse Sidebar machine, original Strip constructors and original admitted Add/Insert ordering. Explicit initialized type/House catalog, typed arrays/counts and common TechnoType registry are supplied; no complete process/rules/House loaders or TechnoType registry construction execute.',
+            'Action+90 duration/tab and Action+54 inline identifier are explicit materialized-reader priors. Original6E4100/6E4150 execute to return. Original reader6DD5B0 is covered by existing trigger_action_values/inline_type evidence and is not executed in this selected mode.',
+            '114 executes original6ABAC0 count gate; valid0..3 nonempty strips invoke6A7590, invalid/empty inputs return0.115 scans original A8EB04/A8EB10 backwards with exact case, then original6AC5F0 scans typed pointer arrays and picks a strip. Unsupported/missing type returns0; a registered type without a retained entry still updates53A0.',
+            'Original6AC5F0 compares only retained typed-array index+58 and not RTTI+5C. Thus the supplied Vehicle strip[ORCA(AircraftIndex0),HTNK(UnitIndex0)] highlights ORCA when asked for HTNK. This collision is a recorded original behavior, not a Python matching rule.',
+            'All deadline arithmetic is original signed i32 wrapping: entry88=Frame+duration and Sidebar53A0=Frame+duration+1. Repeated requests overwrite; no max or cooldown policy is supplied. Original6A9B4B..6A9B78 branches provide draw_controls[deadline,signed-frame,draw-darken]; the threshold and signed remainder are not computed in Python.',
+            'Three original RNG streams are initialized with seed31; unchanged states and observed draw entry points are recorded. The selected bodies have no gameplay timer or detach call. Deadline fields are presentation state, not simulation clocks.'],
+        substitutions=[
+            'Existing Sidebar fixture cost/availability/EVA/allocator boundaries remain setup only; original comparison, typed lookup, action helper, deadline and flash-predicate instructions are unchanged.',
+            '6A7590 is a recorded RET4 selection sink. Its actual gadget remove/add, active-tab storage and layout/draw tail are excluded. StripDraw execution stops before either darken overlay setup6A9B78 or ordinary continuation6A9BC5; no pixel, palette, SHP decode or GPU claim.'],
+        entry_points=dict(action114=0x6E4100, nonempty=0x6ABAC0,
+            tab_switch_boundary=0x6A7590, action115=0x6E4150,
+            flash_cameo=0x6AC5F0, draw_gate=0x6A9B4B,
+            overlay_selected=0x6A9B78, ordinary_draw=0x6A9BC5))
+
+
 if __name__ == '__main__':
+    import argparse
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument('--trigger-cameos', action='store_true')
+    selected, remaining = selector.parse_known_args()
+    if selected.trigger_cameos:
+        finish_vectors(trigger_cameo_generate,
+            Path(__file__).with_name('trigger_cameos.json'),
+            provenance=trigger_cameo_metadata, argv=remaining)
+        raise SystemExit(0)
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,
                    source_paths={
                        'producer': Path(__file__),

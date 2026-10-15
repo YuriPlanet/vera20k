@@ -137,6 +137,230 @@ fn reveal_cell(sim: &mut Simulation, viewer: InternedId, cell: (u16, u16), final
     }
 }
 
+fn conceal_topology(corpus: &Value, input: &Value) -> Value {
+    let fixture = &corpus["fixture"];
+    let mut allocated = Vec::new();
+    for cell in fixture["allocated_cells"].as_array().unwrap() {
+        let mut prior = fixture["default_prior"].clone();
+        prior["cell"] = cell.clone();
+        if let Some(overrides) = input["overrides"].as_array() {
+            for change in overrides.iter().filter(|change| change["cell"] == *cell) {
+                for (field, value) in change.as_object().unwrap() {
+                    prior[field] = value.clone();
+                }
+            }
+        }
+        if *cell == json!([4, 4]) {
+            if !input["level"].is_null() {
+                prior["level"] = input["level"].clone();
+            }
+            if !input["flags"].is_null() {
+                prior["flags"] = input["flags"].clone();
+            }
+        }
+        allocated.push(prior);
+    }
+    json!({"allocated_cells": allocated,
+        "dummy_prior": {"cell": [0,0], "level":0, "counter":1,
+                        "gap":0, "alt":0, "flags":0, "cache":[-2,-2]}})
+}
+
+fn conceal_expected_after(topology: &Value, row: &Value) -> BTreeMap<(u16, u16), Value> {
+    let mut expected: BTreeMap<_, _> = topology["allocated_cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|cell| (pair(&cell["cell"]), cell.clone()))
+        .collect();
+    for phase in ["after_conceal_delta", "after_update_delta"] {
+        for delta in row[phase].as_array().unwrap() {
+            let cell = (
+                delta[0].as_i64().unwrap() as u16,
+                delta[1].as_i64().unwrap() as u16,
+            );
+            expected.insert(
+                cell,
+                json!({"cell":[cell.0,cell.1], "level":delta[2],
+                "counter":delta[3], "gap":delta[4], "alt":delta[5], "flags":delta[6],
+                "cache":[delta[7],delta[8]]}),
+            );
+        }
+    }
+    expected
+}
+
+#[test]
+fn native_trigger_conceal_circle_and_immediate_two_pass_sweep_match_original() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_conceal_area.json",
+    ))
+    .unwrap();
+    assert_eq!(corpus["controls"].as_array().unwrap().len(), 13);
+    for row in corpus["controls"].as_array().unwrap() {
+        let input = &row["input"];
+        let topology = conceal_topology(&corpus, input);
+        let (mut sim, player, _) = fixture(&topology);
+        sim.session.binary_frame = 119; // Action101 must not wait for the120 rung.
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width: 4,
+            height: 4,
+            local_left: 0,
+            local_top: 0,
+            local_width: 4,
+            local_height: 4,
+        });
+        sim.session.install_waypoints(
+            &[(
+                7,
+                crate::map::waypoints::Waypoint {
+                    index: 7,
+                    rx: 4,
+                    ry: 4,
+                },
+            )]
+            .into(),
+        );
+        let radius = row["radius_reads"].as_array().unwrap().last().unwrap()["value"]
+            .as_i64()
+            .unwrap();
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[General]\nRevealTriggerRadius={radius}\n"
+        )))
+        .unwrap();
+        if input["latch"] == 1 {
+            sim.fog.admit_whole_map_reveal(player);
+        }
+        assert_eq!(rng_hashes(&sim), row["rng_before"], "{}", input["name"]);
+        let ((returned, trace), draws) = crate::sim::rng::trace_draws(|| {
+            trace_reveal_calls(|| {
+                sim.trigger_conceal_at_waypoint(7, UninitContext::with_rules(&rules))
+            })
+        });
+        assert_eq!(returned, row["result"] == 1, "{}", input["name"]);
+        let expected_walk: Vec<_> = row["conceal_probes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|probe| {
+                (
+                    probe[0].as_i64().unwrap() as u16,
+                    probe[1].as_i64().unwrap() as u16,
+                )
+            })
+            .collect();
+        if row["map_calls"].as_array().unwrap().is_empty() {
+            assert!(trace.walks.is_empty());
+        } else {
+            assert_eq!(trace.walks, vec![expected_walk], "{}", input["name"]);
+        }
+        let notifications: Vec<_> = row["notifications"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event[0] == "005865F0")
+            .map(|event| {
+                (
+                    (
+                        event[1].as_i64().unwrap() as u16,
+                        event[2].as_i64().unwrap() as u16,
+                    ),
+                    true,
+                )
+            })
+            .collect();
+        assert_eq!(trace.notifications, notifications, "{}", input["name"]);
+        let expected = conceal_expected_after(&topology, row);
+        for state in expected.values() {
+            assert_native_cell_history(
+                &sim.fog,
+                player,
+                state,
+                sim.resolved_terrain.as_ref().unwrap(),
+                false,
+            );
+        }
+        assert!(draws.is_empty(), "{}", input["name"]);
+        assert_eq!(rng_hashes(&sim), row["rng_after"], "{}", input["name"]);
+        let restored: vision::FogState =
+            bincode::deserialize(&bincode::serialize(&sim.fog).unwrap()).unwrap();
+        for state in expected.values() {
+            assert_native_cell_history(
+                &restored,
+                player,
+                state,
+                sim.resolved_terrain.as_ref().unwrap(),
+                false,
+            );
+        }
+    }
+}
+
+#[test]
+fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_conceal_area.json",
+    ))
+    .unwrap();
+    let row = corpus["controls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "global_pending_outside_local_circle")
+        .unwrap();
+    let topology = conceal_topology(&corpus, &row["input"]);
+    let (mut sim, player, other) = fixture(&topology);
+    sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+        theater: "TEMPERATE".into(),
+        fill: "Clear".into(),
+        level: 0,
+        width: 4,
+        height: 4,
+        local_left: 0,
+        local_top: 0,
+        local_width: 4,
+        local_height: 4,
+    });
+    let clear = conceal_topology(&corpus, &json!({}));
+    let (other_fog, _) = native_map_cell_fixture(&clear, other);
+    sim.fog
+        .by_owner
+        .insert(other, other_fog.by_owner[&other].clone());
+    sim.session.binary_frame = 119;
+    sim.tick_pending_shroud_conceal(UninitContext::default());
+    assert!(sim.fog.is_ground_unshrouded(player, 1, 4));
+    sim.session.binary_frame = 120;
+    let (_, calls) =
+        trace_reveal_calls(|| sim.tick_pending_shroud_conceal(UninitContext::default()));
+    assert!(!sim.fog.is_ground_unshrouded(player, 1, 4));
+    assert!(sim.fog.is_ground_unshrouded(other, 1, 4));
+    assert_eq!(calls.notifications, vec![((1, 4), true)]);
+    assert_eq!(
+        sim.fog.by_owner[&player]
+            .map_cell_edge_cache_for_test((1, 4))
+            .1,
+        0
+    );
+    // Discovery callbacks are synchronous: the represented House registry,
+    // rather than randomized visibility-map storage, orders their effects.
+    let mut alternate = row["input"].clone();
+    alternate["overrides"][0]["cell"] = json!([7, 5]);
+    let (other_fog, _) = native_map_cell_fixture(&conceal_topology(&corpus, &alternate), other);
+    let (player_fog, _) = native_map_cell_fixture(&topology, player);
+    sim.fog
+        .by_owner
+        .insert(other, other_fog.by_owner[&other].clone());
+    sim.fog
+        .by_owner
+        .insert(player, player_fog.by_owner[&player].clone());
+    sim.session.house_order = vec![other, player];
+    let (_, ordered) =
+        trace_reveal_calls(|| sim.tick_pending_shroud_conceal(UninitContext::default()));
+    assert_eq!(ordered.notifications, vec![((7, 5), true), ((1, 4), true)]);
+}
+
 #[test]
 fn native_trigger_reveal_cell_put_then_discovery_matches_original_owner_histories() {
     let corpus = discovery_corpus();

@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 19, 20, 21, 24, 37, 39, 40, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 17, 19, 20, 21, 24, 37, 39, 40, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -129,6 +129,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 11
             | 14
             | 16
+            | 17
             | 19
             | 20
             | 21
@@ -374,6 +375,35 @@ impl Simulation {
                 registry,
                 frame_effects,
             ),
+            17 => {
+                // Steam3e81a617:6E972C..6E977F destroys the current Script,
+                // constructs one from ScriptType::Array8B41CC[argument],
+                // then Reset691590 sets its cursor to-1. It does NOT set
+                // Team+80. Native Current691500 consequently returns -1 on
+                // subsequent visits until another owner advances the Team.
+                // Preserve mission/focus, members, guard timer and RNG. The
+                // original constructor/destructor's instance registry has
+                // no independent Rust identity: this VM owns the attachment.
+                // tools/team_recruit_oracle.py --change-script executes the
+                // caller, constructor/reset and the following script visit.
+                let replacement = usize::try_from(action.argument)
+                    .ok()
+                    .and_then(|index| self.team_script_vm.script_order.get(index))
+                    .copied();
+                if let Some(replacement) = replacement {
+                    if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                        team.script_id = replacement;
+                        team.cursor = -1;
+                    }
+                } else {
+                    // Native directly indexes the array and can fault. Keep
+                    // the attachment on malformed authored input instead.
+                    log::warn!(
+                        "Team {team_id} Script17 names invalid ScriptType ordinal {}",
+                        action.argument
+                    );
+                }
+            }
             37 => {
                 //Steam3e81a617:6E954D..6E957A caches Foot+5D8 before
                 //vtD4 Limbo and vtF8 UnInit, then marks+80 to advance.

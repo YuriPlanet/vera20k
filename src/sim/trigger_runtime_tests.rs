@@ -16,6 +16,249 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane, TriggerInputs};
 
 #[test]
+fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
+    let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
+        return;
+    };
+    for tag in 0..sim.trigger_runtime.definitions.tag_types.len() {
+        sim.construct_trigger_tag(tag);
+    }
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_type("07FA53DC")
+        .unwrap();
+    let actions = sim.trigger_runtime.definitions.trigger_types[source]
+        .actions
+        .clone();
+    let before = sim.trigger_runtime.trigger_order.clone();
+    for action in actions.iter().filter(|action| action.entry.kind == 12) {
+        assert!(sim.apply_live_trigger_action(
+            action,
+            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            &mut Vec::new(),
+            Some(&rules),
+            Some(&overlay),
+            FrameEffects::default(),
+        ));
+    }
+    // Original Execute6DF051 calls726720, never the deleting destructor.
+    assert_eq!(sim.trigger_runtime.trigger_order, before);
+    for name in [
+        "0B603E5C", "0B60744C", "06A25F3C", "09FF490C", "082C467C", "082C44AC", "0DD0203C",
+        "082C3CEC", "082C79BC", "082C77EC",
+    ] {
+        let target = sim.trigger_runtime.definitions.trigger_type(name).unwrap();
+        let matching: Vec<_> = sim
+            .trigger_runtime
+            .triggers
+            .iter()
+            .flatten()
+            .filter(|trigger| trigger.type_index == target)
+            .collect();
+        assert!(!matching.is_empty(), "retail target {name}");
+        assert!(matching.iter().all(|trigger| trigger.pending), "{name}");
+    }
+    assert!(
+        sim.trigger_runtime
+            .triggers
+            .iter()
+            .flatten()
+            .filter(|trigger| trigger.type_index == source)
+            .all(|trigger| !trigger.pending)
+    );
+    sim.process_pending_delete_with(
+        Some(&rules),
+        Some(&overlay),
+        FrameEffects::default(),
+        1,
+        true,
+    );
+    assert!(
+        sim.trigger_runtime
+            .triggers
+            .iter()
+            .flatten()
+            .all(|trigger| !trigger.pending)
+    );
+    sim.validate_restored_trigger_runtime().unwrap();
+}
+
+#[test]
+fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
+    let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
+        return;
+    };
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_type("097651DC")
+        .unwrap();
+    let action = sim.trigger_runtime.definitions.trigger_types[source]
+        .actions
+        .iter()
+        .find(|action| action.entry.kind == 70)
+        .unwrap()
+        .clone();
+    let Some(DefinitionReference::Tag(target)) = action.reference else {
+        panic!("retail Tag reference")
+    };
+    let first = sim.construct_trigger_tag(target);
+    let second = sim.construct_trigger_tag(target);
+    let unrelated_type = sim
+        .trigger_runtime
+        .definitions
+        .tag_type("0C47FB1C")
+        .unwrap();
+    let unrelated = sim.construct_trigger_tag(unrelated_type);
+    let cell = sim.trigger_cell_identity((50, 60));
+    sim.replace_cell_trigger_tag(cell, Some(first));
+    let linked = sim.trigger_runtime.tag(first).unwrap().triggers.clone();
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+        &mut Vec::new(),
+        Some(&rules),
+        Some(&overlay),
+        FrameEffects::default(),
+    ));
+    //6DF0CA's virtual20 is6E58B0 ->6E4F60; only its linked Triggers defer.
+    assert!(sim.trigger_runtime.tag(first).is_none());
+    assert!(sim.trigger_runtime.tag(second).is_none());
+    assert!(sim.trigger_runtime.tag(unrelated).is_some());
+    assert!(!sim.trigger_runtime.cell_tags.contains_key(&cell));
+    assert!(
+        linked
+            .iter()
+            .all(|&id| sim.trigger_runtime.trigger(id).is_some())
+    );
+    sim.process_pending_delete_with(
+        Some(&rules),
+        Some(&overlay),
+        FrameEffects::default(),
+        1,
+        true,
+    );
+    assert!(
+        linked
+            .iter()
+            .all(|&id| sim.trigger_runtime.trigger(id).is_none())
+    );
+    sim.validate_restored_trigger_runtime().unwrap();
+}
+
+#[test]
+fn retail_sov01_make_enemy_reaches_the_shared_diplomacy_owner() {
+    let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
+        return;
+    };
+    let russians = sim.session.current_house.unwrap();
+    let arabs = sim.interner.intern("Arabs");
+    sim.houses.insert(
+        arabs,
+        crate::sim::house_state::HouseState::new(arabs, 1, Some(arabs), false, 0, 10),
+    );
+    sim.session.house_order.push(arabs);
+    let graph = [
+        (
+            "RUSSIANS".into(),
+            ["RUSSIANS".into(), "ARABS".into()].into_iter().collect(),
+        ),
+        (
+            "ARABS".into(),
+            ["ARABS".into(), "RUSSIANS".into()].into_iter().collect(),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(graph),
+        &rules,
+    );
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_type("0C331D8C")
+        .unwrap();
+    let tag = sim
+        .trigger_runtime
+        .definitions
+        .tag_types
+        .iter()
+        .position(|tag| tag.trigger == Some(source))
+        .unwrap();
+    let tag = sim.construct_trigger_tag(tag);
+    let live = sim
+        .trigger_runtime
+        .tag(tag)
+        .unwrap()
+        .triggers
+        .iter()
+        .copied()
+        .find(|&id| sim.trigger_runtime.trigger(id).unwrap().type_index == source)
+        .unwrap();
+    let action = sim.trigger_runtime.definitions.trigger_types[source]
+        .actions
+        .iter()
+        .find(|action| action.entry.kind == 38)
+        .unwrap()
+        .clone();
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        sim.trigger_action_context(source, Some(live), TagEventInput::default(), Some(&rules)),
+        &mut Vec::new(),
+        Some(&rules),
+        Some(&overlay),
+        FrameEffects::default(),
+    ));
+    assert!(!sim.house_alliances["RUSSIANS"].contains("ARABS"));
+    assert!(!sim.house_alliances["ARABS"].contains("RUSSIANS"));
+    assert_eq!(sim.fog.alliances, sim.house_alliances);
+    assert_eq!(sim.session.current_house, Some(russians));
+}
+
+#[test]
+fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
+    let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
+        return;
+    };
+    let source = sim
+        .trigger_runtime
+        .definitions
+        .trigger_type("097DB5BC")
+        .unwrap();
+    let actions = sim.trigger_runtime.definitions.trigger_types[source]
+        .actions
+        .clone();
+    sim.session.binary_frame = 0x7FFF_FFF0;
+    let mut effects = Vec::new();
+    for action in actions
+        .iter()
+        .filter(|action| matches!(action.entry.kind, 114 | 115))
+    {
+        assert!(sim.apply_live_trigger_action(
+            action,
+            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            &mut effects,
+            Some(&rules),
+            Some(&overlay),
+            FrameEffects::default(),
+        ));
+    }
+    assert_eq!(
+        effects,
+        [
+            TriggerEffect::SelectSidebarTab { index: 3 },
+            TriggerEffect::FlashSidebarCameo {
+                type_id: sim.interner.get("SAPC").unwrap(),
+                duration: 100,
+                frame: 0x7FFF_FFF0,
+            }
+        ]
+    );
+}
+
+#[test]
 fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
     let Some((mut sim, rules, overlay, _map)) = retail_sov01_script_context() else {
         return;
@@ -997,7 +1240,19 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         sim.substrate.entities.get(source).unwrap().owner(),
         houses[1]
     );
-    assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 6), (tag, 44)]);
+    // Event6's Action14 changes both owners. Each Unit E0(null-killer)
+    // reaches original744720's48/29 prefix before the later damage44.
+    assert_eq!(
+        sim.trigger_runtime.dispatch_trace,
+        [
+            (tag, 6),
+            (tag, 48),
+            (tag, 29),
+            (tag, 48),
+            (tag, 29),
+            (tag, 44)
+        ]
+    );
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
     assert!(
         !sim.substrate

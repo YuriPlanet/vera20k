@@ -144,7 +144,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     assert!(!sim.entities().get(1).unwrap().lifecycle.in_limbo());
     // A distinct later real P remains admitted, as the executed native
     // infantry_health_zero_alive_true control pins. Do not add a health gate.
-    assert!(sim.try_select_object(1, None));
+    assert!(sim.try_select_object(1, UninitContext::new(None, None)));
     assert!(sim.entities().get(1).unwrap().selection.is_selected());
 }
 
@@ -6485,7 +6485,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
     let wingman = sim
         .spawn_object("MTNK", "Americans", 21, 22, 0, &rules)
         .expect("spawn second MTNK");
-    assert!(sim.try_select_object(tank, Some(&rules)));
+    assert!(sim.try_select_object(tank, UninitContext::new(Some(&rules), None)));
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
     sim.substrate.entities.get_mut(tank).unwrap().temporal =
         crate::sim::temporal::TemporalState::warped_by_for_test(wingman);
@@ -6541,7 +6541,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .is_selected(),
         "an ordinary replacement still deselects an omitted warp-out member"
     );
-    assert!(!sim.try_select_object(tank, Some(&rules)));
+    assert!(!sim.try_select_object(tank, UninitContext::new(Some(&rules), None)));
 }
 
 #[test]
@@ -6552,9 +6552,9 @@ fn test_try_select_object_rejects_an_already_selected_object() {
         .spawn_object("MTNK", "Americans", 20, 22, 0, &rules)
         .expect("spawn MTNK");
 
-    assert!(sim.try_select_object(tank, Some(&rules)));
+    assert!(sim.try_select_object(tank, UninitContext::new(Some(&rules), None)));
     assert!(
-        !sim.try_select_object(tank, Some(&rules)),
+        !sim.try_select_object(tank, UninitContext::new(Some(&rules), None)),
         "the selection group holds no duplicates"
     );
     assert!(
@@ -6562,6 +6562,98 @@ fn test_try_select_object_rejects_an_already_selected_object() {
             .entities
             .get(tank)
             .is_some_and(|e| e.selection.is_selected())
+    );
+}
+
+#[test]
+fn event33_select_command_raises_tags_once_in_payload_order_after_admission() {
+    let mut sim = Simulation::new();
+    let rules = selection_gate_test_rules();
+    let first = sim
+        .spawn_object("MTNK", "Americans", 20, 22, 0, &rules)
+        .unwrap();
+    let second = sim
+        .spawn_object("MTNK", "Americans", 21, 22, 0, &rules)
+        .unwrap();
+    let refused = sim
+        .spawn_object("NOSEL", "Americans", 22, 22, 0, &rules)
+        .unwrap();
+    // Both admitted objects have already passed the graphical input discovery
+    // gate. The command below is the same ordered payload kept in a replay.
+    for id in [first, second] {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .discovery
+            .set_discovered_by_current_house_for_test(true);
+    }
+    let map = crate::map::map_file::MapFile::from_bytes(
+        b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+          [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+          [Basic]\nNewINIFormat=4\n\
+          [Triggers]\nFIRST=<none>,<none>,First selected,0,1,1,1,0\n\
+          SECOND=<none>,<none>,Second selected,0,1,1,1,0\n\
+          [Tags]\nONE=2,First selection,FIRST\nTWO=2,Second selection,SECOND\n\
+          [Events]\nFIRST=1,33,0,0\nSECOND=1,33,0,0\n\
+          [Actions]\nFIRST=1,11,4,MISSION:First,0,0,0,0,A\n\
+          SECOND=1,11,4,MISSION:Second,0,0,0,0,A\n",
+    )
+    .unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.classify_map_triggers(Some(&rules));
+    sim.attach_object_trigger_tag(first, Some("ONE"));
+    sim.attach_object_trigger_tag(second, Some("TWO"));
+    sim.attach_object_trigger_tag(refused, Some("ONE"));
+    let _ = sim.drain_trigger_effects();
+    let command = Command::Select {
+        entity_ids: vec![second, refused, second, first],
+        additive: false,
+    };
+    assert!(sim.apply_command("Americans", &command, Some(&rules)));
+    assert_eq!(
+        sim.drain_trigger_effects(),
+        vec![
+            crate::sim::trigger_runtime::TriggerEffect::LocalizedMessage {
+                csf_label: "MISSION:Second".to_string(),
+            },
+            crate::sim::trigger_runtime::TriggerEffect::LocalizedMessage {
+                csf_label: "MISSION:First".to_string(),
+            },
+        ],
+        "native6FBFCE refuses the event after failed ObjectSelect; duplicates do not select twice",
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(refused)
+            .unwrap()
+            .selection
+            .is_selected()
+    );
+    assert!(sim.apply_command("Americans", &command, Some(&rules)));
+    assert!(
+        sim.drain_trigger_effects().is_empty(),
+        "retained members do not run Select again"
+    );
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Select {
+            entity_ids: Vec::new(),
+            additive: false
+        },
+        Some(&rules),
+    ));
+    assert!(sim.apply_command("Americans", &command, Some(&rules)));
+    assert_eq!(
+        sim.drain_trigger_effects().len(),
+        2,
+        "a fresh selection raises the repeat2 Tags again"
     );
 }
 

@@ -449,6 +449,10 @@ fn constructor_side_admission_matches_original_foot_receiver() {
 #[test]
 fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects() {
     let (mut sim, rules, registry) = fixture();
+    // Isolate the constructor/deferred-drain chain from Logic55B29A's
+    // independently tested120-frame578100 sweep, whose map queries may
+    // legitimately restamp the shared Dummy's coordinate.
+    sim.session.binary_frame = 1;
     for (index, requested) in [(16, 16), (17, 16)].into_iter().enumerate() {
         let mut host = LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),

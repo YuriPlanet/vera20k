@@ -262,6 +262,10 @@ fn spawn(
 #[test]
 fn gsi_04_01_production_tick_keeps_pavement_damage_through_ordinary_overlay_repair() {
     let (mut sim, grid) = simulation_fixture();
+    // This ordinary damage/repair regression starts after map startup. Keep
+    // its exact three-cell damage notification outside the independently
+    // covered120-frame578100 sweep, which also publishes radar edge changes.
+    sim.session.binary_frame = 1;
     let ini = production_ini();
     let rules = RuleSet::from_ini(&ini).expect("production bridge damage/repair rules");
     sim.intern_rule_type_ids(&rules);

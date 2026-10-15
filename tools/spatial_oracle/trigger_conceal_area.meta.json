@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Action101/Map567F70 local conceal and full578100 two-pass sweep on a small complete allocated Size4x4 diamond; no occupied-object or rendered-pixel claim.",
+  "assumptions": [
+    "Reuse ActionFixture, initialize_waypoint_map, DiscoveryFixture Cell observations, native Cell constructor47BBF0 and sparse512-stride table. All28 Size4x4 diamond Cells and shared Dummy execute original constructors. World priors explicitly replace only level/counter/gap/alt/flags/cache/dirty fields for selected histories; this is not retail scenario geometry.",
+    "Original TAction constructor/reader/full dispatch1016DE8B7->6E1A70 reads waypoint index from+90(7), independently of trailing tokenA/+44(0). Current Player+240, rather than incoming foreign Trigger House+240, gates both conceal and following update. Foreign latch is1 in all cases; only the declared local latch control skips.",
+    "Existing original projection6D1830/6D18C0/6D1BB0 and Cell/TAction/Map constant initializer groups run. Caller half-height,100/400 bridge flags, signed word arithmetic, native AdjustForZ6D20E0, original567F70 radius traversal, counter admission and both alt-bit stores execute without substitutions. No Python formula supplies a golden coordinate, distance, counter or bitmask.",
+    "RevealTriggerRadius uses original constructor store665EDE and existing General scalar read67181C..67183C/5276D0 on declared cached physical RULESMD then SOV01 General layers, cropped to the one exact key this body reads; optional case overrides use the same native reader. Physical hashes are pinned. Full INI loader/Process chronology, optional LANGRULE/mode passes and unrelated General keys/index collisions are excluded.",
+    "Original578100 and allocated578290 run to completion, including pending20 cleanup,138 dirty writes, both native edge-cache6D8700 recomputation and empty resident5865F0 notifications. The global-pending control lies outside radius0 and demonstrates this sweep is broader than the local circle. CellDelta arrays use the declared fields order and are native post-conceal then post-update differences.",
+    "Original6DA7D0 takes its no-dirty-screen branch from supplied Map+C=1; actual dirty-region publication/rendering is excluded. Cells have empty resident lists and no local Tags/units/buildings. Native neighbor/radar/empty-resident bodies execute; occupied knowledge callbacks, nested actions, renderer and full map/session loading remain outside scope.",
+    "Three native RNG streams start with seed31; original draw entry observations and full state hashes are retained. The selected path has no timer/detach producer; no gameplay callable is replaced."
+  ],
+  "substitutions": [
+    "Only inherited ActionFixture platform/CRT/heap/INI-cache boundaries; no Action101, Map567F70/578100/578290, projection, Cell writer, edge-cache or notification instruction is replaced."
+  ],
+  "entry_points": {
+    "dispatch": "0x006DD8B0",
+    "execute101": "0x006DE8B7",
+    "action101": "0x006E1A70",
+    "local_conceal": "0x00567F70",
+    "update": "0x00578100",
+    "allocated_next": "0x00578290",
+    "edge_cache": "0x006D8700",
+    "cell_constructor": "0x0047BBF0",
+    "adjust_for_z": "0x006D20E0",
+    "radius_ctor": "0x00665EDE",
+    "radius_read": "0x0067181C",
+    "resident_notify": "0x005865F0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --conceal-area",
+  "payload_sha256": "628c265f93b5c05c62b6bd004bd1b98622322dd9b83a376521b071a5f1df092b"
+}

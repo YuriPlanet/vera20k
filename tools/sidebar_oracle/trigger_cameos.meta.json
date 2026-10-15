@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Actions114/115 helper admission, exact reverse TechnoType search, Sidebar6AC5F0 numeric-index deadline writes and StripDraw signed flash predicate; no native pixels or complete gadget registration.",
+  "assumptions": [
+    "Reuse Sidebar machine, original Strip constructors and original admitted Add/Insert ordering. Explicit initialized type/House catalog, typed arrays/counts and common TechnoType registry are supplied; no complete process/rules/House loaders or TechnoType registry construction execute.",
+    "Action+90 duration/tab and Action+54 inline identifier are explicit materialized-reader priors. Original6E4100/6E4150 execute to return. Original reader6DD5B0 is covered by existing trigger_action_values/inline_type evidence and is not executed in this selected mode.",
+    "114 executes original6ABAC0 count gate; valid0..3 nonempty strips invoke6A7590, invalid/empty inputs return0.115 scans original A8EB04/A8EB10 backwards with exact case, then original6AC5F0 scans typed pointer arrays and picks a strip. Unsupported/missing type returns0; a registered type without a retained entry still updates53A0.",
+    "Original6AC5F0 compares only retained typed-array index+58 and not RTTI+5C. Thus the supplied Vehicle strip[ORCA(AircraftIndex0),HTNK(UnitIndex0)] highlights ORCA when asked for HTNK. This collision is a recorded original behavior, not a Python matching rule.",
+    "All deadline arithmetic is original signed i32 wrapping: entry88=Frame+duration and Sidebar53A0=Frame+duration+1. Repeated requests overwrite; no max or cooldown policy is supplied. Original6A9B4B..6A9B78 branches provide draw_controls[deadline,signed-frame,draw-darken]; the threshold and signed remainder are not computed in Python.",
+    "Three original RNG streams are initialized with seed31; unchanged states and observed draw entry points are recorded. The selected bodies have no gameplay timer or detach call. Deadline fields are presentation state, not simulation clocks."
+  ],
+  "substitutions": [
+    "Existing Sidebar fixture cost/availability/EVA/allocator boundaries remain setup only; original comparison, typed lookup, action helper, deadline and flash-predicate instructions are unchanged.",
+    "6A7590 is a recorded RET4 selection sink. Its actual gadget remove/add, active-tab storage and layout/draw tail are excluded. StripDraw execution stops before either darken overlay setup6A9B78 or ordinary continuation6A9BC5; no pixel, palette, SHP decode or GPU claim."
+  ],
+  "entry_points": {
+    "action114": "0x006E4100",
+    "nonempty": "0x006ABAC0",
+    "tab_switch_boundary": "0x006A7590",
+    "action115": "0x006E4150",
+    "flash_cameo": "0x006AC5F0",
+    "draw_gate": "0x006A9B4B",
+    "overlay_selected": "0x006A9B78",
+    "ordinary_draw": "0x006A9BC5"
+  },
+  "replay_command": "python -m tools.sidebar_oracle.cameo_order --trigger-cameos",
+  "payload_sha256": "a09c019bc58fd86c2ee8b25f8ee96ac22e10f95784352bd9b510e8564e04c416"
+}

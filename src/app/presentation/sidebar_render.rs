@@ -187,6 +187,11 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_state
         .match_presentation
         .sidebar_projection
+        .set_cameo_frame(sim.session.binary_frame as i32);
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
         .reconcile_factory_links(sim, owner);
     if inserted {
         crate::app::input::dispatch::push_local_eva(

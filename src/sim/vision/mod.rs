@@ -64,8 +64,8 @@ const FLAG_EFFECTIVE_GAP_SIGHT: u8 = 0x80;
 /// CellClass `+0x12C` ground bits as VERA's sight cache and the cell writers
 /// keep them: ground visible (`0x08`) and ground open (`0x10`). Sight sets
 /// both; `0x004A9CA0` sets or clears both with `ShroudKnowledge::open`;
-/// `0x004AA050` sets `0x08`, and `0x10` where its frame is open. The gap,
-/// sweep and whole-map writers move `ShroudKnowledge::open` alone (#1117),
+/// `0x004AA050` sets `0x08`, and `0x10` where its frame is open. The gap
+/// and some whole-map writers move `ShroudKnowledge::open` alone (#1117),
 /// so `MapClass::IsShrouded` reads that copy ([`cell_ground_mapped`]); the
 /// edge frames and the aircraft fire-location query
 /// ([`FogState::is_ground_open`]) read this one.
@@ -153,6 +153,33 @@ fn height_lift_px(height_leptons: i32) -> i32 {
 /// ground cell.
 fn iso_height_shift_cells(height_leptons: i32) -> i32 {
     height_lift_px(height_leptons) / CELL_HEIGHT_PX
+}
+
+/// Original567F70 conceal geometry, distinct from RevealArea's spiral and
+/// sight-height geometry. AdjustForZ6D20E0 is divided by-30 with signed
+/// truncation, then applied in leptons before signed /256 and WORD storage.
+/// DX is the outer loop and the strict signed squared-radius test wraps32.
+/// Executed geometry/counter controls: trigger_conceal_area.json (Steam
+/// 3e81a617); no RNG, timer or detach in this traversal.
+pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)> {
+    let shift = crate::util::native_x87::adjust_for_z_standard(coord[2]) / -30;
+    let x = (coord[0].wrapping_add(shift.wrapping_shl(8)) / 256) as i16;
+    let y = (coord[1].wrapping_add(shift.wrapping_shl(8)) / 256) as i16;
+    let lower = (-2i32).wrapping_sub(radius);
+    let upper = radius.wrapping_add(2);
+    let squared_radius = radius.wrapping_add(1).wrapping_mul(radius.wrapping_add(1));
+    let mut cells = Vec::new();
+    for dx in lower..upper {
+        for dy in lower..upper {
+            if dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) < squared_radius {
+                cells.push((
+                    x.wrapping_add(dx as i16) as u16,
+                    y.wrapping_add(dy as i16) as u16,
+                ));
+            }
+        }
+    }
+    cells
 }
 
 /// Per-owner visibility stored as a flat grid of flag bytes.
@@ -1307,16 +1334,22 @@ impl FogState {
         }
     }
 
-    /// Original Logic55B29A/55B2AD ->578100: signed native frame modulo120.
-    /// Pending survives removal; a fresh reveal cancels it only if already open.
+    /// Fog-only test adapter for Logic55B29A's signed modulo120. Production
+    /// uses Simulation's shared578100 traversal so occupied callbacks and
+    /// the actual allocated cursor execute between individual cell writes.
+    #[cfg(test)]
     pub(crate) fn flush_pending_gap_conceal(&mut self, native_frame: i32) {
         if native_frame % 120 != 0 {
             return;
         }
-        for vis in self.by_owner.values_mut() {
-            for index in 0..vis.cells.len() {
-                vis.shroud_knowledge[index].sweep();
-                vis.publish_knowledge(index);
+        let viewers: Vec<_> = self.by_owner.keys().copied().collect();
+        let cells = self.rectangular_cells();
+        for viewer in viewers {
+            for &cell in &cells {
+                self.sweep_pending_map_cell(viewer, cell, None);
+            }
+            for &cell in &cells {
+                self.refresh_map_cell_ground_frame(viewer, cell, None);
             }
         }
     }
@@ -2517,9 +2550,9 @@ pub(crate) fn point_is_shrouded(
 /// `viewer` has mapped `cell`'s ground, the `Cell+0x12C & 0x08` that
 /// `MapClass::IsShrouded @ 0x00586360` tests: [`ShroudKnowledge::open`] as
 /// published to [`FogState::is_cell_revealed`], the copy every native writer
-/// of that bit reaches (the gap `0x006FB170`/`0x006FB470`, sweep
-/// `0x00578100` and whole-map `0x00577D90`/`0x00577AB0` writers move it
-/// alone). The canonical Dummy answers its retained record, which only the
+/// of that bit reaches (the gap `0x006FB170`/`0x006FB470` and some
+/// whole-map writers still move it alone). The canonical Dummy answers its
+/// retained record, which only the
 /// cell writers touch. [`point_is_shrouded`] and the Foot click queries use
 /// it; the Fire_At reveal (`world_fire.rs`) still answers its own (#1117).
 pub(crate) fn cell_ground_mapped(

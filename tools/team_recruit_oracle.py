@@ -1856,6 +1856,80 @@ def delete_members_metadata():
         entry_points={"script37": 0x6E954D, "stop_before_epilogue": 0x6E957B})
 
 
+def change_script_rows():
+    """Script17 replacement/reset and the next original TeamAI script visit.
+
+    The old scalar destructor is an explicit expiry sink; the new Script
+    constructor and Reset/Current are original instructions. In particular,
+    replacement does NOT complete the Team's step. A later visit therefore
+    sees Current(-1), rather than executing the replacement's first action.
+    """
+    rows = []
+    for ordinal, old_script, advance in ((0, True, False), (2, True, False),
+                                        (112, True, False), (1, False, False),
+                                        (1, True, True)):
+        emu = TeamEmu()
+        script_types = FAKE + 0x340000
+        script_instances = FAKE + 0x341000
+        old_vtable = FAKE + 0x342000
+        target_type = FAKE + 0x343000
+        emu.write32(0x8B41CC, script_types)
+        emu.write32(script_types + ordinal * 4, target_type)
+        emu.write32(0x8872B4, script_instances)
+        emu.write32(0x8872B8, 8)
+        emu.write32(0x8872C0, 0)
+        emu.write32(SCRIPT, old_vtable)
+        emu.write32(old_vtable + 0x20, STUBS + 0x820)
+        emu.write32(TEAM + 0x28, SCRIPT if old_script else 0)
+        emu.write32(TEAM + 0x3C, CELL)
+        emu.write32(TEAM + 0x40, CELL)
+        emu.write8(TEAM + 0x80, int(advance))
+        def destroy_old(e):
+            e.events.append(['destroy_old', e.arg(0)])
+            # Actual TeamPointerExpired6EAE60 clears +28 only. Its native
+            # body has no +80 write; this transport does not invent one.
+            e.write32(TEAM + 0x28, 0)
+        emu.hook(STUBS + 0x820, destroy_old, 4)
+        emu.mark(0x6913C0, 'construct_new')
+        emu.mark(0x691590, 'reset_new')
+        emu.events = []
+        sp = STACK_BASE + STACK_SIZE - 0x1000 - 4
+        emu.write32(sp + 0x24, ordinal)
+        emu.uc.reg_write(UC_X86_REG_ESI, TEAM)
+        emu.start(0x6E972C, 0x6E9767, ecx=TEAM)
+        replacement = emu.read32(TEAM + 0x28)
+        row = dict(ordinal=ordinal, old_script=old_script,
+                   advance_before=advance,
+                   advance_after=bool(emu.read8(TEAM + 0x80)),
+                   cursor=emu.read_i32(replacement + 0x2C),
+                   target_type_matches=emu.read32(replacement + 0x24) == target_type,
+                   target_retained=emu.read32(TEAM + 0x3C) == CELL,
+                   focus_retained=emu.read32(TEAM + 0x40) == CELL,
+                   instances=emu.read32(0x8872C0), events=emu.events.copy())
+        if not advance:
+            emu.uc.reg_write(UC_X86_REG_ESI, TEAM)
+            emu.start(0x6E9364, 0x6E95AB, ecx=0)
+            row['next_action'] = emu.read_i32(sp + 0x20)
+            row['next_cursor'] = emu.read_i32(replacement + 0x2C)
+            row['next_advance'] = bool(emu.read8(TEAM + 0x80))
+        rows.append(row)
+    return rows
+
+
+def change_script_metadata():
+    return provenance(
+        scope='Original Script17 inline6E972C..6E9767, Script constructor6913C0, Reset691590 and next TeamAI script visit9364..95AB',
+        assumptions=['Supplied ScriptType array ordinal, retained mission/focus and Team StepCompleted prior; valid allocation and ScriptType pointer only.',
+                     'Script instance registry has preallocated capacity8. No whole TeamAI formation/recruitment or mission scene claim.'],
+        substitutions=['Old Script scalar destructor records delete flag and models only TeamPointerExpired6EAE60 clearing+28; no destructor/expiry-scene parity claim.',
+                       'Shared heap allocation/free boundaries come from TeamEmu. Abstract/Script constructors, Reset, Current and retained registry append execute unchanged.',
+                       'No RNG, timer arithmetic or Team+80 write exists in this action; no RNG/timer replacement is added.'],
+        entry_points={'script17': 0x6E972C, 'script_constructor': 0x6913C0,
+                      'script_reset': 0x691590, 'script_current': 0x691500,
+                      'team_pointer_expired': 0x6EAE60,
+                      'team_script_visit': 0x6E9364})
+
+
 def attack_waypoint_building_rows():
     """Original Script59 selector/ammunition gates, with shared-owner seams."""
     rows=[]
@@ -1930,6 +2004,12 @@ if __name__ == '__main__' and '--delete-members' in sys.argv:
     finish_vectors(delete_members_rows, Path(__file__).with_name('team_delete_members.json'),
                    provenance=delete_members_metadata,
                    argv=[arg for arg in sys.argv[1:] if arg != '--delete-members'])
+    raise SystemExit
+
+if __name__ == '__main__' and '--change-script' in sys.argv:
+    finish_vectors(change_script_rows, Path(__file__).with_name('team_change_script.json'),
+                   provenance=change_script_metadata,
+                   argv=[arg for arg in sys.argv[1:] if arg != '--change-script'])
     raise SystemExit
 
 if __name__ == '__main__' and '--force-facing' in sys.argv:

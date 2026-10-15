@@ -151,6 +151,8 @@ pub struct SidebarItem {
     pub has_cameo_art: bool,
     /// Draw the type's `AltCameo=` image (`TechnoTypeClass::GetCameo`).
     pub alt_cameo: bool,
+    /// Native retained-entry flash phase (StripDraw6A9B59).
+    pub flash_darkened: bool,
     pub queue_category: ProductionCategory,
     pub enabled: bool,
     pub progress: f32,
@@ -380,6 +382,7 @@ mod tests {
             cost: None,
             has_cameo_art: true,
             alt_cameo: false,
+            flash_darkened: false,
             queue_category: ProductionCategory::Defense,
             enabled: true,
             progress: if is_ready { 1.0 } else { 0.5 },
