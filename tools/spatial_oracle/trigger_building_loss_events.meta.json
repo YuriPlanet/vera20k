@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Fourteen original HasOccurred10 controls and two StateA/StateB calls. Covers the tracked-building predicate and first-Country resolution, not a complete House destruction or campaign mechanism.",
+  "assumptions": [
+    "Reuse PowerEventControls/FlagsFixture native image, cached counted TEvent reader and minimal three-House arena. Country bindings0/7/0, registered order, signed House+2F0 tracked-building counts and actor/incoming House identities are supplied priors. No House or Building constructor, tracking writer, Limbo, UnInit or destructor runs here.",
+    "Original HasOccurred71E940 executes Country lookup502D30 with Event+34 and Event10 branch71F115..71F12E. It tests the first matched House tracked+2F0 <=0 signed; absent Country returns true. The declared INT_MIN/-1/0/1/INT_MAX and reversed duplicate-Country controls distinguish signed scalar and registration-order semantics.",
+    "Wrong raised99, distinct actor/incoming House1, null incoming House and both A8ED6B values are executed. Event+54 starts0xABCD1234 and persistence starts0 or1; both and the supplied timer remain unchanged. StateA71F950 returns0 and StateB71F9C0 returns1. Existing observers see neither RNG draw entry; this predicate has no timer write or detach.",
+    "The corpus deliberately omits unrelated power reader rows and active/per-type counters. Existing house_tracking.py evidence owns Add/RemoveTracking behavior; existing house_tag_raise.py and tag_lifecycle.py evidence own polling, registration and cleanup. These scalar controls do not extend their declared coverage or certify a whole ALL04 rescue sequence."
+  ],
+  "substitutions": [
+    "Existing FlagsFixture allocator/CRT/TLS transports and explicit House/actor storage priors only. Original counted TEvent reader, predicate, Country lookup and StateA/StateB instructions run unchanged; no selected gameplay return is supplied."
+  ],
+  "entry_points": {
+    "event_constructor": "0x0071E6A0",
+    "event_counted_read": "0x007274DC",
+    "has_occurred": "0x0071E940",
+    "country_house": "0x00502D30",
+    "building_compare": "0x0071F115",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --building-loss-events",
+  "payload_sha256": "1e542f528e080e4c45fbcbeef413fffc47057d000c2cfbcb18a4ecd912fec699"
+}

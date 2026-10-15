@@ -11,6 +11,197 @@ fn integer(value: &Value) -> i32 {
 }
 
 #[test]
+fn building_loss_event_matches_original_tracked_count_and_country_order() {
+    use super::tests::{
+        event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit,
+    };
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_building_loss_events.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        corpus["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    let controls = corpus["controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 14);
+    for case in controls {
+        let (mut sim, rules, _, houses) = event_ingress_fixture();
+        sim.session.house_order = case["house_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| houses[integer(index) as usize])
+            .collect();
+        for (index, owner) in houses.iter().enumerate() {
+            sim.houses
+                .get_mut(owner)
+                .unwrap()
+                .tracking
+                .set_buildings_for_test(integer(&case["tracked_buildings"][index]));
+        }
+        let actor = case["actor_owner"].as_u64().map(|index| {
+            spawn_event_ingress_unit(&mut sim, &rules, houses[index as usize], (15, 15))
+        });
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nLOSS=Country0,<none>,Loss,0,1,1,1,0\n\
+             [Events]\nLOSS=1,10,0,{}\n[Tags]\nTAG=2,Loss,LOSS\n",
+                integer(&case["value"])
+            ),
+        );
+        let typ = sim.trigger_runtime.definitions.tag_type("TAG").unwrap();
+        let tag = sim.shared_trigger_tag(typ);
+        let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+        let trigger_type = sim.trigger_runtime.trigger(live).unwrap().type_index;
+        sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house =
+            Some(houses[1]);
+        let timer = sim.trigger_runtime.trigger(live).unwrap().timer;
+        let rng = (
+            sim.scenario_rng.logical_state(),
+            sim.main_rng.logical_state(),
+            sim.mapgen_rng.logical_state(),
+        );
+        let mut persistence = integer(&case["initial_persistence"]) != 0;
+        let mut predicate = |sim: &mut Simulation| {
+            sim.has_occurred(
+                0,
+                TagEventInput {
+                    kind: integer(&case["raised"]),
+                    actor,
+                    source: None,
+                    cell: (0, 0),
+                    force: false,
+                },
+                case["incoming_house"]
+                    .as_u64()
+                    .map(|index| houses[index as usize]),
+                &mut persistence,
+                Some(&rules),
+                live,
+            )
+        };
+        let result = if case["scenario_init"].as_bool().unwrap() {
+            sim.with_buildup_bypass(predicate)
+        } else {
+            predicate(&mut sim)
+        };
+        assert_eq!(result, integer(&case["result"]) != 0, "{case}");
+        assert_eq!(persistence, integer(&case["persistence"]) != 0, "{case}");
+        assert_eq!(sim.trigger_runtime.trigger(live).unwrap().timer, timer);
+        assert_eq!(
+            sim.trigger_runtime.definitions.trigger_types[trigger_type].events[0].retained_house,
+            Some(houses[1]),
+            "{case}"
+        );
+        assert_eq!(
+            (
+                sim.scenario_rng.logical_state(),
+                sim.main_rng.logical_state(),
+                sim.mapgen_rng.logical_state()
+            ),
+            rng
+        );
+    }
+}
+
+#[test]
+fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
+    use crate::rules::{process_owner::NativeScenarioRulesPrefix, ruleset::CountryIdx};
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let raw = assets.get_ref("ALL04DMD.MAP").unwrap();
+    assert_eq!(
+        crate::util::sha256::sha256_hex(raw),
+        "f1621a21e7221c1e475a52dccd4a04bb3125f8a095377c917e2122019f2157b2"
+    );
+    let map = crate::map::map_file::MapFile::from_bytes(raw).unwrap();
+    let named = assets.resolve_ref("ALL04DMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL04DMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut rules_owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = rules_owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+        &mut sim,
+        &roster,
+        Some(&rules),
+        Some(&map.ini),
+    );
+    let owner = sim.house_by_country_index(CountryIdx(9), &rules).unwrap();
+    assert_eq!(sim.interner.resolve(owner), "YuriCountry");
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+    let typ = sim
+        .trigger_runtime
+        .definitions
+        .tag_type("07C973FC")
+        .unwrap();
+    let tag = sim.shared_trigger_tag(typ);
+    let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
+    let definition = &sim.trigger_runtime.definitions.trigger_types
+        [sim.trigger_runtime.trigger(live).unwrap().type_index];
+    assert_eq!(definition.id, "07C9797C");
+    assert_eq!(
+        (
+            definition.events[0].condition.kind,
+            definition.events[0].condition.value
+        ),
+        (10, 9)
+    );
+    assert!(!sim.trigger_runtime.locals_set.contains(&10));
+    // Isolate the authored retail route. Actual constructor/Limbo/destructor
+    // accounting is exercised separately through the ordinary master frame.
+    for (buildings, expected) in [(1, false), (0, true), (1, true)] {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .tracking
+            .set_buildings_for_test(buildings);
+        sim.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: EVENT_ANY,
+                ..Default::default()
+            },
+            &mut Vec::new(),
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        );
+        assert_eq!(sim.trigger_runtime.locals_set.contains(&10), expected);
+    }
+    assert_eq!(sim.trigger_runtime.action_trace, [(56, 10)]);
+    // The later actual rescue trigger reads the same local. It is initially
+    // disabled; this fixture does not claim to play the full rescue sequence.
+    let rescue = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .find(|typ| typ.id == "07BC56CC")
+        .unwrap();
+    assert!(
+        rescue
+            .events
+            .iter()
+            .any(|event| event.condition.kind == 36 && event.condition.value == 10)
+    );
+}
+
+#[test]
 fn damage_source_event44_matches_original_registered_house_index() {
     use super::tests::{
         event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit,

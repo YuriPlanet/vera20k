@@ -1,0 +1,466 @@
+{
+  "classification": {
+    "state_a": 0,
+    "state_b": 1
+  },
+  "code_unchanged": true,
+  "controls": [
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "tracked_buildings_-2147483648",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        -2147483648,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "tracked_buildings_-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        -1,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "tracked_buildings_0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "tracked_buildings_1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        1,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "tracked_buildings_2147483647",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        2147483647,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "name": "first_country_order_(0, 1, 2)",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        0,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        2,
+        1,
+        0
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "name": "first_country_order_(2, 1, 0)",
+      "persistence": 0,
+      "raised": 99,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        0,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "no_country_-1",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        7,
+        5,
+        9
+      ],
+      "value": -1
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "no_country_999",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        7,
+        5,
+        9
+      ],
+      "value": 999
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "input_house_0_bypass_False",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "name": "input_house_0_bypass_True",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "name": "input_house_None_bypass_False",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "name": "input_house_None_bypass_True",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        5,
+        7
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 1,
+      "name": "retained_persistence_one",
+      "persistence": 1,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_buildings": [
+        0,
+        5,
+        7
+      ],
+      "value": 0
+    }
+  ],
+  "country_indices": [
+    0,
+    7,
+    0
+  ],
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "schema_version": 1,
+  "zero_rng_calls": true
+}

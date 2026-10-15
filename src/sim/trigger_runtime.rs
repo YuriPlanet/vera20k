@@ -1719,13 +1719,16 @@ impl Simulation {
                 }
                 result
             }
-            9 | 11 => {
+            9 | 10 | 11 => {
                 //71F069 ->502D30: Event.value selects a Country's first
                 //registered House, independently of the incoming House or
                 //raised event. No matching House reaches the AL1 tail; this
                 //does not write persistence or the Type-owned Event+54.
                 //The private HouseTracking owner preserves separate signed
-                //Unit/Infantry totals and11's tracked Building scalar.
+                //Unit/Infantry totals and the tracked Building scalar.
+                //10's71F115..71F12E tests tracked buildings <=0, including
+                //constructor-complete Limbo until actual destruction. Steam
+                //3e81a617..08600; tag_lifecycle --building-loss-events.
                 let owner = rules.and_then(|rules| {
                     u16::try_from(condition.value).ok().and_then(|country| {
                         self.house_by_country_index(
@@ -1735,13 +1738,13 @@ impl Simulation {
                     })
                 });
                 owner.is_none_or(|owner| {
-                    self.houses.get(&owner).is_none_or(|house| {
-                        if condition.kind == 9 {
-                            house.tracking.units_destroyed()
-                        } else {
-                            house.tracking.all_destroyed()
-                        }
-                    })
+                    self.houses
+                        .get(&owner)
+                        .is_none_or(|house| match condition.kind {
+                            9 => house.tracking.units_destroyed(),
+                            10 => house.tracking.buildings() <= 0,
+                            _ => house.tracking.all_destroyed(),
+                        })
                 })
             }
             30 | 58 => {
