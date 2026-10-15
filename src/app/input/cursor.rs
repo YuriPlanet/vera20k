@@ -210,6 +210,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         hover_rx,
         hover_ry,
         state.match_state.sandbox_full_visibility,
+        sim.resolved_terrain.as_ref(),
     ) != CellVisibilityState::Visible
     {
         // Over a shrouded or fogged cell no object is offered; the empty-cell

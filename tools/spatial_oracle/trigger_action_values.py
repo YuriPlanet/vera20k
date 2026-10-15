@@ -36,6 +36,10 @@ this mode nor those scalar controls certify rendered campaign output.
 allocated iterator578290 on explicit sparse map/House priors. Sight/gap
 release/reentry and presentation calls are recorded sinks, not invented world
 callbacks. No earlier corpus is regenerated.
+
+``--click-shroud`` executes the reachable ProcessClickCoords floor/shroud
+suffix and Tactical pick on declared flat/elevated Cell knowledge. Screen-to-Cell
+conversion and the registered screen list are explicit inputs.
 """
 from pathlib import Path
 import hashlib
@@ -1401,6 +1405,121 @@ def reveal_cases():
     return [dict(case_kind='trigger_reveal',constants=controls[0]['constants'],
         radius_reader=reveal_radius_reader(physical_rules,physical_map),
         retail_definitions=definitions,controls=controls,los_controls=los)]
+
+
+def click_shroud_generate():
+    """Actual692419 suffix, including native floor, shroud and object pick.
+
+    The production caller69325E has already resolved a click Cell when this
+    block starts. Supply that frame, not a synthetic replacement for IsShrouded.
+    Original692419..692605 balances its own saved-register frame and returns.
+    """
+    cases = [
+        dict(name='flat_open', level=0, mapped=[[20,20]]),
+        dict(name='flat_closed', level=0, mapped=[]),
+        dict(name='even_projected_only', level=4, mapped=[[18,18]]),
+        dict(name='even_raw_only', level=4, mapped=[[20,20]]),
+        dict(name='even_both', level=4, mapped=[[18,18],[20,20]]),
+        dict(name='even_closed', level=4, mapped=[]),
+        dict(name='odd_first_only', level=3, mapped=[[18,18]]),
+        dict(name='odd_second_only', level=3, mapped=[[19,19]]),
+        dict(name='odd_raw_only', level=3, mapped=[[20,20]]),
+        dict(name='odd_closed', level=3, mapped=[]),
+        dict(name='bridge100_flat_open', level=0, flags=0x100, mapped=[[20,20]]),
+        dict(name='bridge100_even_projected_only', level=4, flags=0x100, mapped=[[18,18]]),
+    ]
+    rows=[]
+    for case in cases:
+        f=DiscoveryFixture();u=f.uc;f.capture=False
+        click=(20,20)
+        for y in range(17,22):
+            for x in range(17,22):
+                pointer=f.add_cell((x,y),level=case['level'] if (x,y)==click else 0)
+                if [x,y] in case['mapped']:
+                    u.mem_write(pointer+0x12C,dwords(f.read32(pointer+0x12C)|8))
+        u.mem_write(f.cells[click]+0x140,dwords(case.get('flags',0)))
+        tactical,screen,cell_ptr,object_out,shroud_out,fog_out=(
+            SCRATCH+offset for offset in (0x72000,0x74000,0x74020,0x74030,0x74040,0x74050))
+        # An ordinary foreign, alive, non-limbo/non-cloaked Infantry shell.
+        # Discovery remains constructor-produced zero; it is not set by hand
+        # to admit the object. No concrete allocation/Unlimbo is represented.
+        actor=DISCOVERY_OBJECT
+        assert list(u.mem_read(actor+0x41A,3))==[0,0,0]
+        u.mem_write(actor+0x90,b'\1');u.mem_write(actor+0x81,b'\0')
+        u.mem_write(actor+0x220,dwords(0))
+        u.mem_write(actor+0x9C,dwords(click[0]*256+128,click[1]*256+128,
+            case['level']*f.constants['level_leptons']))
+        u.mem_write(DISCOVERY_TYPE+0xC9A,b'\0')
+        u.mem_write(tactical,bytes(0x1000));u.mem_write(tactical+0xDB0,dwords(1))
+        u.mem_write(0x887324,dwords(tactical))
+        u.mem_write(0xB0CEC8,dwords(actor,100,100))
+        u.mem_write(screen,dwords(100,100));u.mem_write(cell_ptr,packed(*click))
+        u.mem_write(object_out,dwords(0));u.mem_write(shroud_out,b'\0');u.mem_write(fog_out,b'\0')
+        u.mem_write(0xB73550,dwords(1))
+        # Original ProcessClickCoords fog branch is disabled for ordinary YR.
+        u.mem_write(0xA8B230,dwords(DISCOVERY_SCENARIO))
+        u.mem_write(DISCOVERY_SCENARIO,dwords(0))
+        sp=STACK_BASE+STACK_SIZE-0x2000
+        u.mem_write(sp,bytes(0x100))
+        # 0x18-byte locals and four saved registers precede the return address.
+        u.mem_write(sp+0x28,dwords(RET_MAGIC))
+        u.mem_write(sp+0x38,dwords(object_out))
+        u.mem_write(sp+0x3C,dwords(fog_out));u.mem_write(sp+0x40,dwords(shroud_out))
+        for register,value in ((UC_X86_REG_ESP,sp),(UC_X86_REG_ESI,cell_ptr),
+                               (UC_X86_REG_EDI,fog_out),(UC_X86_REG_EBP,screen)):
+            u.reg_write(register,value)
+        ranges=((0x692419,0x692606),(0x6DA380,0x6DA553),
+                (0x586360,0x586495),(0x578080,0x5780D8))
+        original=[bytes(u.mem_read(a,b-a)) for a,b in ranges]
+        trace=[];query=[];pick_calls=[]
+        def observe(_u,pc,size,data):
+            if pc in (0x578080,0x586360):
+                current_sp=u.reg_read(UC_X86_REG_ESP)
+                point=list(struct.unpack('<iii',u.mem_read(f.read32(current_sp+4),12)))
+                query.append(dict(pc=f'{pc:08X}',point=point))
+            if pc==0x6DA380:pick_calls.append(f'{pc:08X}')
+            if pc in (0x69244C,0x692480,0x6924FC,0x692515,0x692522,0x6925F0):
+                trace.append(f'{pc:08X}')
+        hook=u.hook_add(UC_HOOK_CODE,observe)
+        before=f.rng_hashes();discovery_before=list(u.mem_read(actor+0x41A,3))
+        run_checked(u,0x692419,RET_MAGIC,count=10000,
+                    required_addresses=(0x578080,0x586360,0x6924FC))
+        u.hook_del(hook)
+        assert u.reg_read(UC_X86_REG_ESP)==sp+0x44
+        assert original==[bytes(u.mem_read(a,b-a)) for a,b in ranges]
+        f.check_code()
+        rows.append(dict(name=case['name'],input=dict(click_cell=list(click),
+            level=case['level'],flags=case.get('flags',0),mapped_cells=case['mapped'],
+            target_cell=list(click),target_screen=[100,100],cursor_screen=[100,100],
+            discovered_by_current_house=False),
+            constants=f.constants,query=query,trace=trace,
+            floor_z=next(q['point'][2] for q in query if q['pc']=='00586360'),
+            target_raw_mapped=bool(f.read32(f.cells[click]+0x12C)&8),
+            returned_al=u.reg_read(UC_X86_REG_EAX)&255,
+            shrouded=bool(u.mem_read(shroud_out,1)[0]),
+            fogged=bool(u.mem_read(fog_out,1)[0]),pick_calls=len(pick_calls),
+            picked_target=f.read32(object_out)==actor,
+            discovery_before=discovery_before,
+            discovery_after=list(u.mem_read(actor+0x41A,3)),
+            rng_before=before,rng_after=f.rng_hashes(),rng_calls=f.rng_calls))
+    return dict(controls=rows)
+
+
+def click_shroud_metadata():
+    return provenance(
+        scope='Original Display692419..692605 click Cell floor/shroud suffix and Tactical6DA380 pick; supplied screen-to-Cell and registration priors, no whole UI/attack mission parity.',
+        assumptions=[
+            'Reuse DiscoveryFixture native Cell47BBF0/sparse512-stride table, original projection/Cell startup and constructor discovery prefixes. Click Cell20,20, explicit signed level0/3/4, optional structural bridge flag100 and mapped-ground bit8 inputs on a flat25-cell neighborhood; ordinary YR fog-mode off, shroud enabled. These are controlled knowledge histories, not a retail scenario load.',
+            'Scroll69325E calls full ProcessClickCoords692300; its known reachable suffix692419 constructs click Cell center XY, obtains actual Map578080 floor height at69244C, writes that Z at692461, and calls unchanged586360 at692480. Starting at that suffix supplies the upstream Cell conversion and saved-register frame, without skipping any shroud/pick branch.',
+            'Native586360 projects level/2 in both axes; odd levels test the native481810 neighbor when the first mapped test fails. Original floor arithmetic, packed map lookup, shroud tests and high-level rejection branches execute. ProcessClickCoords does not add structural bridge height after Map578080; flag100 controls retain actual queryZ. No Python calculation supplies the query or boolean golden.',
+            'One declared Tactical registration at screen100,100 references the existing foreign Infantry shell, supplied alive/non-limbo/non-cloaked and ordinary type Invisible=false. Constructor-produced+41A/+41B/+41C are all zero before/after. Actual Pick6DA380, its casts and post-pick ProcessClickCoords cloak/type checks execute. This demonstrates manual pick admission independent of discovered+41B; object allocation/Unlimbo, screen registration production, rendered pixels and later DetermineAction/Attack are excluded.',
+            'The active left-release route69325E->692300,693271->692610 and69328B->4AB9B0 passes the same object to action and release. That ordering is established by static instructions, not a whole mouse-message execution here.',
+            'Three seeded native RNG states and draw observations remain unchanged. This suffix has no timer write, detach or allocation producer.'],
+        substitutions=[
+            'Only inherited DiscoveryFixture constructor/platform transport boundaries. No Display suffix, floor height, native shroud, TacticalPick or post-pick gameplay instruction is substituted.'],
+        entry_points=dict(click_process=0x692300,suffix=0x692419,floor_call=0x69244C,
+            shroud_call=0x692480,shroud=0x586360,pick_call=0x692515,pick=0x6DA380,
+            mouse_process_call=0x69325E,mouse_action_call=0x693271,mouse_release_call=0x69328B))
 
 
 class DiscoveryFixture(DiscoveryEntry):
@@ -3418,6 +3537,7 @@ if __name__=='__main__':
     selector = argparse.ArgumentParser(add_help=False)
     selected_modes = selector.add_mutually_exclusive_group()
     selected_modes.add_argument('--damage-waypoint', action='store_true')
+    selected_modes.add_argument('--click-shroud', action='store_true')
     selected_modes.add_argument('--super-charge', action='store_true')
     selected_modes.add_argument('--reveal-zone', action='store_true')
     selected_modes.add_argument('--forced-map', action='store_true')
@@ -3481,6 +3601,12 @@ if __name__=='__main__':
         finish_vectors(lambda: damage_waypoint_generate(inputs_root),
             Path(__file__).with_name('trigger_damage_at_waypoint.json'),
             provenance=damage_waypoint_metadata, argv=remaining, source_paths=sources)
+    elif selected.click_shroud:
+        if selected.inputs is not None:
+            selector.error('--click-shroud uses declared click/Cell priors, not --inputs')
+        finish_vectors(click_shroud_generate,
+            Path(__file__).with_name('click_shroud.json'),
+            provenance=click_shroud_metadata, argv=remaining, source_paths=SOURCE_PATHS)
     else:
         if selected.inputs is not None:
             selector.error('--inputs requires --damage-waypoint or --super-charge')

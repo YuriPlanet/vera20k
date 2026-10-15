@@ -1,0 +1,1099 @@
+{
+  "controls": [
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 0,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 0,
+        "mapped_cells": [
+          [
+            20,
+            20
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "flat_open",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": true,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 0,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 0,
+        "mapped_cells": [],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "flat_closed",
+      "pick_calls": 0,
+      "picked_target": false,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": true,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 416,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 4,
+        "mapped_cells": [
+          [
+            18,
+            18
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "even_projected_only",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            416
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 416,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 4,
+        "mapped_cells": [
+          [
+            20,
+            20
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "even_raw_only",
+      "pick_calls": 0,
+      "picked_target": false,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            416
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": true,
+      "target_raw_mapped": true,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 416,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 4,
+        "mapped_cells": [
+          [
+            18,
+            18
+          ],
+          [
+            20,
+            20
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "even_both",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            416
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": true,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 416,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 4,
+        "mapped_cells": [],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "even_closed",
+      "pick_calls": 0,
+      "picked_target": false,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            416
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": true,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 312,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 3,
+        "mapped_cells": [
+          [
+            18,
+            18
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "odd_first_only",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            312
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 312,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 3,
+        "mapped_cells": [
+          [
+            19,
+            19
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "odd_second_only",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            312
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 312,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 3,
+        "mapped_cells": [
+          [
+            20,
+            20
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "odd_raw_only",
+      "pick_calls": 0,
+      "picked_target": false,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            312
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": true,
+      "target_raw_mapped": true,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 312,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 0,
+        "level": 3,
+        "mapped_cells": [],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "odd_closed",
+      "pick_calls": 0,
+      "picked_target": false,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            312
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": true,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 0,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 256,
+        "level": 0,
+        "mapped_cells": [
+          [
+            20,
+            20
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "bridge100_flat_open",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": true,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    },
+    {
+      "constants": {
+        "adjust_for_z_multiplier_hex": "60493474535ec23f",
+        "bridge_deck_leptons_B0E6D4": 416,
+        "cell_diagonal_hex": "000000609ea07640",
+        "level_leptons": 104,
+        "native_neighbor_lut_sha256": "2a5a40e39bae9655c359008c5894a2c1082e012ff04cdd78ebc168644546f8f1",
+        "rad60_hex": "65732d3852c1f03f",
+        "trigger_level_leptons_B0E6E0": 104
+      },
+      "discovery_after": [
+        0,
+        0,
+        0
+      ],
+      "discovery_before": [
+        0,
+        0,
+        0
+      ],
+      "floor_z": 416,
+      "fogged": false,
+      "input": {
+        "click_cell": [
+          20,
+          20
+        ],
+        "cursor_screen": [
+          100,
+          100
+        ],
+        "discovered_by_current_house": false,
+        "flags": 256,
+        "level": 4,
+        "mapped_cells": [
+          [
+            18,
+            18
+          ]
+        ],
+        "target_cell": [
+          20,
+          20
+        ],
+        "target_screen": [
+          100,
+          100
+        ]
+      },
+      "name": "bridge100_even_projected_only",
+      "pick_calls": 1,
+      "picked_target": true,
+      "query": [
+        {
+          "pc": "00578080",
+          "point": [
+            5248,
+            5248,
+            0
+          ]
+        },
+        {
+          "pc": "00586360",
+          "point": [
+            5248,
+            5248,
+            416
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "shrouded": false,
+      "target_raw_mapped": false,
+      "trace": [
+        "0069244C",
+        "00692480",
+        "006924FC",
+        "00692515",
+        "00692522",
+        "006925F0"
+      ]
+    }
+  ]
+}

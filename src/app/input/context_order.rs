@@ -14,10 +14,7 @@ use crate::app::input::commands::preferred_local_owner;
 use crate::app::input::dispatch::{
     is_alt_held, is_ctrl_held, is_shift_held, selected_stable_ids_in_order,
 };
-use crate::app::input::entity_pick::{
-    HoverTargetKindWithId, hover_target_at_point, pick_any_target_stable_id,
-    pick_enemy_target_stable_id,
-};
+use crate::app::input::entity_pick::{HoverTargetKindWithId, hover_target_at_point};
 use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
@@ -1294,6 +1291,15 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             &state.match_state.match_presentation.height_map,
             crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
         );
+        let cell_is_shrouded = crate::app::presentation::instances::cell_visibility_for_local_owner(
+            Some(owner_id),
+            Some(&sim.fog),
+            target_rx,
+            target_ry,
+            state.match_state.sandbox_full_visibility,
+            sim.resolved_terrain.as_ref(),
+        )
+            == crate::app::presentation::instances::CellVisibilityState::Shrouded;
         // The chord test fails — and the order resolves normally — unless every
         // selected object can accept an attack-move order. The walk covers the
         // whole selection, so a selected building or aircraft kills the chord.
@@ -1405,11 +1411,8 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
             )
         });
-        let cell_hidden = force_fire
-            && matches!(attack_target, TargetKind::Cell(..))
-            && !state.match_state.sandbox_full_visibility
-            && (!sim.fog.is_cell_revealed(owner_id, target_rx, target_ry)
-                || sim.fog.is_cell_gap_covered(owner_id, target_rx, target_ry));
+        let cell_hidden =
+            force_fire && matches!(attack_target, TargetKind::Cell(..)) && cell_is_shrouded;
         let attack_dispatch =
             if !cell_hidden && (force_fire || (enemy_object && context_actions_enabled)) {
                 attack_branch_orders(
@@ -1981,30 +1984,20 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 .filter(|target| force_move && target.kind != HoverTargetKind::HiddenEnemy)
                 .map(|target| target.stable_id);
 
-            let attack_target: Option<u64> = if force_move {
-                None
-            } else if force_fire {
-                pick_any_target_stable_id(
-                    sim,
-                    world_x,
-                    world_y,
-                    state.match_state.sandbox_full_visibility,
-                    Some(&resources.rules),
-                    &state.match_state.match_presentation.height_map,
-                    crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
-                )
-            } else {
-                pick_enemy_target_stable_id(
-                    sim,
-                    world_x,
-                    world_y,
-                    &owner,
-                    state.match_state.sandbox_full_visibility,
-                    Some(&resources.rules),
-                    &state.match_state.match_presentation.height_map,
-                    crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
-                )
-            };
+            // Scroll693271..69328B gives the same picked object to action
+            // and release. Re-picking with an empty viewer for Ctrl lost the
+            // local shroud and sensor policy; retain the original pick.
+            let attack_target = hover
+                .as_ref()
+                .filter(|target| {
+                    !force_move
+                        && (force_fire
+                            || matches!(
+                                target.kind,
+                                HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
+                            ))
+                })
+                .map(|target| target.stable_id);
             // VERA-internal: force-fire on a shrouded cell is rejected here.
             // gamemd equivalent CONTRADICTS this — the FootClass shroud wrapper
             // around What_Action_OnCell explicitly preserves the force-fire
@@ -2012,18 +2005,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // comment cited as a "shroud check" is in fact the waypoint lookup.
             // Left in place because removing it changes click routing; recorded
             // as a DRIFT for its own slice. Computed once outside the loop.
-            let cell_is_shrouded: bool = if force_fire && !state.match_state.sandbox_full_visibility
-            {
-                let owner_id_for_fog = sim.interner.get(&owner).unwrap_or_default();
-                !sim.fog
-                    .is_cell_revealed(owner_id_for_fog, target_rx, target_ry)
-                    || sim
-                        .fog
-                        .is_cell_gap_covered(owner_id_for_fog, target_rx, target_ry)
-            } else {
-                false
-            };
-
             if let Some(target_id) = attack_target {
                 if matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove) {
                     match object_click_release(
@@ -2420,11 +2401,10 @@ fn cursor_owner(
 /// picker, which picks again. Both pickers admit what
 /// `Tactical::PickObjectAtScreenPoint` admits
 /// ([`crate::app::input::entity_pick::pick_admits_object`]), but they break
-/// ties apart, and only the selection picker refuses a click on a shrouded
-/// cell (`DisplayClass::ProcessClickCoords`, IsShrouded at `0x00692480`
-/// returns no object at `0x006924FC..0x006924FF`).
-/// Trigger: two objects under the click point, or a click just inside the
-/// shroud. Effect: the selection takes the other object, or is cleared,
+/// ties apart. Both use ProcessClickCoords' floor-projected shroud gate
+/// (692480, spatial_oracle/click_shroud.json).
+/// Trigger: two objects under the click point.
+/// Effect: the selection takes the other object, or is cleared,
 /// where native selects the object DetermineAction saw (one pick for both,
 /// `0x00693271` → `0x0069328B`). Rare.
 fn object_click_release(

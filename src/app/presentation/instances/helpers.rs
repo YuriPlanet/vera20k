@@ -449,6 +449,7 @@ pub(crate) fn cell_visibility_for_local_owner(
     rx: u16,
     ry: u16,
     ignore_visibility: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> CellVisibilityState {
     if ignore_visibility {
         return CellVisibilityState::Visible;
@@ -459,8 +460,24 @@ pub(crate) fn cell_visibility_for_local_owner(
     let Some(fog) = fog else {
         return CellVisibilityState::Visible;
     };
-    // Standard YR (FogOfWar=false): explored = fully visible, no intermediate state.
-    if fog.is_cell_revealed(local_owner_id, rx, ry) {
+    // Display::ProcessClickCoords69244C..692480 asks Map578080 for the
+    // clicked Cell centre's floor, then IsShrouded586360. The shroud lattice
+    // is flat: raw map coordinates reject visible high-ground targets.
+    // CellGetCoords486840 has the same floor input and no bridge-deck term.
+    // Executed suffix/Pick controls: spatial_oracle/click_shroud.json.
+    // Standard YR has FogOfWar=false; current sight is not an extra gate.
+    let shrouded = terrain.map_or_else(
+        || !fog.is_cell_revealed(local_owner_id, rx, ry),
+        |terrain| {
+            crate::sim::vision::cell_is_shrouded(
+                fog,
+                &crate::map::resolved_terrain::NativeCellQuery::isolated(terrain),
+                local_owner_id,
+                (rx, ry),
+            )
+        },
+    );
+    if !shrouded {
         CellVisibilityState::Visible
     } else {
         CellVisibilityState::Shrouded

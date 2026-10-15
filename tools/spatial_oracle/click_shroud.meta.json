@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Display692419..692605 click Cell floor/shroud suffix and Tactical6DA380 pick; supplied screen-to-Cell and registration priors, no whole UI/attack mission parity.",
+  "assumptions": [
+    "Reuse DiscoveryFixture native Cell47BBF0/sparse512-stride table, original projection/Cell startup and constructor discovery prefixes. Click Cell20,20, explicit signed level0/3/4, optional structural bridge flag100 and mapped-ground bit8 inputs on a flat25-cell neighborhood; ordinary YR fog-mode off, shroud enabled. These are controlled knowledge histories, not a retail scenario load.",
+    "Scroll69325E calls full ProcessClickCoords692300; its known reachable suffix692419 constructs click Cell center XY, obtains actual Map578080 floor height at69244C, writes that Z at692461, and calls unchanged586360 at692480. Starting at that suffix supplies the upstream Cell conversion and saved-register frame, without skipping any shroud/pick branch.",
+    "Native586360 projects level/2 in both axes; odd levels test the native481810 neighbor when the first mapped test fails. Original floor arithmetic, packed map lookup, shroud tests and high-level rejection branches execute. ProcessClickCoords does not add structural bridge height after Map578080; flag100 controls retain actual queryZ. No Python calculation supplies the query or boolean golden.",
+    "One declared Tactical registration at screen100,100 references the existing foreign Infantry shell, supplied alive/non-limbo/non-cloaked and ordinary type Invisible=false. Constructor-produced+41A/+41B/+41C are all zero before/after. Actual Pick6DA380, its casts and post-pick ProcessClickCoords cloak/type checks execute. This demonstrates manual pick admission independent of discovered+41B; object allocation/Unlimbo, screen registration production, rendered pixels and later DetermineAction/Attack are excluded.",
+    "The active left-release route69325E->692300,693271->692610 and69328B->4AB9B0 passes the same object to action and release. That ordering is established by static instructions, not a whole mouse-message execution here.",
+    "Three seeded native RNG states and draw observations remain unchanged. This suffix has no timer write, detach or allocation producer."
+  ],
+  "substitutions": [
+    "Only inherited DiscoveryFixture constructor/platform transport boundaries. No Display suffix, floor height, native shroud, TacticalPick or post-pick gameplay instruction is substituted."
+  ],
+  "entry_points": {
+    "click_process": "0x00692300",
+    "suffix": "0x00692419",
+    "floor_call": "0x0069244C",
+    "shroud_call": "0x00692480",
+    "shroud": "0x00586360",
+    "pick_call": "0x00692515",
+    "pick": "0x006DA380",
+    "mouse_process_call": "0x0069325E",
+    "mouse_action_call": "0x00693271",
+    "mouse_release_call": "0x0069328B"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --click-shroud",
+  "payload_sha256": "e5393b5a90b060f548c8b28c1aeb30d5639e2e72e237a568144184c4efccbfba"
+}

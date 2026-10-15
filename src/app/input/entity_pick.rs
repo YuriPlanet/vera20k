@@ -57,57 +57,6 @@ fn pick_distance_sq(dx: f32, dy: f32) -> f32 {
     dx * dx + PICK_Y_WEIGHT * dy * dy
 }
 
-pub(crate) fn pick_enemy_target_stable_id(
-    sim: &crate::sim::world::Simulation,
-    world_x: f32,
-    world_y: f32,
-    friendly_owner: &str,
-    ignore_visibility: bool,
-    rules: Option<&RuleSet>,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn TacticalBridgeLookup>,
-) -> Option<u64> {
-    hover_target_at_point(
-        sim,
-        world_x,
-        world_y,
-        friendly_owner,
-        ignore_visibility,
-        rules,
-        height_map,
-        bridge_cells,
-    )
-    .and_then(|hover| match hover.kind {
-        HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure => Some(hover.stable_id),
-        _ => None,
-    })
-}
-
-/// Force-fire: pick any entity under cursor (including friendlies).
-pub(crate) fn pick_any_target_stable_id(
-    sim: &crate::sim::world::Simulation,
-    world_x: f32,
-    world_y: f32,
-    ignore_visibility: bool,
-    rules: Option<&RuleSet>,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn TacticalBridgeLookup>,
-) -> Option<u64> {
-    // Use empty owner so everything is considered "enemy" in hover logic.
-    hover_target_at_point(
-        sim,
-        world_x,
-        world_y,
-        "",
-        ignore_visibility,
-        rules,
-        height_map,
-        bridge_cells,
-    )
-    .filter(|hover| hover.kind != HoverTargetKind::HiddenEnemy)
-    .map(|hover| hover.stable_id)
-}
-
 /// The object under the cursor that DetermineAction sees, for the cursor and
 /// the click, among those [`pick_admits_object`] admits.
 pub(crate) fn hover_target_at_point(
@@ -121,8 +70,24 @@ pub(crate) fn hover_target_at_point(
     bridge_cells: Option<&dyn TacticalBridgeLookup>,
 ) -> Option<HoverTargetKindWithId> {
     let player = sim.interner.get(local_owner);
-    let local_owner_id: InternedId = player.unwrap_or_default();
     let fog = (!ignore_visibility).then_some(&sim.fog);
+    let (rx, ry) = crate::app::match_runtime::sim_tick::world_point_to_cell(
+        world_x,
+        world_y,
+        height_map,
+        bridge_cells,
+    );
+    if crate::app::presentation::instances::cell_visibility_for_local_owner(
+        player,
+        fog,
+        rx,
+        ry,
+        ignore_visibility,
+        sim.resolved_terrain.as_ref(),
+    ) == crate::app::presentation::instances::CellVisibilityState::Shrouded
+    {
+        return None;
+    }
     let mut best: Option<(u64, f32)> = None;
     for entity in sim.entities().values() {
         if !pick_admits_object(entity, fog, player) {
@@ -165,24 +130,12 @@ pub(crate) fn hover_target_at_point(
         let dy = sy - world_y;
         let dist_sq = dx * dx + dy * dy;
         let is_friendly = sim.fog.is_friendly(local_owner, owner_str);
-        let is_visible = ignore_visibility
-            || (sim.fog.is_cell_revealed(
-                local_owner_id,
-                entity.position.rx(),
-                entity.position.ry(),
-            ) && !sim.fog.is_cell_gap_covered(
-                local_owner_id,
-                entity.position.rx(),
-                entity.position.ry(),
-            ));
         let kind = if is_friendly {
             if is_structure {
                 HoverTargetKind::FriendlyStructure
             } else {
                 HoverTargetKind::FriendlyUnit
             }
-        } else if !is_visible {
-            HoverTargetKind::HiddenEnemy
         } else if is_structure {
             HoverTargetKind::EnemyStructure
         } else {
@@ -260,6 +213,7 @@ pub(crate) fn compute_click_selection_snapshot(
         bridge_cells,
         interner,
         false,
+        None,
     )
 }
 
@@ -279,6 +233,7 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     bridge_cells: Option<&dyn TacticalBridgeLookup>,
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<SelectionMutation> {
     let Some(picked_sid) = pick_entity_at_point(
         entities,
@@ -293,6 +248,7 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
         height_map,
         bridge_cells,
         interner,
+        terrain,
     ) else {
         // Non-shift click clears selection; shift-click with no hit keeps it.
         return if additive || current_selection.is_empty() {
@@ -1224,6 +1180,7 @@ pub(crate) fn pick_entity_at_point(
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     bridge_cells: Option<&dyn TacticalBridgeLookup>,
     interner: Option<&crate::sim::intern::StringInterner>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<u64> {
     // Elliptical pick distance: dx² + 0.5*dy² < 200, with the 0.5 Y-weight
     // compensating for isometric projection.
@@ -1237,7 +1194,15 @@ pub(crate) fn pick_entity_at_point(
             height_map,
             bridge_cells,
         );
-        if !fog.is_cell_revealed(owner_id, rx, ry) || fog.is_cell_gap_covered(owner_id, rx, ry) {
+        if crate::app::presentation::instances::cell_visibility_for_local_owner(
+            Some(owner_id),
+            Some(fog),
+            rx,
+            ry,
+            false,
+            terrain,
+        ) == crate::app::presentation::instances::CellVisibilityState::Shrouded
+        {
             return None;
         }
     }
@@ -1250,12 +1215,8 @@ pub(crate) fn pick_entity_at_point(
         if !pick_admits_object(entity, fog, local_owner_id) {
             continue;
         }
-        let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
-        if entity.category() != EntityCategory::Structure
-            && !is_drawn_for_local_owner(fog, local_owner, owner_str, entity, local_owner_id)
-        {
-            continue;
-        }
+        // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
+        // it does not repeat a raw anchor-cell shroud or discovery test.
         let (sx, sy) =
             crate::app::presentation::instances::interpolated_screen_position_entity(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
@@ -1336,6 +1297,10 @@ fn is_local_band_candidate(
     local_owner.is_none_or(|local| entity_owner.eq_ignore_ascii_case(local))
         && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }
+
+#[cfg(test)]
+#[path = "entity_pick_reveal_tests.rs"]
+mod reveal_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1464,6 +1429,8 @@ mod tests {
         let player = sim.interner.intern("Americans");
         let enemy = sim.interner.intern("Russians");
         let sub = sim.interner.intern("SUB");
+        // ProcessClickCoords' terrain gate precedes its cloak test.
+        sim.fog.reveal_cells_for_owner(player, [(10, 10), (20, 10)]);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
         cloak.set_state_for_test(2);
         for (id, owner, rx) in [(1, enemy, 10), (2, player, 20)] {
@@ -2043,6 +2010,7 @@ mod tests {
                 &heights,
                 None,
                 Some(&sim.interner),
+                sim.resolved_terrain.as_ref(),
             )
         };
         // Original6D461A registers buildings before mobile drawing6D465F;
@@ -2078,6 +2046,7 @@ mod tests {
             None,
             Some(&sim.interner),
             true,
+            sim.resolved_terrain.as_ref(),
         )
         .unwrap();
         assert_eq!(selection.select, [1]);
@@ -2142,6 +2111,7 @@ mod tests {
                 &heights,
                 None,
                 Some(&interner),
+                None,
             ),
             Some(2),
             "an earlier structure wins an equal global tracked-anchor score"

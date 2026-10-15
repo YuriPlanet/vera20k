@@ -232,6 +232,7 @@ fn sell_wall_command_for_cell(
         rx,
         ry,
         ignore_visibility,
+        sim.resolved_terrain.as_ref(),
     ) != crate::app::presentation::instances::CellVisibilityState::Visible
     {
         return None;

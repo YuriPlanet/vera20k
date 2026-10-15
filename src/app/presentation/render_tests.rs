@@ -2,7 +2,6 @@ use super::HoverTargetKind;
 use crate::app::input::dispatch::CLICK_SELECT_RADIUS;
 use crate::app::input::entity_pick::{
     compute_box_selection_snapshot, compute_click_selection_snapshot, hover_target_at_point,
-    pick_enemy_target_stable_id,
 };
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
@@ -574,6 +573,7 @@ fn test_click_selection_allows_visible_allied_units_for_local_owner() {
 #[test]
 fn test_pick_enemy_target_ignores_hidden_entities() {
     let mut sim = Simulation::new();
+    let player = sim.interner.intern("Americans");
     let soviet_id = sim.interner.intern("Soviet");
     let e1_id = sim.interner.intern("E1");
 
@@ -598,7 +598,8 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
 
     let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
     let picked_hidden =
-        pick_enemy_target_stable_id(&sim, hx, hy, "Americans", false, None, &empty_heights, None);
+        hover_target_at_point(&sim, hx, hy, "Americans", false, None, &empty_heights, None)
+            .map(|hover| hover.stable_id);
     assert!(
         picked_hidden.is_none(),
         "Hidden enemy must not be targetable"
@@ -622,15 +623,16 @@ fn test_pick_enemy_target_ignores_hidden_entities() {
     sim.entities_mut().insert(visible);
     let (vx, vy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(3).expect("visible"));
-    sim.fog
-        .mark_visible_for_owner(crate::sim::intern::test_intern("Americans"), 11, 10);
+    sim.fog.mark_visible_for_owner(player, 11, 10);
 
     let picked_visible =
-        pick_enemy_target_stable_id(&sim, vx, vy, "Americans", false, None, &empty_heights, None);
+        hover_target_at_point(&sim, vx, vy, "Americans", false, None, &empty_heights, None)
+            .map(|hover| hover.stable_id);
     assert_eq!(picked_visible, Some(3));
 
     let still_hidden =
-        pick_enemy_target_stable_id(&sim, hx, hy, "Americans", false, None, &empty_heights, None);
+        hover_target_at_point(&sim, hx, hy, "Americans", false, None, &empty_heights, None)
+            .map(|hover| hover.stable_id);
     assert_ne!(still_hidden, Some(2));
 }
 
@@ -681,11 +683,16 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     sim.entities_mut().insert(enemy);
     let (enemy_sx, enemy_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(11).expect("enemy"));
-    sim.fog
-        .mark_visible_for_owner(crate::sim::intern::test_intern("Americans"), 20, 5);
-
     // Provide empty height maps — structure picking now uses foundation-based hit testing.
     let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
+    // This test classifies the two objects on open terrain. Reveal the actual
+    // clicked cells, including the building anchor's projection, before the
+    // shared ProcessClickCoords gate. Shroud rejection is tested separately.
+    for (x, y) in [(friendly_sx, friendly_sy), (enemy_sx, enemy_sy)] {
+        let (rx, ry) =
+            crate::app::match_runtime::sim_tick::world_point_to_cell(x, y, &empty_heights, None);
+        sim.fog.mark_visible_for_owner(americans_id, rx, ry);
+    }
     let friendly_hover = hover_target_at_point(
         &sim,
         friendly_sx,
