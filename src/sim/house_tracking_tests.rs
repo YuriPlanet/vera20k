@@ -119,12 +119,14 @@ fn fixture_type(case: &str) -> Option<&'static str> {
 /// `HouseClass::Add_Tracking @ 0x004FF700` and `Remove_Tracking @
 /// 0x004FF550` against the original, through VERA's own writers: each case's
 /// type is constructed (Add_Tracking), then UnInit'd and drained (the
-/// destructor's Remove_Tracking), and the change in the two counters the
+/// destructor's Remove_Tracking), and the change in the counters the
 /// defeat gate reads is compared with the native routing: `+0x2F0` (a
 /// building unless Insignificant, DontScore, a 1x1 undeployer or one that
 /// undeploys into a ResourceGatherer) and the per-type `+0x5514` (a Unit
-/// unless Insignificant or DontScore). This corpus does not compare its other
-/// counters (`+0x2E8`, `+0x2EC`, `+0x2F4`, `+0x2F8`); infantry absorber latch
+/// unless Insignificant or DontScore), plus tracked navy `+0x2EC` (a Naval
+/// Unit with Passengers exactly zero). The Steam replay identity and payload
+/// comparison are in trigger_naval_land_events.json. This does not compare
+/// the other counters (`+0x2E8`, `+0x2F4`, `+0x2F8`); infantry absorber latch
 /// lifecycle is covered through production in building-entry tests.
 #[test]
 fn native_tracking_corpus() {
@@ -148,8 +150,13 @@ fn native_tracking_corpus() {
             .map(|event| if event[0] == "increment" { 1 } else { -1 })
             .sum();
         let native_buildings = case.counts["buildings"];
+        let native_navy = case.counts["naval"];
         let Some(kind) = fixture_type(name) else {
-            assert_eq!((native_units, native_buildings), (0, 0), "{name}");
+            assert_eq!(
+                (native_units, native_buildings, native_navy),
+                (0, 0, 0),
+                "{name}"
+            );
             continue;
         };
         let mut sim = Simulation::with_seed(3);
@@ -158,7 +165,11 @@ fn native_tracking_corpus() {
             .insert(house, HouseState::new(house, 0, None, true, 0, 10));
         let counts = |sim: &Simulation| {
             let tracking = &sim.houses[&house].tracking;
-            (tracking.buildings(), tracking.units_for_test())
+            (
+                tracking.buildings(),
+                tracking.units_for_test(),
+                tracking.navy(),
+            )
         };
         let before = counts(&sim);
         let id = sim
@@ -166,14 +177,22 @@ fn native_tracking_corpus() {
             .unwrap_or_else(|| panic!("{name}: {kind} spawns"));
         let added = counts(&sim);
         let delta = if case.input["call"] == "add" {
-            (added.0 - before.0, added.1 - before.1)
+            (added.0 - before.0, added.1 - before.1, added.2 - before.2)
         } else {
             sim.uninit_with_rules(id, &rules);
             sim.flush_pending_delete();
             let removed = counts(&sim);
-            (removed.0 - added.0, removed.1 - added.1)
+            (
+                removed.0 - added.0,
+                removed.1 - added.1,
+                removed.2 - added.2,
+            )
         };
-        assert_eq!(delta, (native_buildings, native_units), "{name}");
+        assert_eq!(
+            delta,
+            (native_buildings, native_units, native_navy),
+            "{name}"
+        );
         compared += 1;
     }
     assert_eq!(compared, 34);
@@ -456,4 +475,159 @@ fn vehicle_and_infantry_totals_follow_tracking() {
     sim.flush_pending_delete();
     let tracking = &sim.houses[&house].tracking;
     assert_eq!((tracking.vehicles(), tracking.infantry()), (0, 0));
+}
+
+#[test]
+fn naval_tracking_uses_unit_naval_and_exact_zero_passengers() {
+    // Native4FF8AD..4FF8C6 /4FF6B5..4FF6CE: any nonzero signed
+    // Passengers excludes a Naval Unit; a unit-like Building never joins navy.
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[VehicleTypes]\n0=BOAT\n1=TRANSPORT\n2=NEGATIVE\n3=IGNORED\n4=UNSCORED\n\
+             [BuildingTypes]\n0=DEPLOYED\n\
+             [BOAT]\nStrength=100\nNaval=yes\n\
+             [TRANSPORT]\nStrength=100\nNaval=yes\nPassengers=3\n\
+             [NEGATIVE]\nStrength=100\nNaval=yes\nPassengers=-1\n\
+             [IGNORED]\nStrength=100\nNaval=yes\nInsignificant=yes\n\
+             [UNSCORED]\nStrength=100\nNaval=yes\nDontScore=yes\n\
+             [DEPLOYED]\nStrength=100\nNaval=yes\nUndeploysInto=BOAT\n",
+        ),
+        &IniFile::from_str("[DEPLOYED]\nFoundation=1x1\n"),
+    )
+    .unwrap();
+    assert_eq!(rules.object("NEGATIVE").unwrap().passengers, -1);
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+    let ids: Vec<_> = [
+        "BOAT",
+        "TRANSPORT",
+        "NEGATIVE",
+        "IGNORED",
+        "UNSCORED",
+        "DEPLOYED",
+    ]
+    .into_iter()
+    .map(|kind| {
+        sim.spawn_object_limbo_at_height(kind, "Americans", 10, 10, 0, 0, &rules)
+            .unwrap()
+    })
+    .collect();
+    let tracking = &sim.houses[&owner].tracking;
+    assert_eq!(
+        (tracking.vehicles(), tracking.navy(), tracking.buildings()),
+        (4, 1, 0)
+    );
+    for id in ids {
+        sim.uninit_with_rules(id, &rules);
+    }
+    sim.flush_pending_delete();
+    let tracking = &sim.houses[&owner].tracking;
+    assert_eq!(
+        (tracking.vehicles(), tracking.navy(), tracking.buildings()),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
+    use crate::sim::snapshot::GameSnapshot;
+
+    let (mut sim, rules, first) = one_house();
+    let second = sim.interner.intern("Russians");
+    sim.houses
+        .insert(second, HouseState::new(second, 1, None, false, 0, 10));
+    let boat = sim
+        .spawn_object_at_height("BOAT", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let transport = sim
+        .spawn_object_limbo_at_height("TRANSPORT", "Americans", 14, 10, 0, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        (
+            sim.houses[&first].tracking.vehicles(),
+            sim.houses[&first].tracking.navy()
+        ),
+        (2, 1)
+    );
+    sim.techno_limbo_with_rules(boat, &rules, None);
+    assert_eq!(sim.houses[&first].tracking.active_for_test().0, 0);
+    assert_eq!(
+        sim.houses[&first].tracking.navy(),
+        1,
+        "Limbo is not destruction"
+    );
+    sim.change_owner(boat, second);
+    assert_eq!(
+        (
+            sim.houses[&first].tracking.navy(),
+            sim.houses[&second].tracking.navy()
+        ),
+        (0, 1)
+    );
+
+    // Scenario RNG is reset to0 by the existing snapshot load contract.
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let expected_hash = sim.state_hash();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "tracked-navy", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.state_hash(), expected_hash);
+    restored
+        .houses
+        .get_mut(&second)
+        .unwrap()
+        .tracking
+        .set_naval_land_for_test(1, 0, 0);
+    assert_ne!(
+        restored.state_hash(),
+        expected_hash,
+        "the navy scalar participates in the world hash"
+    );
+    restored
+        .houses
+        .get_mut(&second)
+        .unwrap()
+        .tracking
+        .set_naval_land_for_test(1, 1, 0);
+    let facts = restored
+        .substrate
+        .entities
+        .get(boat)
+        .unwrap()
+        .tracking_facts;
+    restored
+        .substrate
+        .entities
+        .get_mut(boat)
+        .unwrap()
+        .tracking_facts = Default::default();
+    assert_ne!(
+        restored.state_hash(),
+        expected_hash,
+        "future removal admission also participates in the hash"
+    );
+    restored
+        .substrate
+        .entities
+        .get_mut(boat)
+        .unwrap()
+        .tracking_facts = facts;
+    assert_eq!(restored.state_hash(), expected_hash);
+
+    for candidate in [&mut sim, &mut restored] {
+        candidate.uninit_with_rules(boat, &rules);
+        assert_eq!(
+            candidate.houses[&second].tracking.navy(),
+            1,
+            "UnInit leaves tracking until the destructor drain"
+        );
+        candidate.flush_pending_delete();
+        assert_eq!(candidate.houses[&second].tracking.navy(), 0);
+        candidate.uninit_with_rules(transport, &rules);
+        candidate.flush_pending_delete();
+        assert_eq!(candidate.houses[&first].tracking.vehicles(), 0);
+    }
+    assert_eq!(sim.state_hash(), restored.state_hash());
 }

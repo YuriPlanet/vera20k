@@ -1736,13 +1736,18 @@ impl Simulation {
                 }
                 result
             }
-            9 | 11 => {
+            9 | 11 | 55 | 56 => {
                 //71F069 ->502D30: Event.value selects a Country's first
                 //registered House, independently of the incoming House or
                 //raised event. No matching House reaches the AL1 tail; this
                 //does not write persistence or the Type-owned Event+54.
                 //The private HouseTracking owner preserves separate signed
                 //Unit/Infantry totals and11's tracked Building scalar.
+                //55/56: Steam3e81a617..08600, 71F159 /71F16F..71F187;
+                //tools/spatial_oracle/tag_lifecycle.py --naval-land-events.
+                //56's TEST after SUB observes wrapping subtraction, not a
+                //signed comparison of the two source counts. These events
+                //read tracked scalars, unlike9's on-map CounterClass totals.
                 let owner = rules.and_then(|rules| {
                     u16::try_from(condition.value).ok().and_then(|country| {
                         self.house_by_country_index(
@@ -1752,13 +1757,22 @@ impl Simulation {
                     })
                 });
                 owner.is_none_or(|owner| {
-                    self.houses.get(&owner).is_none_or(|house| {
-                        if condition.kind == 9 {
-                            house.tracking.units_destroyed()
-                        } else {
-                            house.tracking.all_destroyed()
-                        }
-                    })
+                    self.houses
+                        .get(&owner)
+                        .is_none_or(|house| match condition.kind {
+                            9 => house.tracking.units_destroyed(),
+                            11 => house.tracking.all_destroyed(),
+                            55 => house.tracking.navy() <= 0,
+                            56 => {
+                                house
+                                    .tracking
+                                    .vehicles()
+                                    .wrapping_sub(house.tracking.navy())
+                                    <= 0
+                                    && house.tracking.infantry() <= 0
+                            }
+                            _ => unreachable!(),
+                        })
                 })
             }
             30 | 58 => {

@@ -1702,6 +1702,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.building_entry.hash(hasher);
     }
     let latches = entity.house_tracking_latches();
+    if entity.tracking_facts.naval_combatant() {
+        // Retained across reload: later Remove_Tracking must use the same
+        // Naval/Passengers admission as construction, even while in limbo.
+        b"naval-tracking-eligibility-v1".hash(hasher);
+    }
     if latches != Default::default() {
         b"house-tracking-infantry-latches-v1".hash(hasher);
         latches.hash(hasher);

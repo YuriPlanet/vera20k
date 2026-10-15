@@ -1,0 +1,2015 @@
+{
+  "classification": [
+    {
+      "kind": 55,
+      "state_a": 0,
+      "state_b": 1
+    },
+    {
+      "kind": 56,
+      "state_a": 0,
+      "state_b": 1
+    }
+  ],
+  "code_unchanged": true,
+  "controls": [
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_navy-2147483648",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          3,
+          -2147483648,
+          9
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_navy-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          3,
+          -1,
+          9
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_navy0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          3,
+          0,
+          9
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_navy1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          3,
+          1,
+          9
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_navy2147483647",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          3,
+          2147483647,
+          9
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry0",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry2",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          1
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry3",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          5,
+          5,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry4",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          6,
+          5,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry5",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          4,
+          5,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry6",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          -1
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry7",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          -2147483648
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry8",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          2147483647
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry9",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          -2147483648,
+          1,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry10",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2147483647,
+          -1,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry11",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          -2147483648,
+          2147483647,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry12",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2147483647,
+          -2147483648,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_signed_sub_infantry13",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          -1,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_all_houses_zero",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_first_country_order(0, 1, 2)",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        2,
+        1,
+        0
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_first_country_order(2, 1, 0)",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_absent_country-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ]
+      ],
+      "value": -1
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_absent_country999",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ]
+      ],
+      "value": 999
+    },
+    {
+      "actor_owner": 2,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_country7",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ]
+      ],
+      "value": 7
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_null_incoming_selected_positive",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_wrong_raise_buildup0",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 55,
+      "name": "naval_land55_wrong_raise_buildup1",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 1,
+      "kind": 55,
+      "name": "naval_land55_retained_persistence_one",
+      "persistence": 1,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": null,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_all_houses_zero",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_first_country_order(0, 1, 2)",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        2,
+        1,
+        0
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_first_country_order(2, 1, 0)",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_absent_country-1",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ]
+      ],
+      "value": -1
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_absent_country999",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          1
+        ]
+      ],
+      "value": 999
+    },
+    {
+      "actor_owner": 2,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_country7",
+      "persistence": 0,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ]
+      ],
+      "value": 7
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": null,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_null_incoming_selected_positive",
+      "persistence": 0,
+      "raised": 8,
+      "result": 0,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_wrong_raise_buildup0",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 0,
+      "kind": 56,
+      "name": "naval_land56_wrong_raise_buildup1",
+      "persistence": 0,
+      "raised": 99,
+      "result": 1,
+      "scenario_init": true,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    },
+    {
+      "actor_owner": 1,
+      "event54": -1412623820,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 1,
+      "initial_persistence": 1,
+      "kind": 56,
+      "name": "naval_land56_retained_persistence_one",
+      "persistence": 1,
+      "raised": 8,
+      "result": 1,
+      "scenario_init": false,
+      "timer_after": [
+        0,
+        0,
+        30
+      ],
+      "timer_before": [
+        0,
+        0,
+        30
+      ],
+      "tracked_counts": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          7,
+          7
+        ],
+        [
+          4,
+          2,
+          0
+        ]
+      ],
+      "value": 0
+    }
+  ],
+  "country_indices": [
+    0,
+    7,
+    0
+  ],
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "retail": {
+    "actions": "3,53,2,0E5CDB7C,0,0,0,0,A,21,6,Mis_xA5_EvaBlackEagles,0,0,0,0,A,53,2,0778A83C,0,0,0,0,A",
+    "authored_health": 184,
+    "country_registries": [
+      {
+        "entries": [
+          {
+            "index": 0,
+            "name": "Americans"
+          },
+          {
+            "index": 1,
+            "name": "Alliance"
+          },
+          {
+            "index": 2,
+            "name": "French"
+          },
+          {
+            "index": 3,
+            "name": "Germans"
+          },
+          {
+            "index": 4,
+            "name": "British"
+          },
+          {
+            "index": 5,
+            "name": "Africans"
+          },
+          {
+            "index": 6,
+            "name": "Arabs"
+          },
+          {
+            "index": 7,
+            "name": "Confederation"
+          },
+          {
+            "index": 8,
+            "name": "Russians"
+          },
+          {
+            "index": 9,
+            "name": "YuriCountry"
+          },
+          {
+            "index": 10,
+            "name": "GDI"
+          },
+          {
+            "index": 11,
+            "name": "Nod"
+          },
+          {
+            "index": 12,
+            "name": "Neutral"
+          },
+          {
+            "index": 13,
+            "name": "Special"
+          }
+        ],
+        "layer": "RULESMD.INI"
+      },
+      {
+        "entries": [
+          {
+            "index": 0,
+            "name": "Americans"
+          },
+          {
+            "index": 1,
+            "name": "Alliance"
+          },
+          {
+            "index": 2,
+            "name": "French"
+          },
+          {
+            "index": 3,
+            "name": "Germans"
+          },
+          {
+            "index": 4,
+            "name": "British"
+          },
+          {
+            "index": 5,
+            "name": "Africans"
+          },
+          {
+            "index": 6,
+            "name": "Arabs"
+          },
+          {
+            "index": 7,
+            "name": "Confederation"
+          },
+          {
+            "index": 8,
+            "name": "Russians"
+          },
+          {
+            "index": 9,
+            "name": "YuriCountry"
+          },
+          {
+            "index": 10,
+            "name": "GDI"
+          },
+          {
+            "index": 11,
+            "name": "Nod"
+          },
+          {
+            "index": 12,
+            "name": "Neutral"
+          },
+          {
+            "index": 13,
+            "name": "Special"
+          },
+          {
+            "index": 14,
+            "name": "Einstein"
+          },
+          {
+            "index": 15,
+            "name": "Player"
+          },
+          {
+            "index": 16,
+            "name": "BadGuy1"
+          },
+          {
+            "index": 17,
+            "name": "BadGuy2"
+          },
+          {
+            "index": 18,
+            "name": "BadGuy3"
+          },
+          {
+            "index": 19,
+            "name": "Germany1"
+          },
+          {
+            "index": 20,
+            "name": "Germany2"
+          },
+          {
+            "index": 21,
+            "name": "Germany3"
+          },
+          {
+            "index": 22,
+            "name": "Temp"
+          }
+        ],
+        "layer": "ALL05UMD.MAP"
+      }
+    ],
+    "initial_bsub_entry": "BadGuy2 House,BSUB,184,60,72,192,Guard,None,0,-1,0,-1,1,1",
+    "initial_bsub_entry_id": "38",
+    "map": "ALL05UMD.MAP",
+    "map_sha256": "7ee8148ad4b0092b7970588d9b064ddd6b753fc7bfb352bcc043affeb72c6aed",
+    "native_read": {
+      "kind": 55,
+      "name": "",
+      "results": [],
+      "team_present": false,
+      "value": 17
+    },
+    "raw_event": "1,55,0,17",
+    "rules_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+    "selected_house": {
+      "000": "YAPOWR,131,103",
+      "001": "YAPOWR,131,101",
+      "002": "YAPOWR,129,99",
+      "003": "YAPOWR,127,99",
+      "Allies": "BadGuy1 House,BadGuy2 House,BadGuy3 House",
+      "Color": "Purple",
+      "Country": "BadGuy2",
+      "Credits": "400",
+      "Edge": "East",
+      "IQ": "5",
+      "NodeCount": "4",
+      "PercentBuilt": "100",
+      "PlayerControl": "no",
+      "TechLevel": "10"
+    },
+    "selected_house_name": "BadGuy2 House",
+    "tag": "0,Black Eagle Initiate,0E5FA1BC",
+    "tag_id": "0E5FB56C",
+    "trigger": "BadGuy2,<none>,Black Eagle Initiate,0,1,1,1,0",
+    "trigger_id": "0E5FA1BC",
+    "type_field_readers": [
+      {
+        "fields": {
+          "naval": 0,
+          "passengers": 0
+        },
+        "layer": "TechnoType_constructor710AF0"
+      },
+      {
+        "fields": {
+          "naval": 1,
+          "passengers": 0
+        },
+        "layer": "RULESMD.INI",
+        "naval_key": "yes",
+        "passengers_key": null,
+        "section_present": true
+      },
+      {
+        "fields": {
+          "naval": 1,
+          "passengers": 0
+        },
+        "layer": "ALL05UMD.MAP",
+        "naval_key": null,
+        "passengers_key": null,
+        "section_present": false
+      }
+    ]
+  },
+  "schema_version": 1,
+  "tracking_replay": {
+    "cases": 36,
+    "payload_matches_saved": true,
+    "payload_sha256": "000f86cf46961f6537416c4df93deed78f22493f4c9bf44205d7f8873cbbe1fb",
+    "replayed_native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "saved_provenance_native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+  },
+  "zero_predicate_rng_calls": true
+}

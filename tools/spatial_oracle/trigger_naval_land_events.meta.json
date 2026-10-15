@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "39 original HasOccurred55/56 predicates, four StateA/StateB calls, replay of the existing36 tracking controls, selected retail ALL05 Event/Country and BSUB Naval/Passengers readers. Not full House/object construction, resource search, reinforcement execution or campaign parity.",
+  "assumptions": [
+    "Reuse PowerEventControls/FlagsFixture original image, counted TEvent reader and minimal three-House arena with Country bindings0/7/0. Supplied tracked+2E8/+2EC/+2F4 priors are vehicles/navy/infantry. Original Country502D30 and HasOccurred71E940 execute; incoming House, actor, raised kind and A8ED6B do not select these predicates' House.",
+    "55 at71F159 tests signed navy<=0.56 at71F16F subtracts navy from vehicles with32-bit wrapping, TEST/JG, then independently tests tracked infantry<=0. INT_MIN/MAX, overflow, independent infantry signs, first duplicate Country order, absent Country, null incoming House, unrelated actor/raised flag and initial persistence0/1 are executed. Event+54 and timer remain unchanged; StateA/B are0/1 and existing observers assert no predicate65C780/65C7E0 entry. No own timer write or detach belongs to these leaves.",
+    "house_tracking.generate is the existing sole Add/Remove fixture. Its complete36-case replay on the actual selected image must match every saved payload field. The old sidecar names the other supported1cdd image: actual replay identity and matching canonical payload hash are separate fields here, not a rewrite of that older provenance. Existing supplied virtuals, per-type Counter and owned-type sinks remain; this is not a concrete constructor/destructor lifecycle replay.",
+    "Original tracking increases/decreases+2EC only in Unit RTTI1, after Insignificant/DontScore admission, when Naval+CCE is nonzero AND signed Passengers+5E0 is exactly0. Naval transports with any nonzero capacity remain vehicles without navy contribution. Production integration must retain the existing tracking construction, ChangeOwner and actual final-deletion owners rather than active count, factory/naval statistics or a map scan.",
+    "Actual mapsmd03.mix member ALL05UMD.MAP and extracted retail ini/rulesmd.ini bytes are SHA-identified. Lexical cached entries feed original counted TEvent and Country registration668C8B..668CDB; rules followed by map registration yields Country17 BadGuy2. The retained BadGuy2 House BSUB Units entry is raw data; authored health184 is not executed actual HP. Trigger0E5FA1BC starts enabled and one-shot;53/21/53 activates existing black-eagle support consumers. Later AIProduction74 and whole-level behavior are outside this evidence.",
+    "Existing CampaignReader and shared TechnoType710AF0 constructor establish Naval=false/Passengers0. Original field blocks714A63..714A7D and714B35..714B56 execute on physical RULESMD BSUB then the absent map section: Naval=yes ->1, absent Passengers retains0; the map retains1/0. Readers pass current fields as defaults, exact-case keys, ReadBool5295F0/ReadInt5276D0 without clamps. The absent-section row deliberately executes selected readers; it does not claim whole ReadINI section admission, full UnitType construction, all Rules Process passes, physical loading or exhaustive LANGRULE/scenario-INI absence. Campaign has no mode layer in this selected input.",
+    "CampaignReader is supplied an existing empty asset directory through VERA20K_CAMPAIGN_START_ASSETS; its inherited constructor preloads that directory, and these selected Country/type controls request no asset files. Registries have declared spare capacity. No original Tag/House polling/action execution is added here; the Rust production regressions and existing lifecycle evidence own their separate coverage."
+  ],
+  "substitutions": [
+    "Existing FlagsFixture/CampaignReader allocator/CRT/TLS/INI-cache transports and explicit scalar/vector/House priors; existing house_tracking virtual/per-type sinks retain their published boundary. No selected event, Country lookup, field reader or tracking-body return is replaced."
+  ],
+  "entry_points": {
+    "has_occurred": "0x0071E940",
+    "navy_predicate": "0x0071F159",
+    "land_predicate": "0x0071F16F",
+    "country_house": "0x00502D30",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0",
+    "add_tracking": "0x004FF700",
+    "remove_tracking": "0x004FF550",
+    "country_registration": "0x00668C8B",
+    "techno_type_constructor": "0x00710AF0",
+    "naval_reader": "0x00714A63",
+    "passengers_reader": "0x00714B35"
+  },
+  "environment": {
+    "RA2_DIR": "retail installation containing gamemd.exe and mapsmd03.mix",
+    "VERA20K_CAMPAIGN_START_ASSETS": "existing empty directory; selected Country/type prefix needs no assets",
+    "checkout_prerequisite": "ini/rulesmd.ini is the selected extracted retail RULESMD"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --naval-land-events",
+  "payload_sha256": "61e809b82c32f75deaf556150970286d6a41f17ee9f30905d45104f7c634b42a"
+}

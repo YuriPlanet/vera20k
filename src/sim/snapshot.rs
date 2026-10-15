@@ -1047,7 +1047,8 @@ use crate::sim::world::Simulation;
 // 365 -> 366: process scalable Bullet order and retained type cadence values.
 // 366 -> 367: authoritative PlanMgr nodes/tokens and local planning input mode.
 // 367 -> 368: ordered Techno DistributedFire candidates/scores and history.
-const SNAPSHOT_VERSION: u32 = 368;
+// 368 -> 369: tracked navy scalar and retained Unit Naval/Passengers admission.
+const SNAPSHOT_VERSION: u32 = 369;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4552,7 +4553,8 @@ mod tests {
         // 365 -> 366: process scalable Bullet order and type cadence.
         // 366 -> 367: synchronized planning nodes, paths and local input mode.
         // 367 -> 368: retained runtime DistributedFire state.
-        assert_eq!(super::SNAPSHOT_VERSION, 368);
+        // 368 -> 369: tracked navy and its retained type admission.
+        assert_eq!(super::SNAPSHOT_VERSION, 369);
     }
 
     #[test]
