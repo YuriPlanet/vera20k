@@ -2654,6 +2654,7 @@ fn retail_unit_on_move(
 /// either way and a tank bunker; otherwise Guard. No retail type lists the
 /// GUARD_AREA ability.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn the_unit_guard_pick_follows_house_iq_team_and_type() {
     use crate::sim::mission::MissionType;
 

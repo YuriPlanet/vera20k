@@ -526,20 +526,14 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.crash_latched = true;
     }
     fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3] {
-        let Some(terrain) = self.terrain() else {
-            return [
-                i32::from(cell.0) * 256 + 128,
-                i32::from(cell.1) * 256 + 128,
-                0,
-            ];
-        };
-        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let identity = cells.lookup(cell);
-        let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(identity, &cells);
-        // An unsupported slope has no ground height; the centre keeps 0.
-        let z = crate::sim::cell_kernel::native_cell_own_coords(identity, &cells)
-            .map_or(0, |(_, _, z)| z as i32);
-        [x, y, z]
+        let coord = crate::sim::movement::target_cell_coord(
+            cell.0 as u16,
+            cell.1 as u16,
+            self.terrain()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                .as_ref(),
+        );
+        [coord.x, coord.y, coord.z]
     }
     /// Owner `+0x427`: a Magnetron dropped it.
     fn dropped(&self) -> bool {

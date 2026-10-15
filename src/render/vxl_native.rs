@@ -414,11 +414,7 @@ pub(super) fn prepare_draw(
     // normal mode from limb zero, not switched for every limb.
     let normals_mode = vxl.limbs.first()?.normals_mode;
     let rotation = glam::Mat3::from_mat4(draw_matrix);
-    let pages = if matches!(params.body_tilt, Some(super::BodyTilt::Tumble(_))) {
-        super::vxl_normals::diffuse_pages(normals_mode, rotation)
-    } else {
-        super::vxl_normals::blinn_phong_pages(normals_mode, rotation)
-    };
+    let pages = params.lighting.pages(normals_mode, rotation);
     let mut writes = Vec::with_capacity(vxl.limbs.iter().map(|limb| limb.voxels.len()).sum());
     for &index in &geometry.paint_order {
         paint_section(
@@ -671,6 +667,83 @@ mod tests {
         (backward, erased)
     }
 
+    /// Actual Bullet468090 ->46B0C0 ->754510 execution, including its
+    /// velocity conversion, HVA frame0, diffuse pages and encoded span writes.
+    #[test]
+    fn kirov_bullet_pose_and_raster_match_original_execution() {
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/bullet_fixtures.json",
+        ))
+        .unwrap();
+        // Honor the required-retail INI contract as well as archive admission.
+        // The corpus contains derived native output and asset identities only;
+        // copyrighted VXL/HVA/VPL input bytes come from the local install.
+        let Some(_battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let Some((_, local_assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let assets = &fixture["assets"];
+        let asset_bytes = |kind: &str| {
+            local_assets
+                .get_ref(assets[kind]["name"].as_str().unwrap())
+                .unwrap()
+        };
+        for (name, asset) in assets.as_object().unwrap() {
+            let data = asset_bytes(name);
+            assert_eq!(data.len() as u64, asset["bytes"], "{name} length");
+            assert_eq!(
+                crate::util::sha256::sha256_hex(data),
+                asset["sha256"],
+                "{name} hash"
+            );
+        }
+        let vxl = VxlFile::from_bytes(asset_bytes("vxl")).unwrap();
+        let hva = HvaFile::from_bytes(asset_bytes("hva")).unwrap();
+        let vpl = super::super::VplFile::from_bytes(asset_bytes("vpl")).unwrap();
+        let controls = fixture["controls"].as_array().unwrap();
+        assert_eq!(controls.len(), 22);
+        for row in controls {
+            let label = row["name"].as_str().unwrap();
+            let velocity =
+                crate::sim::projectile::ProjectileVelocity::from_native(std::array::from_fn(|i| {
+                    crate::util::native_x87::NativeF64Bits::from_bits(
+                        u64::from_str_radix(row["velocity_bits"][i].as_str().unwrap(), 16).unwrap(),
+                    )
+                }));
+            let [heading, pitch] = super::super::projectile_voxel_angles(velocity).unwrap();
+            assert_eq!(u64::from(heading), row["heading_word"], "{label} heading");
+            assert_eq!(u64::from(pitch), row["pitch_word"], "{label} pitch");
+            assert_eq!(
+                u64::from(super::super::voxel_facing_step_u16(heading)),
+                row["heading_step"],
+                "{label}"
+            );
+            assert_eq!(
+                u64::from(super::super::voxel_facing_step_u16(pitch)),
+                row["pitch_step"],
+                "{label}"
+            );
+            let matrix = super::super::projectile_voxel_matrix(velocity).unwrap();
+            assert_eq!(matrix_bits(matrix), words(&row["matrix_bits"]), "{label}");
+            let params = super::super::VxlRenderParams {
+                body_tilt: Some(super::super::BodyTilt::Matrix(matrix)),
+                lighting: super::super::VxlLighting::Diffuse,
+                ..Default::default()
+            };
+            assert_eq!(
+                params
+                    .lighting
+                    .pages(vxl.limbs[0].normals_mode, glam::Mat3::from_mat4(matrix))
+                    .as_slice(),
+                bytes(row["body"]["normal_pages"].as_str().unwrap()),
+                "{label} diffuse"
+            );
+            compare_native_render(&vxl, Some(&hva), &vpl, &params, matrix, &row["body"], label);
+        }
+    }
+
     #[test]
     fn native_sections_match_all_geometry_and_visibility_bytes() {
         let fixture: Value = serde_json::from_str(crate::test_fixture::text(
@@ -745,7 +818,8 @@ mod tests {
                 "{label} native diffuse pages"
             );
             let params = super::super::VxlRenderParams {
-                body_tilt: Some(super::super::BodyTilt::Tumble(matrix)),
+                body_tilt: Some(super::super::BodyTilt::Matrix(matrix)),
+                lighting: super::super::VxlLighting::Diffuse,
                 ..Default::default()
             };
             backward += compare_native_render(&vxl, None, &vpl, &params, matrix, body, &label).0;

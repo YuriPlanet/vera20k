@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Terrain lethal receiver and populated Object observer broadcast through Bullet PointerExpired before Terrain Limbo, repeated expiry and independent source expiry. Two direct receiver controls; no child Fire/AI or deferred destructor execution.",
+  "assumptions": [
+    "Pinned original image; native x87 control0x0E7F. Original49F2F0 initializes the8-neighbor offsets. Supplied map has cell10,20 at level2 and all8 neighbors. One TREE01 occupies the ground head and Logic vector, with one-cell occupationbits4, rawoccupation0xFC, neighbor counts1 and center count0. No second linked Terrain, Anim contact, or custom spawner.",
+    "Terrain has retained Location2688,5248,208, supplied health10, maxHP200 and armorwood6. Independent rules_oracle/bridge_landing_inputs executes original TREE01 rules/ART readers and HE/Super readers. This receiver consumes TREE01 Immune0/Spawns0/occupation4,6, HE Woodtrue/woodverses0.75 and Rules MaxDamage10000/ConditionRed0.25/ConditionYellow0.5. Damage20, distance0, gameRunningtrue and frame1000 are supplied. NoDamagefalse. No INI reader executes inside either receiver row; initialized Super/C4 fields are unused.",
+    "Original BulletType46BBC0, Bullet466380 and Construct4664C0 populate real Object observer vectorB0F724 with one observer targeting Terrain and a separate supplied Unit-vtable source. Other observer vectors are empty. BulletType keeps constructor defaults; SmallCometP is its supplied ID, not a physical type read. Construct receives Damage30, HE, speed74 and brightfalse; these payload values do not control PointerExpired and no Fire/AI runs.",
+    "Original ObjectReceiveDamage DetachAll, Terrain lethal DetachAll, UnInit direct broadcast and ObjectLimbo DetachAll produce four Bullet callbacks before Cell/Logic removal. No deferred destructor executes. Tree-before-source then directly repeats tree expiry (control1) and expires source(control0); source-before-tree first expires source(control0). Callback control records the byte consumed by4685CC, excluding upper stack bytes. Complete Scenario seed1 state is captured before/after this interval; four subsequent native RNG words are only the separately recorded continuation check.",
+    "Process footprint sentinelAC1398 and render-depthB0CD48 bits0x3FC25E5374344960 are supplied. Pending-delete capacity32 and Logic capacity4 are preallocated. No tag, audio, warp, house, bomb or live animation state; full rendering/pathfinding is excluded."
+  ],
+  "substitutions": [
+    "Executed:71D160 render rectangle returns0,0,1,1;6D2790 TacticalDirty returns0; 5F5850 ObjectMark returns1 so original TerrainMark/ExitCell/CellRemoveContent execute.",
+    "Executed:439150 empty BombListPointerGotInvalid,4A9770 display removal,47D2B0 cell recalc, 56D460 orphan zone,584550 incremental zone and6551C0 radar dirty each return0. Original call order is recorded; these external effects are not proved.",
+    "Installed but unexecuted for these rows:439B00 Anim bounce-contact,7C8E17 allocator (including its custom-spawner failure arm),7C8B3D delete. The shared runner retains those hooks for its other controls; no result here depends on them."
+  ],
+  "entry_points": {
+    "terrain_receiver": "0x0071B920",
+    "object_receiver": "0x005F5390",
+    "damage_kernel": "0x00489180",
+    "terrain_limbo": "0x0071C930",
+    "object_limbo": "0x005F4D30",
+    "cell_remove": "0x0047EA90",
+    "logic_unregister": "0x0055BAE0",
+    "uninit": "0x005F65F0",
+    "neighbor_init": "0x0049F2F0",
+    "bullet_type_ctor": "0x0046BBC0",
+    "bullet_ctor": "0x00466380",
+    "bullet_construct": "0x004664C0",
+    "bullet_pointer_expired": "0x004684E0",
+    "detach_all": "0x005F5280",
+    "observer_broadcast": "0x007258D0"
+  },
+  "native_landing_inputs_sha256": "d7cedef65837fca09ba0d18c15683e5fd51393d3dc190e322cd1b575f1218541",
+  "replay_command": "python -m tools.spatial_oracle.terrain_debris_receiver --bullet-observer",
+  "payload_sha256": "a16882e7d071459d7faf2de0b51b44c6d2d20eafa777561effc61916f863260d"
+}

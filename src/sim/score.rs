@@ -372,9 +372,14 @@ mod tests {
     #[test]
     fn natural_terminal_frame_finalizes_score_before_returned_hash_once() {
         let mut sim = natural_terminal_sim(0x51C0_9ABC);
+        // At normal play's cadence the ending frame hashes off the interval.
+        // It does not commit, so its tick stays the last committed one.
+        sim.hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
+        sim.session.tick = 7;
 
         let first = sim.advance_tick(&[], None, None, None, 67);
 
+        assert_eq!(first.tick, 7);
         assert!(!first.frame_committed);
         assert!(first.terminal_score_finalized);
         assert_eq!(first.state_hash, Some(sim.state_hash()));

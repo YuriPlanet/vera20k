@@ -5,6 +5,7 @@ memory layout, native execution, supplied leaves, and observed row schemas.
 Importing it does not locate an executable, run native code, or write references.
 """
 
+import hashlib
 import struct
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
@@ -26,7 +27,7 @@ SP = BASE + 0x40000
 ENTRY = 0x6FE8EE
 LAUNCHED = 0x6FF01A
 FAILED = 0x6FF93C
-VARIANTS = frozenset(("ordinary", "directed", "building", "voxel", "second-probe"))
+VARIANTS = frozenset(("ordinary", "directed", "radial", "building", "voxel", "second-probe"))
 
 
 def w32(machine, address, value):
@@ -40,7 +41,7 @@ def r32(machine, address):
 def run(dx, dy, dz, speed=100, arcing=True, lobber=False, floater=False, *,
         variant="ordinary", dropping=False, rot=-1, turret=False, hull=0,
         barrel=0, source_z=0, building_height=2, voxel=True, vertical=False,
-        seed=0, stored_weapon_speed=None):
+        seed=0, stored_weapon_speed=None, radial_segments=0, radial_index=0):
     """Execute one fresh case and retain that producer's existing JSON schema."""
     if variant not in VARIANTS:
         raise ValueError(f"Unknown FireAt fixture variant: {variant}")
@@ -81,7 +82,7 @@ def run(dx, dy, dz, speed=100, arcing=True, lobber=False, floater=False, *,
 
     # These are supplied virtual results, not arithmetic replacements.
     virtual_returns = {HOOK: (STYPE, 4), HOOK + 16: (REF, 8), HOOK + 32: (1, 4)}
-    if variant == "directed":
+    if variant in ("directed", "radial"):
         for address, value in (
             (VT + 0x308, 0x740F80), (VT + 0x2A8, 0x746E30),
             (SOURCE + 0x6C4, STYPE), (SOURCE + 0x388, hull),
@@ -90,6 +91,9 @@ def run(dx, dy, dz, speed=100, arcing=True, lobber=False, floater=False, *,
             w32(u, address, value)
         u.mem_write(PTYPE + 0x29C, bytes([dropping]))
         u.mem_write(STYPE + 0xCA1, bytes([turret]))
+        w32(u, STYPE + 0x6A4, radial_segments)
+        w32(u, SOURCE + 0x43C, radial_index)
+        u.mem_write(PTYPE + 0x2C0, bytes([vertical]))
     elif variant == "building":
         for address, value in (
             (VT + 0xAC, 0x41BE00), (VT + 0x300, 0x6F3D60),
@@ -109,6 +113,16 @@ def run(dx, dy, dz, speed=100, arcing=True, lobber=False, floater=False, *,
 
     seen = []
     second = []
+    headings = []
+    scalars = []
+    rng_addresses = (0x886B88, BASE + 0x30000)
+    if variant == "radial":
+        from tools.rmg_oracle.gen_rng_vectors import seeded_struct
+        w32(u, 0xA8B230, rng_addresses[1] - 0x218)
+        for address in rng_addresses:
+            u.mem_write(address, seeded_struct(31))
+        rng_before = [hashlib.sha256(bytes(u.mem_read(a, 0x3F4))).hexdigest()
+                      for a in rng_addresses]
 
     def return_from_leaf(value, stack_bytes):
         sp = u.reg_read(UC_X86_REG_ESP)
@@ -127,6 +141,12 @@ def run(dx, dy, dz, speed=100, arcing=True, lobber=False, floater=False, *,
             return_from_leaf(1, 12 if address == 0x5F4EC0 else 8)
         elif address in (0x70D590, 0x48A8D0, 0x48A9D0, 0x4CB3D0):
             seen.append(hex(address))
+        elif variant == "radial" and address == 0x6FEB1B:
+            headings.append(u.reg_read(UC_X86_REG_EAX) & 0xFFFF)
+        elif variant == "radial" and address == 0x6FEA52:
+            scalars.append(struct.unpack("<i", u.mem_read(SP + 0x28, 4))[0])
+        elif variant == "radial" and address in (0x65C780, 0x65C7E0):
+            raise OracleError("Radial launch unexpectedly consumed RNG")
         elif variant == "second-probe" and address == 0x48A954:
             sp = u.reg_read(UC_X86_REG_ESP)
             second.append(dict(
@@ -141,16 +161,25 @@ def run(dx, dy, dz, speed=100, arcing=True, lobber=False, floater=False, *,
     finally:
         u.hook_del(hook)
     raw = bytes(u.mem_read(SP + 0x50, 24))
-    if endpoint == LAUNCHED and raw != bytes(u.mem_read(BULLET + 0xE8, 24)):
+    if variant != "radial" and endpoint == LAUNCHED and raw != bytes(u.mem_read(BULLET + 0xE8, 24)):
         raise OracleError(f"{variant} FireAt/BulletFire persistent velocity bits differ")
 
     row = dict(delta=[dx, dy, dz], speed=speed)
-    if variant in ("ordinary", "directed", "building"):
+    if variant in ("ordinary", "directed", "radial", "building"):
         row.update(arcing=arcing, lobber=lobber, floater=floater)
-    if variant == "directed":
+    if variant in ("directed", "radial"):
         origin = list(struct.unpack("<iii", u.mem_read(BULLET + 0x9C, 12)))
         row.update(dropping=dropping, rot=rot, turret=turret, hull=hull,
                    barrel=barrel, origin=origin)
+        if variant == "radial":
+            row.update(radial_segments=radial_segments, radial_index=radial_index,
+                       radial_next=struct.unpack("<i", u.mem_read(SOURCE + 0x43C, 4))[0],
+                       vertical=vertical, headings=headings,
+                       launch_scalar=scalars[0],
+                       fired_bits=[f"{v:016x}" for v in struct.unpack("<QQQ", u.mem_read(BULLET + 0xE8, 24))],
+                       rng_before=rng_before,
+                       rng_after=[hashlib.sha256(bytes(u.mem_read(a, 0x3F4))).hexdigest()
+                                  for a in rng_addresses])
     elif variant == "building":
         row.update(source_z=source_z, building_height=building_height)
     elif variant == "voxel":

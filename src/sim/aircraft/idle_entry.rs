@@ -370,10 +370,7 @@ pub(crate) fn enter_idle_mode_for(
         || object.missile_spawn;
     let facts = IdleFacts {
         suspended: entity.mission.suspended() != MissionId::NONE,
-        airstrike: entity
-            .mission_leaf
-            .as_aircraft()
-            .is_some_and(|leaf| leaf.airstrike_manager_present()),
+        airstrike: entity.airstrike_link().is_some(),
         mission_only: entity.is_mission_only(),
         passengers: entity
             .passenger_role

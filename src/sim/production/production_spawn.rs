@@ -405,58 +405,6 @@ fn nearby_query_for_naval_unit_delivery<'a>(
     })
 }
 
-/// Resolve the caller's `CellStruct` through the never-null MapClass lookup and
-/// `CellClass::GetCoords @ 0x00486840` before ObjectClass evaluates its normal
-/// zero-cell sentinel. A miss therefore updates and observes the one retained
-/// shared-dummy identity; it is not collapsed to a Rust-side `None`.
-fn resolve_produced_unit_cell_coords(
-    sim: &Simulation,
-    requested: (u16, u16),
-) -> Option<crate::sim::components::DriveCoord> {
-    if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let selected = cells.lookup((requested.0 as i16, requested.1 as i16));
-        let (x, y, z) = crate::sim::cell_kernel::native_cell_own_coords(selected, &cells)?;
-        return Some(crate::sim::components::DriveCoord {
-            x: x as i32,
-            y: y as i32,
-            z: z as i32,
-        });
-    }
-    // Terrain-less diagnostics keep their existing singleton-dummy adapter.
-    // An ordinary native match always has MapClass; this is not another
-    // CellClass port and performs no real/native map admission.
-    let selected = crate::sim::cell_rect::get_cellclass_fallback(
-        sim.resolved_terrain.as_ref(),
-        i32::from(requested.0),
-        i32::from(requested.1),
-    );
-    let (coord, level, slope) = match selected {
-        crate::sim::cell_rect::CellRef::Real(cell) => (
-            (i32::from(cell.rx), i32::from(cell.ry)),
-            cell.level,
-            cell.slope_type,
-        ),
-        crate::sim::cell_rect::CellRef::Dummy { cell } => {
-            let snapshot = cell.snapshot();
-            (snapshot.coord, snapshot.level as u8, snapshot.slope_type)
-        }
-    };
-    let mut coords = crate::sim::cell_kernel::cell_center(
-        crate::sim::cell_kernel::CellCoordinate {
-            x: coord.0,
-            y: coord.1,
-        },
-        0,
-    );
-    coords.z = crate::util::lepton::ground_height_leptons(level, slope, coords.x, coords.y).ok()?;
-    Some(crate::sim::components::DriveCoord {
-        x: coords.x,
-        y: coords.y,
-        z: coords.z,
-    })
-}
-
 /// Naval ExitObject's selected Cell goes through the same concrete Unlimbo
 /// boundary as every Unit constructor; there is no production +1AC port.
 pub(super) fn unlimbo_held_naval_unit(
@@ -467,7 +415,15 @@ pub(super) fn unlimbo_held_naval_unit(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> Option<u64> {
-    let coord = resolve_produced_unit_cell_coords(sim, cell)?;
+    // The selected Cell's GetCoords (`0x00486840`).
+    let coord = crate::sim::movement::target_cell_coord(
+        cell.0,
+        cell.1,
+        sim.resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+            .as_ref(),
+    );
     sim.reveal_constructed_object_at_coord_with_overlay_context(
         stable_id,
         coord,
@@ -852,78 +808,6 @@ mod tests {
             producer_get_coords_cell(&entities, 10),
             Some((12, 12)),
             "4x4 NW (10,10) GetCoords adds 384 leptons then truncates to (12,12)"
-        );
-    }
-
-    #[test]
-    fn production_cell_center_uses_104_for_real_and_dummy_without_changing_xy() {
-        let mut sim = production_admission_sim();
-        let requested = (8, 8);
-        let flat = resolve_produced_unit_cell_coords(&sim, requested);
-        assert_eq!(
-            flat,
-            Some(crate::sim::components::DriveCoord {
-                x: 8 * 256 + 128,
-                y: 8 * 256 + 128,
-                z: 0
-            })
-        );
-
-        let cell = sim
-            .resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut(requested.0, requested.1)
-            .unwrap();
-        cell.level = 2;
-        cell.slope_type = 0;
-        assert_eq!(
-            crate::util::lepton::ground_height_leptons(
-                cell.level,
-                cell.slope_type,
-                i32::from(requested.0) * 256 + 128,
-                i32::from(requested.1) * 256 + 128,
-            ),
-            Ok(208),
-        );
-        assert_eq!(
-            resolve_produced_unit_cell_coords(&sim, requested),
-            flat.map(|coord| crate::sim::components::DriveCoord { z: 208, ..coord }),
-            "GetCoords retains raised Z without changing X/Y",
-        );
-
-        sim.resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut(requested.0, requested.1)
-            .unwrap()
-            .slope_type = 21;
-        assert_eq!(resolve_produced_unit_cell_coords(&sim, requested), None);
-
-        let dummy_grid = ResolvedTerrainGrid::from_cells(0, 0, Vec::new());
-        let mut dummy_sim = Simulation::default();
-        dummy_sim.resolved_terrain = Some(dummy_grid);
-        let dummy_request = (u16::MAX, 7);
-        let flat_dummy = resolve_produced_unit_cell_coords(&dummy_sim, dummy_request);
-        dummy_sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .test_set_dummy_cell_level_slope(2, 0);
-        assert_eq!(
-            resolve_produced_unit_cell_coords(&dummy_sim, dummy_request),
-            flat_dummy.map(|coord| crate::sim::components::DriveCoord { z: 208, ..coord }),
-            "shared-dummy GetCoords retains Level 2 Z and the same signed-center X/Y",
-        );
-        dummy_sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .test_set_dummy_cell_level_slope(2, 21);
-        assert_eq!(
-            resolve_produced_unit_cell_coords(&dummy_sim, dummy_request),
-            None,
-            "the native-unsafe slope remains a Rust admission failure on the retained dummy too",
         );
     }
 

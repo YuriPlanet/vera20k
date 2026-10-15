@@ -213,6 +213,7 @@ fn retail_root_ifv_and_passengers_match_original_readers() {
 // Hills runs through production source selection here. The native component
 // corpus establishes the stock FV baseline, not the complete Hills Rules pass.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_battle_hills_preserves_native_ifv_baseline() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

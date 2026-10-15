@@ -1029,9 +1029,18 @@ use crate::sim::world::Simulation;
 // take both frames from Foot+0x538. Version 356 records carry them.
 // 357 -> 358: the process-resident BuildingType retains TargetCoordOffset.
 // Its three signed dwords change the saved type-registry layout.
-// 358 -> 359: Scenario owns the campaign countdown and authored caption.
-// 359 -> 360: retain sidebar entry flash deadlines and redraw scheduling.
-const SNAPSHOT_VERSION: u32 = 360;
+// 358 -> 359: ordered Tesla charger pointers, the separate Building weapon
+// latch and Foot's automatic charging-target flag survive saves.
+// 359 -> 360: Airstrike manager state/links, tint clocks and sampled building
+// animation light; retained per-pass type settings and type-based aircraft gate.
+// The unused MissionLeaf airstrike boolean is removed.
+// 360 -> 361: retained RadialFireSegments per-layer type state and the
+// independent per-firer radial launch counter (Techno+43C).
+// 361 -> 362: Bullet targets can retain a Terrain object identity. Its target
+// tag and strong-reference validation differ from Entity and Cell targets.
+// 362 -> 363: Scenario owns the campaign countdown and authored caption, and
+// sidebar entry flash deadlines and redraw scheduling survive saves.
+const SNAPSHOT_VERSION: u32 = 363;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1220,6 +1229,11 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("entity {object_id} has invalid Tesla charging state: {reason}")]
+    InvalidTeslaChargingState {
+        object_id: u64,
+        reason: &'static str,
+    },
     #[error("non-Building entity {owner_id} retains animation slot {slot}")]
     InvalidBuildingAnimSlotOwner { owner_id: u64, slot: u8 },
     #[error("Building {owner_id} slot {slot} references missing AnimStore object {anim_id}")]
@@ -1941,6 +1955,49 @@ fn restore_object_references(
     // complete modeled pointer graph before mutating even weak references or
     // derived caches, so a failed restore remains an atomic rejection.
     for (entity_id, entity) in sim.substrate.entities.iter_sorted() {
+        if entity.tesla_charger.is_active()
+            && !matches!(
+                entity.category(),
+                crate::map::entities::EntityCategory::Unit
+                    | crate::map::entities::EntityCategory::Infantry
+                    | crate::map::entities::EntityCategory::Aircraft
+            )
+        {
+            return Err(SnapshotRestoreError::InvalidTeslaChargingState {
+                object_id: entity_id,
+                reason: "charging intent belongs to a Foot",
+            });
+        }
+        if !entity.tesla_charge.is_default()
+            && entity.category() != crate::map::entities::EntityCategory::Structure
+        {
+            return Err(SnapshotRestoreError::InvalidTeslaChargingState {
+                object_id: entity_id,
+                reason: "charger list and weapon latch belong to a Building",
+            });
+        }
+        let mut seen_chargers = BTreeSet::new();
+        for &charger in entity.tesla_charge.chargers() {
+            require_resolved_reference(
+                entity_ids.contains(&charger),
+                "EntityStore",
+                entity_id,
+                "tesla_charge.chargers",
+                "EntityStore",
+                charger,
+            )?;
+            if !seen_chargers.insert(charger)
+                || sim.substrate.entities.get(charger).unwrap().category()
+                    != crate::map::entities::EntityCategory::Infantry
+            {
+                return Err(SnapshotRestoreError::InvalidTeslaChargingState {
+                    object_id: entity_id,
+                    reason: "chargers must be distinct Infantry identities",
+                });
+            }
+        }
+        // Do not require a current reciprocal TarCom or recompute +661:
+        // native saves can lie between retarget/expiry and Building AI.
         for contact_id in entity.radio_contacts.iter_live() {
             require_resolved_reference(
                 entity_ids.contains(&contact_id),
@@ -1970,6 +2027,29 @@ fn restore_object_references(
         // for the common post-load swizzle pass. Rust keeps stable IDs in those
         // fields, so admission requires the same references to resolve before
         // any cleanup mutates the restored graph.
+        if let Some(owner) = entity.airstrike_link() {
+            require_resolved_reference(
+                sim.substrate
+                    .entities
+                    .get(owner)
+                    .is_some_and(|owner| owner.airstrike.owns_manager()),
+                "EntityStore",
+                entity_id,
+                "airstrike.link",
+                "AirstrikeManager",
+                owner,
+            )?;
+        }
+        for referenced_id in entity.airstrike.referenced_ids() {
+            require_resolved_reference(
+                entity_ids.contains(&referenced_id),
+                "EntityStore",
+                entity_id,
+                "airstrike.reference",
+                "EntityStore",
+                referenced_id,
+            )?;
+        }
         if let Some(manager) = entity.spawn_manager.as_ref() {
             for slot in manager.slots() {
                 if let Some(spawn_id) = slot.spawn() {
@@ -2292,7 +2372,7 @@ fn restore_object_references(
 
     // BulletClass__Load @ 0x0046AE70 queues the non-null source/firer pointer
     // at +0xB0 and target pointer at +0x10C for global swizzling. VERA's zero
-    // source sentinel and non-entity Cell/null targets are the corresponding
+    // source sentinel and Cell/null targets are the corresponding
     // null/non-pointer representations and therefore need no object lookup.
     for (&projectile_id, projectile) in sim.projectiles.iter() {
         if projectile.source_id != crate::sim::combat::RAD_NO_ATTACKER {
@@ -2305,13 +2385,23 @@ fn restore_object_references(
                 projectile.source_id,
             )?;
         }
-        if let ProjectileTarget::Entity(target_id) = projectile.target {
+        if let Some((target_id, target_registry, present)) = match projectile.target {
+            ProjectileTarget::Entity(id) => Some((id, "EntityStore", entity_ids.contains(&id))),
+            ProjectileTarget::Terrain(id) => Some((
+                id,
+                "TerrainObjectStore",
+                sim.production.terrain_objects.contains_key(&id),
+            )),
+            ProjectileTarget::Cell { .. }
+            | ProjectileTarget::DummyCell
+            | ProjectileTarget::None => None,
+        } {
             require_resolved_reference(
-                entity_ids.contains(&target_id),
+                present,
                 "ProjectileStore",
                 projectile_id,
                 "target",
-                "EntityStore",
+                target_registry,
                 target_id,
             )?;
         }
@@ -4408,9 +4498,12 @@ mod tests {
         // 355 -> 356: the Foot navigation list and its loop flag.
         // 356 -> 357: no voxel HVA or OREGATH frame clock.
         // 357 -> 358: retained BuildingType TargetCoordOffset.
-        // 358 -> 359: retained Scenario countdown and caption.
-        // 359 -> 360: native sidebar cameo flash deadlines.
-        assert_eq!(super::SNAPSHOT_VERSION, 360);
+        // 358 -> 359: Tesla charger list, weapon latch and Foot intent.
+        // 359 -> 360: retained airstrike managers and aircraft relationships.
+        // 360 -> 361: retained radial launch settings and firing index.
+        // 361 -> 362: Terrain Bullet target identity and reference validation.
+        // 362 -> 363: retained Scenario countdown and sidebar cameo flash deadlines.
+        assert_eq!(super::SNAPSHOT_VERSION, 363);
     }
 
     #[test]
@@ -7633,6 +7726,194 @@ mod tests {
         }
     }
 
+    fn terrain_target_snapshot_fixture() -> (Simulation, crate::rules::ruleset::RuleSet, u64, u64) {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::combat::RAD_NO_ATTACKER;
+        use crate::sim::projectile::ProjectileTarget;
+        use crate::sim::terrain_object::{
+            TerrainObjectState, mark_terrain_occupation, mark_terrain_raw_occupation,
+        };
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=DUMMY\n[DUMMY]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\nWarhead=WH\n[SHOT]\nInviso=yes\n[WH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n[TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=10\nArmor=wood\nTemperateOccupationBits=7\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.session.map_width = 4;
+        sim.session.map_height = 4;
+        let mut terrain = flat_terrain(4, 4);
+        terrain.cell_mut(1, 1).unwrap().level = 2;
+        let tree_id = sim.allocate_stable_id();
+        let tree = TerrainObjectState::new(
+            tree_id,
+            sim.interner.intern("TREE01"),
+            (1, 1),
+            rules
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap(),
+            false,
+            Some(&terrain),
+        );
+        let coordinate = tree.world_coord();
+        mark_terrain_occupation(&tree, Some(&mut terrain));
+        mark_terrain_raw_occupation(
+            &mut sim.substrate.raw_cell_occupation,
+            tree.cell(),
+            tree.occupation_bits,
+        );
+        sim.production
+            .terrain_object_cells
+            .insert(tree.cell(), tree_id);
+        sim.production.terrain_objects.insert(tree_id, tree);
+        sim.resolved_terrain = Some(terrain);
+        assert!(sim.register_terrain_object(tree_id, Some(&rules)));
+
+        let projectile_id = sim.allocate_stable_id();
+        let mut spawn = gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::Terrain(tree_id));
+        spawn.initial_target_position = coordinate;
+        spawn.payload = crate::sim::projectile::ProjectilePayload::new(
+            1,
+            sim.interner.intern("WH"),
+            sim.interner.intern("GUN"),
+        );
+        sim.admit_projectile(projectile_id, spawn);
+        (sim, rules, tree_id, projectile_id)
+    }
+
+    #[test]
+    fn terrain_projectile_target_roundtrip_preserves_identity_coordinate_and_hash_kind() {
+        use crate::sim::projectile::ProjectileTarget;
+        let (mut sim, _, tree_id, projectile_id) = terrain_target_snapshot_fixture();
+        let coordinate = sim.production.terrain_objects[&tree_id].world_coord();
+        let terrain_hash = sim.state_hash();
+        sim.projectiles.get_mut(projectile_id).unwrap().target = ProjectileTarget::Entity(tree_id);
+        assert_ne!(
+            terrain_hash,
+            sim.state_hash(),
+            "pointer kinds cannot hash alike"
+        );
+        sim.projectiles.get_mut(projectile_id).unwrap().target = ProjectileTarget::Terrain(tree_id);
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "terrain-target", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(
+            restored.projectiles.get(projectile_id).unwrap().target,
+            ProjectileTarget::Terrain(tree_id)
+        );
+        assert_eq!(
+            restored.production.terrain_objects[&tree_id].world_coord(),
+            coordinate
+        );
+        assert_eq!(
+            restored
+                .projectiles
+                .get(projectile_id)
+                .unwrap()
+                .last_target_position,
+            coordinate
+        );
+        assert_eq!(
+            restored.production.terrain_object_cells.get(&(1, 1)),
+            Some(&tree_id)
+        );
+    }
+
+    #[test]
+    fn terrain_projectile_target_restore_rejects_missing_and_wrong_kind_references() {
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::projectile::ProjectileTarget;
+        for wrong_kind in [false, true] {
+            let (mut sim, _, _, projectile_id) = terrain_target_snapshot_fixture();
+            let target_id = if wrong_kind {
+                let id = sim.allocate_stable_id();
+                sim.substrate.entities.insert(GameEntity::test_default(
+                    id,
+                    "DUMMY",
+                    "Americans",
+                    2,
+                    2,
+                ));
+                sim.register_live_object(id);
+                id
+            } else {
+                9_999
+            };
+            sim.projectiles.get_mut(projectile_id).unwrap().target =
+                ProjectileTarget::Terrain(target_id);
+            let bytes = GameSnapshot::save(&sim, 0, 0, "bad-terrain-target", 0);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            assert_eq!(
+                restored.restore_after_snapshot_load(),
+                Err(SnapshotRestoreError::UnresolvedObjectReference {
+                    source_registry: "ProjectileStore",
+                    source_id: projectile_id,
+                    field: "target",
+                    target_registry: "TerrainObjectStore",
+                    target_id,
+                }),
+                "wrong kind={wrong_kind}"
+            );
+            assert_eq!(
+                restored.projectiles.get(projectile_id).unwrap().target,
+                ProjectileTarget::Terrain(target_id)
+            );
+        }
+    }
+
+    #[test]
+    fn terrain_projectile_target_cell_repair_survives_pending_delete_roundtrip() {
+        use crate::sim::combat::RAD_NO_ATTACKER;
+        use crate::sim::projectile::ProjectileTarget;
+        let (mut sim, rules, tree_id, projectile_id) = terrain_target_snapshot_fixture();
+        let coordinate = sim.production.terrain_objects[&tree_id].world_coord();
+        let warhead_id = sim.interner.intern("WH");
+        crate::sim::combat::world_receiver::apply_area_damage(
+            &mut sim,
+            &rules,
+            None,
+            coordinate,
+            10,
+            rules.warhead("WH").unwrap(),
+            (RAD_NO_ATTACKER, None, warhead_id),
+            crate::sim::world::FrameEffects::default(),
+        );
+        let cell_target = ProjectileTarget::Cell { rx: 1, ry: 1 };
+        assert_eq!(
+            sim.projectiles.get(projectile_id).unwrap().target,
+            cell_target
+        );
+        assert!(sim.substrate.pending_delete.contains_object(&tree_id));
+        assert!(!sim.production.terrain_object_cells.contains_key(&(1, 1)));
+        let bytes = GameSnapshot::save(&sim, 0, 0, "retired-terrain-target", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(
+            restored.projectiles.get(projectile_id).unwrap().target,
+            cell_target
+        );
+        assert!(restored.substrate.pending_delete.contains_object(&tree_id));
+        assert!(
+            !restored
+                .production
+                .terrain_object_cells
+                .contains_key(&(1, 1))
+        );
+        restored.flush_pending_delete();
+        assert!(!restored.production.terrain_objects.contains_key(&tree_id));
+        assert_eq!(
+            restored.projectiles.get(projectile_id).unwrap().target,
+            cell_target
+        );
+        let bytes = GameSnapshot::save(&restored, 0, 0, "deleted-terrain-target", 0);
+        GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim
+            .restore_after_snapshot_load()
+            .unwrap();
+    }
+
     fn gsi_17_03_reference_fixture() -> (Simulation, Gsi1703Ids) {
         use crate::sim::combat::TargetKind;
         use crate::sim::game_entity::GameEntity;
@@ -8318,7 +8599,7 @@ mod tests {
         let mut leaves = [
             MissionLeafState::unit_raw_for_test(1, 2, 3, 4),
             MissionLeafState::infantry_raw_for_test(5, 41),
-            MissionLeafState::aircraft_raw_for_test(6, 7, true),
+            MissionLeafState::aircraft_raw_for_test(6, 7),
             MissionLeafState::building_raw_for_test(8),
             MissionLeafState::unit_raw_for_test(9, 10, 11, 12),
             MissionLeafState::infantry_raw_for_test(13, -1),

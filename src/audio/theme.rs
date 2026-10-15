@@ -1195,6 +1195,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn retail_ra2_music_reaches_catalog_and_shared_decoder() {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;

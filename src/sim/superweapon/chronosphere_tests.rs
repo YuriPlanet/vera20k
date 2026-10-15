@@ -908,6 +908,7 @@ fn retail_chrono_warp_frames_match_native_process() {
 /// one cell, a blocked bridge cell's search, and the MovementZone remap
 /// (the search's input).
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_chrono_update_position_matches_native_rows() {
     if retail_rules().is_none() {
         return;

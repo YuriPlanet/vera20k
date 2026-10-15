@@ -935,11 +935,9 @@ impl Simulation {
             }
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).
-            if open_topped
-                && passenger_owner != unit_owner
-                && let Some(entity) = sim.substrate.entities.get_mut(passenger)
-            {
-                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+            if open_topped && passenger_owner != unit_owner {
+                let _ =
+                    sim.assign_target_represented(passenger, None, Some(rules), registry, effects);
             }
             // `0x00738130..0x0073813D`: Scatter(&EmptyCoord, 1, 0).
             if infantry {

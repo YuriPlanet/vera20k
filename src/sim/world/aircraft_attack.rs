@@ -225,10 +225,7 @@ impl Simulation {
             ),
             leaves_map: entity.is_mission_only(),
             human: self.owner_is_human(entity.owner()),
-            airstrike: entity
-                .mission_leaf
-                .as_aircraft()
-                .is_some_and(|leaf| leaf.airstrike_manager_present()),
+            airstrike: entity.airstrike_link().is_some(),
         };
         let visit = attack_mission::exit_visit(
             &facts,
@@ -284,8 +281,8 @@ impl attack_mission::ExitHost for WorldExit<'_> {
         }
     }
 
-    /// RESIDUAL: VERA has no Airstrike: no producer sets the leaf's `+0x294`
-    /// byte, so this is dormant.
+    /// 418CAD..418CB4: a linked plane with ammunition retreats when its
+    /// designated target has gone away. The manager link remains until removal.
     fn retreat(&mut self) {
         let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
         crate::sim::mission::authority::queue_entity_mission_deferred(

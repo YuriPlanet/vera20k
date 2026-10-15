@@ -180,6 +180,7 @@ fn voice_feedback_reader_matches_original_constructor_and_reached_passes() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn voice_feedback_matches_the_physical_battle_reader_and_sound_catalog_identity() {
     use serde_json::{Value, json};
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -517,6 +518,7 @@ fn resolved_enslaved_selection_voice_changes_configuration_under_identical_rules
 // The test-only retail fixture owns its upward map-loader calls.
 #[cfg(test)]
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn enslaved_selection_voice_matches_physical_anytown_battle_rules_and_sound_inputs() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {

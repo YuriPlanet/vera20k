@@ -1,5 +1,5 @@
 //! Original E1 class setter controls for the native response/Rescue consumer.
-//! Reciprocal+2A8 rows and unconsumed+68E/timer auxiliary words are excluded;
+//! Reciprocal+2A8 rows and unconsumed timer auxiliary words are excluded;
 //! this compares the represented ordinary class receiver, not the whole setter.
 
 use crate::map::entities::EntityCategory;
@@ -159,6 +159,9 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
             false,
         );
         actor.lifecycle.set_in_limbo_for_test(false);
+        actor.tesla_charger = crate::sim::tesla_charging::TeslaCharger::for_test(
+            before["byte68e"].as_u64().unwrap() != 0,
+        );
         let doing = before["doing"].as_i64().unwrap() as i32;
         actor
             .mission_leaf
@@ -343,6 +346,11 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
         let after = &row["after"];
         let actor = sim.substrate.entities.get(1).unwrap();
         let leaf = actor.mission_leaf.as_infantry().unwrap();
+        assert_eq!(
+            actor.tesla_charger.is_active(),
+            after["byte68e"].as_u64().unwrap() != 0,
+            "{name}: native Foot+68E through {consumer:?}",
+        );
         assert_eq!(
             leaf.doing(),
             after["doing"].as_i64().unwrap() as i32,

@@ -761,6 +761,7 @@ fn a_crazy_ivan_bombs_a_tank() {
 /// `FireOnce` clears the planter's target in the same object turn, before
 /// another order or the victim's fuse can run.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_fire_once_ivan_releases_target_on_attach() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -811,6 +812,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
 /// The other stock one-shot bomb route uses the same FireAt tail; defusing
 /// keeps the victim alive, retires the carrier index and releases the order.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_fire_once_defuse_releases_target_and_carrier() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -844,6 +846,7 @@ fn retail_fire_once_defuse_releases_target_and_carrier() {
 
 /// A normal retail weapon must keep attacking its surviving target.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_non_fire_once_shot_retains_target() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {

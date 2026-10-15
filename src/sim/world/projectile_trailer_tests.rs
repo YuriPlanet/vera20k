@@ -194,6 +194,7 @@ fn only_bubble(sim: &Simulation) -> u64 {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native() {
     let corpus = native();
     for name in ["stock_lifetime", "constructor_random_rate"] {

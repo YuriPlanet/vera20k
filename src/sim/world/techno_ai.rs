@@ -421,6 +421,7 @@ impl Simulation {
                 dummy: &shared_cell_dummy,
                 occupancy,
                 entities,
+                terrain_objects: &self.production.terrain_objects,
                 interner,
                 alliances: house_alliances,
                 overlays: overlay_grid,
@@ -440,10 +441,7 @@ impl Simulation {
                 .advance_after_head(
                     head,
                     binary_frame,
-                    |target_id| {
-                        collision_world
-                            .target_aim(crate::sim::projectile::ProjectileTarget::Entity(target_id))
-                    },
+                    |target, query| collision_world.target_coordinate(target, query),
                     terrain,
                     &shared_cell_dummy,
                     rules.map_or_else(
@@ -760,6 +758,16 @@ fn techno_ai_shell(
                 sim.update_building_absorb_anim(id, rules);
                 sim.update_building_storage_anims(id, rules);
             }
+            let airstrike_active = sim.airstrike_tint_active(id);
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                entity.building_art.capture_tint_sample(
+                    sim.session.binary_frame,
+                    entity.flashing.flashed(),
+                    entity.invulnerability.as_ref(),
+                    &entity.airstrike_tint,
+                    airstrike_active,
+                );
+            }
             building_missions::update_animation(sim, id, rules);
             // The ready check after UpdateAnimation (`0x0043FE27`).
             building_missions::ready_commence(sim, id, true);
@@ -889,6 +897,7 @@ fn techno_ai_shell(
                     ctx,
                     &mut outcome.bridge_state_changed,
                 );
+                sim.update_tesla_charge(id, rules);
                 // Building4401A3..4401AF: allegiance belongs to this object's
                 // AI tail, before repair/power and factory work. Earlier
                 // native returns admit only a live, nonzero-health building.
@@ -962,7 +971,7 @@ fn techno_ai_shell(
         // gives a zero flags word, which the class gate (`0x006F821A`) refuses
         // for every candidate; the scan's Scenario draw and timer remain.
         EntityCategory::Aircraft => {
-            drop_unsensed_cloaked_target_step(sim, id);
+            drop_unsensed_cloaked_target_step(sim, id, rules, ctx.effects);
             if let Some(rules) = rules
                 && !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None)
             {
@@ -1211,7 +1220,12 @@ fn self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// (`vt+0x32C` at `0x0070D460` has no function boundary in the database; the
 /// body reads the sensor count for the passed house at the object's own cell,
 /// and returns false for a null house.)
-fn drop_unsensed_cloaked_target_step(sim: &mut Simulation, id: u64) {
+fn drop_unsensed_cloaked_target_step(
+    sim: &mut Simulation,
+    id: u64,
+    rules: Option<&RuleSet>,
+    effects: FrameEffects<'_>,
+) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
@@ -1244,9 +1258,7 @@ fn drop_unsensed_cloaked_target_step(sim: &mut Simulation, id: u64) {
     {
         return;
     }
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-    }
+    let _ = sim.assign_target_represented(id, None, rules, None, effects);
 }
 
 /// Tick the common `+0xC4` per-mission AI counter once per object visit
@@ -1420,17 +1432,13 @@ fn berserk_step(
 /// curtained object's tint stage, whose stage 2 draws from the Scenario
 /// stream ([`InvulnerabilityState::update_tint`]).
 ///
-/// RESIDUAL: the next step, `TechnoClass::UpdateAirstrikeTint`
-/// (`0x0070E920`, called at `0x006F9EB6`), steps the airstrike tint of a
-/// building its own AirstrikeClass (`+0x294`) targets and makes the same
-/// Scenario `RandomRanged(-5, 5)` draw at that stage machine's stage 2 step.
-/// VERA has no AirstrikeClass (Boris' airstrike), so the draw is missing with
-/// it. Trigger: a building marked by Boris. Downstream: later Scenario draws
-/// shift.
+/// Next, UpdateAirstrikeTint70E920 (call6F9EB6) steps a marked building,
+/// consuming its jitter draw after the Iron draw on the same Scenario stream.
 ///
 /// [`InvulnerabilityState::update_tint`]: crate::sim::superweapon::invulnerability::InvulnerabilityState::update_tint
 fn iron_tint_step(sim: &mut Simulation, id: u64) {
     let frame = sim.session.binary_frame as i32;
+    let airstrike_active = sim.airstrike_tint_active(id);
     if let Some(curtain) = sim
         .substrate
         .entities
@@ -1438,6 +1446,11 @@ fn iron_tint_step(sim: &mut Simulation, id: u64) {
         .and_then(|entity| entity.invulnerability.as_mut())
     {
         curtain.update_tint(frame, &mut sim.scenario_rng);
+    }
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity
+            .airstrike_tint
+            .update_tint(frame, airstrike_active, &mut sim.scenario_rng);
     }
 }
 

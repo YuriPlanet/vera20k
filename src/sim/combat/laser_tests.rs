@@ -270,6 +270,77 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
 }
 
 #[test]
+fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
+    let corpus = native();
+    let row = corpus["laser_birth"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "production_main")
+        .unwrap();
+    let input = &row["input"];
+    let rules = fixture_rules(input);
+    let mut sim = Simulation::new();
+    sim.session.binary_frame = 200;
+    place(
+        &mut sim,
+        1,
+        "ATESLA",
+        EntityCategory::Structure,
+        xyz(&input["location"]),
+    );
+    place(
+        &mut sim,
+        2,
+        "GAPOWR",
+        EntityCategory::Structure,
+        xyz(&input["target_building"]["location"]),
+    );
+    let owner = sim.substrate.entities.get(1).unwrap().owner();
+    let from = ProjectileCoord::new(9000, 12000, 1000);
+    let birth = *laser::create(
+        &mut sim,
+        &rules,
+        1,
+        super::TargetKind::Entity(2).into(),
+        0,
+        rules.weapon("LaserProbe").unwrap(),
+        Some(from),
+    )
+    .unwrap();
+    assert_eq!(birth.from, from);
+    assert_eq!(birth.to, coordinate(&row["laser"]["target"]));
+    // SpawnLaser6FD2C4 skips the building adjustment for an explicit source;
+    // LaserDraw54FE60 defaults remain untouched without FireAt postprocessing.
+    assert_eq!(birth.z_adjust, 0);
+    assert_eq!((birth.width, birth.supported), (1, false));
+    assert_eq!(
+        birth.duration,
+        row["laser"]["duration"].as_i64().unwrap() as i32
+    );
+    assert_eq!(birth.color, LaserColor::House(owner));
+
+    for source in [None, Some(ProjectileCoord::new(0, 0, 0))] {
+        let birth = *laser::create(
+            &mut sim,
+            &rules,
+            1,
+            super::TargetKind::Entity(2).into(),
+            0,
+            rules.weapon("LaserProbe").unwrap(),
+            source,
+        )
+        .unwrap();
+        assert_eq!(birth.from, coordinate(&row["laser"]["source"]));
+        assert_eq!(
+            birth.z_adjust,
+            row["laser"]["z_adjust"].as_i64().unwrap() as i32
+        );
+        assert_eq!((birth.width, birth.supported), (1, false));
+    }
+}
+
+#[test]
 fn production_frame_orders_laser_update_before_delayed_support_birth() {
     let rules = fixture_rules(&json!({}));
     let mut sim = Simulation::new();

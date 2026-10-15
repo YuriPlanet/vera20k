@@ -24,6 +24,26 @@ impl DisplayLayer {
     pub(crate) const AIR: Self = Self(3);
     pub(crate) const TOP: Self = Self(4);
 
+    /// Base Object5F4260 after its virtual IsInAir query. Class-specific
+    /// locomotor/height overrides stay with their callers.
+    pub(crate) fn for_object(
+        in_air: bool,
+        height: impl FnOnce() -> i32,
+        cruise_height: i32,
+    ) -> Self {
+        if !in_air {
+            return Self::GROUND;
+        }
+        let height = height();
+        if height == 0 {
+            Self::GROUND
+        } else if height < cruise_height {
+            Self::AIR
+        } else {
+            Self::TOP
+        }
+    }
+
     pub(crate) fn from_index(index: u8) -> Option<Self> {
         (index < 5).then_some(Self(index))
     }

@@ -16,7 +16,7 @@ pub(crate) fn country_bit(index: CountryIdx) -> u32 {
 /// `ParentCountry=`, `HouseTypeClass+0x98`, which retail leaves at the type's
 /// own name) is `country_name`: an unknown name answers -1, whose low five
 /// bits make bit 31.
-pub(crate) fn house_country_bit(rules: &RuleSet, country_name: &str) -> u32 {
+pub fn house_country_bit(rules: &RuleSet, country_name: &str) -> u32 {
     rules
         .trigger_house_type_index(country_name)
         .map_or(1 << 31, country_bit)
@@ -73,7 +73,8 @@ pub(crate) fn owner_allows(candidate: &ObjectType, country_bit: u32, rules: &Rul
 /// gamemd-derived: `HouseClass__FirstBuildableFromArray @ 0x005051E0`.
 /// `TechnoTypeClass` construction at `0x00711193` initializes Owner to zero;
 /// reader block `0x007149E1..0x007149F5` preserves that missing-key default.
-pub(crate) fn candidate_allowed(
+/// sim-bench also asks it which of a side's types a country may own.
+pub fn candidate_allowed(
     candidate: &ObjectType,
     country_bit: u32,
     side_index: u8,

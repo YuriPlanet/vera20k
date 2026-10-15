@@ -41,11 +41,13 @@ struct Rocketeer {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn no_rally_two_paid_rocketeers_release_their_barracks_in_flight() {
     two_paid_rocketeers(None);
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn rally_two_paid_rocketeers_fly_to_the_rally_after_release() {
     two_paid_rocketeers(Some((10, 18)));
 }

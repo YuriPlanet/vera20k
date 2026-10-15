@@ -133,55 +133,22 @@ impl Simulation {
     /// `ParticleSystemClass::AI_Spark @ 0x0062E840`'s burst half and
     /// `particles/spark.rs` the per-particle kernel. Railgun is still refused.
     ///
-    /// The shared FireAt electric-bolt producer creates one
-    /// `[CombatDamage] DefaultSparkSystem` per
-    /// `IsElectricBolt=yes` discharge at the bolt's target endpoint, matching
-    /// `EBolt::Init @ 0x004C2A60`'s construction at `0x004C2B30` — no owner
-    /// house, no attachment, handle discarded, no constructor RNG consumed.
+    /// The shared `combat::electric_bolt::create` owner creates one
+    /// `[CombatDamage] DefaultSparkSystem` at the bolt's target endpoint,
+    /// matching `EBolt::Init @ 0x004C2A60`'s construction at `0x004C2B30`:
+    /// no owner house, no attachment, handle discarded, no constructor RNG.
     /// Both system and particle constructors retain their AbstractClass IDs.
-    /// That is the
-    /// most frequent of native's five Spark producers by a wide margin: every
-    /// Tesla Coil, Tesla Trooper, Tesla Tank, `AssaultBolt`, `EiffelBolt`,
-    /// `CRElectricBolt` shot. It does NOT cover shrapnel bolts, which reach
-    /// `CreateElectricBolt` through a different seam — see the residual below.
+    /// Ordinary FireAt and SpawnShrapnel call this same owner. The latter
+    /// reaches it once per child whose weapon has `IsElectricBolt`, including
+    /// retail Electricbounce -> TeslaFragment on elite Tesla discharges.
     ///
-    /// RESIDUAL (GSI-05.13) — the shrapnel seam and one other native
-    /// producer are not wired. Their reachability is settled rather than
-    /// assumed:
-    /// - `BulletClass::SpawnShrapnel @ 0x0046A310` calls `CreateElectricBolt`
-    ///   once per shrapnel bolt when the CHILD weapon carries `IsElectricBolt`.
-    ///   REACHABLE: `[TankBoltE]` and `[ElectricBoltE]` — the elite Tesla Tank
-    ///   and elite Tesla Coil weapons — use `Projectile=Electricbounce`, whose
-    ///   `ShrapnelWeapon=TeslaFragment, ShrapnelCount=2`, and
-    ///   `[TeslaFragment] IsElectricBolt=true`. So an elite Tesla shot throws
-    ///   two more spark systems this engine does not create.
-    ///   (`[ElectricFragment]` also sets the flag but is named by no stock
-    ///   `ShrapnelWeapon=`, so it is dead and deliberately not listed as a
-    ///   trigger.) Ordinary FireAt now calls `combat::electric_bolt::fired`
-    ///   synchronously; `emit_projectile_shrapnel` still pushes only
-    ///   `projectile_spawns`, so its electric birth remains a separate caller
-    ///   to integrate through the shared effect owner.
-    /// - `TechnoClass::Fire_At @ 0x006FF1EC`, on `WeaponType+0x12A`
-    ///   (`UseSparkParticles`), spawning `WeaponType+0x11C`
-    ///   (`AttachedParticleSystem`) into `Techno+0x308`, one at a time.
-    ///   REACHABLE: stock authors it once, on `[RepairBullet]`
-    ///   (`AttachedParticleSystem=WeldingSys`), carried by the IFV's
-    ///   `Weapon2`/`EliteWeapon2` — the repair IFV's welding sparks.
-    ///
-    /// - Trigger: an elite Tesla shot, or repairing with an IFV. (The parasite
-    ///   bite's `DefaultSparkSystem` at `0x0062A103` is wired in
-    ///   `combat/parasite.rs`, the Mastermind overload's at `0x00471C15` in
-    ///   `capture_manager.rs`, and an offline Robot Tank's at `0x007361A4`
-    ///   (`Techno+0x1C8`, not a deploy) in `powered_unit.rs`.)
-    /// - Player effect: neither throws sparks. The IFV repair arm is the
-    ///   one a player watches — a repair beam with no welding shower.
-    /// - Frequency: the shrapnel arm is the common one — it follows every
-    ///   elite Tesla Tank and elite Tesla Coil discharge, and veterancy makes
-    ///   those ordinary in a long Soviet game. The IFV arm follows every repair
-    ///   tick.
-    /// - Downstream risk: the `Fire_At` arm needs the `Techno+0x308` slot and
-    ///   its clearing writer, which is UNCHECKED — the offset is shared across
-    ///   several classes and the search for the writer was not settled.
+    /// RESIDUAL (GSI-05.13): FireAt6FF1EC's `UseSparkParticles` arm remains
+    /// unwired. It constructs `AttachedParticleSystem` into Techno+0x308,
+    /// one at a time. Retail RepairBullet supplies WeldingSys through the
+    /// repair IFV's Weapon2/EliteWeapon2, so repair ticks lack their welding
+    /// shower. The +0x308 clearing writer/lifecycle still needs tracing.
+    /// Other Spark producers are wired through combat/parasite.rs
+    /// (62A103), capture_manager.rs (471C15), and powered_unit.rs (7361A4).
     ///
     /// NOT_APPLICABLE_PROVEN, and recorded so it is not re-attempted: the
     /// `DamageParticleSystems=` Spark producer in

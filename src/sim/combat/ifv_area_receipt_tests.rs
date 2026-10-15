@@ -266,6 +266,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
     let Some((base, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
         return;

@@ -514,10 +514,10 @@ fn ready_to_commence_answer(
 /// The five-mission filter `AircraftClass::Queue_Mission @ 0x0041BA90` and
 /// `Assign_Mission @ 0x0041B9F0` share: current `+0xAC`, and no Airstrike (`+0x294`).
 fn aircraft_allows(entity: &crate::sim::game_entity::GameEntity, requested: MissionId) -> bool {
-    let Some(leaf) = entity.mission_leaf.as_aircraft() else {
+    let Some(_) = entity.mission_leaf.as_aircraft() else {
         return true;
     };
-    leaf.airstrike_manager_present()
+    entity.airstrike_link().is_some()
         || !AIRCRAFT_PROTECTED.contains(&entity.mission.current())
         || AIRCRAFT_PROTECTED.contains(&requested)
 }
@@ -1214,7 +1214,7 @@ mod tests {
     #[test]
     fn mission_authority_assign_applies_aircraft_gate_before_writes() {
         let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
-        aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, false);
+        aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
         let before = aircraft.mission;
         let mut sim = sim_with(aircraft);
 
@@ -1326,7 +1326,7 @@ mod tests {
     fn aircraft_mission_authority_queue_gate_covers_manager_unknown_and_none() {
         for requested in [MissionId::NONE, MissionId::from_raw(0x1234_5678)] {
             let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
-            aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, false);
+            aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
             let before_mission = aircraft.mission;
             let before_leaf = aircraft.mission_leaf;
             let mut sim = sim_with(aircraft);
@@ -1342,7 +1342,7 @@ mod tests {
         }
 
         let mut protected_request = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
-        protected_request.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, false);
+        protected_request.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
         let mut sim = sim_with(protected_request);
         sim.mission_queue_exact(
             1,
@@ -1358,7 +1358,8 @@ mod tests {
         );
 
         let mut managed = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
-        managed.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, true);
+        managed.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
+        managed.airstrike.set_test_link(Some(999));
         let unknown = MissionId::from_raw(0x1234_5678);
         let mut sim = sim_with(managed);
         sim.mission_queue_exact(1, unknown, 0, 10, &TestReadyProvider::ready(false))
@@ -1409,7 +1410,7 @@ mod tests {
             (AIRCRAFT_ACTION_EXCEPTION, MissionId::from_raw(0x1a), 9),
         ] {
             let mut aircraft = entity(EntityCategory::Aircraft, old_current);
-            aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, false);
+            aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
             let mut sim = sim_with(aircraft);
             let readiness = TestReadyProvider::ready(true);
 
@@ -1430,7 +1431,7 @@ mod tests {
     #[test]
     fn aircraft_mission_authority_commence_hook_runs_even_with_empty_queue() {
         let mut aircraft = entity(EntityCategory::Aircraft, ATTACK);
-        aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, false);
+        aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
         let mut sim = sim_with(aircraft);
 
         assert!(!sim.mission_commence_exact(1, 10).unwrap());
@@ -1976,7 +1977,7 @@ mod tests {
     #[test]
     fn blocked_aircraft_override_has_empty_trace_and_byte_identical_state() {
         let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
-        aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1, false);
+        aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
         aircraft
             .attack_target
             .set_for_test(Some(TargetKind::Entity(7)));

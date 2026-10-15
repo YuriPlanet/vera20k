@@ -802,18 +802,18 @@ fn airborne_ids_in_spatial_order(
     terrain: &ResolvedTerrainGrid,
 ) -> Vec<u64> {
     let (map_width, map_height) = (terrain.width(), terrain.height());
-    let mut buckets: BTreeMap<u16, Vec<(u64, u64)>> = BTreeMap::new();
-    for entity in entities
-        .values()
-        .filter(|entity| entity.air_spatial_bucket().is_some())
-    {
+    // The store yields the tracked entities in enter order, each bucket's
+    // vector order.
+    let mut buckets: BTreeMap<u16, Vec<u64>> = BTreeMap::new();
+    for entity in entities.airborne() {
         buckets
-            .entry(entity.air_spatial_bucket().expect("filtered above"))
+            .entry(
+                entity
+                    .air_spatial_bucket()
+                    .expect("a tracked entity has a bucket"),
+            )
             .or_default()
-            .push((entity.air_spatial_enter_order(), entity.stable_id()));
-    }
-    for entries in buckets.values_mut() {
-        entries.sort_unstable();
+            .push(entity.stable_id());
     }
 
     let mut ordered = Vec::new();
@@ -821,7 +821,7 @@ fn airborne_ids_in_spatial_order(
         air_spatial_query_bucket_order(impact_rx, impact_ry, radius_cells, map_width, map_height)
     {
         if let Some(entries) = buckets.get(&bucket) {
-            ordered.extend(entries.iter().map(|&(_, stable_id)| stable_id));
+            ordered.extend_from_slice(entries);
         }
     }
     ordered

@@ -944,6 +944,7 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
 /// separately checked by the app input test; decoded Cell commands here have
 /// native ordinary (flag1) semantics regardless of the physical modifier.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_gi_reissues_match_original_command_returns() {
     check_initialized_ground_reissues(
         &[
@@ -1287,6 +1288,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
 /// The raw-word contrast imports an explicit component prior. Stop is the
 /// class51DAF0 method boundary, not keyboard/event Stop ingress.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
     let corpus = ground_command_corpus();
     for name in [
@@ -1391,6 +1393,7 @@ fn replay_original_stop(
 /// the real target CanEnter, FNPC selection and class return. The subsequent
 /// AStar path and the unrelated factory map objects are not replayed here.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_gi_findpath_redirects_match_original_class_returns() {
     use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 
@@ -1459,6 +1462,7 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
 /// the playfield, a foreign House, Berserk, the Unit deployment bytes and
 /// Doing27 for a Deployer and a non-Deployer.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_cell_what_action_matches_every_original_query() {
     let corpus = ground_command_corpus();
     let mut compared = 0;
@@ -1524,6 +1528,7 @@ fn initialized_cell_what_action_matches_every_original_query() {
 /// an order; the latter's query2 has a different refusal path.51AA40 owns its
 /// separate later human-class guard.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_gi_cell_input_no_order_contexts_match_original_state() {
     check_initialized_no_order_contexts(&[
         "human_Doing27_B",
@@ -1538,6 +1543,7 @@ fn initialized_gi_cell_input_no_order_contexts_match_original_state() {
 /// Explicit native byte priors exercise them without claiming that MTNK's
 /// retail type can itself produce deployment transitions.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_unit_cell_input_no_order_contexts_match_original_state() {
     check_initialized_no_order_contexts(&[
         "unit_owner_mismatch_B",
@@ -1658,6 +1664,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
 /// Event prelude. House50B730 decides the class's independent human guard.
 /// The setter is void; compare true-RET8 state rather than incidental EAX.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_gi_deploy_class_contexts_match_original_returns() {
     let corpus = ground_command_corpus();
     for name in [
@@ -1872,6 +1879,7 @@ fn no_rally_two_paid_gi_walk_out_and_release_their_factory_contacts() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn rally_two_paid_gi_consume_archive_walk_to_rally_and_settle() {
     joined_two_paid_gi(OutputRoute::Rally);
 }

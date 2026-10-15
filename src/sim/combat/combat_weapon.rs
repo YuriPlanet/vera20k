@@ -932,14 +932,6 @@ fn open_transport_weapon(in_open_transport: bool, obj: &ObjectType) -> Option<i3
 ///
 /// RESIDUAL (GSI-08.02, row 122) — inputs whose native state VERA does not
 /// yet represent are pinned at their constructor value:
-/// - `is_overpowered_building` = false (`BuildingClass+0x661`, writer
-///   `BuildingClass::Update 0x0044015B`). This is a DEFERRAL, not an
-///   approximation: false is the genuine constructor state, so VERA behaves as
-///   a game in which no coil is ever charged rather than guessing a charge
-///   model. Trigger: a player deliberately parking three Tesla Troopers on an
-///   `Overpowerable=true` building (stock: TESLA, CAEAST01/02, CAPARS01), or
-///   one while the house is at full power ratio; effect: the coil never fires
-///   `OPCoilBolt`; frequency: only that micro.
 /// - `aircraft_spawn_collision` = false (`AircraftClass+0x6CA`): the kamikaze
 ///   tracker's membership (`sim::kamikaze`), which Push sets only on a
 ///   `MissileSpawn=` child (`0x0054E47D`; any other child crashes). Dormant:
@@ -969,7 +961,7 @@ pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerF
         drain_target_active: entity.drain.target().is_some(),
         // `MissionClass::GetCurrentMission @ 0x005B3040`: current, else queued.
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
-        is_overpowered_building: false,
+        is_overpowered_building: entity.tesla_charge.is_overpowered(),
         aircraft_spawn_collision: false,
     }
 }

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Bullet468090 orientation and46B0C0 packed ZBOMB raster through754510; stop before490B90. Fourteen synthetic velocity boundaries and eight native Vertical flight states.",
+  "assumptions": [
+    "Original x87 0E7F, camera startup and light/viewer initialization. Immutable retail ZBOMB.VXL/HVA and VOXELS.VPL inputs; one frame and all sections.",
+    "Asset metadata identifies local retail inputs; no retail VXL/HVA/VPL file bytes are serialized. Rust consumers independently load those files through the existing retail-assets owner and check their recorded length/SHA256.",
+    "Physical weapon/Bullet readers establish BlimpBomb/BlimpBombE and BlimpBombP flags, speed and acceleration. Existing ArtStateReader supplies the prior ART cache invalidation and skips voxel asset binding; raster owner independently executes VXL/HVA loaders on physical bytes.",
+    "Each admitted layer records raw keys, native Speed reader result before7729F0 and processed result afterward. AudioVisual.Gravity is read through66B3C4 before the postpass; current retail rawSpeed20 reads51 and postprocesses52 at Gravity6/Range384. Vertical motion consumes Acceleration1 and retained maximum52; no gravity is applied in that branch.",
+    "Source[3200,3200,1000] and target[3456,3200,0] are supplied coordinates, not an executed ZEP locomotor/aim producer. Shared original distance/GetSpeed/FireAt-tail/Vertical blocks supply velocities. Admitted commits are supplied between Vertical visits; no full AI/collision/Logic claim.",
+    "Fixed binary64 inputs bracket original atan-table heading/pitch transitions. All expected words, quantized steps, matrices, normal pages and raster pixels are produced by original instructions.",
+    "Type Color1 is supplied only for observed pointer selection after raster. Generic native474A90 current0/missing->LightGold1 is separately consumed in campaign_start_houses.json. This corpus does not prove Bullet Color reads, RGB565, full surface clipping, GPU or whole-scene parity."
+  ],
+  "substitutions": [
+    "Immutable file vtable IO and bounded allocation, as shared raster owner.",
+    "Inherited physical reader and shared FireAt-tail supplied virtual/world boundaries. No numeric/rotation/raster leaf replaced."
+  ],
+  "entry_points": {
+    "bullet_draw": "0x00468090",
+    "voxel_draw": "0x0046B0C0",
+    "raster": "0x00754510",
+    "stop_before_convert": "0x0046B21A",
+    "vertical_begin": "0x004671E0",
+    "vertical_end": "0x00467334"
+  },
+  "replay_command": "python -m tools.voxel_oracle.raster_fixtures --bullet",
+  "payload_sha256": "7153aa737e24bcd2a241f0527cc8cc5580a5b1f0f6f638f0b1669182ec2fc822"
+}

@@ -995,8 +995,26 @@ fn classify_foot_entry<'a>(
             MovementLayer::Ground,
         )
     };
+    // Unit 0x0073F530..0x0073F56F, Infantry 0x0051C259..0x0051C298: a
+    // parasite owner (`+0x69C`) holding a victim (`+0x28`) is admitted (0)
+    // at the first object, after itself, whose map cell (vt+0x1B8,
+    // 0x0041BEA0) is the victim's. A released owner unlimbos at its victim.
+    let victim_cell = e
+        .parasite
+        .class()
+        .and_then(|state| state.victim())
+        .and_then(|victim| live.sim.substrate.entities.get(victim))
+        .map(|victim| {
+            crate::sim::movement::coord_cell(
+                crate::sim::movement::ground_pose::position_world_coord(&victim.position),
+            )
+        });
     for member in target.objects(live, p, layer) {
         let CellObjectMember::Entity(blocker_id) = member else {
+            // A terrain object's map cell is the cell that lists it.
+            if victim_cell == Some(p) {
+                return Ok(0);
+            }
             if !infantry {
                 // Unit73FBAC calls the target-sensitive +2E4 selector. Terrain
                 // has no Techno bit and is not a Cell (746CD0 ->6F3330).
@@ -1029,6 +1047,9 @@ fn classify_foot_entry<'a>(
         let (b, blocker) = live
             .blocker(blocker_id)
             .ok_or("repair list has retired blocker")?;
+        if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position)) {
+            return Ok(0);
+        }
         let bt = mover
             .object_type(live, b.type_ref)
             .ok_or("repair list missing blocker type")?;

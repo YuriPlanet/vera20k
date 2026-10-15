@@ -1,0 +1,3648 @@
+{
+  "histories": [
+    {
+      "air_duration": 100000,
+      "frames": 230,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": null,
+      "name": "air_long",
+      "operations": {},
+      "outer_final": [
+        1000,
+        100000
+      ],
+      "raw_rng_updates": 2,
+      "rng_after": "0000000002000000690000006ecdf0a7a9a5488a1ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 2,
+              "value": 4
+            }
+          ]
+        },
+        {
+          "air": [
+            4,
+            1034,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 34,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1098,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 98,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1162,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 162,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1226,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 226,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 319,
+      "frames": 325,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": null,
+      "name": "air_threshold_below",
+      "operations": {},
+      "outer_final": [
+        1000,
+        319
+      ],
+      "raw_rng_updates": 2,
+      "rng_after": "0000000002000000690000006ecdf0a7a9a5488a1ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 2,
+              "value": 4
+            }
+          ]
+        },
+        {
+          "air": [
+            4,
+            1034,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 34,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1098,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 98,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            6,
+            1098,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 162,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            7,
+            1289,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 289,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            8,
+            1295,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 295,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            9,
+            1299,
+            20
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 299,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            10,
+            1299,
+            20
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 319,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 320,
+      "frames": 326,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": null,
+      "name": "air_threshold_at",
+      "operations": {},
+      "outer_final": [
+        1000,
+        320
+      ],
+      "raw_rng_updates": 2,
+      "rng_after": "0000000002000000690000006ecdf0a7a9a5488a1ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 2,
+              "value": 4
+            }
+          ]
+        },
+        {
+          "air": [
+            4,
+            1034,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 34,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1098,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 98,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1162,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 162,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1226,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 226,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            6,
+            1226,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 290,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            7,
+            1291,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 291,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            8,
+            1297,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 297,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            9,
+            1301,
+            20
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 301,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            10,
+            1301,
+            20
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 321,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 100000,
+      "frames": 180,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": 750,
+      "name": "simultaneous",
+      "operations": {},
+      "outer_final": [
+        1000,
+        100000
+      ],
+      "raw_rng_updates": 3,
+      "rng_after": "00000000030000006a0000006ecdf0a7a9a5488a633945f5a8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            1,
+            1000,
+            6
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            2,
+            1006,
+            4
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            18
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ],
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            3,
+            1010,
+            24
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "iron",
+              "raw_updates": 2,
+              "value": 4
+            },
+            {
+              "phase": "airstrike",
+              "raw_updates": 1,
+              "value": -2
+            }
+          ]
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            3,
+            1010,
+            24
+          ],
+          "offset": 28,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1034,
+            8
+          ],
+          "offset": 34,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1042,
+            16
+          ],
+          "offset": 42,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1058,
+            8
+          ],
+          "offset": 58,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1066,
+            16
+          ],
+          "offset": 66,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1082,
+            8
+          ],
+          "offset": 82,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1028,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1090,
+            16
+          ],
+          "offset": 90,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1092,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1090,
+            16
+          ],
+          "offset": 92,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1092,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1106,
+            8
+          ],
+          "offset": 106,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1092,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1114,
+            16
+          ],
+          "offset": 114,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1092,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1130,
+            8
+          ],
+          "offset": 130,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1092,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1138,
+            16
+          ],
+          "offset": 138,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1092,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1154,
+            8
+          ],
+          "offset": 154,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1156,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1154,
+            8
+          ],
+          "offset": 156,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1156,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1162,
+            16
+          ],
+          "offset": 162,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1156,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1178,
+            8
+          ],
+          "offset": 178,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 100000,
+      "frames": 180,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": 750,
+      "name": "simultaneous_seed3",
+      "operations": {},
+      "outer_final": [
+        1000,
+        100000
+      ],
+      "raw_rng_updates": 2,
+      "rng_after": "000000000200000069000000415014cd22cd53bd390380c1fd4a9c91d3c1e015a06f25a5684a65a82aba19d732d547ae5f145dded8f8bc594b43dcc1e05e8905c8a54426ab1a2ee47b0ed23defd4cec2b5e1fc888fedcdb02b60233bdfbab33d25a4e912de5da4b8973d326e3210dfa42eb691783090f1b35afd034481fc36d023c159981a45bb95c29327c4911dbb7eec0ef1cfa8b20efc562c8e71740fd30f92ef1ef964341d8ee61c80144b2f3a732a041d81a91294869ba617fabbf3d3a23a4a6401cfae1f5405e66ef4a8696433fcd21564f8f1bebdf703ca960543da3fcd0a96f407954bb3d3e3014f47187ae5973c3c796e55d937762a3307e2158c2a8c07ece72324081170f15fb2e30bad255f4e8c4178a6e8059034b501d700e56ed1107fb65d6ec52fdc289f1f85f6a19100c33d60408708e9c8a2bbbfd8985727434936b4c3db163b41b9fb3ca86c2ef3fb985805bb1cce1a7b0e17e9bad38babdfbb6bdd81a29ebe9ae4c925cb1fcd7997e7d4826c1833d0470911fc2f40f951f8e37c1db0820f4a5baec15b58022952c8fc8a8bf3e308ae70df338f13facfa5616c30489d85e3d009e12bfa370a21e3ca56195bb9550033b557cabc16b4fafacdbd619dc96ad2b3a4cf62d9f05c14a5974c0214f9200245fe0e5d9be606c5f67d351d8f769b7a5c7015a190d34ef236c31ac6d59797b451cb866babc97dd1034f51ab806676d09dad40def2c963e285150f141531667508badff77fc09cc09c8d536bd35d4c77bbcaa27f4a0d611cb74fb337a3206f36c821e095e2ba18e439f5db439614398d0e4ef0848675c898d0ee301f9996fefce4d1b6eba5b5daf869408398920f960943b8042f46acb74bcb955ec3fc08c9d2bdda83663cfbc81e9b574903882bdcf8a27a70cd0a397cd1f549c8a7d0f22d93814d94173afc34eb436f0728bfd57e18ad09134bd26945b5b8f20114e76d9baf74a86ba433b54451505a9d01f097eb35cc785564a158950e240e438a33cda9c46212540d5bfe385d4e56c7bd037b459f5494c4d59f080183bbf81698b379374be1bc6d89445e8211e71faf06492b2954ccdafda383b36d186bf2af9c34aa37ac8daf1d89fc3fea3b5e126580aa0002c3079c791b4ba2e0d98736e36517ecfd62cf0d37b7b0430acef28e81ecd2a9feb791bdb3addc72d8c46eb4dcdd26154d8c267f5cf498c8caa6c3ddb6ad1f1f3498e3b1717b4b7b13b71ab0ffd5fa5343cbf06b48fc7a868befdb023bc81d3bb44fbd1f4893ad421c1d533ed1a98bb40d48b163e166162982211a68e7a5ffc77b0644f6b5a619d89dae8284e2943c94f2ab71073b9fee4606b757b5fcce6e8ec219051ef3588f94864d3f340c5eaff22abbd2893651bc3a7d677801ca9683382fb6fd83bee9de9e6ae040d85190c5",
+      "seed": 3,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            1,
+            1000,
+            6
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            2,
+            1006,
+            4
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            17
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ],
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            3,
+            1010,
+            16
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "iron",
+              "raw_updates": 1,
+              "value": -4
+            },
+            {
+              "phase": "airstrike",
+              "raw_updates": 1,
+              "value": -3
+            }
+          ]
+        },
+        {
+          "air": [
+            3,
+            1010,
+            17
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1026,
+            8
+          ],
+          "offset": 26,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1027,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1026,
+            8
+          ],
+          "offset": 27,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1027,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1034,
+            16
+          ],
+          "offset": 34,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1027,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1050,
+            8
+          ],
+          "offset": 50,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1027,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1058,
+            16
+          ],
+          "offset": 58,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1027,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1074,
+            8
+          ],
+          "offset": 74,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1027,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1082,
+            16
+          ],
+          "offset": 82,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1082,
+            16
+          ],
+          "offset": 91,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1098,
+            8
+          ],
+          "offset": 98,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1106,
+            16
+          ],
+          "offset": 106,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1122,
+            8
+          ],
+          "offset": 122,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1130,
+            16
+          ],
+          "offset": 130,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1146,
+            8
+          ],
+          "offset": 146,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1091,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1154,
+            16
+          ],
+          "offset": 154,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1155,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1154,
+            16
+          ],
+          "offset": 155,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1155,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            4,
+            1170,
+            8
+          ],
+          "offset": 170,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1155,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            5,
+            1178,
+            16
+          ],
+          "offset": 178,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 100000,
+      "frames": 80,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": null,
+      "name": "marker_clear_restore",
+      "operations": {
+        "12": [
+          "clear_marker"
+        ],
+        "20": [
+          "restore_marker"
+        ]
+      },
+      "outer_final": [
+        1000,
+        100000
+      ],
+      "raw_rng_updates": 3,
+      "rng_after": "00000000030000006a0000006ecdf0a7a9a5488a633945f5a8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 2,
+              "value": 4
+            }
+          ]
+        },
+        {
+          "air": [
+            0,
+            1010,
+            24
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 12,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            1,
+            1020,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 20,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1026,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 26,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1030,
+            18
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 30,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 1,
+              "value": -2
+            }
+          ]
+        },
+        {
+          "air": [
+            4,
+            1048,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 48,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 100000,
+      "frames": 80,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": null,
+      "name": "other_target_restore",
+      "operations": {
+        "12": [
+          "other_target"
+        ],
+        "20": [
+          "self_target"
+        ]
+      },
+      "outer_final": [
+        1000,
+        100000
+      ],
+      "raw_rng_updates": 3,
+      "rng_after": "00000000030000006a0000006ecdf0a7a9a5488a633945f5a8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 2,
+              "value": 4
+            }
+          ]
+        },
+        {
+          "air": [
+            0,
+            1010,
+            24
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 12,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            1,
+            1020,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 20,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1026,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 26,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1030,
+            18
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 30,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 1,
+              "value": -2
+            }
+          ]
+        },
+        {
+          "air": [
+            4,
+            1048,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 48,
+          "returned_draws": []
+        }
+      ]
+    },
+    {
+      "air_duration": 100000,
+      "frames": 200,
+      "initial": {
+        "air": [
+          0,
+          -1,
+          0
+        ],
+        "iron": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "iron_duration": null,
+      "name": "outer_stop",
+      "operations": {
+        "12": [
+          "stop_outer"
+        ]
+      },
+      "outer_final": [
+        1012,
+        0
+      ],
+      "raw_rng_updates": 2,
+      "rng_after": "0000000002000000690000006ecdf0a7a9a5488a1ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+      "seed": 7,
+      "start": 1000,
+      "steps": [
+        {
+          "air": [
+            1,
+            1000,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 0,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            2,
+            1006,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 6,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [
+            [
+              "draw",
+              536,
+              -5,
+              5
+            ]
+          ],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 10,
+          "returned_draws": [
+            {
+              "phase": "airstrike",
+              "raw_updates": 2,
+              "value": 4
+            }
+          ]
+        },
+        {
+          "air": [
+            3,
+            1010,
+            24
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 12,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            4,
+            1034,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 34,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            5,
+            1098,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 98,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            6,
+            1098,
+            64
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 162,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            7,
+            1163,
+            6
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 163,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            8,
+            1169,
+            4
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 169,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            9,
+            1173,
+            20
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 173,
+          "returned_draws": []
+        },
+        {
+          "air": [
+            10,
+            1173,
+            20
+          ],
+          "draws": [],
+          "iron": [
+            0,
+            -1,
+            0
+          ],
+          "offset": 193,
+          "returned_draws": []
+        }
+      ]
+    }
+  ],
+  "inputs": [
+    0,
+    1,
+    199,
+    255,
+    256,
+    500,
+    999,
+    1000,
+    1001,
+    1234,
+    1500,
+    1999,
+    2000,
+    2001,
+    4000,
+    -1,
+    -256,
+    -1000,
+    4194304,
+    2147483647,
+    -2147483648
+  ],
+  "intensities": [
+    [
+      0,
+      0,
+      0,
+      0,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2001,
+        4000,
+        -1,
+        -256,
+        -1000,
+        4194304,
+        2147483647,
+        -2147483648
+      ]
+    ],
+    [
+      3,
+      24,
+      0,
+      0,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      0,
+      0,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      1,
+      6,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2000,
+        2000,
+        -1,
+        -256,
+        -1000,
+        2000,
+        -1,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      1,
+      6,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      1,
+      6,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      1,
+      1,
+      [
+        0,
+        1,
+        364,
+        467,
+        469,
+        916,
+        1830,
+        1832,
+        1833,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -469,
+        -1833,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      3,
+      24,
+      1,
+      1,
+      [
+        0,
+        3,
+        859,
+        1101,
+        1106,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6,
+        -1107,
+        -4324,
+        2000,
+        -6,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      1,
+      1,
+      [
+        0,
+        0,
+        71,
+        91,
+        93,
+        181,
+        364,
+        364,
+        364,
+        448,
+        545,
+        729,
+        729,
+        729,
+        1458,
+        -2,
+        -94,
+        -367,
+        2000,
+        2000,
+        2000
+      ]
+    ],
+    [
+      0,
+      0,
+      2,
+      4,
+      [
+        0,
+        2,
+        398,
+        510,
+        512,
+        1000,
+        1998,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -512,
+        -2000,
+        -8388608,
+        -2,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      2,
+      4,
+      [
+        0,
+        4,
+        938,
+        1202,
+        1208,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6,
+        -1208,
+        -4720,
+        2000,
+        -6,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      2,
+      4,
+      [
+        0,
+        0,
+        78,
+        100,
+        102,
+        198,
+        398,
+        398,
+        398,
+        490,
+        596,
+        796,
+        796,
+        796,
+        1592,
+        -2,
+        -102,
+        -400,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      0,
+      0,
+      3,
+      24,
+      [
+        0,
+        2,
+        437,
+        560,
+        563,
+        1099,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -563,
+        -2200,
+        -7553024,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      3,
+      24,
+      3,
+      24,
+      [
+        0,
+        4,
+        1031,
+        1321,
+        1328,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -7,
+        -1329,
+        -5191,
+        2000,
+        -7,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      3,
+      24,
+      [
+        0,
+        0,
+        85,
+        109,
+        112,
+        217,
+        437,
+        437,
+        437,
+        538,
+        655,
+        875,
+        875,
+        875,
+        1750,
+        -3,
+        -113,
+        -440,
+        2000,
+        2000,
+        -1671168
+      ]
+    ],
+    [
+      0,
+      0,
+      3,
+      0,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2000,
+        2000,
+        -1,
+        -256,
+        -1000,
+        2000,
+        -1,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      3,
+      0,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      3,
+      0,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      4,
+      64,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2000,
+        2000,
+        -1,
+        -256,
+        -1000,
+        2000,
+        -1,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      4,
+      64,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      4,
+      64,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      4,
+      1,
+      [
+        0,
+        1,
+        394,
+        506,
+        508,
+        992,
+        1982,
+        1984,
+        1986,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -508,
+        -1985,
+        2000,
+        -2,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      4,
+      1,
+      [
+        0,
+        3,
+        930,
+        1192,
+        1198,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6,
+        -1199,
+        -4684,
+        2000,
+        -6,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      4,
+      1,
+      [
+        0,
+        0,
+        77,
+        99,
+        101,
+        196,
+        394,
+        394,
+        394,
+        486,
+        591,
+        789,
+        789,
+        789,
+        1579,
+        -2,
+        -102,
+        -397,
+        2000,
+        2000,
+        2000
+      ]
+    ],
+    [
+      0,
+      0,
+      5,
+      64,
+      [
+        0,
+        2,
+        398,
+        510,
+        512,
+        1000,
+        1998,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -512,
+        -2000,
+        -8388608,
+        -2,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      5,
+      64,
+      [
+        0,
+        4,
+        938,
+        1202,
+        1208,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6,
+        -1208,
+        -4720,
+        2000,
+        -6,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      5,
+      64,
+      [
+        0,
+        0,
+        78,
+        100,
+        102,
+        198,
+        398,
+        398,
+        398,
+        490,
+        596,
+        796,
+        796,
+        796,
+        1592,
+        -2,
+        -102,
+        -400,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      0,
+      0,
+      5,
+      1,
+      [
+        0,
+        1,
+        202,
+        258,
+        260,
+        507,
+        1014,
+        1015,
+        1016,
+        1253,
+        1523,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -260,
+        -1016,
+        2000,
+        -2,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      5,
+      1,
+      [
+        0,
+        2,
+        476,
+        610,
+        613,
+        1197,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -4,
+        -614,
+        -2397,
+        -6988800,
+        -4,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      5,
+      1,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        100,
+        202,
+        202,
+        202,
+        248,
+        302,
+        404,
+        404,
+        404,
+        808,
+        -2,
+        -52,
+        -204,
+        2000,
+        2000,
+        2000
+      ]
+    ],
+    [
+      0,
+      0,
+      6,
+      0,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2000,
+        2000,
+        -1,
+        -256,
+        -1000,
+        2000,
+        -1,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      6,
+      0,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      6,
+      0,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      7,
+      6,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2000,
+        2000,
+        -1,
+        -256,
+        -1000,
+        2000,
+        -1,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      7,
+      6,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      7,
+      6,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      8,
+      4,
+      [
+        0,
+        2,
+        398,
+        510,
+        512,
+        1000,
+        1998,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -512,
+        -2000,
+        -8388608,
+        -2,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      8,
+      4,
+      [
+        0,
+        4,
+        938,
+        1202,
+        1208,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6,
+        -1208,
+        -4720,
+        2000,
+        -6,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      8,
+      4,
+      [
+        0,
+        0,
+        78,
+        100,
+        102,
+        198,
+        398,
+        398,
+        398,
+        490,
+        596,
+        796,
+        796,
+        796,
+        1592,
+        -2,
+        -102,
+        -400,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      0,
+      0,
+      9,
+      20,
+      [
+        0,
+        2,
+        398,
+        510,
+        512,
+        1000,
+        1998,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -2,
+        -512,
+        -2000,
+        -8388608,
+        -2,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      9,
+      20,
+      [
+        0,
+        4,
+        938,
+        1202,
+        1208,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6,
+        -1208,
+        -4720,
+        2000,
+        -6,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      9,
+      20,
+      [
+        0,
+        0,
+        78,
+        100,
+        102,
+        198,
+        398,
+        398,
+        398,
+        490,
+        596,
+        796,
+        796,
+        796,
+        1592,
+        -2,
+        -102,
+        -400,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      0,
+      0,
+      9,
+      0,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2000,
+        2000,
+        -1,
+        -256,
+        -1000,
+        2000,
+        -1,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      9,
+      0,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      9,
+      0,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      10,
+      0,
+      [
+        0,
+        1,
+        199,
+        255,
+        256,
+        500,
+        999,
+        1000,
+        1001,
+        1234,
+        1500,
+        1999,
+        2000,
+        2001,
+        4000,
+        -1,
+        -256,
+        -1000,
+        4194304,
+        2147483647,
+        -2147483648
+      ]
+    ],
+    [
+      3,
+      24,
+      10,
+      0,
+      [
+        0,
+        2,
+        469,
+        601,
+        604,
+        1179,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -3,
+        -604,
+        -2360,
+        -6881280,
+        -3,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      10,
+      0,
+      [
+        0,
+        0,
+        39,
+        50,
+        51,
+        99,
+        199,
+        199,
+        199,
+        245,
+        298,
+        398,
+        398,
+        398,
+        796,
+        -1,
+        -51,
+        -200,
+        2000,
+        2000,
+        -8388608
+      ]
+    ],
+    [
+      0,
+      0,
+      1,
+      -8388608,
+      [
+        0,
+        -1398100,
+        2000,
+        -4193794,
+        -5591893,
+        2000,
+        -4192305,
+        -5590405,
+        -6988504,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -5584401,
+        2000,
+        2000,
+        2000,
+        2000,
+        -6990509,
+        -8388608
+      ]
+    ],
+    [
+      3,
+      24,
+      1,
+      -8388608,
+      [
+        0,
+        -2796199,
+        -1397163,
+        -1396899,
+        -5591197,
+        -4191945,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -5597129,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      1,
+      -8388608,
+      [
+        0,
+        0,
+        -4194226,
+        -2796103,
+        -4194202,
+        -4194106,
+        2000,
+        2000,
+        2000,
+        -6990017,
+        2000,
+        -2795407,
+        -2795407,
+        -2795407,
+        -5590813,
+        2000,
+        2000,
+        -5592806,
+        2000,
+        2000,
+        -5603328
+      ]
+    ],
+    [
+      0,
+      0,
+      4,
+      -8388608,
+      [
+        0,
+        -131070,
+        2000,
+        2000,
+        512,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -4186304,
+        2000,
+        -512,
+        -3147728,
+        -8388608,
+        2000,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      4,
+      -8388608,
+      [
+        0,
+        -262140,
+        2000,
+        2000,
+        2000,
+        -3536586,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -4719800,
+        2000,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      4,
+      -8388608,
+      [
+        0,
+        0,
+        -5111730,
+        -6553500,
+        -6684570,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -5504428,
+        -1834212,
+        -1834212,
+        -1834212,
+        -3668424,
+        2000,
+        2000,
+        -7340432,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      0,
+      0,
+      5,
+      8388607,
+      [
+        0,
+        -131072,
+        2000,
+        2000,
+        252,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -4190367,
+        2000,
+        -252,
+        -3146713,
+        2000,
+        2000,
+        0
+      ]
+    ],
+    [
+      3,
+      24,
+      5,
+      8388607,
+      [
+        0,
+        -262143,
+        2000,
+        2000,
+        2000,
+        -3537784,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -4719187,
+        2000,
+        -6773760,
+        2000,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      5,
+      8388607,
+      [
+        0,
+        0,
+        -5111770,
+        -6553551,
+        -6684622,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -5504731,
+        -1834617,
+        -1834617,
+        -1834617,
+        -3669233,
+        2000,
+        2000,
+        -7340229,
+        2000,
+        2000,
+        -8257536
+      ]
+    ],
+    [
+      0,
+      0,
+      9,
+      8388607,
+      [
+        0,
+        -419430,
+        2000,
+        -6291214,
+        -6710643,
+        -8388133,
+        2000,
+        950,
+        -418479,
+        2000,
+        -8387182,
+        2000,
+        1901,
+        -417528,
+        2000,
+        2000,
+        2000,
+        -951,
+        -6078464,
+        -7969179,
+        -8388608
+      ]
+    ],
+    [
+      3,
+      24,
+      9,
+      8388607,
+      [
+        0,
+        -838859,
+        2000,
+        -418859,
+        -1677148,
+        -7968057,
+        1901,
+        1901,
+        1901,
+        1901,
+        1901,
+        1901,
+        1901,
+        1901,
+        1901,
+        2000,
+        2000,
+        -2244,
+        -6542592,
+        2000,
+        0
+      ]
+    ],
+    [
+      6,
+      0,
+      9,
+      8388607,
+      [
+        0,
+        0,
+        2000,
+        -4194257,
+        -4613686,
+        -7969084,
+        2000,
+        2000,
+        2000,
+        -2096920,
+        -7549464,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        2000,
+        -191,
+        1901,
+        1901,
+        -4620288
+      ]
+    ]
+  ],
+  "rng_controls": [
+    {
+      "rows": [
+        {
+          "calls": 0,
+          "rng_after": "000000000000000067000000ef97752c07a9ad611ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+          "values": []
+        },
+        {
+          "calls": 1,
+          "rng_after": "0000000002000000690000006ecdf0a7a9a5488a1ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+          "values": [
+            4
+          ]
+        },
+        {
+          "calls": 2,
+          "rng_after": "00000000030000006a0000006ecdf0a7a9a5488a633945f5a8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+          "values": [
+            4,
+            -2
+          ]
+        }
+      ],
+      "seed": 7
+    },
+    {
+      "rows": [
+        {
+          "calls": 0,
+          "rng_after": "00000000000000006700000048b13f3715c7725e390380c1fd4a9c91d3c1e015a06f25a5684a65a82aba19d732d547ae5f145dded8f8bc594b43dcc1e05e8905c8a54426ab1a2ee47b0ed23defd4cec2b5e1fc888fedcdb02b60233bdfbab33d25a4e912de5da4b8973d326e3210dfa42eb691783090f1b35afd034481fc36d023c159981a45bb95c29327c4911dbb7eec0ef1cfa8b20efc562c8e71740fd30f92ef1ef964341d8ee61c80144b2f3a732a041d81a91294869ba617fabbf3d3a23a4a6401cfae1f5405e66ef4a8696433fcd21564f8f1bebdf703ca960543da3fcd0a96f407954bb3d3e3014f47187ae5973c3c796e55d937762a3307e2158c2a8c07ece72324081170f15fb2e30bad255f4e8c4178a6e8059034b501d700e56ed1107fb65d6ec52fdc289f1f85f6a19100c33d60408708e9c8a2bbbfd8985727434936b4c3db163b41b9fb3ca86c2ef3fb985805bb1cce1a7b0e17e9bad38babdfbb6bdd81a29ebe9ae4c925cb1fcd7997e7d4826c1833d0470911fc2f40f951f8e37c1db0820f4a5baec15b58022952c8fc8a8bf3e308ae70df338f13facfa5616c30489d85e3d009e12bfa370a21e3ca56195bb9550033b557cabc16b4fafacdbd619dc96ad2b3a4cf62d9f05c14a5974c0214f9200245fe0e5d9be606c5f67d351d8f769b7a5c7015a190d34ef236c31ac6d59797b451cb866babc97dd1034f51ab806676d09dad40def2c963e285150f141531667508badff77fc09cc09c8d536bd35d4c77bbcaa27f4a0d611cb74fb337a3206f36c821e095e2ba18e439f5db439614398d0e4ef0848675c898d0ee301f9996fefce4d1b6eba5b5daf869408398920f960943b8042f46acb74bcb955ec3fc08c9d2bdda83663cfbc81e9b574903882bdcf8a27a70cd0a397cd1f549c8a7d0f22d93814d94173afc34eb436f0728bfd57e18ad09134bd26945b5b8f20114e76d9baf74a86ba433b54451505a9d01f097eb35cc785564a158950e240e438a33cda9c46212540d5bfe385d4e56c7bd037b459f5494c4d59f080183bbf81698b379374be1bc6d89445e8211e71faf06492b2954ccdafda383b36d186bf2af9c34aa37ac8daf1d89fc3fea3b5e126580aa0002c3079c791b4ba2e0d98736e36517ecfd62cf0d37b7b0430acef28e81ecd2a9feb791bdb3addc72d8c46eb4dcdd26154d8c267f5cf498c8caa6c3ddb6ad1f1f3498e3b1717b4b7b13b71ab0ffd5fa5343cbf06b48fc7a868befdb023bc81d3bb44fbd1f4893ad421c1d533ed1a98bb40d48b163e166162982211a68e7a5ffc77b0644f6b5a619d89dae8284e2943c94f2ab71073b9fee4606b757b5fcce6e8ec219051ef3588f94864d3f340c5eaff22abbd2893651bc3a7d677801ca9683382fb6fd83bee9de9e6ae040d85190c5",
+          "values": []
+        },
+        {
+          "calls": 1,
+          "rng_after": "000000000100000068000000415014cd15c7725e390380c1fd4a9c91d3c1e015a06f25a5684a65a82aba19d732d547ae5f145dded8f8bc594b43dcc1e05e8905c8a54426ab1a2ee47b0ed23defd4cec2b5e1fc888fedcdb02b60233bdfbab33d25a4e912de5da4b8973d326e3210dfa42eb691783090f1b35afd034481fc36d023c159981a45bb95c29327c4911dbb7eec0ef1cfa8b20efc562c8e71740fd30f92ef1ef964341d8ee61c80144b2f3a732a041d81a91294869ba617fabbf3d3a23a4a6401cfae1f5405e66ef4a8696433fcd21564f8f1bebdf703ca960543da3fcd0a96f407954bb3d3e3014f47187ae5973c3c796e55d937762a3307e2158c2a8c07ece72324081170f15fb2e30bad255f4e8c4178a6e8059034b501d700e56ed1107fb65d6ec52fdc289f1f85f6a19100c33d60408708e9c8a2bbbfd8985727434936b4c3db163b41b9fb3ca86c2ef3fb985805bb1cce1a7b0e17e9bad38babdfbb6bdd81a29ebe9ae4c925cb1fcd7997e7d4826c1833d0470911fc2f40f951f8e37c1db0820f4a5baec15b58022952c8fc8a8bf3e308ae70df338f13facfa5616c30489d85e3d009e12bfa370a21e3ca56195bb9550033b557cabc16b4fafacdbd619dc96ad2b3a4cf62d9f05c14a5974c0214f9200245fe0e5d9be606c5f67d351d8f769b7a5c7015a190d34ef236c31ac6d59797b451cb866babc97dd1034f51ab806676d09dad40def2c963e285150f141531667508badff77fc09cc09c8d536bd35d4c77bbcaa27f4a0d611cb74fb337a3206f36c821e095e2ba18e439f5db439614398d0e4ef0848675c898d0ee301f9996fefce4d1b6eba5b5daf869408398920f960943b8042f46acb74bcb955ec3fc08c9d2bdda83663cfbc81e9b574903882bdcf8a27a70cd0a397cd1f549c8a7d0f22d93814d94173afc34eb436f0728bfd57e18ad09134bd26945b5b8f20114e76d9baf74a86ba433b54451505a9d01f097eb35cc785564a158950e240e438a33cda9c46212540d5bfe385d4e56c7bd037b459f5494c4d59f080183bbf81698b379374be1bc6d89445e8211e71faf06492b2954ccdafda383b36d186bf2af9c34aa37ac8daf1d89fc3fea3b5e126580aa0002c3079c791b4ba2e0d98736e36517ecfd62cf0d37b7b0430acef28e81ecd2a9feb791bdb3addc72d8c46eb4dcdd26154d8c267f5cf498c8caa6c3ddb6ad1f1f3498e3b1717b4b7b13b71ab0ffd5fa5343cbf06b48fc7a868befdb023bc81d3bb44fbd1f4893ad421c1d533ed1a98bb40d48b163e166162982211a68e7a5ffc77b0644f6b5a619d89dae8284e2943c94f2ab71073b9fee4606b757b5fcce6e8ec219051ef3588f94864d3f340c5eaff22abbd2893651bc3a7d677801ca9683382fb6fd83bee9de9e6ae040d85190c5",
+          "values": [
+            -4
+          ]
+        },
+        {
+          "calls": 2,
+          "rng_after": "000000000200000069000000415014cd22cd53bd390380c1fd4a9c91d3c1e015a06f25a5684a65a82aba19d732d547ae5f145dded8f8bc594b43dcc1e05e8905c8a54426ab1a2ee47b0ed23defd4cec2b5e1fc888fedcdb02b60233bdfbab33d25a4e912de5da4b8973d326e3210dfa42eb691783090f1b35afd034481fc36d023c159981a45bb95c29327c4911dbb7eec0ef1cfa8b20efc562c8e71740fd30f92ef1ef964341d8ee61c80144b2f3a732a041d81a91294869ba617fabbf3d3a23a4a6401cfae1f5405e66ef4a8696433fcd21564f8f1bebdf703ca960543da3fcd0a96f407954bb3d3e3014f47187ae5973c3c796e55d937762a3307e2158c2a8c07ece72324081170f15fb2e30bad255f4e8c4178a6e8059034b501d700e56ed1107fb65d6ec52fdc289f1f85f6a19100c33d60408708e9c8a2bbbfd8985727434936b4c3db163b41b9fb3ca86c2ef3fb985805bb1cce1a7b0e17e9bad38babdfbb6bdd81a29ebe9ae4c925cb1fcd7997e7d4826c1833d0470911fc2f40f951f8e37c1db0820f4a5baec15b58022952c8fc8a8bf3e308ae70df338f13facfa5616c30489d85e3d009e12bfa370a21e3ca56195bb9550033b557cabc16b4fafacdbd619dc96ad2b3a4cf62d9f05c14a5974c0214f9200245fe0e5d9be606c5f67d351d8f769b7a5c7015a190d34ef236c31ac6d59797b451cb866babc97dd1034f51ab806676d09dad40def2c963e285150f141531667508badff77fc09cc09c8d536bd35d4c77bbcaa27f4a0d611cb74fb337a3206f36c821e095e2ba18e439f5db439614398d0e4ef0848675c898d0ee301f9996fefce4d1b6eba5b5daf869408398920f960943b8042f46acb74bcb955ec3fc08c9d2bdda83663cfbc81e9b574903882bdcf8a27a70cd0a397cd1f549c8a7d0f22d93814d94173afc34eb436f0728bfd57e18ad09134bd26945b5b8f20114e76d9baf74a86ba433b54451505a9d01f097eb35cc785564a158950e240e438a33cda9c46212540d5bfe385d4e56c7bd037b459f5494c4d59f080183bbf81698b379374be1bc6d89445e8211e71faf06492b2954ccdafda383b36d186bf2af9c34aa37ac8daf1d89fc3fea3b5e126580aa0002c3079c791b4ba2e0d98736e36517ecfd62cf0d37b7b0430acef28e81ecd2a9feb791bdb3addc72d8c46eb4dcdd26154d8c267f5cf498c8caa6c3ddb6ad1f1f3498e3b1717b4b7b13b71ab0ffd5fa5343cbf06b48fc7a868befdb023bc81d3bb44fbd1f4893ad421c1d533ed1a98bb40d48b163e166162982211a68e7a5ffc77b0644f6b5a619d89dae8284e2943c94f2ab71073b9fee4606b757b5fcce6e8ec219051ef3588f94864d3f340c5eaff22abbd2893651bc3a7d677801ca9683382fb6fd83bee9de9e6ae040d85190c5",
+          "values": [
+            -4,
+            -3
+          ]
+        }
+      ],
+      "seed": 3
+    }
+  ]
+}

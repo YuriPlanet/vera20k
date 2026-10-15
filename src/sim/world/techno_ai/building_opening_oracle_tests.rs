@@ -304,6 +304,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

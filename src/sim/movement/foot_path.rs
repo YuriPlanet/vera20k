@@ -28,7 +28,6 @@ use crate::sim::find_nearby_cell::{
 };
 use crate::sim::mission::MissionId;
 use crate::sim::mission::authority::EntityReadyInputProvider;
-use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::pathfinding::CODE2_CHAIN_MAX_HOPS;
@@ -826,14 +825,10 @@ impl Simulation {
         //Foot 0x4D94B0 -> Walk 0x75ADA0, or Unit 0x741970 -> Foot 0x4D94B0 ->
         //Drive 0x4AFE00 / Ship 0x69F510.
         self.assign_null_destination(id, Some(rules), registry, frame_effects);
-        let actor = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .ok_or("retired failed Find_Path actor")?;
-        //0x4D4149: the class target setter with NULL; the represented owner
-        //serves Techno 0x6FCDB0 and Infantry 0x51B1F0 alike.
-        represented_assign_target(actor, None);
+        //4D4149 dispatches the concrete target setter, including an owned
+        //Airstrike's cancellation before its TarCom changes.
+        self.assign_target_represented(id, None, Some(rules), registry, frame_effects)
+            .map_err(|_| "retired failed Find_Path actor")?;
         let human = self.owner_is_human(owner);
         let mission = if human {
             MissionType::Guard

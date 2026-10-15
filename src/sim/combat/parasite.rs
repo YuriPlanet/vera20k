@@ -26,13 +26,39 @@
 //! the Teleport warp step (`0x007195BF`). Victim restrictions ported: transport
 //! loading, tank bunkers, DeploysInto, retaliation against the eater.
 //!
+//! Every release unlimbos the owner through the class Unlimbo
+//! (`Simulation::unlimbo_class_entry`). The AttachTo refusal and ExitUnit
+//! raise no `0x00A8E7AC`, so the owner's class `Can_Enter_Cell`
+//! (`0x005F4F1B..0x005F4F44`) decides, and an owner it refuses is deleted;
+//! an owner still holding its victim is admitted at the victim's cell
+//! (`0x0073F530`, `0x0051C259`). PointerExpired raises it around its Unlimbo
+//! (`0x0062A2F8..0x0062A311`, cleared at `0x0062A372..0x0062A379` and
+//! `0x0062A45C..0x0062A462`), which skips that query.
+//!
 //! RESIDUALS (each needs a mechanism VERA does not have yet):
-//! - Unlimbo's Can_Enter_Cell (`0x005F4F1B..0x005F4F44`) runs on the unbracketed
-//!   AttachTo-refusal and ExitUnit releases and deletes an owner it refuses
-//!   (Unit/Infantry skip occupants of the attached victim's cell,
-//!   `0x0073F530`, `0x0051C259`). VERA places the owner. Trigger: a launch cell
-//!   taken during the jump, or a NearbyLocation cell only the victim can use.
-//!   Frequency: rare. Owner: the CanEnterCell consolidation (Drive/Ship port).
+//! - A placed owner's sight: native follows the Unlimbo with ReReveal
+//!   (AttachTo refusal, `0x0062AA51`) or UpdateReveal (ExitUnit `0x0062A7A8`,
+//!   PointerExpired `0x0062A40B`), and the fog border `0x00567DA0`
+//!   (presentation; `0x0062AA91`, `0x0062A44B`). VERA's vision frame pass
+//!   admits the placed owner in their place (the residual in `sim::vision`),
+//!   so after the AttachTo refusal it holds sight where native's ReReveal has
+//!   just released the reveal Unlimbo made (`0x006F6D27`), until its next
+//!   cell arrival. Trigger: a jump whose host is lost in flight. Effect: the
+//!   returned drone sees around its launch cell before it moves again.
+//!   Frequency: rare.
+//! - ExitUnit zeroes the victim's sideways rock angle (`+0x328`,
+//!   `0x0062A869`). VERA's bites do not rock the victim (the bite's own
+//!   residual), so there is no angle to clear.
+//! - GetReleaseCoords' PlaceInfantryInCell finding no spot writes the zero
+//!   coordinate (`0x0089E778`), which a Unit owner turns into map cell
+//!   (0,0)'s GetCoords (`0x0062AE09..0x0062AE3E`); that is no longer the
+//!   invalid `0x00AC4948`, so PointerExpired unlimboes the owner there under
+//!   `0x00A8E7AC`, outside the map. VERA has no off-map Unlimbo and deletes
+//!   the owner. Trigger: a drone's victim dies where the drone cannot take
+//!   its place (in the air, on a building or terrain object, on water) and
+//!   the cell ahead of the victim holds a vehicle or a closed object.
+//!   Effect: the drone is lost instead of standing off the map's corner.
+//!   Frequency: rare. Risk: the owner's unit count only.
 //! - Paralysis in some movers: Drive Set_Destination `0x004AFD5E`, Ship
 //!   `0x0069F46E`/`0x006A1DA9`, Fly `0x004CCD00`/`0x004CF96E`, Mech Move_To
 //!   `0x005B0099` and Tunnel Move_To `0x00728B10` refuse a paralyzed Foot;
@@ -50,10 +76,11 @@
 //!   the order needs the cursor/command legality VERA does not port yet.
 
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
-use crate::sim::movement::ground_pose;
+use crate::sim::movement::{ground_pose, target_cell_coord};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 use crate::util::direction_tables::CELL_DELTAS;
@@ -92,6 +119,12 @@ impl ParasiteState {
             suppression: CdTimer::started(frame as i32, 0),
             damage: CdTimer::started(frame as i32, 0),
         }
+    }
+
+    /// `+0x28` Victim, which the owner's own `Can_Enter_Cell` also reads
+    /// (Unit `0x0073F530`, Infantry `0x0051C259`).
+    pub(crate) fn victim(&self) -> Option<u64> {
+        self.victim
     }
 
     #[cfg(test)]
@@ -263,14 +296,6 @@ fn dir_type(raw: u16) -> u8 {
     ((((u32::from(raw) >> 7) + 1) >> 1) & 0xFF) as u8
 }
 
-fn cell_centre(cell: (i16, i16)) -> DriveCoord {
-    DriveCoord {
-        x: i32::from(cell.0) * 256 + 128,
-        y: i32::from(cell.1) * 256 + 128,
-        z: 0,
-    }
-}
-
 impl Simulation {
     /// `CanInfect @ 0x0062A8E0` for AttachTo, through the same
     /// [`ParasiteVictimFacts`](super::combat_weapon::ParasiteVictimFacts)
@@ -344,7 +369,14 @@ impl Simulation {
         let victim_coord = ground_pose::position_world_coord(
             &self.substrate.entities.get(victim).unwrap().position,
         );
-        self.force_track(owner, -1, victim_coord, Some(rules), None, effects);
+        self.force_track(
+            owner,
+            -1,
+            victim_coord,
+            Some(rules),
+            effects.overlay_registry(),
+            effects,
+        );
         self.substrate
             .entities
             .get_mut(victim)
@@ -378,7 +410,16 @@ impl Simulation {
         else {
             return;
         };
-        if !self.parasite_unlimbo_owner(owner, cell_centre(cell), 0, false, rules, effects) {
+        // 0x0062AA02..0x0062AA2E: Unlimbo at the cell's GetCoords, DirType 0.
+        let coords = target_cell_coord(
+            cell.0 as u16,
+            cell.1 as u16,
+            self.resolved_terrain
+                .as_ref()
+                .map(NativeCellQuery::canonical)
+                .as_ref(),
+        );
+        if !self.parasite_unlimbo_owner(owner, coords, 0, rules, effects) {
             self.uninit_with_context(
                 owner,
                 UninitContext::with_rules(rules).with_effects(effects),
@@ -410,24 +451,24 @@ impl Simulation {
                 }
                 crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
-            self.assign_null_destination(owner, Some(rules), None, effects);
+            self.assign_null_destination(owner, Some(rules), effects.overlay_registry(), effects);
         }
-        crate::sim::world::enter_idle_mode(self, owner, rules, None, effects);
+        crate::sim::world::enter_idle_mode(self, owner, rules, effects.overlay_registry(), effects);
     }
 
     /// A successful ExitUnit or PointerExpired release re-adds the owner to
     /// its team to rejoin (`+0x434`, `Add_Member(owner, 0)` at `0x0062A759`
     /// and `0x0062A3BC`), which asks `Can_Add`.
-    ///
-    /// RESIDUAL: the release paths carry no overlay registry, so the
-    /// `Calc_Center` a centreless team runs on the rejoin tests the closest
-    /// member's cell without overlays. Trigger: the dog's team lost its
-    /// centre (no joined member left) while it was away. Effect: that centre
-    /// can be the mean cell where an overlay would refuse it, until the next
-    /// `Calc_Center`.
     fn parasite_rejoin_team(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         if let Some(team) = self.team_script_vm.team_to_rejoin(owner) {
-            self.team_add_member(team, owner, false, rules, None, effects);
+            self.team_add_member(
+                team,
+                owner,
+                false,
+                rules,
+                effects.overlay_registry(),
+                effects,
+            );
         }
     }
 
@@ -639,16 +680,18 @@ impl Simulation {
         } else {
             self.techno_nearby_location(victim, None, rules)
         };
+        // 0x0062A5E8..0x0062A61F: Unlimbo at the chosen cell's GetCoords.
         let placed = cell.is_some_and(|cell| {
+            let coords = target_cell_coord(
+                cell.0 as u16,
+                cell.1 as u16,
+                self.resolved_terrain
+                    .as_ref()
+                    .map(NativeCellQuery::canonical)
+                    .as_ref(),
+            );
             self.parasite_can_place_at_victim(owner, victim, rules)
-                && self.parasite_unlimbo_owner(
-                    owner,
-                    cell_centre(cell),
-                    dir_type(released),
-                    false,
-                    rules,
-                    effects,
-                )
+                && self.parasite_unlimbo_owner(owner, coords, dir_type(released), rules, effects)
         });
         if placed {
             self.parasite_reselect(owner);
@@ -744,9 +787,11 @@ impl Simulation {
             .get(victim)
             .map_or(0, |v| v.body_facing_current(frame));
         let coords = self.parasite_release_coords(owner, victim, rules);
-        // 0x0062A2ED..0x0062A303: the 0xA8E7AC bracket around Unlimbo.
+        // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
-            self.parasite_unlimbo_owner(owner, coords, dir_type(victim_raw), true, rules, effects)
+            self.with_object_placement_scope(|sim| {
+                sim.parasite_unlimbo_owner(owner, coords, dir_type(victim_raw), rules, effects)
+            })
         });
         if placed {
             self.parasite_reselect(owner);
@@ -796,9 +841,14 @@ impl Simulation {
             let victim_entity = self.substrate.entities.get(victim)?;
             let mut coords = ground_pose::position_world_coord(&victim_entity.position);
             if owner_is_unit {
-                let cell = ((coords.x / 256) as i16, (coords.y / 256) as i16);
-                coords = cell_centre(cell);
-                coords.z = self.cell_ground_z(cell);
+                coords = target_cell_coord(
+                    (coords.x / 256) as u16,
+                    (coords.y / 256) as u16,
+                    self.resolved_terrain
+                        .as_ref()
+                        .map(NativeCellQuery::canonical)
+                        .as_ref(),
+                );
                 if victim_on_bridge {
                     coords.z = coords
                         .z
@@ -832,29 +882,23 @@ impl Simulation {
         if !naval_owner && self.land_blocks_release(adjacent, victim_cell) {
             return None;
         }
-        // CellClass::PlaceInfantryInCell 0x00481180 from the adjacent cell's
-        // centre, for every owner class; Unit owners then take the centre.
-        let centre = crate::util::fixed_math::SimFixed::from_num(128);
-        let spot = crate::sim::movement::bump_crush::place_infantry_in_cell(
-            &self.substrate.raw_cell_occupation,
+        // CellClass::PlaceInfantryInCell 0x00481180 (`0x0062ADCF..0x0062ADE9`)
+        // on the ground plane, at the adjacent cell's GetCoords, for every
+        // owner class; Unit owners then take the centre (`0x0062AE09..0x0062AE3E`).
+        let mut coords = target_cell_coord(
             adjacent.0 as u16,
             adjacent.1 as u16,
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            centre,
-            centre,
-            &mut self.scenario_rng,
-        )?;
-        let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
-        let mut coords = if owner_is_unit {
-            cell_centre(adjacent)
-        } else {
-            DriveCoord {
-                x: i32::from(adjacent.0) * 256 + sub_x.to_num::<i32>(),
-                y: i32::from(adjacent.1) * 256 + sub_y.to_num::<i32>(),
-                z: 0,
-            }
-        };
-        coords.z = self.cell_ground_z(adjacent);
+            self.resolved_terrain
+                .as_ref()
+                .map(NativeCellQuery::canonical)
+                .as_ref(),
+        );
+        let spot = self.place_infantry_in_ground_cell(rules, coords)?;
+        if !owner_is_unit {
+            let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
+            coords.x = i32::from(adjacent.0) * 256 + sub_x.to_num::<i32>();
+            coords.y = i32::from(adjacent.1) * 256 + sub_y.to_num::<i32>();
+        }
         let bridge = self.cell_has_bridge(adjacent);
         let on_bridge = if victim_on_bridge {
             if bridge {
@@ -865,7 +909,15 @@ impl Simulation {
             bridge
         } else if bridge {
             // 0x0062AE63: only a deck below the victim's own height counts.
-            let victim_z = self.cell_ground_z(victim_cell);
+            let victim_z = target_cell_coord(
+                victim_cell.0 as u16,
+                victim_cell.1 as u16,
+                self.resolved_terrain
+                    .as_ref()
+                    .map(NativeCellQuery::canonical)
+                    .as_ref(),
+            )
+            .z;
             if victim_z > coords.z {
                 coords.z = coords
                     .z
@@ -965,17 +1017,6 @@ impl Simulation {
         })
     }
 
-    fn cell_ground_z(&self, cell: (i16, i16)) -> i32 {
-        let centre = cell_centre(cell);
-        ground_pose::ground_surface_z_at(
-            [centre.x, centre.y],
-            false,
-            self.resolved_terrain.as_ref(),
-            None,
-        )
-        .unwrap_or(0)
-    }
-
     /// `CellClass::IsClearToMove @ 0x004834A0` with (SpeedType, 0, 0, zone,
     /// MovementZone, -1, 1) after `GetZoneID(cell, MovementZone, 0)`.
     fn cell_clear_for(
@@ -1026,83 +1067,62 @@ impl Simulation {
         )
     }
 
-    /// Unlimbo(coord, dir) for a released or returning owner. Infantry place
-    /// through `PlaceInfantryInCell @ 0x00481180`: `guarded` is the
-    /// `0x00A8E7AC` bracket PointerExpired holds, which selects the priority
-    /// arm (no occupancy test, no RNG); otherwise the ordinary arm may draw.
+    /// Unlimbo(coord, dir) (vt+0xD8) for a released or returning owner: the
+    /// class half ([`Simulation::unlimbo_class_entry`]: InfantryClass::Unlimbo
+    /// `0x0051DFF0`'s PlaceInfantryInCell `0x00481180` for an infantryman,
+    /// then Object's class `Can_Enter_Cell` `0x005F4F1B..0x005F4F49` unless
+    /// the caller raised `0x00A8E7AC`), then the Reveal, which snaps the body
+    /// to `facing` (`0x006F6DAA`).
     fn parasite_unlimbo_owner(
         &mut self,
         owner: u64,
         coord: DriveCoord,
         facing: u8,
-        guarded: bool,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
+        use crate::sim::world::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest};
         let rx = (coord.x / 256) as u16;
         let ry = (coord.y / 256) as u16;
-        let Some(entity) = self.substrate.entities.get(owner) else {
-            return false;
-        };
-        let infantry = entity.category() == EntityCategory::Infantry;
-        // Unlimbo receives the whole coordinate. A deck release from
-        // GetReleaseCoords (`0x0062AC60..0x0062ACF6`) carries the deck height,
-        // which the reveal adapter reads as `level + 4` with the owner's
-        // OnBridge; cell-centre coordinates (ExitUnit, AttachTo refusal) are
-        // ground, `CellClass::GetCoords @ 0x00486840`.
+        // The stored level beside the coordinate: a deck release from
+        // GetReleaseCoords (`0x0062AC60..0x0062ACF6`) stands at `level + 4`
+        // with the owner's OnBridge; a cell's GetCoords is its ground.
         let ground_level = self.terrain_cell_level(rx, ry).unwrap_or(0);
         let coord_level =
             u8::try_from(coord.z.max(0) / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
                 .unwrap_or(u8::MAX);
-        let z = ground_level.max(coord_level);
-        let sub_x = crate::util::fixed_math::SimFixed::from_num(coord.x.rem_euclid(256));
-        let sub_y = crate::util::fixed_math::SimFixed::from_num(coord.y.rem_euclid(256));
-        let (sub_cell, sub_x, sub_y) = if infantry {
-            let spot = if guarded {
-                crate::sim::movement::bump_crush::priority_sub_cell(sub_x, sub_y)
-            } else {
-                let Some(spot) = crate::sim::movement::bump_crush::place_infantry_in_cell(
-                    &self.substrate.raw_cell_occupation,
-                    rx,
-                    ry,
-                    crate::sim::movement::locomotor::MovementLayer::Ground,
-                    sub_x,
-                    sub_y,
-                    &mut self.scenario_rng,
-                ) else {
-                    return false;
-                };
-                spot
-            };
-            let (x, y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
-            (Some(spot), x, y)
-        } else {
-            (None, sub_x, sub_y)
+        let requested = RevealPosition::new(
+            rx,
+            ry,
+            ground_level.max(coord_level),
+            Some(coord.z),
+            crate::util::fixed_math::SimFixed::from_num(coord.x.rem_euclid(256)),
+            crate::util::fixed_math::SimFixed::from_num(coord.y.rem_euclid(256)),
+        );
+        let registry = effects.overlay_registry();
+        let Some((position, placement)) = self.unlimbo_class_entry(
+            owner,
+            requested,
+            PlacementEvidence::EvaluateMark,
+            Some(rules),
+            registry,
+        ) else {
+            return false;
         };
-        if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            match sub_cell {
-                Some(spot) => entity.sub_cell.hold(spot),
-                None => entity.sub_cell.release(),
-            }
-        }
-        let revealed = matches!(
+        matches!(
             self.try_reveal_entity_with_context(
                 owner,
-                crate::sim::world::RevealRequest {
-                    position: crate::sim::world::RevealPosition::new(rx, ry, z, None, sub_x, sub_y),
-                    placement: crate::sim::world::PlacementEvidence::MarkSucceeded,
+                RevealRequest {
+                    position,
+                    placement,
                     logic_eligible: true,
                 },
-                UninitContext::with_rules(rules).with_effects(effects),
+                UninitContext::new(Some(rules), registry)
+                    .with_effects(effects)
+                    .with_unlimbo_facing(Some(facing)),
             ),
-            crate::sim::world::RevealOutcome::Revealed { .. }
-        );
-        // Unlimbo's body snap (`0x006F6DAA`) follows a successful Reveal.
-        let frame = self.session.binary_frame;
-        if revealed && let Some(entity) = self.substrate.entities.get_mut(owner) {
-            entity.body_facing.snap(u16::from(facing) << 8, frame);
-        }
-        revealed
+            RevealOutcome::Revealed { .. }
+        )
     }
 
     /// `TechnoClass::Fire @ 0x006FF749..0x006FF872`, the LimboLaunch block,

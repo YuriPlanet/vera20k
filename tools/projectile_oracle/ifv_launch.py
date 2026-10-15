@@ -24,6 +24,21 @@ def bullet_addref_transport(m,address,events):
  events.append(dict(call='KERNEL32.InterlockedIncrement',com_refcount=value))
  return True
 
+def bullet_activation_transport(m, address, events):
+ """Windows COM activation at the existing Bullet creation call sites.
+
+ Only activation is supplied: registered factory6C5090 and Bullet constructors
+ execute unchanged. Reuse the five COM argument words for the factory ABI.
+ """
+ if address not in (0x46b072, 0x46a564, 0x46a9e2):return False
+ u=m.u;sp=u.reg_read(UC_X86_REG_ESP)
+ assert bytes(u.mem_read(address,6))==bytes.fromhex('ff15fc157e00')
+ clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20))
+ assert (clsid,outer,context,iid)==(0x7e96e0,0,7,0x7f7c90)
+ events.append(dict(call='CoCreateInstance activation to original registered factory',clsid_hex=bytes(u.mem_read(clsid,16)).hex(),iid_hex=bytes(u.mem_read(iid,16)).hex()))
+ u.mem_write(sp,dwords(address+6,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,0x6c5090)
+ return True
+
 def bullet_world_admission_transport(m,address,bullet,events):
  """Supply world admission while retaining original Bullet coordinate fixup.
 
@@ -93,13 +108,7 @@ def launch(origin=(2688,5248,1030),bridge=True):
   if a in (0x773070,0x46b050,0x6c5090,0x466380,0x410230,0x68bcb0,0x4664c0,0x70bcb0,0x740f80,0x70e140,0x7177c0,0x70d590,0x468670,0x4e1130):visited.add(hex(a))
   if a in (0x65c640,0x65c660,0x65c780,0x65c7e0):raise AssertionError(('unexpected launch RNG',hex(a)))
   if a in (0x7258d0,0x5f65f0,0x466560,0x5f3b80):raise AssertionError(('unexpected launch detach/retirement',hex(a)))
-  if a==0x46b072:
-   sp=u.reg_read(UC_X86_REG_ESP);clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20))
-   assert (clsid,outer,context,iid)==(0x7e96e0,0,7,0x7f7c90)
-   events.append(dict(call='CoCreateInstance activation to original registered factory',clsid_hex=bytes(u.mem_read(clsid,16)).hex(),iid_hex=bytes(u.mem_read(iid,16)).hex()))
-   # Native stdcall factory consumes(this,outer,iid,ppv). Reuse the COM arg
-   # stack with explicit native return so resulting ESP equals the COM call.
-   u.mem_write(sp,dwords(0x46b078,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,0x6c5090)
+  if bullet_activation_transport(m,a,events):pass
   elif a==0x46afe5:
    # Verified PE import KERNEL32.InterlockedIncrement. The single-threaded
    # Windows API boundary updates COM refcount only; native Abstract ID remains

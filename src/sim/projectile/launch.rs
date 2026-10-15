@@ -9,8 +9,8 @@ use crate::map::retail_trig::{AcosTable, TrigTable};
 use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X, X87Ordering, X87Value};
 
 use super::native_math::{
-    angle_word, apply_pitch, atan, cos, d, f, int, less, radians, round, sin, sqrt, square, store,
-    turn_xy,
+    PI_HALF, angle_word, apply_pitch, atan, cos, d, f, int, less, radians, round, sin, sqrt,
+    square, store, turn_xy,
 };
 use super::{ProjectileCoord, ProjectileVelocity};
 use crate::sim::rng::SimRng;
@@ -20,6 +20,8 @@ const POSITIVE_HEIGHT_ANGLE: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_21d
 const INVERSE_DRAW_SPAN: NativeF64Bits = NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
 /// `[0x007E3CC0]` = 2π.
 const TWO_PI: NativeF64Bits = NativeF64Bits::from_bits(0x4019_21fb_5444_2d18);
+/// `[0x007E44D0]`, the radial fan's π.
+const PI: NativeF64Bits = NativeF64Bits::from_bits(0x4009_21fb_5444_2d18);
 /// SpawnShrapnel's fixed launch pitch, pushed as an immediate (`0x0046A787`).
 const SHRAPNEL_PITCH: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_2164_8732_995c);
 
@@ -112,6 +114,10 @@ pub(crate) struct FireAtLaunch {
     pub vertical: bool,
     pub homing: bool,
     pub heading: Option<u16>,
+    pub radial_segments: i32,
+    pub radial_index: i32,
+    /// PrimaryFacing.Current, independent of a turret's directed heading.
+    pub body_heading: u16,
     pub arcing: bool,
     pub gravity: NativeF64Bits,
     pub high_root: bool,
@@ -123,6 +129,8 @@ pub(crate) struct FireAtLaunch {
 pub(crate) struct FireAtLaunchResult {
     pub velocity: ProjectileVelocity,
     pub speed: i32,
+    #[cfg(test)]
+    pub before_fire: ProjectileVelocity,
 }
 
 /// `[0x007F4E80]`, the lead's 0.9.
@@ -590,8 +598,10 @@ fn aircraft_bullet_velocity_with_table(
     }
 }
 
-/// FireAt 6FE8EE..6FF014 for ordinary ROT<=0 and stock RadialFireSegments=0.
-/// The returned doubles are the six DWORDs copied by Bullet::Fire 468691..A0.
+/// FireAt 6FE8EE..6FF014 through Bullet::Fire's ROT normalization.
+/// The fan reads the caller's old radial index; the firing owner advances it
+/// at 6FEBC5..6FEBDC, before a subsequent pitch/launch failure can occur.
+/// Native numeric controls: `tools/projectile_oracle/directed_launch.py --radial`.
 pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     let trig = TrigTable::embedded();
     let acos_table = AcosTable::retail();
@@ -601,12 +611,29 @@ pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     let x2 = round(X::mul(x, x));
     let distance = int(sqrt(X::add(X::add(X::mul(z, z), X::mul(y, y)), x2)));
     let mut speed = input.speed.min(distance / 2);
-    if input.vertical || input.homing {
+    // 6FEA18..6FEA3A: any nonzero *signed* segment value keeps the scalar.
+    // Only a positive value enters the fan; negative authored values retain
+    // the ordinary heading but still bypass this scalar-one override.
+    if (input.vertical || input.homing) && input.radial_segments == 0 {
         speed = 1;
     }
-    let heading = input
-        .heading
-        .unwrap_or_else(|| angle_word(atan(X::load_i32(input.delta.y.wrapping_neg()), x)));
+    let heading = if input.radial_segments > 0 {
+        // 6FEAC5..6FEB1B: (PI / segments) * old_index - PI/2 is stored
+        // binary64 before adding PrimaryFacing.Current's radians. Preserve
+        // the signed DirStruct word and common ftol/low-word quantization;
+        // a loaded index is neither clamped nor reduced before this read.
+        let step = X::div(d(PI), X::load_i32(input.radial_segments))
+            .expect("positive radial segment divisor");
+        let offset = round(X::sub(
+            X::mul(step, X::load_i32(input.radial_index)),
+            d(PI_HALF),
+        ));
+        angle_word(X::add(d(radians(input.body_heading)), offset))
+    } else {
+        input
+            .heading
+            .unwrap_or_else(|| angle_word(atan(X::load_i32(input.delta.y.wrapping_neg()), x)))
+    };
 
     // Scale the native (100,0,0) seed, retaining both normalization lookups.
     let scale =
@@ -673,6 +700,8 @@ pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
         round(X::mul(cos(trig, pitch_radians), vy)),
         round(X::mul(sin(trig, pitch_radians), magnitude)),
     ];
+    #[cfg(test)]
+    let before_fire = ProjectileVelocity::from_native(velocity.map(store));
     // Bullet::Fire 468AAC..468B57 renormalizes ROT>0 after the six DWORDs
     // have been copied, with (z*z + y*y) + x*x and another Sqrt_Approx.
     if input.homing {
@@ -683,6 +712,8 @@ pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     Some(FireAtLaunchResult {
         velocity: ProjectileVelocity::from_native(velocity.map(store)),
         speed,
+        #[cfg(test)]
+        before_fire,
     })
 }
 
@@ -690,6 +721,69 @@ pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn radial_fire_matches_original_pre_and_post_fire() {
+        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/radial_launch.json",
+        ))
+        .unwrap();
+        for (index, row) in rows.iter().enumerate() {
+            let segments = row["radial_segments"].as_i64().unwrap() as i32;
+            let homing = row["rot"].as_i64().unwrap() > 0;
+            let result = fireat_launch(FireAtLaunch {
+                delta: coord(&row["delta"]),
+                speed: row["speed"].as_i64().unwrap() as i32,
+                vertical: row["vertical"].as_bool().unwrap(),
+                homing,
+                heading: homing.then(|| {
+                    if row["turret"].as_bool().unwrap() {
+                        row["barrel"].as_u64().unwrap() as u16
+                    } else {
+                        row["hull"].as_u64().unwrap() as u16
+                    }
+                }),
+                radial_segments: segments,
+                radial_index: row["radial_index"].as_i64().unwrap() as i32,
+                body_heading: row["hull"].as_u64().unwrap() as u16,
+                arcing: row["arcing"].as_bool().unwrap(),
+                gravity: super::super::projectile_gravity(6, false),
+                high_root: false,
+                voxel_downward: None,
+                building_pitch_height: None,
+            });
+            assert_eq!(
+                result.is_some(),
+                row["success"].as_u64().unwrap() != 0,
+                "row {index}"
+            );
+            if let Some(result) = result {
+                assert_eq!(
+                    result.speed,
+                    row["launch_scalar"].as_i64().unwrap() as i32,
+                    "row {index} scalar"
+                );
+                for (actual, field) in [
+                    (result.before_fire, "bits"),
+                    (result.velocity, "fired_bits"),
+                ] {
+                    let actual = actual.native().map(|n| format!("{:016x}", n.bits()));
+                    let expected: Vec<_> = row[field]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_str().unwrap())
+                        .collect();
+                    assert_eq!(
+                        actual.as_slice(),
+                        expected.as_slice(),
+                        "row {index} {field}"
+                    );
+                }
+            }
+            assert_eq!(row["rng_before"], row["rng_after"], "row {index} RNG");
+        }
+    }
 
     /// Both nuclear missiles' launch velocities against the original Fire
     /// calls (`tools/superweapon_oracle.py`: the silo's at 10.0 in every
@@ -765,6 +859,9 @@ mod tests {
                     delta,
                     speed: row["speed"].as_i64().unwrap() as i32,
                     homing: false,
+                    radial_segments: 0,
+                    radial_index: 0,
+                    body_heading: 0,
                     vertical: row["vertical"].as_bool().unwrap_or(false),
                     heading: row["hull"].as_u64().map(|hull| {
                         if row["turret"].as_bool().unwrap() {

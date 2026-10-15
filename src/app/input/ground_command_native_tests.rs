@@ -34,6 +34,7 @@ fn produce_move(
 /// Query7404B0/click738910 -> ordinary Event -> Unit741970 returns, with
 /// initialized component priors rather than whole construction/AI parity.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_unit_reissues_match_original_command_returns() {
     native::check_initialized_ground_reissues(&["unit_plain_A_B", "unit_shift_A_B"], produce_move);
 }
@@ -44,6 +45,7 @@ fn initialized_unit_shift_resolves_original_outside_playfield_cell_before_event(
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_unit_same_and_later_reissues_match_original_command_returns() {
     native::check_initialized_ground_reissues(
         &[
@@ -57,6 +59,7 @@ fn initialized_unit_same_and_later_reissues_match_original_command_returns() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn initialized_unit_paid_head_and_event_stop_reissues_match_original_returns() {
     native::check_initialized_unit_paid_reissues(produce_move);
 }

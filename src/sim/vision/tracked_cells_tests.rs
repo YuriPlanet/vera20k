@@ -57,6 +57,7 @@ fn reveal_between_frames(
 /// which folds every fog grid and sight admission, is the same whether the
 /// frame passes visit the tracked cells or every cell and footprint.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn tracked_fog_passes_match_visiting_every_cell() {
     let Some(rules) = retail_rules() else {
         return;

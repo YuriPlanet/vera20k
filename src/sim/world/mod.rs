@@ -256,7 +256,8 @@ pub struct TickResult {
     pub frame_committed: bool,
     pub executed_commands: usize,
     /// The state hash after this frame, on the frames
-    /// [`Simulation::hash_state_every`] selects; `None` on the others.
+    /// [`Simulation::hash_state_every`] selects and on every frame that ends
+    /// the match (`frame_committed` false); `None` on the others.
     pub state_hash: Option<u64>,
     /// This call latched the natural win/loss score snapshot before hashing.
     pub terminal_score_finalized: bool,
@@ -1400,7 +1401,7 @@ pub struct Simulation {
     /// VERA-only: which frames hash their state for the TickResult, by tick
     /// number. Every frame unless the caller asks for fewer; normal play's
     /// frame loop asks for every [`crate::sim::replay::PLAY_HASH_INTERVAL`]th.
-    /// Never saved or hashed.
+    /// A frame that ends the match hashes regardless. Never saved or hashed.
     #[serde(skip, default = "every_frame")]
     state_hash_interval: std::num::NonZeroU64,
     /// Pending gameplay commands waiting for their scheduled execution tick.
@@ -2092,7 +2093,6 @@ impl Simulation {
         );
         let crate::sim::combat::CombatEmit {
             effects,
-            projectile_spawns,
             fire_events,
             // The receiver already committed these inline before returning.
             damage_events: _,
@@ -2101,7 +2101,6 @@ impl Simulation {
             spawn_target_updates: _,
             drain_links: _,
         } = emit;
-        self.admit_projectile_spawns(projectile_spawns, rules);
         let receipt = damage_consequences::DamageConsequences::live_fire(
             effects,
             pings,
@@ -2140,7 +2139,6 @@ impl Simulation {
         );
         let terrain_navigation_changed_cells = run.finish();
 
-        self.admit_projectile_spawns(commit.projectile_spawns, rules);
         #[cfg(test)]
         if let Some(fixture) = self.receiver_fixture.as_mut() {
             let changed = commit.effects.bridge_state_changed;
@@ -4213,7 +4211,7 @@ impl Simulation {
     /// Admit the bullets a detonation spawned (`BulletClass::SpawnShrapnel
     /// @ 0x0046A310`), each [`Self::construct_bullet_scheme`]d as every
     /// constructed bullet is. SpawnShrapnel then Fires each one (vt+0x1F0,
-    /// `0x0046A875`, `0x0046AD24`), whose Inviso arm (`0x004688B7..0x00468986`)
+    /// `0x0046A875`, `0x0046AD29`), whose Inviso arm (`0x004688B7..0x00468986`)
     /// stands an `Inviso=` child on its target's vt+0x58, the coordinate the
     /// spawn captured ([`ProjectileStore::fire_inviso`]); its OnBridge stays
     /// clear, as only FireAt copies one.
@@ -4243,6 +4241,10 @@ impl Simulation {
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
             self.construct_bullet_scheme(stable_id, rules);
+            #[cfg(test)]
+            if let Some(fixture) = self.receiver_fixture.as_mut() {
+                fixture.admitted_spawns.push((stable_id, inviso, projectile));
+            }
             if inviso {
                 self.projectiles.fire_inviso(stable_id, placement, false);
             }
@@ -6755,8 +6757,10 @@ impl Simulation {
     }
 
     /// From the next frame on, hash the state for the TickResult only after
-    /// frames whose tick is a multiple of `frames` (1: every frame). A fixed
-    /// frame count, so the same commands always hash the same frames.
+    /// frames whose tick is a multiple of `frames` (1: every frame), and after
+    /// every frame that ends the match (an EXIT, a quit, the current house's
+    /// win or loss, a lost connection), whose `frame_committed` is false. A
+    /// fixed frame count, so the same commands always hash the same frames.
     pub fn hash_state_every(&mut self, frames: std::num::NonZeroU64) {
         self.state_hash_interval = frames;
     }
@@ -6834,7 +6838,9 @@ impl Simulation {
         trigger_inputs: Option<TriggerInputs<'_>>,
         effects: FrameEffects<'_>,
     ) -> Result<MasterFrameOutput, FrameAdvanceError> {
-        let effects = effects.with_rules(rules);
+        let effects = effects
+            .with_rules(rules)
+            .with_overlay_registry(overlay_registry);
         // A failed earlier frame never reached collection; drop its value.
         self.frame_sync_checksum = None;
         self.combat_light_requests.clear();
@@ -7020,7 +7026,6 @@ impl Simulation {
                 &projectile_detonations,
                 effects,
             );
-            self.admit_projectile_spawns(combat_result.projectile_spawns.iter().copied(), rules);
             bridge_state_changed |=
                 self.visit_combat_tail(first_tail_id, rules, overlay_registry, effects);
             // Unit facing already committed immediately after that Unit's
@@ -7173,11 +7178,14 @@ impl Simulation {
         self.debug_assert_lifecycle_consistent();
         let terminal_score_finalized =
             self.natural_outcome_exit_ready() && self.finalize_terminal_score_snapshot();
-        let state_hash = self
-            .session
-            .tick
-            .is_multiple_of(self.state_hash_interval.get())
-            .then(|| self.state_hash());
+        // A frame that ends the match hashes whatever its tick: the replay
+        // log records it as its last frame.
+        let state_hash = (!frame_committed
+            || self
+                .session
+                .tick
+                .is_multiple_of(self.state_hash_interval.get()))
+        .then(|| self.state_hash());
         Ok(MasterFrameOutput {
             admitted_commands: commands,
             tick: TickResult {
@@ -7362,3 +7370,5 @@ mod ore_spread_oracle_tests;
 
 #[cfg(test)]
 mod drop_as_bomb_integration_tests;
+
+mod airstrike_aircraft;

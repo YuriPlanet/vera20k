@@ -2,6 +2,8 @@
 and the computer houses' use of their superweapons.
 
 Run python -m tools.superweapon_oracle --check (or explicit --write).
+The focused --airstrike-tint option reads/writes tools/airstrike_tint.json;
+src/sim/superweapon/airstrike_tint_tests.rs consumes it.
 Rust consumers: src/sim/superweapon/fire_tests.rs (click_fire,
 defense_alert), src/sim/world/techno_ai/building_missile.rs (mission_missile),
 src/sim/projectile/launch.rs (both velocities), src/sim/combat/nuke_maker_tests.rs
@@ -3588,6 +3590,173 @@ def tint_building(emu, *, curtain=(4990, 750), stage=0, tint=(-1, 0), shielded=1
     emu.write32(this + TECHNO_AIRSTRIKE, TINT_AIRSTRIKE if airstrike else 0)
     emu.write32(TINT_AIRSTRIKE + 0x50, this if airstrike == 'self' else TINT_OTHER)
     return this
+
+
+AIR_OUTER = 0x1A8
+START_FRAME = 1000
+DRAW_RETURNS = {0x70E699: 'iron', 0x70EA50: 'airstrike'}
+
+
+def air_tint_state(emu, this, stage, timer):
+    return [emu.read_i32(this + offset) for offset in (stage, timer, timer + 8)]
+
+
+def install_draw_observers(emu):
+    record_draws(emu)
+    tracking = {'raw': 0, 'before': 0, 'calls': []}
+
+    def entering(uc, address, size, data):
+        tracking['before'] = tracking['raw']
+
+    def raw(uc, address, size, data):
+        # The rejection loop's original primitive XOR update begins here.
+        tracking['raw'] += 1
+
+    def returned(uc, address, size, data):
+        item = {'phase': DRAW_RETURNS[address], 'value': i32(uc.reg_read(UC_X86_REG_EAX)),
+                'raw_updates': tracking['raw'] - tracking['before']}
+        tracking['calls'].append(item)
+
+    emu.uc.hook_add(UC_HOOK_CODE, entering, begin=RANDOM_RANGED, end=RANDOM_RANGED)
+    emu.uc.hook_add(UC_HOOK_CODE, raw, begin=0x65C837, end=0x65C837)
+    for address in DRAW_RETURNS:
+        emu.uc.hook_add(UC_HOOK_CODE, returned, begin=address, end=address)
+    return tracking
+
+
+def air_tint_both(emu, this):
+    # Execute the actual TechnoClass::AI call sequence, stopping before its
+    # next unrelated block. These are NOT reordered Python calls.
+    sp = STACK_BASE + STACK_SIZE - 0x1000
+    emu.uc.reg_write(UC_X86_REG_ESP, sp)
+    emu.uc.reg_write(UC_X86_REG_ESI, this)
+    emu.uc.reg_write(UC_X86_REG_FPCW, NATIVE_FPCW)
+    run_checked(emu.uc, 0x6F9EAD, 0x6F9EBB,
+                required_addresses=(0x70E5A0, 0x70E920))
+    assert emu.uc.reg_read(UC_X86_REG_ESP) == sp
+
+
+def air_tint_history(*, name, air_duration, frames, seed=7, iron_duration=None,
+                     operations=None):
+    emu = Emu()
+    this = tint_building(emu, curtain=(-1, 0), shielded=0, airstrike='self')
+    seed_scenario_rng(emu, seed)
+    track = install_draw_observers(emu)
+    emu.write32(FRAME, START_FRAME)
+    emu.invoke(0x70E300, ecx=this, args=[air_duration])
+    if iron_duration is not None:
+        emu.invoke(0x70E2B0, ecx=this, args=[iron_duration, 0, 0])
+    initial = {
+        'air': air_tint_state(emu, this, TECHNO_AIRSTRIKE_STAGE, TECHNO_AIRSTRIKE_TIMER),
+        'iron': air_tint_state(emu, this, TECHNO_TINT_STAGE, TECHNO_TINT_TIMER),
+    }
+    previous, steps = None, []
+    for offset in range(frames):
+        emu.write32(FRAME, START_FRAME + offset)
+        emu.events = []
+        track['calls'] = []
+        for operation in (operations or {}).get(offset, []):
+            if operation == 'clear_marker':
+                emu.write32(this + TECHNO_AIRSTRIKE, 0)
+            elif operation == 'restore_marker':
+                emu.write32(this + TECHNO_AIRSTRIKE, TINT_AIRSTRIKE)
+            elif operation == 'other_target':
+                emu.write32(TINT_AIRSTRIKE + 0x50, TINT_OTHER)
+            elif operation == 'self_target':
+                emu.write32(TINT_AIRSTRIKE + 0x50, this)
+            elif operation == 'stop_outer':
+                emu.invoke(0x70E340, ecx=this)
+            else:
+                raise ValueError(operation)
+        if iron_duration is None:
+            emu.invoke(0x70E920, ecx=this)
+        else:
+            air_tint_both(emu, this)
+        current = {
+            'air': air_tint_state(emu, this, TECHNO_AIRSTRIKE_STAGE, TECHNO_AIRSTRIKE_TIMER),
+            'iron': air_tint_state(emu, this, TECHNO_TINT_STAGE, TECHNO_TINT_TIMER),
+        }
+        if current != previous or emu.events or offset in (operations or {}):
+            steps.append({'offset': offset, **current, 'draws': emu.events,
+                          'returned_draws': list(track['calls'])})
+        previous = current
+    return {
+        'name': name, 'air_duration': air_duration, 'iron_duration': iron_duration,
+        'seed': seed, 'start': START_FRAME, 'frames': frames, 'initial': initial,
+        'operations': operations or {}, 'steps': steps,
+        'raw_rng_updates': track['raw'],
+        'outer_final': [emu.read_i32(this + AIR_OUTER), emu.read_i32(this + AIR_OUTER + 8)],
+        'rng_after': rng_state(emu),
+    }
+
+
+def air_tint_rng_controls(seed):
+    emu = Emu()
+    seed_scenario_rng(emu, seed)
+    rows = [{'calls': 0, 'values': [], 'rng_after': rng_state(emu)}]
+    values = []
+    for count in (1, 2):
+        values.append(i32(emu.invoke(RANDOM_RANGED, ecx=SCENARIO_RANDOM, args=[-5, 5])))
+        rows.append({'calls': count, 'values': list(values), 'rng_after': rng_state(emu)})
+    return {'seed': seed, 'rows': rows}
+
+
+def airstrike_tint():
+    """Small executed corpus for the tint's signed arithmetic and Scenario
+    draw count/order. Full stage histories include timer and marker edge cases;
+    the intensity controls exercise every phase and wrapping products."""
+    histories = [
+        air_tint_history(name='air_long', air_duration=100000, frames=230),
+        air_tint_history(name='air_threshold_below', air_duration=319, frames=325),
+        air_tint_history(name='air_threshold_at', air_duration=320, frames=326),
+        air_tint_history(name='simultaneous', air_duration=100000, iron_duration=750, frames=180),
+        air_tint_history(name='simultaneous_seed3', air_duration=100000, iron_duration=750,
+                         seed=3, frames=180),
+        air_tint_history(name='marker_clear_restore', air_duration=100000, frames=80,
+                         operations={12: ['clear_marker'], 20: ['restore_marker']}),
+        air_tint_history(name='other_target_restore', air_duration=100000, frames=80,
+                         operations={12: ['other_target'], 20: ['self_target']}),
+        air_tint_history(name='outer_stop', air_duration=100000, frames=200,
+                         operations={12: ['stop_outer']}),
+    ]
+    emu = Emu()
+    frame = 5000
+    emu.write32(FRAME, frame)
+    intensities = []
+    for stage, left in ((0, 0), (1, 6), (1, 1), (2, 4), (3, 24), (3, 0),
+                        (4, 64), (4, 1), (5, 64), (5, 1), (6, 0),
+                        (7, 6), (8, 4), (9, 20), (9, 0), (10, 0),
+                        (1, -8388608), (4, -8388608), (5, 8388607), (9, 8388607)):
+        for iron_stage, iron_left in ((0, 0), (3, 24), (6, 0)):
+            this = curtain_techno(emu, stage=iron_stage, tint=(-1, iron_left))
+            emu.write32(this + TECHNO_AIRSTRIKE_STAGE, stage)
+            emu.write32(this + TECHNO_AIRSTRIKE_TIMER, -1)
+            emu.write32(this + TECHNO_AIRSTRIKE_TIMER + 8, left)
+            values = [i32(emu.invoke(0x70E360, ecx=this, args=[value & 0xFFFFFFFF]))
+                      for value in TINT_INTENSITIES]
+            intensities.append([iron_stage, iron_left, stage, left, values])
+    controls = [air_tint_rng_controls(7), air_tint_rng_controls(3)]
+    for history in histories:
+        count = sum(len(step['returned_draws']) for step in history['steps'])
+        control = next(row for row in controls if row['seed'] == history['seed'])['rows'][count]
+        assert history['rng_after'] == control['rng_after'], history['name']
+    return dict(histories=histories, intensities=intensities,
+                inputs=TINT_INTENSITIES, rng_controls=controls)
+
+
+def airstrike_tint_metadata():
+    return provenance(
+        scope='Airstrike tint numeric/RNG controls; simultaneous native Techno AI slice orders Iron before Airstrike.',
+        assumptions=['FRAME is advanced by the harness.',
+                     'Original StartAirstrikeTimer and IronCurtain initialize histories.',
+                     'Original RandomClass constructor initializes the Scenario stream.'],
+        substitutions=['WhatAmI answers the initialized fixture class.',
+                       'Other-target/marker controls change only the pointer gate.',
+                       'GetCoords and allocation hooks are unused by tint bodies.'],
+        entry_points={'start_airstrike': 0x70E300, 'stop_airstrike': 0x70E340,
+                      'update_airstrike': 0x70E920, 'iron_curtain': 0x70E2B0,
+                      'intensity': 0x70E360, 'ai_slice_start': 0x6F9EAD,
+                      'ai_slice_end': 0x6F9EBB, 'random_ranged': RANDOM_RANGED})
 
 
 def tint_rules(emu, *, force_color=6, laser_color=4, pixel_format=2):
@@ -7770,6 +7939,12 @@ def generate():
 
 if __name__ == '__main__':
     import sys
+    if '--airstrike-tint' in sys.argv[1:]:
+        arguments = sys.argv[1:]
+        arguments.remove('--airstrike-tint')
+        finish_vectors(airstrike_tint, Path(__file__).with_name('airstrike_tint.json'),
+                       provenance=airstrike_tint_metadata, argv=arguments)
+        raise SystemExit
     if '--chrono-screen' in sys.argv[1:]:
         arguments = sys.argv[1:]
         arguments.remove('--chrono-screen')

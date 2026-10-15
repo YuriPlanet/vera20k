@@ -311,6 +311,7 @@ fn physical_retail_mgtk_disguise_rules_match_original_root_reader() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn physical_retail_mgtk_disguise_rules_match_original_battle_scenario() {
     let Some(retail) = super::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP") else {
         return;

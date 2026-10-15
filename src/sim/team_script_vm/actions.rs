@@ -62,9 +62,6 @@
 //!   (`team_out_of_ammo`). Trigger: a team of units with `Ammo=` above 0.
 //!   Effect: the team keeps attacking where native would move on once all
 //!   are empty.
-//! - `Coordinate_Move`'s far branch reads Foot `+0x68E` (a target the
-//!   tank-bunker scans acquired), which no ported code writes: it reads
-//!   clear, so an `Aggressive=` team's fighting member keeps fighting.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
@@ -1913,9 +1910,16 @@ impl Simulation {
                 }
             } else {
                 if aggressive && entity.attack_target.target().is_some() {
-                    continue;
+                    if !entity.tesla_charger.is_active() {
+                        continue;
+                    }
+                    //6EBDF3..6EBE0D recalls an automatic coil charger: the
+                    //class setter clears its target before Move/Commence.
+                    self.team_member_clear_target(member, rules);
                 }
-                if entity.mission.effective() != MissionId::from_known(MissionType::Move) {
+                if self.substrate.entities.get(member).is_some_and(|entity| {
+                    entity.mission.effective() != MissionId::from_known(MissionType::Move)
+                }) {
                     self.team_member_queue_mission(member, MissionType::Move, rules);
                     self.team_member_commence(member, rules);
                 }

@@ -880,9 +880,8 @@ impl Simulation {
     /// - prone: Prone;
     /// - otherwise Ready.
     ///
-    /// The sequencer applies the completion facing hint first. RESIDUAL:
-    /// the actual AirstrikeClass+294 secondary-fire repeat at520D7E..520E00
-    /// needs that manager's lifecycle; ordinary GI has no such manager.
+    /// The sequencer applies the completion facing hint first. An Airstrike
+    /// owner instead repeats stationary secondary fire at520D7E..520E00.
     fn infantry_default_action(
         &mut self,
         id: u64,
@@ -900,6 +899,23 @@ impl Simulation {
         //Teleport/Infantry sequencer controls) and existing Walk/Jumpjet rows.
         let is_moving = super::motion_query::is_moving(actor) == Some(true);
         let moving = is_moving && actor.foot_speed.above_tenth();
+        // Infantry520D7E..520E00 repeats a stationary designation action
+        // while TarCom and the Airstrike link remain. This uses Is_Moving,
+        // without the default walk arm's speed threshold.
+        if matches!(action, 40 | 41)
+            && actor.airstrike_link().is_some()
+            && actor.attack_target.target().is_some()
+            && !is_moving
+        {
+            let requested = if is_prone(actor) { 41 } else { 40 };
+            if let Err(cause) = self.infantry_do_action(id, requested, true, rules, effects) {
+                log::debug!("infantry {id} designation repeat: {cause}");
+            }
+            if let Some(actor) = self.substrate.entities.get_mut(id) {
+                actor.mission_leaf.set_foot_firing_sequence(0);
+            }
+            return;
+        }
         let requested = if moving {
             if is_prone(actor) { DO_CRAWL } else { DO_WALK }
         } else if deploy_action(action) {

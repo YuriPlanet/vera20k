@@ -107,6 +107,42 @@ impl TerrainObjectState {
         crate::sim::projectile::ProjectileCoord::new(x, y, self.world_z_leptons)
     }
 
+    /// Terrain retains Object5F5F40/5F6B90/5F4260. Its live admitted
+    /// lifecycle represents Marked; Limbo removes that membership.
+    pub(crate) fn height(&self, terrain: Option<&ResolvedTerrainGrid>) -> i32 {
+        let coord = self.world_coord();
+        let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        crate::sim::movement::air_movement::object_height_in_query(
+            crate::sim::components::DriveCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+            false,
+            cells.as_ref(),
+        )
+    }
+
+    pub(crate) fn is_in_air(&self, terrain: Option<&ResolvedTerrainGrid>) -> bool {
+        crate::sim::movement::air_movement::object_flight_predicate(
+            self.is_live(),
+            || self.height(terrain),
+            true,
+        )
+    }
+
+    pub(crate) fn display_layer(
+        &self,
+        terrain: Option<&ResolvedTerrainGrid>,
+        rules: Option<&RuleSet>,
+    ) -> crate::sim::world::display_layers::DisplayLayer {
+        crate::sim::world::display_layers::DisplayLayer::for_object(
+            self.is_in_air(terrain),
+            || self.height(terrain),
+            rules.map_or(400, |rules| rules.general.display_cruise_height),
+        )
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(stable_id: u64, type_ref: InternedId, rx: u16, ry: u16) -> Self {
         Self {

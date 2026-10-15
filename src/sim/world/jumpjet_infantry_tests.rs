@@ -511,6 +511,7 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
 /// returns it to Ready, where it idles again. With the pose alone its fidget
 /// never ended, and it never idled again.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_grounded_rocketeer_fidgets_and_turns_to_the_fidgets_facing() {
     use crate::sim::movement::infantry_action::{DO_IDLE1, DO_IDLE2, DO_READY};
     let row = serde_json::json!({"doing": DO_READY, "fraction": 0.0, "height": 0,

@@ -447,8 +447,8 @@ pub struct GameEntity {
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     /// Optional presentation-only native recoil, owned by voxel_recoil.
     voxel_recoil: Option<Box<voxel_recoil::VoxelRecoil>>,
-    /// Techno+3B8, the burst index, owned by `combat::burst`; it survives
-    /// target replacement and mission changes.
+    /// Techno+3B8 burst and +43C radial launch indices, owned by
+    /// `combat::burst`. Only the burst index resets on a null target.
     #[serde(default)]
     pub(crate) weapon_burst: crate::sim::combat::burst::WeaponBurst,
     /// Sole native Building+534/+538 body state; construction/sale use the
@@ -473,6 +473,13 @@ pub struct GameEntity {
     /// the Grand_Opening guard. `sim::building_art` owns it.
     #[serde(default)]
     pub(crate) building_art: crate::sim::building_art::BuildingArt,
+    /// Building+66C charger pointers and +661 weapon latch, owned by
+    /// `sim::tesla_charging` independently of House power accounting.
+    #[serde(default)]
+    pub(crate) tesla_charge: crate::sim::tesla_charging::BuildingCharge,
+    /// Foot+68E automatic charging-target intent, owned by `sim::tesla_charging`.
+    #[serde(default)]
+    pub(crate) tesla_charger: crate::sim::tesla_charging::TeslaCharger,
     /// The last operational sample (`BuildingClass+0x6C8`), a
     /// [`LastOperational`] that `world::gap_generator` owns.
     ///
@@ -582,6 +589,13 @@ pub struct GameEntity {
     /// [`is_invulnerable`]: crate::sim::superweapon::invulnerability::is_invulnerable
     #[serde(default)]
     pub(crate) invulnerability: Option<InvulnerabilityState>,
+    /// Techno+294 owned manager or borrowed plane/building link; Airstrike
+    /// owns both the relationship and its cancellation/removal lifecycle.
+    #[serde(default)]
+    pub(crate) airstrike: crate::sim::airstrike::AirstrikeState,
+    /// Techno+1A8/+1B4/+1C0: outer timer and independent tint phase.
+    #[serde(default)]
+    pub(crate) airstrike_tint: crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
     /// The victim side of mind control (`TechnoClass+0x2C0` MindControlledBy,
     /// `+0x2C8` the ring anim), written only by `capture_manager`.
     #[serde(default)]
@@ -1422,6 +1436,8 @@ impl GameEntity {
             building_sale: None,
             ai_placement_timer: Default::default(),
             building_art: Default::default(),
+            tesla_charge: Default::default(),
+            tesla_charger: Default::default(),
             building_last_operational: Default::default(),
             building_powered_center: Default::default(),
             building_has_engineer: Default::default(),
@@ -1443,6 +1459,8 @@ impl GameEntity {
             spawn_owner_id: Default::default(),
             fall: ObjectFallState::default(),
             invulnerability: None,
+            airstrike: Default::default(),
+            airstrike_tint: Default::default(),
             mind_control: Default::default(),
             temporal: Default::default(),
             bomb: None,
@@ -1741,6 +1759,12 @@ impl GameEntity {
     /// `Object+0x90`, IsAlive; see the field.
     pub fn is_object_alive(&self) -> bool {
         self.lifecycle.object_alive()
+    }
+
+    /// `ObjectClass+0x81`, InLimbo: off the map, as an object still in its
+    /// factory or a transport, or a V3 rocket in its launcher.
+    pub fn in_limbo(&self) -> bool {
+        self.lifecycle.in_limbo()
     }
 
     /// Transitional Rust system gate until ordinary Infantry lifecycle authority

@@ -831,7 +831,7 @@ mod tests {
     fn aircraft_ready_to_commence_action_and_transition_matrix_is_exact() {
         for current in [MISSION_STICKY.raw(), MISSION_RESCUE.raw()] {
             let mission = mission_fixture(current, MissionId::NONE.raw(), 0);
-            let leaf_state = MissionLeafState::aircraft_raw_for_test(0, 1, false);
+            let leaf_state = MissionLeafState::aircraft_raw_for_test(0, 1);
             assert_eq!(
                 aircraft_ready_to_commence(AircraftReadyView {
                     mission: &mission,
@@ -849,7 +849,7 @@ mod tests {
             (MISSION_AIRCRAFT_ACTION_EXCEPTION.raw(), 255, 0, false),
         ] {
             let mission = mission_fixture(current, MissionId::NONE.raw(), 0);
-            let leaf_state = MissionLeafState::aircraft_raw_for_test(action, transition, false);
+            let leaf_state = MissionLeafState::aircraft_raw_for_test(action, transition);
             assert_eq!(
                 aircraft_ready_to_commence(AircraftReadyView {
                     mission: &mission,

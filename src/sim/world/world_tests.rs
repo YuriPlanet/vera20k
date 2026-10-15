@@ -220,6 +220,26 @@ fn a_state_hash_interval_selects_frames_by_tick() {
     }
 }
 
+/// A frame that ends the match hashes between intervals, so the replay log's
+/// last frame carries the final state: here the frame an EXIT executes on.
+#[test]
+fn a_match_ending_frame_hashes_between_intervals() {
+    let (mut sim, owner) = game_speed_command_sim();
+    let interval = crate::sim::replay::PLAY_HASH_INTERVAL;
+    sim.hash_state_every(interval);
+    let committed = sim.advance_tick(&[], None, None, None, 67);
+    assert!(committed.frame_committed);
+    assert_eq!(committed.state_hash, None, "tick {}", committed.tick);
+
+    let exit = CommandEnvelope::new(owner, committed.tick + 1, Command::ExitMatch);
+    let ended = sim.advance_tick(&[exit], None, None, None, 67);
+    assert_eq!(ended.executed_commands, 1);
+    assert!(!ended.frame_committed);
+    // It keeps the last committed tick, which is off the interval.
+    assert_eq!(ended.tick, committed.tick);
+    assert_eq!(ended.state_hash, Some(sim.state_hash()));
+}
+
 #[test]
 fn invalid_or_unknown_game_speed_transition_is_consumed_without_state_effect() {
     let (mut invalid, owner) = game_speed_command_sim();

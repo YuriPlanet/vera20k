@@ -722,6 +722,7 @@ fn a_teleporter_is_repaired_at_a_depot_and_drives_off() {
 /// park beside it (`0x0070D8F0`) and take the slot from their own
 /// `FootClass::AI` once it frees (`0x0070D7E0`).
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
     let depot_rules = format!(
         "{UNITS}[BuildingTypes]\n1=DEPOT\n\

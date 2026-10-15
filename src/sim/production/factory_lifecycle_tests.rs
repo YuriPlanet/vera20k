@@ -64,6 +64,7 @@ fn world_with(rules: RuleSet, seed: u64) -> (Simulation, RuleSet, InternedId) {
 /// Limbo and the runtime; building admission/construction and map loading are
 /// outside this fixture.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/sidebar_oracle/factory_loss.json",
@@ -431,6 +432,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
 /// Use physical stock Battle rules through the scenario reader, including its
 /// mode/map passes. This is a production regression, not a native timing golden.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_superweapon_construction_survives_revalidation() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

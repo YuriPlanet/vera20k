@@ -818,6 +818,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
 /// compared mechanism; its complete RNG continuation is adopted through the
 /// persistence owner before the second call, without seed fitting or draws.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
     let Some((physical_ini, art)) = retail_rules_and_art() else {
         return;

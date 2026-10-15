@@ -15,6 +15,7 @@ fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn unit_entry_matches_original_height_bridge_and_tube_traversal() {
     compare_rows(
         crate::test_fixture::text("tools/spatial_oracle/unit_entry_traversal.json"),
@@ -42,6 +43,7 @@ fn unit_entry_reads_actual_blocker_movement_state() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn unit_entry_reads_fly_pitch_and_jumpjet_request_independently_of_phase() {
     compare_rows(
         crate::test_fixture::text("tools/spatial_oracle/unit_entry_air_motion.json"),

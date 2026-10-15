@@ -561,31 +561,23 @@ fn scan_radius_cells(
 }
 
 /// The air pre-pass's temporary coordinate lookup, built from the separately
-/// owned airborne registrations; its sweep-order residual is below.
+/// owned airborne registrations (the store keeps them in enter order); its
+/// sweep-order residual is below.
 fn airborne_index(
     entities: &EntityStore,
     min: (i32, i32),
     max: (i32, i32),
 ) -> BTreeMap<(u16, u16), Vec<u64>> {
-    let mut ordered: Vec<&GameEntity> = entities
-        .values()
-        .filter(|entity| {
-            let x = i32::from(entity.position.rx());
-            let y = i32::from(entity.position.ry());
-            entity.air_spatial_bucket().is_some()
-                && x >= min.0
-                && x <= max.0
-                && y >= min.1
-                && y <= max.1
-        })
-        .collect();
-    ordered.sort_by_key(|entity| (entity.air_spatial_enter_order(), entity.stable_id()));
     let mut airborne: BTreeMap<(u16, u16), Vec<u64>> = BTreeMap::new();
-    for entity in ordered {
-        airborne
-            .entry((entity.position.rx(), entity.position.ry()))
-            .or_default()
-            .push(entity.stable_id());
+    for entity in entities.airborne() {
+        let (rx, ry) = (entity.position.rx(), entity.position.ry());
+        let (x, y) = (i32::from(rx), i32::from(ry));
+        if x >= min.0 && x <= max.0 && y >= min.1 && y <= max.1 {
+            airborne
+                .entry((rx, ry))
+                .or_default()
+                .push(entity.stable_id());
+        }
     }
     airborne
 }

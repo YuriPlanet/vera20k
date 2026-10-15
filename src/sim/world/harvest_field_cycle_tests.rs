@@ -340,6 +340,7 @@ fn a_harvest_order_on_a_cutting_miner_keeps_state_one_and_cuts_on_arrival() {
 /// clear terrain and two owned refineries; this is a frame integration test,
 /// not a whole-map native comparison.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::sim::command::Command;

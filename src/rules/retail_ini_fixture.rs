@@ -269,10 +269,27 @@ pub(crate) fn retail_battle_rules_for_map(map_name: &str) -> Option<RetailBattle
     retail_mode_rules_for_map(1, map_name)
 }
 
+/// An explicit authored override merged into Hills' map before the existing
+/// production pass. Keep startup, mode and map chronology intact: reparsing
+/// a projected merged INI loses the startup AudioVisual defaults/postpass.
+#[cfg(test)]
+pub(crate) fn retail_battle_rules_with_map_patch(patch: &IniFile) -> Option<RetailBattleRules> {
+    retail_mode_rules_for_map_impl(1, "Hills.mmx", Some(patch))
+}
+
 /// [`retail_battle_rules_for_map`] for another retail skirmish mode, by its
 /// roster id.
 #[cfg(test)]
 pub(crate) fn retail_mode_rules_for_map(mode_id: i32, map_name: &str) -> Option<RetailBattleRules> {
+    retail_mode_rules_for_map_impl(mode_id, map_name, None)
+}
+
+#[cfg(test)]
+fn retail_mode_rules_for_map_impl(
+    mode_id: i32,
+    map_name: &str,
+    patch: Option<&IniFile>,
+) -> Option<RetailBattleRules> {
     use crate::rules::retail_sources::select_ini;
 
     let (root, mut assets) = retail_assets()?;
@@ -290,8 +307,12 @@ pub(crate) fn retail_mode_rules_for_map(mode_id: i32, map_name: &str) -> Option<
     let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets)
         .expect("load retail mode roster");
     let mode = crate::skirmish_modes::mode_by_id(&modes, mode_id).expect("stock skirmish mode");
-    let map = crate::map::source::load_map_by_name_or_path_with_assets(&root, map_name, &assets)
-        .expect("load requested retail Battle fixture");
+    let mut map =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, map_name, &assets)
+            .expect("load requested retail Battle fixture");
+    if let Some(patch) = patch {
+        map.map.ini.merge(patch);
+    }
     crate::map::theater::load_theater(&mut assets, &map.map.header.theater)
         .expect("load fixture theater before mode selection");
     let mode = select_ini(&assets, &mode.override_file).expect("select Battle override");

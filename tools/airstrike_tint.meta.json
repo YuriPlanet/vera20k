@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Airstrike tint numeric/RNG controls; simultaneous native Techno AI slice orders Iron before Airstrike.",
+  "assumptions": [
+    "FRAME is advanced by the harness.",
+    "Original StartAirstrikeTimer and IronCurtain initialize histories.",
+    "Original RandomClass constructor initializes the Scenario stream."
+  ],
+  "substitutions": [
+    "WhatAmI answers the initialized fixture class.",
+    "Other-target/marker controls change only the pointer gate.",
+    "GetCoords and allocation hooks are unused by tint bodies."
+  ],
+  "entry_points": {
+    "start_airstrike": "0x0070E300",
+    "stop_airstrike": "0x0070E340",
+    "update_airstrike": "0x0070E920",
+    "iron_curtain": "0x0070E2B0",
+    "intensity": "0x0070E360",
+    "ai_slice_start": "0x006F9EAD",
+    "ai_slice_end": "0x006F9EBB",
+    "random_ranged": "0x0065C7E0"
+  },
+  "replay_command": "python -m tools.superweapon_oracle --airstrike-tint",
+  "payload_sha256": "94dfe09fdd13546115b9f8ab08a36e97630bd810ed6935374d9963ff5a350f64"
+}

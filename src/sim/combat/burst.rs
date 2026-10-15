@@ -1,6 +1,7 @@
-//! Retained TechnoClass burst position, independent of Target and its orders.
+//! Retained TechnoClass firing indices, independent of Target and its orders.
 
 use serde::{Deserialize, Serialize};
+use std::hash::{Hash, Hasher};
 
 /// Techno+3B8: ctor6F2F01 initializes zero; FireAt6FF274 increments before
 /// GetROF and6FF2C5 stores the signed remainder afterwards. Target assignment
@@ -11,9 +12,26 @@ use serde::{Deserialize, Serialize};
 /// Unlimbo (`0x006B73F6`, `0x006B7585`).
 /// This owner replaces the old target-owned remaining-shot count. FLH and
 /// the next GetROF branch both read this retained index.
-#[derive(Debug, Default, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct WeaponBurst {
     index: i32,
+    /// Techno+43C: constructor6F3046 initializes zero. FireAt6FEADA reads
+    /// this independent fan position, then6FEBC5..6FEBDC increments/wraps
+    /// it. Assign_Target and the ordinary burst's remainder do not reset it.
+    #[serde(default)]
+    radial_index: i32,
+}
+
+impl Hash for WeaponBurst {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+        // Preserve established hashes when the additional retained state is
+        // zero; no fan history then distinguishes this object.
+        if self.radial_index != 0 {
+            b"radial-fire-index".hash(state);
+            self.radial_index.hash(state);
+        }
+    }
 }
 
 impl WeaponBurst {
@@ -23,6 +41,23 @@ impl WeaponBurst {
 
     pub(crate) fn next_index(self) -> i32 {
         self.index.wrapping_add(1)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn radial_index(self) -> i32 {
+        self.radial_index
+    }
+
+    /// Consume the positive RadialFireSegments fan at6FEAC5..6FEBE6. This
+    /// occurs before pitch/launch can fail, independently of complete_shot.
+    /// Preserve signed INC and CMP, including out-of-range loaded counters.
+    pub(crate) fn take_radial_index(&mut self, segments: i32) -> i32 {
+        let index = self.radial_index;
+        if segments > 0 {
+            let next = index.wrapping_add(1);
+            self.radial_index = if next >= segments { 0 } else { next };
+        }
+        index
     }
 
     /// Store 0: Assign_Target's null arm (`0x006FCF5B`) and a missile launch
@@ -47,6 +82,30 @@ mod tests {
     use crate::sim::mission::concrete_effects::represented_assign_target;
 
     #[test]
+    fn radial_index_matches_original_signed_increment_without_changing_burst() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/radial_launch.json",
+        ))
+        .unwrap();
+        for row in rows {
+            let index = row["radial_index"].as_i64().unwrap() as i32;
+            let mut state = WeaponBurst {
+                index: 7,
+                radial_index: index,
+            };
+            assert_eq!(
+                state.take_radial_index(row["radial_segments"].as_i64().unwrap() as i32),
+                index
+            );
+            assert_eq!(
+                state.radial_index(),
+                row["radial_next"].as_i64().unwrap() as i32
+            );
+            assert_eq!(state.index(), 7);
+        }
+    }
+
+    #[test]
     fn burst_index_matches_original_signed_increment_and_remainder() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/techno_burst_index.json",
@@ -56,6 +115,7 @@ mod tests {
         for row in rows {
             let mut burst = WeaponBurst {
                 index: row["index"].as_i64().unwrap() as i32,
+                ..Default::default()
             };
             assert_eq!(
                 burst.next_index(),

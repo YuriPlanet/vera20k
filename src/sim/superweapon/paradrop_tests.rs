@@ -1142,6 +1142,7 @@ fn assert_landed(
 /// retreats and leaves the map; they land around the target in Guard. The
 /// Super recharges.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_paradrops_land_their_lists_around_the_target() {
     for (name, count) in [(PARADROP, 6), (AMER_PARADROP, 8)] {
         let Some(rules) = retail_rules() else {

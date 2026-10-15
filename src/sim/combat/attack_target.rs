@@ -15,6 +15,15 @@ pub enum TargetKind {
     Cell(u16, u16),
 }
 
+impl From<TargetKind> for crate::sim::projectile::ProjectileTarget {
+    fn from(target: TargetKind) -> Self {
+        match target {
+            TargetKind::Entity(id) => Self::Entity(id),
+            TargetKind::Cell(rx, ry) => Self::Cell { rx, ry },
+        }
+    }
+}
+
 impl From<crate::sim::components::NavTargetRef> for TargetKind {
     /// A NavCom (`Foot+0x5A4`) as a target: its cell, or the object it names.
     fn from(target: crate::sim::components::NavTargetRef) -> Self {

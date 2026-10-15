@@ -485,6 +485,10 @@ fn default_true() -> bool {
 /// construction stamp writes them.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TypeFacts {
+    /// Aircraft `Spawned=yes` and `MissileSpawn=no`, read by Techno6FCE05
+    /// before its mid-attack retarget rejection. Independent of SpawnOwner.
+    #[serde(default)]
+    spawned_non_missile_aircraft: bool,
     /// `Foundation=`, as its rules string: the structure footprint the cell
     /// lists cover; `1x1` for a type without one.
     #[serde(default = "default_foundation")]
@@ -531,6 +535,7 @@ impl TypeFacts {
     /// empty hidden-occupancy profile, no other type's.
     pub(crate) fn new(category: EntityCategory) -> Self {
         Self {
+            spawned_non_missile_aircraft: false,
             foundation: default_foundation(),
             building_hidden_occupancy: (category == EntityCategory::Structure)
                 .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
@@ -546,6 +551,8 @@ impl TypeFacts {
     /// Copy the type's facts: the foundation for every object, the rest for
     /// a building.
     fn stamp(&mut self, category: EntityCategory, obj: &ObjectType) {
+        self.spawned_non_missile_aircraft =
+            category == EntityCategory::Aircraft && obj.spawned && !obj.missile_spawn;
         self.foundation = obj.foundation.clone();
         if category == EntityCategory::Structure {
             self.building_hidden_occupancy = Some(obj.hidden_occupancy);
@@ -561,6 +568,10 @@ impl TypeFacts {
     /// `Foundation=`, as its rules string.
     pub(crate) fn foundation(&self) -> &str {
         &self.foundation
+    }
+
+    pub(crate) fn spawned_non_missile_aircraft(&self) -> bool {
+        self.spawned_non_missile_aircraft
     }
 
     /// A building's hidden-object counter inputs.

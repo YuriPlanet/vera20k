@@ -498,7 +498,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         plane.set_category_for_test(EntityCategory::Aircraft);
         // The RadioClass constructor's one contact slot (`0x0065A764`).
         plane.radio_contacts.set_capacity(1);
-        plane.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1, false);
+        plane.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1);
         plane
             .mission
             .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {

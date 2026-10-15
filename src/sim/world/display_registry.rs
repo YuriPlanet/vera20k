@@ -79,11 +79,7 @@ pub(crate) fn entity_layer(
         // Object5F4260 uses Rules+420, not FlightLevel or a type's height.
         rules.map_or(400, |(rules, _)| rules.general.display_cruise_height)
     };
-    if adjusted_height < cruise_height {
-        DisplayLayer::AIR
-    } else {
-        DisplayLayer::TOP
-    }
+    DisplayLayer::for_object(true, || adjusted_height, cruise_height)
 }
 
 fn entity_sort_key(

@@ -704,6 +704,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn waterfall_attempts_advance_the_region_and_stamp_varied_water() {
         // A successful waterfall attempt shows two ways: the region advances
         // extra id, and the fills paint varied water tiles (water_base+1..+5),

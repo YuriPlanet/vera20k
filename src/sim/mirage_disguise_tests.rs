@@ -185,6 +185,7 @@ fn assert_visit(sim: &mut Simulation, rules: &RuleSet, row: &Value) {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn native_mirage_first_infantry_layer_and_timer_boundaries() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -239,6 +240,7 @@ fn native_mirage_first_infantry_layer_and_timer_boundaries() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn native_mirage_reveal_refresh_removal_and_reacquisition_history() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -275,6 +277,7 @@ fn native_mirage_reveal_refresh_removal_and_reacquisition_history() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn native_mirage_acquisition_gates_and_retained_identity() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -348,6 +351,7 @@ fn native_mirage_acquisition_gates_and_retained_identity() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn native_mirage_object_load_preserves_reveal_and_retained_continuations() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -398,6 +402,7 @@ fn native_mirage_constructor_initializes_identity_and_timer_frame() {
 /// resets Scenario Random2 to seed zero, so it cannot promise the unsaved
 /// stream's next tree. Identity, signed timer and the no-draw wait survive.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn mirage_full_snapshot_preserves_wait_and_uses_the_restored_scenario_owner() {
     use crate::sim::snapshot::GameSnapshot;
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {

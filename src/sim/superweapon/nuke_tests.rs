@@ -351,7 +351,7 @@ fn wait_matches_native() {
                 .advance_after_head(
                     head,
                     1,
-                    |_| None,
+                    |_, _| None,
                     None,
                     &dummy,
                     6,

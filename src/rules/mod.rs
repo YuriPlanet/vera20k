@@ -102,6 +102,7 @@
 //! - rules/ is depended on by: sim/, map/, render/, app/, audio/, ui/, net/
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
+pub mod airstrike;
 pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;

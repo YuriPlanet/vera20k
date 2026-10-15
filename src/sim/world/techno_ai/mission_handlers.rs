@@ -251,7 +251,7 @@ pub(crate) fn dispatch_foot_mission(
         // Doing is the instance+6C4 action index; Type+6C4 is the separate
         // UndeployDelay. Shared522510 establishes Doing27..30 exactly.
         //
-        // RESIDUAL (GSI-07.06) — two further Foot-body steps are absent:
+        // RESIDUAL (GSI-07.06) — the preceding HoverAttack step is absent:
         // - Step 1, the `HoverAttack` re-anchor. When `TechnoType+0x390`
         //   (`HoverAttack`, NOT `DefaultToGuardArea` — the research corpus has
         //   those crossed) is set and `GetHeight() == 0`, native finds a nearby
@@ -261,12 +261,6 @@ pub(crate) fn dispatch_foot_mission(
         //   grounded Siege Chopper on Attack. Player effect: retail nudges them
         //   off the spot; VERA's stay put. Frequency: routine in Allied and
         //   Soviet mid-game. The key IS parsed, for locomotor selection only.
-        // - Step 2, Foot+68E re-acquisition. Guard4D51C5 and AreaGuard4D7018
-        //   produce it for a secondary ElectricAssault warhead and an allied
-        //   Overpowerable building (stock SHK/TESLA). Attack4D4E0D clears it
-        //   after a non-null pick. The producer, consumer and team-coordinate
-        //   reader remain one required Tesla charging chain; none has a Rust
-        //   latch owner yet. This is unrelated to tank-bunker containment.
         // `InfantryClass::Mission_Attack @ 0x0051F3E0` opens with its C4 arm,
         // for every house.
         (EntityCategory::Infantry, Some(MissionType::Attack))
@@ -304,6 +298,41 @@ pub(crate) fn dispatch_foot_mission(
             MissionHandlerEvaluation { delay, queue }
         }
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Attack)) => {
+            // Foot4D4E0D..4D4E53 asks Greatest_Threat(mask1) while charging,
+            // without passive scan gates or timer writes. A failed scan keeps
+            // its coil; a successful scan clears the flag even on setter refusal.
+            if sim
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.tesla_charger.is_active())
+                && let Some(target) = super::target_scan::direct_greatest_threat(
+                    sim,
+                    rules,
+                    ctx.overlay_registry,
+                    id,
+                    crate::sim::combat::ScanMission::Guard,
+                )
+            {
+                let _ = sim.assign_target_represented(
+                    id,
+                    Some(crate::sim::combat::TargetKind::Entity(target)),
+                    Some(rules),
+                    ctx.overlay_registry,
+                    ctx.effects,
+                );
+                sim.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .tesla_charger
+                    .clear();
+            }
+            let has_attack_target = sim
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.attack_target.target().is_some());
             // MissionAttack4D4E6A calls Approach before its Scenario cadence
             // draw. The accepted destination is visible to this object's
             // subsequent Drive Process, and is retained while it fires.
@@ -315,7 +344,7 @@ pub(crate) fn dispatch_foot_mission(
             // next due Attack dispatch to queue an idle mission. Firing belongs
             // to the concrete class's separate combat host. Both branches draw
             // cadence jitter; the half-cadence band needs a live target.
-            let idle_queue = if input.has_attack_target {
+            let idle_queue = if has_attack_target {
                 None
             } else {
                 // Foot4D4E72 -> Techno709A54 releases a held Temporal victim
@@ -1757,9 +1786,9 @@ const AREA_GUARD_CADENCE_JITTER_MAX: u32 = 5;
 /// The heads (tank bunker, [`foot_building_entry_head`], then a computer
 /// Foot's navigation list, [`Simulation::area_guard_navigation_head`])
 /// precede it. With a Target and a post it approaches through
-/// [`Simulation::approach_target`] (`0x004D6F32`). Required larger chains:
-/// Tesla ElectricAssault adjacency4D6F44 (+68E, Overpowerable), the
-/// AI C4/Sabotage arm4D6DDA and the early harvester arm.
+/// [`Simulation::approach_target`] (`0x004D6F32`). ElectricAssault adjacency
+/// follows the idle block. Required larger chains: the AI C4/Sabotage arm
+/// 4D6DDA and the early harvester arm.
 /// They retain their existing boundaries; these controls do not certify them.
 pub(super) fn evaluate_foot_area_guard(
     sim: &mut Simulation,
@@ -1895,6 +1924,9 @@ pub(super) fn evaluate_foot_area_guard(
     {
         let _ = sim.infantry_idle_action(id, rules, ctx.effects);
     }
+    //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence
+    //draw. An acquired enemy already returned above.
+    sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, ctx.effects);
     let base = mission_cadence(rules, MissionType::AreaGuard);
     // `0x004D7040..0x004D7048`: an aircraft (What_Am_I 2) doubles the Rate
     // before the draw.
@@ -2030,13 +2062,6 @@ fn foot_building_entry_head(
 ///   plants; VERA's shoots it instead. Frequency: every Guard dispatch of such
 ///   a computer-owned infantryman with a building target.
 ///   `+0xEC2` is UNCHECKED.
-/// - **Tesla charging adjacency** (0x004D5116-0x004D51D2; AreaGuard4D6F44).
-///   A secondary weapon's ElectricAssault warhead (`+0x158`)
-///   admits an adjacent allied Overpowerable building (`+0x1575`, reader460029).
-///   The handler assigns that building, sets Foot+68E, then queues Attack.
-///   Stock SHK/TESLA exercise this when a trooper stands beside its coil.
-///   Charging and the Attack/team consumers of +68E remain required; using
-///   bunker_link here would introduce the wrong state owner and effect.
 /// - **the second cadence-tail short-circuit ahead of the jitter draw**
 ///   (past the rearm return). `GetTechnoType()->[+0x6B0]` — the **`DistributedFire`**
 ///   bool, key string 0x00843A64, read by `TechnoTypeClass::ReadINI` at
@@ -2059,13 +2084,15 @@ pub(super) fn evaluate_foot_guard_cadence(
         return head;
     }
     let effects = ctx.effects;
+    let charging = sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, effects);
     //4D51A6 /4D51D8 precede even the rearm-timer early return. Unit's
     //receiver is a false stub; Infantry's owner decides actual admission.
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.attack_target.target().is_none())
+    if !charging
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.attack_target.target().is_none())
     {
         let _ = sim.infantry_idle_action(id, rules, effects);
     }
@@ -3039,6 +3066,10 @@ mod guard_rearm_tests {
             let mut sim = Simulation::with_seed(1);
             sim.session.binary_frame = field("frame") as u32;
             let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+            // Guard now reaches the native GetWeapon(1) query before its
+            // timer tail. Keep the fixture's null weapon, with valid identities.
+            entity.set_type_ref_for_test(sim.interner.intern("TEST"));
+            entity.set_owner_for_test(sim.interner.intern("Americans"));
             entity
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(

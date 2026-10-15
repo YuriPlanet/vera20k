@@ -1,0 +1,1246 @@
+[
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "406e61064c75cac0",
+      "8000000000000000",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fee7fd2ba3e52db",
+      "8000000000000000",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      16383
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 0,
+    "radial_next": 1,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      243.0320188809037,
+      -0.0,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "406ce3a6f2fc42ee",
+      "c052cb00d9d5fa95",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fed00f0bd1603de",
+      "bfd2de0e4bdfc2ea",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      13107
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 1,
+    "radial_next": 2,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      231.11412953634084,
+      -75.17192693611499,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "406894722e2c2968",
+      "c061da4136697f81",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fe8ad5d87253912",
+      "bfe1ec5a95a6ac0d",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      9830
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 2,
+    "radial_next": 3,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      196.63893803239193,
+      -142.8204605160245,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "4061da4136697f81",
+      "c06894722e2c2968",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fe1ec5a95a6ac0d",
+      "bfe8ad5d87253912",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      6553
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 4,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      142.8204605160245,
+      -196.63893803239193,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "4052cb00d9d5fa95",
+      "c06ce3a6f2fc42ee",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fd2de0e4bdfc2ea",
+      "bfed00f0bd1603de",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      3277
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 4,
+    "radial_next": 5,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      75.17192693611499,
+      -231.11412953634084,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "3d20c122a94b36c1",
+      "c06e61064c75cac0",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3ca0d21f08173f51",
+      "bfee7fd2ba3e52db",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      0
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 5,
+    "radial_next": 6,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      2.976185545038346e-14,
+      -243.0320188809037,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "c052bfa836febdfa",
+      "c06ce57ea7851027",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bfd2d2aa28486990",
+      "bfed02ca4fd70dbc",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      62260
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 6,
+    "radial_next": 7,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      -74.99464201810034,
+      -231.17171073902975,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "c061da4136697f81",
+      "c06894722e2c2968",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bfe1ec5a95a6ac0d",
+      "bfe8ad5d87253912",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      58984
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 7,
+    "radial_next": 8,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      -142.8204605160245,
+      -196.63893803239193,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "c06894722e2c2968",
+      "c061da4136697f81",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bfe8ad5d87253912",
+      "bfe1ec5a95a6ac0d",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      55707
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 8,
+    "radial_next": 9,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      -196.63893803239193,
+      -142.8204605160245,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "c06ce3a6f2fc42ee",
+      "c052cb00d9d5fa95",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bfed00f0bd1603de",
+      "bfd2de0e4bdfc2ea",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      52430
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 9,
+    "radial_next": 0,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      -231.11412953634084,
+      -75.17192693611499,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "bd30c122a94b36c1",
+      "406e61064c75cac0",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bcb0d21f08173f51",
+      "3fee7fd2ba3e52db",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      32767
+    ],
+    "hull": 16384,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 0,
+    "radial_next": 1,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      -5.952371090076692e-14,
+      243.0320188809037,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "c06ce3a6f2fc42ee",
+      "c052cb00d9d5fa95",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bfed00f0bd1603de",
+      "bfd2de0e4bdfc2ea",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      52429
+    ],
+    "hull": 65535,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 9,
+    "radial_next": 0,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      -231.11412953634084,
+      -75.17192693611499,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "406e5e38f3640f46",
+      "401a17e39b0fe8a3",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fee7d0289eb5b09",
+      "3f9a3257bf418f92",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      16677
+    ],
+    "hull": 33059,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 10,
+    "radial_next": 0,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      242.9444519953051,
+      6.523329184385292,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "406ce7554aa4a4b0",
+      "4052b44edde15b95",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fed04a2d019af0e",
+      "3fd2c7454db21fda",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      19660
+    ],
+    "hull": 0,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": -1,
+    "radial_next": 0,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      231.22916156918427,
+      74.81731364257423,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "c06ce3a6f2fc42ee",
+      "4052cb00d9d5fa95",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "bfed00f0bd1603de",
+      "3fd2de0e4bdfc2ea",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [
+      45875
+    ],
+    "hull": 65535,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 2147483647,
+    "radial_next": -2147483648,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": false,
+    "velocity": [
+      -231.11412953634084,
+      75.17192693611499,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "3fee686422acf33e",
+      "3fb2b1d4a5896384",
+      "3fd35fbd8c7374e0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fee68dde48d6357",
+      "3fb2b21f80b985ea",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [],
+    "hull": 16384,
+    "launch_scalar": 1,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 3,
+    "radial_segments": 0,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      0.9502430608041335,
+      0.07302598039076541,
+      0.3027185317603891
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "3fe97ca572a409d6",
+      "3fe0bf9c6d5e1f8e",
+      "3fd35fbd8c7374e0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fe97ca572a409d6",
+      "3fe0bf9c6d5e1f8e",
+      "3fd35fbd8c7374e0"
+    ],
+    "floater": false,
+    "headings": [],
+    "hull": 16384,
+    "launch_scalar": 1,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 3,
+    "radial_segments": 0,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 0,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      0.7964656104161871,
+      0.5233900199973378,
+      0.3027185317603891
+    ],
+    "vertical": true
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "4069634ed56300a3",
+      "4060aef5cefd821c",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "4069634ed56300a3",
+      "4060aef5cefd821c",
+      "40534c7a6aa40ea0"
+    ],
+    "floater": false,
+    "headings": [],
+    "hull": 16384,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 3,
+    "radial_segments": 0,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 0,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      203.1033732350962,
+      133.46750592721298,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "406e4a291e8c3708",
+      "40329f3eb6645e36",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "3fee68de5e510efb",
+      "3fb2b21fcb95d05e",
+      "3fd3600b1fffffff"
+    ],
+    "floater": false,
+    "headings": [],
+    "hull": 16384,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 3,
+    "radial_segments": -10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      242.31751944909797,
+      18.622050666335973,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "4069634ed56300a3",
+      "4060aef5cefd821c",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "4069634ed56300a3",
+      "4060aef5cefd821c",
+      "40534c7a6aa40ea0"
+    ],
+    "floater": false,
+    "headings": [],
+    "hull": 16384,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 3,
+    "radial_segments": -10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 0,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      203.1033732350962,
+      133.46750592721298,
+      77.19497171422199
+    ],
+    "vertical": true
+  },
+  {
+    "arcing": false,
+    "barrel": 17185,
+    "bits": [
+      "4069634ed56300a3",
+      "4060aef5cefd821c",
+      "40534c7a6aa40ea0"
+    ],
+    "calls": [
+      "0x4cb3d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      500
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "4069634ed56300a3",
+      "4060aef5cefd821c",
+      "40534c7a6aa40ea0"
+    ],
+    "floater": false,
+    "headings": [],
+    "hull": 16384,
+    "launch_scalar": 255,
+    "lobber": false,
+    "origin": [
+      1280,
+      1280,
+      0
+    ],
+    "pitch": 13178,
+    "radial_index": 3,
+    "radial_next": 3,
+    "radial_segments": -10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 0,
+    "speed": 255,
+    "success": 1,
+    "turret": true,
+    "velocity": [
+      203.1033732350962,
+      133.46750592721298,
+      77.19497171422199
+    ],
+    "vertical": false
+  },
+  {
+    "arcing": true,
+    "barrel": 0,
+    "bits": [
+      "bfee6e0a250378e0",
+      "bfd3cb8f34c68920",
+      "0000000000000000"
+    ],
+    "calls": [
+      "0x70d590",
+      "0x48a8d0",
+      "0x48a9d0"
+    ],
+    "delta": [
+      1200,
+      800,
+      0
+    ],
+    "dropping": false,
+    "fired_bits": [
+      "0000000000000000",
+      "0000000000000000",
+      "0000000000000000"
+    ],
+    "floater": false,
+    "headings": [
+      52430
+    ],
+    "hull": 0,
+    "launch_scalar": 1,
+    "lobber": false,
+    "origin": [
+      0,
+      0,
+      0
+    ],
+    "pitch": 16383,
+    "radial_index": 9,
+    "radial_next": 0,
+    "radial_segments": 10,
+    "rng_after": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rng_before": [
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    ],
+    "rot": 20,
+    "speed": 1,
+    "success": 0,
+    "turret": false,
+    "velocity": [
+      -0.9509325716897159,
+      -0.30929927972660387,
+      0.0
+    ],
+    "vertical": false
+  }
+]

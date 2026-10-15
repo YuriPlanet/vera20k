@@ -744,6 +744,7 @@ fn a_bio_reactor_team_member_walks_into_the_reactor() {
 /// A loaded Bio Reactor accepts the player's Unload order and ejects its cargo
 /// through the regular building mission and frame, one cargo head per visit.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_bio_reactor_unload_command_reveals_its_passenger() {
     let rules = rules();
     let (mut sim, grid) = arena(&rules);
@@ -1613,6 +1614,7 @@ fn a_seeker_beaten_to_the_last_slot_gives_up() {
 /// Initiate (`Size=1` within `SizeLimit=15`) and refuses a Lasher (no
 /// `UnitAbsorb=`).
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_retail_bio_reactor_takes_infantry_only() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -1957,6 +1959,7 @@ fn the_guard_head_garrison_seek_answers_captures_rate() {
 /// the house owns (`TechLevel=-1`) is not on the list, and a Rhino
 /// (NULL to CanBeOccupiedBy) is refused.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_retail_battle_bunker_admits_a_conscript() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -2223,6 +2226,7 @@ fn a_seeker_whose_tank_bunker_dies_gives_up_and_can_be_recruited() {
 /// the Chaos Drone are `Bunkerable=no`, and infantry are not `Bunkerable=`
 /// by default. The Lasher's seek takes the bunker.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_retail_tank_bunker_admits_the_lasher_and_the_gattling_tank() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {

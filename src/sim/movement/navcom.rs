@@ -421,8 +421,8 @@ pub(crate) fn target_cell_coord(
             z: z as i32,
         };
     }
-    // Existing no-map diagnostic adapter; ordinary receivers use the retained
-    // Cell identity and one shared native point above.
+    // Map-less fixtures take the centre at Z 0. Every gameplay world (app,
+    // headless, replay, sim-bench) comes from a map load.
     let point = crate::sim::cell_kernel::cell_center(
         crate::sim::cell_kernel::CellCoordinate {
             x: i32::from(rx as i16),
@@ -1109,6 +1109,38 @@ mod tests {
                 .unwrap();
 
         assert_ne!(first, second);
+    }
+
+    /// CellClass::GetCoords (`0x00486840`) through its caller API: the centre
+    /// takes the cell's ground Z, on a real cell and on the retained shared
+    /// dummy, without moving X/Y.
+    #[test]
+    fn target_cell_coord_takes_the_cells_ground_on_real_and_dummy_cells() {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        let get = |terrain: &ResolvedTerrainGrid, cell: (u16, u16)| {
+            target_cell_coord(cell.0, cell.1, Some(&NativeCellQuery::canonical(terrain)))
+        };
+        let mut terrain = crate::map::resolved_terrain::test_grid(
+            16,
+            16,
+            crate::map::resolved_terrain::test_clear_cell,
+        );
+        let flat = get(&terrain, (8, 8));
+        assert_eq!(flat, DriveCoord::cell(8, 8, 0));
+        terrain.cell_mut(8, 8).unwrap().level = 2;
+        assert_eq!(get(&terrain, (8, 8)), DriveCoord { z: 208, ..flat });
+
+        let dummy = ResolvedTerrainGrid::from_cells(0, 0, Vec::new());
+        let request = (u16::MAX, 7);
+        let flat_dummy = get(&dummy, request);
+        dummy.test_set_dummy_cell_level_slope(2, 0);
+        assert_eq!(
+            get(&dummy, request),
+            DriveCoord {
+                z: 208,
+                ..flat_dummy
+            }
+        );
     }
 
     #[test]

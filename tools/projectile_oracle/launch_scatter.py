@@ -1,6 +1,12 @@
 """Original launch scatter, shrapnel launch velocity and cluster direction math.
 
-Executes, case by case:
+The optional --shrapnel-chain mode executes full SpawnShrapnel46A310,
+including original selection, RNG, factory/Construct, Fire, Logic admission and
+first-generation Comet/SuperComet lasers. Its supplied-world and excluded
+lifetime boundary is recorded in shrapnel_chain.meta.json. Rust consumer:
+src/sim/combat/shrapnel_chain_tests.rs.
+
+Default numeric mode executes, case by case:
 - TechnoClass::FireAt's launch scatter, 0x006FE663..0x006FE8EE, both arms
   (flak: FlakScatter and not Inviso; plain). Sqrt_Approx 0x004CAC40,
   Math::sin 0x004CACB0, Math::cos 0x004CAD00 and ftol 0x007C5F00 run.
@@ -193,6 +199,330 @@ def shrapnel(case):
                 bits=[f"{bits:016x}" for bits in struct.unpack("<QQQ", uc.mem_read(velocity, 24))])
 
 
+def shrapnel_chain(case):
+    """Full46A310, child Fire and laser births; supplied incoming world only.
+
+    The existing Bullet world/reader owns initialization, RngTrace owns stream
+    observation and the registered native factory owns each child allocation.
+    No selection, random result, launch or effect result is supplied here.
+    """
+    import hashlib
+    from collections import deque
+    from tools.native_oracle import initialize_empty_windows_seh
+    from tools.projectile_oracle.bridge_render_inputs import BulletReader, assets_root, lexical
+    from tools.projectile_oracle.guided_step import create, xyz, vec, i32
+    from tools.projectile_oracle.ifv_impact import initialize_effect_registries, initialize_effect_world
+    from tools.projectile_oracle.ifv_launch import bullet_activation_transport, bullet_addref_transport
+    from tools.procedural_drawing_oracle.electric_bolt import RngTrace
+    from tools.spatial_oracle.building_prism import LASERS, LASER_VECTOR_INIT, laser_state
+    from tools.spatial_oracle.building_body_rules import RULES as INI_RULES, SP as CALL_SP, dwords
+
+    root = assets_root()
+    art, _ = lexical((root / 'ARTMD.INI').read_bytes(),
+                     {'AAHeatSeeker2', 'DRAGON', 'FV', 'LargeCometP', 'SmallCometP',
+                      'SuperCometP', 'SuperSmallCometP'})
+    m, _, cells, _ = create(False, reader=BulletReader(art))
+    u = m.u
+    initialize_effect_registries(m)
+    initialize_effect_world(m, cells)
+    initialize_empty_windows_seh(u)
+    transports = []
+
+    def platform(_u, pc, _size, _data):
+        if pc == 0x7C978A:  # CRT atexit (no process teardown in the fixture)
+            m.ret(0)
+        else:
+            bullet_activation_transport(m, pc, transports)
+            bullet_addref_transport(m, pc, transports)
+
+    u.hook_add(UC_HOOK_CODE, platform)
+    # The trailer-only world does not walk Logic. Run its original vector
+    # constructor so ObjectUnlimbo can allocate/insert instead of returning0.
+    m.invoke(0x40CB80, 0)
+    m.invoke(LASER_VECTOR_INIT, 0)
+    # Native initializer plus a supplied spare-capacity backing array, as in
+    # the existing LaserScene; original constructor performs every insertion.
+    u.mem_write(LASERS + 4, dwords(m.alloc(64), 16))
+    u.mem_write(LASERS + 0xD, b'\0')
+    names = ['Comet', 'CometFragment', 'SuperComet', 'SuperCometFragment']
+    weapons = {name: m.invoke(0x772FA0, m.cstring(name)) for name in names}
+    wanted = set(names) | {'LargeCometP', 'SmallCometP', 'SuperCometP',
+                            'SuperSmallCometP', 'CometWH', 'AudioVisual'}
+    layers = []
+    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'):
+        path = root / filename
+        if not path.exists():
+            assert filename == 'LANGRULE.INI'
+            layers.append(dict(file=filename, absent=True))
+            continue
+        raw = path.read_bytes()
+        sections, _ = lexical(raw, wanted)
+        m.rules_cache(sections)
+        # Rules::ReadAudioVisual precedes type postprocessing. Gravity belongs
+        # to AudioVisual (not General); preserve the native retained default
+        # across absent layers, as weapon_speed.physical does.
+        rules_object = m.read32(0x8871E0)
+        gravity_before = i32(u, rules_object + 0x16B8)
+        u.reg_write(UC_X86_REG_ESP, CALL_SP)
+        u.reg_write(UC_X86_REG_ESI, rules_object)
+        u.reg_write(UC_X86_REG_EDI, INI_RULES)
+        run_checked(u, 0x66B3C4, 0x66B3E4, required_addresses=(0x5276D0,))
+        gravity = i32(u, rules_object + 0x16B8)
+        postpass = {}
+        # Referenced projectiles and weapons are allocated by native readers;
+        # repeated explicit reads reproduce retained values in each layer.
+        for w in weapons.values():
+            m.invoke(0x772080, w, (INI_RULES,))
+            if m.read32(w + 0xA0):
+                m.invoke(0x46BEE0, m.read32(w + 0xA0), (INI_RULES,))
+            if m.read32(w + 0xAC):
+                m.invoke(0x75D3A0, m.read32(w + 0xAC), (INI_RULES,))
+            m.invoke(0x7729F0, w)
+            postpass[m.string(w + 0x24)] = dict(
+                gravity=gravity, floater=bool(u.mem_read(m.read32(w + 0xA0) + 0x295, 1)[0]),
+                speed=i32(u, w + 0xA8))
+        layers.append(dict(file=filename, sha256=hashlib.sha256(raw).hexdigest(),
+                           physical_sections=sections, gravity_before=gravity_before,
+                           gravity=gravity, weapon_postpass=postpass))
+    w = weapons[case['parent_weapon']]
+    p = m.read32(w + 0xA0)
+    child_w = m.read32(p + 0x2B4)
+    assert child_w
+
+    # Explicit preexisting actors and ground head order; real Unit vtable
+    # methods read these fields. Actor construction/death dispatch is excluded.
+    houses = []
+    for index in range(2):
+        h = m.alloc(0x6000)
+        u.mem_write(h + 0x30, dwords(index))
+        u.mem_write(h + 0x56FC, bytes((18, 52, 86)))
+        houses.append(h)
+    actors, identities, actor_inputs = {}, {}, []
+    layout = [('source', (15, 20), 0), ('victim', (16, 20), 1),
+              ('ally', (16, 19), 0), ('hidden_enemy', (16, 19), 1),
+              ('enemy_a', (17, 20), 1), ('enemy_b', (16, 21), 1)]
+    if case.get('terrain'):
+        layout += [('tree', (17, 19), None)]
+    if case.get('all_selected'):
+        layout += [('enemy_c', (17, 19), 1), ('enemy_d', (17, 21), 1),
+                   ('enemy_e', (15, 21), 1)]
+    for name, cell, house in layout:
+        actor = m.alloc(0x1000)
+        location = [cell[0] * 256 + 128, cell[1] * 256 + 128, 624]
+        if name == 'tree':
+            location[2] = case.get('retained_z', 624)
+        u.mem_write(actor, dwords(0x7F522C if name == 'tree' else 0x7F5C70))
+        u.mem_write(actor + 0x14, dwords(2))
+        u.mem_write(actor + 0x9C, dwords(*location))
+        if house is not None:
+            u.mem_write(actor + 0x21C, dwords(houses[house]))
+        actors[name], identities[actor] = actor, name
+        actor_inputs.append(dict(name=name, cell=list(cell), house=house, location=location,
+                                 head=name != 'hidden_enemy',
+                                 native_class='Terrain' if name == 'tree' else 'Unit',
+                                 next_object='hidden_enemy' if name == 'ally' else None))
+        if name == 'hidden_enemy':
+            u.mem_write(actors['ally'] + 0x30, dwords(actor))
+        else:
+            u.mem_write(cells[cell] + 0xE4, dwords(actor))
+    if case.get('lower_tree_ground'):
+        # Preserve the Terrain object's retained location while its cell drops.
+        u.mem_write(cells[17, 19] + 0x11B, b'\0')
+    if case.get('refused'):
+        u.mem_write(cells[16, 20] + 0xE4, dwords(0))
+    b = m.alloc(0x180)
+    m.invoke(0x466380, b)
+    m.invoke(0x4664C0, b, (p, actors['victim'], actors['source'], m.read32(w + 0xA4),
+                          m.read32(w + 0xAC), m.read32(w + 0xA8), 0))
+    if 'count' in case:
+        u.mem_write(p + 0x2B8, dwords(case['count']))
+    origin = xyz(u, actors['tree'] + 0x9C) if case.get('tree_center') else [4224, 5248, 624]
+    u.mem_write(b + 0x9C, dwords(*origin))
+    u.mem_write(b + 0x130, dwords(w))
+    if case.get('detached'):
+        m.invoke(0x4684E0, b, (actors['source'], 0))
+        assert m.read32(b + 0xB0) == 0
+    scenario = m.read32(0xA8B230)
+    rng = RngTrace(u, scenario, case['seed'])
+    before = rng.states()
+    id_before = m.read32(scenario + 0x214)
+    events, children, lasers, recent = [], [], [], deque(maxlen=12)
+    child_pointers, visited = [], set()
+    pending_fire, pending_laser = {}, {}
+    by_cell = {pointer: list(cell) for cell, pointer in cells.items()}
+
+    def identity(ptr):
+        if ptr == 0:
+            return None
+        if ptr in identities:
+            return dict(kind='terrain' if identities[ptr] == 'tree' else 'entity',
+                        name=identities[ptr])
+        if ptr in by_cell:
+            return dict(kind='cell', cell=by_cell[ptr])
+        raise AssertionError(('unrecognized native target', hex(ptr)))
+
+    def observe(_u, pc, _size, _data):
+        recent.append(hex(pc))
+        if pc in (0x6C5090, 0x466380, 0x4664C0, 0x468670, 0x5F4EC0,
+                  0x55BAA0, 0x6FD210, 0x54FE60, 0x4A9720):
+            visited.add(hex(pc))
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if (pc, sp) in pending_fire:
+            row = children[pending_fire.pop((pc, sp))]
+            child = row.pop('_pointer')
+            row.update(placed_location=xyz(u, child + 0x9C),
+                       fired_velocity=vec(u, child + 0xE8),
+                       fire_location=xyz(u, child + 0x134),
+                       target_location=xyz(u, child + 0x140),
+                       on_bridge=bool(u.mem_read(child + 0x8C, 1)[0]),
+                       in_limbo=bool(u.mem_read(child + 0x81, 1)[0]),
+                       alive=bool(u.mem_read(child + 0x90, 1)[0]),
+                       logic_registered=bool(u.mem_read(child + 0x98, 1)[0]),
+                       returned=u.reg_read(UC_X86_REG_EAX) & 255,
+                       rng_after_fire=rng.states(),
+                       arm=[i32(u, child + 0xC4), i32(u, child + 0xCC)],
+                       weapon_is_null=m.read32(child + 0x130) == 0)
+            if case.get('terrain'):
+                row['retained_target'] = identity(m.read32(child + 0x10C))
+            events.append(dict(kind='fire_return', child=row['order']))
+        if (pc, sp) in pending_laser:
+            index = pending_laser.pop((pc, sp))
+            ptr = u.reg_read(UC_X86_REG_EAX)
+            lasers.append(dict(child=index, **laser_state(u, ptr)))
+            events.append(dict(kind='laser_return', child=index))
+        if pc == 0x65C7E0:
+            events.append(dict(kind='rng', request=len(rng.requests) - 1))
+        elif pc == 0x4664C0:
+            args = struct.unpack('<7I', u.mem_read(sp + 4, 28))
+            child = u.reg_read(UC_X86_REG_ECX)
+            child_pointers.append(child)
+            children.append(dict(order=len(children), _pointer=child,
+                                 native_id=m.read32(child + 0x10),
+                                 projectile=m.string(args[0] + 0x24), target=identity(args[1]),
+                                 source=identity(args[2]), damage=args[3],
+                                 warhead=m.string(args[4] + 0x24), speed=args[5], bright=args[6],
+                                 rng_request_count=len(rng.requests)))
+            events.append(dict(kind='construct', child=len(children) - 1))
+        elif pc == 0x468670:
+            row = children[-1]
+            assert u.reg_read(UC_X86_REG_ECX) == row['_pointer']
+            coord, velocity = struct.unpack('<2I', u.mem_read(sp + 4, 8))
+            row.update(launch_location=xyz(u, coord), launch_velocity=vec(u, velocity))
+            pending_fire[(m.read32(sp), sp + 12)] = row['order']
+            events.append(dict(kind='fire', child=row['order']))
+        elif pc == 0x6FD210:
+            target, index, weapon, source = struct.unpack('<4I', u.mem_read(sp + 4, 16))
+            assert index == 0 and weapon == child_w
+            events.append(dict(kind='laser', child=len(children)-1,
+                               source=identity(u.reg_read(UC_X86_REG_ECX)),
+                               target=identity(target), origin=xyz(u, source), weapon=m.string(weapon+0x24)))
+            pending_laser[(m.read32(sp), sp + 20)] = len(children) - 1
+        elif pc == 0x6FD460:
+            raise AssertionError('Unexpected electric child effect in Prism control')
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    try:
+        m.invoke(0x46A310, b, context={'case': case})
+    except Exception:
+        print('SpawnShrapnel last instructions:', list(recent))
+        raise
+    finally:
+        u.hook_del(hook)
+    assert not pending_fire and not pending_laser
+    after = rng.states()
+    logic_count = m.read32(0x87F788)
+    logic_items = m.read32(0x87F77C)
+    logic_pointers = [m.read32(logic_items + i*4) for i in range(logic_count)]
+    assert logic_pointers == child_pointers
+    assert all(c['returned'] == 1 and c['logic_registered'] for c in children)
+    if children:
+        assert {'0x6c5090', '0x466380', '0x4664c0', '0x468670', '0x5f4ec0', '0x55baa0'} <= visited
+    if lasers:
+        assert {'0x6fd210', '0x54fe60'} <= visited
+    assert m.read32(LASERS + 0x10) == len(lasers)
+    assert before['main'] == after['main'] and before['mapgen'] == after['mapgen']
+    return dict(input=case, origin=origin, actors=actor_inputs, children=children,
+                logic_child_order=[child_pointers.index(p) for p in logic_pointers],
+                original_calls=sorted(visited),
+                lasers=lasers, events=events, requests=rng.requests,
+                rng_before=before, rng_after=after, native_id_before=id_before,
+                native_id_after=m.read32(scenario + 0x214),
+                effective=dict(child_weapon=m.string(child_w + 0x24),
+                               child_count=i32(u, p + 0x2B8),
+                               child_range=i32(u, child_w + 0xB4),
+                               gravity=i32(u, m.read32(0x8871E0) + 0x16B8),
+                               child_floater=bool(u.mem_read(m.read32(child_w + 0xA0) + 0x295, 1)[0]),
+                               child_type_is_logic=bool(u.mem_read(m.read32(child_w + 0xA0) + 0x234, 1)[0])), layers=layers)
+
+
+def shrapnel_chain_generate():
+    rows = [shrapnel_chain(case) for case in [
+        dict(name='normal_mixed', parent_weapon='Comet', seed=31),
+        dict(name='normal_selected', parent_weapon='Comet', seed=31, all_selected=True),
+        dict(name='normal_detached', parent_weapon='Comet', seed=31, detached=True),
+        dict(name='elite_mixed', parent_weapon='SuperComet', seed=31),
+        dict(name='refused_empty_center', parent_weapon='Comet', seed=31, refused=True),
+    ]]
+    layers = rows[0]['layers']
+    for row in rows:
+        assert row.pop('layers') == layers
+    return dict(layers=layers, cases=rows,
+                input_environment='VERA20K_PROJECTILE_RENDER_ASSETS points to the extracted physical files identified in layers; RA2_DIR or VERA20K_GAMEMD_EXE selects gamemd.exe')
+
+
+def shrapnel_chain_metadata():
+    return provenance(
+        scope='Full original SpawnShrapnel46A310 through return, native child constructors/Fire and first-generation Prism laser births',
+        assumptions=[
+            'Selected physical Battle+Hills AudioVisual.Gravity and weapon/projectile/warhead layers read through original native readers; hashes, physical strings and each native Gravity/Floater/Speed postpass input/output are in payload. Original66B3C4 reads AudioVisual.Gravity before7729F0 recomputes nonROT speed; the inherited default3 alone is not a retail input.',
+            'Existing guided Bullet world plus original Logic40CB80 initializer supplies flat level6 cells; actor fields/ground list heads and parent incoming location are supplied, native vtables and selection/coordinate getters execute.',
+            'Detached row executes original PointerExpired4684E0 before measured entry. Whole actor death dispatch, parent FireAt/flight/AreaDamage, child AI/recursive damage and pixels are outside this boundary.',
+            'Main/Scenario/MapGen seeded by existing native RngTrace; all complete stream states and draw requests retained. No RNG/geometry/selection/effect result is supplied.',
+            'Supplied parent and actors have real Bullet/Unit vtables; only stock positive shrapnel counts and first-generation Comet/SuperComet are compared. No allocation failure, dummy cell or recursive child AI claim.',
+            'Native x87 control0E7F; existing54 shrapnel numeric controls remain separate and unchanged.',
+        ],
+        substitutions=[
+            'Inherited BulletReader allocator, CRT TLS, cached INI/archive IO; supplied mapped cell/actor state and laser spare capacity.',
+            'Existing Windows CoCreateInstance transport to native registered factory6C5090 and InterlockedIncrement; CRT atexit returns0.',
+        ], entry_points=dict(gravity_reader=0x66B3C4, weapon_postpass=0x7729F0,
+                             spawn_shrapnel=0x46A310, construct=0x4664C0,
+                             fire=0x468670, laser=0x6FD210, laser_ctor=0x54FE60))
+
+
+def terrain_shrapnel_generate():
+    rows = [shrapnel_chain(case) for case in (
+        dict(name='normal_tree', parent_weapon='Comet', seed=31, terrain=True),
+        dict(name='elite_tree_retained_ground', parent_weapon='SuperComet', seed=31,
+             terrain=True, lower_tree_ground=True),
+        dict(name='tree_detached', parent_weapon='Comet', seed=31, terrain=True, detached=True),
+        dict(name='tree_count_zero', parent_weapon='Comet', seed=31, terrain=True, count=0),
+        dict(name='elite_tree_child_center', parent_weapon='SuperCometFragment', seed=31,
+             terrain=True, tree_center=True),
+    )]
+    layers = rows[0]['layers']
+    for row in rows:
+        assert row.pop('layers') == layers
+    return dict(layers=layers, cases=rows)
+
+
+def terrain_shrapnel_metadata():
+    result = shrapnel_chain_metadata()
+    result['scope'] = ('Original SpawnShrapnel target/RNG/child/effect order with a real Terrain '
+                       'vtable head, no-firer and count0 controls, and a prepared elite '
+                       'second-generation parent centered on the tree; no child AI execution')
+    result['assumptions'][1] = (
+        'Existing flat level6 map, supplied Unit and Terrain object states. Terrain7F522C '
+        'has retained Location, Object flag2, null house and WhatAmI36; retained-ground '
+        'row lowers only tree cell17,19 from level6 to0 after supplying LocationZ624. Original virtual '
+        '+48/+58/+A4 and alliance gate run. Terrain construction/ground admission excluded.')
+    result['assumptions'][4] = (
+        'Count0 is an explicit synthetic override after physical reads. Other counts and '
+        'weapons are native-reader outputs. Elite child-center row supplies an already '
+        'detonating SuperSmallCometP at the retained tree location; it does not execute '
+        'the preceding child AI/damage or certify complete recursive lifetime.')
+    return result
+
+
 def direction(case):
     """0x0049F420(out, in, distance, snap=0) with one supplied raw draw."""
     uc = machine()
@@ -345,6 +675,17 @@ def generate():
 
 
 if __name__ == "__main__":
+    import sys
+    if '--terrain-shrapnel' in sys.argv:
+        args = [arg for arg in sys.argv[1:] if arg != '--terrain-shrapnel']
+        finish_vectors(terrain_shrapnel_generate, Path(__file__).with_name('terrain_shrapnel.json'),
+                       provenance=terrain_shrapnel_metadata, argv=args)
+        raise SystemExit(0)
+    if '--shrapnel-chain' in sys.argv:
+        args = [arg for arg in sys.argv[1:] if arg != '--shrapnel-chain']
+        finish_vectors(shrapnel_chain_generate, Path(__file__).with_name('shrapnel_chain.json'),
+                       provenance=shrapnel_chain_metadata, argv=args)
+        raise SystemExit(0)
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
         scope="FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), BulletClass::Fire's flak "
               "placement 0x0046874E..0x004688A9, SpawnShrapnel child "

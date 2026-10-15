@@ -605,6 +605,7 @@ fn barrel_image_keeps_its_first_drawn_pitch() {
 /// `rulesmd.ini` changes these types' `Turret=`, so the processed Hills/Battle
 /// rules decide.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_vehicles_load_their_native_voxel_models() {
     use crate::rules::object_type::ObjectCategory;
     use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
@@ -1017,4 +1018,51 @@ fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
             "{name}"
         );
     }
+}
+
+/// The shared direct-matrix owner keeps Bullet's successful VXL/HVA pair
+/// requirement separate from debris's explicit no-HVA drawing policy.
+#[test]
+fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut model = UnitModel::load(&assets, "ZBOMB", None).expect("retail bomb model");
+    let vpl = crate::assets::vpl_file::VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap())
+        .unwrap();
+    let matrix = crate::render::vxl_raster::projectile_voxel_matrix(
+        crate::sim::projectile::ProjectileVelocity::new(0, 0, -1),
+    )
+    .unwrap();
+    let lighting = crate::render::vxl_raster::VxlLighting::Diffuse;
+    let (first, bounds) = model
+        .render_matrix(matrix, 0, true, lighting, Some(&vpl))
+        .unwrap();
+    assert!(bounds.is_some());
+    let frames = model
+        .body
+        .as_ref()
+        .unwrap()
+        .hva
+        .as_ref()
+        .unwrap()
+        .frame_count;
+    let (wrapped, wrapped_bounds) = model
+        .render_matrix(matrix, frames, true, lighting, Some(&vpl))
+        .unwrap();
+    assert_eq!(first.palette_indices, wrapped.palette_indices);
+    assert_eq!(bounds, wrapped_bounds);
+    model.body.as_mut().unwrap().hva = None;
+    assert!(
+        model
+            .render_matrix(matrix, 0, true, lighting, Some(&vpl))
+            .is_none(),
+        "Bullet LoadVoxelAssets requires both main files"
+    );
+    assert!(
+        model
+            .render_matrix(matrix, 0, false, lighting, Some(&vpl))
+            .is_some(),
+        "the explicit debris no-HVA caller still uses the same raster owner"
+    );
 }

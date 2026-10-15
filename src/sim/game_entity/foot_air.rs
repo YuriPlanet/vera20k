@@ -13,7 +13,9 @@ use crate::sim::world::Simulation;
 const NATIVE_NULL_CELL: (i16, i16) = (0, 0);
 
 /// Saved native Foot Cells and the ordered airborne-vector projection.
-/// Bucket and order retain their serialized names and constructor values.
+/// Bucket and order retain their serialized names and constructor values;
+/// the entity store keeps the tracked entities in enter order beside them
+/// (`EntityStore::airborne`), so they change only through the store.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct FootAirState {
     air_spatial_bucket: Option<u16>,
@@ -48,6 +50,18 @@ impl GameEntity {
 
     pub(crate) fn air_spatial_enter_order(&self) -> u64 {
         self.foot_air.air_spatial_enter_order
+    }
+
+    /// The bucket and enter order write, made only by
+    /// [`EntityStore::set_air_membership`](crate::sim::entity_store::EntityStore::set_air_membership).
+    pub(crate) fn set_air_membership_from_store(
+        &mut self,
+        bucket: Option<u16>,
+        enter_order: u64,
+        _: crate::sim::entity_store::AirMembershipAuthority,
+    ) {
+        self.foot_air.air_spatial_bucket = bucket;
+        self.foot_air.air_spatial_enter_order = enter_order;
     }
 
     /// Owner virtual+2F8 receiver41C160. Add, Remove and Update share this
@@ -99,19 +113,18 @@ impl Simulation {
             self.session.map_height,
         );
         let order = self.substrate.next_air_tracker_order.next();
-        let entity = self.substrate.entities.get_mut(id).unwrap();
-        entity.retain_air_tracker_cell(cell);
-        entity.foot_air.air_spatial_bucket = Some(bucket);
-        entity.foot_air.air_spatial_enter_order = order;
+        let entities = &mut self.substrate.entities;
+        entities.get_mut(id).unwrap().retain_air_tracker_cell(cell);
+        entities.set_air_membership(id, Some(bucket), order);
     }
 
     /// AircraftTracker::Remove4135D0 removes membership and invokes41C160 at
     /// 413601 with NativeNull8B3D88. Slot notification+564 is independent.
     pub(crate) fn aircraft_tracker_remove(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
+        let entities = &mut self.substrate.entities;
+        if let Some(entity) = entities.get_mut(id) {
             entity.retain_air_tracker_cell(NATIVE_NULL_CELL);
-            entity.foot_air.air_spatial_bucket = None;
-            entity.foot_air.air_spatial_enter_order = 0;
+            entities.set_air_membership(id, None, 0);
         }
     }
 
@@ -133,8 +146,9 @@ impl Simulation {
             return;
         }
         let order = self.substrate.next_air_tracker_order.next();
-        entity.foot_air.air_spatial_bucket = Some(bucket);
-        entity.foot_air.air_spatial_enter_order = order;
+        self.substrate
+            .entities
+            .set_air_membership(id, Some(bucket), order);
     }
 
     /// CellClass::SetAltObject487D70. A foreign claim returns AL0 unchanged.

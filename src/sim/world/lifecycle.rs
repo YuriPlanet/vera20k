@@ -368,8 +368,10 @@ impl<'a> UninitContext<'a> {
         Self { effects, ..self }
     }
 
-    pub(crate) const fn effects(self) -> FrameEffects<'a> {
-        self.effects
+    /// The effects, with this context's overlay table bound when they carry
+    /// none, so a receiver reads one table whichever carrier lent it.
+    pub(crate) fn effects(self) -> FrameEffects<'a> {
+        self.effects.with_overlay_registry(self.registry)
     }
 
     /// Techno Unlimbo's direction for this synchronous reveal. The caller's
@@ -759,6 +761,13 @@ pub(crate) enum LifecycleTestEvent {
         projectile_resolvable: bool,
         source_id: u64,
         target: ProjectileTarget,
+    },
+    TerrainExpiryBoundary {
+        stable_id: u64,
+        cell: (u16, u16),
+        indexed: bool,
+        in_logic: bool,
+        live: bool,
     },
     WaveDamageReceiverSelected {
         wave_id: u64,
@@ -2894,6 +2903,38 @@ impl Simulation {
         true
     }
 
+    /// Ordinary Terrain71B920 lethal tail: DetachAll, ObjectUnInit and
+    /// ObjectLimbo each announce expiry while the retained object is still
+    /// readable and marked. Only then may TerrainLimbo unlink its cell.
+    pub(crate) fn terrain_lethal_uninit(
+        &mut self,
+        lethal: crate::sim::terrain_object::TerrainLethalDamage,
+        finalizing: &mut std::collections::BTreeSet<u64>,
+        navigation_changed_cells: &mut Vec<(u16, u16)>,
+        context: UninitContext<'_>,
+    ) -> bool {
+        // 71BB69->5F5311, 71BB73->5F6616, then 5F4D61. Repeated
+        // notifications do not rematch a Bullet already repaired to Cell.
+        for _ in 0..3 {
+            self.notify_pointer_expired(lethal.stable_id, context);
+        }
+        let finalized = crate::sim::terrain_object::finalize_terrain_lethal(
+            crate::sim::terrain_object::production_authority_parts(
+                &mut self.production,
+                &mut self.substrate.raw_cell_occupation,
+            ),
+            finalizing,
+            navigation_changed_cells,
+            lethal,
+            self.resolved_terrain.as_mut(),
+        );
+        if finalized {
+            let retired = self.retire_non_entity_object(lethal.stable_id);
+            debug_assert!(retired);
+        }
+        finalized
+    }
+
     /// Open-topped cargo entry hides the passenger but then directly restores
     /// its active membership. This is deliberately not Reveal: the passenger
     /// remains limbo/unmarked while its AI stays in the live object order.
@@ -3794,6 +3835,12 @@ impl Simulation {
             }
         }
         listener.radio_contacts.iter_live().for_each(&mut name);
+        listener
+            .tesla_charge
+            .chargers()
+            .iter()
+            .copied()
+            .for_each(&mut name);
         if let Some(cargo) = listener.passenger_role.cargo() {
             cargo.passengers().iter().copied().for_each(&mut name);
         }
@@ -3825,7 +3872,8 @@ impl Simulation {
         .flatten()
         .for_each(&mut name);
         listener.mega_mission.referenced_ids().for_each(&mut name);
-        listener.spawn_manager.is_some()
+        listener.airstrike.owns_manager()
+            || listener.spawn_manager.is_some()
             || listener.capture_manager.is_some()
             || listener.temporal.has_link()
             || listener.parasite.eater().is_some()
@@ -3949,14 +3997,6 @@ impl Simulation {
     /// other caller chains remain separate migration work.
     ///
     /// RESIDUALS, recorded rather than guessed:
-    /// - The native suppression clause (`0x0070D4DB..0x0070D4FB`) skips the
-    ///   whole block for a listener whose `+0x294` manager points at the
-    ///   detaching object: the Boris Airstrike link (`AirstrikeClass`,
-    ///   `+0x294` written by `0x0041D540..0x0041DCD9`), not mind control
-    ///   (`+0x2BC`, whose manager has no such field). VERA has no Airstrike
-    ///   manager, so the clause is omitted. A mind-control capture DOES run
-    ///   this sweep in full: the firing controller drops its new victim as
-    ///   its target.
     /// - The aircraft-Patrol arm, which clears two patrol-cursor fields on an
     ///   aircraft whose committed mission is Patrol. Neither field is
     ///   represented; the arm is a no-op for every ground object.
@@ -3999,6 +4039,11 @@ impl Simulation {
         listeners.reverse();
 
         for listener_id in listeners {
+            if let TargetKind::Entity(target_id) = target
+                && self.airstrike_detach_preserves_target(listener_id, target_id)
+            {
+                continue;
+            }
             if !self.listener_targets(listener_id, target) {
                 continue;
             }
@@ -4346,6 +4391,9 @@ impl Simulation {
         // MegaTarget becomes a MegaDestination at its GetCoords cell, and its
         // MegaDestination is dropped.
         let expire_mega_pointer = listener.mega_mission.references(expired_id);
+        // Building44EA77 removes a charger for either control, irrespective
+        // of the base target exemptions. Only later AI changes the weapon latch.
+        let clear_tesla_charger = listener.tesla_charge.chargers().contains(&expired_id);
         if !(clear_suspended_target
             || clear_damage_smoke
             || clear_archive_target
@@ -4357,7 +4405,8 @@ impl Simulation {
             || clear_airfield
             || clear_passenger_role
             || clear_c4_source
-            || expire_mega_pointer)
+            || expire_mega_pointer
+            || clear_tesla_charger)
         {
             return;
         }
@@ -4410,6 +4459,9 @@ impl Simulation {
                 .mega_mission
                 .pointer_expired(expired_id, expired_get_coords_cell);
         }
+        if clear_tesla_charger {
+            listener.tesla_charge.pointer_expired(expired_id);
+        }
     }
 
     /// ObjectClass::Detach_From_All_Lists represented listener broadcast.
@@ -4426,9 +4478,10 @@ impl Simulation {
     /// Every listener uses the live MapClass authority, including when a receiver
     /// has temporarily lent that grid through UninitContext. The remaining arms
     /// read the object's liveness, health and mission from the same world.
-    fn notify_pointer_expired(&mut self, expired_id: u64, context: UninitContext<'_>) {
+    pub(crate) fn notify_pointer_expired(&mut self, expired_id: u64, context: UninitContext<'_>) {
         if !self.substrate.entities.contains(expired_id)
             && !self.substrate.particle_systems.contains_key(expired_id)
+            && !self.production.terrain_objects.contains_key(&expired_id)
             && self
                 .smudge_grid
                 .as_ref()
@@ -4436,6 +4489,18 @@ impl Simulation {
                 .is_none()
         {
             return;
+        }
+
+        #[cfg(test)]
+        if let Some(tree) = self.production.terrain_objects.get(&expired_id) {
+            self.trace_lifecycle_for_test(LifecycleTestEvent::TerrainExpiryBoundary {
+                stable_id: expired_id,
+                cell: tree.cell(),
+                indexed: self.production.terrain_object_cells.get(&tree.cell())
+                    == Some(&expired_id),
+                in_logic: tree.in_logic_vector,
+                live: tree.is_live(),
+            });
         }
 
         // gamemd-derived: the House pointer-expiry handler reached by this
@@ -4508,7 +4573,7 @@ impl Simulation {
         if !self
             .projectiles
             .iter()
-            .any(|(_, bullet)| bullet.target == ProjectileTarget::Entity(target_id))
+            .any(|(_, bullet)| bullet.target.object_id() == Some(target_id))
         {
             return;
         }
@@ -4536,6 +4601,12 @@ impl Simulation {
                     .map(|system| [system.coords.x, system.coords.y])
             })
             .or_else(|| {
+                self.production.terrain_objects.get(&target_id).map(|tree| {
+                    let coord = tree.world_coord();
+                    [coord.x, coord.y]
+                })
+            })
+            .or_else(|| {
                 self.smudge_grid
                     .as_ref()?
                     .object(target_id)
@@ -4557,6 +4628,11 @@ impl Simulation {
                     context.rules().map(|rules| (rules, &self.interner)),
                 )
             })
+            || self
+                .production
+                .terrain_objects
+                .get(&target_id)
+                .is_some_and(|tree| tree.is_in_air(terrain))
             || (rx, ry) == NULL_TARGET_CELL_SENTINEL
         {
             return ProjectileTarget::None;
@@ -4636,6 +4712,14 @@ impl Simulation {
                 // its retained coordinates and liveness are still readable
                 // during ObjectLimbo's synchronous expiry announcement.
                 Some((cell, system.alive(), 255, false, None))
+            })
+            .or_else(|| {
+                let tree = self.production.terrain_objects.get(&expired_id)?;
+                let coord = tree.world_coord();
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(coord.x))
+                    .ok()
+                    .zip(u16::try_from(crate::util::lepton::lepton_to_cell(coord.y)).ok());
+                Some((cell, tree.is_live(), tree.health, false, None))
             })
             .or_else(|| {
                 let smudge = self.smudge_grid.as_ref()?.object(expired_id)?;
@@ -4765,6 +4849,12 @@ impl Simulation {
                             .map(|system| (system.alive(), system.in_limbo()))
                     })
                     .or_else(|| {
+                        self.production
+                            .terrain_objects
+                            .get(&expired_id)
+                            .map(|tree| (tree.is_live(), !tree.is_live()))
+                    })
+                    .or_else(|| {
                         self.smudge_grid
                             .as_ref()?
                             .object(expired_id)
@@ -4843,6 +4933,12 @@ impl Simulation {
                     context.rules(),
                     context.effects(),
                 );
+                self.airstrike_pointer_expired(
+                    listener_id,
+                    expired_id,
+                    context.rules(),
+                    context.effects(),
+                );
                 // Then the Magnetron links (`0x00707B64..0x00707BAC`), also
                 // outside the control test.
                 self.locomotor_link_pointer_expired(
@@ -4876,9 +4972,10 @@ impl Simulation {
                     .particle_systems
                     .pointer_expired(listener_id, expired_id);
             } else if kind == ObjectKind::Projectile {
-                let target_matches = self.projectiles.get(listener_id).is_some_and(|projectile| {
-                    projectile.target == ProjectileTarget::Entity(expired_id)
-                });
+                let target_matches = self
+                    .projectiles
+                    .get(listener_id)
+                    .is_some_and(|projectile| projectile.target.object_id() == Some(expired_id));
                 let projectile_replacement_target = if target_matches {
                     self.projectile_lost_target(expired_id, context)
                 } else {
@@ -4900,7 +4997,7 @@ impl Simulation {
                         LifecycleTestEvent::ProjectilePointerExpiredVisited {
                             expired_id,
                             projectile_id: listener_id,
-                            expired_resolvable: self.substrate.entities.contains(expired_id),
+                            expired_resolvable: self.classify_object(expired_id).is_some(),
                             projectile_resolvable: true,
                             source_id,
                             target,
@@ -5188,6 +5285,11 @@ impl Simulation {
             // Scalar Smudge6B4FA0 sends its third removed=true expiry at
             //6B4FC6 before leaving Smudge/Object registries. Place's cells
             // survive this destructor and Building Mark(0).
+            self.notify_pointer_expired(stable_id, context);
+        }
+        if self.production.terrain_objects.contains_key(&stable_id) {
+            // Terrain destructor71B7D6 repeats expiry before leaving its
+            // registry. This is later than the live lethal/UnInit callbacks.
             self.notify_pointer_expired(stable_id, context);
         }
         if self

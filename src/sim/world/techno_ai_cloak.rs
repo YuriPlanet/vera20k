@@ -6,9 +6,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
 use crate::sim::intern::InternedId;
-use crate::sim::mission::concrete_effects::{
-    assign_target_commits, represented_assign_target_admitted,
-};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::util::direction_tables::CELL_DELTAS;
 
@@ -338,14 +335,14 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
     if start.is_some_and(|start| start.play_sound) {
         emit_configured_cloak_sound(sim, id, rules);
     }
-    let commits = assign_target_commits(&sim.substrate.entities, Some(TargetKind::Entity(id)));
     for &targeter_id in &reassigned_targeters {
-        let targeter = sim
-            .substrate
-            .entities
-            .get_mut(targeter_id)
-            .expect("saved Techno targeter remains registered during sensor callback");
-        represented_assign_target_admitted(targeter, Some(TargetKind::Entity(id)), commits);
+        let _ = sim.assign_target_represented(
+            targeter_id,
+            Some(TargetKind::Entity(id)),
+            Some(rules),
+            None,
+            FrameEffects::default(),
+        );
     }
     SensorCloakReevaluation {
         cloak_transitioned: start.is_some_and(|start| start.transitioned),
@@ -644,11 +641,14 @@ pub(super) fn tick_stock_cloak_producer(
         // `represented_assign_target_admitted` reproduces.
         let retained = sensor_targeters_in_native_dispatch_order(sim, id);
         detach_targeters_on_cloak(sim, id, rules, registry, effects);
-        let commits = assign_target_commits(&sim.substrate.entities, Some(TargetKind::Entity(id)));
         for targeter_id in retained {
-            if let Some(targeter) = sim.substrate.entities.get_mut(targeter_id) {
-                represented_assign_target_admitted(targeter, Some(TargetKind::Entity(id)), commits);
-            }
+            let _ = sim.assign_target_represented(
+                targeter_id,
+                Some(TargetKind::Entity(id)),
+                Some(rules),
+                registry,
+                effects,
+            );
         }
     }
     if result.is_some_and(|result| result.play_cloak_sound) {

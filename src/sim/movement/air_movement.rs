@@ -305,16 +305,27 @@ fn queried_flight_height(
     let Some(z) = entity.position.exact_z_leptons() else {
         return 0;
     };
+    object_height_in_query(
+        DriveCoord {
+            z,
+            ..super::ground_pose::position_world_coord(&entity.position)
+        },
+        entity.on_bridge(),
+        cells,
+    )
+}
+
+/// Object5F5F40: retained Location less the live ground and optional deck.
+/// Both Techno and Terrain queries use the same ground/height boundary.
+pub(crate) fn object_height_in_query(
+    coord: DriveCoord,
+    on_bridge: bool,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> i32 {
     let ground = cells
-        .and_then(|cells| {
-            super::ground_pose::query_ground_height(
-                cells,
-                super::ground_pose::position_world_coord(&entity.position),
-            )
-            .ok()
-        })
+        .and_then(|cells| super::ground_pose::query_ground_height(cells, coord).ok())
         .unwrap_or(0);
-    super::ground_pose::height_at_z(z, ground, entity.on_bridge())
+    super::ground_pose::height_at_z(coord.z, ground, on_bridge)
 }
 
 /// Object virtual+50 /5F6B60. A marked grounded object is low; an unmarked
@@ -382,10 +393,22 @@ fn query_flight_predicate(
         // Aircraft41B920 returns moving; Aircraft41B980 returns !moving.
         return moving == high;
     }
-    entity.lifecycle.cell_marked()
-        && (queried_flight_height(entity, cells)
-            >= crate::util::lepton::HIGH_FLIGHT_THRESHOLD_LEPTONS as i32)
-            == high
+    object_flight_predicate(
+        entity.lifecycle.cell_marked(),
+        || queried_flight_height(entity, cells),
+        high,
+    )
+}
+
+/// Shared Object virtual+50/+54 (5F6B60/5F6B90), after class overrides.
+pub(crate) fn object_flight_predicate(
+    marked: bool,
+    height: impl FnOnce() -> i32,
+    high: bool,
+) -> bool {
+    // The original short-circuits before GetHeight; a map query can stamp the
+    // shared fallback cell even when its numeric result would be discarded.
+    marked && (height() >= crate::util::lepton::HIGH_FLIGHT_THRESHOLD_LEPTONS as i32) == high
 }
 
 fn missile_flight_override(

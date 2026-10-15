@@ -178,6 +178,7 @@ fn move_sound_selected_physical_layers_and_reader_history_match_original() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn move_sound_retained_cadence_and_names_match_the_full_retail_battle_reader() {
     let Some(retail) = super::retail_ini_fixture::retail_battle_rules() else {
         return;

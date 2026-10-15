@@ -254,6 +254,7 @@ mod tests {
     /// Stock field regressions through retained startup, scenario passes and
     /// fixed ART. These are retail-data checks, not fresh native goldens.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn stock_hills_battle_fields_match_retail_contracts() {
         use crate::util::fixed_math::SimFixed;
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {

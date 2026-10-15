@@ -382,6 +382,7 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                                 &data,
                                 0,
                                 1,
+                                crate::render::tactical_draw_plan::RenderZPolicy::ReadOnly,
                             ),
                             _ => unreachable!(),
                         }

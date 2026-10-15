@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCERS = tuple('tools.projectile_oracle.' + name for name in (
-    'fireat_launch', 'directed_launch', 'building_pitch', 'voxel_launch',
+    'fireat_launch', 'directed_launch', 'launch_scatter', 'building_pitch', 'voxel_launch',
     'arc_second_probe', 'fireat_runtime', 'fire_once', 'load_timers', 'ordinary_collision',
     'shared_collision', 'homing_impact', 'arc_domain',
 )) + ('tools.input_oracle.gattling_loop',

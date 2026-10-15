@@ -1145,10 +1145,7 @@ impl Simulation {
                     // the Chrono Warp's Teleport takes any destination's
                     // coordinate (`0x004D9628`).
                     let coord = coord.expect("accepted Move_To captures target +4C");
-                    let cell =
-                        requested_cell.unwrap_or(((coord.x / 256) as u16, (coord.y / 256) as u16));
-                    let point = super::navcom::target_cell_coord(cell.0, cell.1, None);
-                    self.teleport_move_to(id, point, rules, is_harvester, None, frame_effects)
+                    self.teleport_move_to(id, coord, rules, is_harvester, None, frame_effects)
                         .unwrap_or_else(|error| {
                             log::debug!("Unit Teleport MoveTo {id}: {error}");
                             false

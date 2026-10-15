@@ -1,0 +1,1242 @@
+{
+  "cases": [
+    {
+      "alive": 0,
+      "case": {
+        "bullet_observer": true,
+        "damage": 20,
+        "health": 10,
+        "name": "tree_before_source",
+        "source_first": false
+      },
+      "delete_count": 1,
+      "events": [
+        {
+          "a": "0071B920",
+          "args": [
+            553852928,
+            0,
+            553672704,
+            0,
+            0,
+            0,
+            0
+          ],
+          "caller": "30000000",
+          "damage": 20,
+          "distance": 0,
+          "first_health": 10,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5390",
+          "caller": "0071B98B",
+          "first_health": 10,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F42F0",
+          "caller": "005F57A0",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5280",
+          "caller": "005F57B5",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F5316",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5280",
+          "caller": "0071BB6F",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F5316",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F65F0",
+          "caller": "0071BB79",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F661B",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "0071C930",
+          "caller": "005F6625",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F4D30",
+          "caller": "0071CA15",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5280",
+          "caller": "005F4D67",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F5316",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "0071BFB0",
+          "caller": "005F4D73",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005687F0",
+          "caller": "0071C058",
+          "first_health": 0,
+          "obj": "0087F7E8"
+        },
+        {
+          "a": "0047EA90",
+          "caller": "005688F0",
+          "first_health": 0,
+          "obj": "21000000"
+        },
+        {
+          "a": "0071C070",
+          "caller": "0047EB8F",
+          "first_health": 0,
+          "obj": "21030000"
+        }
+      ],
+      "ground_head": 0,
+      "health": 0,
+      "in_logic": 0,
+      "limbo": 1,
+      "logic_count": 0,
+      "neighbor_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "next_rng": [
+        2025287381,
+        660436142,
+        3663968561,
+        2901129938
+      ],
+      "observer": {
+        "after_receiver": {
+          "logic_count": 0,
+          "source": "source",
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "cell"
+          },
+          "tree_alive": false,
+          "tree_in_logic": false,
+          "tree_is_ground_head": false,
+          "tree_limbo": true
+        },
+        "after_repeat": {
+          "logic_count": 0,
+          "source": "source",
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "cell"
+          },
+          "tree_alive": false,
+          "tree_in_logic": false,
+          "tree_is_ground_head": false,
+          "tree_limbo": true
+        },
+        "after_source_before_damage": null,
+        "after_source_expiry": {
+          "logic_count": 0,
+          "source": null,
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "cell"
+          },
+          "tree_alive": false,
+          "tree_in_logic": false,
+          "tree_is_ground_head": false,
+          "tree_limbo": true
+        },
+        "events": [
+          {
+            "after": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "terrain",
+                "location": [
+                  2688,
+                  5248,
+                  208
+                ]
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "event": "uninit",
+            "state": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            }
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "event": "terrain_limbo",
+            "state": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            }
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "event": "cell_remove",
+            "state": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            }
+          },
+          {
+            "event": "logic_remove",
+            "state": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": false,
+              "tree_limbo": false
+            }
+          },
+          {
+            "after": {
+              "logic_count": 0,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "before": {
+              "logic_count": 0,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "after": {
+              "logic_count": 0,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "before": {
+              "logic_count": 0,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "control": 0,
+            "event": "bullet_pointer_expired",
+            "expired": "source"
+          }
+        ],
+        "initial": {
+          "logic_count": 1,
+          "source": "source",
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "terrain",
+            "location": [
+              2688,
+              5248,
+              208
+            ]
+          },
+          "tree_alive": true,
+          "tree_in_logic": true,
+          "tree_is_ground_head": true,
+          "tree_limbo": false
+        },
+        "rng_calls": [],
+        "scenario_after": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario_before": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "occupation": 172,
+      "receiver_results": [
+        {
+          "damage_after": 10,
+          "health": 0,
+          "obj": 553844736,
+          "result": 4
+        }
+      ],
+      "result": 4,
+      "rng_unchanged": true,
+      "second_hp": 0,
+      "substitutions": [
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "0071D160",
+          "caller": "0071BB3D",
+          "this": 553844736
+        },
+        {
+          "a": "006D2790",
+          "caller": "0071BB63",
+          "this": 0
+        },
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "005F5850",
+          "caller": "0071BFC1",
+          "this": 553844736
+        },
+        {
+          "a": "0047D2B0",
+          "caller": "00568916",
+          "this": 553648128
+        },
+        {
+          "a": "004A9770",
+          "caller": "005F4D7E",
+          "this": 8910824
+        },
+        {
+          "a": "0047D2B0",
+          "caller": "0071CA2F",
+          "this": 553648128
+        },
+        {
+          "a": "0056D460",
+          "caller": "0071CA47",
+          "this": 8910824
+        },
+        {
+          "a": "00584550",
+          "caller": "0071CA56",
+          "this": 8910824
+        },
+        {
+          "a": "006551C0",
+          "caller": "0071CA65",
+          "this": 8910824
+        }
+      ],
+      "successor": 0
+    },
+    {
+      "alive": 0,
+      "case": {
+        "bullet_observer": true,
+        "damage": 20,
+        "health": 10,
+        "name": "source_before_tree",
+        "source_first": true
+      },
+      "delete_count": 1,
+      "events": [
+        {
+          "a": "0071B920",
+          "args": [
+            553852928,
+            0,
+            553672704,
+            0,
+            0,
+            0,
+            0
+          ],
+          "caller": "30000000",
+          "damage": 20,
+          "distance": 0,
+          "first_health": 10,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5390",
+          "caller": "0071B98B",
+          "first_health": 10,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F42F0",
+          "caller": "005F57A0",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5280",
+          "caller": "005F57B5",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F5316",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5280",
+          "caller": "0071BB6F",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F5316",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F65F0",
+          "caller": "0071BB79",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F661B",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "0071C930",
+          "caller": "005F6625",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F4D30",
+          "caller": "0071CA15",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005F5280",
+          "caller": "005F4D67",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "007258D0",
+          "caller": "005F5316",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "0071BFB0",
+          "caller": "005F4D73",
+          "first_health": 0,
+          "obj": "21030000"
+        },
+        {
+          "a": "005687F0",
+          "caller": "0071C058",
+          "first_health": 0,
+          "obj": "0087F7E8"
+        },
+        {
+          "a": "0047EA90",
+          "caller": "005688F0",
+          "first_health": 0,
+          "obj": "21000000"
+        },
+        {
+          "a": "0071C070",
+          "caller": "0047EB8F",
+          "first_health": 0,
+          "obj": "21030000"
+        }
+      ],
+      "ground_head": 0,
+      "health": 0,
+      "in_logic": 0,
+      "limbo": 1,
+      "logic_count": 0,
+      "neighbor_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "next_rng": [
+        2025287381,
+        660436142,
+        3663968561,
+        2901129938
+      ],
+      "observer": {
+        "after_receiver": {
+          "logic_count": 0,
+          "source": null,
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "cell"
+          },
+          "tree_alive": false,
+          "tree_in_logic": false,
+          "tree_is_ground_head": false,
+          "tree_limbo": true
+        },
+        "after_repeat": {
+          "logic_count": 0,
+          "source": null,
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "cell"
+          },
+          "tree_alive": false,
+          "tree_in_logic": false,
+          "tree_is_ground_head": false,
+          "tree_limbo": true
+        },
+        "after_source_before_damage": {
+          "logic_count": 1,
+          "source": null,
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "terrain",
+            "location": [
+              2688,
+              5248,
+              208
+            ]
+          },
+          "tree_alive": true,
+          "tree_in_logic": true,
+          "tree_is_ground_head": true,
+          "tree_limbo": false
+        },
+        "after_source_expiry": {
+          "logic_count": 0,
+          "source": null,
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "cell"
+          },
+          "tree_alive": false,
+          "tree_in_logic": false,
+          "tree_is_ground_head": false,
+          "tree_limbo": true
+        },
+        "events": [
+          {
+            "after": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "terrain",
+                "location": [
+                  2688,
+                  5248,
+                  208
+                ]
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": "source",
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "terrain",
+                "location": [
+                  2688,
+                  5248,
+                  208
+                ]
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 0,
+            "event": "bullet_pointer_expired",
+            "expired": "source"
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "terrain",
+                "location": [
+                  2688,
+                  5248,
+                  208
+                ]
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "event": "uninit",
+            "state": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            }
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "event": "terrain_limbo",
+            "state": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            }
+          },
+          {
+            "after": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "before": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "event": "cell_remove",
+            "state": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": true,
+              "tree_limbo": false
+            }
+          },
+          {
+            "event": "logic_remove",
+            "state": {
+              "logic_count": 1,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": true,
+              "tree_in_logic": true,
+              "tree_is_ground_head": false,
+              "tree_limbo": false
+            }
+          },
+          {
+            "after": {
+              "logic_count": 0,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "before": {
+              "logic_count": 0,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "control": 1,
+            "event": "bullet_pointer_expired",
+            "expired": "tree"
+          },
+          {
+            "after": {
+              "logic_count": 0,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "before": {
+              "logic_count": 0,
+              "source": null,
+              "target": {
+                "cell": [
+                  10,
+                  20
+                ],
+                "kind": "cell"
+              },
+              "tree_alive": false,
+              "tree_in_logic": false,
+              "tree_is_ground_head": false,
+              "tree_limbo": true
+            },
+            "control": 0,
+            "event": "bullet_pointer_expired",
+            "expired": "source"
+          }
+        ],
+        "initial": {
+          "logic_count": 1,
+          "source": "source",
+          "target": {
+            "cell": [
+              10,
+              20
+            ],
+            "kind": "terrain",
+            "location": [
+              2688,
+              5248,
+              208
+            ]
+          },
+          "tree_alive": true,
+          "tree_in_logic": true,
+          "tree_is_ground_head": true,
+          "tree_limbo": false
+        },
+        "rng_calls": [],
+        "scenario_after": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "scenario_before": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "occupation": 172,
+      "receiver_results": [
+        {
+          "damage_after": 10,
+          "health": 0,
+          "obj": 553844736,
+          "result": 4
+        }
+      ],
+      "result": 4,
+      "rng_unchanged": true,
+      "second_hp": 0,
+      "substitutions": [
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "0071D160",
+          "caller": "0071BB3D",
+          "this": 553844736
+        },
+        {
+          "a": "006D2790",
+          "caller": "0071BB63",
+          "this": 0
+        },
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "00439150",
+          "caller": "0072596C",
+          "this": 8910296
+        },
+        {
+          "a": "005F5850",
+          "caller": "0071BFC1",
+          "this": 553844736
+        },
+        {
+          "a": "0047D2B0",
+          "caller": "00568916",
+          "this": 553648128
+        },
+        {
+          "a": "004A9770",
+          "caller": "005F4D7E",
+          "this": 8910824
+        },
+        {
+          "a": "0047D2B0",
+          "caller": "0071CA2F",
+          "this": 553648128
+        },
+        {
+          "a": "0056D460",
+          "caller": "0071CA47",
+          "this": 8910824
+        },
+        {
+          "a": "00584550",
+          "caller": "0071CA56",
+          "this": 8910824
+        },
+        {
+          "a": "006551C0",
+          "caller": "0071CA65",
+          "this": 8910824
+        }
+      ],
+      "successor": 0
+    }
+  ]
+}

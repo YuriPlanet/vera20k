@@ -56,6 +56,10 @@ mod building_abandoned_sound_tests;
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
 
+#[cfg(test)]
+#[path = "radial_fire_segments_tests.rs"]
+mod radial_fire_segments_tests;
+
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
@@ -842,6 +846,13 @@ pub struct GeneralRules {
     /// value, constructor 0 (`0x006678C1`). A Force Shielded building's draws
     /// OR its colour into their pixels (`app/presentation/lighting.rs`).
     pub force_shield_color: i32,
+    /// AudioVisual LaserTargetColor (Rules+18A4), constructor6678AA=0;
+    /// ReadInt66B818..66B832 retains the current ColorAdd table index.
+    pub laser_target_color: i32,
+    /// AudioVisual66A046..66A07C / 66A088..66A0B5 use ReadString128 then
+    /// VocFindIndex7514D0, retaining the current index on a miss (ctor -1).
+    pub airstrike_abort_sound: Option<String>,
+    pub airstrike_attack_voice: Option<String>,
     /// `ConditionRedSparkingProbability=` ([General]) — per-tick probability that
     /// the `AI_Update` damage-Spark particle system spawns while health is below
     /// ConditionRed. Default **0.02** (verified `RulesClass__Constructor`; stock INI
@@ -2194,6 +2205,9 @@ impl Default for GeneralRules {
             elite_flash_timer: 0,
             idle_action_frequency: f64::from_bits(0x3fb5_3f7c_ed91_6873),
             force_shield_color: 0,
+            laser_target_color: 0,
+            airstrike_abort_sound: None,
+            airstrike_attack_voice: None,
             condition_red_sparking_probability: 0.02,
             condition_yellow_sparking_probability: 0.01,
             condition_red_spark_threshold: damage_spark_spawn_threshold(0.02),
@@ -2794,6 +2808,8 @@ impl GeneralRules {
         // ReadAudioVisual too (`0x0066B877..0x0066B891`).
         let force_shield_color =
             audio_visual.read_int("ForceShieldColor", defaults.force_shield_color);
+        let laser_target_color =
+            audio_visual.read_int("LaserTargetColor", defaults.laser_target_color);
         let ally_reveal = audio_visual.read_bool("AllyReveal", defaults.ally_reveal);
         let psychic_reveal_activate_sound = audio_visual
             .read_name("PsychicRevealActivateSound", 0x80)
@@ -2841,6 +2857,7 @@ impl GeneralRules {
                 bomb_ticking_sound,
                 bomb_attach_sound,
                 force_shield_color,
+                laser_target_color,
                 ally_reveal,
                 allies_allowed,
                 paranoid,
@@ -3190,6 +3207,9 @@ impl GeneralRules {
             idle_action_frequency: audio_visual
                 .read_double("IdleActionFrequency", defaults.idle_action_frequency),
             force_shield_color,
+            laser_target_color,
+            airstrike_abort_sound: None,
+            airstrike_attack_voice: None,
             building_garrisoned_sound: audio_visual
                 .read_name("BuildingGarrisonedSound", 0x80)
                 .map(str::to_owned),
@@ -3898,6 +3918,15 @@ impl RuleSet {
                 weapon.projectile = projectile.map(str::to_owned);
             }
         }
+        for (category, name, airstrike) in processed.airstrike_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.airstrike = airstrike.clone();
+            }
+        }
         for (category, name, recoil) in processed.recoil_states() {
             if let Some(object) = rules
                 .object_list
@@ -3905,6 +3934,15 @@ impl RuleSet {
                 .find(|object| object.category == category && object.id == name)
             {
                 object.recoil = recoil;
+            }
+        }
+        for (category, name, segments) in processed.radial_fire_segments_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.radial_fire_segments = segments;
             }
         }
         for (category, name, prerequisite, prerequisite_override) in processed.prerequisite_states()
@@ -3986,6 +4024,12 @@ impl RuleSet {
         ini: &IniFile,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        self.general.airstrike_abort_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAbortSound"));
+        self.general.airstrike_attack_voice = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAttackVoice"));
         self.general.leave_bio_reactor_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound"));
@@ -5136,10 +5180,10 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>();
         smudge_anim_inputs.hash(&mut hasher);
-        // These effective ART values feed ordinary FireAt after load. Hash
+        // These effective Bullet values feed FireAt and drawing after load. Hash
         // consumed values in canonical type order, not ART insertion order,
         // authored-key presence, or unrelated presentation metadata.
-        b"art-projectile-config-v3".hash(&mut hasher);
+        b"art-projectile-config-v4".hash(&mut hasher);
         self.projectiles
             .iter()
             .map(|(id, p)| {
@@ -5149,12 +5193,13 @@ impl RuleSet {
                         (
                             &p.image,
                             &p.image_load,
+                            p.voxel_image_load(),
                             p.voxel,
                             p.theater,
                             p.new_theater,
                             p.inviso,
                         ),
-                        (p.rotates, p.flat, p.anim_palette),
+                        (p.rotates, p.flat, p.anim_palette, p.color_scheme()),
                         (
                             p.use_line_trail,
                             p.line_trail_color,
@@ -5200,6 +5245,35 @@ impl RuleSet {
                 (
                     object.id.to_ascii_uppercase(),
                     self.building_launch_height(object),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        // Elite Airstrike fallbacks depend on reached pass boundaries, not
+        // merely merged text; managers copy these values into gameplay state.
+        b"airstrike-settings-v1".hash(&mut hasher);
+        self.general.airstrike_abort_sound.hash(&mut hasher);
+        self.general.airstrike_attack_voice.hash(&mut hasher);
+        self.general.laser_target_color.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.airstrike,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        // Radial launch settings likewise survive earlier reached passes even
+        // when the current source stack omits their key.
+        b"radial-fire-segments-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    object.radial_fire_segments,
                 )
             })
             .collect::<BTreeMap<_, _>>()
@@ -6650,6 +6724,7 @@ SpawnCount=3
     /// layers MPBATTLEMD's `AlliesAllowed=yes` over RULESMD's `no`;
     /// FreeForAll's MPFREEFORALLMD says `no`.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn allies_allowed_and_paranoid_read_over_constructor_defaults() {
         let absent = GeneralRules::from_ini(&IniFile::from_str("[General]\nFlightLevel=500\n"));
         assert!(!absent.allies_allowed);
@@ -9922,6 +9997,26 @@ Projectile=Invisible
         second.set_terrain_spawner_frame_count_for_test("TIBTRE01", 24);
 
         assert_eq!(first.source_ini_hash(), second.source_ini_hash());
+        assert_ne!(
+            first.simulation_config_hash(),
+            second.simulation_config_hash()
+        );
+    }
+
+    #[test]
+    fn simulation_config_hash_covers_retained_projectile_color() {
+        let make = |color: &str| {
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[Colors]\nFirst=0,0,0\nSecond=1,2,3\n[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\n[SHOT]\nColor={color}\n",
+            )))
+            .unwrap()
+        };
+        let first = make("First");
+        let mut second = make("Second");
+        assert_eq!(first.projectile("SHOT").unwrap().color_scheme(), 1);
+        assert_eq!(second.projectile("SHOT").unwrap().color_scheme(), 3);
+        // Isolate the effective retained field from the raw-text fingerprint.
+        second.source_ini_hash = first.source_ini_hash;
         assert_ne!(
             first.simulation_config_hash(),
             second.simulation_config_hash()

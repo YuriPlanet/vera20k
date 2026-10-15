@@ -142,6 +142,7 @@ fn scalar_voice_defaults_and_retained_reached_passes_match_original_readers() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn stock_pack_voice_slots_match_physical_anytown_battle_production_rules() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {

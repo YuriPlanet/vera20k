@@ -48,6 +48,9 @@ fn curtained(row: &Value) -> GameEntity {
         u8::try_from(int(&row["stage"])).unwrap(),
         timer(&row["tint"]),
     ));
+    if !row["airstrike"].is_null() {
+        entity.airstrike.set_test_link(Some(99));
+    }
     entity
 }
 
@@ -63,22 +66,24 @@ fn shielded(row: &Value) -> GameEntity {
         InvulnKind::IronCurtain
     };
     entity.invulnerability = Some(InvulnerabilityState::new(timer(&row["curtain"]), kind));
+    if !row["airstrike"].is_null() {
+        entity.airstrike.set_test_link(Some(99));
+    }
     entity
 }
 
 fn rules(force_color: i32) -> RuleSet {
     let ini = IniFile::from_str(&format!(
-        "{RETAIL_COLOR_ADD}[AudioVisual]\nForceShieldColor={force_color}\n"
+        "{RETAIL_COLOR_ADD}[AudioVisual]\nForceShieldColor={force_color}\nLaserTargetColor=4\n"
     ));
     RuleSet::from_ini(&ini).unwrap()
 }
 
 /// Each `drawshp_curtain_arm` row (TechnoClass::DrawSHP `0x0070631F..
-/// 0x00706389` run natively) for a building and a unit with no
-/// airstrike: the intensity DrawSHP hands the blit is the
+/// 0x00706389` run natively) for a building and a unit including
+/// airstrike markers: the intensity DrawSHP hands the blit is the
 /// brightness [`techno_effect_light`] gives the draw at the row's frame as the
-/// committed `binary_frame`, and the compatibility tint takes its ratio. The
-/// other rows are its residuals.
+/// committed `binary_frame`, and the compatibility tint takes its ratio. All rows are compared.
 #[test]
 fn the_shp_draw_curtain_arm_matches_native() {
     assert_curtain_arm_matches("drawshp_curtain_arm");
@@ -99,16 +104,14 @@ fn assert_curtain_arm_matches(section: &str) {
     let mut sim = Simulation::new();
     let mut compared = 0;
     for row in rows {
-        if !row["airstrike"].is_null() {
-            continue;
-        }
         let intensity = int(&row["intensity"]);
         sim.session.binary_frame = int(&row["frame"]) as u32;
-        let (tint, light) = techno_effect_light(
+        let (tint, light) = techno_effect_light_at(
             &curtained(row),
             TINT,
             PaletteLight::color_scheme([1000; 3], intensity),
-            &sim,
+            sim.session.binary_frame,
+            row["airstrike"] == "self",
         );
         let out = int(&row["out_intensity"]);
         assert_eq!(light.brightness(), out, "{row}");
@@ -119,12 +122,12 @@ fn assert_curtain_arm_matches(section: &str) {
         );
         compared += 1;
     }
-    assert_eq!(compared, 88);
+    assert_eq!(compared, 92);
 }
 
 /// Each `building_anim_light` row (BuildingClass::UpdateAnimation
 /// `0x00450A47..0x00450A77` with 0x456FB0 and the slot loop run natively)
-/// with no airstrike: the ShouldUseCellDrawer anim's
+/// including airstrike markers: the ShouldUseCellDrawer anim's
 /// intensity is the brightness [`building_anim_light`] gives it when the
 /// committed frame is the one after the update's, cut to 16 bits; the anim
 /// whose type lacks ShouldUseCellDrawer keeps its own.
@@ -138,12 +141,17 @@ fn the_building_anim_light_matches_native() {
     for row in rows {
         assert_eq!(row["drawer_set"], serde_json::json!([true, false]), "{row}");
         assert_eq!(int(&row["anim_light"][1]), -12345, "{row}");
-        if !row["airstrike"].is_null() {
-            continue;
-        }
         sim.session.binary_frame = int(&row["frame"]) as u32 + 1;
+        let mut building = curtained(row);
+        building.building_art.capture_tint_sample(
+            int(&row["frame"]) as u32,
+            building.flashing.flashed(),
+            building.invulnerability.as_ref(),
+            &building.airstrike_tint,
+            row["airstrike"] == "self",
+        );
         let (_, light) = building_anim_light(
-            &curtained(row),
+            &building,
             TINT,
             PaletteLight::color_scheme([1000; 3], int(&row["intensity"])),
             &sim,
@@ -151,12 +159,12 @@ fn the_building_anim_light_matches_native() {
         assert_eq!(light.brightness(), int(&row["anim_light"][0]), "{row}");
         compared += 1;
     }
-    assert_eq!(compared, 46);
+    assert_eq!(compared, 48);
 }
 
 /// Each `building_colour_word` row (BuildingClass_DrawBody
 /// `0x0043D386..0x0043D544` and BuildingClass::Draw `0x0043DC1C..0x0043DDF1`
-/// run natively) in the active RGB565 format with no airstrike: both blocks
+/// run natively) in the active RGB565 format including airstrike markers: both blocks
 /// give the same low 16 bits, which are [`building_colour_word`]'s.
 #[test]
 fn the_building_colour_word_matches_native() {
@@ -168,7 +176,7 @@ fn the_building_colour_word_matches_native() {
     for row in rows {
         let native = row["draw_body_word"].as_u64().unwrap() & 0xFFFF;
         assert_eq!(native, row["draw_word"].as_u64().unwrap() & 0xFFFF, "{row}");
-        if !row["airstrike"].is_null() || int(&row["pixel_format"]) != 2 {
+        if int(&row["pixel_format"]) != 2 {
             continue;
         }
         sim.session.binary_frame = int(&row["frame"]) as u32;
@@ -181,12 +189,12 @@ fn the_building_colour_word_matches_native() {
         assert_eq!(u64::from(word), native, "{row}");
         compared += 1;
     }
-    assert_eq!(compared, 25);
+    assert_eq!(compared, 29);
 }
 
 /// Each `anim_colour_word` row (AnimClass::DrawIt `0x004233EE..0x00423630`
-/// run natively, the cell's objects walked by `0x0047C520`) with no
-/// airstrike: a slot anim over a building, first among the cell's objects or
+/// run natively, the cell's objects walked by `0x0047C520`) including
+/// airstrike markers: a slot anim over a building, first among the cell's objects or
 /// behind another, takes that building's [`building_colour_word`]; an anim
 /// that is not a slot anim, or whose cell holds no building, takes none. The
 /// rows stand in for VERA's cell lookup (`instances/shp.rs`
@@ -199,9 +207,6 @@ fn the_anim_colour_word_matches_native() {
     let mut sim = Simulation::new();
     let mut compared = 0;
     for row in rows {
-        if !row["airstrike"].is_null() {
-            continue;
-        }
         assert_eq!(row["word"], row["stored"], "{row}");
         let native = row["word"].as_u64().unwrap() & 0xFFFF;
         if !row["slot_anim"].as_bool().unwrap() || row["occupant"] == "none" {
@@ -218,7 +223,7 @@ fn the_anim_colour_word_matches_native() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 11);
+    assert_eq!(compared, 13);
 }
 
 /// The blitter each draw's flags pick (`blit_pickers`: ConvertClass
@@ -322,4 +327,53 @@ fn retail_force_shield_colour_is_high_blue() {
         native & 0xFFFF
     );
     assert_eq!(native & 0xFFFF, 0x0018);
+}
+
+/// UpdateAnimation reads before Techno updates either tint. Crossing the
+/// random stage-three boundary must retain that pre-update sample, including
+/// through serialization, instead of resampling the new stage at an old frame.
+#[test]
+fn building_animation_retains_the_pre_techno_airstrike_sample() {
+    use crate::sim::rng::SimRng;
+    let mut building = GameEntity::test_default_of_category(
+        1,
+        "GAPOWR",
+        "Americans",
+        10,
+        10,
+        EntityCategory::Structure,
+    );
+    let mut rng = SimRng::new(7);
+    building.airstrike_tint.start(1000, 100000);
+    for frame in 1000..1010 {
+        building.airstrike_tint.update_tint(frame, true, &mut rng);
+    }
+    building
+        .building_art
+        .capture_tint_sample(1010, false, None, &building.airstrike_tint, true);
+    building.airstrike_tint.update_tint(1010, true, &mut rng);
+    let mut sim = Simulation::new();
+    sim.session.binary_frame = 1011;
+    let input = PaletteLight::color_scheme([1000; 3], 500);
+    let (_, retained) = building_anim_light(&building, TINT, input, &sim);
+    let (_, body) = techno_effect_light_at(&building, TINT, input, 1010, true);
+    assert_eq!(retained.brightness(), 1000);
+    let native: Value =
+        serde_json::from_str(crate::test_fixture::text("tools/airstrike_tint.json")).unwrap();
+    let row = native["intensities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r[0] == 0 && r[2] == 3 && r[3] == 24)
+        .unwrap();
+    assert_eq!(body.brightness(), int(&row[4][5]));
+    assert_ne!(retained.brightness(), body.brightness());
+    let serialized = serde_json::to_value(&building.building_art).unwrap();
+    building.building_art = serde_json::from_value(serialized).unwrap();
+    assert_eq!(
+        building_anim_light(&building, TINT, input, &sim)
+            .1
+            .brightness(),
+        retained.brightness()
+    );
 }

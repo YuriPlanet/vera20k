@@ -229,8 +229,8 @@ pub fn cell_passable_for_infantry(occ: Option<&CellOccupancy>, layer: MovementLa
 /// refuses either plane (`0x00481298`) unless the 0x40 occupier is a passable
 /// Gate (`Gate=`, `+0x16B7`, `0x004525F0`).
 ///
-/// RESIDUAL: the slave, crew, drop, unload and parasite cell-coordinate callers
-/// lack the live Gate context and still supply `false`. A ground object bit
+/// RESIDUAL: the slave, crew, drop and unload cell-coordinate callers lack the
+/// live Gate context and still supply `false`. A ground object bit
 /// belonging to an open Gate therefore refuses before RNG where native may
 /// admit; their native comparisons do not cover that exception. Callers with
 /// the context use the native-cell owner.
@@ -360,8 +360,8 @@ impl crate::sim::world::Simulation {
     /// at `0x0089E778` (`0x004812EC`, `0x004813CC`).
     /// AircraftClass::Drop_Payload (`0x00415D9B..0x00415DD1`),
     /// InfantryClass::ReceiveDamage's InfDeath 9 arm
-    /// (`0x0051897C..0x00518A0D`) and the Infantry tube exit (`0x0051B967`)
-    /// ask it so.
+    /// (`0x0051897C..0x00518A0D`), the Infantry tube exit (`0x0051B967`) and
+    /// ParasiteClass::GetReleaseCoords (`0x0062ADE9`) ask it so.
     pub(crate) fn place_infantry_in_ground_cell(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,

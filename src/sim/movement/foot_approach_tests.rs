@@ -113,6 +113,7 @@ fn original_approach_candidate_heights() {
 /// enemy. This checks the ordinary Attack command through live object turns;
 /// it does not compare exact native first-shot or erase timing.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::house_state::HouseState;

@@ -71,6 +71,7 @@ pub mod spy_infiltration; // BuildingClass::Infiltrate (a spy's effects on the b
 pub(crate) mod stage;
 pub(crate) mod state_hasher;
 pub mod temporal;
+pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
@@ -172,7 +173,7 @@ pub mod trigger_runtime;
 
 // --- AI, replay, selection, debug ---
 pub(crate) mod ai_build_need;
-pub(crate) mod ai_buildable;
+pub mod ai_buildable;
 pub(crate) mod ai_team_creation;
 pub(crate) mod ai_unit_choice;
 pub mod debug_event_log;
@@ -196,3 +197,5 @@ pub mod particles;
 #[cfg(test)]
 #[path = "deploy_tests.rs"]
 mod deploy_tests;
+
+pub(crate) mod airstrike;

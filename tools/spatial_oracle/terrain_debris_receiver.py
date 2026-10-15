@@ -1,5 +1,7 @@
 """Bounded original Anim bounce-contact -> Terrain damage and immediate death cleanup.
 
+The --bullet-observer controls enter Terrain damage directly and record four
+Bullet callbacks before membership removal; no deferred destructor runs.
 All substitutions and fixture state are declared in the companion metadata.
 """
 import hashlib,json,struct
@@ -58,6 +60,25 @@ def run(case):
  u.mem_write(0x87f778,words(0x7e18fc,MEM+0x3a000,4))
  u.mem_write(0x87f788,words(2 if case.get('second') else 1))
  u.mem_write(MEM+0x3a000,words(OBJ,OBJ2))
+ observer=MEM+0x9000;observer_type=MEM+0xa000;observer_source=MEM+0xb000
+ if case.get('bullet_observer'):
+  # Use original constructors to populate the common Object observer vector.
+  # The receiver boundary supplies a Bullet target, not full child Fire/AI.
+  for i,vector in enumerate((0xa8e360,0xb0f720,0xb0f670,0xb0f618,0xa8ed40,0xa83c80)):
+   u.mem_write(vector,words(0x7eb6d4,MEM+0xc000+i*0x200,64,1,0,10))
+  u.mem_write(observer_source,words(0x7f5c70))
+ observer_events=[];observer_returns={}
+ def observer_state():
+  target=read32(u,observer+0x10c);source=read32(u,observer+0xb0)
+  if target==OBJ:identity=dict(kind='terrain',cell=[10,20],location=list(struct.unpack('<3i',u.mem_read(OBJ+0x9c,12))))
+  elif target==CELL:identity=dict(kind='cell',cell=list(struct.unpack('<2h',u.mem_read(CELL+0x24,4))))
+  elif target==0:identity=dict(kind='none')
+  else:raise AssertionError(('unexpected observer target',hex(target)))
+  assert source in (0,observer_source)
+  return dict(target=identity,source='source' if source else None,
+              tree_alive=bool(u.mem_read(OBJ+0x90,1)[0]),tree_limbo=bool(u.mem_read(OBJ+0x81,1)[0]),
+              tree_is_ground_head=read32(u,CELL+0xe4)==OBJ,
+              tree_in_logic=bool(u.mem_read(OBJ+0x98,1)[0]),logic_count=read32(u,0x87f788))
  events=[];recent=[];heap=MEM+0x40000;substitutions=[];receiver_results=[];pending_receivers=[];rng_calls=[]
  rng_before=bytes(u.mem_read(SCENARIO+0x218,0x3f4))
  def ret(value,cleanup):
@@ -68,6 +89,17 @@ def run(case):
   recent.append(a)
   if len(recent)>32:recent.pop(0)
   sp=u.reg_read(UC_X86_REG_ESP)
+  if case.get('bullet_observer'):
+   if (a,sp) in observer_returns:
+    observer_events[observer_returns.pop((a,sp))]['after']=observer_state()
+   if a==0x4684e0:
+    expired=read32(u,sp+4)
+    observer_events.append(dict(event='bullet_pointer_expired',
+       expired='tree' if expired==OBJ else 'source',control=u.mem_read(sp+8,1)[0],before=observer_state()))
+    observer_returns[(read32(u,sp),sp+12)]=len(observer_events)-1
+   elif a in (0x5f65f0,0x71c930,0x47ea90,0x55bae0):
+    observer_events.append(dict(event={0x5f65f0:'uninit',0x71c930:'terrain_limbo',
+       0x47ea90:'cell_remove',0x55bae0:'logic_remove'}[a],state=observer_state()))
   if a in (0x47ea90,0x71c070,0x71b920,0x5f5390,0x5f5280,0x7258d0,0x5f65f0,0x71c930,0x5f4d30,0x71bfb0,0x5687f0,0x489280,0x5f42f0,0x422b80):
    e=dict(a=f'{a:08X}',obj=f'{u.reg_read(UC_X86_REG_ECX):08X}',caller=f'{read32(u,sp):08X}',first_health=signed(read32(u,OBJ+0x6c)));events.append(e)
    if a==0x71b920:
@@ -91,6 +123,19 @@ def run(case):
   elif a==0x5f5850:ret(1,4)
   elif a in (0x439150,0x4a9770,0x47d2b0,0x56d460,0x584550,0x6551c0):ret(0,4)
  u.hook_add(UC_HOOK_CODE,hook)
+ observer_initial=None;observer_source_before_damage=None
+ if case.get('bullet_observer'):
+  u.mem_write(MEM+0xf000,b'SmallCometP\0')
+  call(u,0x46bbc0,observer_type,(MEM+0xf000,))
+  call(u,0x466380,observer)
+  call(u,0x4664c0,observer,(observer_type,OBJ,observer_source,30,WARHEAD,74,0))
+  observer_initial=observer_state()
+  if case.get('source_first'):
+   call(u,0x4684e0,observer,(observer_source,0))
+   for pending,index in list(observer_returns.items()):
+    if pending[0]==RET_MAGIC:
+     observer_events[index]['after']=observer_state();del observer_returns[pending]
+   observer_source_before_damage=observer_state()
  u.mem_write(SP,words(RET_MAGIC,DAMAGE,case.get('distance',0),0 if case.get('null_warhead') else WARHEAD,0,0,0,0));u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ECX,ANIM if case.get('contact') else OBJ)
  try:run_checked(u,0x423930 if case.get('contact') else 0x71B920,RET_MAGIC,count=200000)
  except Exception:
@@ -98,9 +143,31 @@ def run(case):
  if pending_receivers:
   _,obj,dp=pending_receivers.pop();receiver_results.append(dict(obj=obj,result=signed(u.reg_read(UC_X86_REG_EAX)),damage_after=signed(read32(u,dp)),health=signed(read32(u,obj+0x6c))))
  result=signed(u.reg_read(UC_X86_REG_EAX))
- rng_unchanged=rng_before==bytes(u.mem_read(SCENARIO+0x218,0x3f4))
+ observer_after_receiver=None;observer_repeated=None;observer_source_expired=None
+ if case.get('bullet_observer'):
+  observer_after_receiver=observer_state()
+  # run_checked stops before RET_MAGIC, so resolve that last observer return
+  # after each direct call without inventing a callback result.
+  for expired,label in ((OBJ,'repeat_tree'),(observer_source,'source_expiry')):
+   call(u,0x4684e0,observer,(expired,1 if expired==OBJ else 0))
+   for pending,index in list(observer_returns.items()):
+    if pending[0]==RET_MAGIC:
+     observer_events[index]['after']=observer_state();del observer_returns[pending]
+   if label=='repeat_tree':observer_repeated=observer_state()
+   else:observer_source_expired=observer_state()
+  assert not observer_returns
+ rng_after=bytes(u.mem_read(SCENARIO+0x218,0x3f4))
+ rng_unchanged=rng_before==rng_after
+ observer_rng_calls=list(rng_calls)
  continuation=[call(u,0x65c780,SCENARIO+0x218) for _ in range(4)]
- return dict(case=case,events=events,receiver_results=receiver_results,substitutions=substitutions,neighbor_counts=[u.mem_read(p+0x122,1)[0] for p in neighbors],rng_unchanged=rng_unchanged,next_rng=continuation,result=result,health=signed(read32(u,OBJ+0x6c)),alive=u.mem_read(OBJ+0x90,1)[0],limbo=u.mem_read(OBJ+0x81,1)[0],ground_head=read32(u,CELL+0xe4),occupation=read32(u,CELL+0x124),delete_count=read32(u,0xB0F6A8),successor=read32(u,OBJ+0x30),second_hp=signed(read32(u,OBJ2+0x6c)),logic_count=read32(u,0x87f788),in_logic=u.mem_read(OBJ+0x98,1)[0])
+ output=dict(case=case,events=events,receiver_results=receiver_results,substitutions=substitutions,neighbor_counts=[u.mem_read(p+0x122,1)[0] for p in neighbors],rng_unchanged=rng_unchanged,next_rng=continuation,result=result,health=signed(read32(u,OBJ+0x6c)),alive=u.mem_read(OBJ+0x90,1)[0],limbo=u.mem_read(OBJ+0x81,1)[0],ground_head=read32(u,CELL+0xe4),occupation=read32(u,CELL+0x124),delete_count=read32(u,0xB0F6A8),successor=read32(u,OBJ+0x30),second_hp=signed(read32(u,OBJ2+0x6c)),logic_count=read32(u,0x87f788),in_logic=u.mem_read(OBJ+0x98,1)[0])
+ if case.get('bullet_observer'):
+  output['observer']=dict(initial=observer_initial,events=observer_events,
+     after_receiver=observer_after_receiver,after_repeat=observer_repeated,
+     after_source_expiry=observer_source_expired,
+     after_source_before_damage=observer_source_before_damage,
+     scenario_before=rng_before.hex(),scenario_after=rng_after.hex(),rng_calls=observer_rng_calls)
+ return output
 def generate():
  cases=[]
  for health in (200,16,15,14,10,1,0):
@@ -134,5 +201,67 @@ def metadata():
  ],entry_points={'contact':0x423930,'terrain_receiver':0x71B920,'object_receiver':0x5F5390,'damage_kernel':0x489180,'terrain_limbo':0x71C930,'object_limbo':0x5F4D30,'cell_remove':0x47EA90,'logic_unregister':0x55BAE0,'uninit':0x5F65F0,'area':0x489280,'neighbor_init':0x49F2F0})
  result['native_landing_inputs_sha256']=hashlib.sha256((Path(__file__).parent.parent/'rules_oracle/bridge_landing_inputs.json').read_bytes()).hexdigest()
  return result
+def bullet_observer_generate():
+ return dict(cases=[run(dict(name=name,bullet_observer=True,health=10,damage=20,
+                            source_first=source_first))
+                    for name,source_first in (('tree_before_source',False),
+                                               ('source_before_tree',True))])
+
+def bullet_observer_metadata():
+ result=provenance(
+  scope='Original Terrain lethal receiver and populated Object observer broadcast through '
+        'Bullet PointerExpired before Terrain Limbo, repeated expiry and independent source expiry. '
+        'Two direct receiver controls; no child Fire/AI or deferred destructor execution.',
+  assumptions=[
+   'Pinned original image; native x87 control0x0E7F. Original49F2F0 initializes the8-neighbor '
+   'offsets. Supplied map has cell10,20 at level2 and all8 neighbors. One TREE01 occupies '
+   'the ground head and Logic vector, with one-cell occupationbits4, rawoccupation0xFC, '
+   'neighbor counts1 and center count0. No second linked Terrain, Anim contact, or custom spawner.',
+   'Terrain has retained Location2688,5248,208, supplied health10, maxHP200 and armorwood6. '
+   'Independent rules_oracle/bridge_landing_inputs executes original TREE01 rules/ART readers '
+   'and HE/Super readers. This receiver consumes TREE01 Immune0/Spawns0/occupation4,6, '
+   'HE Woodtrue/woodverses0.75 and Rules MaxDamage10000/ConditionRed0.25/ConditionYellow0.5. '
+   'Damage20, distance0, gameRunningtrue and frame1000 are supplied. NoDamagefalse. '
+   'No INI reader executes inside either receiver row; initialized Super/C4 fields are unused.',
+   'Original BulletType46BBC0, Bullet466380 and Construct4664C0 populate real Object observer '
+   'vectorB0F724 with one observer targeting Terrain and a separate supplied Unit-vtable source. '
+   'Other observer vectors are empty. BulletType keeps constructor defaults; SmallCometP is '
+   'its supplied ID, not a physical type read. Construct receives Damage30, HE, speed74 and '
+   'brightfalse; these payload values do not control PointerExpired and no Fire/AI runs.',
+   'Original ObjectReceiveDamage DetachAll, Terrain lethal DetachAll, UnInit direct broadcast '
+   'and ObjectLimbo DetachAll produce four Bullet callbacks before Cell/Logic removal. '
+   'No deferred destructor executes. Tree-before-source then directly repeats tree expiry '
+   '(control1) and expires source(control0); source-before-tree first expires source(control0). '
+   'Callback control records the byte consumed by4685CC, excluding upper stack bytes. '
+   'Complete Scenario seed1 state is captured before/after this interval; four subsequent '
+   'native RNG words are only the separately recorded continuation check.',
+   'Process footprint sentinelAC1398 and render-depthB0CD48 bits0x3FC25E5374344960 are supplied. '
+   'Pending-delete capacity32 and Logic capacity4 are preallocated. No tag, audio, warp, '
+   'house, bomb or live animation state; full rendering/pathfinding is excluded.',
+  ],
+  substitutions=[
+   'Executed:71D160 render rectangle returns0,0,1,1;6D2790 TacticalDirty returns0; '
+   '5F5850 ObjectMark returns1 so original TerrainMark/ExitCell/CellRemoveContent execute.',
+   'Executed:439150 empty BombListPointerGotInvalid,4A9770 display removal,47D2B0 cell recalc, '
+   '56D460 orphan zone,584550 incremental zone and6551C0 radar dirty each return0. '
+   'Original call order is recorded; these external effects are not proved.',
+   'Installed but unexecuted for these rows:439B00 Anim bounce-contact,7C8E17 allocator '
+   '(including its custom-spawner failure arm),7C8B3D delete. The shared runner retains '
+   'those hooks for its other controls; no result here depends on them.',
+  ],entry_points=dict(terrain_receiver=0x71B920,object_receiver=0x5F5390,
+                     damage_kernel=0x489180,terrain_limbo=0x71C930,object_limbo=0x5F4D30,
+                     cell_remove=0x47EA90,logic_unregister=0x55BAE0,uninit=0x5F65F0,
+                     neighbor_init=0x49F2F0,bullet_type_ctor=0x46BBC0,bullet_ctor=0x466380,
+                     bullet_construct=0x4664C0,bullet_pointer_expired=0x4684E0,
+                     detach_all=0x5F5280,observer_broadcast=0x7258D0))
+ result['native_landing_inputs_sha256']=hashlib.sha256((Path(__file__).parent.parent/'rules_oracle/bridge_landing_inputs.json').read_bytes()).hexdigest()
+ return result
+
 if __name__=='__main__':
- finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)
+ import sys
+ if '--bullet-observer' in sys.argv:
+  args=[arg for arg in sys.argv[1:] if arg!='--bullet-observer']
+  finish_vectors(bullet_observer_generate,Path(__file__).with_name('terrain_bullet_expiry.json'),
+                 provenance=bullet_observer_metadata,argv=args)
+ else:
+  finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)

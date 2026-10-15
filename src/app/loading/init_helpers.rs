@@ -590,19 +590,15 @@ pub(crate) fn build_presentation_manifest(
             Some(&sim.interner),
         )
     });
-    // Build PaletteSet: theater palette + per-house RGB ramps for the voxel
-    // sprite shader. Active houses are derived from the house_colors map
-    // (deduplicated; row 0 of the ramp texture is the no-remap fallback).
+    // Build PaletteSet from active houses and voxel Bullet type Colors.
+    // Row0 remains the no-remap fallback; type-owned rows do not require a house.
     let default_ramps = crate::rules::house_colors::HouseColorRamps::default();
     let house_ramps: &crate::rules::house_colors::HouseColorRamps = rules
         .map(|r| &r.house_color_ramps)
         .unwrap_or(&default_ramps);
     let palette_set: Option<crate::render::palette_textures::PaletteSet> =
         palette.as_ref().map(|pal| {
-            let mut active: Vec<crate::rules::house_colors::HouseColorIndex> =
-                house_colors.values().copied().collect();
-            active.sort_by_key(|h| h.0);
-            active.dedup();
+            let active = voxel_palette_demand(house_colors, rules);
             crate::render::palette_textures::PaletteSet::new(gpu, pal, house_ramps, &active)
         });
     PresentationManifest {
@@ -701,6 +697,31 @@ mod retail_placement_oracle_tests;
 #[cfg(test)]
 #[path = "init_helpers_retail_buildup_tests.rs"]
 mod retail_buildup_tests;
+
+/// ColorScheme rows used by voxel objects, independently of active house
+/// colors. Bullet468210 selects its type's retained Color, so a Kirov bomb
+/// can require LightGold even when no house uses that scheme.
+fn voxel_palette_demand(
+    house_colors: &HouseColorMap,
+    rules: Option<&RuleSet>,
+) -> Vec<crate::rules::house_colors::HouseColorIndex> {
+    use crate::rules::house_colors::HouseColorIndex;
+    let mut colors: Vec<_> = house_colors.values().copied().collect();
+    if let Some(rules) = rules {
+        colors.extend(
+            rules
+                .projectiles_iter()
+                .filter(|kind| kind.voxel)
+                .filter_map(|kind| {
+                    let index = u8::try_from(kind.color_scheme() / 2).ok()?;
+                    Some(HouseColorIndex(index))
+                }),
+        );
+    }
+    colors.sort_by_key(|color| color.0);
+    colors.dedup();
+    colors
+}
 
 #[cfg(test)]
 mod tests {
@@ -1311,4 +1332,20 @@ mod tests {
             "a map BuildSpeed override must change the rules hash"
         );
     }
+}
+
+#[test]
+fn voxel_palette_demand_keeps_kirov_type_color_without_a_matching_house() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let blue = crate::rules::house_colors::HouseColorIndex(8);
+    let gold = crate::rules::house_colors::HouseColorIndex(0);
+    let houses = HouseColorMap::from([("Americans".to_owned(), blue)]);
+    let colors = voxel_palette_demand(&houses, Some(&battle.rules));
+    assert!(colors.contains(&blue));
+    assert!(
+        colors.contains(&gold),
+        "Bullet type Color must be uploaded without a LightGold house"
+    );
 }

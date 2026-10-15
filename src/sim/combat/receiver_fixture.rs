@@ -205,8 +205,8 @@ pub(crate) struct FixturePolicy {
     /// Bullet detonations the same frame's tail committed, held for the
     /// fixture's result instead of the world's consequence commit.
     pub(crate) tail_effects: Vec<(crate::sim::combat::DeathEffects, Vec<UnderAttackEvent>)>,
-    /// The launch record of every bullet the fixture's shots admit, with its
-    /// id and whether it is Inviso.
+    /// Read-only launch observations from FireAt and SpawnShrapnel admission,
+    /// with stable id and whether the type is Inviso. Never a pending queue.
     pub(crate) admitted_spawns: Vec<(u64, bool, crate::sim::projectile::ProjectileSpawn)>,
 }
 

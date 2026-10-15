@@ -34,11 +34,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let mut sim = Simulation::with_seed(0);
     let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
     entity.set_category_for_test(EntityCategory::Aircraft);
-    entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(
-        u8::from(input["latch_6d2"].as_bool().unwrap()),
-        1,
-        false,
-    );
+    entity.mission_leaf =
+        MissionLeafState::aircraft_raw_for_test(u8::from(input["latch_6d2"].as_bool().unwrap()), 1);
     entity.mission = MissionCom::at_frame(0);
     let mut ammo = AircraftAmmo::new(2);
     ammo.set_current_for_test(input["ammo"].as_i64().unwrap() as i32);

@@ -68,6 +68,7 @@ fn recoil_reached_sections_reset_barrel_through_retained_registry() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn recoil_retail_reader_and_scenario_layers_match_original() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

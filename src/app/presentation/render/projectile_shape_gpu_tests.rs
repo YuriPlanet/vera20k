@@ -276,12 +276,13 @@ fn compare_shape_corpus(
                 &kind,
                 type_id,
                 crate::rules::house_colors::HouseColorIndex(0),
-                atlas,
+                Some(atlas),
                 grid,
                 camera_pos,
                 viewport,
                 axis,
                 &order,
+                |_, _| None,
             );
             // Serialize the actual retained components, not a freshly sorted
             // list or new projectile constructor. Full savegame restoration is
@@ -297,12 +298,13 @@ fn compare_shape_corpus(
                 &kind,
                 type_id,
                 crate::rules::house_colors::HouseColorIndex(0),
-                atlas,
+                Some(atlas),
                 grid,
                 camera_pos,
                 viewport,
                 axis,
                 &restored_order,
+                |_, _| None,
             );
             let layers = lower_object_instances(object.into_iter().collect());
             let restored_layers = lower_object_instances(restored.into_iter().collect());
@@ -432,12 +434,13 @@ fn compare_shape_corpus(
                     &kind,
                     type_id,
                     crate::rules::house_colors::HouseColorIndex(0),
-                    atlas,
+                    Some(atlas),
                     sim.resolved_terrain.as_ref().unwrap(),
                     camera_pos,
                     viewport,
                     axis,
-                    &removed_order
+                    &removed_order,
+                    |_, _| None,
                 )
                 .is_none()
             );

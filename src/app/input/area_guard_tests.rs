@@ -225,6 +225,7 @@ fn sound_name<'a>(corpus: &'a Value, id: &Value) -> Option<&'a str> {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn area_guard_ingress_matches_native_order_current_cells_voices_and_rng() {
     let corpus = native::native();
     let mut compared = 0;

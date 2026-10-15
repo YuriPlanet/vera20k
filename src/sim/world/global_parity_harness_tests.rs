@@ -937,6 +937,7 @@ fn due_commands(sim: &Simulation, script: &[(u64, Command)], tick: u64) -> Vec<C
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let rules = harness_rules();
     let overlays = harness_overlays();

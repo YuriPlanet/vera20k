@@ -68,6 +68,12 @@ pub(crate) mod world_receiver;
 pub(crate) mod receiver_fixture;
 
 #[cfg(test)]
+mod aegis_launch_tests;
+#[cfg(test)]
+mod homing_shipyard_tests;
+#[cfg(test)]
+mod shrapnel_chain_tests;
+#[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]
 mod bridge_launch_tests;
@@ -232,6 +238,7 @@ use crate::util::lepton::LEPTONS_PER_LEVEL;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 use super::game_entity::GameEntity;
+#[cfg(test)]
 use super::occupancy::OccupancyGrid;
 
 /// One Unit's post-Foot Facing slot output for this tick — the write half of
@@ -335,9 +342,8 @@ pub struct CombatTickResult {
     /// Test adapter observations of actual inline AnimStore construction.
     #[cfg(test)]
     pub(crate) fixture_anims: Vec<receiver_fixture::ConstructedAnimObservation>,
-    /// Shrapnel bullets from detonations the combat pass committed; the frame
-    /// admits them before its Logic tail visits the new objects. FireAt admits
-    /// its own bullets directly.
+    /// Test observations of bullets already admitted through production owners.
+    #[cfg(test)]
     pub projectile_spawns: Vec<ProjectileSpawn>,
     /// Facing observations for component combat fixtures. Production Unit
     /// facing commits within that Unit's live Logic slot.
@@ -355,9 +361,6 @@ pub(crate) struct CombatEmit {
     /// One receiver-ordered consequence accumulator shared by weapon emission
     /// and fatal damage. Radiation is drained at its earlier ordinary phase.
     pub(crate) effects: DeathEffects,
-    /// Recursive/shrapnel bullet emissions awaiting the caller's admission.
-    /// FireAt admits its own ordinary Bullet directly into the live Logic walk.
-    pub(crate) projectile_spawns: Vec<ProjectileSpawn>,
     /// Native-order ReceiveDamage calls, including raw area records.
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
@@ -380,7 +383,6 @@ pub(crate) struct CombatEmit {
 /// Outputs produced by one Bullet Logic slot after its detonation receivers
 /// have committed, but before the world retires the Bullet object itself.
 pub(crate) struct LogicProjectileCommit {
-    pub(crate) projectile_spawns: Vec<ProjectileSpawn>,
     pub(crate) effects: DeathEffects,
     pub(crate) under_attack_events: Vec<UnderAttackEvent>,
 }

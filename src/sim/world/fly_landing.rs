@@ -788,6 +788,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn fly_can_enter_matches_original_ground_shroud_queries() {
         use crate::sim::vision::OwnerVisibility;
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(

@@ -168,7 +168,8 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             &tire,
             None,
             &VxlRenderParams {
-                body_tilt: Some(BodyTilt::Tumble(matrix)),
+                body_tilt: Some(BodyTilt::Matrix(matrix)),
+                lighting: crate::render::vxl_raster::VxlLighting::Diffuse,
                 ..VxlRenderParams::default()
             },
             Some(&vpl),

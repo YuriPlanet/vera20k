@@ -24,6 +24,7 @@ pub(crate) mod chronosphere_tests;
 mod fire;
 pub mod force_shield;
 pub mod genetic_converter;
+pub(crate) mod airstrike_tint;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;

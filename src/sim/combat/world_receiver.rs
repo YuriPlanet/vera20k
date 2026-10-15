@@ -477,6 +477,14 @@ pub(crate) fn commit_terrain(
         return (effects, under_attack_events);
     };
 
+    // ObjectReceiveDamage5F57AF calls DetachAll before returning lethal4
+    // to Terrain71B920. Its observers run before Terrain's nested C4 and
+    // the three later DetachAll/UnInit/Limbo announcements.
+    world.notify_pointer_expired(
+        lethal.stable_id,
+        crate::sim::world::UninitContext::new(Some(rules), overlay_registry),
+    );
+
     if lethal.spawns_tiberium
         && let Some(c4_warhead) = rules.warhead(&rules.bridge_warheads.c4_name).cloned()
     {
@@ -498,23 +506,12 @@ pub(crate) fn commit_terrain(
         under_attack_events.append(&mut pings);
     }
 
-    let finalized = crate::sim::terrain_object::finalize_terrain_lethal(
-        crate::sim::terrain_object::production_authority_parts(
-            &mut world.production,
-            &mut world.substrate.raw_cell_occupation,
-        ),
+    world.terrain_lethal_uninit(
+        lethal,
         &mut run.finalizing_terrain,
         &mut run.navigation_changed_cells,
-        lethal,
-        world.resolved_terrain.as_mut(),
+        crate::sim::world::UninitContext::new(Some(rules), overlay_registry),
     );
-    if finalized {
-        // Terrain's common tail 0x71BB2C -> ObjectUnInit 0x5F65F0 retires Logic membership before
-        // returning to the current receiver walk; physical deletion is deferred.
-        // Native executable comparison: terrain_debris_receiver.json.
-        let retired = world.retire_non_entity_object(lethal.stable_id);
-        debug_assert!(retired);
-    }
     (effects, under_attack_events)
 }
 
@@ -1525,7 +1522,6 @@ pub(crate) fn handle_death(
                 {
                     let commit =
                         commit_projectiles(world, run, &[detonation], rules, overlay_registry);
-                    world.admit_projectile_spawns(commit.projectile_spawns, rules);
                     under_attack_events.extend(commit.under_attack_events);
                     blast_effects.append(commit.effects);
                 }
@@ -1877,8 +1873,8 @@ enum SpecialArmTarget {
 
 /// The special arm of `BulletClass::DetonateAtCoord @ 0x004690B0`
 /// (`0x0046920B..0x00469A3D`) the warhead's flags selected, for both
-/// deliveries: a visible bullet's detonation, and VERA's immediate `Inviso=`
-/// shot, which natively is the same bullet detonating through the same chain.
+/// deliveries: a visible bullet's detonation, and an `Inviso=` bullet's first
+/// AI visit, which detonates through the same chain.
 ///
 /// Whatever the arm does, it claims the impact: every arm, its internal
 /// refusals included, leaves by `JMP 0x00469AA4`, and `Apply_area_damage`
@@ -1886,9 +1882,8 @@ enum SpecialArmTarget {
 /// at `0x00469A3F`. So the caller runs neither, and runs the shared tail below
 /// `LAB_00469AA4` after this returns. `owner` is the bullet's `+0xB0`.
 ///
-/// RESIDUAL: the ElectricAssault (`0x0046937A`), Airstrike (`0x00469705`)
-/// and DirectRocker (`0x0046978E`) bodies are not ported; those arms claim
-/// the impact and do nothing else (see `SpecialDetonationAction`).
+/// DirectRocker (`0x0046978E`) remains unported; its admitted arm claims the
+/// impact without an effect. Airstrike delegates to the manager lifecycle.
 fn run_special_detonation_arm(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1899,7 +1894,9 @@ fn run_special_detonation_arm(
 ) {
     let owner = detonation.source_id;
     let target = match detonation.target {
-        ProjectileTarget::Entity(id) => SpecialArmTarget::Object(id),
+        ProjectileTarget::Entity(id) | ProjectileTarget::Terrain(id) => {
+            SpecialArmTarget::Object(id)
+        }
         ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell => SpecialArmTarget::Cell,
         ProjectileTarget::None => SpecialArmTarget::None,
     };
@@ -1984,9 +1981,13 @@ fn run_special_detonation_arm(
                 effects,
             );
         }
-        SpecialDetonationAction::ElectricAssault
-        | SpecialDetonationAction::Airstrike
-        | SpecialDetonationAction::DirectRocker => {
+        SpecialDetonationAction::ElectricAssault => {
+            world.electric_assault_detonation(owner, object);
+        }
+        SpecialDetonationAction::Airstrike => {
+            world.airstrike_detonation(owner, object, rules, effects);
+        }
+        SpecialDetonationAction::DirectRocker => {
             log::debug!(
                 "special detonation {action:?} from {owner} claimed with its body unported; \
                  shrapnel and area damage suppressed, the shared tail still runs"
@@ -2016,6 +2017,11 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let terrain = world.resolved_terrain.as_ref();
     let target_coords = match detonation.target {
         ProjectileTarget::Entity(id) => object_get_coords(world, id),
+        ProjectileTarget::Terrain(id) => world
+            .production
+            .terrain_objects
+            .get(&id)
+            .map(|tree| tree.world_coord()),
         ProjectileTarget::Cell { rx, ry } => {
             Some(crate::sim::projectile::cell_ground_coord(terrain, rx, ry))
         }
@@ -2183,6 +2189,7 @@ fn emit_detonation_receivers(
                 .get(id)
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit),
             ProjectileTarget::Cell { .. }
+            | ProjectileTarget::Terrain(_)
             | ProjectileTarget::None
             | ProjectileTarget::DummyCell => false,
         },
@@ -2201,18 +2208,10 @@ fn emit_detonation_receivers(
     match special_action {
         SpecialDetonationAction::OrdinaryDamage => {
             emit_projectile_shrapnel(
+                world,
+                rules,
                 detonation,
                 bullet_location(world, detonation).0,
-                &world.substrate.entities,
-                &world.substrate.occupancy,
-                &world.production.terrain_object_cells,
-                rules,
-                &mut world.interner,
-                world.resolved_terrain.as_ref(),
-                &world.house_alliances,
-                &mut world.scenario_rng,
-                &mut world.native_unique_ids,
-                out,
             );
 
             // `0x00469A69..0x00469A75`: the bullet's live Owner's house, or
@@ -2525,7 +2524,6 @@ pub(crate) fn commit_projectiles(
     debug_assert!(emit.spawn_target_updates.is_empty());
 
     LogicProjectileCommit {
-        projectile_spawns: emit.projectile_spawns,
         effects: emit.effects,
         under_attack_events,
     }

@@ -140,7 +140,9 @@ pub(crate) fn facing16_between(from: [i32; 2], to: [i32; 2]) -> u16 {
     ))
 }
 
-fn facing16_from_angle(angle: X87Value) -> u16 {
+/// Convert the original atan return to a direction word (shared by Bullet
+/// Draw468090 and the coordinate-facing callers).
+pub(crate) fn facing16_from_angle(angle: X87Value) -> u16 {
     let centered = X87Chop53::sub(angle, load_f64(PI_OVER_TWO_F64));
     let scaled = X87Chop53::mul(centered, load_f64(FACING_SCALE_F64));
     X87Chop53::ftol_i64(scaled)

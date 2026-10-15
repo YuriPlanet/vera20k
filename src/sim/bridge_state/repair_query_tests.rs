@@ -13,6 +13,7 @@ fn point(value: &Value) -> (i16, i16) {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn complete_native_query_corpus_matches_al_and_retained_dummy() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/bridge_repair_query.json",

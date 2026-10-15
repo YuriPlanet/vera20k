@@ -1324,6 +1324,60 @@ fn install_constructor_flat_terrain(sim: &mut Simulation) {
     ));
 }
 
+/// Object's Unlimbo (`0x005F4F3C`) asks an Aircraft's own +1AC,
+/// AircraftClass::Can_Enter_Cell (`0x004196B0`): in game mode 0 the current
+/// house's aircraft is refused a cell its house has not mapped. Any other
+/// game mode, or a mapped cell, admits it.
+#[test]
+fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
+    let rules = constructor_rules();
+    let reveal = |game_mode_nonzero: bool, mapped: bool| {
+        let mut sim = Simulation::with_seed(0x1a44);
+        install_constructor_test_playfield(&mut sim);
+        install_constructor_flat_terrain(&mut sim);
+        install_american_house(&mut sim);
+        sim.session.game_mode_nonzero = game_mode_nonzero;
+        let owner = sim.interner.get("Americans").unwrap();
+        sim.fog.width = 10;
+        sim.fog.height = 10;
+        if mapped {
+            sim.fog.reveal_all_for_owner(owner);
+        }
+        assert_eq!(sim.fog.is_cell_revealed(owner, 6, 5), mapped);
+        let held = sim
+            .construct_object_limbo_at_height(
+                "ORCA",
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("construct held aircraft");
+        sim.substrate
+            .entities
+            .get_mut(held)
+            .unwrap()
+            .discovery
+            .set_owned_by_current_house_for_test(true);
+        sim.reveal_constructed_object_at_height(
+            held,
+            6,
+            5,
+            0,
+            0,
+            PlacementEvidence::EvaluateMark,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+    };
+    assert_eq!(reveal(false, false), None);
+    assert!(reveal(false, true).is_some());
+    assert!(reveal(true, false).is_some());
+}
+
 fn assert_generated_projection_rejects_before_mutation(
     seed: u64,
     entities: &[MapEntity],

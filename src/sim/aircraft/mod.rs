@@ -56,8 +56,8 @@ const MISSION_STUB_FRAMES: i32 = 450;
 /// - `HouseClass::SendParadropPlanes` (`0x0065E6BE`) and `SendSpyPlanes`
 ///   (`0x0065EB10`).
 ///
-/// `Create_Air_Reinforcement` (`0x0065E8FF`) sets it too, but only for
-/// `AirstrikeClass`, which is not ported. Never infer the flag from the
+/// `Create_Air_Reinforcement` (`0x0065E8FF`) sets it for AirstrikeClass's
+/// planes too. Never infer the flag from the
 /// current type, mission, cargo or `+0x3D5`. The aircraft missions read it
 /// to leave the map, and the ordinary click action (`0x00692766`) reads it;
 /// forced `ObjectSelect @ 0x005F4578` has a separate vt+0xA0 prerequisite.

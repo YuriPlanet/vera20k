@@ -1781,21 +1781,28 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return PlacementEvidence::RejectedEarly;
         };
-        // Other classes' +1AC constructor receivers are separate migrations.
-        // Terrain-less diagnostics retain their existing generic Mark seam.
-        if !matches!(
-            entity.category(),
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Structure
-        ) || self.resolved_terrain.is_none()
-        {
+        // Map-less fixtures keep Object's generic Mark. Every gameplay world
+        // (app, headless, replay, sim-bench) comes from a map load.
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
             return PlacementEvidence::EvaluateMark;
+        };
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&position);
+        if entity.category() == EntityCategory::Aircraft {
+            // An Aircraft's +1AC is AircraftClass::Can_Enter_Cell (vtable
+            // slot 0x007E2450 -> 0x004196B0). It reads no playfield, so the
+            // admitted Aircraft keeps Object's generic Mark.
+            return if self.object_placement_scope_active()
+                || self.aircraft_can_enter_cell(stable_id, cells.lookup_world(x, y)) == 0
+            {
+                PlacementEvidence::EvaluateMark
+            } else {
+                PlacementEvidence::RejectedEarly
+            };
         }
         if entity.category() != EntityCategory::Structure && self.object_placement_scope_active() {
             return PlacementEvidence::UnitEntryAdmitted;
         }
-        let terrain = self.resolved_terrain.as_ref().unwrap();
-        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&position);
         let cell = cells.lookup_world(x, y);
         if entity.category() == EntityCategory::Structure {
             // Building4405A5 performs its own449440 before Techno/Object,
@@ -1861,6 +1868,7 @@ impl Simulation {
     ) {
         crate::sim::spawn_manager::commit_spawn_manager_pool(self, parent_id, rules, frame_effects);
         self.create_slave_manager(parent_id, rules, frame_effects);
+        self.initialize_airstrike(parent_id, rules);
     }
 
     /// Unit/Infantry constructor cloak ability plus UnitClass::Unlimbo's
@@ -2536,16 +2544,14 @@ impl Simulation {
             }
         }
         let target = Some(TargetKind::Entity(new_sid));
-        let commits = crate::sim::mission::concrete_effects::assign_target_commits(
-            &self.substrate.entities,
-            target,
-        );
         for targeter in targeters {
-            if let Some(entity) = self.substrate.entities.get_mut(targeter) {
-                crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                    entity, target, commits,
-                );
-            }
+            let _ = self.assign_target_represented(
+                targeter,
+                target,
+                Some(rules),
+                overlay_registry,
+                frame_effects,
+            );
         }
         self.uninit_with_context(
             sid,

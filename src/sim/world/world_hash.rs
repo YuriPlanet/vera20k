@@ -137,6 +137,12 @@ fn hash_projectile_target(
         crate::sim::projectile::ProjectileTarget::DummyCell => {
             3u8.hash(hasher);
         }
+        crate::sim::projectile::ProjectileTarget::Terrain(id) => {
+            // Bullet+10C retains a distinct Object pointer kind. Keep all
+            // established tags stable and never alias Entity(id) to a tree.
+            4u8.hash(hasher);
+            id.hash(hasher);
+        }
     }
 }
 
@@ -464,7 +470,6 @@ fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut 
         2u8.hash(hasher);
         aircraft.action_latch().hash(hasher);
         aircraft.transition_ready_latch().hash(hasher);
-        aircraft.airstrike_manager_present().hash(hasher);
         // Ctor 0x00413D74 starts +0x6D3 at 5, which adds no bytes; Overfly
         // reads it to come round again.
         if aircraft.paradrop_passes() != 5 {
@@ -1758,6 +1763,13 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.barrel_elevation().hash(hasher);
     }
     entity.body_frame_counter.get().hash(hasher);
+    if !entity.tesla_charge.is_default() {
+        b"building-tesla-charge-v1".hash(hasher);
+        entity.tesla_charge.hash(hasher);
+    }
+    if entity.tesla_charger.is_active() {
+        b"foot-tesla-charger-v1".hash(hasher);
+    }
     // Building+6E6 is retained transition state, independent of HP.
     if entity.building_art.damage_state_active() {
         b"building-damage-state-v1".hash(hasher);
@@ -2221,6 +2233,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // conditional field has it too. It is not reachable here — a live
     // pool always folds a tag plus its spawn type and mode — but the
     // invariant is "no known aliasing", not "aliasing is impossible".
+    entity.airstrike.hash_state(hasher);
+    entity.airstrike_tint.hash_state(hasher);
+    if entity.type_facts.spawned_non_missile_aircraft() {
+        b"spawned-non-missile-aircraft".hash(hasher);
+    }
     if let Some(ref manager) = entity.spawn_manager {
         1u8.hash(hasher);
         manager.hash(hasher);
@@ -2923,20 +2940,16 @@ mod mission_authority_hash_tests {
 
     #[test]
     fn every_aircraft_mission_leaf_field_changes_state_hash() {
-        let base = MissionLeafState::aircraft_raw_for_test(9, 10, false);
+        let base = MissionLeafState::aircraft_raw_for_test(9, 10);
         let base_hash = hash_leaf(base);
         for (field, variant) in [
             (
                 "action latch",
-                MissionLeafState::aircraft_raw_for_test(10, 10, false),
+                MissionLeafState::aircraft_raw_for_test(10, 10),
             ),
             (
                 "transition ready latch",
-                MissionLeafState::aircraft_raw_for_test(9, 11, false),
-            ),
-            (
-                "airstrike manager presence",
-                MissionLeafState::aircraft_raw_for_test(9, 10, true),
+                MissionLeafState::aircraft_raw_for_test(9, 11),
             ),
         ] {
             assert_ne!(

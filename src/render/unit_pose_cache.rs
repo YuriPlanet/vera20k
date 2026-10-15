@@ -19,9 +19,8 @@ use std::collections::BTreeMap;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::vpl_file::VplFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::gpu::GpuContext;
 use crate::render::unit_atlas::{PoseTilt, UnitModel, UnitSpriteEntry, UnitSpriteKey};
-use crate::render::vxl_raster::VxlSprite;
+use crate::render::vxl_raster::{VxlLighting, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
 const PAGE_SIZE: u32 = 1024;
@@ -40,15 +39,32 @@ pub struct VxlPoseFrameCache {
     vpl: Option<Option<VplFile>>,
     /// Each posed type's voxel model, parsed on its first pose.
     models: BTreeMap<String, Option<UnitModel>>,
-    /// Each `[VoxelAnims]` image's model, parsed on its first draw. Kept apart
-    /// from `models`: an image is a file name, not a rules type.
-    debris_models: BTreeMap<String, Option<UnitModel>>,
+    /// Image-file models shared by voxel debris and bullets. These keys are
+    /// retained image-load attempts, unlike the rules type keys in `models`.
+    image_models: BTreeMap<String, ImageModel>,
+}
+
+struct ImageModel {
+    model: Option<UnitModel>,
+    /// Equal direct matrices share a page slot only within this frame.
+    poses: BTreeMap<MatrixPoseKey, UnitSpriteEntry>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct MatrixPoseKey {
+    matrix: [u32; 16],
+    frame: u32,
+    use_hva: bool,
+    lighting: VxlLighting,
 }
 
 impl VxlPoseFrameCache {
     /// Forget last frame's poses. The GPU page keeps its old texels until the
     /// next upload; no instance references them.
     pub fn begin_frame(&mut self) {
+        for image in self.image_models.values_mut() {
+            image.poses.clear();
+        }
         if self.pixels.is_empty() {
             self.pixels = vec![0; (PAGE_SIZE * PAGE_SIZE) as usize];
         } else if self.dirty {
@@ -114,13 +130,70 @@ impl VxlPoseFrameCache {
             })
             .as_ref();
         let model = self
-            .debris_models
+            .image_models
             .entry(image.to_string())
-            .or_insert_with(|| UnitModel::load(asset_manager, image, None))
+            .or_insert_with(|| ImageModel {
+                model: UnitModel::load(asset_manager, image, None),
+                poses: BTreeMap::new(),
+            })
+            .model
             .as_ref()?;
         let (body, shadow) = model.render_tumble(section, matrix, vpl)?;
         let shadow = shadow.and_then(|sprite| self.place(&sprite, None));
         Some((self.place(&body, None)?, shadow))
+    }
+
+    /// Rasterize an image-file body at the supplied native matrix. Bullet
+    /// Draw46B0C0 requires the retained VXL/HVA pair and frame0; debris's
+    /// no-HVA/shadow policy stays with `render_tumble`. Failed image attempts
+    /// are cached too, and the match/asset owner replaces this entire cache.
+    pub fn render_matrix(
+        &mut self,
+        asset_manager: &AssetManager,
+        image: &str,
+        matrix: glam::Mat4,
+        frame: u32,
+        use_hva: bool,
+        lighting: VxlLighting,
+    ) -> Option<UnitSpriteEntry> {
+        if self.pixels.is_empty() {
+            self.begin_frame();
+        }
+        let key = MatrixPoseKey {
+            matrix: matrix.to_cols_array().map(f32::to_bits),
+            frame,
+            use_hva,
+            lighting,
+        };
+        if let Some(entry) = self
+            .image_models
+            .get(image)
+            .and_then(|model| model.poses.get(&key))
+        {
+            return Some(*entry);
+        }
+        let vpl = self
+            .vpl
+            .get_or_insert_with(|| {
+                asset_manager
+                    .get_ref("VOXELS.VPL")
+                    .and_then(|data| VplFile::from_bytes(data).ok())
+            })
+            .as_ref();
+        let model = self
+            .image_models
+            .entry(image.to_owned())
+            .or_insert_with(|| ImageModel {
+                model: UnitModel::load(asset_manager, image, None),
+                poses: BTreeMap::new(),
+            });
+        let (sprite, bounds) = model
+            .model
+            .as_ref()?
+            .render_matrix(matrix, frame, use_hva, lighting, vpl)?;
+        let entry = self.place(&sprite, bounds)?;
+        self.image_models.get_mut(image)?.poses.insert(key, entry);
+        Some(entry)
     }
 
     /// Put one rasterized sprite on the page.
@@ -148,16 +221,16 @@ impl VxlPoseFrameCache {
 
     /// Write this frame's used rows into the GPU page when anything was
     /// placed on it.
-    pub fn upload(&mut self, gpu: &GpuContext, batch: &BatchRenderer) {
+    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, batch: &BatchRenderer) {
         if !self.dirty {
             return;
         }
         let rows = self.used_rows();
         let texture = self.texture.get_or_insert_with(|| {
-            batch.create_blank_unit_atlas_texture(&gpu.device, PAGE_SIZE, PAGE_SIZE)
+            batch.create_blank_unit_atlas_texture(device, PAGE_SIZE, PAGE_SIZE)
         });
         crate::render::atlas_growth::write_texels(
-            &gpu.queue,
+            queue,
             texture.view.texture(),
             [0, 0],
             [PAGE_SIZE, rows],
@@ -209,6 +282,85 @@ impl VxlPoseFrameCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kirov_image_cache_reuses_poses_resets_frames_and_keeps_failed_attempts() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let down = crate::render::vxl_raster::projectile_voxel_matrix(
+            crate::sim::projectile::ProjectileVelocity::new(0, 0, -1),
+        )
+        .unwrap();
+        let east = crate::render::vxl_raster::projectile_voxel_matrix(
+            crate::sim::projectile::ProjectileVelocity::new(1, 0, 0),
+        )
+        .unwrap();
+        let mut cache = VxlPoseFrameCache::default();
+        cache.begin_frame();
+        let first = cache
+            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse)
+            .unwrap();
+        let cursor = (cache.cursor_x, cache.cursor_y, cache.shelf_height);
+        let repeated = cache
+            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse)
+            .unwrap();
+        assert_eq!(first.uv_origin, repeated.uv_origin);
+        assert_eq!(
+            (cache.cursor_x, cache.cursor_y, cache.shelf_height),
+            cursor,
+            "equal simultaneous bombs must not consume extra page space"
+        );
+        let changed = cache
+            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse)
+            .unwrap();
+        assert_ne!(first.uv_origin, changed.uv_origin);
+        assert_eq!(cache.image_models["ZBOMB"].poses.len(), 2);
+        for missing in ["VERA_MISSING_BULLET_IMAGE", ""] {
+            assert!(
+                cache
+                    .render_matrix(&assets, missing, down, 0, true, VxlLighting::Diffuse)
+                    .is_none()
+            );
+            assert!(cache.image_models[missing].model.is_none());
+        }
+        let parsed_model = cache.image_models["ZBOMB"].model.as_ref().unwrap() as *const UnitModel;
+        cache.begin_frame();
+        assert!(
+            cache
+                .image_models
+                .values()
+                .all(|model| model.poses.is_empty())
+        );
+        assert_eq!(
+            cache.image_models["ZBOMB"].model.as_ref().unwrap() as *const UnitModel,
+            parsed_model,
+            "a frame reset retains the parsed immutable asset"
+        );
+        assert!(cache.pixels.iter().all(|&pixel| pixel == 0));
+        assert_eq!(cache.used_rows(), 0);
+        let next = cache
+            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse)
+            .unwrap();
+        assert_eq!(
+            next.uv_origin, first.uv_origin,
+            "new frame starts at the first page slot, not a prior pose's slot"
+        );
+        assert!(
+            cache.image_models["VERA_MISSING_BULLET_IMAGE"]
+                .model
+                .is_none()
+        );
+        assert!(
+            cache.image_models[""].model.is_none(),
+            "an empty attempted Image differs from no attempt"
+        );
+        let replacement = VxlPoseFrameCache::default();
+        assert!(
+            replacement.image_models.is_empty(),
+            "match/asset replacement drops model and failure caches"
+        );
+    }
 
     #[test]
     fn a_new_frame_starts_an_empty_page() {

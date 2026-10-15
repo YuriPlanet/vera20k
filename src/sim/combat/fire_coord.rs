@@ -20,7 +20,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_targeting::AttackerSnapshot;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::projectile::ProjectileCoord;
+use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
 use crate::sim::world::Simulation;
 use crate::util::direction_tables::{facing16_between, step32_from_facing16};
 use crate::util::lepton::LEPTONS_PER_LEVEL;
@@ -51,10 +51,10 @@ pub(crate) struct FireCoordinate {
 pub(crate) fn effect_target_coordinate(
     world: &Simulation,
     rules: &RuleSet,
-    target: TargetKind,
+    target: ProjectileTarget,
 ) -> Option<ProjectileCoord> {
     match target {
-        TargetKind::Entity(id) => {
+        ProjectileTarget::Entity(id) => {
             let target = world.substrate.entities.get(id)?;
             let point = crate::sim::movement::ground_pose::object_target_coords(
                 target,
@@ -63,16 +63,29 @@ pub(crate) fn effect_target_coordinate(
             );
             Some(ProjectileCoord::new(point.x, point.y, point.z))
         }
-        TargetKind::Cell(x, y) => Some(crate::sim::projectile::cell_target_coord(
+        // Terrain+A4 (41BDD0) delegates to its retained Object+48 (5F65A0).
+        ProjectileTarget::Terrain(id) => world
+            .production
+            .terrain_objects
+            .get(&id)
+            .map(crate::sim::terrain_object::TerrainObjectState::world_coord),
+        ProjectileTarget::Cell { rx, ry } => Some(crate::sim::projectile::cell_target_coord(
             world.resolved_terrain.as_ref(),
-            x,
-            y,
+            rx,
+            ry,
         )),
+        ProjectileTarget::DummyCell => Some(crate::sim::projectile::dummy_cell_target_coord(
+            &world.effective_shared_cell_dummy(),
+        )),
+        // Native dereferences a null target. Keep an unresolved caller inert;
+        // no stock beam creation call supplies a null Abstract pointer.
+        ProjectileTarget::None => None,
     }
 }
 
-/// Both beam constructors subtract the projected Building+AC origin from
-/// their projected FLH and clamp positive deltas to zero (6FD210/6FD460).
+/// The laser's NullCoord arm and every bolt constructor subtract the projected
+/// Building+AC origin from their source and clamp positive deltas to zero
+/// (6FD210/6FD460). Explicit-source lasers bypass this calculation.
 /// Each projection stays with the existing native world-to-screen owner.
 pub(crate) fn effect_z_adjust(
     world: &Simulation,

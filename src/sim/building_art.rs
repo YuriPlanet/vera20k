@@ -58,9 +58,68 @@ pub(crate) struct BuildingArt {
     stuff_enabled: bool,
     /// Building+6E4: OnConstructionComplete's one-time allocation guard.
     actually_placed: bool,
+    /// Derived draw cache from UpdateAnimation, before this object's Techno
+    /// tint updates. Never read by simulation decisions or the world hash.
+    #[serde(default)]
+    tint_sample: Option<BuildingTintSample>,
+}
+
+/// Inputs to native BuildingClass::UpdateAnimation's relight at 00450A47.
+/// Retain the pre-Techno values across save/load because the next render uses
+/// them; the gameplay owners remain the entity's live tint and flash state.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BuildingTintSample {
+    frame: u32,
+    flashed: bool,
+    invulnerability: Option<crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    airstrike: crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
+    airstrike_active: bool,
+}
+
+impl BuildingTintSample {
+    pub(crate) fn frame(&self) -> u32 {
+        self.frame
+    }
+    pub(crate) fn flashed(&self) -> bool {
+        self.flashed
+    }
+    pub(crate) fn invulnerability(
+        &self,
+    ) -> Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState> {
+        self.invulnerability.as_ref()
+    }
+    pub(crate) fn airstrike(&self) -> &crate::sim::superweapon::airstrike_tint::AirstrikeTintState {
+        &self.airstrike
+    }
+    pub(crate) fn airstrike_active(&self) -> bool {
+        self.airstrike_active
+    }
 }
 
 impl BuildingArt {
+    /// Sample once at Building43FE22, before Techno43FE56 can update either
+    /// tint stage, draw Scenario RNG, or decrement the flash countdown.
+    pub(crate) fn capture_tint_sample(
+        &mut self,
+        frame: u32,
+        flashed: bool,
+        invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+        airstrike: &crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
+        airstrike_active: bool,
+    ) {
+        self.tint_sample = Some(BuildingTintSample {
+            frame,
+            flashed,
+            invulnerability: invulnerability.cloned(),
+            airstrike: airstrike.clone(),
+            airstrike_active,
+        });
+    }
+
+    pub(crate) fn tint_sample(&self) -> Option<&BuildingTintSample> {
+        self.tint_sample.as_ref()
+    }
+
     /// Building+6E6.
     pub(crate) fn damage_state_active(&self) -> bool {
         self.damage_state_active
@@ -140,6 +199,7 @@ impl Default for BuildingArt {
             storage: BuildingStorage::default(),
             stuff_enabled: true,
             actually_placed: false,
+            tint_sample: None,
         }
     }
 }

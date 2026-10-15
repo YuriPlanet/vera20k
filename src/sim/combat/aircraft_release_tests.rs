@@ -43,7 +43,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let mut sim = Simulation::with_seed(0);
     let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
     entity.set_category_for_test(EntityCategory::Aircraft);
-    entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(0, 1, false);
+    entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(0, 1);
     entity
         .mission
         .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {

@@ -353,8 +353,9 @@ fn recalculate_power_for_owner(
         }
 
         // Numeric comparison corpus: tools/spatial_oracle/power_health.json.
-        // Still-open native lifecycle inputs: overpowered, attached upgrade
-        // slots and House campaign registration.
+        // Still-open native lifecycle inputs: attached upgrade slots and
+        // House campaign registration. The independent Tesla weapon latch
+        // (+661) is not the power-output multiplier at +668.
         // Producer branch: base = max(Power, 0), plus ExtraPower × occupants
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).

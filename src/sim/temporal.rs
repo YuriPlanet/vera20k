@@ -101,8 +101,8 @@
 //!   - `HouseClass::CanBuild`'s upgrade-prerequisite scan
 //!     (`0x004F7DE6..0x004F7E4E`: an upgrade prerequisite counts only on an
 //!     online, unsold host; plain prerequisites use the house counters),
-//!     CheckDockArrayOccupancy (`0x0044E855`) and PowerCheck_Upgrade
-//!     (`0x00450605`). Effect: an option enabled by a warped upgrade host
+//!     CheckDockArrayOccupancy (`0x0044E855`). Effect: an option enabled by a
+//!     warped upgrade host
 //!     stays available.
 //!   - The player-only BuildingClass virtual `+0x4E0` (`0x004456D0`,
 //!     UpdateConstructionOptions: it adds the sidebar cameos of what the
@@ -1224,14 +1224,23 @@ impl Simulation {
         // unit only finishes its current track. The locomotor's Move_To
         // refuses while warped (Drive `0x004AFD71`, Walk `0x0075ACD0`), and it
         // does not process.
-        let mut clears_destination = false;
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            if entity.attack_target.target().is_some() {
-                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-            }
-            clears_destination =
-                category != EntityCategory::Structure && entity.navigation.nav_com().is_some();
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.attack_target.target().is_some())
+        {
+            // Each frozen class calls virtual +3C8 (Infantry51BBEF), not
+            // the Techno base write set. Its reached tail also clears a
+            // Tesla Trooper's automatic charging intent at51B33F.
+            let _ = self.assign_target_represented(id, None, Some(rules), registry, ctx.effects);
         }
+        let clears_destination = category != EntityCategory::Structure
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.navigation.nav_com().is_some());
         if clears_destination {
             self.assign_null_destination(id, Some(rules), registry, ctx.effects);
         }

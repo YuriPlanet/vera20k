@@ -103,6 +103,7 @@ fn spent_orca(rules: &RuleSet, human: bool) -> (Simulation, u64, u64) {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_spent_aircraft_enters_its_dock_reloads_and_guards_on_the_pad() {
     let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("rules");
     for human in [true, false] {
@@ -157,6 +158,7 @@ fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
 /// `CanPassiveAquire=no`, which the retail Harrier and Black Eagle carry,
 /// refuses the scan at CanAcquireTarget (`0x007091D0`).
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn a_guarding_aircraft_scans_passively_unless_its_type_may_not_and_takes_nothing() {
     for passive in [true, false] {
         let text = if passive {

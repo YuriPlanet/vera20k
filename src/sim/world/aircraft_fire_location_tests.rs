@@ -332,7 +332,7 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
             ai_counter: 0,
             dispatch_timer: MissionDispatchTimer::at_frame(100),
         });
-    entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1, false);
+    entity.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1);
     entity.attack_target.set_for_test(
         (!input["null_target"].as_bool().unwrap_or(false))
             .then(|| crate::sim::combat::TargetKind::Entity(2)),

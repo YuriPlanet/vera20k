@@ -13,18 +13,12 @@
 //! (HELLO/OVER_OUT/TETHER on real Unit and Building receivers) and the
 //! `can_dock` rows (the DOCKING handshake with every nested transmit).
 //!
-//! RESIDUALS (no represented reader or sender):
-//! - `RadioClass+0xD4..+0xDC`, the last three distinct received messages
-//!   (`0x0065A829`), is not kept.
-//! - The bus carries no overlay registry, so RUN_AWAY's Scatter reaches an
-//!   Infantry receiver without one, and its overlay reads fail on any cell
-//!   holding an overlay (ore included); the error is logged. When
-//!   Find_Nearby_Passable_Cell found a cell, the draw and the setter have
-//!   already run: the man keeps that destination and walks at his next turn,
-//!   but loses the immediate Process. When the neighbour fallback runs
-//!   instead, he stays. Trigger: RUN_AWAY reaching an infantryman in radio
-//!   contact. Frequency: rare, radio contacts are mostly docked Units. A Unit
-//!   receiver reads no overlay.
+//! Receivers that read a cell's overlay take the match's OverlayTypeClass
+//! table from the frame's effects ([`FrameEffects::overlay_registry`]); the
+//! bus hands them only the rules and those effects.
+//!
+//! RESIDUAL (no represented reader or sender): `RadioClass+0xD4..+0xDC`, the
+//! last three distinct received messages (`0x0065A829`), is not kept.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/radio + sim/world. sim/ NEVER depends on
@@ -912,7 +906,7 @@ fn unit_run_away(
         None,
         ScatterFlags::new(true, false),
         rules,
-        None,
+        effects.overlay_registry(),
         effects,
     ) {
         log::debug!("RUN_AWAY unit {unit} did not scatter: {cause}");
@@ -969,10 +963,7 @@ fn aircraft_receive(
     let Some(entity) = sim.substrate.entities.get(aircraft) else {
         return RadioResponse::None;
     };
-    let airstrike = entity
-        .mission_leaf
-        .as_aircraft()
-        .is_some_and(|leaf| leaf.airstrike_manager_present());
+    let airstrike = entity.airstrike_link().is_some();
     if !airstrike
         && matches!(
             entity.mission.current().known(),
@@ -1257,7 +1248,13 @@ fn foot_move_here(
         sim.mission_host_promote(foot, now, rules);
     }
     // 0x004D91E1..0x004D91EB: the class setter vt+0x480(*P, 1).
-    let _ = sim.assign_destination_represented(foot, payload.target, Some(rules), None, effects);
+    let _ = sim.assign_destination_represented(
+        foot,
+        payload.target,
+        Some(rules),
+        effects.overlay_registry(),
+        effects,
+    );
     // 0x004D91F1..0x004D920D: UpdateTimer (+0xC8) = {Frame, -, 0}. Inside a
     // mission dispatch the MissionClass::AI epilogue overwrites it.
     if let Some(entity) = sim.substrate.entities.get_mut(foot) {
@@ -1296,7 +1293,7 @@ fn foot_run_away(
         _ => false,
     };
     if aimed_at_contact {
-        sim.assign_null_destination(foot, Some(rules), None, effects);
+        sim.assign_null_destination(foot, Some(rules), effects.overlay_registry(), effects);
     }
     let mission = |sim: &Simulation| {
         sim.substrate
@@ -1333,7 +1330,7 @@ fn foot_run_away(
         None,
         ScatterFlags::new(true, true),
         rules,
-        None,
+        effects.overlay_registry(),
         effects,
     ) {
         log::debug!("RUN_AWAY foot {foot} did not scatter: {cause}");

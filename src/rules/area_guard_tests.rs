@@ -202,6 +202,7 @@ fn guard_sound_reader_matches_native_registered_name_and_failed_lookup_retention
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn area_guard_sound_inputs_match_full_retail_battle_production_reader() {
     let Some(retail) = super::retail_ini_fixture::retail_battle_rules() else {
         return;

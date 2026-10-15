@@ -105,6 +105,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {

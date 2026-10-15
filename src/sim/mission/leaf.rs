@@ -69,7 +69,6 @@ pub(crate) struct AircraftMissionLeaf {
     action_latch: u8,
     /// Aircraft+6D4, independent of the pending-ammunition byte+6C8.
     transition_ready_latch: u8,
-    airstrike_manager_present: bool,
     /// Aircraft `+0x6D3`, the paradrop passes left: the constructor writes 5
     /// (`0x00413D74`), each Mission_ParadropApproach turn into Overfly takes
     /// one (`0x00415950`), and each drop restores 5 (`0x00415E93`).
@@ -411,14 +410,12 @@ impl MissionLeafState {
     pub(crate) const fn aircraft_raw_for_test(
         action_latch: u8,
         transition_ready_latch: u8,
-        airstrike_manager_present: bool,
     ) -> Self {
         Self::Aircraft(AircraftMissionLeaf {
             idle_entry_latch: 0,
             firing_sequence_latch: 0,
             action_latch,
             transition_ready_latch,
-            airstrike_manager_present,
             paradrop_passes: initial_paradrop_passes(),
         })
     }
@@ -500,7 +497,6 @@ impl AircraftMissionLeaf {
             firing_sequence_latch: 0,
             action_latch: 0,
             transition_ready_latch: 1,
-            airstrike_manager_present: false,
             paradrop_passes: initial_paradrop_passes(),
         }
     }
@@ -515,10 +511,6 @@ impl AircraftMissionLeaf {
 
     pub(crate) const fn transition_ready_latch(&self) -> u8 {
         self.transition_ready_latch
-    }
-
-    pub(crate) const fn airstrike_manager_present(&self) -> bool {
-        self.airstrike_manager_present
     }
 }
 
@@ -559,7 +551,6 @@ mod tests {
         let aircraft = aircraft.as_aircraft().expect("Aircraft view");
         assert_eq!(aircraft.action_latch(), 0);
         assert_eq!(aircraft.transition_ready_latch(), 1);
-        assert!(!aircraft.airstrike_manager_present());
 
         let building = MissionLeafState::for_entity_category(EntityCategory::Structure);
         assert_eq!(
@@ -625,13 +616,12 @@ mod tests {
         );
         assert_eq!(infantry.as_infantry().expect("Infantry view").doing(), 41);
 
-        let mut aircraft = MissionLeafState::aircraft_raw_for_test(12, 13, true);
+        let mut aircraft = MissionLeafState::aircraft_raw_for_test(12, 13);
         aircraft.set_aircraft_transition_ready(14);
         aircraft.clear_aircraft_action_for_commence();
         let aircraft_view = aircraft.as_aircraft().expect("Aircraft view");
         assert_eq!(aircraft_view.action_latch(), 0);
         assert_eq!(aircraft_view.transition_ready_latch(), 14);
-        assert!(aircraft_view.airstrike_manager_present());
 
         let mut building = MissionLeafState::building_raw_for_test(15);
         building.set_building_ready_latch(16);
@@ -664,12 +654,12 @@ mod tests {
     #[test]
     fn mission_leaf_serde_round_trip_preserves_every_raw_field() {
         // A paradrop plane past its last pass: `+0x6D3` below zero.
-        let mut paradrop = MissionLeafState::aircraft_raw_for_test(1, 2, false);
+        let mut paradrop = MissionLeafState::aircraft_raw_for_test(1, 2);
         paradrop.set_paradrop_passes_for_test(-1);
         let fixtures = [
             MissionLeafState::unit_raw_for_test(1, 2, 3, u8::MAX),
             MissionLeafState::infantry_raw_for_test(u8::MAX, 41),
-            MissionLeafState::aircraft_raw_for_test(u8::MAX, 0, true),
+            MissionLeafState::aircraft_raw_for_test(u8::MAX, 0),
             paradrop,
             MissionLeafState::building_raw_for_test(u8::MAX),
         ];

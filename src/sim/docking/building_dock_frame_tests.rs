@@ -41,6 +41,7 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {

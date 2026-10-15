@@ -407,7 +407,16 @@ fn admit_attacker_fire<'r>(
         //5208FE may refuse unchanged/noninterruptible/absent actions.520912
         // raises+68D regardless of AL; the retained Doing/Stage still decides
         // when this attempt can discharge.
-        if let Err(cause) =
+        // Infantry520866..520884: an Airstrike owner firing secondary
+        // restarts only +F8, even when its existing action is noninterruptible.
+        if actor.airstrike_link().is_some() && matches!(requested, 40 | 41) {
+            world
+                .substrate
+                .entities
+                .get_mut(snap.stable_id)
+                .unwrap()
+                .set_native_stage_value(0);
+        } else if let Err(cause) =
             world.infantry_do_action(snap.stable_id, requested, false, rules, effects)
         {
             log::debug!("infantry {} firing Do_Action: {cause}", snap.stable_id);
@@ -1192,7 +1201,7 @@ pub(super) fn emit_admitted_fire(
             launch_source.coord,
             // 6FE1EE reads the Building argument's+A4. The launch delta and
             // Bullet::Fire reference below independently read+58 instead.
-            super::fire_coord::effect_target_coordinate(world, rules, snap.target)
+            super::fire_coord::effect_target_coordinate(world, rules, snap.target.into())
                 .unwrap_or(impact),
             tarcom,
         );
@@ -1204,8 +1213,8 @@ pub(super) fn emit_admitted_fire(
         // `TechnoClass::FireAt` step order, `0x006FE663`..`0x006FEA52`:
         // resolve the target delta, scatter it, recompute the facing from the
         // scattered delta, clamp the launch speed to half the straight-line
-        // distance, and only then force a homing or vertical shot to one
-        // lepton per frame. `BulletClass::Fire` keeps the target's own
+        // distance, and then apply the radial fan and homing/vertical scalar
+        // gate. `BulletClass::Fire` keeps the target's own
         // unled coordinate as the bullet's (`0x00468700..0x0046872B`).
         let frozen_target_position = impact;
         let aim = launch_geometry.aim;
@@ -1292,25 +1301,24 @@ pub(super) fn emit_admitted_fire(
         // 6FE947..6FE98A: directed launches read virtual+308. Dropping's
         // second GetCoords read (0x006FE960) stores the value the launch
         // source already holds (`fireat_launch_source`).
-        // RESIDUAL: `RadialFireSegments=` (`TechnoTypeClass+0x6A4`) is not
-        // parsed. One stock author, `[AEGIS]`: native replaces the launch
-        // direction with `body facing + (PI * counter / segments - PI / 2)`,
-        // cycling a counter at `TechnoClass+0x43C`, and forces the ROT>0
-        // launch speed to 1 only when it is zero (`0x006FEA18..0x006FEA3A`).
-        // Player effect: the Aegis Cruiser fires straight at one target
-        // instead of sweeping its flak arc, in every Allied naval engagement.
+        // RadialFireSegments reads PrimaryFacing.Current independently of
+        // the directed launch's virtual+308 (which can use a turret).
+        let body_heading = world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .map_or(snap.hull_facing.current(binary_frame), |source| {
+                source.body_facing_current(binary_frame)
+            });
         let directed_heading = projectile_type
             .filter(|projectile| projectile.dropping || projectile.rot != 0)
             .map(|_| {
                 let source = world.substrate.entities.get(snap.stable_id);
-                let hull = source.map_or(snap.hull_facing.current(binary_frame), |source| {
-                    source.body_facing_current(binary_frame)
-                });
                 match snap.category {
                     EntityCategory::Unit if obj.has_turret => source
                         .and_then(|source| source.barrel_facing.as_ref())
                         .map_or(0, |facing| facing.current(binary_frame)),
-                    EntityCategory::Unit | EntityCategory::Infantry => hull,
+                    EntityCategory::Unit | EntityCategory::Infantry => body_heading,
                     EntityCategory::Aircraft => source
                         .and_then(|source| source.barrel_facing.as_ref())
                         .map_or(0, |facing| facing.current(binary_frame)),
@@ -1347,7 +1355,27 @@ pub(super) fn emit_admitted_fire(
                     .wrapping_mul(200)
                     .wrapping_sub(pivot_z)
             });
+        let voxel_downward = (!ballistic && voxel).then(|| {
+            target_location(snap.target)
+                .expect("live native FireAt target")
+                .z
+                < raw_source.z
+        });
+        //6FEAC5..6FEBE6 consumes +43C before pitch or Bullet::Fire can fail.
+        // A nonpositive segment count leaves this independent index alone.
+        let radial_index = world
+            .substrate
+            .entities
+            .get_mut(snap.stable_id)
+            .map_or(0, |source| {
+                source
+                    .weapon_burst
+                    .take_radial_index(obj.radial_fire_segments)
+            });
         let launch = fireat_launch(FireAtLaunch {
+            radial_segments: obj.radial_fire_segments,
+            radial_index,
+            body_heading,
             delta,
             speed: launch_geometry.speed,
             vertical: vertical.is_some(),
@@ -1359,12 +1387,7 @@ pub(super) fn emit_admitted_fire(
                 collision.floater,
             ),
             high_root: high_arc_root(weapon.lobber, raw_source, current_target_coord),
-            voxel_downward: (!ballistic && voxel).then(|| {
-                target_location(snap.target)
-                    .expect("live native FireAt target")
-                    .z
-                    < raw_source.z
-            }),
+            voxel_downward,
             building_pitch_height,
         });
         // A launch with no ballistic solution deletes its bullet
@@ -1374,6 +1397,7 @@ pub(super) fn emit_admitted_fire(
         if let Some(FireAtLaunchResult {
             velocity,
             speed: launch_speed,
+            ..
         }) = launch
         {
             // ProcessDelayedFire writes its support bonus on the bullet this
@@ -1407,7 +1431,15 @@ pub(super) fn emit_admitted_fire(
                     max_speed: weapon.speed,
                     origin,
                     velocity,
-                    speed: launch_speed.clamp(0, i32::from(u16::MAX)) as u16,
+                    // Bullet::Fire normalizes ROT>0 after FireAt's scalar
+                    // math. Keep the current-speed cache derived from that
+                    // returned vector, as the homing owner does each visit.
+                    speed: if guidance.is_some() {
+                        crate::sim::projectile::projectile_velocity_magnitude(velocity)
+                            .clamp(0.0, f64::from(u16::MAX)) as u16
+                    } else {
+                        launch_speed.clamp(0, i32::from(u16::MAX)) as u16
+                    },
                 },
             );
         }
@@ -2148,6 +2180,7 @@ pub(crate) fn tick_combat(
         return CombatTickResult {
             #[cfg(test)]
             fixture_anims: Vec::new(),
+            #[cfg(test)]
             projectile_spawns: Vec::new(),
             unit_facing: Vec::new(),
             consequences: crate::sim::world::damage_consequences::DamageConsequences::ordinary(
@@ -2347,7 +2380,6 @@ pub(crate) fn tick_combat(
     // Destructure back into the named locals for post-fire state updates.
     let CombatEmit {
         mut effects,
-        projectile_spawns,
         mut damage_events,
         mut remove_attack,
         fire_events,
@@ -2464,9 +2496,13 @@ pub(crate) fn tick_combat(
     remove_attack.sort_unstable();
     remove_attack.dedup();
     for &attacker_id in &remove_attack {
-        if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
-            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-        }
+        let _ = world.assign_target_represented(
+            attacker_id,
+            None,
+            Some(rules),
+            overlay_registry,
+            FrameEffects::default(),
+        );
     }
 
     // Push the synchronously selected death sounds to the presentation sink.
@@ -2494,7 +2530,8 @@ pub(crate) fn tick_combat(
     CombatTickResult {
         #[cfg(test)]
         fixture_anims: Vec::new(),
-        projectile_spawns,
+        #[cfg(test)]
+        projectile_spawns: Vec::new(),
         unit_facing,
         consequences: crate::sim::world::damage_consequences::DamageConsequences::ordinary(
             effects,

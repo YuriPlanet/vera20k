@@ -538,6 +538,56 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// Retained six-field TechnoType71458A Airstrike reader state.
+    pub(crate) fn airstrike_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::airstrike::AirstrikeSettings,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        &member.airstrike,
+                    )
+                })
+            })
+    }
+
+    /// TechnoType+6A4 after every reached ReadINI7147B4 pass.
+    pub(crate) fn radial_fire_segments_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.radial_fire_segments,
+                    )
+                })
+            })
+    }
+
     /// Retained +A8 speed and +A0 projectile after the last Weapon sweep.
     pub(crate) fn weapon_speeds_and_projectiles(
         &self,
@@ -1227,6 +1277,10 @@ struct ProcessedType {
     /// reads747BBD..747E90, retained across every reached Rules pass.
     gunner_turrets: GunnerTurrets,
     recoil: crate::rules::recoil::RecoilConfig,
+    airstrike: crate::rules::airstrike::AirstrikeSettings,
+    /// TechnoType constructor711134 and current-default ReadInt7147B4.
+    #[serde(default)]
+    radial_fire_segments: i32,
     /// TechnoType `Prerequisite=` (`+0x638`) and `PrerequisiteOverride=`
     /// (`+0x654`), each read with its current list as the default.
     prerequisite: Vec<Prerequisite>,
@@ -1260,6 +1314,8 @@ impl ProcessedType {
             unit_shp: Default::default(),
             gunner_turrets: GunnerTurrets::default(),
             recoil: crate::rules::recoil::RecoilConfig::default(),
+            airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
+            radial_fire_segments: 0,
             prerequisite: Vec::new(),
             prerequisite_override: Vec::new(),
             weapon: WeaponReadState::default(),
@@ -2095,7 +2151,7 @@ impl RulesPassProcessor {
             if let Some((native_stored_id, raw, effective)) =
                 self.begin_rules_member_read(family, index, pass)
             {
-                self.process_techno_base(&raw, &effective);
+                self.process_techno_base(family, index, &raw, &effective);
                 // TechnoTypeClass::ReadINI parses `Prerequisite=` (`0x007141C5`)
                 // and `PrerequisiteOverride=` (`0x0071424B`) after `Dock=` and
                 // `DeploysInto=` (`0x00713180`, `0x00713279`), the reads above
@@ -2231,7 +2287,13 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_techno_base(&mut self, raw: &IniSection, effective: &IniSection) {
+    fn process_techno_base(
+        &mut self,
+        family: RulesTypeFamily,
+        index: usize,
+        raw: &IniSection,
+        effective: &IniSection,
+    ) {
         self.allocate_scalar_from(raw, "DeathWeapon", RulesTypeFamily::Weapon, 0x80);
         self.allocate_list_from(raw, "DebrisTypes", RulesTypeFamily::VoxelAnimation, 0x80);
         self.allocate_list_from(raw, "DebrisAnims", RulesTypeFamily::Animation, 0x80);
@@ -2290,17 +2352,29 @@ impl RulesPassProcessor {
             RulesTypeFamily::ParticleSystem,
             0x80,
         );
-        self.allocate_scalar_from(raw, "AirstrikeTeamType", RulesTypeFamily::Aircraft, 0x80);
-        self.allocate_scalar_from(
-            raw,
-            "EliteAirstrikeTeamType",
-            RulesTypeFamily::Aircraft,
-            0x80,
-        );
+        // Preserve both the six-field fallback order and Aircraft constructor
+        // chronology at TechnoType71458A..714654. Later text merging cannot
+        // recover an elite value reset by an omitted key in a reached section.
+        let mut airstrike = std::mem::take(&mut self.family_mut(family)[index].airstrike);
+        airstrike.apply_pass(raw, |name| {
+            self.find_or_allocate(RulesTypeFamily::Aircraft, name)
+                .map(|aircraft| {
+                    self.families[&RulesTypeFamily::Aircraft][aircraft]
+                        .native_stored_id
+                        .clone()
+                })
+        });
+        self.family_mut(family)[index].airstrike = airstrike;
         self.allocate_scalar_from(raw, "UnloadingClass", RulesTypeFamily::Vehicle, 0x80);
         self.allocate_scalar_from(raw, "DeployingAnim", RulesTypeFamily::Animation, 0x80);
         self.allocate_scalar_from(raw, "Enslaves", RulesTypeFamily::Infantry, 0x80);
         self.allocate_scalar_from(raw, "Spawns", RulesTypeFamily::Aircraft, 0x80);
+        // Original ReadINI7147B4..7147C8 stores ReadInt5276D0 directly.
+        // Missing sections never enter this reader; omitted keys retain the
+        // prior value, including across process-resident registry handoffs.
+        let member = &mut self.family_mut(family)[index];
+        member.radial_fire_segments =
+            raw.read_int("RadialFireSegments", member.radial_fire_segments);
     }
 
     fn allocate_fixed_art_techno_reference(
@@ -2372,6 +2446,9 @@ impl RulesPassProcessor {
     }
 
     fn process_bullet_family(&mut self, pass: &IniFile, fixed_art: &IniFile) {
+        // Colors66D3A0 precedes this sweep. Own the small name list while
+        // reference readers below may allocate more native type members.
+        let color_names: Vec<_> = self.colors.iter().map(|(name, _)| name.clone()).collect();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Projectile) {
             if let Some((_id, raw, _effective)) =
@@ -2383,7 +2460,7 @@ impl RulesPassProcessor {
                 let mut art = self.families[&RulesTypeFamily::Projectile][index]
                     .projectile_art
                     .clone();
-                art.read_pass(&raw, fixed_art, |incoming| {
+                art.read_pass(&raw, fixed_art, &color_names, |incoming| {
                     let animation = self.find_or_allocate(RulesTypeFamily::Animation, incoming)?;
                     Some(
                         self.families[&RulesTypeFamily::Animation][animation]

@@ -52,15 +52,8 @@
 //!   against `medium`) healing a deployed Slave Miner (YAREFN,
 //!   `Armor=medium`), if its targeting admits the building. Effect: native
 //!   pings the ore-miner line and stops at the ally test; VERA pings nothing.
-//! - Is_Operational ([`Simulation::building_operational_state`]) counts no
-//!   Tesla chargers and no EMP. Trigger: a Tesla Coil in a low-power base
-//!   charged by two or more Tesla Troopers (`ElectricAssault=`), which native
-//!   counts operational (`+0x67C >= 2`). Effect: native turns a human's coil
-//!   with one draw and gives an AI's coil the source through SetTarget; VERA
-//!   draws nothing, so the Scenario stream diverges, and SetTarget refuses.
-//!   Frequency: uncommon, Soviet bases short of power. Later owner: the Tesla
-//!   overpower chain, which ports the charger vector. No reachable retail EMP
-//!   source was traced.
+//! - Is_Operational has no EMP state; no retail EMP source was traced.
+//!   Its Tesla charger count comes from `sim::tesla_charging`.
 //!
 //! No RNG beyond the one Scenario draw per turn; `+0x388`'s timer is the only
 //! timer written; nothing is detached.

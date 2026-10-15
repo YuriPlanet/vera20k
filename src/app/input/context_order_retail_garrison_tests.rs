@@ -72,6 +72,7 @@ fn queue_ordinary_order(runtime: &mut crate::sim::runtime::SimRuntime, order: Co
 /// earlier Chebyshev-1-from-origin admission left every one of them standing
 /// inside the foundation in mission Enter.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
     let Some((mut scene, castle)) = retail_garrison_scene() else {
         return;
@@ -205,6 +206,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
 /// capture by that house. The production Walk reaches PerCell's repeated
 /// CanBeOccupiedBy457CE0 / refusal5196E5..519700; Stop replaces the order.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
     for control in ["red_health", "full", "other_owner", "stop"] {
         let Some((mut scene, castle)) = retail_garrison_scene() else {

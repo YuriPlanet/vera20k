@@ -120,9 +120,9 @@ pub struct ProjectileType {
     pub elasticity: f64,
 
     // --- Color ---
-    /// `Color=` color scheme name (+0x2D4 holds the scheme index; stock
-    /// `[ChemMissile] Color=DarkGreen`).
-    pub color: Option<String>,
+    /// Native BulletType +2D4 runtime ColorScheme index. The retained rules
+    /// processor owns ReadColor474A90; a name alone loses layered defaults.
+    color_scheme: i32,
 
     // --- String/reference fields ---
     /// Weapon fired on airburst detonation (weapon type name).
@@ -134,6 +134,9 @@ pub struct ProjectileType {
     /// Last admitted native5F9070 load, independently of the later Image text.
     /// None means no reader load; an empty name is an actual .SHP/.GHP attempt.
     pub image_load: Option<ProjectileImageLoad>,
+    /// Last native5F8110 VXL/HVA load attempt. Empty is an actual empty-name
+    /// attempt; None means no reached voxel load since construction.
+    voxel_image_load: Option<String>,
     /// ObjectType+236, loaded from ART before BulletRead clears a missing Image.
     /// FireAt 6FED2F uses this flag for its native launch-pitch branch.
     pub voxel: bool,
@@ -157,13 +160,19 @@ pub struct ProjectileImageLoad {
     pub new_theater: bool,
 }
 
-/// Process-resident Bullet ART values, owned by native_processing::ProcessedType.
+/// Process-resident Bullet image, Color and ART values, owned by
+/// native_processing::ProcessedType.
 /// Native constructors46BBC0/5F7090 and full ReadINI46BEE0; executable inputs:
 /// tools/projectile_oracle/bridge_render_art_state.{py,json}.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ProjectileArtState {
     image: String,
     image_load: Option<ProjectileImageLoad>,
+    #[serde(default)]
+    voxel_image_load: Option<String>,
+    /// Bullet ctor46BCA4 and ReadColor474A90 at46BFA5.
+    #[serde(default)]
+    color_scheme: i32,
     inviso: bool,
     voxel: bool,
     theater: bool,
@@ -186,6 +195,8 @@ impl ProjectileArtState {
         Self {
             image: native_id.chars().take(24).collect(),
             image_load: None,
+            voxel_image_load: None,
+            color_scheme: 0,
             inviso: false,
             voxel: false,
             theater: false,
@@ -208,6 +219,7 @@ impl ProjectileArtState {
         &mut self,
         rules: &IniSection,
         fixed_art: &IniFile,
+        color_names: &[String],
         resolve_trailer: impl FnMut(&str) -> Option<String>,
     ) {
         // ObjectType5F92F8..5F933B uses Image25 with the previous Image default.
@@ -221,6 +233,14 @@ impl ProjectileArtState {
         if !self.voxel {
             self.record_image_load(&object_image);
         }
+        // Bullet46BF96..46BFAA: constructor0, current-index default and the
+        // Colors catalog already registered by this RulesClass pass. Missing
+        // whole sections never enter this body; a missing key still reads.
+        self.color_scheme = rules.read_color_scheme(
+            "Color",
+            self.color_scheme,
+            color_names.iter().map(String::as_str),
+        );
         // Bullet46C1CC clears absent Image. Later unguarded animation reads use
         // that same address, hence the ART section cached by ObjectType above.
         // Active retail's preceding Anim sweep679A5D..679A82 resets this cache:
@@ -229,11 +249,21 @@ impl ProjectileArtState {
         self.image = rules.read_string("Image", "", 25);
         self.inviso = rules.read_bool("Inviso", self.inviso);
         self.read_bullet_fields(section, resolve_trailer);
+        self.record_bullet_image_loads();
+    }
+
+    fn record_bullet_image_loads(&mut self) {
         // 46C3F8..46C406 skips only this second load for Inviso. Its current
         // Image may be empty: native then attempts .SHP and .GHP, clearing +A4
         // when neither exists. Inviso can instead retain the base-prefix load.
         if !self.inviso {
             self.record_image_load(&self.image.clone());
+        }
+        // 46C40B..46C417: independent of Inviso, after the clearing Image
+        // read. A false Voxel flag preserves the prior pair; missing/empty
+        // files on a reached load clear it in the asset owner's load result.
+        if self.voxel {
+            self.voxel_image_load = Some(self.image.clone());
         }
     }
 
@@ -287,6 +317,8 @@ impl ProjectileArtState {
     pub(crate) fn apply_to(&self, projectile: &mut ProjectileType) {
         projectile.image = (!self.image.is_empty()).then(|| self.image.clone());
         projectile.image_load = self.image_load.clone();
+        projectile.voxel_image_load = self.voxel_image_load.clone();
+        projectile.color_scheme = self.color_scheme;
         projectile.inviso = self.inviso;
         projectile.voxel = self.voxel;
         projectile.theater = self.theater;
@@ -306,6 +338,17 @@ impl ProjectileArtState {
 }
 
 impl ProjectileType {
+    /// Runtime ColorScheme index (two native shade variants per Colors entry).
+    pub fn color_scheme(&self) -> i32 {
+        self.color_scheme
+    }
+
+    /// Current retained VXL/HVA load attempt, including an empty filename.
+    /// Asset loading owns whether that attempted pair resolved successfully.
+    pub fn voxel_image_load(&self) -> Option<&str> {
+        self.voxel_image_load.as_deref()
+    }
+
     /// Parse a ProjectileType from a rules.ini section.
     ///
     /// AG defaults to true because most projectiles can hit ground targets.
@@ -365,8 +408,9 @@ impl ProjectileType {
             // ReadDouble -> `FSTP qword [ESI+0x2C8]` (`0x0046BF71`) over the
             // constructor's 0.75 (`0x0046BC65`/`0x0046BC9A`).
             elasticity: section.read_double("Elasticity", 0.75),
-            // `0x0046BFA5`: ReadString 0x20, then the color scheme lookup.
-            color: section.read_name("Color", 0x20).map(str::to_string),
+            // Constructor46BCA4. Resolution requires the pass-local Colors
+            // registry and is supplied by the retained rules processor.
+            color_scheme: 0,
             // ReadString 0x80 ahead of each weapon lookup (`0x0046C2B9`,
             // `0x0046C2F8`).
             airburst_weapon: section
@@ -377,6 +421,7 @@ impl ProjectileType {
                 .map(str::to_string),
             image: None,
             image_load: None,
+            voxel_image_load: None,
             voxel: false,
             theater: false,
             new_theater: false,
@@ -398,9 +443,7 @@ impl ProjectileType {
             (!incoming.eq_ignore_ascii_case("none") && !incoming.eq_ignore_ascii_case("<none>"))
                 .then(|| incoming.chars().take(24).collect())
         });
-        if !art.inviso {
-            art.record_image_load(&art.image.clone());
-        }
+        art.record_bullet_image_loads();
         art.apply_to(&mut result);
         result
     }
@@ -498,7 +541,7 @@ mod tests {
         // Float defaults
         assert_eq!(proj.elasticity, 0.75);
         // Color defaults
-        assert_eq!(proj.color, None);
+        assert_eq!(proj.color_scheme(), 0);
         // String fields default to None
         assert!(proj.airburst_weapon.is_none());
         assert!(proj.shrapnel_weapon.is_none());
@@ -550,12 +593,12 @@ mod tests {
     }
 
     #[test]
-    fn color_names_a_color_scheme() {
+    fn isolated_section_keeps_constructor_color_without_a_registry() {
         let ini: IniFile = IniFile::from_str("[ChemMissile]\nColor=DarkGreen\n");
         let section = ini.section("ChemMissile").unwrap();
         let proj = ProjectileType::from_ini_section("ChemMissile", section, None);
 
-        assert_eq!(proj.color.as_deref(), Some("DarkGreen"));
+        assert_eq!(proj.color_scheme(), 0);
     }
 
     #[test]

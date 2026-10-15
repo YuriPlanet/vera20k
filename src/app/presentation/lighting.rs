@@ -157,17 +157,22 @@ pub(crate) fn anim_palette_light(
 /// committed `binary_frame`. VERA's compatibility tint, for translucent and
 /// effect draws, is linear in the intensity and takes the same ratio.
 ///
-/// RESIDUAL: DrawSHP and TechnoClass::Draw also scale a building an airstrike
-/// aims at that is off
-/// the curtain (`0x0070633E..0x00706375`), with the airstrike's tint
-/// (`sim/superweapon/invulnerability.rs`).
+/// DrawSHP and TechnoClass::Draw also enter this arm for a building with an
+/// Airstrike manager that targets it. GetEffectTintIntensity
+/// applies Iron then Airstrike stages, each with its own cap.
 pub(crate) fn techno_effect_light(
     entity: &crate::sim::game_entity::GameEntity,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
-    techno_effect_light_at(entity, tint, light, sim.session.binary_frame)
+    techno_effect_light_at(
+        entity,
+        tint,
+        light,
+        sim.session.binary_frame,
+        sim.airstrike_tint_active(entity.stable_id()),
+    )
 }
 
 /// The light BuildingClass::UpdateAnimation gives a building's slot anims
@@ -180,30 +185,34 @@ pub(crate) fn techno_effect_light(
 /// UpdateIronTint (BuildingClass::Update `0x0043FE22`, TechnoClass::AI
 /// `0x0043FE56`).
 ///
-/// RESIDUAL: VERA reads the tint stage and timer UpdateIronTint left at that
-/// frame, where native reads the ones before it. The stages' scales meet at
-/// each boundary (`InvulnerabilityState::effect_tint_intensity`'s oracle
-/// rows) but stage 3's start, ten frames into the curtain, whose
-/// `RandomRanged(-5, 5)` offset moves its first scale off 512: there VERA
-/// draws the anims for one frame at 396..627/256 where native draws 512/256.
-/// Above a light of 2000 the cap the scaled stages apply also moves by that
-/// frame at stage 1's start and stage 10's. The event relights that call
-/// GetEffectTintIntensity too
-/// (CreateAnimForSlot `0x00451AEE`, UpdateAnimLighting `0x00452073`, Flash
-/// `0x00456E8C`, placement `0x0043FA12`, ChangeOwner `0x00448E10`) hold
-/// until the next update, at most a frame.
 pub(crate) fn building_anim_light(
     building: &crate::sim::game_entity::GameEntity,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
-    let (tint, light) = techno_effect_light_at(
-        building,
-        tint,
-        light,
-        sim.session.binary_frame.wrapping_sub(1),
-    );
+    let (tint, light) = if let Some(sample) = building.building_art.tint_sample() {
+        effect_light(
+            tint,
+            light,
+            TintLightState {
+                building: true,
+                flashed: sample.flashed(),
+                curtain: sample.invulnerability(),
+                airstrike: sample.airstrike(),
+                airstrike_active: sample.airstrike_active(),
+                frame: sample.frame(),
+            },
+        )
+    } else {
+        techno_effect_light_at(
+            building,
+            tint,
+            light,
+            sim.session.binary_frame.wrapping_sub(1),
+            sim.airstrike_tint_active(building.stable_id()),
+        )
+    };
     (tint, light.with_brightness(light.brightness() & 0xFFFF))
 }
 
@@ -212,11 +221,40 @@ fn techno_effect_light_at(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     frame: u32,
+    airstrike_active: bool,
+) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
+    effect_light(
+        tint,
+        light,
+        TintLightState {
+            building: entity.category() == crate::map::entities::EntityCategory::Structure,
+            flashed: entity.flashing.flashed(),
+            curtain: entity.invulnerability.as_ref(),
+            airstrike: &entity.airstrike_tint,
+            airstrike_active,
+            frame,
+        },
+    )
+}
+
+struct TintLightState<'a> {
+    building: bool,
+    flashed: bool,
+    curtain: Option<&'a crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    airstrike: &'a crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
+    airstrike_active: bool,
+    frame: u32,
+}
+
+fn effect_light(
+    tint: [f32; 3],
+    light: crate::render::palette_light::PaletteLight,
+    state: TintLightState<'_>,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     let intensity = light.brightness();
-    let flashed = if !entity.flashing.flashed() {
+    let flashed = if !state.flashed {
         intensity
-    } else if entity.category() == crate::map::entities::EntityCategory::Structure {
+    } else if state.building {
         if intensity <= 1500 {
             intensity.wrapping_add(500)
         } else {
@@ -227,12 +265,18 @@ fn techno_effect_light_at(
     } else {
         500
     };
-    let curtain = entity.invulnerability.as_ref().filter(|curtain| {
-        crate::sim::superweapon::invulnerability::is_invulnerable(Some(curtain), frame)
-    });
-    let tinted = curtain.map_or(flashed, |curtain| {
-        curtain.effect_tint_intensity(flashed, frame as i32)
-    });
+    let curtained =
+        crate::sim::superweapon::invulnerability::is_invulnerable(state.curtain, state.frame);
+    let tinted = if curtained || (state.building && state.airstrike_active) {
+        let iron = state.curtain.map_or(flashed, |curtain| {
+            curtain.effect_tint_intensity(flashed, state.frame as i32)
+        });
+        state
+            .airstrike
+            .effect_tint_intensity(iron, state.frame as i32)
+    } else {
+        flashed
+    };
     with_intensity(tint, light, tinted)
 }
 
@@ -274,14 +318,14 @@ fn with_intensity(
 /// (`0x0043DC1C..0x0043DDF1`) and AnimClass::DrawIt for the building at a
 /// slot anim's cell (`0x004233EE..0x00423630`) compute it: the
 /// `ForceShieldColor=` `[ColorAdd]` word while time is left on a Force
-/// Shield (`IsIronCurtained`, and IronCurtain's byte `+0x1C4` at 1), none
-/// under the Iron Curtain, and none when the local map shrouds the cell the
+/// Shield (`IsIronCurtained`, and IronCurtain's byte `+0x1C4` at 1); an Iron
+/// Curtain contributes no colour word. Neither effect colours a shrouded cell the
 /// draw tests (`0x00487950`; `shrouded`, asked only of a shielded building).
 /// Which blits OR it into their pixels is the blitter's
 /// ([`crate::render::tactical_draw_plan::BlitPolicy::ors_colour_word`]).
 ///
-/// RESIDUAL: an airstrike's target (`+0x294`) ORs the `LaserTargetColor=`
-/// word (retail HighRed) the same way; it comes with the airstrike.
+/// Any nonnull Airstrike pointer (`+0x294`) ORs LaserTargetColor too,
+/// independently of its manager target and of the Force Shield colour.
 pub(crate) fn building_colour_word(
     building: &crate::sim::game_entity::GameEntity,
     sim: &Simulation,
@@ -295,12 +339,25 @@ pub(crate) fn building_colour_word(
                 sim.session.binary_frame,
             )
     });
-    if !shielded || shrouded() {
+    let marked = building.has_airstrike_marker();
+    if !(shielded || marked) || shrouded() {
         return 0;
     }
-    rules
-        .color_add
-        .rgb565_word(rules.general.force_shield_color)
+    let shield = if shielded {
+        rules
+            .color_add
+            .rgb565_word(rules.general.force_shield_color)
+    } else {
+        0
+    };
+    let laser = if marked {
+        rules
+            .color_add
+            .rgb565_word(rules.general.laser_target_color)
+    } else {
+        0
+    };
+    shield | laser
 }
 
 pub(crate) fn color_scheme_rgb(

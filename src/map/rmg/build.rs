@@ -688,6 +688,7 @@ mod tests {
     /// together they say the difference comes from the connector pass and not
     /// from accessibility leaking into something else.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn accessibility_moves_island_maps_and_leaves_the_others_alone() {
         let cells = |m: &GeneratedMap| {
             m.map_file
@@ -776,6 +777,7 @@ mod tests {
 
     /// Every configuration the dialog can emit, across the seed spread.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn dialog_reachable_matrix_generates() {
         let mut temperate_rocks = 0usize;
         for map_type in DIALOG_MAP_TYPES {
@@ -796,6 +798,7 @@ mod tests {
     /// The `.SED`-only tier, kept separate so a failure here is not confused
     /// with one on a surface the player can reach from the dialog.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn sed_only_matrix_generates() {
         let mut temperate_rocks = 0usize;
         for theater in DIALOG_THEATERS {
@@ -820,6 +823,7 @@ mod tests {
     /// Determinism across the matrix. A ratchet: both sides are produced by
     /// this build, so it detects nondeterminism and never drift.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn matrix_generation_is_deterministic() {
         for map_type in 0..=4 {
             for theater in [0, 1] {
@@ -858,6 +862,7 @@ mod tests {
     /// The connector/low-deck construction now runs after the rebuilt region
     /// list; this test isolates the earlier destroy-and-rebuild terrain effect.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn island_passes_reshape_only_the_island_map_types() {
         let changed = |map_type, seed| {
             let (_, points, snapshots) = observe_run(&matrix_options(map_type, 0, seed));

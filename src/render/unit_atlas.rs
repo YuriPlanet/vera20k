@@ -1334,13 +1334,43 @@ impl UnitModel {
         if section != 0 || body.vxl.limbs.len() != 1 {
             return None;
         }
+        let (sprite, _) =
+            self.render_matrix(matrix, 0, false, vxl_raster::VxlLighting::Diffuse, vpl)?;
+        Some((sprite, vxl_raster::shadow::render_matrix(&body.vxl, matrix)))
+    }
+
+    /// Shared direct-matrix body raster. Bullet46B0C0 submits every section
+    /// with HVA frame modulo count and diffuse lighting; the VoxelAnim caller
+    /// instead selects no HVA and separately renders its shadow.
+    pub(crate) fn render_matrix(
+        &self,
+        matrix: glam::Mat4,
+        frame: u32,
+        use_hva: bool,
+        lighting: vxl_raster::VxlLighting,
+        vpl: Option<&VplFile>,
+    ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+        let body = self.body.as_ref()?;
+        let hva = if use_hva {
+            Some(body.hva.as_ref()?)
+        } else {
+            None
+        };
+        let frame = if let Some(hva) = hva {
+            frame.checked_rem(hva.frame_count)?
+        } else {
+            frame
+        };
         let params = VxlRenderParams {
-            body_tilt: Some(vxl_raster::BodyTilt::Tumble(matrix)),
+            body_tilt: Some(vxl_raster::BodyTilt::Matrix(matrix)),
+            lighting,
+            frame,
             ..VxlRenderParams::default()
         };
+        let bounds = vxl_raster::native_vxl_draw_bounds(&body.vxl, hva, &params)?;
         Some((
-            vxl_raster::render_vxl(&body.vxl, None, &params, vpl),
-            vxl_raster::shadow::render_matrix(&body.vxl, matrix),
+            vxl_raster::render_vxl(&body.vxl, hva, &params, vpl),
+            Some(bounds),
         ))
     }
 

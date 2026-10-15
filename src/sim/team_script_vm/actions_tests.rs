@@ -4,8 +4,95 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
+use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
-use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition, TeamScriptVm};
+use crate::sim::team_script_vm::{
+    TeamScriptAction, TeamScriptDefinition, TeamScriptVm, TeamTaskForceDefinition,
+    TeamTaskForceEntry, TeamTypeDefinition, member_type_identity,
+};
+
+#[test]
+fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    for automatic in [true, false] {
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x7E51A);
+        let coil = sim
+            .spawn_object("TESLA", "Americans", 12, 12, 0, &rules)
+            .unwrap();
+        let source = sim
+            .spawn_object("SHK", "Americans", 11, 12, 0, &rules)
+            .unwrap();
+        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, None, FrameEffects::default()));
+        if !automatic {
+            sim.assign_target_represented(
+                source,
+                Some(TargetKind::Entity(coil)),
+                Some(&rules),
+                None,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        }
+        let owner = sim.substrate.entities.get(source).unwrap().owner();
+        let script = sim.interner.intern("TESLA-RECALL-SCRIPT");
+        let type_id = sim.interner.intern("TESLA-RECALL-TYPE");
+        let force = sim.interner.intern("TESLA-RECALL-FORCE");
+        sim.team_script_vm.register_script(TeamScriptDefinition {
+            id: script,
+            source: TeamAiDefinitionSource::FixedAimd,
+            actions: vec![TeamScriptAction {
+                action_id: 3,
+                argument: 0,
+            }],
+        });
+        sim.team_script_vm
+            .register_task_force(TeamTaskForceDefinition {
+                id: force,
+                group: -1,
+                source: TeamAiDefinitionSource::FixedAimd,
+                entries: vec![TeamTaskForceEntry {
+                    count: 1,
+                    member_type: member_type_identity(sim.substrate.entities.get(source).unwrap()),
+                }],
+            });
+        sim.team_script_vm.register_team_type(TeamTypeDefinition {
+            id: type_id,
+            script_id: script,
+            task_force_id: force,
+            priority: 0,
+            is_base_defense: false,
+            suicide: false,
+            aggressive: true,
+            combined_movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+            base_zone_relation_enforced: true,
+            transport_crossing_required: false,
+        });
+        let team = sim
+            .team_script_vm
+            .create_team(owner, script, vec![source], 0);
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.team_type_id = Some(type_id);
+        state.mission_target = Some(TeamTarget::Cell { x: 25, y: 25 });
+        state.focus = state.mission_target;
+        sim.team_coordinate_move(team, &rules, None, FrameEffects::default());
+        let actor = sim.substrate.entities.get(source).unwrap();
+        if automatic {
+            assert_eq!(actor.attack_target.target(), None);
+            assert!(!actor.tesla_charger.is_active());
+            assert_eq!(
+                actor.mission.effective(),
+                MissionId::from_known(MissionType::Move)
+            );
+            assert!(actor.navigation.nav_com().is_some());
+        } else {
+            assert_eq!(actor.attack_target.target(), Some(TargetKind::Entity(coil)));
+            assert!(actor.navigation.nav_com().is_none());
+        }
+    }
+}
 
 fn patrol_corpus() -> serde_json::Value {
     serde_json::from_str(crate::test_fixture::text("tools/team_patrol.json")).unwrap()

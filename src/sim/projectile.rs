@@ -298,6 +298,20 @@ pub enum ProjectileTarget {
     /// The enum stores the pointer kind, not a coordinate snapshot; Simulation
     /// owns the live identity and BulletClass AI resolves it every visit.
     DummyCell,
+    /// TerrainClass is an Object target with its own retained coordinate and
+    /// lifetime, not a Techno or a cell. SpawnShrapnel46A59B retains this pointer.
+    Terrain(u64),
+}
+
+impl ProjectileTarget {
+    /// Stable identity of a represented Object pointer. IDs are unique across
+    /// stores; retaining the enum kind still controls coordinate dispatch.
+    pub(crate) fn object_id(self) -> Option<u64> {
+        match self {
+            Self::Entity(id) | Self::Terrain(id) => Some(id),
+            Self::Cell { .. } | Self::None | Self::DummyCell => None,
+        }
+    }
 }
 
 /// What to do when an entity target no longer exists.
@@ -406,6 +420,16 @@ pub enum ProjectileCollisionResponse {
     ImpactLadder(ImpactLadderWorld),
 }
 
+/// The target virtual requested at a Bullet AI boundary. Object410540
+/// forwards+58 to GetCoords; Cell+58 includes its deck. Guided AI466B5D..466BAB then
+/// substitutes Object+A4, whereas final fuse snapping467CA9..467E4D uses+48.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectileTargetQuery {
+    GetCoords,
+    TargetAim,
+    GuidanceAim,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ProjectileCollisionPhase {
     Ordinary {
@@ -414,7 +438,6 @@ pub(crate) enum ProjectileCollisionPhase {
         motion: ProjectileCollisionMotion,
     },
     Shared,
-    TargetLocation,
     /// `0x00468D80` asks the target and the warhead for
     /// [`resolve_impact_coord`]; the candidate is the bullet's Location.
     ImpactLadder,
@@ -700,29 +723,14 @@ pub fn projectile_shrapnel_count(
 ///
 /// Both deliveries dispatch the chain through one owner,
 /// `combat::world_receiver::run_special_detonation_arm`: a visible bullet at
-/// its detonation, and VERA's immediate `Inviso=` shot, which natively is the
-/// same bullet detonating (every stock special weapon but the dog's and the
+/// its detonation, and an `Inviso=` bullet's first AI visit (every stock
+/// special weapon but the dog's and the
 /// Terror Drone's jump is Inviso).
 ///
-/// RESIDUAL — **three special effect bodies are not implemented in VERA.**
-/// MindControl (`capture_manager`), IvanBomb and BombDisarm (`bomb`), Parasite
-/// (`combat/parasite.rs`; the Giant Squid's grapple is its own residual there),
-/// Temporal (`temporal`) and MakesDisguise (`cloak_disguise`, whose Unit body
-/// is its own residual there) run their bodies, NukeMaker
-/// (`combat::world_receiver`) drops the nuclear warhead and Locomotor
-/// (`locomotor_lift`) lifts the vehicle. ElectricAssault, Airstrike and
-/// DirectRocker claim the detonation, suppress damage and shrapnel exactly as
-/// native does, and then run the shared tail without performing their effect.
-/// - Trigger: a stock weapon whose warhead carries one of those flags: the
-///   Tesla Trooper's `[AssaultBolt]` at its own coil and Boris's `[Flare]`
-///   (DirectRocker has no live stock line).
-/// - Player effect: the shot lands, plays its animation and leaves its crater,
-///   but no coil is charged and no airstrike called, and the target takes no
-///   damage from that shot.
-/// - Frequency: every game with Boris or Tesla Troopers.
-/// - Downstream risk: each port adds snapshotted, hashed state (the charger
-///   vector, the AirstrikeClass manager) with its own `SNAPSHOT_VERSION`
-///   bump.
+/// Special effects dispatch through their shared state owners, including
+/// Airstrike (`airstrike`): a flare starts or retargets its firer's aircraft.
+/// DirectRocker remains unimplemented; no stock weapon reaches that body.
+/// Its admitted arm still claims the impact and runs the shared tail.
 ///
 /// The ordinary-arm AreaDamage return2 means near-center Iron Curtain
 /// isolation (489968/489B3B), covered by ifv_area_receipt.json. The shared
@@ -742,7 +750,7 @@ pub enum SpecialDetonationAction {
     IvanBomb,
     /// `ElectricAssault=` (`+0x158`), test `0x0046937a`: a Building target
     /// hit by an Infantry owner -> the Tesla-Coil charger-vector move-to-back
-    /// at `0x00452820`. UNIMPLEMENTED.
+    /// at `0x00452820`, owned by `tesla_charging`.
     ElectricAssault,
     /// `Parasite=` (`+0x159`), test `0x004693d3` ->
     /// `ParasiteClass::AttachTo @ 0x0062a980`, ported in `combat/parasite.rs`
@@ -757,7 +765,7 @@ pub enum SpecialDetonationAction {
     /// `Locomotor=` CLSID (`sim::locomotor_lift`).
     Locomotor,
     /// `Airstrike=` (`+0x16c`), test `0x00469705` ->
-    /// `AirstrikeClass::SetTarget @ 0x0041d830`. UNIMPLEMENTED.
+    /// `AirstrikeClass::SetTarget @ 0x0041d830`, owned by `airstrike`.
     ///
     /// The decompile shows this arm as conditional; the disassembly does not.
     /// `0x0046970d JZ 0x0046978e` is its only fall-through and fires on the
@@ -1000,7 +1008,8 @@ pub struct ProjectileSpawn {
     pub payload: ProjectilePayload,
     /// The bullet's CURRENT speed in leptons per frame — native's
     /// `ftol(|velocity|)`, not the weapon's `Speed=`. `TechnoClass::FireAt
-    /// @ 0x006FEA3A` launches every `ROT > 0` or `Vertical` bullet at 1, and
+    /// @ 0x006FEA3A` uses scalar1 for `ROT > 0` or `Vertical` only when
+    /// `RadialFireSegments=0`; a nonzero value retains its clamped scalar.
     /// `BulletClass::Fire @ 0x00468B2C` renormalises a `ROT > 0` bullet's
     /// vector to magnitude 1.0 regardless; `Speed=` only becomes the ceiling
     /// stored at `Bullet+0x110`. Non-homing, non-vertical bullets do keep the
@@ -1334,7 +1343,7 @@ impl ProjectileStore {
     /// shared with PointerExpired468517..46859C; neither resets flight state.
     pub(crate) fn lose_targets(&mut self, target_id: u64, replacement: ProjectileTarget) {
         for projectile in self.projectiles.values_mut().rev() {
-            if projectile.target == ProjectileTarget::Entity(target_id) {
+            if projectile.target.object_id() == Some(target_id) {
                 projectile.target = replacement;
             }
         }
@@ -1357,7 +1366,7 @@ impl ProjectileStore {
         if projectile.source_id == expired_id {
             projectile.source_id = crate::sim::combat::RAD_NO_ATTACKER;
         }
-        if projectile.target == ProjectileTarget::Entity(expired_id) {
+        if projectile.target.object_id() == Some(expired_id) {
             projectile.target = replacement_target;
         }
         true
@@ -1526,7 +1535,6 @@ impl ProjectileStore {
                 |projectile, candidate, phase| match phase {
                     ProjectileCollisionPhase::Ordinary { .. } => None,
                     ProjectileCollisionPhase::Shared => collides_at(projectile, candidate),
-                    ProjectileCollisionPhase::TargetLocation => None,
                     ProjectileCollisionPhase::ImpactLadder => None,
                 },
                 None,
@@ -1577,13 +1585,14 @@ impl ProjectileStore {
     /// Test adapter joining the shared AI head and continuation without the
     /// world's intervening Trailer constructor or retirement transaction. An
     /// awaited anim counts as dead; a test needing a live one calls
-    /// [`Self::begin_ai_visit`] itself.
+    /// [`Self::begin_ai_visit`] itself. Supplied coordinates serve every query;
+    /// world integration tests cover the separate target virtuals.
     #[cfg(test)]
     pub(crate) fn advance_one(
         &mut self,
         id: u64,
         binary_frame: u32,
-        target_position: impl FnMut(u64) -> Option<ProjectileCoord>,
+        mut target_position: impl FnMut(u64) -> Option<ProjectileCoord>,
         terrain: Option<&ResolvedTerrainGrid>,
         shared_cell_dummy: &SharedCellDummy,
         rules_gravity: i32,
@@ -1601,7 +1610,7 @@ impl ProjectileStore {
         self.advance_after_head(
             head,
             binary_frame,
-            target_position,
+            |target, _query| target.object_id().and_then(&mut target_position),
             terrain,
             shared_cell_dummy,
             rules_gravity,
@@ -1617,7 +1626,10 @@ impl ProjectileStore {
         &mut self,
         head: ProjectileAiHead,
         binary_frame: u32,
-        mut resolve_target_position: impl FnMut(u64) -> Option<ProjectileCoord>,
+        mut resolve_target_position: impl FnMut(
+            ProjectileTarget,
+            ProjectileTargetQuery,
+        ) -> Option<ProjectileCoord>,
         terrain: Option<&ResolvedTerrainGrid>,
         shared_cell_dummy: &SharedCellDummy,
         rules_gravity: i32,
@@ -1656,33 +1668,44 @@ impl ProjectileStore {
             // collision, and reached-target decisions.
             ProjectileTarget::None => ProjectileCoord::new(0, 0, 0),
             ProjectileTarget::DummyCell => dummy_cell_target_coord(shared_cell_dummy),
-            ProjectileTarget::Entity(target_id) => match resolve_target_position(target_id) {
-                Some(position) => {
+            // AI466B5D..466BAB feeds+A4 to guided steering. Fire's frozen
+            // reference and the later +48 fuse snap remain separate queries.
+            target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                match resolve_target_position(
+                    target,
                     if projectile.tracks_target {
-                        projectile.last_target_position = position;
+                        ProjectileTargetQuery::GuidanceAim
+                    } else {
+                        ProjectileTargetQuery::TargetAim
+                    },
+                ) {
+                    Some(position) => {
+                        if projectile.tracks_target {
+                            projectile.last_target_position = position;
+                        }
+                        projectile.last_target_position
                     }
-                    projectile.last_target_position
+                    None => match projectile.target_expiry {
+                        TargetExpiryPolicy::Expire => {
+                            result.expired.push(id);
+                            return Some(result);
+                        }
+                        // `Arm=` is NOT consulted here. The detonation
+                        // admission at `BulletClass::AI 0x00467C70` tests only
+                        // the impact flag and the proximity-fuse result; the
+                        // Arm counter lives inside `ProximityDetector::Check`
+                        // and gates that one result alone.
+                        TargetExpiryPolicy::DetonateAtLastKnown => {
+                            result.detonations.push(detonation(
+                                projectile,
+                                projectile.last_target_position,
+                                ProjectileDetonationReason::TargetExpired,
+                            ));
+                            return Some(result);
+                        }
+                    },
                 }
-                None => match projectile.target_expiry {
-                    TargetExpiryPolicy::Expire => {
-                        result.expired.push(id);
-                        return Some(result);
-                    }
-                    // `Arm=` is NOT consulted here. The detonation
-                    // admission at `BulletClass::AI 0x00467C70` tests only
-                    // the impact flag and the proximity-fuse result; the
-                    // Arm counter lives inside `ProximityDetector::Check`
-                    // and gates that one result alone.
-                    TargetExpiryPolicy::DetonateAtLastKnown => {
-                        result.detonations.push(detonation(
-                            projectile,
-                            projectile.last_target_position,
-                            ProjectileDetonationReason::TargetExpired,
-                        ));
-                        return Some(result);
-                    }
-                },
-            },
+            }
         };
 
         if let Some(fuse) = projectile.fuse_frames_remaining.as_mut() {
@@ -1914,14 +1937,9 @@ impl ProjectileStore {
             {
                 // +58 is fetched even in the unconditional mode-one arm.
                 let aim = match projectile.target {
-                    ProjectileTarget::Entity(id) => match collides_at(
-                        projectile,
-                        selected_candidate,
-                        ProjectileCollisionPhase::TargetLocation,
-                    ) {
-                        Some(ProjectileCollisionResponse::TargetZClamp(location)) => Some(location),
-                        _ => resolve_target_position(id),
-                    },
+                    target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                        resolve_target_position(target, ProjectileTargetQuery::TargetAim)
+                    }
                     ProjectileTarget::Cell { rx, ry } => Some(cell_target_coord(terrain, rx, ry)),
                     ProjectileTarget::DummyCell => Some(dummy_cell_target_coord(shared_cell_dummy)),
                     ProjectileTarget::None => None,
@@ -1937,7 +1955,9 @@ impl ProjectileStore {
                 });
                 let location = match projectile.target {
                     _ if !snap => None,
-                    ProjectileTarget::Entity(id) => resolve_target_position(id),
+                    target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                        resolve_target_position(target, ProjectileTargetQuery::GetCoords)
+                    }
                     ProjectileTarget::Cell { rx, ry } => Some(cell_ground_coord(terrain, rx, ry)),
                     ProjectileTarget::DummyCell => Some(dummy_cell_ground_coord(shared_cell_dummy)),
                     ProjectileTarget::None => None,
@@ -2602,7 +2622,9 @@ mod tests {
             origin: ProjectileCoord::new(0, 0, 0),
             target,
             initial_target_position: match target {
-                ProjectileTarget::Entity(_) => ProjectileCoord::new(128, 0, 0),
+                ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_) => {
+                    ProjectileCoord::new(128, 0, 0)
+                }
                 ProjectileTarget::Cell { rx, ry } => cell_target_coord(None, rx, ry),
                 ProjectileTarget::None => ProjectileCoord::new(0, 0, 0),
                 ProjectileTarget::DummyCell => ProjectileCoord::new(0, 0, 0),

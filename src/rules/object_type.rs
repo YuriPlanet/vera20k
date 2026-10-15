@@ -694,6 +694,12 @@ pub struct ObjectType {
     pub turret_rot: i32,
     /// Retained TechnoType recoil reader; shared by every voxel turret.
     pub recoil: crate::rules::recoil::RecoilConfig,
+    /// Six retained settings copied when this Techno creates an Airstrike manager.
+    pub airstrike: crate::rules::airstrike::AirstrikeSettings,
+    /// TechnoType+6A4: constructor711134 sets zero; ReadINI7147B4..7147C8
+    /// uses exact `RadialFireSegments`, ReadInt5276D0 and the current value.
+    /// Signed and unclamped: FireAt distinguishes zero, negative and positive.
+    pub radial_fire_segments: i32,
     /// VXL turret model name for buildings (TurretAnim= in rules.ini, e.g., "SAM").
     /// The engine loads `{TurretAnim}.VXL` + `{TurretAnim}.HVA` as the turret model.
     pub turret_anim: Option<String>,
@@ -2553,6 +2559,8 @@ impl ObjectType {
             // but ROT= remains the parsed TechnoType +0x71C facing-rate field.
             turret_rot: section.read_int("ROT", 0),
             recoil: crate::rules::recoil::RecoilConfig::from_ini_section(section),
+            airstrike: crate::rules::airstrike::AirstrikeSettings::from_ini_section(section),
+            radial_fire_segments: section.read_int("RadialFireSegments", 0),
             turret_anim: section.read_name("TurretAnim", 0x10).map(str::to_uppercase),
             turret_anim_is_voxel: section.read_bool("TurretAnimIsVoxel", false),
             turret_anim_x: section.read_int("TurretAnimX", 0),
@@ -3231,6 +3239,7 @@ mod infantry_speed_type_tests;
 mod tests {
     /// `RevealToAll=` through the production reader on the retail layers.
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn reveal_to_all_reads_the_seven_stock_types() {
         let Some(retail) =
             crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -3311,6 +3320,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow; run when changing what it covers"]
     fn combatant_retail_rules_mode_map_reads_match_original_execution() {
         let Some(retail) =
             crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")

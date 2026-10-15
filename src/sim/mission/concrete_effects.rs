@@ -348,6 +348,11 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         {
             return;
         }
+        //6FCDD2..6FCDE1: only a receiver owning its manager clears the
+        //designation here; aircraft and marked buildings borrow +294.
+        if changes && entity.airstrike_link() == Some(prepared.receiver) {
+            sim.airstrike_clear_target(prepared.receiver, self.rules, self.frame_effects);
+        }
         let commits = assign_target_commits(&sim.substrate.entities, requested);
         let entity = sim
             .substrate
@@ -367,6 +372,17 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             })
         {
             self.apply_destination(sim, prepared, Some(NavTargetRef::object(building)));
+        }
+        if infantry {
+            // Infantry51B310/51B33F: even a same-target assignment clears
+            // automatic charging intent, after the infiltration tail. The
+            // Doing27..30 refusal above never reaches this write.
+            sim.substrate
+                .entities
+                .get_mut(prepared.receiver)
+                .unwrap()
+                .tesla_charger
+                .clear();
         }
     }
 
@@ -600,13 +616,10 @@ pub(crate) fn represented_assign_target_admitted(
     }
     // `0x006FCDEB..0x006FCE46`, the aircraft arm: a spawned aircraft with
     // ammo, mid-run in Mission_Attack states 5..9, handed another target
-    // drops it and empties its ammo, so its manager recalls it. Type
-    // `Spawned=` (`+0xD54`) without `MissileSpawn=` (`+0xD68`) is VERA's spawn
-    // child (`spawn_owner_id`): the other stock Spawned aircraft never attack
-    // (PDPLANE, SPYP) or have no VERA producer (BPLN's Airstrike).
-    let requested = if requested.is_some()
-        && entity.category() == crate::map::entities::EntityCategory::Aircraft
-        && entity.spawn_owner_id.owner().is_some()
+    // drops it and empties its ammo, so it leaves the run. This reads the
+    //TYPE's Spawned/MissileSpawn flags, also for Boris planes without a
+    //SpawnOwner. A NULL request reaches this gate too (6FCDEB..6FCE46).
+    let requested = if entity.type_facts.spawned_non_missile_aircraft()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.aircraft_ammo.as_mut()
         && ammo.current() != 0

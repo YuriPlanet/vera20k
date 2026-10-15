@@ -1,8 +1,10 @@
-//! Borrowed effects at native sound-handle boundaries within one frame.
+//! Borrowed effects at native sound-handle boundaries within one frame, and
+//! the frame's bound resources.
 //!
 //! The process sound owner implements this capability. Simulation retains no
 //! callback or device state, and tooling/replay explicitly omit it.
 
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 
 use super::{SimSoundEvent, Simulation};
@@ -20,6 +22,7 @@ pub(crate) trait SoundBoundary {
 pub(crate) struct FrameEffects<'a> {
     sound: Option<&'a dyn SoundBoundary>,
     rules: Option<&'a RuleSet>,
+    overlay_registry: Option<&'a OverlayTypeRegistry>,
 }
 
 impl<'a> FrameEffects<'a> {
@@ -27,6 +30,7 @@ impl<'a> FrameEffects<'a> {
         Self {
             sound: None,
             rules: None,
+            overlay_registry: None,
         }
     }
 
@@ -34,6 +38,7 @@ impl<'a> FrameEffects<'a> {
         Self {
             sound: Some(sound),
             rules: None,
+            overlay_registry: None,
         }
     }
 
@@ -45,6 +50,22 @@ impl<'a> FrameEffects<'a> {
             ..self
         }
     }
+
+    /// Bind the match's OverlayTypeClass table, as [`Self::with_rules`] binds
+    /// the rules, for receivers the frame reaches without one of their own:
+    /// the radio bus hands its receivers only the rules and these effects.
+    pub(crate) fn with_overlay_registry(self, registry: Option<&'a OverlayTypeRegistry>) -> Self {
+        Self {
+            overlay_registry: registry.or(self.overlay_registry),
+            ..self
+        }
+    }
+
+    /// The overlay table [`Self::with_overlay_registry`] bound, if any.
+    pub(crate) const fn overlay_registry(self) -> Option<&'a OverlayTypeRegistry> {
+        self.overlay_registry
+    }
+
     /// Stop/Release must complete at their native call sites before a later
     /// Main draw or object visit. The consumer also delivers earlier sound
     /// facts first, preserving the existing ordered producer channel.

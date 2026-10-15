@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original SpawnShrapnel target/RNG/child/effect order with a real Terrain vtable head, no-firer and count0 controls, and a prepared elite second-generation parent centered on the tree; no child AI execution",
+  "assumptions": [
+    "Selected physical Battle+Hills AudioVisual.Gravity and weapon/projectile/warhead layers read through original native readers; hashes, physical strings and each native Gravity/Floater/Speed postpass input/output are in payload. Original66B3C4 reads AudioVisual.Gravity before7729F0 recomputes nonROT speed; the inherited default3 alone is not a retail input.",
+    "Existing flat level6 map, supplied Unit and Terrain object states. Terrain7F522C has retained Location, Object flag2, null house and WhatAmI36; retained-ground row lowers only tree cell17,19 from level6 to0 after supplying LocationZ624. Original virtual +48/+58/+A4 and alliance gate run. Terrain construction/ground admission excluded.",
+    "Detached row executes original PointerExpired4684E0 before measured entry. Whole actor death dispatch, parent FireAt/flight/AreaDamage, child AI/recursive damage and pixels are outside this boundary.",
+    "Main/Scenario/MapGen seeded by existing native RngTrace; all complete stream states and draw requests retained. No RNG/geometry/selection/effect result is supplied.",
+    "Count0 is an explicit synthetic override after physical reads. Other counts and weapons are native-reader outputs. Elite child-center row supplies an already detonating SuperSmallCometP at the retained tree location; it does not execute the preceding child AI/damage or certify complete recursive lifetime.",
+    "Native x87 control0E7F; existing54 shrapnel numeric controls remain separate and unchanged."
+  ],
+  "substitutions": [
+    "Inherited BulletReader allocator, CRT TLS, cached INI/archive IO; supplied mapped cell/actor state and laser spare capacity.",
+    "Existing Windows CoCreateInstance transport to native registered factory6C5090 and InterlockedIncrement; CRT atexit returns0."
+  ],
+  "entry_points": {
+    "gravity_reader": "0x0066B3C4",
+    "weapon_postpass": "0x007729F0",
+    "spawn_shrapnel": "0x0046A310",
+    "construct": "0x004664C0",
+    "fire": "0x00468670",
+    "laser": "0x006FD210",
+    "laser_ctor": "0x0054FE60"
+  },
+  "replay_command": "python -m tools.projectile_oracle.launch_scatter --terrain-shrapnel",
+  "payload_sha256": "edac91fd3c7697742495bb68e3c944522bdb0f373970bf30f5e6c7f3985bcaec"
+}

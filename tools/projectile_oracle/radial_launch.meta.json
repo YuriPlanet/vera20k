@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "22 synthetic original FireAt radial-launch and BulletFire controls: retail segments10/ROT20/speed255, complete ten-index fan, body-facing and signed counter edges, zero/negative segment and vertical controls, and a post-fan arc failure.",
+  "assumptions": [
+    "Each case starts a fresh emulator with the pinned retail executable. Synthetic source, target, type, weapon, Bullet, Rules, virtual table and stack state supply the FireAt tail at 0x006FE8EE; constructors, full FireAt admission, aim selection and retail INI loading are not executed.",
+    "Source X/Y are 1280/1280; Rules gravity is 6. The producer supplies delta, speed and selected type flags. Unwritten mapped fixture memory and native BSS remain zero; this is not a Windows process initialization claim.",
+    "Ambient x87 control word is 0x0E7F: 53-bit precision, truncation, masked exceptions. Native velocity bytes are observed as binary64 including signed zero; this corpus does not establish physical x87 hardware equivalence.",
+    "Execution must reach 0x006FF01A or the failed-launch boundary 0x006FF93C within 200000 instructions and the checked runner's time limit. Both FireAt stack and persistent Bullet velocity are retained because positive ROT renormalizes the copied vector. Failed-launch vector/pitch bytes are observations, not valid launched velocities.",
+    "RadialFireSegments and old per-source counter are supplied. The ten-index rows cover the stock Aegis fan; no Python arithmetic determines the observed heading or next counter.",
+    "Body and turret Facing objects have supplied destination words and zero turn rates; original Facing::Current4C93D0 returns the body word. Distinct turret words verify that the fan ignores turret facing.",
+    "Both native RNG streams start from original constructor seed31; their complete 0x3F4-byte states are hashed before and after. Entering Random65C780 or RandomRanged65C7E0 is an error.",
+    "bits is the FireAt pre-Fire stack velocity; fired_bits is the persisted Bullet velocity after ROT normalization. launch_scalar and radial_next are observed original fields."
+  ],
+  "substitutions": [
+    "Virtual GetType/GetWeapon and the selected class gate return supplied type/weapon references and a fixture class value. Native source location getter 0x005F65A0 remains executable.",
+    "World SetLocation 0x005F4EC0 copies the requested coordinates to Bullet+0x9C, sets Bullet+0x90 to 1 and returns success. Display Remove 0x004A9770 and Submit 0x004A9720 return success. World admission, registration, map state and those leaf bodies are excluded."
+  ],
+  "entry_points": {
+    "fireat_tail_begin": "0x006FE8EE",
+    "fireat_launched_boundary": "0x006FF01A",
+    "fireat_failed_boundary": "0x006FF93C",
+    "bullet_fire": "0x00468670",
+    "radial_begin": "0x006FEAC5",
+    "radial_heading": "0x006FEB1B",
+    "radial_counter_store": "0x006FEBC8",
+    "facing_current": "0x004C93D0"
+  },
+  "replay_command": "python -m tools.projectile_oracle.directed_launch --radial",
+  "payload_sha256": "47b2051b619178ff14cbc0a6d2895cac2fd20d02049d2959633437ed44a8af91"
+}

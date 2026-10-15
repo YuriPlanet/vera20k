@@ -27,6 +27,28 @@ struct Corpus {
 }
 
 #[test]
+fn unmarked_object_flight_predicates_do_not_query_the_map() {
+    // Object5F6B60/5F6B90 return before GetHeight when +74 is clear.
+    // A missing-cell lookup would overwrite the process-global Dummy cell.
+    let mut terrain = ResolvedTerrainGrid::from_cells(
+        25,
+        25,
+        (0..25)
+            .flat_map(|y| (0..25).map(move |x| test_flat_cell(x, y)))
+            .collect(),
+    );
+    terrain.test_set_native_allocated_cells(&[]);
+    let dummy = terrain.shared_cell_dummy();
+    dummy.stamp_coord(111, -222);
+    let mut entity = GameEntity::test_default(1, "FV", "Americans", 10, 20);
+    entity.position.set_exact_z_leptons_for_test(Some(624));
+    entity.lifecycle.set_cell_marked(false);
+    assert!(!is_low_flying(&entity, Some(&terrain), None));
+    assert!(!is_high_flying(&entity, Some(&terrain), None));
+    assert_eq!(dummy.snapshot().coord, (111, -222));
+}
+
+#[test]
 fn native_object_flight_queries_use_live_ground_bridge_and_mark() {
     let corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/object_flight_height.json",

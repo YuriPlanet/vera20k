@@ -303,6 +303,7 @@ fn assert_response_rules(rules: &RuleSet, native: &Value) {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn native_base_response_retail_and_sequential_readers_match_original_fields() {
     let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
         return;

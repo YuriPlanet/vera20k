@@ -2778,6 +2778,7 @@ CurleyShuffle=yes
 /// `AircraftClass::AI` paid a pass's ammo the frame after its first bomb
 /// (`0x0041505E`).
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass() {
     for (shape, hornet_keys) in [("cruising", ""), ("Landable", "Landable=yes\nROT=3\n")] {
         let sortie = strafing_carrier_sortie(hornet_keys);

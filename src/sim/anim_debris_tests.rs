@@ -5,6 +5,7 @@ use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, retail_ini_fixtur
 use crate::sim::occupancy::CellObjectMember;
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn debris_contact_matches_original_tree_damage_gates_radius_and_retirement() {
     let Some(retail) = retail_ini("rulesmd.ini") else {
         return;

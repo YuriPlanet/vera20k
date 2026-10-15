@@ -98,6 +98,9 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         source["launch_speed"].as_i64().unwrap()
     );
     let launched = launch::fireat_launch(launch::FireAtLaunch {
+        radial_segments: 0,
+        radial_index: 0,
+        body_heading: 0,
         homing: false,
         delta: ProjectileCoord::new(
             target.x.wrapping_sub(origin.x),

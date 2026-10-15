@@ -67,12 +67,12 @@ pub(crate) fn build_projectile_visual_instances(
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
 ) {
-    let (Some(rt), Some(atlas)) = (
-        state.match_state.sim_runtime.as_ref(),
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
-    ) else {
+    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
         return;
     };
+    let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
+    let assets = state.process_assets.manager();
+    let mut pose_cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
     let sim = &rt.simulation;
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return;
@@ -114,6 +114,16 @@ pub(crate) fn build_projectile_visual_instances(
             [width, height],
             axis,
             order,
+            |image, matrix| {
+                pose_cache.render_matrix(
+                    assets?,
+                    image,
+                    matrix,
+                    0,
+                    true,
+                    crate::render::vxl_raster::VxlLighting::Diffuse,
+                )
+            },
         ) {
             objects.push(object);
         }
@@ -127,21 +137,85 @@ pub(crate) fn projectile_draw_instance(
     kind: &ProjectileType,
     type_id: &str,
     scheme: HouseColorIndex,
-    atlas: &SpriteAtlas,
+    atlas: Option<&SpriteAtlas>,
     terrain: &ResolvedTerrainGrid,
     camera: [f32; 2],
     viewport: [f32; 2],
     axis: DepthAxis,
     order: &NativeDisplayOrder,
+    render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
 ) -> Option<PlannedObjectInstance> {
-    let parent = order.object_draw(projectile.id, SpriteEncoding::Plain)?;
+    let encoding = if kind.voxel {
+        SpriteEncoding::Voxel
+    } else {
+        SpriteEncoding::Plain
+    };
+    let mut parent = order.object_draw(projectile.id, encoding)?;
     // `0x004680E2..0x004680FE`: an `Inviso=` type and a bullet waiting on
     // its `NUKE` anim (`+0x158`) draw nothing.
-    if kind.inviso || kind.voxel || projectile.awaiting_anim() {
+    if kind.inviso || projectile.awaiting_anim() {
         return None;
     }
+    let (x, y) = absolute_leptons_to_screen(
+        projectile.position.x,
+        projectile.position.y,
+        projectile.position.z,
+    );
+    let point = [x, y];
+    if !projection_admitted(point, camera, viewport) {
+        return None;
+    }
+    let depth = crate::render::native_z::depth_for_row(
+        point[1] + adjust_for_z_standard(projectile.position.z) as f32,
+        axis.origin_y,
+        axis.world_height,
+    );
+    if kind.voxel {
+        // Bullet468104..46824A returns before the SHP frame, shadow and
+        // palette arms. Its retained LoadVoxelAssets5F8110 pair supplies
+        // frame0, diffuse lighting, type Color and no owner/cell lighting.
+        // Flat voxel's global81AF00 Z policy remains outside the Kirov chain.
+        if kind.flat {
+            return None;
+        }
+        let image = kind.voxel_image_load()?;
+        let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity)?;
+        let entry = render_voxel(image, matrix)?;
+        let runtime_scheme = u32::try_from(kind.color_scheme()).ok()?;
+        let remap_row = runtime_scheme / 2 + 1;
+        let shades = if runtime_scheme & 1 == 0 { 1 } else { 53 };
+        let palette_light = PaletteLight::new([1000; 3], shades, 1000, true);
+        // Non-Flat flags0x800 select Convert+6C (490CE5), whose493DF0
+        // leaf reads A and copies color without a Z test or store.
+        parent.policy = crate::render::tactical_draw_plan::BlitPolicy::z_none(encoding);
+        let piece = ObjectPieceInstance {
+            target: ObjectTexture::UnitPose,
+            render_z: RenderZPolicy::None,
+            instance: SpriteInstance {
+                position: [point[0] + entry.offset_x, point[1] + entry.offset_y],
+                size: entry.pixel_size,
+                uv_origin: entry.uv_origin,
+                uv_size: entry.uv_size,
+                depth,
+                tint: crate::map::lighting::DEFAULT_TINT,
+                palette_light,
+                alpha: 1.0,
+                draw_state: crate::render::draw_state::DrawState {
+                    remap_row,
+                    ..Default::default()
+                },
+                z_adjust: 0.0,
+                z_gradient: crate::render::native_z::pack_z_gradient(
+                    crate::render::native_z::ZGradient::Vertical,
+                    false,
+                ),
+                ..Default::default()
+            },
+        };
+        return Some(PlannedObjectInstance::object(parent, vec![piece]));
+    }
     let frame = u16::from(projectile_shp_frame(projectile, kind));
-    let entry = atlas.projectile_sprite(type_id, kind, frame, scheme)?;
+    let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
     let (ground_z, structural) =
         super::foot_depth::floor_probe(terrain, projectile.position.x, projectile.position.y);
     let geometry = geometry(
@@ -150,15 +224,6 @@ pub(crate) fn projectile_draw_instance(
         structural,
         projectile.on_bridge,
         kind.shadow,
-    );
-    // Object6D2140's padded projection admission precedes the shape clip.
-    if !projection_admitted(geometry.body.point, camera, viewport) {
-        return None;
-    }
-    let depth = crate::render::native_z::depth_for_row(
-        geometry.body.point[1] + adjust_for_z_standard(projectile.position.z) as f32,
-        axis.origin_y,
-        axis.world_height,
     );
     let mut pieces = Vec::with_capacity(2);
     for (piece, geometry) in geometry
@@ -220,3 +285,10 @@ mod tests {
         assert!(actual.shadow.is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "projectile_voxel_tests.rs"]
+mod voxel_tests;
+
+#[cfg(test)]
+pub(crate) use voxel_tests::admitted_kirov_bomb;

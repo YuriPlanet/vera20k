@@ -209,6 +209,7 @@ pub(super) fn draw_native_object_pass<'a>(
                             buffer,
                             run.start,
                             run.count,
+                            run.render_z,
                         );
                     }
                 }
@@ -221,6 +222,7 @@ pub(super) fn draw_native_object_pass<'a>(
                             buffer,
                             run.start,
                             run.count,
+                            run.render_z,
                         );
                     }
                 }
@@ -235,6 +237,7 @@ pub(super) fn draw_native_object_pass<'a>(
                             buffer,
                             run.start,
                             run.count,
+                            run.render_z,
                         );
                     }
                 }
@@ -441,3 +444,7 @@ mod projectile_submission_gpu_tests;
 #[cfg(test)]
 #[path = "packed_material_gpu_tests.rs"]
 mod packed_material_gpu_tests;
+
+#[cfg(test)]
+#[path = "projectile_voxel_gpu_tests.rs"]
+mod projectile_voxel_gpu_tests;

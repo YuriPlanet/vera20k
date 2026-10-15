@@ -120,7 +120,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
 
     assert!(emit.fire_events.is_empty());
     assert!(emit.damage_events.is_empty());
-    assert!(emit.projectile_spawns.is_empty());
     assert_eq!(entities.get(1).unwrap().rearm_timer.timer(), rearm_before);
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);
@@ -10160,12 +10159,13 @@ fn commit_shrapnel(
     projectile_id: u64,
     target: crate::sim::projectile::ProjectileTarget,
     impact: crate::sim::projectile::ProjectileCoord,
-) -> Vec<crate::sim::projectile::ProjectileSpawn> {
+) -> Vec<crate::sim::projectile::Projectile> {
     let payload = crate::sim::projectile::ProjectilePayload::new(
         20,
         sim.interner.intern("WH"),
         sim.interner.intern("PARENT"),
     );
+    let before: BTreeSet<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     world_receiver::commit_projectiles(
         sim,
         &mut world_receiver::ReceiverRun::default(),
@@ -10179,8 +10179,12 @@ fn commit_shrapnel(
         }],
         rules,
         None,
-    )
-    .projectile_spawns
+    );
+    sim.projectiles
+        .iter()
+        .filter(|(id, _)| !before.contains(id))
+        .map(|(_, bullet)| bullet.clone())
+        .collect()
 }
 
 /// [`commit_shrapnel`] for a bullet with no live record (its Location is the
@@ -10188,7 +10192,7 @@ fn commit_shrapnel(
 fn commit_shrapnel_at_5_5(
     sim: &mut Simulation,
     rules: &RuleSet,
-) -> Vec<crate::sim::projectile::ProjectileSpawn> {
+) -> Vec<crate::sim::projectile::Projectile> {
     commit_shrapnel(
         sim,
         rules,
@@ -10381,7 +10385,7 @@ fn projectile_shrapnel_reads_the_bullets_location_not_its_impact() {
 
     assert_eq!(fragments.len(), 1);
     let fragment = &fragments[0];
-    assert_eq!(fragment.origin, location);
+    assert_eq!(fragment.launch_origin, location);
     assert_eq!(
         fragment.target,
         ProjectileTarget::Cell {
@@ -10500,9 +10504,10 @@ fn an_inviso_fragment_is_admitted_standing_on_its_target() {
         None,
     );
 
-    let id = sim.substrate.next_stable_object_id;
-    sim.admit_projectile_spawns(fragments, &rules);
-    let fragment = sim.projectiles.get(id).expect("the admitted fragment");
+    let fragment = sim
+        .projectiles
+        .get(fragments[0].id)
+        .expect("the admitted fragment");
     assert_eq!(fragment.position, ProjectileCoord::new(aim.x, aim.y, aim.z));
     assert_eq!(fragment.speed_leptons_per_frame, 0);
 }
@@ -10539,7 +10544,7 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
 
-    let mut scenario_rng = SimRng::new(0x46_a310);
+    let scenario_rng = SimRng::new(0x46_a310);
     let mut expected_rng = scenario_rng.clone();
     let expected_cells = [
         projectile_random_shrapnel_cell(5, 5, &mut expected_rng),
@@ -10579,49 +10584,48 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
         expected_target(expected_cells[1], true),
         expected_target(expected_cells[2], true),
     ];
-    let mut out = CombatEmit::default();
-    emit_projectile_shrapnel(
-        &detonation,
-        detonation.impact,
-        &entities,
-        &occupancy,
-        &BTreeMap::new(),
-        &rules,
-        &mut interner,
-        Some(&terrain),
-        &HouseAllianceMap::default(),
-        &mut scenario_rng,
-        &mut Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation()),
-        &mut out,
-    );
+    let mut sim = Simulation::with_seed(0x46_a310);
+    sim.substrate.entities = entities;
+    sim.substrate.occupancy = occupancy;
+    sim.substrate.next_stable_object_id = 2;
+    sim.interner = interner;
+    sim.native_unique_ids =
+        Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
+    sim.install_resolved_terrain_for_new_map(terrain.clone());
+    emit_projectile_shrapnel(&mut sim, &rules, &detonation, detonation.impact);
+    let children: Vec<_> = sim
+        .projectiles
+        .iter()
+        .map(|(_, bullet)| bullet.clone())
+        .collect();
 
-    assert_eq!(scenario_rng.logical_state(), expected_rng.logical_state());
-    assert_eq!(out.projectile_spawns.len(), 3);
     assert_eq!(
-        out.projectile_spawns[0].target,
+        sim.scenario_rng.logical_state(),
+        expected_rng.logical_state()
+    );
+    assert_eq!(children.len(), 3);
+    assert_eq!(
+        children[0].target,
         ProjectileTarget::Cell {
             rx: expected_cells[0].0 as u16,
             ry: expected_cells[0].1 as u16,
         }
     );
-    assert_eq!(out.projectile_spawns[1].target, ProjectileTarget::DummyCell);
-    assert_eq!(out.projectile_spawns[2].target, ProjectileTarget::DummyCell);
-    for (index, spawn) in out.projectile_spawns.iter().enumerate() {
-        assert_eq!(spawn.initial_target_position, expected_positions[index]);
+    assert_eq!(children[1].target, ProjectileTarget::DummyCell);
+    assert_eq!(children[2].target, ProjectileTarget::DummyCell);
+    for (index, child) in children.iter().enumerate() {
+        assert_eq!(child.launch_target, expected_positions[index]);
         assert_eq!(
-            spawn.velocity,
+            child.velocity,
             crate::sim::projectile::launch::shrapnel_launch_velocity(
                 detonation.impact,
                 expected_positions[index],
                 rules.weapon("CHILD").unwrap().speed,
-                true
+                true,
             )
         );
     }
-    assert_ne!(
-        out.projectile_spawns[1].initial_target_position,
-        out.projectile_spawns[2].initial_target_position
-    );
+    assert_ne!(children[1].launch_target, children[2].launch_target);
 
     let final_snapshot = dummy.snapshot();
     assert_eq!(final_snapshot.coord, expected_cells[2]);
@@ -10643,14 +10647,11 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
     assert_eq!(later_target.x, 9 * 256 + 128);
     assert_eq!(later_target.y, 10 * 256 + 128);
     assert_eq!(later_target.z, 2 * 104 + BRIDGE_DECK_HEIGHT_LEPTONS);
-    assert_ne!(
-        later_target,
-        out.projectile_spawns[2].initial_target_position
-    );
+    assert_ne!(later_target, children[2].launch_target);
     assert_eq!(
-        out.projectile_spawns
+        children
             .iter()
-            .map(|spawn| spawn.initial_target_position)
+            .map(|spawn| spawn.launch_target)
             .collect::<Vec<_>>(),
         expected_positions
     );

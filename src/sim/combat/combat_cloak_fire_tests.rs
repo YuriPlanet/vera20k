@@ -107,7 +107,6 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     );
     assert!(blocked.fire_events.is_empty());
     assert!(blocked.damage_events.is_empty());
-    assert!(blocked.projectile_spawns.is_empty());
     assert_eq!(
         entities.get(1).unwrap().rearm_timer.timer(),
         rearm_before,

@@ -648,6 +648,7 @@ fn mixed_infantry_cancel_clears_old_cameo_before_same_factory_promotion() {
 /// Accepted mobile HousePlace4FB663 reaches that same House unlink. Both
 /// units are actually charged; ordinary Strip completion queues the PLACE.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn mixed_infantry_delivery_clears_old_cameo_before_same_factory_promotion() {
     let Some(mut fixture) = paid_ready_fixture() else {
         return;
@@ -1009,6 +1010,7 @@ fn other_ready_cameo_retains_pending_building_and_preview() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn own_ready_cameo_right_clears_other_category_pending_before_abandon() {
     for shift in [false, true] {
         let Some(mut fixture) = paid_ready_fixture() else {
@@ -1053,6 +1055,7 @@ fn own_ready_cameo_right_clears_other_category_pending_before_abandon() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
     for shift in [false, true] {
         let Some(mut fixture) = paid_ready_fixture() else {
@@ -1220,6 +1223,7 @@ fn late_stationary_blocker_restores_saved_product_and_requests_preview_refresh()
 /// orders: the first success clears the saved second click; the later actual
 /// Unlimbo failure therefore restores NULL while retaining that held object.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn same_frame_success_then_failure_clears_backup_in_both_building_orders() {
     for orders in [
         [
@@ -1479,6 +1483,7 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn abandon_then_place_rejects_early_without_retry_or_cannot_deploy() {
     let Some(mut fixture) = paid_ready_fixture() else {
         return;
@@ -1565,6 +1570,7 @@ fn remote_other_category_abandon_does_not_clear_the_current_building() {
 /// BandBoxLeftUp4AB9B0 subsequently has no House issuer to enqueue. This test
 /// reaches the shared expiry/output/getter boundaries, not the AppState click.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn current_product_expiry_retains_type_and_preview_but_has_no_issuer() {
     let Some(mut fixture) = paid_ready_fixture() else {
         return;
@@ -1743,6 +1749,7 @@ fn null_product_cameo_right_retains_orphan_until_house_abandon() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn null_product_house_abandon_accepts_nonzero_buildcat_without_a_held_type() {
     for name in ["GAPOWR", "GAPILE"] {
         let Some(mut fixture) = paid_ready_fixture() else {

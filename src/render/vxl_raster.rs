@@ -376,12 +376,66 @@ pub enum BodyTilt {
     /// `RocketLocomotionClass::Draw_Matrix` (`0x00663470`): CurrentPitch in
     /// radians above the horizon.
     Rocket(f32),
-    /// `VoxelAnimClass::DrawIt @ 0x00749B70`: the bounce body's drawing
-    /// matrix (`BounceClass::GetDrawingMatrix @ 0x004399E0`), which DrawIt
-    /// multiplies only by the identity viewer at `0x00887430` (`0x00749DB1`):
-    /// no camera and no facing. It is lit diffusely
-    /// ([`super::vxl_normals::diffuse_pages`]) and drawn without an HVA.
-    Tumble(Mat4),
+    /// A complete caller-supplied draw matrix. Lighting and HVA admission
+    /// remain independent: Bullet468090 uses a camera/velocity matrix and
+    /// HVA frame0, while VoxelAnim749B70 uses its bounce matrix without HVA.
+    Matrix(Mat4),
+}
+
+/// Native light setup selected by the caller, independently of its matrix.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VxlLighting {
+    #[default]
+    BlinnPhong,
+    Diffuse,
+}
+
+impl VxlLighting {
+    fn pages(self, mode: u8, rotation: Mat3) -> [u8; 256] {
+        match self {
+            Self::BlinnPhong => vxl_normals::blinn_phong_pages(mode, rotation),
+            Self::Diffuse => vxl_normals::diffuse_pages(mode, rotation),
+        }
+    }
+}
+
+/// Bullet468090's velocity-derived body matrix, before its HVA frame0.
+/// Original468132..46820A uses atan2(-vy,vx), Sqrt_Approx(vx²+vy²), then
+/// atan2(vz,horizontal), direction-word quantization, RotateZ/RotateY and the
+/// standard voxel camera. Preserve represented velocity, including tiny XY
+/// components: a nominally vertical Kirov launch can face the opposite way.
+/// Numeric witnesses: tools/voxel_oracle/bullet_fixtures.json.
+fn projectile_voxel_angles(
+    velocity: crate::sim::projectile::ProjectileVelocity,
+) -> Option<[u16; 2]> {
+    use crate::util::native_x87::X87Chop53 as Fpu;
+    let [x, y, z] = velocity.native().map(Fpu::load_f64);
+    let (x, y, z) = (x.ok()?, y.ok()?, z.ok()?);
+    let atan = |y, x| {
+        Some(crate::util::direction_tables::native_atan2_f32(
+            Fpu::store_f32(y).ok()?,
+            Fpu::store_f32(x).ok()?,
+        ))
+    };
+    let heading = crate::util::direction_tables::facing16_from_angle(atan(Fpu::neg(y), x)?);
+    // 468198 stores the sum as binary64 before Sqrt_Approx's f32 store.
+    let sum = Fpu::add(Fpu::mul(x, x), Fpu::mul(y, y));
+    let sum = Fpu::load_f64(Fpu::store_f64(sum).ok()?).ok()?;
+    let horizontal = Fpu::load_f32(crate::util::native_x87::sqrt_approx_f32(sum).ok()?).ok()?;
+    let horizontal = Fpu::load_f64(Fpu::store_f64(horizontal).ok()?).ok()?;
+    let pitch = crate::util::direction_tables::facing16_from_angle(atan(z, horizontal)?);
+    Some([heading, pitch])
+}
+
+pub(crate) fn projectile_voxel_matrix(
+    velocity: crate::sim::projectile::ProjectileVelocity,
+) -> Option<Mat4> {
+    let [heading, pitch] = projectile_voxel_angles(velocity)?;
+    let heading = voxel_facing_step_u16(heading);
+    let pitch = voxel_facing_step_u16(pitch) as i8 - 8;
+    let orientation = voxel_barrel_pitch(voxel_body_facing(heading), pitch);
+    // The same original5AF980 affine product used by ordinary voxel bodies.
+    native::matrix_product(voxel_camera_view(), orientation)
 }
 
 /// The draw matrix of one body draw: a tilt arm when one is present, else the
@@ -401,7 +455,7 @@ fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
         )
         .expect("finite voxel rotation"),
         // The section transform applies the identity viewer itself.
-        Some(BodyTilt::Tumble(matrix)) => matrix,
+        Some(BodyTilt::Matrix(matrix)) => matrix,
         None if params.barrel_pitch != 0 => voxel_pitched_draw_rotation(
             params.slope_type,
             params.slope_blend,
@@ -650,6 +704,9 @@ pub struct VxlRenderParams {
     /// (`RocketLocomotionClass+0x54`). When present the body draws through
     /// that arm instead of the slope matrices.
     pub body_tilt: Option<BodyTilt>,
+    /// Original753D00 for ordinary bodies; Bullet46B0C0 and VoxelAnim749B70
+    /// choose diffuse753C80 regardless of their matrix/HVA policy.
+    pub lighting: VxlLighting,
     /// A barrel part's pitch step, `d32 - 8` of the barrel elevation
     /// (`TechnoClass+0x370`); 0 draws it level. Applies to the slope arm
     /// only: no tilting body carries a barrel in retail data.
@@ -689,6 +746,7 @@ impl Default for VxlRenderParams {
             slope_type: 0,
             slope_blend: None,
             body_tilt: None,
+            lighting: VxlLighting::BlinnPhong,
             barrel_pitch: 0,
             scale: 1.0,
             ambient: 0.6,
@@ -1075,7 +1133,7 @@ pub fn prepare_limb_data(
         // camera * locomotor to TechnoClass::Render, so lighting includes
         // the camera but precedes the HVA transform. See the executable
         // vectors in tools/voxel_oracle/lighting.py and vxl_normals.rs.
-        let vpl_pages: [u8; 256] = vxl_normals::blinn_phong_pages(limb.normals_mode, draw_rotation);
+        let vpl_pages: [u8; 256] = params.lighting.pages(limb.normals_mode, draw_rotation);
 
         // Section scale: maps grid coordinates to model-space units.
         let sx: f32 = if limb.size_x > 0 {

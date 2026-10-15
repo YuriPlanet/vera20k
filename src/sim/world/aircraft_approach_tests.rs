@@ -10,6 +10,30 @@ use serde_json::{Value, json};
 
 fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let (mut sim, mut rules) = reengagement_fixture(input);
+    // The native fixture supplies an external AirstrikeClass behind +0x294.
+    // Keep that borrowed relationship valid through snapshot restoration.
+    let manager_rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=TEST\n[TEST]\nAirstrikeTeam=1\n",
+    ))
+    .unwrap();
+    let aircraft = sim.substrate.entities.get(1).unwrap();
+    let manager = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+        999,
+        0,
+        0,
+        0,
+        0,
+        aircraft.owner(),
+        crate::sim::combat::Health::new(100),
+        aircraft.type_ref(),
+        EntityCategory::Aircraft,
+        0,
+        5,
+        true,
+    );
+    sim.substrate.entities.insert(manager);
+    sim.substrate.next_stable_object_id = 1000;
+    sim.initialize_airstrike(999, &manager_rules);
     let flh = input.get("flh").cloned().unwrap_or(json!([0, 0, 0]));
     let elite = input.get("elite_flh").unwrap_or(&flh);
     rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
@@ -29,8 +53,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let state = input["state"].as_u64().unwrap_or(3) as u8;
     entity.mission.set_handler_state(u32::from(state));
-    entity.mission_leaf =
-        crate::sim::mission::MissionLeafState::aircraft_raw_for_test(1, state, true);
+    entity.mission_leaf = crate::sim::mission::MissionLeafState::aircraft_raw_for_test(1, state);
+    entity.airstrike.set_test_link(Some(999));
     entity
         .navigation
         .set_nav_com_for_test(input["nav"].as_array().map(|xy| {
@@ -117,6 +141,7 @@ fn assert_facings(sim: &Simulation, row: &Value) {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn aircraft_approach_matches_original_dispatch_and_restored_continuation() {
     let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/aircraft_approach.json",

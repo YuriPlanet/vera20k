@@ -703,8 +703,9 @@ pub struct ReplayHeader {
 }
 
 /// How often normal play's diagnostic log records the state hash: after every
-/// 15th frame, by tick number. A fixed frame count, never wall time, so any
-/// run of the same commands hashes the same frames. Tests, sim-bench and
+/// 15th frame, by tick number, and after the frame that ends the match. A
+/// fixed frame count, never wall time, so any run of the same commands hashes
+/// the same frames. Tests, sim-bench and
 /// replay verification can hash every frame instead
 /// ([`Simulation::hash_state_every`](crate::sim::world::Simulation::hash_state_every)).
 pub const PLAY_HASH_INTERVAL: std::num::NonZeroU64 = std::num::NonZeroU64::new(15).unwrap();

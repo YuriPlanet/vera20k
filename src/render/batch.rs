@@ -508,6 +508,7 @@ pub struct BatchRenderer {
     /// `unit_atlas_bind_group_layout` (group 1) + `voxel_palette_bind_group_layout`
     /// (group 2). Same vertex layout as the other batch pipelines.
     pub voxel_sprite_pipeline: wgpu::RenderPipeline,
+    voxel_passthrough_pipeline: wgpu::RenderPipeline,
     /// Layout for camera uniform bind group (group 0).
     /// Stored so other pipelines (e.g., fog shader) can reuse the same layout.
     camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -1218,9 +1219,9 @@ impl BatchRenderer {
                 ],
                 push_constant_ranges: &[],
             });
-        let voxel_sprite_pipeline: wgpu::RenderPipeline =
+        let voxel_pipeline = |label, depth_compare| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Voxel Sprite Pipeline"),
+                label: Some(label),
                 layout: Some(&voxel_sprite_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &voxel_shader,
@@ -1249,14 +1250,20 @@ impl BatchRenderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
                     depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
                 cache: None,
-            });
+            })
+        };
+
+        let voxel_sprite_pipeline =
+            voxel_pipeline("Voxel Sprite Pipeline", wgpu::CompareFunction::Less);
+        let voxel_passthrough_pipeline =
+            voxel_pipeline("Voxel Color/A Only Pipeline", wgpu::CompareFunction::Always);
 
         Self {
             overlay_pipeline,
@@ -1277,6 +1284,7 @@ impl BatchRenderer {
             unit_atlas_bind_group_layout,
             voxel_palette_bind_group_layout,
             voxel_sprite_pipeline,
+            voxel_passthrough_pipeline,
             camera_bind_group_layout,
             camera_buffer,
             uploaded_camera: std::sync::RwLock::new(camera_uniform),
@@ -1691,11 +1699,17 @@ impl BatchRenderer {
         buffer: &'a wgpu::Buffer,
         start: u32,
         count: u32,
+        render_z: crate::render::tactical_draw_plan::RenderZPolicy,
     ) {
         if count == 0 {
             return;
         }
-        render_pass.set_pipeline(&self.voxel_sprite_pipeline);
+        let pipeline = if render_z == crate::render::tactical_draw_plan::RenderZPolicy::None {
+            &self.voxel_passthrough_pipeline
+        } else {
+            &self.voxel_sprite_pipeline
+        };
+        render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         render_pass.set_bind_group(1, &atlas.bind_group, &[]);
         render_pass.set_bind_group(2, palette_bind_group, &[]);

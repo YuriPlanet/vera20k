@@ -234,11 +234,6 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         .begin_frame();
     instances::build_unit_instances(state, &mut planned_objects, &display_order);
     instances::build_voxel_anim_instances(state, &mut planned_objects, &display_order);
-    state
-        .renderer
-        .vxl_pose_frame_cache
-        .borrow_mut()
-        .upload(&state.renderer.gpu, &state.renderer.batch_renderer);
     // A building's voxel turret remains owned by the building display call.
     // The SHP builder therefore adds it to the same contiguous Ground parent
     // instead of leaking it into an atlas-level tie.
@@ -260,6 +255,14 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
     // native Z/palette/packed composition with the other object families.
     let particle_draws =
         instances::build_particle_instances(state, &mut planned_objects, &display_order);
+
+    // Every dynamic pose consumer, including Bullet46B0C0, has now populated
+    // the shared page. One upload precedes this frame's draw submission.
+    state.renderer.vxl_pose_frame_cache.borrow_mut().upload(
+        &state.renderer.gpu.device,
+        &state.renderer.gpu.queue,
+        &state.renderer.batch_renderer,
+    );
 
     let object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
 

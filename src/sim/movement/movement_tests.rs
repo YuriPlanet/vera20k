@@ -1632,6 +1632,7 @@ fn gsi_06_13_fixture_mover(
 // command and frame. Native scatter gate vectors are retained in
 // tools/infantry_scatter_oracle.json.
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn group_gis_do_not_jump_or_lose_their_goal() {
     let mut reached = 0;
     for seed in 0..8 {

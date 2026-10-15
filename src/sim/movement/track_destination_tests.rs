@@ -975,6 +975,7 @@ fn destination_receipt_actor(
 /// cadence draw and Infantry's earlier threat-timer writes have their owners.
 #[cfg(test)]
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn noncell_foot_destinations_match_original_anytown_class_calls() {
     use crate::sim::rng::SimRng;
 

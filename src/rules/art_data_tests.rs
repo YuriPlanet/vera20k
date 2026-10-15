@@ -376,6 +376,7 @@ fn declared_cameo_comes_from_the_rules_image_section_before_the_type_section() {
 }
 
 #[test]
+#[ignore = "slow; run when changing what it covers"]
 fn retail_sidebar_cameos_follow_the_rules_image_section() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

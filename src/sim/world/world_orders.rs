@@ -510,8 +510,7 @@ impl Simulation {
     /// handed `target` (vt+0x480(target, 1)), if [`infiltrator_admits`] it.
     /// Unlike the click's arm ([`Self::infiltrator_building_action`]), it asks
     /// neither the owner's control nor alliance. Every path through the
-    /// setter's tail then clears `+0x68E`, a re-acquisition latch VERA does
-    /// not keep (`mission_handlers`, GSI-07.06).
+    /// setter's tail then clears the automatic Tesla charging latch `+0x68E`.
     pub(crate) fn infiltrator_target_building(
         &self,
         actor_id: u64,

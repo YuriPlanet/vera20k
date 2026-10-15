@@ -14,6 +14,8 @@ const RULES: &str = "\
 [General]\nRepairPercent=15%\nRepairStep=8\n\
 [Clear]\nFoot=100%\nTrack=100%\nWheel=100%\nFloat=0%\nHover=50%\nAmphibious=80%\nFloatBeach=0%\n\
 Buildable=yes\n\
+[Tiberium]\nFoot=90%\nTrack=70%\nWheel=50%\nFloat=0%\nFloatBeach=0%\nHover=50%\nAmphibious=50%\n\
+Buildable=no\n\
 [CombatDamage]\nC4Warhead=Super\nIronCurtainDuration=750\n\
 [InfantryTypes]\n0=DOG\n1=E1\n\
 [VehicleTypes]\n0=DRON\n1=MTNK\n2=DLPH\n3=MCV\n4=TRAN\n\
@@ -690,6 +692,65 @@ fn a_teleport_warp_ejects_the_drone_before_the_host_relocates() {
 }
 
 #[test]
+fn a_teleport_warp_drops_the_drone_onto_ore_through_the_frames_overlay_table() {
+    // ExitUnit's Unlimbo (0x0062A5E8..0x0062A61F) asks the drone's own
+    // Can_Enter_Cell, whose overlay arm reads the OverlayTypeClass table the
+    // frame binds: a Chrono Miner warping off an ore field drops its drone on
+    // ore. Without the table the query fails and the drone is deleted.
+    use crate::sim::tiberium::test_support::{bales_at, overlay_registry, place_tiberium_on_map};
+    let rules = rules();
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    arena.infect(&rules, drone, tank);
+    // The overlay grid matches the arena's 32x32 map.
+    arena.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    for y in 9..=11 {
+        for x in 10..=12 {
+            place_tiberium_on_map(
+                &mut arena.sim,
+                (x, y),
+                crate::sim::miner::ResourceType::Ore,
+                5,
+            );
+        }
+    }
+    assert!(arena.sim.rebuild_dynamic_navigation(&rules));
+    arena.grid = (*arena.sim.path_grid_snapshot().unwrap()).clone();
+    let host = arena.sim.substrate.entities.get_mut(tank).unwrap();
+    host.locomotor = Some(
+        crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Teleport,
+        ),
+    );
+    host.install_teleport_state_for_test(Some(
+        crate::sim::movement::teleport_movement::TeleportState::for_test(
+            crate::sim::movement::teleport_movement::TeleportPhase::Relocate,
+            20,
+            20,
+            0,
+        ),
+    ));
+    let commands = arena.sim.take_due_commands();
+    let _ = arena.sim.advance_tick(
+        &commands,
+        Some(&rules),
+        Some(&arena.grid),
+        Some(overlay_registry()),
+        33,
+    );
+
+    assert_eq!(arena.cell(tank), (20, 20));
+    let released = arena.sim.substrate.entities.get(drone).unwrap();
+    assert!(!released.lifecycle.in_limbo() && released.lifecycle.object_alive());
+    let (rx, ry) = arena.cell(drone);
+    assert!(
+        bales_at(&arena.sim, rx, ry) > 0,
+        "released onto ore at ({rx},{ry})"
+    );
+}
+
+#[test]
 fn a_host_lost_in_flight_returns_the_drone_to_its_launch_cell() {
     // AttachTo 0x0062AA02..0x0062AAD6: CanInfect fails, so the owner unlimboes
     // at the centre of its last cell (Foot+55C), facing 0, unparalyzed.
@@ -734,6 +795,66 @@ fn a_host_lost_in_flight_returns_the_drone_to_its_launch_cell() {
     assert!(returned.parasite.class().unwrap().victim.is_none());
     // The refusal (0x0062AA96..0x0062AAC9) never calls Set_ArchiveTarget.
     assert_eq!(returned.archive_target(), anchor);
+}
+
+#[test]
+fn a_drone_whose_launch_cell_was_taken_is_deleted_when_its_host_is_lost() {
+    // AttachTo's refusal Unlimbo (0x0062AA2C) raises no 0x00A8E7AC, so the
+    // drone's own Can_Enter_Cell (Object 0x005F4F1B..0x005F4F44) decides: a
+    // tank that took the launch cell during the jump refuses it, and the
+    // refused drone is deleted (0x0062AA39).
+    let rules = rules();
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    let rhino = arena.spawn(&rules, "MTNK", "Russians", (14, 10));
+    arena.attack(drone, tank);
+    arena.until(&rules, 100, |sim| {
+        sim.substrate
+            .entities
+            .get(drone)
+            .is_some_and(|d| d.lifecycle.in_limbo())
+    });
+    arena.spawn(&rules, "MTNK", "Russians", (10, 10));
+    arena.hit(&rules, tank, Some(rhino), 400, "AP");
+    arena.until(&rules, 100, |sim| {
+        sim.substrate
+            .entities
+            .get(drone)
+            .is_none_or(|d| !d.lifecycle.in_limbo() || !d.lifecycle.object_alive())
+    });
+    assert!(arena.gone(drone));
+}
+
+#[test]
+fn an_attached_parasite_may_enter_its_victims_cell_and_no_other_held_cell() {
+    // Unit Can_Enter_Cell 0x0073F530..0x0073F56F: an owner holding a victim
+    // answers 0 at the first other object whose map cell is the victim's,
+    // before any blocker rule. An unarmed friendly vehicle's cell still
+    // refuses it.
+    let rules = rules();
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    arena.spawn(&rules, "MCV", "Russians", (10, 12));
+    let can_enter = |arena: &Arena, cell: (i16, i16)| {
+        let terrain = arena.sim.resolved_terrain.as_ref().unwrap();
+        let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).lookup(cell);
+        arena
+            .sim
+            .foot_can_enter(
+                drone,
+                cell,
+                crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+                &rules,
+                None,
+            )
+            .unwrap()
+    };
+    assert_ne!(can_enter(&arena, (11, 10)), 0, "a free drone is refused");
+    arena.infect(&rules, drone, tank);
+    assert_eq!(can_enter(&arena, (11, 10)), 0);
+    assert_ne!(can_enter(&arena, (10, 12)), 0);
 }
 
 #[test]
