@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 19, 21, 24, 37, 39, 40, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 19, 20, 21, 24, 37, 39, 40, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -130,6 +130,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 14
             | 16
             | 19
+            | 20
             | 21
             | 24
             | 37
@@ -454,6 +455,46 @@ impl Simulation {
                     if let Some(entity) = self.substrate.entities.get_mut(member) {
                         crate::sim::infantry::apply_panic_force(object, entity);
                     }
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Steam gamemd3e81a617: Script20 at6E9683..6E96BC caches
+            // Foot+5D8 before each ChangeOwner(vt+3D4), resolving the
+            // Country through502D30 for every member, then sets Team+80.
+            // The class owner can unlink a transferred member; neither
+            // Team.House nor a Player@ start-slot selector is changed here.
+            20 => {
+                let mut member = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .and_then(|team| team.members().next());
+                while let Some(current) = member {
+                    let next = self
+                        .team_script_vm
+                        .teams
+                        .get(&team_id)
+                        .and_then(|team| team.next_member_after(current));
+                    let owner = u16::try_from(action.argument).ok().and_then(|country| {
+                        self.house_by_country_index(
+                            crate::rules::ruleset::CountryIdx(country),
+                            rules,
+                        )
+                    });
+                    // An unresolved Country is ignored safely. Native null-
+                    // House handling is outside the admitted SOV01 route.
+                    if let Some(owner) = owner {
+                        self.change_owner_with_rules(
+                            current,
+                            owner,
+                            rules,
+                            registry,
+                            frame_effects,
+                        );
+                    }
+                    member = next;
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;

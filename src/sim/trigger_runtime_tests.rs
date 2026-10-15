@@ -81,21 +81,27 @@ fn script40_clears_local_through_trigger_owner_and_advances_on_rejected_indices(
     }
 }
 
-#[test]
-fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
+/// Shared retail readers and a declared flat-water script arena. Terrain and
+/// complete mission playback remain with the production game/manual checks.
+fn retail_sov01_script_context() -> Option<(
+    Simulation,
+    crate::rules::ruleset::RuleSet,
+    crate::rules::overlay_types::OverlayTypeRegistry,
+    crate::map::map_file::MapFile,
+)> {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::retail_ini_fixture::{
         retail_archive_bytes, retail_ini, retail_rules_and_art,
     };
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     let Some(raw_map) = retail_archive_bytes("SOV01UMD.MAP") else {
-        return;
+        return None;
     };
     let Some((retail, art)) = retail_rules_and_art() else {
-        return;
+        return None;
     };
     let Some(ai) = retail_ini("aimd.ini") else {
-        return;
+        return None;
     };
     let map = crate::map::map_file::MapFile::from_bytes(&raw_map).unwrap();
     assert_eq!(
@@ -152,6 +158,14 @@ fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
     sim.initialize_trigger_definitions(&map, &registry, None, None);
     let overlay =
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(processed.ini(), Some(&art));
+    Some((sim, rules, overlay, map))
+}
+
+#[test]
+fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
+    let Some((mut sim, rules, overlay, _map)) = retail_sov01_script_context() else {
+        return;
+    };
     let naval = [
         "0C0A612C", "0C0A790C", "0C0A756C", "0C0A71CC", "0C0A8B7C", "0C0A824C", "0C0A9C8C",
         "0C0A98EC", "0C04FEFC",
@@ -192,6 +206,140 @@ fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
             sim.interner.resolve(team.script_id())
         );
         assert_eq!(team.refusal(), None);
+    }
+}
+
+#[test]
+fn script20_uses_country_order_and_survives_members_unlinked_by_owner_callbacks() {
+    use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
+    let (mut sim, rules, overlay, houses) = event_ingress_fixture();
+    sim.houses.get_mut(&houses[2]).unwrap().is_human = true;
+    sim.session.current_house = Some(houses[2]);
+    sim.session.house_order = vec![houses[1], houses[2], houses[0]];
+    // Houses 0 and 2 share Country0. Registration selects House2, while
+    // lexical order would select House0 and raw House index0 names House1.
+    let members: Vec<_> = [(3, 4), (4, 4), (5, 4)]
+        .into_iter()
+        .map(|cell| spawn_event_ingress_unit(&mut sim, &rules, houses[1], cell))
+        .collect();
+    let script = sim.interner.intern("Script20 transfer callback control");
+    sim.team_script_vm.register_script(TeamScriptDefinition {
+        id: script,
+        source: crate::rules::team_ai_ini::TeamAiDefinitionSource::Scenario,
+        actions: vec![TeamScriptAction {
+            action_id: 20,
+            argument: 0,
+        }],
+    });
+    let team = sim
+        .team_script_vm
+        .create_team(houses[1], script, members.clone(), 0);
+    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    for member in members {
+        assert_eq!(
+            sim.substrate.entities.get(member).unwrap().owner(),
+            houses[2]
+        );
+        assert!(sim.team_script_vm.team_for_member(member).is_none());
+    }
+    let team = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(
+        team.owner(),
+        houses[1],
+        "the script does not change Team.House"
+    );
+    assert_eq!(
+        team.member_count(),
+        0,
+        "the human-owner callback unlinks every Foot"
+    );
+    assert!(team.advance_pending());
+}
+
+#[test]
+fn script20_retail_sov01_transport_tails_set_the_authored_landing_flags() {
+    use crate::rules::ruleset::CountryIdx;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+    use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
+    // Only the admitted, already-unloaded tail is cropped here. Movement,
+    // Full cargo construction and actual landing are played through the game.
+    for (stock_id, expected_flag) in [("08816C8C", 45), ("0D2F490C", 9)] {
+        let Some((mut sim, rules, overlay, map)) = retail_sov01_script_context() else {
+            return;
+        };
+        let registry = TeamAiIniRegistry::from_sources(
+            &crate::rules::ini_parser::IniFile::from_str(""),
+            &map.ini,
+            false,
+        );
+        let stock = registry
+            .scripts
+            .iter()
+            .find(|script| script.id == stock_id)
+            .unwrap();
+        let actions: Vec<_> = stock
+            .actions
+            .iter()
+            .skip_while(|action| action.action_id != 20)
+            .take(2)
+            .map(|action| TeamScriptAction {
+                action_id: action.action_id,
+                argument: action.argument,
+            })
+            .collect();
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0].argument, 15);
+        assert_eq!(
+            actions[1],
+            TeamScriptAction {
+                action_id: 39,
+                argument: expected_flag
+            }
+        );
+        let target_name = rules.country_name(CountryIdx(15)).unwrap().to_owned();
+        assert_eq!(
+            target_name, "Soviet2 Country",
+            "the map appends this Country after retail rules"
+        );
+        let target = sim.interner.intern(&target_name);
+        sim.houses.insert(
+            target,
+            crate::sim::house_state::HouseState::new(target, 2, Some(target), false, 0, 10),
+        );
+        sim.session.house_order.push(target);
+        let member = sim
+            .spawn_object("SAPC", "Russians", 100, 100, 0, &rules)
+            .unwrap();
+        let original_owner = sim.substrate.entities.get(member).unwrap().owner();
+        let script = sim.interner.intern("Admitted retail unload tail");
+        sim.team_script_vm.register_script(TeamScriptDefinition {
+            id: script,
+            source: stock.source,
+            actions,
+        });
+        let team = sim
+            .team_script_vm
+            .create_team(original_owner, script, vec![member], 0);
+        sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+        assert_eq!(sim.substrate.entities.get(member).unwrap().owner(), target);
+        assert_eq!(
+            sim.team_script_vm.team(team).unwrap().owner(),
+            original_owner
+        );
+        assert!(sim.team_script_vm.team(team).unwrap().advance_pending());
+        assert!(
+            !sim.trigger_runtime
+                .locals_set
+                .contains(&(expected_flag as u32))
+        );
+        sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+        assert!(
+            sim.trigger_runtime
+                .locals_set
+                .contains(&(expected_flag as u32)),
+            "{stock_id}"
+        );
+        assert_eq!(sim.team_script_vm.team(team).unwrap().refusal(), None);
     }
 }
 
