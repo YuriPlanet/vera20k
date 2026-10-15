@@ -480,6 +480,142 @@ pub(super) fn event_ingress_damage(
 }
 
 #[test]
+fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
+    use crate::sim::combat::{KillCallback, KillSource};
+    // Original Unit744720 -> Techno702D40; E4 stays703230 (vtable
+    //7F5C70+E0/E4). Repeating Tag keeps each callback observable.
+    for (techno, present, expected) in [
+        (true, true, vec![7, 48, 29, 6, 4]),
+        (true, false, vec![48, 29]),
+        (false, true, vec![6, 4]),
+        (false, false, vec![]),
+    ] {
+        let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+        let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
+        let killer = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            "[Triggers]\nDEATH=Country0,<none>,Death,0,1,1,1,0\n\
+             [Tags]\nTAG=2,Death,DEATH\n[Events]\nDEATH=1,48,0,0\n",
+        );
+        sim.attach_object_trigger_tag(victim, Some("TAG"));
+        sim.trigger_runtime.dispatch_trace.clear();
+        let source = if techno {
+            KillSource::Techno(present.then_some(killer))
+        } else {
+            KillSource::House(present.then_some(houses[1]))
+        };
+        sim.record_the_kill(
+            victim,
+            source,
+            KillCallback::Terminal,
+            crate::sim::world::UninitContext::new(Some(&rules), Some(&overlays)),
+        );
+        assert_eq!(
+            sim.trigger_runtime
+                .dispatch_trace
+                .iter()
+                .map(|call| call.1)
+                .collect::<Vec<_>>(),
+            expected,
+            "E0={techno}, incoming pointer present={present}"
+        );
+    }
+}
+
+#[test]
+fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship() {
+    use crate::sim::combat::{KillCallback, KillSource};
+    let Some((mut sim, rules, overlay, map)) = retail_sov01_script_context() else {
+        return;
+    };
+    for (name, country) in [("Americans", "Americans"), ("Alliance", "Alliance")] {
+        let house = sim.interner.intern(name);
+        let country = sim.interner.intern(country);
+        sim.houses.insert(
+            house,
+            crate::sim::house_state::HouseState::new(house, 0, Some(country), false, 0, 10),
+        );
+        sim.session.house_order.push(house);
+    }
+    // Real map readers select the seven authored targets and their shared
+    // repeat=1 Tag. Flat-water placement is the declared arena above, not
+    // a whole mission replay. Destroy buildings first: a remaining ship must
+    // spring48 itself rather than rely on a later building's base callback.
+    let mut targets: Vec<_> = map
+        .entities
+        .iter()
+        .filter(|entity| entity.trigger_tag.as_deref() == Some("0B75455C"))
+        .cloned()
+        .collect();
+    assert_eq!(targets.len(), 7);
+    targets.sort_by_key(|entity| entity.category != EntityCategory::Structure);
+    assert_eq!(sim.spawn_from_map(&targets, Some(&rules)), 7);
+    sim.classify_map_triggers(Some(&rules));
+    let tag_type = sim
+        .trigger_runtime
+        .definitions
+        .tag_type("0B75455C")
+        .unwrap();
+    let tag = sim.shared_trigger_tag(tag_type);
+    assert_eq!(sim.trigger_runtime.tag(tag).unwrap().refs, 7);
+    let landing_type = sim
+        .trigger_runtime
+        .definitions
+        .trigger_types
+        .iter()
+        .position(|trigger| trigger.id == "0B92C6AC")
+        .unwrap();
+    let landing = sim
+        .trigger_runtime
+        .triggers
+        .iter()
+        .position(|trigger| {
+            trigger
+                .as_ref()
+                .is_some_and(|trigger| trigger.type_index == landing_type)
+        })
+        .unwrap();
+    assert!(!sim.trigger_runtime.trigger(landing).unwrap().enabled);
+    let mut victims: Vec<_> = sim
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| {
+            sim.trigger_runtime
+                .attachments
+                .get(&TagAttachment::Object(entity.stable_id()))
+                == Some(&tag)
+        })
+        .map(|entity| {
+            (
+                entity.category() != EntityCategory::Structure,
+                entity.stable_id(),
+            )
+        })
+        .collect();
+    victims.sort_unstable();
+    for (index, (_, victim)) in victims.into_iter().enumerate() {
+        sim.record_the_kill(
+            victim,
+            KillSource::Techno(None),
+            KillCallback::Terminal,
+            crate::sim::world::UninitContext::new(Some(&rules), Some(&overlay)),
+        );
+        assert_eq!(
+            sim.trigger_runtime.trigger(landing).unwrap().enabled,
+            index == 6,
+            "landing must enable exactly on the seventh target"
+        );
+        sim.uninit_with_context(
+            victim,
+            crate::sim::world::UninitContext::new(Some(&rules), Some(&overlay)),
+        );
+    }
+}
+
+#[test]
 fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
     let (mut sim, rules, overlays, houses) = event_ingress_fixture();
     let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));

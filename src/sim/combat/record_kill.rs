@@ -1,6 +1,6 @@
 //! `TechnoClass::Record_The_Kill @ 0x00702D40`: the kill's experience award
 //! and its score and House statistics. The world owner runs its synchronous
-//! Tag prefix before the existing arithmetic/accounting continuation.
+//! concrete-class and base Tag prefixes before the arithmetic/accounting continuation.
 
 use super::*;
 
@@ -230,8 +230,9 @@ fn record_the_kill(
 }
 
 impl crate::sim::world::Simulation {
-    /// Original702D40/703230 world entry. CostOf base precedes Tag callbacks;
-    /// every later owner/rank/Tag read belongs to its native continuation.
+    /// Original virtual E0/E4 world entry, including Unit744720's E0 prefix.
+    /// Base702D40/703230 captures CostOf after the Unit callbacks and before
+    /// its own Tag callbacks; later owner/rank/Tag reads remain live.
     /// Source/control flow: active Steam3e81a617 instruction bodies; existing
     /// object_health/house_statistics/veterancy corpora own the arithmetic.
     /// No own RNG, timer or detach; nested Tag actions use their existing owners.
@@ -245,6 +246,27 @@ impl crate::sim::world::Simulation {
         let Some(rules) = context.rules() else {
             return;
         };
+        if matches!(source, KillSource::Techno(_))
+            && self
+                .substrate
+                .entities
+                .get(victim_id)
+                .is_some_and(|victim| victim.category() == EntityCategory::Unit)
+        {
+            // Unit vt7F5C70+E0 ->744720..744797 (Steam3e81a617..08600).
+            // 744741 tests the incoming killer only for7;48 and29 follow
+            // even for NULL. Each call re-reads Object+34, without Alive/HP
+            // gates. This precedes the base CostOf and its6/4 callbacks.
+            // Source: original bodies/vtable via tools.native_inspect.
+            // RESIDUAL: hijacked Units (+338 !=-1) with a transferable Tag
+            // skip this prefix; hijacking state/crew transfer is not ported.
+            // No own RNG/timer/detach; synchronous Tag actions own those.
+            for kind in [7, 48, 29] {
+                if kind != 7 || source.is_present() {
+                    self.dispatch_object_tag_event(victim_id, kind, Some(victim_id), None, context);
+                }
+            }
+        }
         let Some(victim) = self.substrate.entities.get(victim_id) else {
             return;
         };
