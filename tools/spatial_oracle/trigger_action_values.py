@@ -4,6 +4,10 @@ Pins +90 materialization independently of ActionID and the four +34..40
 parameters. The first 61 numeric rows are retained unchanged. Additional rows
 identify their bounded reference, input or EVA observation with ``case_kind``.
 
+``--click-shroud`` executes the reachable ProcessClickCoords floor/shroud
+suffix and Tactical pick on declared flat/elevated Cell knowledge. Screen-to-Cell
+conversion and the registered screen list are explicit inputs.
+
 The separate ``--damage-waypoint`` mode records Action63 and the bounded
 ALL01 reactor damage consumer without regenerating the legacy corpus. Set
 ``VERA20K_TRIGGER_DAMAGE_INPUTS`` to extracted RULESMD.INI, ARTMD.INI,
@@ -36,10 +40,6 @@ this mode nor those scalar controls certify rendered campaign output.
 allocated iterator578290 on explicit sparse map/House priors. Sight/gap
 release/reentry and presentation calls are recorded sinks, not invented world
 callbacks. No earlier corpus is regenerated.
-
-``--click-shroud`` executes the reachable ProcessClickCoords floor/shroud
-suffix and Tactical pick on declared flat/elevated Cell knowledge. Screen-to-Cell
-conversion and the registered screen list are explicit inputs.
 """
 from pathlib import Path
 import hashlib

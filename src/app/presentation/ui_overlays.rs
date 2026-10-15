@@ -1443,6 +1443,10 @@ pub(crate) fn build_self_heal_pip_instances(
         if e.passenger_role.is_inside_transport() {
             continue;
         }
+        // Existing residual: native6F6A58..6F6A8C guards the vt+450
+        // pip tail with alliance / Techno+210 current-viewer bits before
+        // self-heal709A90/70A50C. Health admission does not prove that policy;
+        // the represented relationship gate currently serves group labels.
         if !health_bar_drawable(
             sim,
             e,
