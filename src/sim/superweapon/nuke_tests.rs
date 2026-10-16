@@ -696,12 +696,10 @@ fn psi_warnings(sim: &Simulation) -> Vec<Option<u64>> {
 
 #[test]
 fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
     else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     // The lib suite loads no SHP: bind the anims' frame counts.
     for name in ["PSIWARN", "NUKETO"] {
         rules.bind_anim_frame_count_for_test(name, 20);

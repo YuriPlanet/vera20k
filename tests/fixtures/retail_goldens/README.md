@@ -11,7 +11,9 @@ path. Moving them to `asset_tools::retail_corpus` exposed a reference last chang
 at `58b5d5b3e`, before several deliberate production changes. The migration changes
 no production parser or archive-loading behavior.
 
-[Recorded comparison](migration-2026-09-27.json) accounts for the refreshed fields:
+The recorded comparison accounts for the refreshed fields. Nothing reads it, so
+it lives in history only:
+`git show c273a9104:tests/fixtures/retail_goldens/migration-2026-09-27.json`.
 
 | Reference field | Evidence and reason |
 | --- | --- |

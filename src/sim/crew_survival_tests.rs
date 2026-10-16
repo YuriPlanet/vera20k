@@ -1338,12 +1338,9 @@ fn a_selected_foreign_vehicle_selects_nothing() {
 /// receiver leave stock crew with native health ranges.
 #[test]
 fn retail_rules_crew_the_power_plant_and_the_mcv() {
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let general = &rules.general;
     assert_eq!(
         [

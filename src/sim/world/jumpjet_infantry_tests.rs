@@ -1502,11 +1502,9 @@ fn the_mission_destination_setter_reorders_a_moving_rocketeer() {
 /// dormant.
 #[test]
 fn retail_jumpjet_infantry_all_hover_attack() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
-        .expect("retail rules");
     let jumpjets: Vec<&str> = rules
         .infantry_ids
         .iter()

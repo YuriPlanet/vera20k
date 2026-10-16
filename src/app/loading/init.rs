@@ -3483,7 +3483,7 @@ mod random_map_retail_tests {
     }
 
     #[test]
-    #[ignore] // Requires RA2_DIR (retail game files).
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn generated_maps_resolve_every_tile_against_retail_theaters() {
         let Some(ra2) = retail_dir() else {
             panic!("set RA2_DIR to the retail RA2/YR install directory");

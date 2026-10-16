@@ -3465,6 +3465,37 @@ mod tests {
         assert_eq!(bounds.clamp(i32::MIN, i32::MAX), (1, 137));
     }
 
+    /// Retail starts sit outside `[Map] Size=`: Dustbowl's Size is 70x76 and
+    /// its starts are at rx 70 and 79. Start bounds and the session's cell
+    /// extent therefore come from the Resize cell array, which must hold every
+    /// authored start without the fallback clamp moving it.
+    #[test]
+    fn retail_dustbowl_starts_need_the_cell_array_not_the_size_rect() {
+        let Some((root, _assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = crate::map::map_file::load_from_path(&root.join("Dustbowl.mmx"))
+            .expect("retail Dustbowl.mmx parses");
+        let bounds = NativeStartBounds::from_map_header(&map.header).expect("valid Size=");
+        let starts = crate::map::waypoints::multiplayer_start_waypoints(&map.waypoints);
+        assert!(!starts.is_empty());
+        for start in &starts {
+            assert_eq!(
+                bounds.clamp(i32::from(start.rx), i32::from(start.ry)),
+                (start.rx, start.ry),
+                "start {}",
+                start.index
+            );
+        }
+        assert!(
+            starts
+                .iter()
+                .any(|start| u32::from(start.rx) >= map.header.width
+                    || u32::from(start.ry) >= map.header.height),
+            "some authored start lies outside the Size= rect"
+        );
+    }
+
     #[test]
     fn untouched_bootstrap_cursors_match_fresh_descriptor_construction() {
         let seed = 0x51C0_1001;

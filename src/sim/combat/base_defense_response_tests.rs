@@ -668,14 +668,9 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
 #[test]
 fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
     use crate::sim::movement::bridge_layer_oracle_tests as native;
-    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
-        return;
-    };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     assert!(
         rules.object("HARV").unwrap().to_protect,
         "retail protected War Miner"

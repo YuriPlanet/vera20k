@@ -262,6 +262,25 @@ fn overlong_physical_line_discards_everything_after_511_bytes() {
 }
 
 #[test]
+fn crlf_lines_and_widened_bytes_follow_the_same_read_line_rules() {
+    let mut data = b"[S]\r\nK\re\ry=V\ra\rl\rue\r\nShort=".to_vec();
+    // 300 widened bytes take 600 UTF-8 bytes but only 300 of the 511 places.
+    data.extend([0xE9; 300]);
+    data.extend(b"\r\nLong=");
+    data.extend([0xE9; 600]);
+    data.extend(b"\r\n");
+    let ini = IniFile::from_bytes(&data).unwrap();
+    let section = ini.section("S").unwrap();
+
+    assert_eq!(section.get("Key"), Some("Value"));
+    assert_eq!(section.get("Short").unwrap(), "\u{e9}".repeat(300));
+    assert_eq!(
+        section.get("Long").unwrap(),
+        "\u{e9}".repeat(511 - "Long=".len())
+    );
+}
+
+#[test]
 fn test_registry_ids_zero_indexed() {
     let ini: IniFile = IniFile::from_str("[Types]\n0=E1\n1=E2\n2=ENGINEER\n3=FLAKT\n");
     let section: &IniSection = ini.section("Types").unwrap();

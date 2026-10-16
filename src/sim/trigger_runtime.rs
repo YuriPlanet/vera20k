@@ -1904,7 +1904,9 @@ impl Simulation {
             //original bodies ignore value/incoming House/actor/source here;
             //tag_lifecycle.py --damage-events / trigger_damage_events.json
             //execute30 controls, including prior persistence and NULL House.
-            2 | 4 | 6 | 7 | 29 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 => {
+            //49/50 use the same gate. Steam3e81a617,71EC9A/71F1B1;
+            //trigger_action_values --crate records their original predicates.
+            2 | 4 | 6 | 7 | 29 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 | 49 | 50 => {
                 input.kind == condition.kind && !self.buildup_bypass_active()
             }
             //71F28B selects the generic true tail71F1B4, no persistence write.
@@ -2074,6 +2076,8 @@ impl Simulation {
     /// Original Tag6E53A0 attached-object ingress. `subject` chooses the
     /// attachment; `actor` and `source` keep the caller's distinct objects.
     /// Discovery6F4A18, Infantry519B53/519F44/51A025 use this same funnel.
+    /// Returns whether the caller had a nonnull Tag, independently of whether
+    /// an action fired. Pickup481A7F skips its Alive reread without a Tag.
     pub(crate) fn dispatch_object_tag_event(
         &mut self,
         subject: u64,
@@ -2081,13 +2085,13 @@ impl Simulation {
         actor: Option<u64>,
         source: Option<u64>,
         context: crate::sim::world::UninitContext<'_>,
-    ) {
+    ) -> bool {
         let Some(&tag) = self
             .trigger_runtime
             .attachments
             .get(&TagAttachment::Object(subject))
         else {
-            return;
+            return false;
         };
         let mut effects = Vec::new();
         self.dispatch_live_tag_event(
@@ -2105,6 +2109,14 @@ impl Simulation {
             context.effects(),
         );
         self.publish_trigger_effects(effects);
+        true
+    }
+
+    /// Pickup481AC1 writes Scenario+34BE only after its optional Tag callback
+    /// survives. Logic55AFB0 consumes and clears this existing serialized flag.
+    /// Steam3e81a617; tools/spatial_oracle/trigger_crate.json.
+    pub(crate) fn mark_crate_pickup_event(&mut self) {
+        self.trigger_runtime.dirty[3] = true;
     }
 
     /// Foot4D8978..4D8A14, reached from the unique Arrival per-cell owner.
@@ -3375,6 +3387,28 @@ impl Simulation {
                         .with_effects(frame_effects),
                 );
             }
+            108 => {
+                //Steam3e81a617: active Execute6DF69B..6DF6CD ->68BCC0
+                //->56BEC0. Unset valid waypoints supply(0,0) to FNPC; the
+                //Place AL is returned. Compare the full scalar with20 before
+                //the fixed choice's low-byte store, including276 -> byte20.
+                //Original execution: trigger_action_values.py --crate.
+                let (Some(rules), Some(registry), Some(value), Some(waypoint)) =
+                    (rules, overlay_registry, value, action.waypoint_index)
+                else {
+                    return false;
+                };
+                let Some(cell) = self.session.waypoint_cell(waypoint as i32) else {
+                    return false;
+                };
+                return crate::sim::crates::place_crate(
+                    self,
+                    rules,
+                    registry,
+                    cell,
+                    (value != 20).then_some(value as u8),
+                );
+            }
             101 => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
                     return false;
@@ -3838,6 +3872,10 @@ mod reveal_zone_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_ai_activation_tests.rs"]
 mod ai_activation_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_crate_tests.rs"]
+mod crate_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_build_type_tests.rs"]

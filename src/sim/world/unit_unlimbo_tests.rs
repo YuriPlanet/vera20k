@@ -75,8 +75,8 @@ fn in_scopes<R>(
 
 fn retail_rules() -> Option<(RuleSet, OverlayTypeRegistry, TerrainRules)> {
     let (ini, art) = retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
     let overlays = OverlayTypeRegistry::from_ini(&ini, Some(&art));
     Some((rules, overlays, TerrainRules::from_ini(&ini)))
 }
@@ -823,8 +823,8 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
     let Some((physical_ini, art)) = retail_rules_and_art() else {
         return;
     };
-    let mut base_rules = RuleSet::from_ini_with_fixed_art_for_test(&physical_ini, &art).unwrap();
-    base_rules.install_art_data(ArtRegistry::from_ini(&art));
+    let base_rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
     let registry = OverlayTypeRegistry::from_ini(&physical_ini, Some(&art));
     let terrain_rules = TerrainRules::from_ini(&physical_ini);
     let corpus = corpus();

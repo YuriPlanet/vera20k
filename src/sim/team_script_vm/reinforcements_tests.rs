@@ -559,8 +559,8 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
     let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
     let terrain_rules = TerrainRules::from_ini(&ini);
     let rows: Vec<_> = corpus
@@ -1119,8 +1119,8 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
     let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
     let terrain_rules = TerrainRules::from_ini(&ini);
     for row in rows("reinforcement", 10) {
@@ -1355,8 +1355,8 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
     let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
     let terrain_rules = TerrainRules::from_ini(&ini);
     let row = rows("script_move", 10)
@@ -1483,8 +1483,8 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
     let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
     let terrain_rules = TerrainRules::from_ini(&ini);
     let native_flash = rows("elite_flash", 21)

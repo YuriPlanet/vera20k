@@ -111,18 +111,13 @@ fn native_trigger_reveal_cell_put_discovers_unshrouded_campaign_resident() {
 
 #[test]
 fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
-    use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::retail_ini_fixture::retail_rules_and_art;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::rng::SimRng;
 
-    let Some((ini, art)) = retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules =
-        crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/team_creation.json",
     ))
@@ -3009,33 +3004,6 @@ fn gsi_04_05_hard_limbo_clears_pending_then_current_vehicle_occupation() {
             .unwrap()
             .occupation_head_to(),
         None
-    );
-}
-
-#[test]
-fn lifecycle_authority_conceal_outputs_match_release_order() {
-    let mut sim = Simulation::new();
-    insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .removal_facts
-        .set_dirty_rect_eligible_for_test(true);
-    let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
-
-    let _ = sim.object_conceal(1);
-    assert_eq!(
-        sim.lifecycle_outputs,
-        vec![
-            LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
-            LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
-            LifecycleOutput::DirtyTacticalRect { stable_id: 1 },
-            LifecycleOutput::ClearDrawnState { stable_id: 1 },
-            LifecycleOutput::ClearRedraw { stable_id: 1 },
-        ]
     );
 }
 

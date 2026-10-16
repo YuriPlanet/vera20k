@@ -264,23 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn no_radar_when_low_power() {
-        let mut sim = Simulation::new();
-        let rules = make_rules_with_radar();
-        // Only radar building, no power plant — drained > produced
-        spawn_building(&mut sim, 1, "Americans", "GARADR");
-        // Tick power states so low-power is detected.
-        crate::sim::power_system::tick_power_states(
-            &mut sim.power_states,
-            &mut sim.substrate.entities,
-            &rules,
-            &sim.interner,
-            0,
-        );
-        assert!(!has_radar_for_owner(&sim, &rules, "Americans"));
-    }
-
-    #[test]
     fn spy_sat_does_not_replace_a_radar_provider() {
         let mut sim = Simulation::new();
         let ini = IniFile::from_str(

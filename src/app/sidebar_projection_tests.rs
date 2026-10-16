@@ -362,11 +362,11 @@ fn native_order_reaches_localized_views_scrolling_and_click_identity() {
     let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
     let mut projection = SidebarProjectionState::default();
     assert!(
-        !projection.reconcile_cameos(owner, &candidates, 3),
+        !projection.reconcile_cameos(owner, &candidates, 3).build_inserted(),
         "scenario seeding is silent"
     );
     assert!(
-        !projection.reconcile_cameos(owner, &candidates, 3),
+        !projection.reconcile_cameos(owner, &candidates, 3).build_inserted(),
         "retained identities are not insertions"
     );
 
@@ -435,33 +435,31 @@ fn only_an_accepted_new_object_in_the_same_house_announces_construction_options(
         .unwrap()
         .available = false;
     let mut projection = SidebarProjectionState::default();
-    assert!(!projection.reconcile_cameos(owner, &initial, 3));
-    assert!(projection.reconcile_cameos(owner, &candidates, 3));
-    assert!(!projection.reconcile_cameos(owner, &candidates, 3));
+    assert!(!projection.reconcile_cameos(owner, &initial, 3).build_inserted());
+    assert!(projection.reconcile_cameos(owner, &candidates, 3).build_inserted());
+    assert!(!projection.reconcile_cameos(owner, &candidates, 3).build_inserted());
     assert!(
-        !projection.reconcile_cameos(owner, &initial, 3),
+        !projection.reconcile_cameos(owner, &initial, 3).build_inserted(),
         "removal is silent"
     );
     assert!(
-        projection.reconcile_cameos(owner, &candidates, 3),
+        projection.reconcile_cameos(owner, &candidates, 3).build_inserted(),
         "a later accepted reinsertion announces again"
     );
     let other = sim.interner.get("TESTBUILD").unwrap();
     assert!(
-        !projection.reconcile_cameos(other, &candidates, 3),
+        !projection.reconcile_cameos(other, &candidates, 3).build_inserted(),
         "local-house replacement seeds silently"
     );
 }
 
 #[test]
 fn retail_rules_admission_and_csf_names_keep_the_same_identity_in_every_view() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
-        return;
-    };
     // Extracted RULESMD/ARTMD are an explicit base-rules fixture, not a claim
     // about all mode/map layers. The separate native replay supplies order.
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
     let (sim, owner) = world(
         &rules,
         &[
@@ -477,7 +475,7 @@ fn retail_rules_admission_and_csf_names_keep_the_same_identity_in_every_view() {
     });
     let candidates = cameo_candidates(&sim, &rules, csf.as_ref(), owner, &options, &[], &[]);
     let mut projection = SidebarProjectionState::default();
-    assert!(!projection.reconcile_cameos(owner, &candidates, 3));
+    assert!(!projection.reconcile_cameos(owner, &candidates, 3).build_inserted());
     let visible: HashSet<_> = options
         .iter()
         .filter(|item| item.visible_in_sidebar())

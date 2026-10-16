@@ -3,7 +3,6 @@
 //! these tests do not treat the earlier supplied20-pool fixture as retail.
 
 use super::*;
-use crate::rules::{art_data::ArtRegistry, retail_ini_fixture::retail_ini};
 use serde_json::Value;
 
 fn native() -> Value {
@@ -14,10 +13,7 @@ fn native() -> Value {
 }
 
 fn retail_rules(corpus: &Value) -> Option<RuleSet> {
-    let ini = retail_ini("rulesmd.ini")?;
-    let art = retail_ini("artmd.ini")?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let mut rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     assert_eq!(
         serde_json::json!(rules.general.metallic_debris),
         corpus["metallic_pool"]
@@ -102,14 +98,10 @@ fn retail_rules(corpus: &Value) -> Option<RuleSet> {
 
 #[test]
 fn retail_bridge_anim_inputs_match_original_full_art_reader() {
-    let Some(ini) = retail_ini("rulesmd.ini") else {
+    let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+    else {
         return;
     };
-    let Some(art) = retail_ini("artmd.ini") else {
-        return;
-    };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
     // Original427530 -> full427D00/5F92E0 -> image427B50, supplied only raw
     // physical ART strings and complete retail SHP bytes at archive I/O.
     // This independent corpus establishes the inputs used by the producer and

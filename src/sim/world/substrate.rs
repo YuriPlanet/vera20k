@@ -580,13 +580,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn enter_order_counter_new_starts_at_one() {
-        let mut c = EnterOrderCounter::new();
-        // First handout is 1 (0 is the reserved sentinel).
-        assert_eq!(c.next(), 1);
-    }
-
-    #[test]
     fn enter_order_counter_next_returns_pre_increment_then_advances() {
         let mut c = EnterOrderCounter::new();
         assert_eq!(c.next(), 1);

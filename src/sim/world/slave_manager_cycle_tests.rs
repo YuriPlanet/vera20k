@@ -994,15 +994,9 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
 /// `SlaveMinerUndeploy` as it starts, and is 2x2 (no FindDeployCell step).
 #[test]
 fn retail_rules_feed_the_slave_refinery_relocation() {
-    use crate::rules::art_data::ArtRegistry;
-    use crate::rules::ruleset::RuleSet;
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules =
-        RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).expect("retail rules");
-    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     let general = &rules.general;
     assert_eq!(
         (

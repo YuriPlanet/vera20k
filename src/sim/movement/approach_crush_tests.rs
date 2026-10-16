@@ -3,6 +3,7 @@
 //! tests of the head and the per-cell range stop on retail rules.
 
 use super::ApproachCrush;
+use crate::rules::retail_ini_fixture::retail_unlayered_rules;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
@@ -71,11 +72,6 @@ fn approach_crush_matches_native_execution() {
     }
 }
 
-fn retail_rules() -> Option<RuleSet> {
-    let (ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    Some(RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules"))
-}
-
 fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, cell: (u16, u16)) -> u64 {
     sim.spawn_object(kind, owner, cell.0, cell.1, 0, rules)
         .unwrap_or_else(|| panic!("{kind} spawns"))
@@ -111,7 +107,7 @@ fn set_nav_com(sim: &mut Simulation, actor: u64, nav: NavTargetRef) {
 /// away, an allied GI or a tank it cannot crush.
 #[test]
 fn computer_crusher_heads_for_a_crushable_target_within_reach() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let head = |rhino_owner: &str,
@@ -152,7 +148,7 @@ fn computer_crusher_heads_for_a_crushable_target_within_reach() {
 /// scan picked up, a computer's does not, and neither drives onto a building.
 #[test]
 fn battle_fortress_heads_for_infantry_it_targets() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let head = |owner: &str, victim: (&str, &str), passive: bool| {
@@ -180,7 +176,7 @@ fn battle_fortress_heads_for_infantry_it_targets() {
 /// and its next Attack tick charges again.
 #[test]
 fn a_crush_charge_takes_the_per_cell_range_stop() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4D882F);

@@ -1399,8 +1399,6 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         state.match_state.input.building_placement_preview = None;
         return;
     };
-    // GAPOWR2x2 SetActive4A8BF0 has native cursor offset(0,0).
-    // Larger foundations' nonzero centering offsets remain a separate path.
     let (fw, fh, foundation_str) = rules
         .object(type_id)
         .map(|obj| {
@@ -1423,12 +1421,16 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
             fh,
         );
     }
-    // Place the foundation with cursor cell as the top-left corner.
-    let (rx, ry) = screen_point_to_world_cell(
+    let cursor_cell = screen_point_to_world_cell(
         state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
+    // UpdateFoundationCenter4A91B0 uses center + the type's active offset.
+    // Resolve it before admission/ground/shroud, through the shared owner
+    // also used by a fresh LeftUp; rendering consumes the resulting Cells.
+    let (rx, ry) =
+        crate::rules::foundation::placement_origin_at_cursor(&foundation_str, cursor_cell);
     state.match_state.input.building_placement_preview =
         production::placement_preview_for_owner_with_overlays(
             sim,

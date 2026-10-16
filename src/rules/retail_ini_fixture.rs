@@ -190,6 +190,36 @@ pub fn retail_rules_and_art() -> Option<(IniFile, IniFile)> {
     Some((retail_ini("rulesmd.ini")?, retail_ini("artmd.ini")?))
 }
 
+/// [`retail_rules_and_art`] read by one unlayered pass
+/// ([`RuleSet::from_ini_with_fixed_art_for_test`]), without the scenario
+/// layers of [`retail_battle_rules`]. Built once per test process; each caller
+/// gets its own copy.
+///
+/// [`RuleSet::from_ini_with_fixed_art_for_test`]: crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test
+pub fn retail_unlayered_rules() -> Option<crate::rules::ruleset::RuleSet> {
+    once_per_process("rulesmd.ini over artmd.ini", || {
+        let (ini, art) = retail_rules_and_art()?;
+        Some(
+            crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+                .expect("retail rules"),
+        )
+    })
+    .map(crate::rules::ruleset::RuleSet::with_fresh_serial)
+}
+
+/// [`retail_unlayered_rules`] with `artmd.ini`'s art data installed, as the
+/// app installs it before a scenario starts.
+pub fn retail_unlayered_rules_with_art() -> Option<crate::rules::ruleset::RuleSet> {
+    once_per_process("rulesmd.ini over artmd.ini, with art data", || {
+        let mut rules = retail_unlayered_rules()?;
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&retail_ini(
+            "artmd.ini",
+        )?));
+        Some(rules)
+    })
+    .map(crate::rules::ruleset::RuleSet::with_fresh_serial)
+}
+
 fn open_retail_assets(
     root: Option<&OsStr>,
     required: bool,
@@ -218,18 +248,42 @@ fn open_retail_assets(
 /// Active-YR archive fixtures use explicit RA2_DIR only, never config fallback.
 /// An absent variable skips unless REQUIRE_RETAIL_ASSETS is enabled; an explicit
 /// invalid install always fails. REQUIRE_RETAIL_INI still means extracted files.
+/// The install is opened once per test process; each caller gets its own copy.
 pub fn retail_assets() -> Option<(PathBuf, AssetManager)> {
-    let result = open_retail_assets(
-        std::env::var_os("RA2_DIR").as_deref(),
-        required(std::env::var_os(REQUIRE_RETAIL_ASSETS_ENV).as_deref()),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
+    let root = std::env::var_os("RA2_DIR");
+    let required = required(std::env::var_os(REQUIRE_RETAIL_ASSETS_ENV).as_deref());
+    let result = once_per_process(("retail install", root.clone(), required), || {
+        open_retail_assets(root.as_deref(), required).unwrap_or_else(|error| panic!("{error}"))
+    });
     if result.is_none() {
         eprintln!(
             "SKIPPED: archive fixture needs RA2_DIR; set {REQUIRE_RETAIL_ASSETS_ENV}=1 to require it"
         );
     }
     result
+}
+
+/// [`retail_assets`] as a Battle launch holds it: after the shell archives
+/// register and the app's Choose Map scan registers the loose YRO scenario
+/// archives. The scan parses every listed map, so it runs once per test
+/// process; each caller gets its own copy.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn retail_scenario_assets() -> Option<(PathBuf, AssetManager)> {
+    let root = std::env::var_os("RA2_DIR");
+    let required = required(std::env::var_os(REQUIRE_RETAIL_ASSETS_ENV).as_deref());
+    once_per_process(("after the Choose Map scan", root, required), || {
+        let (root, mut assets) = retail_assets()?;
+        assets
+            .register_neutral_archives()
+            .expect("register retail shell archives");
+        crate::map::scenario_sources::list_skirmish_scenario_records_with_assets(
+            &root,
+            &mut assets,
+            None,
+        )
+        .expect("register retail scenario archives");
+        Some((root, assets))
+    })
 }
 
 /// One file's bytes from that same archive stack (for example a campaign map
@@ -345,18 +399,11 @@ fn load_retail_mode_rules_for_map(
 ) -> Option<RetailBattleRules> {
     use crate::rules::retail_sources::select_ini;
 
-    let (root, mut assets) = retail_assets()?;
-    let mut owner = retail_rules_owner(&assets);
+    // The owner selects its startup sources before the shell and Choose Map
+    // archives register.
+    let mut owner = retail_rules_owner(&retail_assets()?.1);
     let authored_rules = owner.selected_rules_root().clone();
-    assets
-        .register_neutral_archives()
-        .expect("register retail shell archives");
-    crate::map::scenario_sources::list_skirmish_scenario_records_with_assets(
-        &root,
-        &mut assets,
-        None,
-    )
-    .expect("register retail scenario archives");
+    let (root, mut assets) = retail_scenario_assets()?;
     let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets)
         .expect("load retail mode roster");
     let mode = crate::skirmish_modes::mode_by_id(&modes, mode_id).expect("stock skirmish mode");

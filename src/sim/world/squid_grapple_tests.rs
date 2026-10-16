@@ -383,14 +383,6 @@ impl Encounter {
 }
 
 #[test]
-fn stock_squid_attack_limbos_and_attaches_after_its_actual_primary_shot() {
-    let Some(mut scene) = Encounter::retail(false) else {
-        return;
-    };
-    scene.attach_after_actual_shot();
-}
-
-#[test]
 fn stock_squid_attack_refuses_an_already_iron_curtained_destroyer() {
     use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
 

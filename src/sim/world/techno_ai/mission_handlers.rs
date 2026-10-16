@@ -2969,10 +2969,9 @@ mod infantry_guard_pick_tests {
     /// team, a slave link, a lower IQ or an unarmed type keeps Guard.
     #[test]
     fn the_infantry_guard_pick_follows_owner_team_and_type() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
             return;
         };
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
         assert_eq!(rules.general.iq_guard_area, 2, "retail [IQ] GuardArea=");
         assert!(rules.object("DOG").unwrap().default_to_guard_area);
         assert!(!rules.object("E1").unwrap().default_to_guard_area);

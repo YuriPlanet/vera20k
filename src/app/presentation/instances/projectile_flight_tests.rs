@@ -7,7 +7,6 @@
 use super::super::foot_depth::floor_probe;
 use super::{geometry, projection_admitted};
 use crate::map::resolved_terrain::test_flat_ground_grid;
-use crate::rules::{art_data::ArtRegistry, ruleset::RuleSet};
 use crate::sim::projectile::{
     ProjectileCollisionPhase, ProjectileCollisionPolicy, ProjectileCoord, ProjectilePayload,
     ProjectileSpawn, ProjectileTarget, ProjectileTrajectory, ProjectileVisualState,
@@ -36,12 +35,9 @@ fn native_bits(values: [NativeF64Bits; 3]) -> [u64; 3] {
 
 #[test]
 fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain() {
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/projectile_oracle/bridge_render_flight.json",
     ))
@@ -334,12 +330,9 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
 
 #[test]
 fn original_ifv_dragon_frame_getter_matches_retained_flights_and_all_directions() {
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     let weapon = rules.weapon("HoverMissile").unwrap();
     let kind = rules
         .projectile(weapon.projectile.as_deref().unwrap())

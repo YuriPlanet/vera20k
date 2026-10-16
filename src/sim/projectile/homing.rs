@@ -537,11 +537,9 @@ mod tests {
     #[test]
     fn original_ifv_launch_and_125_flight_visits_match_bits_and_live_bridge_transitions() {
         use super::super::{ProjectileStore, ProjectileTarget, ProjectileTrajectory, launch};
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
             return;
         };
-        let rules =
-            crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         let weapon = rules.weapon("HoverMissile").unwrap();
         let kind = rules
             .projectile(weapon.projectile.as_deref().unwrap())

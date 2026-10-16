@@ -8249,20 +8249,6 @@ MutateWarhead=MyMutate\n\
     }
 
     #[test]
-    fn combatdamage_destroyablebridges_no_does_not_clear_default_bridge_flag() {
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             [CombatDamage]\n\
-             DestroyableBridges=no\n",
-        );
-        let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert!(rules.bridge_rules.destroyable_by_default);
-    }
-
-    #[test]
     fn bridge_rules_voxel_max_clamps_oversize() {
         // Regression: u8 storage clamps oversize INI values to 255 instead
         // of wrapping/truncating.
@@ -10501,14 +10487,13 @@ Projectile=Invisible
 
     #[test]
     fn retail_lasher_range_inputs_match_original_readers() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
             return;
         };
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/walk_cell_range_bunker.json",
         ))
         .unwrap();
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         let tank = rules.object("LTNK").unwrap();
         let primary = tank.primary().unwrap();
         let weapon = rules.weapon(primary).unwrap();

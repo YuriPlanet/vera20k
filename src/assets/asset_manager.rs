@@ -28,6 +28,7 @@ struct NamedArchive {
     archive: MixArchive,
 }
 
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 struct LooseAsset {
     path: PathBuf,
     source_name: String,
@@ -124,6 +125,7 @@ pub fn load_audio_index_pair(
 
 /// A frozen resolver winner, not another archive search list. Archive storage
 /// stays on the manager; loose bytes stay in its existing OnceLock snapshot.
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 struct SelectedAudioFile {
     source_archive: String,
     entry_id: i32,
@@ -131,6 +133,7 @@ struct SelectedAudioFile {
 }
 
 #[derive(Default)]
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 struct SelectedAudioPair {
     idx: Option<SelectedAudioFile>,
     bag: Option<SelectedAudioFile>,
@@ -202,6 +205,33 @@ pub struct AssetManager {
     active_theater_archives: Vec<String>,
     /// Path to the RA2 installation directory.
     ra2_dir: PathBuf,
+}
+
+/// Test fixtures open the retail install once per test process and hand each
+/// test its own copy (`rules::retail_ini_fixture`). A copy shares the archive
+/// bytes and starts with the same registrations, lookups, caches and loose
+/// snapshots as the original. Production code holds one manager and never
+/// copies it.
+#[cfg(any(test, feature = "test-support"))]
+impl Clone for AssetManager {
+    fn clone(&self) -> Self {
+        Self {
+            archives: self.archives.clone(),
+            archive_catalog: self.archive_catalog.clone(),
+            lookup_index: self.lookup_index.clone(),
+            mix_file_cache: Mutex::new(
+                self.mix_file_cache
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone(),
+            ),
+            loose_files: self.loose_files.clone(),
+            audio_pair: self.audio_pair.clone(),
+            active_theater: self.active_theater.clone(),
+            active_theater_archives: self.active_theater_archives.clone(),
+            ra2_dir: self.ra2_dir.clone(),
+        }
+    }
 }
 
 /// Reversible current-resolution authority for a fallible VERA save candidate.

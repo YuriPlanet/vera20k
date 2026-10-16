@@ -45,14 +45,12 @@ fn gsi_04_11_refinery_survivor_cells_follow_native_sentinel_offsets() {
 /// bounds take no draw) so the rows start at the loop.
 #[test]
 fn debris_pieces_construct_between_picks_as_the_original() {
-    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
-        return;
-    };
     let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
         return;
     };
-    let mut rules =
-        crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+        return;
+    };
     let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/bridge_debris_producer.json",
     ))

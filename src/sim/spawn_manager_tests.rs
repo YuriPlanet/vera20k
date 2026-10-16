@@ -2969,15 +2969,12 @@ fn retail_launches(
 /// slot, `CMislType=`).
 #[test]
 fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
-    use crate::rules::art_data::ArtRegistry;
     use crate::rules::flh::Flh;
     use crate::sim::components::DriveCoord;
 
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/projectile_oracle/ifv_fire_coord.json",
     ))

@@ -812,22 +812,14 @@ impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn retail_rules() -> Option<crate::rules::ruleset::RuleSet> {
-        let (rules_ini, art_ini) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-        let mut rules =
-            crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
-                .expect("retail rules parse");
-        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-        Some(rules)
-    }
+    use crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art;
 
     /// vt+0x480's mode reaches only the Unit setter (`0x00741970` reads its
     /// `clear_queue`): mode 1 clears a retail tank's NavQueue, mode 0 keeps
     /// it.
     #[test]
     fn only_a_mode_one_destination_clears_a_unit_navqueue() {
-        let Some(rules) = retail_rules() else {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
             return;
         };
         for keep_queue in [true, false] {
@@ -864,7 +856,7 @@ mod tests {
     /// with mode 0 (`0x004D939A`), and the queue shifts.
     #[test]
     fn a_tethered_infantryman_on_enter_takes_his_first_waypoint() {
-        let Some(rules) = retail_rules() else {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
             return;
         };
         let mut sim = Simulation::new();
@@ -911,7 +903,7 @@ mod tests {
     /// heads for it.
     #[test]
     fn a_deferred_aircraft_restore_completes_through_the_aircraft_setter() {
-        let Some(rules) = retail_rules() else {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
             return;
         };
         let mut sim = Simulation::new();
@@ -947,7 +939,7 @@ mod tests {
     /// answers CAN_LOAD.
     #[test]
     fn an_aircraft_pending_depot_entry_takes_the_aircraft_setter() {
-        let Some(rules) = retail_rules() else {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
             return;
         };
         let mut sim = Simulation::new();
@@ -985,7 +977,7 @@ mod tests {
     /// without one a naval type is not refused a land cell.
     #[test]
     fn every_retail_unit_and_infantry_type_reaches_its_class_setter() {
-        let Some(rules) = retail_rules() else {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
             return;
         };
         let mut unspawned = Vec::new();

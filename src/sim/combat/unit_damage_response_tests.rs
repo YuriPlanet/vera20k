@@ -5,6 +5,7 @@
 //! the production receiver on retail rules.
 
 use super::unit_damage_response::{CrushCharge, crush_distance};
+use crate::rules::retail_ini_fixture::retail_unlayered_rules;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::world_receiver::{ReceiverRun, commit_entities};
 use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
@@ -52,18 +53,13 @@ fn should_crush_it_matches_native_execution() {
     }
 }
 
-fn retail_rules() -> Option<RuleSet> {
-    let (ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    Some(RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules"))
-}
-
 /// Retail's reach and IQ, and its miners: of the `Harvester=` vehicles (none
 /// is a `Weeder=`), the War and Chrono Miners count `Tiberium` pips over a
 /// positive `Storage=`; their unloading classes count none.
 #[test]
 fn retail_harvesters_carry_tiberium_pips() {
     use crate::rules::object_type::PipScale::{None, Tiberium};
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     assert_eq!(rules.combat_damage.crush, 460);
@@ -168,7 +164,7 @@ const ENTER: MissionId = MissionId::from_known(MissionType::Enter);
 /// source or a killing one.
 #[test]
 fn computer_crusher_charges_a_crushable_attacker() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let charge = |damage: i32, setup: &dyn Fn(&mut Simulation, u64, u64) -> u64| {
@@ -272,7 +268,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
 /// replaces the berserk Hunt.
 #[test]
 fn gassed_computer_fortress_charges_the_chaos_drone() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let mut sim = arena(&rules);
@@ -307,7 +303,7 @@ fn gassed_computer_fortress_charges_the_chaos_drone() {
 /// (vt+0x530 per type), so a nearer GAREFN loses to the NAREFN.
 #[test]
 fn damaged_computer_miner_heads_for_its_refinery() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let strength = rules.object("HARV").unwrap().strength;
@@ -355,7 +351,7 @@ fn damaged_computer_miner_heads_for_its_refinery() {
 /// no hit unless the hit ignores defences.
 #[test]
 fn vehicle_inside_its_war_factory_takes_no_hit() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let health_after = |ignore_defenses: bool| {

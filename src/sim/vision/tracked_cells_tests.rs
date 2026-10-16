@@ -1,16 +1,12 @@
 //! Rust regression tests for the tracked frame passes ([`super::TrackedCells`]
 //! and the skipped unchanged sources): a battle's fog is the fog that
 //! visiting every cell and footprint gives. No native behavior is claimed.
+use crate::rules::retail_ini_fixture::retail_unlayered_rules;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 use crate::sim::world::{Simulation, UninitContext};
-
-fn retail_rules() -> Option<RuleSet> {
-    let (ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    Some(RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules"))
-}
 
 /// Transient sight between frames: every 25th frame the Americans see 3 cells
 /// around the first Russian (FireAt's RevealOnFire leaf), and every 60th an
@@ -59,7 +55,7 @@ fn reveal_between_frames(
 #[test]
 #[ignore = "slow; run when changing what it covers"]
 fn tracked_fog_passes_match_visiting_every_cell() {
-    let Some(rules) = retail_rules() else {
+    let Some(rules) = retail_unlayered_rules() else {
         return;
     };
     let run = |every_cell: bool| {

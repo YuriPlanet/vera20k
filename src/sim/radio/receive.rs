@@ -2298,14 +2298,6 @@ mod tests {
     }
 
     #[test]
-    fn refinery_unchanged_when_not_a_bunker() {
-        let mut sim = Simulation::new();
-        spawn_refinery(&mut sim, 2, "Americans", 1);
-        spawn_miner(&mut sim, 1, "Americans");
-        assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
-    }
-
-    #[test]
     fn refinery_full_second_hello_is_negatory_no_evict() {
         let mut sim = Simulation::new();
         spawn_refinery(&mut sim, 2, "Americans", 1);

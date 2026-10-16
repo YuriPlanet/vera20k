@@ -40,9 +40,7 @@ fn retail_rules() -> Option<RuleSet> {
 /// Retail rules with `anims`' SHP frame counts bound: the lib suite loads no
 /// SHP.
 pub(crate) fn retail_rules_binding(anims: &[(&str, i32)]) -> Option<RuleSet> {
-    let (rules_ini, art_ini) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+    let mut rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     for &(name, frames) in anims {
         rules.bind_anim_frame_count_for_test(name, frames);
     }

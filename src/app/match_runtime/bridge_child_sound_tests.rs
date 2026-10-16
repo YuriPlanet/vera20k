@@ -5,21 +5,18 @@ use crate::audio::arbiter::{
     ArbiterAction, EntryFacts, HandleOwner, PlayRequest, PlayoutEnd, SoundArbiter, TestPlayback,
 };
 use crate::rules::{
-    art_data::ArtRegistry, retail_ini_fixture::retail_ini, sound_ini::SoundRegistry,
+    retail_ini_fixture::{retail_ini, retail_unlayered_rules_with_art},
+    sound_ini::SoundRegistry,
 };
 use crate::util::fixed_math::SimFixed;
 
 #[test]
 fn retail_landing_child_reports_release_instead_of_cutting_samples() {
-    let (Some(ini), Some(art), Some(sound)) = (
-        retail_ini("rulesmd.ini"),
-        retail_ini("artmd.ini"),
-        retail_ini("soundmd.ini"),
-    ) else {
+    let (Some(mut rules), Some(sound)) =
+        (retail_unlayered_rules_with_art(), retail_ini("soundmd.ini"))
+    else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
     let registry = SoundRegistry::from_ini(&sound);
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rules_oracle/bridge_child_sound.json",

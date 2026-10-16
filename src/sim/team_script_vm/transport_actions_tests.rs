@@ -472,9 +472,8 @@ fn unload_argument_decides_who_leaves_the_team() {
 /// The retail rules and AIMD through the production readers, installed in a
 /// simulation; `None` without the retail INIs.
 fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
-    use crate::rules::retail_ini_fixture::{retail_ini, retail_rules_and_art};
-    let (rules_ini, art_ini) = retail_rules_and_art()?;
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
+    use crate::rules::retail_ini_fixture::retail_ini;
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
     let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
     let mut sim = Simulation::new();

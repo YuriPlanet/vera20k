@@ -3613,11 +3613,9 @@ mod tests {
 
     #[test]
     fn a_retail_garrison_acquires_and_fires_with_its_art_foundation() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
             return;
         };
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
-            .expect("retail RULESMD and fixed ARTMD");
         assert_eq!(rules.object("CABUNK01").unwrap().foundation, "2x2");
         let initial_health = rules.object("AMCV").unwrap().strength;
         let (target, health) = run_captured_garrison(&rules, "CABUNK01", "E1", "AMCV", (10, 16));

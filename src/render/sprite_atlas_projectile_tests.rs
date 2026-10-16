@@ -1,6 +1,6 @@
 use super::*;
 use crate::assets::asset_manager::MediaArchiveMode;
-use crate::rules::{ini_parser::IniFile, retail_ini_fixture::retail_ini};
+use crate::rules::{ini_parser::IniFile, retail_ini_fixture::retail_unlayered_rules_with_art};
 use serde_json::Value;
 
 fn native() -> Value {
@@ -27,14 +27,9 @@ fn simple_rules(art: &str) -> RuleSet {
 
 #[test]
 fn retail_projectile_reader_matches_original_selected_cannon_inputs() {
-    let Some(ini) = retail_ini("rulesmd.ini") else {
+    let Some(rules) = retail_unlayered_rules_with_art() else {
         return;
     };
-    let Some(art_ini) = retail_ini("artmd.ini") else {
-        return;
-    };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     let corpus = native();
     let expected = &corpus["layers"][0]["state"];
     let projectile = rules.projectile("Cannon").unwrap();

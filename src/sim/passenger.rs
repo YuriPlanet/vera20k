@@ -2320,10 +2320,9 @@ ConditionYellow=50%
 
     #[test]
     fn retail_player_bunker_keeps_its_owner_when_empty() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
             return;
         };
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         let bunker = rules.object("NABNKR").unwrap();
         assert!(bunker.can_be_occupied);
         assert!(

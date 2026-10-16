@@ -1,6 +1,6 @@
 //! RA2 Engine — client library root.
 //!
-//! Re-exports all modules so integration tests and future binary targets
+//! Re-exports all modules so the game and the tool binaries in `src/bin/`
 //! can access the engine's functionality. The binary entry point (main.rs)
 //! delegates to this library for all logic.
 //!

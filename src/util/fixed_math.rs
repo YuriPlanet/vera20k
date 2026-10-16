@@ -145,31 +145,12 @@ pub fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
     (raw_speed.clamp(0, 100) * 256 / 100).min(255)
 }
 
-/// Convert a rules.ini `Speed=` value to cells per second using the authentic
-/// RA2 formula.
-///
-/// RA2 internally computes speed as leptons per game frame at 15 FPS:
-///   1. Cap Speed at 100 (values above 100 are treated as 100).
-///   2. `leptons_per_tick = min(Speed * 256 / 100, 255)` — leptons per frame.
-///   3. Convert to cells/second: `leptons_per_tick * 15 / 256`.
-///
-/// The result is a `SimFixed` value in cells per second, suitable for the
-/// movement system's `progress += speed * dt` formula.
-///
-/// Examples: Speed=4 (HARV) → ~0.586 cells/sec, Speed=6 (MTNK) → ~0.879,
-/// Speed=11 (E1) → ~1.641, Speed=100 → ~14.941. Speed=0 → 0 (immobile).
-#[cfg(any(test, feature = "test-support"))]
-pub fn ra2_speed_to_cells_per_second(raw_speed: i32) -> SimFixed {
-    let leptons_per_tick = ra2_speed_to_leptons_per_frame(raw_speed);
-    SimFixed::from_num(leptons_per_tick * 15) / SimFixed::from_num(256)
-}
-
 /// Convert a rules.ini `Speed=` value to leptons per second using the authentic
 /// RA2 formula.
 ///
-/// Same computation as `ra2_speed_to_cells_per_second()` but without the final
-/// `/256` division. The result is in leptons/second (256× larger), suitable for
-/// the lepton-based movement system where progress counts to 256 per cell.
+/// `ra2_speed_to_leptons_per_frame` times the 15-frame second. The result is
+/// in leptons/second, suitable for the lepton-based movement system where
+/// progress counts to 256 per cell.
 ///
 /// Examples: Speed=4 (HARV) → ~150 lep/sec, Speed=11 (E1) → ~420 lep/sec,
 /// Speed=100 → ~3825 lep/sec. Speed=0 → 0 (immobile).
@@ -201,16 +182,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_facing_cardinals() {
-        // Computed directions use the native 65,534-unit scale before exposing
-        // the high byte. Authored quarter turns remain 64/128/192.
-        assert_eq!(facing_from_delta_int(0, -1), 0);
-        assert_eq!(facing_from_delta_int(1, 0), 63);
-        assert_eq!(facing_from_delta_int(0, 1), 127);
-        assert_eq!(facing_from_delta_int(-1, 0), 192);
-    }
-
-    #[test]
     fn test_facing_diagonals() {
         // Iso diagonals map to screen diagonals.
         // (1,-1) = NE on screen → facing 32
@@ -225,11 +196,6 @@ mod tests {
         // (-1,-1) = NW on screen → facing 224
         let nw: u8 = facing_from_delta_int(-1, -1);
         assert!(nw >= 223 || nw <= 1, "NW facing={nw}");
-    }
-
-    #[test]
-    fn test_facing_zero_delta() {
-        assert_eq!(facing_from_delta_int(0, 0), 63);
     }
 
     /// Verify facing produces sane quadrant values for a grid of deltas.
@@ -271,14 +237,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_facing_u16_cardinals() {
-        assert_eq!(facing_from_delta_int_u16(0, -1), 0);
-        assert_eq!(facing_from_delta_int_u16(1, 0), 0x3fff);
-        assert_eq!(facing_from_delta_int_u16(0, 1), 0x7fff);
-        assert_eq!(facing_from_delta_int_u16(-1, 0), 0xc001);
-    }
-
-    #[test]
     fn test_facing_u16_diagonals() {
         let ne: u16 = facing_from_delta_int_u16(1, -1);
         assert_eq!(ne, 8_315);
@@ -288,11 +246,6 @@ mod tests {
         assert_eq!(sw, 41_082);
         let nw: u16 = facing_from_delta_int_u16(-1, -1);
         assert_eq!(nw, 57_221);
-    }
-
-    #[test]
-    fn test_facing_u16_zero_delta() {
-        assert_eq!(facing_from_delta_int_u16(0, 0), 0x3fff);
     }
 
     #[test]
@@ -360,96 +313,21 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_ra2_speed_zero_is_immobile() {
-        assert_eq!(ra2_speed_to_cells_per_second(0), SIM_ZERO);
-        assert_eq!(ra2_speed_to_cells_per_second(-5), SIM_ZERO);
-    }
-
-    #[test]
-    fn test_ra2_speed_harvester() {
-        // HARV: Speed=4. leptons/tick = 4*256/100 = 10. cells/sec = 10*15/256 ≈ 0.586
-        let speed: f32 = ra2_speed_to_cells_per_second(4).to_num();
-        assert!(
-            (speed - 0.586).abs() < 0.01,
-            "Speed=4: got {speed}, expected ~0.586"
-        );
-    }
-
-    #[test]
-    fn test_ra2_speed_medium_tank() {
-        // MTNK: Speed=6. leptons/tick = 6*256/100 = 15. cells/sec = 15*15/256 ≈ 0.879
-        let speed: f32 = ra2_speed_to_cells_per_second(6).to_num();
-        assert!(
-            (speed - 0.879).abs() < 0.01,
-            "Speed=6: got {speed}, expected ~0.879"
-        );
-    }
-
-    #[test]
-    fn test_ra2_speed_infantry() {
-        // E1: Speed=11. leptons/tick = 11*256/100 = 28. cells/sec = 28*15/256 ≈ 1.641
-        let speed: f32 = ra2_speed_to_cells_per_second(11).to_num();
-        assert!(
-            (speed - 1.641).abs() < 0.02,
-            "Speed=11: got {speed}, expected ~1.641"
-        );
-    }
-
-    #[test]
-    fn test_ra2_speed_fast_unit() {
-        // Speed=40. leptons/tick = 40*256/100 = 102. cells/sec = 102*15/256 ≈ 5.977
-        let speed: f32 = ra2_speed_to_cells_per_second(40).to_num();
-        assert!(
-            (speed - 5.977).abs() < 0.02,
-            "Speed=40: got {speed}, expected ~5.977"
-        );
-    }
-
-    #[test]
-    fn test_ra2_speed_max() {
-        // Speed=100. leptons/tick = min(100*256/100, 255) = 255. cells/sec = 255*15/256 ≈ 14.941
-        let speed: f32 = ra2_speed_to_cells_per_second(100).to_num();
-        assert!(
-            (speed - 14.941).abs() < 0.02,
-            "Speed=100: got {speed}, expected ~14.941"
-        );
-    }
-
-    #[test]
-    fn test_ra2_speed_capped_above_100() {
-        // Speed=120 is capped to 100. Same result as Speed=100.
-        let s100: SimFixed = ra2_speed_to_cells_per_second(100);
-        let s120: SimFixed = ra2_speed_to_cells_per_second(120);
-        assert_eq!(
-            s100, s120,
-            "Speed=120 should be capped to same as Speed=100"
-        );
-    }
-
-    #[test]
-    fn test_ra2_speed_one() {
-        // Speed=1. leptons/tick = 1*256/100 = 2. cells/sec = 2*15/256 ≈ 0.117
-        let speed: f32 = ra2_speed_to_cells_per_second(1).to_num();
-        assert!(
-            (speed - 0.117).abs() < 0.01,
-            "Speed=1: got {speed}, expected ~0.117"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // RA2 lepton speed conversion tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_lepton_speed_is_256x_cell_speed() {
-        // Lepton speed should be exactly 256× the cell speed for any input.
-        for raw in [1, 4, 6, 11, 40, 100] {
-            let cell_speed: SimFixed = ra2_speed_to_cells_per_second(raw);
-            let lepton_speed: SimFixed = ra2_speed_to_leptons_per_second(raw);
-            let ratio: f32 = lepton_speed.to_num::<f32>() / cell_speed.to_num::<f32>();
-            assert!(
-                (ratio - 256.0).abs() < 0.1,
-                "Speed={raw}: lepton/cell ratio = {ratio}, expected 256.0"
+    fn leptons_per_frame_clamps_scales_and_caps() {
+        // Clamp to 0..100, scale by 256/100 (truncating), cap at 255.
+        for (speed, leptons) in [
+            (-5, 0),
+            (0, 0),
+            (1, 2),
+            (4, 10),
+            (99, 253),
+            (100, 255),
+            (120, 255),
+        ] {
+            assert_eq!(
+                ra2_speed_to_leptons_per_frame(speed),
+                leptons,
+                "Speed={speed}"
             );
         }
     }

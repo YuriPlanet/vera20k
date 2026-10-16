@@ -541,7 +541,7 @@ fn enslaved_selection_voice_matches_physical_anytown_battle_rules_and_sound_inpu
             "physical AnyTown/Battle production process owner",
         );
     }
-    let Some((root, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
     let layers = rows[0]["layers"].as_array().unwrap();
@@ -562,13 +562,7 @@ fn enslaved_selection_voice_matches_physical_anytown_battle_rules_and_sound_inpu
             );
         }
     }
-    assets.register_neutral_archives().unwrap();
-    crate::map::scenario_sources::list_skirmish_scenario_records_with_assets(
-        &root,
-        &mut assets,
-        None,
-    )
-    .unwrap();
+    let (root, assets) = crate::rules::retail_ini_fixture::retail_scenario_assets().unwrap();
     let map =
         crate::map::source::load_map_by_name_or_path_with_assets(&root, "XMP03T4.MAP", &assets)
             .unwrap();

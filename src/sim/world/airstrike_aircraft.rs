@@ -132,8 +132,7 @@ mod tests {
     use crate::sim::world::edge_cell::Edge;
 
     fn world() -> Option<(RuleSet, Simulation, u64, u64)> {
-        let (rules_ini, art_ini) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
+        let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
         let (rules, mut sim, _) =
             crate::sim::superweapon::chronosphere_tests::world_with(rules, 64, &[]);
         sim.playfield_bounds = Some(PlayfieldBounds::from_raw_local_size(32, 32, [2, 4, 28, 22]));

@@ -1059,6 +1059,39 @@ Image=4
         }
     }
 
+    /// Retail rulesmd `[OverlayTypes]` puts each resource family exactly at
+    /// the compact slots the native ranges hard-code, so a retail overlay
+    /// resolves to the Tiberium whose `Image=` selects its range. Overlay 168,
+    /// which Dustbowl places, is the rock SROCK01, not ore.
+    #[test]
+    fn retail_overlay_types_fill_the_native_tiberium_ranges() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let overlays = OverlayTypeRegistry::from_ini(&rules, None);
+        let tiberiums = TiberiumTypeRegistry::from_ini(&rules);
+        for (image, first, last) in [
+            (1, "TIB01", "TIB20"),
+            (2, "GEM01", "GEM12"),
+            (3, "TIB2_01", "TIB2_20"),
+            (4, "TIB3_01", "TIB3_20"),
+        ] {
+            let range = native_tiberium_overlay_range(image);
+            let last_id = range.base + range.primary_count + range.extra_count - 1;
+            for (overlay_id, name) in [(range.base, first), (last_id, last)] {
+                let overlay_id = u8::try_from(overlay_id).unwrap();
+                assert_eq!(overlays.name(overlay_id), Some(name), "image {image}");
+                let ty = overlays
+                    .tiberium_type_for_overlay(&tiberiums, overlay_id)
+                    .and_then(|id| tiberiums.get(id))
+                    .unwrap_or_else(|| panic!("{name} resolves to a Tiberium"));
+                assert_eq!(ty.image, image, "{name}");
+            }
+        }
+        assert_eq!(overlays.name(168), Some("SROCK01"));
+        assert_eq!(overlays.tiberium_type_for_overlay(&tiberiums, 168), None);
+    }
+
     #[test]
     fn overlay_to_tiberium_index_rejects_false_flag_before_range_lookup() {
         let (overlays, tiberiums) = stock_shaped_tiberium_registries(Some("TIB2_01"));

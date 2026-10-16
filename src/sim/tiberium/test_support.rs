@@ -179,22 +179,6 @@ fn is_tiberium(overlay_id: u8) -> bool {
         .is_some_and(|flags| flags.tiberium)
 }
 
-/// Place ore or gems from an amount in the retired per-cell stock units
-/// (120 per ore bale, 180 per gem bale) that older fixtures are written in.
-pub(crate) fn place_stock_amount(
-    sim: &mut Simulation,
-    cell: (u16, u16),
-    resource: ResourceType,
-    amount: u16,
-) {
-    let per_bale = match resource {
-        ResourceType::Ore => 120,
-        ResourceType::Gem => 180,
-    };
-    let bales = amount.div_ceil(per_bale).clamp(1, 11) as u8;
-    place_tiberium(sim, cell.0, cell.1, resource, bales);
-}
-
 /// Whether a cell holds a tiberium overlay, at any density.
 pub(crate) fn has_tiberium(sim: &Simulation, cell: (u16, u16)) -> bool {
     sim.overlay_grid

@@ -5,6 +5,11 @@
 /// This is the engine's ordinary internal conversion. It is deliberately not
 /// UTF-8, CP1252, or the Windows active code page.
 pub fn widen_bytes(bytes: &[u8]) -> String {
+    // ASCII bytes are already their own UTF-8 encoding. Retail INIs and maps
+    // are ASCII apart from a few EVA strings, so they copy as is.
+    if bytes.is_ascii() {
+        return String::from_utf8(bytes.to_vec()).expect("ASCII is UTF-8");
+    }
     bytes.iter().map(|byte| char::from(*byte)).collect()
 }
 

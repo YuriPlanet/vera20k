@@ -450,10 +450,9 @@ mod tests {
 
     #[test]
     fn selection_and_bullet_height_match_original_executed_controls() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
             return;
         };
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
         let native: Value = serde_json::from_str(crate::test_fixture::text(
             "tools/projectile_oracle/ifv_select_anim.json",
         ))

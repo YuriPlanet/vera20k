@@ -12,11 +12,33 @@ use crate::sim::production::{self, BuildingPlacementCell};
 use crate::sim::world::{FrameEffects, TickLane};
 use serde_json::Value;
 
+fn ordinary_frame(
+    scene: &mut crate::headless_scenario::HeadlessScenario,
+    payload: Option<crate::sim::command::Command>,
+) {
+    let owner = scene.sim().session.current_house.unwrap();
+    let commands: Vec<_> = payload
+        .into_iter()
+        .map(|payload| {
+            crate::sim::command::CommandEnvelope::new(owner, scene.sim().session.tick, payload)
+        })
+        .collect();
+    scene
+        .runtime
+        .advance_frame(
+            &commands,
+            crate::app::types::SIM_TICK_MS,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap();
+}
+
 /// A normal loaded starting MCV, movement/deploy and paid factory completion.
 /// No supplied base, ready flag, slope mutation or preview admission enters
 /// this integration witness. Native loading/production cadence is not claimed.
 fn paid_goldst(root: &std::path::Path) -> crate::headless_scenario::HeadlessScenario {
-    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::command::Command;
     use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
     let mut launch = crate::headless_scenario::battle_session(
         "GoldSt.mmx",
@@ -60,19 +82,7 @@ fn paid_goldst(root: &std::path::Path) -> crate::headless_scenario::HeadlessScen
             }),
             _ => None,
         };
-        let commands: Vec<_> = payload
-            .into_iter()
-            .map(|payload| CommandEnvelope::new(owner, scene.sim().session.tick, payload))
-            .collect();
-        scene
-            .runtime
-            .advance_frame(
-                &commands,
-                crate::app::types::SIM_TICK_MS,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
-            .unwrap();
+        ordinary_frame(&mut scene, payload);
     }
     assert_eq!(scene.map.header.theater, "URBAN");
     let sim = scene.sim();
@@ -125,7 +135,7 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
             "physical input {name}"
         );
     }
-    let scene = paid_goldst(&root);
+    let mut scene = paid_goldst(&root);
     let sim = scene.sim();
     // Consume the original full selected Recalc/LAT outputs against the live
     // loader result, rather than treating authored tile bytes as final state.
@@ -339,4 +349,204 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
             assert_native_color_and_depth(&output, row, format, size);
         }
     }
+    paid_refinery_centering_and_free_unit(&mut scene, &packet["centering"]);
+}
+
+/// Continue the same normal opening through POWER -> paid GAREFN -> opening
+/// CMIN. This consumes native mark coordinates, not a second placement model.
+/// Full production cadence/FreeUnit native bootstrap is not a new claim here.
+fn paid_refinery_centering_and_free_unit(
+    scene: &mut crate::headless_scenario::HeadlessScenario,
+    centering: &Value,
+) {
+    use crate::rules::foundation::placement_origin_at_cursor;
+    use crate::sim::command::Command;
+    let owner = scene.sim().session.current_house.unwrap();
+    let power = scene.sim().interner.get("GAPOWR").unwrap();
+    let power_origin = placement_origin_at_cursor("2x2", (110, 33));
+    ordinary_frame(
+        scene,
+        Some(Command::PlaceReadyBuilding {
+            type_id: power,
+            rx: power_origin.0,
+            ry: power_origin.1,
+        }),
+    );
+    // A fixture wait, not a golden native construction duration.
+    for _ in 0..200 {
+        ordinary_frame(scene, None);
+    }
+    let name = centering["building"]["name"].as_str().unwrap();
+    let refinery = scene.sim().interner.get(name).unwrap();
+    let rules = &scene.runtime.resources.rules;
+    let foundation = rules.object(name).unwrap().foundation.clone();
+    assert_eq!(crate::rules::foundation::foundation_id(&foundation), 12);
+    assert_eq!(rules.building_free_unit(name), Some("CMIN"));
+    assert_eq!(
+        serde_json::json!(crate::rules::foundation::foundation_cell_offsets(
+            &foundation
+        )),
+        centering["building"]["offsets"]
+    );
+    ordinary_frame(scene, Some(Command::QueueProduction { type_id: refinery }));
+    let ready = |scene: &crate::headless_scenario::HeadlessScenario| {
+        production::ready_building_entity_for_owner(
+            scene.sim(),
+            &scene.runtime.resources.rules,
+            owner,
+            refinery,
+        )
+    };
+    for _ in 0..4096 {
+        if ready(scene).is_some() {
+            break;
+        }
+        ordinary_frame(scene, None);
+    }
+    let held = ready(scene).expect("normal paid refinery completion");
+    assert_eq!(
+        production::credits_for_owner(scene.sim(), scene.sim().interner.resolve(owner)),
+        47_200
+    );
+    let miners = |scene: &crate::headless_scenario::HeadlessScenario| {
+        scene
+            .sim()
+            .entities()
+            .iter_sorted()
+            .filter_map(|(id, entity)| {
+                (entity.owner() == owner
+                    && scene.sim().interner.resolve(entity.type_ref()) == "CMIN")
+                    .then_some(id)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        miners(scene).is_empty(),
+        "limbo paid refinery has no opening miner"
+    );
+    let preview = |scene: &crate::headless_scenario::HeadlessScenario, cursor| {
+        let origin = placement_origin_at_cursor(&foundation, cursor);
+        production::placement_preview_for_owner_with_overlays(
+            scene.sim(),
+            &scene.runtime.resources.rules,
+            scene.sim().interner.resolve(owner),
+            name,
+            origin.0,
+            origin.1,
+            Some(&scene.runtime.resources.overlay_registry),
+        )
+        .unwrap()
+    };
+    let before = scene.sim().state_hash();
+    for step in centering["lifecycle"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .take(2)
+    {
+        let center = &step["output"]["center"];
+        let current = preview(
+            scene,
+            (
+                center[0].as_u64().unwrap() as u16,
+                center[1].as_u64().unwrap() as u16,
+            ),
+        );
+        let mut coords: Vec<_> = current.cells.iter().map(|cell| cell.coord).collect();
+        coords.sort();
+        assert_eq!(serde_json::json!(coords), step["output"]["marked"]);
+    }
+    assert_eq!(
+        scene.sim().state_hash(),
+        before,
+        "moving markers cannot change simulation/RNG"
+    );
+
+    let refused = preview(scene, (106, 34)); // Native origin105,33 crosses the ramp.
+    assert!(!refused.valid);
+    assert!(
+        refused.in_build_area && refused.foundation_visible,
+        "blocked footprint must pass the independent input gates: {refused:?}"
+    );
+    ordinary_frame(
+        scene,
+        Some(Command::PlaceReadyBuilding {
+            type_id: refinery,
+            rx: refused.rx,
+            ry: refused.ry,
+        }),
+    );
+    assert_eq!(ready(scene), Some(held));
+    assert!(
+        scene
+            .sim()
+            .entities()
+            .get(held)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+    assert!(miners(scene).is_empty());
+
+    let clear = preview(scene, (113, 35));
+    assert_eq!((clear.rx, clear.ry), (112, 34));
+    assert!(clear.valid);
+    assert_eq!(clear.cells.len(), 12);
+    assert!(
+        clear
+            .cells
+            .iter()
+            .all(|cell| cell.valid && cell.level == 6 && cell.slope == 0)
+    );
+    ordinary_frame(
+        scene,
+        Some(Command::PlaceReadyBuilding {
+            type_id: refinery,
+            rx: clear.rx,
+            ry: clear.ry,
+        }),
+    );
+    let placed = scene.sim().entities().get(held).unwrap();
+    assert!(!placed.lifecycle.in_limbo());
+    assert_eq!((placed.position.rx(), placed.position.ry()), (112, 34));
+    for cell in &clear.cells {
+        assert_eq!(
+            scene.sim().occupancy().first_building_on_layer(
+                cell.coord.0,
+                cell.coord.1,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            ),
+            Some(held),
+            "same paid parent occupies {:?}",
+            cell.coord
+        );
+    }
+    for _ in 0..512 {
+        if !miners(scene).is_empty() {
+            break;
+        }
+        ordinary_frame(scene, None);
+    }
+    let opening_miners = miners(scene);
+    assert_eq!(
+        opening_miners.len(),
+        1,
+        "normal GrandOpening produces one CMIN"
+    );
+    for _ in 0..128 {
+        ordinary_frame(scene, None);
+    }
+    assert_eq!(
+        miners(scene),
+        opening_miners,
+        "completion never duplicates the free unit"
+    );
+    assert_eq!(
+        production::credits_for_owner(scene.sim(), scene.sim().interner.resolve(owner)),
+        47_200
+    );
+    assert!(
+        ready(scene).is_none(),
+        "success consumes the existing held product"
+    );
 }

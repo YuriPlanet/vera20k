@@ -67,12 +67,9 @@ fn projectile_color_matches_original_shared_reader_and_section_admission() {
 
 #[test]
 fn production_kirov_projectile_retains_default_lightgold_shade53() {
-    use crate::rules::retail_ini_fixture::retail_ini;
-    let (Some(rules_ini), Some(art_ini)) = (retail_ini("rulesmd.ini"), retail_ini("artmd.ini"))
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     let kirov = rules.object("ZEP").unwrap();
     // Both normal and elite production weapon references use this same type.
     assert_eq!(kirov.primary(), Some("BlimpBomb"));
@@ -269,14 +266,9 @@ fn retained_projectile_art_matches_original_full_readers_across_layers_and_owner
 
 #[test]
 fn production_retail_projectile_art_matches_original_referenced_type_readers() {
-    use crate::rules::retail_ini_fixture::retail_ini;
-    let Some(rules_ini) = retail_ini("rulesmd.ini") else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let Some(art_ini) = retail_ini("artmd.ini") else {
-        return;
-    };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     let corpus = native();
     let anim_roots = crate::rules::effect_asset_catalog::anim_class_roots(&rules);
     let mut compared = Vec::new();

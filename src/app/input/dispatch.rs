@@ -1628,6 +1628,88 @@ pub(crate) fn handle_hotkey_pressed(
 #[path = "selection_navigation.rs"]
 pub(crate) mod selection_navigation;
 
+/// One `Set{Structure,Defense,Infantry,Unit}TabCommandClass::Execute`
+/// (535D90/535E50/535F10/535FA0).
+///
+/// `StripClass::HasEntries` 6ABAC0 gates the switch: a strip with no retained
+/// entry refuses the command outright, so the active tab does not move — VERA
+/// reaches the same gate through the retained strip that also drives
+/// `SidebarProjectionState::selectable_tab`. Structures and Defense then run
+/// their completed-building tail; a tab that is already active still runs it,
+/// because native only skips the switch, not the tail.
+fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
+    if crate::app::input::campaign_input::is_locked(state) {
+        return;
+    }
+    let Some(tab) = state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .selectable_tab(index)
+    else {
+        return;
+    };
+    state.match_state.match_presentation.active_sidebar_tab = tab;
+    if matches!(tab, SidebarTab::Building | SidebarTab::Defense) {
+        place_ready_building_for_tab(state, tab);
+    }
+}
+
+/// The tail of the Structures and Defense tab commands: Building7342A0 and
+/// Building7342B0 hand the tab's completed building to
+/// `ObjectClass::FindFactory` 5F5C20 (0,0) and `HouseClass::Begin_Building_
+/// Placement` 4FB840. Native registers exactly one such building per structure
+/// tab (`BuildingClass::SetSidebarTabObject` 734250 by the type's BuildCat),
+/// which is this owner's ready building for that tab.
+fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
+    let Some(owner_name) = preferred_local_owner_name(state) else {
+        return;
+    };
+    let ready_target = {
+        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+            return;
+        };
+        let sim = &runtime.simulation;
+        let rules = &runtime.resources.rules;
+        let Some(owner_id) = sim.interner.get(&owner_name) else {
+            return;
+        };
+        crate::sim::production::ready_buildings_for_owner(sim, rules, &owner_name)
+            .into_iter()
+            .find(|ready| SidebarTab::for_category(ready.queue_category) == tab)
+            .and_then(|ready| {
+                let held = crate::sim::production::ready_building_entity_for_owner(
+                    sim,
+                    rules,
+                    owner_id,
+                    ready.type_id,
+                )?;
+                // Native hands Manual_Place4FB840 the object's Factory
+                // 5F5C20(0,0), and 4FB840 refuses a null one. VERA's placement
+                // owner takes no factory, so this lookup is admission only.
+                crate::sim::production::object_find_factory(sim, rules, held, false, false)?;
+                Some((
+                    owner_id,
+                    held,
+                    sim.interner.resolve(ready.type_id).to_string(),
+                ))
+            })
+    };
+    let Some((owner_id, held, held_type)) = ready_target else {
+        return;
+    };
+    if state
+        .match_state
+        .input
+        .begin_building_placement(&held_type, held, owner_id)
+    {
+        // ManualPlace4FB881 calls UnselectAll48DC90 only on entry.
+        queue_selection_snapshot_command(state, Vec::new(), false);
+        let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
+        gadgets.disable_selection_modes(false);
+    }
+}
+
 fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
     match command {
         HotkeyCommand::HealthNav => selection_navigation::execute_category_navigation(
@@ -1651,18 +1733,13 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::StopObject => queue_stop_for_selected(state),
         HotkeyCommand::DeployObject => queue_deploy_undeploy_for_selected(state),
         HotkeyCommand::GuardObject => queue_guard_for_selected(state),
-        HotkeyCommand::StructureTab => {
-            apply_sidebar_action(state, SidebarAction::SelectTab(SidebarTab::Building))
-        }
-        HotkeyCommand::DefenseTab => {
-            apply_sidebar_action(state, SidebarAction::SelectTab(SidebarTab::Defense))
-        }
-        HotkeyCommand::InfantryTab => {
-            apply_sidebar_action(state, SidebarAction::SelectTab(SidebarTab::Infantry))
-        }
-        HotkeyCommand::UnitTab => {
-            apply_sidebar_action(state, SidebarAction::SelectTab(SidebarTab::Vehicle))
-        }
+        // Set{Structure,Defense,Infantry,Unit}TabCommandClass::Execute
+        // 535D90/535E50/535F10/535FA0: the target strip must hold an entry, and
+        // the two structure tabs then place their completed building.
+        HotkeyCommand::StructureTab => select_sidebar_tab_command(state, 0),
+        HotkeyCommand::DefenseTab => select_sidebar_tab_command(state, 1),
+        HotkeyCommand::InfantryTab => select_sidebar_tab_command(state, 2),
+        HotkeyCommand::UnitTab => select_sidebar_tab_command(state, 3),
         // TypeSelect owns both edges in `handle_type_select_key_edge`.
         HotkeyCommand::TypeSelect => {}
         HotkeyCommand::ToggleRepair => apply_sidebar_action(state, SidebarAction::ToggleRepairMode),

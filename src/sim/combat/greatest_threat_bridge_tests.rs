@@ -240,17 +240,13 @@ fn bridge_layer_gate_reads_current_flags_in_each_scan() {
 
 #[test]
 fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection() {
-    use crate::rules::art_data::ArtRegistry;
-    use crate::rules::retail_ini_fixture::retail_rules_and_art;
     use crate::sim::combat::fire_error::FireError;
     use crate::sim::combat::fire_error_world::FireSubject;
     use crate::sim::movement::{FacingClass, locomotor::LocomotorState};
     use crate::sim::world::Simulation;
-    let Some((ini, art)) = retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/bridge_target_composed.json",
     ))

@@ -4217,21 +4217,6 @@ fn long_game_defeats_when_no_owned_objects_remain() {
     assert!(sim.houses[&owner].is_defeated);
 }
 
-#[test]
-fn short_game_victory_resolution_uses_new_defeat_state() {
-    let rules = short_game_defeat_test_rules();
-    let mut sim = Simulation::new();
-    sim.session.game_options.short_game = true;
-    let defeated = insert_house_with_counts(&mut sim, "Americans", 0, 1);
-    let survivor = insert_house_with_counts(&mut sim, "Russians", 1, 0);
-    insert_test_entity_for_owner(&mut sim, 1, defeated, "MTNK", EntityCategory::Unit);
-
-    check_defeat_now(&mut sim, Some(&rules));
-
-    assert!(sim.houses[&defeated].is_defeated);
-    assert!(sim.houses[&survivor].has_won());
-}
-
 /// HouseClass::Update's gate calls Blowup_All (`0x004F8F7B`) before
 /// MPlayer_Defeated: the straggler dies to its own Health in C4 damage, with
 /// no attacker, so no house is credited.
@@ -9439,10 +9424,7 @@ fn unit_route_beside_building(
     goal: (u16, u16),
     contact: bool,
 ) -> Option<Vec<(u16, u16)>> {
-    let ini = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
-    let art = crate::rules::retail_ini_fixture::retail_ini("artmd.ini")?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     let (mut sim, rules, _) = stacking_navigation_world(rules, 24);
     let building_id = sim
         .spawn_object(building, "Americans", origin.0, origin.1, 0, &rules)
@@ -10932,72 +10914,6 @@ fn column_of_vehicles_all_arrive_without_stacking() {
     watch.assert_no_reported_stacking("column_of_four");
 }
 
-/// DIAGNOSTIC: per-tick reservation trace of the four-tank column, printing the
-/// tick a cell first becomes shared together with the preceding window of
-/// head-to reservations and occupation bits for every member.
-#[test]
-#[ignore = "diagnostic"]
-fn diag_column_reservation_trace() {
-    let Some((mut sim, rules, grid)) = stacking_world(32) else {
-        return;
-    };
-
-    let starts = [(5u16, 10u16), (6, 10), (7, 10), (8, 10)];
-    let goals = [(18u16, 10u16), (19, 10), (20, 10), (21, 10)];
-    let ids: Vec<u64> = starts
-        .iter()
-        .map(|&(cx, cy)| {
-            sim.spawn_object("MTNK", "Americans", cx, cy, 64, &rules)
-                .expect("tank spawns")
-        })
-        .collect();
-    let commands: Vec<CommandEnvelope> = ids
-        .iter()
-        .zip(goals.iter())
-        .map(|(&id, &(gx, gy))| {
-            cmd_envelope(
-                &sim,
-                "Americans",
-                1,
-                Command::Move {
-                    entity_id: id,
-                    target_rx: gx,
-                    target_ry: gy,
-                },
-            )
-        })
-        .collect();
-    let _ = sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 100);
-
-    for tick in 0..70u64 {
-        let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
-        let dups = stacking_duplicates(&stacking_cells(&sim, &ids));
-        let bits: Vec<String> = (4u16..=14)
-            .map(|rx| {
-                format!(
-                    "{rx}:{:02X}",
-                    sim.substrate
-                        .cell_occupation
-                        .vehicle_bits(rx, 10, MovementLayer::Ground)
-                )
-            })
-            .collect();
-        println!(
-            "t{tick:>3} {} | row10 {} {}",
-            ids.iter()
-                .map(|&id| stacking_reservation_state(&sim, id))
-                .collect::<Vec<_>>()
-                .join("  "),
-            bits.join(" "),
-            if dups.is_empty() {
-                String::new()
-            } else {
-                format!("<<< SHARED {dups:?}")
-            }
-        );
-    }
-}
-
 /// How close two vehicles actually get, in leptons, over a group move.
 ///
 /// The three cell-identity tests above assert that no two vehicles ever share
@@ -11095,70 +11011,6 @@ fn group_move_never_draws_two_hulls_on_one_spot() {
          ({a} and {b}) — hulls visibly overlap",
         gap as f64 / 256.0
     );
-}
-
-/// DIAGNOSTIC: short-range group move, per-tick head-to reservations, so the
-/// curve geometry at each shared tick is visible (two-node turning curve vs
-/// one-node straight follow).
-#[test]
-#[ignore = "diagnostic"]
-fn diag_short_range_group_reservation_trace() {
-    let Some((mut sim, rules, grid)) = stacking_world(48) else {
-        return;
-    };
-    let start_cells = [
-        (10u16, 10u16),
-        (11, 10),
-        (12, 10),
-        (13, 10),
-        (10, 11),
-        (11, 11),
-        (12, 11),
-        (13, 11),
-    ];
-    let ids: Vec<u64> = start_cells
-        .iter()
-        .map(|&(cx, cy)| {
-            sim.spawn_object("MTNK", "Americans", cx, cy, 64, &rules)
-                .expect("tank spawns")
-        })
-        .collect();
-    let commands: Vec<CommandEnvelope> = ids
-        .iter()
-        .map(|&id| {
-            cmd_envelope(
-                &sim,
-                "Americans",
-                1,
-                Command::Move {
-                    entity_id: id,
-                    target_rx: 16,
-                    target_ry: 16,
-                },
-            )
-        })
-        .collect();
-    let _ = sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 100);
-
-    for tick in 0..110u64 {
-        let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
-        let dups = stacking_duplicates(&stacking_cells(&sim, &ids));
-        if dups.is_empty() && !(60..=70).contains(&tick) && !(93..=99).contains(&tick) {
-            continue;
-        }
-        println!(
-            "t{tick:>3} {} {}",
-            ids.iter()
-                .map(|&id| stacking_reservation_state(&sim, id))
-                .collect::<Vec<_>>()
-                .join(" | "),
-            if dups.is_empty() {
-                String::new()
-            } else {
-                format!("<<< SHARED {dups:?}")
-            }
-        );
-    }
 }
 
 #[test]

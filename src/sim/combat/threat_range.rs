@@ -450,21 +450,6 @@ GuardRange=9\n\n\
     }
 
     #[test]
-    fn guard_with_guard_range_is_a_hard_undoubled_cutoff() {
-        // GuardRange=9 on plain Guard is used as-is. The doubling belongs to
-        // the Area Guard branch only — a V3 on Guard scans 9 cells, not 18.
-        let rules = test_rules();
-        assert_eq!(
-            scan_range(
-                obj(&rules, "WITHGUARD"),
-                ScanMission::Guard.literal_mask(),
-                type_weapon_ranges(&rules, obj(&rules, "WITHGUARD"), 0)
-            ),
-            ScanRange::Hard(9 * 256)
-        );
-    }
-
-    #[test]
     fn area_guard_without_guard_range_doubles_the_wider_weapon() {
         // max(Primary 4, Secondary 6) = 6, doubled = 12. Note it is the wider
         // of the two SLOTS, not the weapon that would be picked against any

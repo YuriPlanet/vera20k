@@ -263,20 +263,28 @@ impl IniFile {
 
         for physical_line in text.split('\n') {
             // Straw::ReadLine removes every CR byte while consuming the line.
-            let without_carriage_returns: String = physical_line
-                .chars()
-                .filter(|character| *character != '\r')
-                .collect();
+            // Most lines end in the one CR of a CRLF pair and hold no other.
+            let line = physical_line.strip_suffix('\r').unwrap_or(physical_line);
+            let without_carriage_returns = if line.contains('\r') {
+                std::borrow::Cow::Owned(line.replace('\r', ""))
+            } else {
+                std::borrow::Cow::Borrowed(line)
+            };
             if without_carriage_returns.is_empty() {
                 continue;
             }
 
             // Straw::ReadLine stores at most 511 payload bytes and consumes the
             // remainder through LF. The discarded tail is never a second line.
-            let chunk_end = without_carriage_returns
-                .char_indices()
-                .nth(READ_LINE_PAYLOAD)
-                .map_or(without_carriage_returns.len(), |(index, _)| index);
+            // A character takes at least one byte, so shorter text is whole.
+            let chunk_end = if without_carriage_returns.len() <= READ_LINE_PAYLOAD {
+                without_carriage_returns.len()
+            } else {
+                without_carriage_returns
+                    .char_indices()
+                    .nth(READ_LINE_PAYLOAD)
+                    .map_or(without_carriage_returns.len(), |(index, _)| index)
+            };
             let buffered = &without_carriage_returns[..chunk_end];
             // NUL occupies a buffer byte, but subsequent C-string operations
             // make the rest of that physical line invisible to the loader.

@@ -9,9 +9,7 @@ use crate::sim::pathfinding::PathGrid;
 
 /// Retail rules on the flat arena, with a human Americans House.
 fn retail_arena() -> Option<(Simulation, RuleSet, PathGrid)> {
-    let (ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     let mut sim = Simulation::new();
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let owner = sim.intern("Americans");

@@ -66,11 +66,9 @@ fn placed(id: u64, xyz: [i32; 3], marked: bool, on_bridge: bool) -> GameEntity {
 
 #[test]
 fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let mut corpus: Corpus = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/in_range_cell_boundary.json",
     ))
@@ -199,10 +197,9 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
 /// pair with the real retail FV weapon reader.
 #[test]
 fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/fv_cell_attack/range_vectors.json",
     ))

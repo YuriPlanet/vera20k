@@ -219,7 +219,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Requires RA2_DIR env var pointing to retail game files
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn parse_real_game_fnt() {
         use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
         use std::path::Path;

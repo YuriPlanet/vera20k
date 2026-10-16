@@ -826,19 +826,12 @@ fn anytown_destination_dependencies() -> Option<(
     crate::rules::ruleset::RuleSet,
     crate::rules::overlay_types::OverlayTypeRegistry,
 )> {
-    use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
+    use crate::rules::retail_ini_fixture::{
+        retail_assets, retail_rules_owner, retail_scenario_assets,
+    };
 
-    let (root, mut assets) = retail_assets()?;
-    let mut process = retail_rules_owner(&assets);
-    assets
-        .register_neutral_archives()
-        .expect("register retail neutral archives");
-    crate::map::scenario_sources::list_skirmish_scenario_records_with_assets(
-        &root,
-        &mut assets,
-        None,
-    )
-    .expect("register retail scenario archives");
+    let mut process = retail_rules_owner(&retail_assets()?.1);
+    let (root, mut assets) = retail_scenario_assets()?;
     let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets)
         .expect("read retail mode roster");
     let mode = crate::skirmish_modes::mode_by_id(&modes, 1).expect("stock Battle mode");

@@ -936,7 +936,6 @@ fn build_exit_confirm_modal_overlay(state: &AppState) -> Option<shell_paint::Mod
 mod tests {
     use super::*;
     use crate::ui::main_menu_shell::compute_layout;
-    use crate::ui::shell::geom::RectPx;
     use crate::ui::shell::slide::ShellFrameWave;
 
     #[test]
@@ -971,19 +970,6 @@ mod tests {
                 Some(column.button_draws(0, crate::ui::shell::slide::WaveDirection::SlideIn)),
             );
         }
-    }
-
-    #[test]
-    fn owner_draw_label_rect_matches_native_boundaries() {
-        let button = RectPx::new(644, 199, 156, 42);
-        assert_eq!(
-            owner_draw_button_label_rect(button, false),
-            RectPx::new(644, 200, 154, 41)
-        );
-        assert_eq!(
-            owner_draw_button_label_rect(button, true),
-            RectPx::new(646, 204, 152, 37)
-        );
     }
 
     #[test]

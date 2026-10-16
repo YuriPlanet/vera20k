@@ -238,5 +238,10 @@ mod tests {
         assert_eq!(facing16_from_delta(0, 1), 0x7fff);
         assert_eq!(facing16_from_delta(-1, 0), 0xc001);
         assert_eq!(facing16_from_delta(0, 0), 0x3fff);
+        assert_eq!(facing8_from_delta(0, -1), 0);
+        assert_eq!(facing8_from_delta(1, 0), 63);
+        assert_eq!(facing8_from_delta(0, 1), 127);
+        assert_eq!(facing8_from_delta(-1, 0), 192);
+        assert_eq!(facing8_from_delta(0, 0), 63);
     }
 }

@@ -353,24 +353,33 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
     };
     // LeftUp4ABA16..4ABA59 uses its supplied clicked Cell and recomputes
     // proximity, rather than latching the previous draw's coordinate/result.
-    // GAPOWR2x2's executed SetActive4A8BF0 offset is(0,0). Nonzero centering
-    // offsets of larger foundations remain outside this ordinary2x2 chain.
-    let (rx, ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+    let cursor_cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
         state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    let in_build_area = state
+    let (origin, in_build_area) = state
         .match_state
         .sim_runtime
         .as_ref()
-        .is_some_and(|runtime| {
+        .and_then(|runtime| {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
-            rules.object(type_id).is_some_and(|object| {
-                crate::sim::production::is_within_build_area(sim, rules, &owner, object, rx, ry)
+            rules.object(type_id).map(|object| {
+                // LeftUp4ABA16 adds the same type-derived offset as preview,
+                // using this fresh clicked Cell rather than the last draw.
+                let origin = crate::rules::foundation::placement_origin_at_cursor(
+                    &object.foundation,
+                    cursor_cell,
+                );
+                let in_build_area = crate::sim::production::is_within_build_area(
+                    sim, rules, &owner, object, origin.0, origin.1,
+                );
+                (origin, in_build_area)
             })
-        });
+        })
+        .unwrap_or((cursor_cell, false));
+    let (rx, ry) = origin;
     // Visibility1181 is latched by UpdateFoundationCenter4A94DA. LeftUp
     // checks it after the freshly recomputed proximity1180(4ABAA4/4ABAB2).
     let visible = state

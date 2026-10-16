@@ -5,7 +5,6 @@
 //! execute the native Unit scheduler or intervening Bullet/world AI.
 
 use super::{CombatEmit, TargetKind, build_attacker_snapshot, world_fire};
-use crate::rules::{art_data::ArtRegistry, ruleset::RuleSet};
 use crate::sim::movement::FacingClass;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::projectile::ProjectileCoord;
@@ -24,11 +23,9 @@ fn coord(value: &Value) -> ProjectileCoord {
 
 #[test]
 fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/projectile_oracle/ifv_fire_coord.json",
     ))

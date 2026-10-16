@@ -2617,9 +2617,7 @@ fn retail_unit_on_move(
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 
-    let (ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.intern("Americans");

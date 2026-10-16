@@ -68,8 +68,6 @@ enum LoadOverlayTerminalPath {
     UnrevealedSurvivor,
     CommonQueued,
     SlopeSurvivor,
-    #[cfg(any(test, feature = "test-support"))]
-    WallQueued,
 }
 
 #[derive(Debug, Hash, serde::Serialize, serde::Deserialize)]
@@ -292,18 +290,17 @@ impl LoadObjectLifecycle {
         handle: LoadOverlayHandle,
         queue: &mut DeferredDeleteQueue,
     ) -> Result<(), LoadOverlayLifecycleError> {
-        self.finish_queued(handle, LoadOverlayTerminalPath::CommonQueued, false, queue)
+        self.finish_queued(handle, false, queue)
     }
 
     /// Wall rejection performs its ordinary UnInit broadcast and a full-Limbo
     /// broadcast before queueing; the destructor supplies the third broadcast.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn finish_wall_reject(
         &mut self,
         handle: LoadOverlayHandle,
         queue: &mut DeferredDeleteQueue,
     ) -> Result<(), LoadOverlayLifecycleError> {
-        self.finish_queued(handle, LoadOverlayTerminalPath::WallQueued, true, queue)
+        self.finish_queued(handle, true, queue)
     }
 
     /// A derived steep-slope failure returns through base Unlimbo. It restores
@@ -400,7 +397,6 @@ impl LoadObjectLifecycle {
     fn finish_queued(
         &mut self,
         handle: LoadOverlayHandle,
-        terminal_path: LoadOverlayTerminalPath,
         full_limbo: bool,
         queue: &mut DeferredDeleteQueue,
     ) -> Result<(), LoadOverlayLifecycleError> {
@@ -413,7 +409,10 @@ impl LoadObjectLifecycle {
             object.alive = false;
             object.on_map = false;
             object.limbo = true;
-            object.terminal_path = terminal_path;
+            // Both UnInit paths share one queued lifetime. Wall refusal's
+            // extra broadcast is already retained by its owned fields/events;
+            // it does not require another serialized terminal discriminator.
+            object.terminal_path = LoadOverlayTerminalPath::CommonQueued;
         }
         self.record(LoadObjectLifecycleEvent::UninitBroadcast(handle));
         if full_limbo {

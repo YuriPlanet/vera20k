@@ -201,6 +201,22 @@ pub fn foundation_dimensions(value: &str) -> (u16, u16) {
     (def.width, def.height)
 }
 
+/// Manual cursor Cell -> foundation origin, in packed 16-bit map coordinates.
+/// SetActive4A8C99..4A8CDA obtains list bounds from4A94F0, decrements and
+/// negates each signed short, then divides toward zero. The fixed table's
+/// bounds match these dimensions; the empty list has native minimum1.
+/// Thus4wide means offset-1, not-2. LeftUp4ABA16 and UpdateCenter4A91B0
+/// both add that offset with word wrapping. Simulation PLACE already carries
+/// an origin and must not apply this cursor conversion again.
+/// Native controls: tools/spatial_oracle/placement_render.json centering.
+pub fn placement_origin_at_cursor(value: &str, cursor: (u16, u16)) -> (u16, u16) {
+    let (width, height) = foundation_dimensions(value);
+    (
+        cursor.0.wrapping_sub(width.saturating_sub(1) / 2),
+        cursor.1.wrapping_sub(height.saturating_sub(1) / 2),
+    )
+}
+
 /// Exact sentinel-list contents for one native foundation, without the final
 /// `(0x7FFF, 0x7FFF)` terminator.
 ///
@@ -233,6 +249,44 @@ pub fn foundation_cell_offsets(value: &str) -> Vec<(i16, i16)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_cursor_origins_match_original_foundation_bounds_and_word_wrap() {
+        let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/placement_render.json",
+        ))
+        .unwrap();
+        let centering = &packet["centering"];
+        let controls = centering["controls"].as_array().unwrap();
+        let edges = centering["edge_controls"].as_array().unwrap();
+        assert_eq!(controls.len(), FOUNDATION_TABLE.len());
+        assert_eq!(edges.len(), 5);
+        for row in controls.iter().chain(edges) {
+            let selector = row["input"]["selector"].as_u64().unwrap();
+            let named = controls
+                .iter()
+                .find(|control| control["input"]["selector"].as_u64() == Some(selector))
+                .unwrap();
+            let name = named["input"]["name"].as_str().unwrap();
+            assert_eq!(u64::from(foundation_id(name)), selector);
+            let packed = |value: &serde_json::Value| {
+                (
+                    value[0].as_i64().unwrap() as u16,
+                    value[1].as_i64().unwrap() as u16,
+                )
+            };
+            assert_eq!(
+                placement_origin_at_cursor(name, packed(&row["input"]["center"])),
+                packed(&row["output"]["marker_origin"]),
+                "native selector {selector}, cursor {}",
+                row["input"]["center"],
+            );
+            if let Some(bounds) = row["output"].get("bounds") {
+                let def = foundation_def(name);
+                assert_eq!((def.width.max(1), def.height.max(1)), packed(bounds));
+            }
+        }
+    }
 
     #[test]
     fn fixed_table_is_case_insensitive() {

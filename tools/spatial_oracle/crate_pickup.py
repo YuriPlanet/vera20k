@@ -18,9 +18,9 @@ OVERLAY, OVERLAYS, SCENARIO = SCRATCH + 0x18000, SCRATCH + 0x18500, SCRATCH + 0x
 STOCK_WEIGHTS = [20, 20, 10, 0, 0, 0, 0, 0, 10, 10, 10, 10, 0, 0, 20, 0, 0, 0, 0]
 
 
-def execute(case):
+def execute(case, *, native_fixture=None):
     state = dict(case, actors=case.get('actors', [{}]))
-    u, sp, pointers, _ = fixture(state)
+    u, sp, pointers, _ = fixture(state, uc=None if native_fixture is None else native_fixture.u)
     actor = pointers[0]
     u.mem_write(actor + 0x14, dwords(5))
     u.mem_write(actor + 0x158, struct.pack('<d', 1.0))
@@ -66,6 +66,31 @@ def execute(case):
     run_checked(u, 0x65C6D0, RET_MAGIC, count=100000, required_addresses=[0x65C6D0])
     rng_before = bytes(u.mem_read(SCENARIO + 0x218, 0x3F4)).hex()
     events, selected, removal_returns, prepared = [], [], [], []
+    joined = native_fixture is not None
+    tag_calls, credit_calls, random_calls = [], [], []
+    if joined:
+        from types import SimpleNamespace
+        from tools.input_oracle.campaign_start import CampaignReader
+        # Explicit empty-storage, neutral-income House priors. No full House
+        # construction, FillSilos or storage conversion is represented.
+        for index, balance in enumerate(case.get('balances', [100, 200])):
+            house = HOUSES + index * 0x400
+            u.mem_write(house, dwords(0x7EA8A0))
+            u.mem_write(house + 0x24, dwords(0x7EA834))
+            u.mem_write(house + 0x34, dwords(house + 0x200))
+            u.mem_write(house + 0x200 + 0x148, struct.pack('<f', 1.0))
+            u.mem_write(house + 0x2FC, bytes(16))
+            u.mem_write(house + 0x30C, dwords(balance))
+        u.mem_write(0xA83D4C, dwords(HOUSES))
+        u.mem_write(OVERLAY + 0x2AB, bytes([case.get('crate_trigger', True)]))
+        u.mem_write(actor + 0x34, dwords(0x123456 if case.get('tag', True) else 0))
+        u.mem_write(actor + 0x90, bytes([case.get('alive', True)]))
+        u.mem_write(0x89EC28, struct.pack('<d', case.get('money_magnitude', 500.0)))
+        # Original startup establishes the global EmptyCell used by Event49.
+        native_fixture.call(0x47B2F0, [])
+        for stream in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            native_fixture.call(0x65C6D0, [case.get('seed', 31)], ecx=stream)
+        rng_full_before = CampaignReader.rng_state(SimpleNamespace(u=u, scenario=SCENARIO))
 
     def read32(p):
         return struct.unpack('<I', u.mem_read(p, 4))[0]
@@ -83,6 +108,35 @@ def execute(case):
             events.append('dirty_screen')
             u.reg_write(UC_X86_REG_EIP, read32(current_sp))
             u.reg_write(UC_X86_REG_ESP, current_sp + 24)
+        elif joined and address == 0x4068E0:
+            # Diagnostic printf only, cdecl caller cleanup.
+            u.reg_write(UC_X86_REG_EIP, read32(current_sp))
+            u.reg_write(UC_X86_REG_ESP, current_sp + 4)
+        elif joined and address == 0x6E53A0:
+            args = list(struct.unpack('<5I', u.mem_read(current_sp + 4, 20)))
+            tag_calls.append(dict(tag=u.reg_read(UC_X86_REG_ECX), kind=args[0],
+                actor=args[1], cell=list(struct.unpack('<2h', dwords(args[2]))),
+                force=args[3], source=args[4], mutation=case.get('mutation', 'none')))
+            mutation = case.get('mutation', 'none')
+            if mutation == 'kill':
+                u.mem_write(actor + 0x90, b'\0')
+            elif mutation == 'owner1':
+                u.mem_write(actor + 0x21C, dwords(HOUSES + 0x400))
+            elif mutation == 'selection10':
+                u.mem_write(CELL + 0x11E, b'\x0a')
+            elif mutation == 'selection0':
+                u.mem_write(CELL + 0x11E, b'\0')
+            u.reg_write(UC_X86_REG_EAX, 1)
+            u.reg_write(UC_X86_REG_EIP, read32(current_sp))
+            u.reg_write(UC_X86_REG_ESP, current_sp + 24)
+        elif joined and address == 0x4F9950:
+            credit_calls.append(dict(house=(u.reg_read(UC_X86_REG_ECX) - HOUSES) // 0x400,
+                amount=struct.unpack('<i', u.mem_read(current_sp + 4, 4))[0]))
+        if joined and address in (0x65C780, 0x65C7E0):
+            random_calls.append(dict(address=f'{address:08X}',
+                receiver=f'{u.reg_read(UC_X86_REG_ECX):08X}',
+                args=list(struct.unpack('<2i', u.mem_read(current_sp + 4, 8)))
+                    if address == 0x65C7E0 else []))
         elif address == 0x481B99 or (address == 0x481D86 and case.get('mode', 3) == 0):
             prepared.append([u.reg_read(UC_X86_REG_EBX), read32(current_sp + 0x14)])
         if address == 0x481D86:
@@ -100,7 +154,7 @@ def execute(case):
     end = run_checked(u, 0x481A00, stops, count=50000, required_addresses=[0x481A00])
     if end == RET_MAGIC:
         assert u.reg_read(UC_X86_REG_ESP) == sp + 8
-    return dict(input=case, selected=selected, prepared=prepared,
+    result = dict(input=case, selected=selected, prepared=prepared,
                 dispatched=u.reg_read(UC_X86_REG_EBX) if end == 0x481DE0 else None,
                 returned=(u.reg_read(UC_X86_REG_EAX) & 255) if end == RET_MAGIC else None,
                 events=events, removal_returns=removal_returns,
@@ -110,6 +164,16 @@ def execute(case):
                 second_slot=list(struct.unpack('<iiiHH', u.mem_read(MAP + 0x168, 16))),
                 factors=[f'{struct.unpack("<Q", u.mem_read(p + 0x580, 8))[0]:016x}' for p in pointers if p],
                 rng_before=rng_before, rng_after=bytes(u.mem_read(SCENARIO + 0x218, 0x3F4)).hex())
+    if joined:
+        result.update(tag_calls=tag_calls, credit_calls=credit_calls, random_calls=random_calls,
+            rng_full_before=rng_full_before,
+            rng_full_after=CampaignReader.rng_state(SimpleNamespace(u=u, scenario=SCENARIO)),
+            alive=bool(u.mem_read(actor + 0x90, 1)[0]),
+            owner=(read32(actor + 0x21C) - HOUSES) // 0x400,
+            dirty34be=u.mem_read(SCENARIO + 0x34BE, 1)[0],
+            balances=[struct.unpack('<i', u.mem_read(HOUSES + i*0x400 + 0x30C, 4))[0]
+                for i in range(2)])
+    return result
 
 
 def generate():

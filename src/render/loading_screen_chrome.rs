@@ -993,52 +993,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "diagnostic asset dump; run explicitly when inspecting PROGBARM palette indices"]
-    fn zz_dump_progbarm_frame0_indices() {
-        let config = match crate::util::config::GameConfig::load() {
-            Ok(config) => config,
-            Err(_) => return,
-        };
-        if !config.paths.ra2_dir.exists() {
-            return;
-        }
-        let assets = crate::assets::asset_manager::AssetManager::new(
-            &config.paths.ra2_dir,
-            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
-        )
-        .expect("install loads");
-        let bytes = assets.get_ref("PROGBARM.SHP").expect("progbarm");
-        let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).expect("parse shp");
-        let f = &shp.frames[0];
-        let mut hist = [0u32; 256];
-        for &p in &f.pixels {
-            hist[p as usize] += 1;
-        }
-        eprintln!(
-            "PROGBARM frame0 fw={} fh={} fx={} fy={} npix={}",
-            f.frame_width,
-            f.frame_height,
-            f.frame_x,
-            f.frame_y,
-            f.pixels.len()
-        );
-        for (i, &count) in hist.iter().enumerate() {
-            if count > 0 {
-                eprintln!("  idx {i:3} count {count}");
-            }
-        }
-        // Dump MPLS.PAL RGB for the house-color band 16..31 (raw 6-bit *4 not applied here).
-        if let Some(pal) = assets.get_ref("MPLS.PAL") {
-            eprintln!("MPLS.PAL raw bytes 16..32:");
-            for i in 16..32 {
-                let o = i * 3;
-                eprintln!("  pal {i:2} = {} {} {}", pal[o], pal[o + 1], pal[o + 2]);
-            }
-        }
-        panic!("diagnostic dump");
-    }
-
-    #[test]
     fn side_icon_pcx_uses_verified_insignia_mapping() {
         let cases = [
             (LoadingArtVariant::Americans, "usai.pcx"),

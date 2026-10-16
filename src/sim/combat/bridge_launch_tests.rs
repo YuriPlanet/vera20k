@@ -52,14 +52,9 @@ fn cell_launch_aim_matches_original_fireat_and_bullet_fire() {
 
 #[test]
 fn retail_grizzly_forcefire_freezes_the_native_cell_aim() {
-    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
-        return;
-    };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     assert_eq!(rules.object("MTNK").unwrap().primary(), Some("105mm"));
     assert_eq!(
         rules.weapon("105mm").unwrap().projectile.as_deref(),

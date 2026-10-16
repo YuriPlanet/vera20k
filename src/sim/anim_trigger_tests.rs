@@ -33,7 +33,7 @@ fn retail_cold_and_post_reset_animation_ordinals_match_original_registries() {
         return;
     };
     let rows = corpus();
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&retail, &art).unwrap();
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules().expect("retail rules");
     let cold =
         process_native_rules_cold_start(NativeRulesRegistryState::default(), &retail, &art, None)
             .unwrap();

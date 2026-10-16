@@ -154,7 +154,10 @@ fn clear_ground(size: u16) -> crate::map::resolved_terrain::ResolvedTerrainGrid 
 /// fixture already installed are kept, including a zone grid built before a
 /// later terrain change; rebuild zones after editing cells.
 pub fn supply_native_map(sim: &mut Simulation) {
-    if sim.resolved_terrain.is_none() {
+    use crate::sim::pathfinding::zone_map::ZoneGrid;
+
+    let supplies_ground = sim.resolved_terrain.is_none();
+    if supplies_ground {
         // A newly supplied map also owns its saved real CellClass values.
         // Keep already installed terrain and deliberate native priors intact.
         sim.install_resolved_terrain_for_new_map(clear_ground(64));
@@ -164,16 +167,24 @@ pub fn supply_native_map(sim: &mut Simulation) {
     let grid = PathGrid::from_resolved_terrain(terrain);
     let size = (i32::from(width), i32::from(height));
     if sim.zone_grid.is_none() {
-        sim.zone_grid = Some(
-            crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_bridge_geometry(
+        let build = || {
+            ZoneGrid::build_with_native_bridge_geometry(
                 &grid,
                 terrain,
                 &[],
                 width,
                 height,
                 Some(size),
-            ),
-        );
+            )
+        };
+        // Every supplied clear ground has the same zones; a fixture builds
+        // them once per test process and installs a copy.
+        static CLEAR_GROUND_ZONES: std::sync::OnceLock<ZoneGrid> = std::sync::OnceLock::new();
+        sim.zone_grid = Some(if supplies_ground {
+            CLEAR_GROUND_ZONES.get_or_init(build).clone()
+        } else {
+            build()
+        });
     }
     if sim.playfield_bounds.is_none() {
         let span = size.0.max(size.1);

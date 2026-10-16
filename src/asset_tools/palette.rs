@@ -505,7 +505,7 @@ fn policy_for(name: &str) -> AlphaPolicy {
 
 /// Reduce `ra2.mix -> sidec02.mix` to `sidec02`, so nested archives match the
 /// family map instead of falling straight through to the fallback chain.
-fn archive_basename(source_lower: &str) -> &str {
+pub(super) fn archive_basename(source_lower: &str) -> &str {
     let last = source_lower
         .rsplit("->")
         .next()

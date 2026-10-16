@@ -856,11 +856,10 @@ mod tests {
 
     #[test]
     fn retail_empty_fv_burst_flh_matches_original_flat_drive() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
             return;
         };
-        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-        rules.install_art_data(ArtRegistry::from_ini(&art));
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/projectile_oracle/ifv_fire_coord.json",
         ))
@@ -905,11 +904,10 @@ mod tests {
     /// `0x006F3C82`). The original read BSUB's offset with its own ART reader.
     #[test]
     fn retail_flh_base_matches_original_get_flh() {
-        let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
             return;
         };
-        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-        rules.install_art_data(ArtRegistry::from_ini(&art));
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/projectile_oracle/ifv_fire_coord.json",
         ))

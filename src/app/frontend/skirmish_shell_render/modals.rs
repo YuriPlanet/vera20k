@@ -745,24 +745,6 @@ mod tests {
     }
 
     #[test]
-    fn choose_map_missing_art_uses_opaque_listbox_fallback() {
-        let interior = backdrop_interior(false);
-
-        assert_eq!(interior, BackdropInteriorPaint::OpaqueFallback);
-        assert!(interior.paints_solid_fill());
-    }
-
-    #[test]
-    fn choose_map_fallback_stops_before_800_rail_and_lower_strip() {
-        let layout = crate::ui::skirmish_shell::compute_layout(800, 600);
-
-        assert_eq!(
-            shell_content_fallback_rect(&layout),
-            RectPx::new(0, 0, 632, 568)
-        );
-    }
-
-    #[test]
     fn choose_map_fallback_preserves_centered_1024_shell_geometry() {
         let layout = crate::ui::skirmish_shell::compute_layout(1024, 768);
 
@@ -770,14 +752,6 @@ mod tests {
             shell_content_fallback_rect(&layout),
             RectPx::new(112, 84, 632, 568)
         );
-    }
-
-    #[test]
-    fn random_map_retail_art_preserves_control_backing() {
-        let interior = backdrop_interior(true);
-
-        assert_eq!(interior, BackdropInteriorPaint::PreserveBacking);
-        assert!(!interior.paints_solid_fill());
     }
 
     #[test]

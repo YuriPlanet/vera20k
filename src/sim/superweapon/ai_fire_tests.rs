@@ -588,11 +588,9 @@ fn the_force_shield_cell_follows_the_alert() {
 /// IsTemple= or IsPlug=, so those values never decide.
 #[test]
 fn retail_ai_fire_rules() {
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     let values = &rules.general.ai_ion_cannon_values;
     let hundred = vec![100, 100, 100];
     let one = vec![1, 1, 1];
@@ -624,9 +622,7 @@ fn retail_ai_fire_rules() {
 /// SHP) and a skirmish on a flat 64x64 map: Americans, a Hard computer house
 /// whose enemy is Russians, a human house.
 fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
-    let (rules_ini, art_ini) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    let mut rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     for name in ["PSIWARN", "NUKETO"] {
         rules.bind_anim_frame_count_for_test(name, 20);
     }

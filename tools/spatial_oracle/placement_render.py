@@ -322,6 +322,143 @@ def foundation_scene(m, typ, foundation, table):
         draws=draws, output=snapshot(u, 65535, 65535))
 
 
+def centering(m, table):
+    """Original fixed-list bounds/offset and selected refinery mark lifetime.
+
+    Runs after the retained raster scene so its allocations/state cannot alter
+    that comparison. Only original prerequisite field blocks are enrolled for
+    GAREFN: the complete visual reader needs additional Bib resource transport.
+    """
+    u = m.u
+    typ = m.alloc(0x2000)
+    m.invoke(0x45DD90, typ, (m.cstring('GAREFN'),))
+    def type_state():
+        return dict(foundation=m.read32(typ + 0xEF0), adjacent=m.read32(typ + 0xEB4),
+                    image=m.string(typ + 0x1F8))
+    building = dict(name='GAREFN', constructor=type_state(), layers=[])
+    for name in ('RULESMD.INI', 'MPBattleMD.ini', 'GoldSt.mmx'):
+        sections, _ = lexical(m.assets[name.upper()], {'GAREFN'})
+        m.rules_cache(sections)
+        u.mem_write(SP, dwords(0))
+        u.mem_write(SP + 0x1B4, dwords(RULES))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBX, typ)
+        run_checked(u, 0x5F92F9, 0x5F9340, required_addresses=(0x528A10,))
+        for reg, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, typ),
+                           (UC_X86_REG_EDI, RULES), (UC_X86_REG_ECX, RULES),
+                           (UC_X86_REG_ESI, typ + 0x24)):
+            u.reg_write(reg, value)
+        run_checked(u, 0x45FFAF, 0x45FFC7, required_addresses=(0x5276D0,))
+        building['layers'].append(dict(file=name, physical_keys=sections.get('GAREFN'),
+                                       retained=type_state()))
+    art, _ = lexical(m.assets['ARTMD.INI'], {'GAREFN'})
+    m.make_ini(art)
+    for reg, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, typ),
+                       (UC_X86_REG_EBX, typ + 0x24), (UC_X86_REG_EDI, typ + 0x1F8),
+                       (UC_X86_REG_ESI, INI)):
+        u.reg_write(reg, value)
+    run_checked(u, 0x461225, 0x46125D, required_addresses=(0x474DA0, 0x528A10))
+    building['art_fields'] = {key: art['GAREFN'][key] for key in
+        ('Foundation', 'NewTheater', 'BibShape', 'Buildup', 'DemandLoadBuildup')}
+    selector = m.read32(typ + 0xEF0)
+    building['foundation_selector'] = selector
+
+    def bind(index):
+        # Supplied selector prior; actual native table binding/getter executes.
+        u.mem_write(typ + 0xEF0, dwords(index))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBP, typ)
+        run_checked(u, 0x46152C, 0x461547)
+        return m.invoke(0x45EC20, typ, (1,))
+
+    foundation = bind(selector)
+    offsets = []
+    for index in range(120):
+        xy = list(struct.unpack('<hh', u.mem_read(foundation + index * 4, 4)))
+        if xy == [32767, 32767]:
+            break
+        offsets.append(xy)
+    else:
+        raise AssertionError('unterminated original occupied foundation')
+    building['offsets'] = offsets
+    building['dimensions'] = [m.invoke(0x45EC90, typ), m.invoke(0x45ECA0, typ, (0,))]
+    shell = m.alloc(0x1000)
+    u.mem_write(shell, dwords(0x7E3EBC))
+    u.mem_write(shell + 0x520, dwords(typ))
+    building['object_footprint_matches_type'] = m.invoke(0x5F5B90, shell, (1,)) == foundation
+    assert building['object_footprint_matches_type']
+    # Retire the old GAPOWR scene before supplying a fresh sparse marker map.
+    m.invoke(0x4A8BF0, 0x87F7E8, (0,))
+    u.mem_write(table, bytes(512 * 512 * 4))
+    cells = {}
+    for x in range(104, 119):
+        for y in range(27, 42):
+            pointer = m.alloc(0x148)
+            cells[x, y] = pointer
+            set_cell(m, table, pointer, dict(coords=[x, y], level=0, slope=0,
+                                            flags=0, revealed=True))
+    calls = []
+    def observe(_u, pc, _n, _d):
+        if pc == 0x4A95A0:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            calls.append(dict(origin=list(struct.unpack('<hh', u.mem_read(m.read32(sp + 4), 4))),
+                              mark=bool(m.read32(sp + 8))))
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    def state():
+        return dict(center=list(struct.unpack('<hh', u.mem_read(0x88095C, 4))),
+            offset=list(struct.unpack('<hh', u.mem_read(0x880960, 4))),
+            marked=[list(xy) for xy, pointer in cells.items() if m.read32(pointer + 0x12C) & 2])
+    controls = []
+    bounds = m.alloc(4)
+    for ordinal in range(22):
+        name = m.string(m.read32(0x81B9D8 + ordinal * 8))
+        index = m.read32(0x81B9DC + ordinal * 8)
+        current = bind(index)
+        m.invoke(0x4A94F0, 0x87F7E8, (bounds, current))
+        m.invoke(0x4A8BF0, 0x87F7E8, (0,))
+        u.mem_write(0x88095C, struct.pack('<hh', 110, 33))
+        calls.clear()
+        m.invoke(0x4A8BF0, 0x87F7E8, (current,))
+        assert len(calls) == 1 and calls[0]['mark']
+        controls.append(dict(input=dict(selector=index, name=name, center=[110, 33]),
+            output=dict(bounds=list(struct.unpack('<hh', u.mem_read(bounds, 4))),
+                        offset=state()['offset'], marker_origin=calls[0]['origin'])))
+    m.invoke(0x4A8BF0, 0x87F7E8, (0,))
+    foundation = bind(selector)
+    edge_controls = []
+    for center in ([0, 0], [1, 1], [32767, 32767], [32768, 32768], [65535, 65535]):
+        u.mem_write(0x88095C, struct.pack('<HH', *center))
+        calls.clear()
+        m.invoke(0x4A8BF0, 0x87F7E8, (foundation,))
+        assert len(calls) == 1 and calls[0]['mark']
+        edge_controls.append(dict(input=dict(selector=selector, center=center),
+                                  output=dict(marker_origin=calls[0]['origin'])))
+        m.invoke(0x4A8BF0, 0x87F7E8, (0,))
+    u.mem_write(0x88095C, struct.pack('<hh', 110, 33))
+    calls.clear()
+    m.invoke(0x4A8BF0, 0x87F7E8, (foundation,))
+    steps = [dict(action='activate', marker_calls=list(calls), output=state())]
+    coord, old = m.alloc(4), m.alloc(4)
+    u.mem_write(coord, struct.pack('<hh', 111, 34))
+    calls.clear()
+    u.mem_write(SP, dwords(0, old, coord))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    u.reg_write(UC_X86_REG_ECX, 0x87F7E8)
+    # Full supplied-coordinate center/mark prefix, stopping before the
+    # independent proximity/whole-foundation visibility publications.
+    run_checked(u, 0x4A91B0, 0x4A943A, required_addresses=(0x6DA360, 0x4A95A0))
+    steps.append(dict(action='move', marker_calls=list(calls), output=state()))
+    calls.clear()
+    m.invoke(0x4A8BF0, 0x87F7E8, (0,))
+    steps.append(dict(action='clear', marker_calls=list(calls), output=state()))
+    u.hook_del(hook)
+    assert len(steps[0]['output']['marked']) == len(steps[1]['output']['marked']) == 12
+    assert not steps[2]['output']['marked']
+    return dict(building=building, controls=controls, edge_controls=edge_controls,
+        lifecycle=dict(input=dict(initial_center=[110, 33], moved_center=[111, 34]), steps=steps),
+        boundary='Original GAREFN constructor and layered Image/Adjacent plus fixed ART Foundation blocks, native occupied-table binding/getters and ObjectGetFootprint on a supplied Building shell. All22 selector priors are supplied numeric controls. Sparse level0/revealed Cell shells and cursor centers are supplied. Move stops after center/mark publication at4A943A, before proximity/visibility. No whole ReadINI/Bib resource, paid GAREFN/ManualPlace, inverse, event or map bootstrap claim.')
+
+
 def generate():
     m, typ, foundation, table, inputs = prepare()
     cases = [dict(name='active_slope1'), dict(name='active_flat', slope=0),
@@ -333,19 +470,23 @@ def generate():
     cases += [dict(name=f'level_{level}', level=level, cell_point=point)
               for level, point in ((0, [66, 81]), (6, [66, 171]), (-128, [66, -1839]))]
     rows = [execute(m, typ, table, case) for case in cases]
+    scene = foundation_scene(m, typ, foundation, table)
     return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
         surface=dict(width=WIDTH, height=HEIGHT, bytes_per_pixel=2), rows=rows,
-        scenes=[foundation_scene(m, typ, foundation, table)])
+        scenes=[scene], centering=centering(m, table))
 
 
 def metadata():
-    return provenance(scope='Original ordinary GAPOWR Cell placement marker and full bounded foundation caller on physical PLACE.SHP; original53-row plain Convert and opaque no-Z/A raster. No native whole scenario or ready-factory lifecycle execution.',
+    return provenance(scope='Original ordinary GAPOWR Cell placement marker/full bounded foundation caller on physical PLACE.SHP, plus GAREFN prerequisite readers and native fixed-foundation centering/mark lifetime; original53-row plain Convert and opaque no-Z/A raster. No native whole scenario or ready-factory lifecycle execution.',
         assumptions=[
             'Shared physical archive/lexical/PaletteReader/surface/raster owners. Original TEMPERAT load52BC49..52BCBB precedes original PALETTE Convert constructor/publication52BE61..52BFCE, matching native Init_Game order. No palette/shape pixels are reconstructed by Python.',
             'Actual BuildingType45DD90 constructor, full45FE50 RULESMD/MPBattleMD/GoldSt reads, ART Foundation, land rules674000, static foundation45B1C0, getter45EC20 and full ToTile postpass465CC0 execute. LANGRULE is absent in the selected installation. Physical Rmpfx03.urb and its selected W/E neighbor files execute the original full lazy TMP loaders/getters. Full47D2B0/47CA80 executes twice per selected cell with actual native theater projection and Rules CliffBack reads; sparse selected type/zone storage and neighbor publications are supplied. Whole registry/map loading remains excluded.',
             'Sparse authored GoldSt coordinates and supplied live levels/slopes/empty objects/visibility/proximity are component priors. Original578080 ground and586360 visibility execute; all-visible Dummy represents supplied revealed surrounding cells. Signed-128, pending and surface controls are boundaries, not natural stock producers.',
             'Original47EC90/47C620/4AED70/490E50/437A10/4960A0 executes without behavior replacements.20600 uses plain palette translation and ignores both A and Z; output runs include retained Z. Foundation scene executes6D5030, actual matrix/projection/mouse queries and mark producer4A8BF0; its X-outer rectangular order is independent of the row-major physical occupied list.',
+            'Additive centering controls execute original GAREFN45DD90, layered Image5F92F9..5F9340 and Adjacent45FFAF..45FFC7, fixed ART Foundation461225..46125D, occupied-table binding46152C..461547, getters and ObjectGetFootprint5F5B90 on a supplied Building shell. Whole GAREFN45FE50/visual Bib loading is excluded; complete reader/visual-loader instructions retain the selected foundation/occupied-pointer/Adjacent fields after these blocks. All22 fixed selector values and sparse revealed level0 Cell shells are supplied numeric priors. Original4A94F0/4A8BF0/4A95A0 capture bounds, signed division and marker origins; move4A91B0 stops at4A943A after mark/center publication, before proximity/visibility. No event or ManualPlace execution is added.',
         ], substitutions=['Existing allocation/archive/TLS services; CRT atexit registration is a no-op service. Sparse map storage and initialized surface priors supplied. No placement/admission/projection/raster body is replaced.'],
         entry_points=dict(cell=0x47EC90, admission=0x47C620, foundation=0x6D5030,
             marker_startup=0x4A885B, convert=0x48E740, shape=0x4AED70,
-            rowwalker=0x437A10, leaf=0x4960A0, ground=0x578080, visibility=0x586360))
+            rowwalker=0x437A10, leaf=0x4960A0, ground=0x578080, visibility=0x586360,
+            foundation_bounds=0x4A94F0, set_active=0x4A8BF0, mark=0x4A95A0,
+            update_center_prefix=0x4A91B0, update_center_stop=0x4A943A))

@@ -296,11 +296,9 @@ fn original_approach_candidate_geometry_and_order() {
 fn retail_balloons_take_their_target_with_vertical_weapons() {
     use crate::sim::combat::combat_weapon::{primary_for_tier, secondary_for_tier};
     use crate::sim::combat::veterancy::RANK_ELITE_U16;
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     let zep = rules.object("ZEP").unwrap();
     let disk = rules.object("DISK").unwrap();
     assert!(zep.balloon_hover && disk.balloon_hover);

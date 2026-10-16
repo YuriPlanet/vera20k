@@ -66,11 +66,9 @@ fn production_line_trail_art_reader_matches_native_retention_and_defined_rgb_sca
 
 #[test]
 fn physical_dragon_line_trail_art_matches_original_object_reader() {
-    use crate::rules::retail_ini_fixture::retail_ini;
-    let (Some(rules), Some(art)) = (retail_ini("rulesmd.ini"), retail_ini("artmd.ini")) else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules, &art).unwrap();
     let actual = rules.projectile("AAHeatSeeker2").unwrap();
     let fixture = native();
     let expected = &fixture["type_layers"][0]["line_trail"];

@@ -45,9 +45,7 @@ fn factory_constructor_rules() -> RuleSet {
 /// exit_object_archive_and_busy_redirect. Whole multi-factory native execution
 /// is separate from these control/order and restoration regressions.
 fn busy_factory_exit_world() -> Option<(Simulation, RuleSet, InternedId)> {
-    let (ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     let mut sim = Simulation::with_seed(0x4444_B300);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -2757,11 +2755,9 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
     use crate::sim::components::NavTargetRef;
     use crate::sim::mission::MissionType;
 
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     assert_eq!(exit_arm(rules.object("GAPILE").unwrap()), ExitArm::Infantry);
     let low_iq = rules.general.iq_guard_area - 1;
     let skirmish_iq = rules.general.max_iq_levels;

@@ -1,4 +1,945 @@
 {
+  "centering": {
+    "boundary": "Original GAREFN constructor and layered Image/Adjacent plus fixed ART Foundation blocks, native occupied-table binding/getters and ObjectGetFootprint on a supplied Building shell. All22 selector priors are supplied numeric controls. Sparse level0/revealed Cell shells and cursor centers are supplied. Move stops after center/mark publication at4A943A, before proximity/visibility. No whole ReadINI/Bib resource, paid GAREFN/ManualPlace, inverse, event or map bootstrap claim.",
+    "building": {
+      "art_fields": {
+        "BibShape": "GAREFNBB",
+        "Buildup": "GAREFNMK",
+        "DemandLoadBuildup": "true",
+        "Foundation": "4x3",
+        "NewTheater": "yes"
+      },
+      "constructor": {
+        "adjacent": 3,
+        "foundation": 0,
+        "image": "GAREFN"
+      },
+      "dimensions": [
+        4,
+        3
+      ],
+      "foundation_selector": 12,
+      "layers": [
+        {
+          "file": "RULESMD.INI",
+          "physical_keys": {
+            "AIBasePlanningSide": "0",
+            "AIBuildThis": "yes",
+            "Adjacent": "2",
+            "Armor": "wood",
+            "Bib": "yes",
+            "BuildCat": "Resource",
+            "Capturable": "true",
+            "Cost": "2000",
+            "Crewed": "yes",
+            "DamageSmokeOffset": "410, 100, 165",
+            "DebrisAnims": "DBRIS1LG,DBRIS1SM,DBRIS4LG,DBRIS4SM,DBRIS5LG,DBRIS5SM",
+            "DockUnload": "yes",
+            "Drainable": "yes",
+            "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+            "FreeUnit": "CMIN",
+            "HalfDamageSmokeLocation1": "0,0,0",
+            "ImmuneToPsionics": "no",
+            "MaxDebris": "10",
+            "MinDebris": "5",
+            "Name": "Allied Ore Refinery",
+            "NumberImpassableRows": "3",
+            "NumberOfDocks": "1",
+            "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+            "PipScale": "Tiberium",
+            "Points": "80",
+            "Power": "-50",
+            "Prerequisite": "POWER,GACNST",
+            "Refinery": "yes",
+            "RefinerySmokeFrames": "50",
+            "RefinerySmokeOffsetOne": "-92, -208, 312",
+            "RefinerySmokeOffsetTwo": "-92, 208, 312",
+            "RefinerySmokeParticleSystem": "SmallGreySSys",
+            "ResourceDestination": "yes",
+            "Sight": "6",
+            "Soylent": "300",
+            "Spyable": "yes",
+            "Storage": "200",
+            "Strength": "1000",
+            "TechLevel": "1",
+            "ThreatPosed": "0",
+            "TogglePower": "no",
+            "UIName": "Name:GAREFN"
+          },
+          "retained": {
+            "adjacent": 2,
+            "foundation": 0,
+            "image": "GAREFN"
+          }
+        },
+        {
+          "file": "MPBattleMD.ini",
+          "physical_keys": null,
+          "retained": {
+            "adjacent": 2,
+            "foundation": 0,
+            "image": "GAREFN"
+          }
+        },
+        {
+          "file": "GoldSt.mmx",
+          "physical_keys": null,
+          "retained": {
+            "adjacent": 2,
+            "foundation": 0,
+            "image": "GAREFN"
+          }
+        }
+      ],
+      "name": "GAREFN",
+      "object_footprint_matches_type": true,
+      "offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    },
+    "controls": [
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x1",
+          "selector": 0
+        },
+        "output": {
+          "bounds": [
+            1,
+            1
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x1",
+          "selector": 1
+        },
+        "output": {
+          "bounds": [
+            2,
+            1
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x2",
+          "selector": 2
+        },
+        "output": {
+          "bounds": [
+            1,
+            2
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x2",
+          "selector": 3
+        },
+        "output": {
+          "bounds": [
+            2,
+            2
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x3",
+          "selector": 4
+        },
+        "output": {
+          "bounds": [
+            2,
+            3
+          ],
+          "marker_origin": [
+            110,
+            32
+          ],
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x2",
+          "selector": 5
+        },
+        "output": {
+          "bounds": [
+            3,
+            2
+          ],
+          "marker_origin": [
+            109,
+            33
+          ],
+          "offset": [
+            -1,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x3",
+          "selector": 6
+        },
+        "output": {
+          "bounds": [
+            3,
+            3
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x5",
+          "selector": 7
+        },
+        "output": {
+          "bounds": [
+            3,
+            5
+          ],
+          "marker_origin": [
+            109,
+            31
+          ],
+          "offset": [
+            -1,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "4x2",
+          "selector": 8
+        },
+        "output": {
+          "bounds": [
+            4,
+            2
+          ],
+          "marker_origin": [
+            109,
+            33
+          ],
+          "offset": [
+            -1,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x3Refinery",
+          "selector": 9
+        },
+        "output": {
+          "bounds": [
+            3,
+            3
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x3",
+          "selector": 10
+        },
+        "output": {
+          "bounds": [
+            1,
+            3
+          ],
+          "marker_origin": [
+            110,
+            32
+          ],
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x1",
+          "selector": 11
+        },
+        "output": {
+          "bounds": [
+            3,
+            1
+          ],
+          "marker_origin": [
+            109,
+            33
+          ],
+          "offset": [
+            -1,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "4x3",
+          "selector": 12
+        },
+        "output": {
+          "bounds": [
+            4,
+            3
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x4",
+          "selector": 13
+        },
+        "output": {
+          "bounds": [
+            1,
+            4
+          ],
+          "marker_origin": [
+            110,
+            32
+          ],
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x5",
+          "selector": 14
+        },
+        "output": {
+          "bounds": [
+            1,
+            5
+          ],
+          "marker_origin": [
+            110,
+            31
+          ],
+          "offset": [
+            0,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x6",
+          "selector": 15
+        },
+        "output": {
+          "bounds": [
+            2,
+            6
+          ],
+          "marker_origin": [
+            110,
+            31
+          ],
+          "offset": [
+            0,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x5",
+          "selector": 16
+        },
+        "output": {
+          "bounds": [
+            2,
+            5
+          ],
+          "marker_origin": [
+            110,
+            31
+          ],
+          "offset": [
+            0,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "5x3",
+          "selector": 17
+        },
+        "output": {
+          "bounds": [
+            5,
+            3
+          ],
+          "marker_origin": [
+            108,
+            32
+          ],
+          "offset": [
+            -2,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "4x4",
+          "selector": 18
+        },
+        "output": {
+          "bounds": [
+            4,
+            4
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x4",
+          "selector": 19
+        },
+        "output": {
+          "bounds": [
+            3,
+            4
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "6x4",
+          "selector": 20
+        },
+        "output": {
+          "bounds": [
+            6,
+            4
+          ],
+          "marker_origin": [
+            108,
+            32
+          ],
+          "offset": [
+            -2,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "0x0",
+          "selector": 21
+        },
+        "output": {
+          "bounds": [
+            1,
+            1
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      }
+    ],
+    "edge_controls": [
+      {
+        "input": {
+          "center": [
+            0,
+            0
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            1,
+            1
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            32767,
+            32767
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            32766,
+            32766
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            32768,
+            32768
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            32767,
+            32767
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            65535,
+            65535
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            -2,
+            -2
+          ]
+        }
+      }
+    ],
+    "lifecycle": {
+      "input": {
+        "initial_center": [
+          110,
+          33
+        ],
+        "moved_center": [
+          111,
+          34
+        ]
+      },
+      "steps": [
+        {
+          "action": "activate",
+          "marker_calls": [
+            {
+              "mark": true,
+              "origin": [
+                109,
+                32
+              ]
+            }
+          ],
+          "output": {
+            "center": [
+              110,
+              33
+            ],
+            "marked": [
+              [
+                109,
+                32
+              ],
+              [
+                109,
+                33
+              ],
+              [
+                109,
+                34
+              ],
+              [
+                110,
+                32
+              ],
+              [
+                110,
+                33
+              ],
+              [
+                110,
+                34
+              ],
+              [
+                111,
+                32
+              ],
+              [
+                111,
+                33
+              ],
+              [
+                111,
+                34
+              ],
+              [
+                112,
+                32
+              ],
+              [
+                112,
+                33
+              ],
+              [
+                112,
+                34
+              ]
+            ],
+            "offset": [
+              -1,
+              -1
+            ]
+          }
+        },
+        {
+          "action": "move",
+          "marker_calls": [
+            {
+              "mark": false,
+              "origin": [
+                109,
+                32
+              ]
+            },
+            {
+              "mark": true,
+              "origin": [
+                110,
+                33
+              ]
+            }
+          ],
+          "output": {
+            "center": [
+              111,
+              34
+            ],
+            "marked": [
+              [
+                110,
+                33
+              ],
+              [
+                110,
+                34
+              ],
+              [
+                110,
+                35
+              ],
+              [
+                111,
+                33
+              ],
+              [
+                111,
+                34
+              ],
+              [
+                111,
+                35
+              ],
+              [
+                112,
+                33
+              ],
+              [
+                112,
+                34
+              ],
+              [
+                112,
+                35
+              ],
+              [
+                113,
+                33
+              ],
+              [
+                113,
+                34
+              ],
+              [
+                113,
+                35
+              ]
+            ],
+            "offset": [
+              -1,
+              -1
+            ]
+          }
+        },
+        {
+          "action": "clear",
+          "marker_calls": [
+            {
+              "mark": false,
+              "origin": [
+                110,
+                33
+              ]
+            }
+          ],
+          "output": {
+            "center": [
+              111,
+              34
+            ],
+            "marked": [],
+            "offset": [
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    }
+  },
   "inputs": {
     "art_source_lines": [
       {

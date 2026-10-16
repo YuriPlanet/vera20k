@@ -111,7 +111,7 @@ fn lifecycle_preview(color: [u8; 3]) -> crate::map::rmg::preview::PreviewImage {
 }
 
 #[test]
-#[ignore] // Requires RA2_DIR (active-retail YR files).
+#[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
 fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let retail_dir = std::path::PathBuf::from(
         std::env::var("RA2_DIR").expect("set RA2_DIR to the active-retail YR directory"),

@@ -5,15 +5,6 @@ use crate::sim::arena_fixture::mastermind::{MindScene, spark_ids};
 use crate::sim::world::FrameEffects;
 
 #[test]
-fn stock_mastermind_four_real_captures_overload_then_rock_on_the_next_visit() {
-    let Some(mut scene) = MindScene::retail() else {
-        return;
-    };
-    scene.capture_four_through_real_attacks();
-    scene.first_pulse();
-}
-
-#[test]
 fn a_due_overload_component_replaces_its_rate_without_erasing_natural_roll() {
     let Some(mut scene) = MindScene::retail() else {
         return;

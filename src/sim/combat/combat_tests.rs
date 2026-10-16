@@ -859,10 +859,9 @@ fn sourceless_infantry_hit_takes_the_refused_scatter_arm_and_the_fear_ladder() {
 #[test]
 fn retail_damage_scatter_tail_admits_by_rank_ability_and_ownership() {
     use crate::sim::components::NavTargetRef;
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     assert!(!rules.general.player_scatter);
     let run = |type_id: &str, human: bool, rank: u16, nav: bool| {
         let mut sim = crate::sim::world::Simulation::with_seed(0x5CA7);
@@ -990,10 +989,9 @@ fn retail_arena_hit_by(
 /// SCATTER admits the Scatter and its draw; a rookie's rank does not.
 #[test]
 fn retail_damage_scatter_tail_follows_the_retaliation_answer() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     let run = |source_x: u16, rank: u16| {
         let (sim, ids, rng) = retail_arena_hit(
             &rules,
@@ -1039,10 +1037,9 @@ fn retail_damage_scatter_tail_follows_the_retaliation_answer() {
 /// draw. Without a source only the first runs.
 #[test]
 fn retail_fraidycat_hit_by_a_source_scatters_twice() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     assert!(rules.object("CIV1").unwrap().fraidycat);
     let run = |sourced: bool| {
         let (sim, ids, rng) = retail_arena_hit(
@@ -1086,10 +1083,9 @@ fn retail_fraidycat_hit_by_a_source_scatters_twice() {
 ///   without a source, keeps Harmless.
 #[test]
 fn retail_infantry_postlude_hunts_and_idles() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     assert!(rules.object("ENGINEER").unwrap().engineer);
     let harmless = rules.mission_control.entry(MissionType::Harmless).unwrap();
     assert!(harmless.no_threat && !harmless.zombie && !harmless.retaliate);
@@ -1152,10 +1148,9 @@ fn retail_infantry_postlude_hunts_and_idles() {
 /// `ImmuneToPsionics=`.
 #[test]
 fn retail_gassed_infantry_scatters_and_fears() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     assert!(rules.object("CIV1").unwrap().fraidycat);
     let gassed = |type_id: &str, sourced: bool, mission: Option<MissionType>| {
         let (sim, ids, _, pings) = retail_arena_hit_by(
@@ -1221,10 +1216,9 @@ fn retail_gassed_infantry_scatters_and_fears() {
 /// action and his path head.
 #[test]
 fn retail_gassed_infantry_drops_its_fire_and_path() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     let (sim, ids, _, _) = retail_arena_hit_by(
         &rules,
         &[
@@ -1257,10 +1251,9 @@ fn retail_gassed_infantry_drops_its_fire_and_path() {
 /// queues Hunt.
 #[test]
 fn retail_berserk_gi_calms_down_in_the_frame_its_time_ends() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     let mut sim = Simulation::with_seed(0x5CA7);
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let owner = sim.interner.intern("Russians");
@@ -1296,10 +1289,9 @@ fn retail_berserk_gi_calms_down_in_the_frame_its_time_ends() {
 /// (`0x006F7F0C`). Calm, it finds nothing.
 #[test]
 fn retail_berserk_gi_targets_its_own_house() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     let mut sim = Simulation::with_seed(0x5CA7);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.interner.intern("Russians");
@@ -1342,10 +1334,9 @@ fn retail_berserk_gi_targets_its_own_house() {
 /// allies.
 #[test]
 fn retail_gi_scan_asks_only_its_own_house_about_allies() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     let mut sim = Simulation::with_seed(0x5CA7);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     for name in ["Russians", "Americans"] {
@@ -1401,10 +1392,9 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
 /// (`0x006FC1CC`).
 #[test]
 fn retail_berserk_gi_shoots_its_own_house() {
-    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
     let mut sim = Simulation::with_seed(0x5CA7);
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let owner = sim.interner.intern("Russians");

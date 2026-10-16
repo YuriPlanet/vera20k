@@ -158,13 +158,9 @@ fn fire_at_matches_the_original() {
 /// (FireAt's own), and `AttackingAircraftSightRange=` is 2.
 #[test]
 fn retail_aircraft_weapons_take_their_courses() {
-    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
-    else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules =
-        crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
-            .unwrap();
     for (aircraft, rot) in [
         ("HORNET", 1),
         ("ASW", 1),

@@ -101,12 +101,11 @@ fn offline_sparks_match_original_execution() {
 /// Retail `rulesmd.ini` and `artmd.ini`, with the type sounds bound against
 /// retail `soundmd.ini`; `None` when the retail INIs are absent.
 fn retail_rules() -> Option<RuleSet> {
-    let (rules_ini, art_ini) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
+    let rules_ini = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
     let sounds = SoundRegistry::from_ini(&crate::rules::retail_ini_fixture::retail_ini(
         "soundmd.ini",
     )?);
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+    let mut rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
     rules.bind_type_sound_references(&rules_ini, &sounds);
     Some(rules)
 }

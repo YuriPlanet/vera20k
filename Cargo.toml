@@ -41,14 +41,6 @@ name = "bik-player"
 path = "src/bin/bik-player.rs"
 required-features = ["tools-ui"]
 
-[[bin]]
-name = "extract-bridge-frames"
-path = "src/bin/extract-bridge-frames.rs"
-
-[[bin]]
-name = "inspect-water-tiles"
-path = "src/bin/inspect-water-tiles.rs"
-
 [features]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
@@ -109,12 +101,17 @@ env_logger = { workspace = true }
 
 # --- Image processing ---
 # Used for texture atlas creation and debug image output, not for asset parsing.
-image = "0.25"
+# Only PNG (every image written) and ICO (the window icon) are enabled: the default
+# formats compile an AV1 encoder (rav1e) and EXR, TIFF, WebP, GIF, JPEG and QOI
+# codecs that nothing reads or writes.
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
 
 # --- Audio ---
 # rodio is the standard Rust audio playback crate, maintained by the rust-audio org
 # (same team behind cpal). Covers all RA2 needs: SFX, music, volume control.
-rodio = "0.22"
+# Playback only: the engine decodes its own audio and hands rodio PCM buffers, so
+# rodio's decoders (symphonia), dither and microphone recording stay off.
+rodio = { version = "0.22", default-features = false, features = ["playback"] }
 
 # --- macOS application icon ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
@@ -142,7 +139,10 @@ thiserror = "2"
 # anyhow for application-level error propagation (main.rs, app facade)
 anyhow = "1"
 log = "0.4"
-env_logger = "0.11"
+# Without the `regex` feature, the optional `/filter` part of RUST_LOG matches as
+# a substring; module and level filters are unchanged. It was the only user of
+# the regex crates. `humantime` stays for `format_timestamp_secs`.
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
 
 [lints]
 workspace = true

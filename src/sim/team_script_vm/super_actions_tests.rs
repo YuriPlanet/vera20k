@@ -407,12 +407,11 @@ fn the_team_leader_matches_native() {
 /// TeamTypes running them no longer idle on an unported action.
 #[test]
 fn retail_superweapon_scripts_run_ported_actions() {
-    use crate::rules::retail_ini_fixture::{retail_ini, retail_rules_and_art};
+    use crate::rules::retail_ini_fixture::retail_ini;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
-    let Some((rules_ini, art_ini)) = retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     assert_eq!(rules.super_weapon_order.len(), 12);
     for (index, name) in rules.super_weapon_order.iter().enumerate() {
         let kind = rules.super_weapon(name).unwrap().kind;

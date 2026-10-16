@@ -3,8 +3,7 @@
 //! original corpus. The separate retail-map test covers production composition.
 use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
-use crate::rules::art_data::ArtRegistry;
-use crate::rules::retail_ini_fixture::retail_rules_and_art;
+use crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art;
 use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
@@ -21,13 +20,6 @@ fn native() -> Value {
         "tools/spatial_oracle/bridge_target_composed.json",
     ))
     .unwrap()
-}
-
-fn retail_rules() -> Option<RuleSet> {
-    let (ini, art) = retail_rules_and_art()?;
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(ArtRegistry::from_ini(&art));
-    Some(rules)
 }
 
 fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
@@ -318,7 +310,9 @@ fn assert_state(sim: &Simulation, state: &Value, label: &str) {
 // It does not execute an Engineer repair or prove ordinary rebuilding.
 #[test]
 fn native_passive_bridge_histories_preserve_timers_rng_assignment_and_cell_list_choice() {
-    let Some(rules) = retail_rules() else { return };
+    let Some(rules) = retail_unlayered_rules_with_art() else {
+        return;
+    };
     let corpus = native();
     let mut histories = 0;
     let mut steps = 0;

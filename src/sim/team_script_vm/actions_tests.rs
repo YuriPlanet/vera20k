@@ -998,12 +998,11 @@ fn scatter_sends_every_member_to_a_neighbouring_cell() {
 /// so the one TeamType running it no longer idles on 21.
 #[test]
 fn the_retail_scatter_script_runs_ported_actions() {
-    use crate::rules::retail_ini_fixture::{retail_ini, retail_rules_and_art};
+    use crate::rules::retail_ini_fixture::retail_ini;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
-    let Some((rules_ini, art_ini)) = retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
     let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
     let mut sim = Simulation::new();
@@ -1254,12 +1253,11 @@ fn the_building_search_admits_by_alliance_passivity_and_enemy() {
 /// only ported actions.
 #[test]
 fn the_retail_tech_capture_scripts_run_ported_actions() {
-    use crate::rules::retail_ini_fixture::{retail_ini, retail_rules_and_art};
+    use crate::rules::retail_ini_fixture::retail_ini;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
-    let Some((rules_ini, art_ini)) = retail_rules_and_art() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     for (name, index) in [("CAOILD", 71), ("CAAIRP", 70)] {
         assert_eq!(rules.object(name).unwrap().base_plan_type_index, index);
     }

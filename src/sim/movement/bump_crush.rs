@@ -1072,14 +1072,6 @@ mod tests {
     }
 
     #[test]
-    fn test_crusher_crushes_crushable_infantry() {
-        assert!(can_crush(
-            CrushCapability::new(true, false),
-            target(EntityCategory::Infantry, true, false, false, false),
-        ));
-    }
-
-    #[test]
     fn test_crusher_cannot_crush_non_crushable_infantry() {
         assert!(!can_crush(
             CrushCapability::new(true, false),
@@ -1138,22 +1130,6 @@ mod tests {
         assert!(!can_crush(
             CrushCapability::new(true, false),
             target(EntityCategory::Unit, false, false, false, false),
-        ));
-    }
-
-    #[test]
-    fn test_normal_zone_cannot_crush() {
-        assert!(!can_crush(
-            CrushCapability::new(false, false),
-            target(EntityCategory::Infantry, true, false, false, false),
-        ));
-    }
-
-    #[test]
-    fn normal_zone_regular_crusher_crushes_crushable_infantry() {
-        assert!(can_crush(
-            CrushCapability::new(true, false),
-            target(EntityCategory::Infantry, true, false, false, false),
         ));
     }
 

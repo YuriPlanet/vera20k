@@ -1439,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires the configured stock retail RA2/YR install"]
     fn retail_shell_shp_dimensions_match_research() {
         let assets = retail_assets();
         let shell_palette = load_named_palette(&assets, "SHELL.PAL").expect("SHELL.PAL");
@@ -1465,7 +1465,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires the configured stock retail RA2/YR install"]
     fn retail_generic_shell_backgrounds_decode_with_shell_palette() {
         let assets = retail_assets();
         let palette = load_named_palette(&assets, "SHELL.PAL").expect("SHELL.PAL");

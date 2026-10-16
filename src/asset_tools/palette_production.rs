@@ -535,7 +535,7 @@ pub fn binding_for(asset_name: &str, source_archive: &str) -> Option<&'static Pr
     }
     let ext = name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("");
     let archive_lower = source_archive.to_ascii_lowercase();
-    let leaf = archive_basename(&archive_lower);
+    let leaf = super::palette::archive_basename(&archive_lower);
 
     let mut best: Option<(u8, &'static Rule)> = None;
     for rule in RULES {
@@ -553,33 +553,12 @@ pub fn binding_for(asset_name: &str, source_archive: &str) -> Option<&'static Pr
     best.map(|(_, rule)| &rule.binding)
 }
 
-/// Reduce `ra2.mix -> sidec02.mix` to `sidec02`.
-///
-/// Deliberately the same reduction `asset_tools::palette::archive_basename`
-/// performs, down to leaving a non-archive source (a loose-file path) untouched
-/// so it simply matches nothing.
-fn archive_basename(source_lower: &str) -> &str {
-    let last = source_lower
-        .rsplit("->")
-        .next()
-        .unwrap_or(source_lower)
-        .trim();
-    last.strip_suffix(".mix").unwrap_or(last)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn palette_for(asset: &str, archive: &str) -> Option<&'static str> {
         binding_for(asset, archive).map(|binding| binding.palette)
-    }
-
-    #[test]
-    fn nested_archive_chain_reduces_to_its_leaf() {
-        assert_eq!(archive_basename("ra2.mix -> sidec02.mix"), "sidec02");
-        assert_eq!(archive_basename("cameomd.mix"), "cameomd");
-        assert_eq!(archive_basename("loose:c:/x/foo.pal"), "loose:c:/x/foo.pal");
     }
 
     #[test]

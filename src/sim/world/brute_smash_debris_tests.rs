@@ -483,6 +483,9 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
             value[2].as_i64().unwrap() as i32,
         )
     };
+    // Rows repeat patches: each distinct patch loads once, and every row gets
+    // its own copy.
+    let mut loaded = std::collections::BTreeMap::new();
     for row in corpus["rows"].as_array().unwrap() {
         let input = &row["input"];
         let context = input["name"].as_str().unwrap();
@@ -517,11 +520,18 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
                     maximums.join(",")
                 ));
             }
-            crate::rules::ini_parser::IniFile::from_str(&text)
+            text
         });
-        let Some(rules) = bound_retail_rules(patch.as_ref()) else {
-            return;
-        };
+        if !loaded.contains_key(&patch) {
+            let ini = patch
+                .as_deref()
+                .map(crate::rules::ini_parser::IniFile::from_str);
+            let Some(rules) = bound_retail_rules(ini.as_ref()) else {
+                return;
+            };
+            loaded.insert(patch.clone(), rules);
+        }
+        let rules = loaded[&patch].clone().with_fresh_serial();
         assert_eq!(
             json!(rules.general.metallic_debris),
             corpus["initial"]["metallic_pool"]
