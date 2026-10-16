@@ -147,7 +147,8 @@ pub(crate) fn render_game(
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
         shroud_buf.rebuild_if_needed(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             view.fog(),
             owner_id,
             state.match_state.input.camera_x,

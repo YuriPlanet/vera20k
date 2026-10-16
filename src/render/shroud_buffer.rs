@@ -17,10 +17,9 @@
 //! diamonds tile the screen without gaps at height discontinuities.
 //!
 //! ## Dependency rules
-//! - Part of render/ — reads FogState (no mutation), uses GpuContext.
+//! - Part of render/ — reads FogState (no mutation), uploads through Device/Queue.
 
 use crate::map::terrain::{iso_to_screen, screen_to_iso};
-use crate::render::gpu::GpuContext;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 use wgpu::util::DeviceExt;
@@ -245,28 +244,6 @@ impl ShroudBuffer {
     /// `frame_pixels` is the raw SHROUD.SHP brightness data per frame,
     /// extracted by the caller from the SHP file.
     pub fn new(
-        gpu: &GpuContext,
-        screen_w: u32,
-        screen_h: u32,
-        map_width: u16,
-        map_height: u16,
-        frame_pixels: Vec<Vec<u8>>,
-        canvas_w: u32,
-        canvas_h: u32,
-        lut: [u8; 256],
-    ) -> Self {
-        Self::new_on_device(
-            &gpu.device,
-            &gpu.queue,
-            [screen_w, screen_h],
-            [map_width, map_height],
-            frame_pixels,
-            [canvas_w, canvas_h],
-            lut,
-        )
-    }
-
-    fn new_on_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         screen_size: [u32; 2],
@@ -325,7 +302,8 @@ impl ShroudBuffer {
     /// Disjoint stock frame masks establish equivalence to native traversal.
     pub fn rebuild_if_needed(
         &mut self,
-        gpu: &GpuContext,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         fog: &FogState,
         owner: crate::sim::intern::InternedId,
         cam_x: f32,
@@ -341,7 +319,7 @@ impl ShroudBuffer {
         // Truncating this lattice would silently expose unsampled shroud as
         // neutral A; keep the full virtual extent and reject that broken input.
         let [virt_w, virt_h] = virtual_dimensions([screen_w, screen_h], zoom);
-        let limit = gpu.device.limits().max_texture_dimension_2d;
+        let limit = device.limits().max_texture_dimension_2d;
         assert!(
             virt_w <= limit && virt_h <= limit,
             "tactical A extent exceeds requested GPU limit"
@@ -358,7 +336,7 @@ impl ShroudBuffer {
             self.row_stride = align_up(virt_w, 256);
             self.pixels
                 .resize((self.row_stride * virt_h) as usize, NEUTRAL);
-            self.texture = create_r8_texture(&gpu.device, virt_w, virt_h);
+            self.texture = create_r8_texture(device, virt_w, virt_h);
             self.view = self.texture.create_view(&Default::default());
             self.last_screen_w = screen_w;
             self.last_screen_h = screen_h;
@@ -401,7 +379,7 @@ impl ShroudBuffer {
             }
         }
 
-        self.upload(&gpu.queue);
+        self.upload(queue);
     }
 
     fn upload(&self, queue: &wgpu::Queue) {
@@ -524,7 +502,7 @@ impl ShroudBuffer {
         pixels: &[u8],
     ) -> Self {
         assert_eq!(pixels.len(), (size[0] * size[1]) as usize);
-        let mut result = Self::new_on_device(
+        let mut result = Self::new(
             device,
             queue,
             size,
@@ -711,125 +689,36 @@ mod tests {
 
     #[test]
     fn shroud_current_sight_keeps_tactical_cell_bright_until_pending_boundary() {
-        use crate::map::entities::EntityCategory;
-        use crate::sim::{combat::Health, game_entity::GameEntity, vision};
-        let owner = intern::test_intern("Americans");
-        let gapper = intern::test_intern("Soviet");
-        let interner = intern::test_interner();
-        let mut fog = fog_16();
-        let entity = GameEntity::new_at_frame_zero_for_test(
-            1,
-            6,
-            6,
-            0,
-            0,
-            owner,
-            Health::new(100),
-            intern::test_intern("E1"),
-            EntityCategory::Infantry,
-            0,
-            3,
-            false,
-        );
-        vision::reveal_entity_vision(
-            &mut fog,
-            &entity,
-            &vision::VisionConfig::default(),
-            None,
-            None,
-            false,
-            &interner,
-        );
-        apply_gap_generators(&mut fog, &[(gapper, 6, 6, 2)], &interner);
-        assert_eq!(
-            cell_fill(&fog, owner, 6, 6, &SHROUD_EDGE_LUT),
-            CellFill::None
-        );
-        vision::recompute_owner_visibility_in_place(
-            &mut fog,
-            &Default::default(),
-            None,
-            &Default::default(),
-            &vision::VisionConfig::default(),
-            None,
-            None,
-            &interner,
-            None,
-        );
-        apply_gap_generators(&mut fog, &[(gapper, 6, 6, 2)], &interner);
-        fog.flush_pending_gap_conceal(119);
-        assert_eq!(
-            cell_fill(&fog, owner, 6, 6, &SHROUD_EDGE_LUT),
-            CellFill::None
-        );
-        fog.flush_pending_gap_conceal(120);
-        assert_eq!(
-            cell_fill(&fog, owner, 6, 6, &SHROUD_EDGE_LUT),
-            CellFill::Frame(15)
-        );
+        let views = crate::sim::world::gap_generator_tests::sustained_source_gap_limbo_views();
+        assert_eq!(views.len(), 5);
+        for (fog, owner, bright) in views {
+            assert_eq!(
+                cell_fill(&fog, owner, 16, 16, &SHROUD_EDGE_LUT),
+                if bright {
+                    CellFill::None
+                } else {
+                    CellFill::Frame(15)
+                },
+                "the production source/gap/Limbo/120-frame sweep reaches the A selector"
+            );
+        }
     }
 
     #[test]
     fn shroud_current_sight_nontransitive_allied_view_stays_dark() {
-        use crate::map::entities::EntityCategory;
-        use crate::sim::{combat::Health, game_entity::GameEntity, vision};
-        let a = intern::test_intern("Americans");
-        let b = intern::test_intern("Alliance");
-        let c = intern::test_intern("Soviet");
-        let gapper = intern::test_intern("Neutral");
-        let mut fog = fog_16();
-        for (left, right) in [
-            ("AMERICANS", "ALLIANCE"),
-            ("ALLIANCE", "AMERICANS"),
-            ("ALLIANCE", "SOVIET"),
-            ("SOVIET", "ALLIANCE"),
-        ] {
-            fog.alliances
-                .entry(left.into())
-                .or_default()
-                .insert(right.into());
-        }
-        for owner in [b, c] {
-            fog.mark_visible_for_owner(owner, 0, 0);
-        }
-        let entity = GameEntity::new_at_frame_zero_for_test(
-            1,
-            6,
-            6,
-            0,
-            0,
-            a,
-            Health::new(100),
-            intern::test_intern("E1"),
-            EntityCategory::Infantry,
-            0,
-            3,
-            false,
-        );
-        let interner = intern::test_interner();
-        vision::reveal_entity_vision(
-            &mut fog,
-            &entity,
-            &vision::VisionConfig::default(),
-            None,
-            None,
-            false,
-            &interner,
-        );
-        for _ in 0..3 {
-            apply_gap_generators(&mut fog, &[(gapper, 6, 6, 2)], &interner);
-            assert_eq!(cell_fill(&fog, b, 6, 6, &SHROUD_EDGE_LUT), CellFill::None);
+        let views = crate::sim::world::gap_generator_tests::nontransitive_source_gap_views();
+        assert_eq!(views.len(), 4);
+        for (fog, direct_ally, indirect_ally) in views {
             assert_eq!(
-                cell_fill(&fog, c, 6, 6, &SHROUD_EDGE_LUT),
+                cell_fill(&fog, direct_ally, 16, 16, &SHROUD_EDGE_LUT),
+                CellFill::None
+            );
+            assert_eq!(
+                cell_fill(&fog, indirect_ally, 16, 16, &SHROUD_EDGE_LUT),
                 CellFill::Frame(15)
             );
-            assert!(!fog.is_cell_visible(c, 6, 6));
+            assert!(!fog.is_cell_visible(indirect_ally, 16, 16));
         }
-        apply_gap_generators(&mut fog, &[], &interner);
-        assert_eq!(
-            cell_fill(&fog, c, 6, 6, &SHROUD_EDGE_LUT),
-            CellFill::Frame(15)
-        );
     }
 
     #[test]

@@ -107,13 +107,13 @@ fn native_shroud_selector_matches_every_retained_neighbor_mask() {
 }
 
 #[test]
-#[ignore = "requires retail archives and GPU source allocation; executes the full production CPU A rebuild"]
+#[ignore = "requires retail archives and GPU; full production A rebuild and actual source texture readback"]
 fn production_shroud_rebuild_matches_original_tactical_scenes() {
     let native = fixture();
     let (frames, canvas) = stock_frames(&native).expect("RA2_DIR supplies stock SHROUD");
     let size = dimensions(&native["size"]);
     let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
-    let mut source = ShroudBuffer::new_on_device(
+    let mut source = ShroudBuffer::new(
         &gpu.device,
         &gpu.queue,
         size,
@@ -148,13 +148,25 @@ fn production_shroud_rebuild_matches_original_tactical_scenes() {
             }
         }
         let camera = input.get("camera").map(point).unwrap_or([-320, 440]);
-        source.last_cam_x = camera[0] as f32;
-        source.last_cam_y = (camera[1] + native["world_y_bias"].as_i64().unwrap() as i32) as f32;
-        source.rasterize(&fog, owner);
-        let pixels = source
-            .pixels
-            .chunks_exact(source.row_stride as usize)
-            .flat_map(|row| row[..size[0] as usize].iter().copied())
+        // Each row installs a different map with a restarted view generation.
+        // Use the same invalidation as a load, then the ordinary dirty gate
+        // and upload, rather than writing private camera/cache fields.
+        source.mark_stale();
+        source.rebuild_if_needed(
+            &gpu.device,
+            &gpu.queue,
+            &fog,
+            owner,
+            camera[0] as f32,
+            (camera[1] + native["world_y_bias"].as_i64().unwrap() as i32) as f32,
+            size[0],
+            size[1],
+            1.0,
+        );
+        let pixels = gpu
+            .read_float_texels(source.gpu_source().0, [0, 0], size)
+            .into_iter()
+            .map(|texel| (texel[0] * 255.0).round() as u8)
             .collect::<Vec<_>>();
         assert_eq!(
             pixels,
@@ -198,7 +210,7 @@ fn production_shroud_rebuild_workload_timing() {
         for zoom in [1.0, minimum_zoom] {
             let size = virtual_dimensions(screen, zoom);
             assert!(size[0] <= limit && size[1] <= limit);
-            let mut source = ShroudBuffer::new_on_device(
+            let mut source = ShroudBuffer::new(
                 &gpu.device,
                 &gpu.queue,
                 size,

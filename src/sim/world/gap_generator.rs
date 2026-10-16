@@ -306,19 +306,7 @@ impl Simulation {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        self.fog.alliances = self.house_alliances.clone();
-        let config = self.sight_reveal_config(rules);
-        let heights = self.sight_height_grid(&config);
-        let ability = config.sight_ability(entity, &self.interner, rules);
-        vision::reveal_entity_vision(
-            &mut self.fog,
-            entity,
-            &config,
-            heights.levels(),
-            self.resolved_terrain.as_ref(),
-            ability,
-            &self.interner,
-        );
+        self.update_object_sight_with_context(id, 0, None, super::UninitContext::new(rules, None));
     }
 
     /// The live4ADEE0/4ADCD0 bracket visits gap candidates even if they had no

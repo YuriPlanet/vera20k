@@ -324,3 +324,29 @@ fn tube_hierarchy_constant_walk_endpoints_match_original_executable() {
         );
     }
 }
+
+/// 582D70 picks the bucket from the zones it was given but stores the
+/// sign-extended transcript, so two pairs can store the same edge under
+/// different buckets. Each bucket keeps its copy; a repeat in one bucket
+/// keeps the first flag.
+#[test]
+fn a_sign_extended_pair_is_kept_once_per_bucket() {
+    let mut buckets = HierarchyEdgeBuckets::new();
+    register_native_hierarchy_pair(&mut buckets, 1, 0x8001, 0);
+    register_native_hierarchy_pair(&mut buckets, 2, 0x8001, 0);
+    register_native_hierarchy_pair(&mut buckets, 1, 0x8001, 1);
+    let stored: Vec<_> = buckets
+        .buckets
+        .iter()
+        .enumerate()
+        .flat_map(|(i, bucket)| {
+            bucket
+                .iter()
+                .map(move |e| (i, e.existing, e.current, e.flag))
+        })
+        .collect();
+    assert_eq!(
+        stored,
+        [(0x11, 0xffff, 0x8001, 0), (0x21, 0xffff, 0x8001, 0)]
+    );
+}

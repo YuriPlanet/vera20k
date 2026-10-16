@@ -49,7 +49,7 @@ impl FogState {
             .sight_admissions
             .iter()
             .filter_map(|(&(id, viewer), source)| {
-                (viewer == owner && source.owner == owner).then_some(id)
+                (viewer == owner && source.owner == owner && source.latched).then_some(id)
             })
             .collect();
         self.transition_whole_map_with_sources(
@@ -75,7 +75,9 @@ impl FogState {
             .iter()
             .map(|&id| (id, self.sight_admissions.get(&(id, owner)).cloned()))
             .collect();
-        self.transition_whole_map_with_gap_reentry(
+        let mut world = crate::sim::world::Simulation::default();
+        world.fog = std::mem::take(self);
+        world.transition_whole_map_with_gap_reentry(
             owner,
             cells,
             if reset {
@@ -87,121 +89,128 @@ impl FogState {
             &sources,
             None,
             &std::collections::BTreeMap::new(),
+            &super::VisionConfig::default(),
+            crate::sim::world::UninitContext::default(),
         );
+        *self = world.fog;
     }
 
-    /// `sources` are the callback objects of `0x004ADEE0` and `0x004ADCD0`,
-    /// each with the footprint `UpdateReveal` re-admits for it where it
-    /// stands now (none past its gates); one releases and is re-admitted
-    /// only when it holds an admission on `owner`'s map. `alternates` are
-    /// the sources the re-admission callback's `RevealToAll=` branch reveals
-    /// on this map, with their footprints.
-    pub(crate) fn transition_whole_map_with_gap_reentry(
+    /// Prepare the existing represented House-map bracket. This contains no
+    /// source event: Simulation performs each release/re-entry and delivers
+    /// Cell notifications synchronously between individual writes.
+    pub(crate) fn prepare_map_transition(
         &mut self,
         owner: InternedId,
-        cells: Vec<(u16, u16)>,
         transition: MapTransition,
-        old_spy_sat_active: bool,
         sources: &std::collections::BTreeMap<u64, Option<SightAdmission>>,
         gap_reentry: Option<&[super::GapGeneratorSource]>,
         alternates: &std::collections::BTreeMap<u64, SightAdmission>,
-    ) {
-        let reset = transition != MapTransition::Reveal;
+    ) -> Option<MapTransitionPlan> {
         if self.width == 0
             || self.height == 0
-            || (!reset && self.whole_map_revealed_owners.contains(&owner))
+            || (transition == MapTransition::Reveal
+                && self.whole_map_revealed_owners.contains(&owner))
         {
-            return;
+            return None;
         }
-        let held: std::collections::BTreeSet<u64> = self
+        let held: std::collections::BTreeSet<_> = self
             .sight_admissions
-            .keys()
-            .filter(|key| key.1 == owner && sources.contains_key(&key.0))
-            .map(|key| key.0)
+            .iter()
+            .filter(|(key, source)| {
+                key.1 == owner && source.latched && sources.contains_key(&key.0)
+            })
+            .map(|(key, _)| key.0)
             .collect();
-        let gaps = self.gap_sources.get(&owner).cloned().unwrap_or_default();
-        let mut gaps_by_id: std::collections::BTreeMap<u64, Vec<_>> =
-            std::collections::BTreeMap::new();
-        for gap in gaps {
-            gaps_by_id.entry(gap.stable_id).or_default().push(gap);
+        let mut gaps = std::collections::BTreeMap::<u64, Vec<super::GapGeneratorSource>>::new();
+        for gap in self.gap_sources.get(&owner).into_iter().flatten() {
+            gaps.entry(gap.stable_id).or_default().push(*gap);
         }
-        let mut reentry_by_id = gaps_by_id.clone();
-        if let Some(reentry) = gap_reentry {
-            reentry_by_id.clear();
-            for &gap in reentry {
-                reentry_by_id.entry(gap.stable_id).or_default().push(gap);
+        let mut reentry = gaps.clone();
+        if let Some(current) = gap_reentry {
+            reentry.clear();
+            for &gap in current {
+                reentry.entry(gap.stable_id).or_default().push(gap);
             }
         }
-        // `0x004ADEE0` has no `RevealToAll=` branch: an alternate admission
-        // keeps its source count through the bulk store.
-        let ids: std::collections::BTreeSet<_> = held
+        let ids = held
             .iter()
             .copied()
-            .chain(gaps_by_id.keys().copied())
-            .chain(reentry_by_id.keys().copied())
+            .chain(gaps.keys().copied())
+            .chain(reentry.keys().copied())
             .chain(alternates.keys().copied())
             .collect();
-        let width = usize::from(self.width);
-        let height = usize::from(self.height);
-        // The gap removals below publish only through the bulk store, so the
-        // next frame's clear visits every cell.
         self.by_owner
             .entry(owner)
             .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
             .tracked
             .complete = false;
-        //4ADEE0, per-object release then remove-gap. Activation sees OLD577A
-        //false, deactivation OLD577Atrue; the House owner changes it afterwards.
-        for &id in &ids {
-            if held.contains(&id) {
-                self.release_sight_for_viewer((id, owner));
-            }
-            for &gap in gaps_by_id.get(&id).into_iter().flatten() {
-                let vis = self.by_owner.get_mut(&owner).unwrap();
-                for index in gap_footprint(gap, width, height) {
-                    vis.shroud_knowledge[index].remove_gap(old_spy_sat_active);
-                }
-            }
-        }
-        self.gap_sources.remove(&owner);
-        if !reset {
-            self.whole_map_revealed_owners.insert(owner);
-        }
-        {
-            let vis = self.by_owner.get_mut(&owner).unwrap();
-            for (x, y) in cells {
-                if transition == MapTransition::Reshroud {
-                    vis.store_reshrouded_map_cell((x, y));
-                } else {
-                    vis.store_bulk_map_cell((x, y), reset);
-                }
-            }
-        }
-        //4ADCD0 repeats registration order, ordinary sight then gap. Stable IDs
-        //are monotonic Techno construction identities in the current owner.
-        for id in ids {
-            if held.contains(&id)
-                && let Some(Some(source)) = sources.get(&id)
-            {
-                self.reconcile_sight_admission(id, owner, source.clone(), false);
-            }
-            if let Some(footprint) = alternates.get(&id) {
-                self.admit_alternate_sight(id, owner, footprint.clone());
-            }
-            for &gap in reentry_by_id.get(&id).into_iter().flatten() {
-                let vis = self.by_owner.get_mut(&owner).unwrap();
-                for index in gap_footprint(gap, width, height) {
-                    vis.shroud_knowledge[index].add_gap();
-                    vis.publish_knowledge(index);
-                }
-                self.gap_sources.entry(owner).or_default().insert(gap);
-                //Complete6FB170 clears local House240 after its cell loop.
-                self.whole_map_revealed_owners.remove(&owner);
-            }
-        }
-        //577AB0 clears240 only after callback re-admission.
-        if reset {
-            self.whole_map_revealed_owners.remove(&owner);
+        Some(MapTransitionPlan {
+            held,
+            gaps,
+            reentry,
+            ids,
+        })
+    }
+
+    pub(crate) fn remove_map_transition_gap(
+        &mut self,
+        owner: InternedId,
+        gap: super::GapGeneratorSource,
+        old_spy_sat_active: bool,
+    ) {
+        let vis = self
+            .by_owner
+            .get_mut(&owner)
+            .expect("admitted map transition");
+        for index in gap_footprint(gap, usize::from(self.width), usize::from(self.height)) {
+            vis.shroud_knowledge[index].remove_gap(old_spy_sat_active);
         }
     }
+
+    pub(crate) fn store_map_transition(
+        &mut self,
+        owner: InternedId,
+        cells: Vec<(u16, u16)>,
+        transition: MapTransition,
+    ) {
+        self.gap_sources.remove(&owner);
+        if transition == MapTransition::Reveal {
+            self.whole_map_revealed_owners.insert(owner);
+        }
+        let vis = self
+            .by_owner
+            .get_mut(&owner)
+            .expect("admitted map transition");
+        for cell in cells {
+            if transition == MapTransition::Reshroud {
+                vis.store_reshrouded_map_cell(cell);
+            } else {
+                vis.store_bulk_map_cell(cell, transition != MapTransition::Reveal);
+            }
+        }
+    }
+
+    pub(crate) fn reenter_map_transition_gap(
+        &mut self,
+        owner: InternedId,
+        gap: super::GapGeneratorSource,
+    ) {
+        let vis = self
+            .by_owner
+            .get_mut(&owner)
+            .expect("admitted map transition");
+        for index in gap_footprint(gap, usize::from(self.width), usize::from(self.height)) {
+            vis.shroud_knowledge[index].add_gap();
+            vis.publish_knowledge(index);
+        }
+        self.gap_sources.entry(owner).or_default().insert(gap);
+        self.whole_map_revealed_owners.remove(&owner);
+    }
+}
+
+pub(crate) struct MapTransitionPlan {
+    pub held: std::collections::BTreeSet<u64>,
+    pub gaps: std::collections::BTreeMap<u64, Vec<super::GapGeneratorSource>>,
+    pub reentry: std::collections::BTreeMap<u64, Vec<super::GapGeneratorSource>>,
+    pub ids: std::collections::BTreeSet<u64>,
 }

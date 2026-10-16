@@ -236,7 +236,7 @@ pub struct GameEntity {
     /// sets the once-counted latch when it adds House+0x2F4.
     #[serde(default)]
     house_tracking_latches: crate::sim::house_tracking::InfantryTrackingLatches,
-    /// The fog sight range and the zero-`Sight=` fact, a [`SightFacts`] that
+    /// The raw signed type `Sight=`, a [`SightFacts`] that
     /// `sim::vision` owns.
     ///
     /// [`SightFacts`]: crate::sim::vision::SightFacts

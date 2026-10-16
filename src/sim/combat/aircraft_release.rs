@@ -451,7 +451,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .clamp(0, i32::from(u16::MAX)) as u16;
         let config = world.sight_reveal_config(Some(strike.rules));
         let heights = world.sight_height_grid(&config);
-        world.reveal_area(
+        let _ = world.reveal_area(
             &[owner],
             (
                 location.x.div_euclid(256) as u16,
@@ -464,6 +464,8 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             &config,
             crate::sim::world::UninitContext::new(Some(strike.rules), strike.overlay_registry)
                 .with_effects(strike.run.effects()),
+            crate::sim::vision::MapRevealProjection::Transient,
+            world.session.current_house,
         );
     }
 

@@ -11,6 +11,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
         "[InfantryTypes]\n[VehicleTypes]\n0=SIGHT\n[AircraftTypes]\n\
          [BuildingTypes]\n0=GAGAP\n1=POWER\n2=GASPYSAT\n\
          [Warheads]\n0=WH\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [Clear]\nBuildable=yes\n\
          [SIGHT]\nStrength=100\nSight=3\nSpeed=0\n\
          [GAGAP]\nGapGenerator=yes\nGapRadiusInCells=10\nPowered=yes\nPower=-100\nStrength=100\nFoundation=1x1\n\
          [POWER]\nPower=200\nStrength=100\nFoundation=1x1\n\
@@ -411,7 +412,12 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
         radius
     );
     assert!(sim.fog.gap_sources[&owner].is_empty());
-    assert!(!sim.fog.sight_admissions.keys().any(|key| key.0 == 1));
+    assert!(
+        !sim.fog
+            .sight_admissions
+            .iter()
+            .any(|(key, source)| key.0 == 1 && source.latched)
+    );
 }
 
 #[test]
@@ -474,4 +480,105 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
         !sim.fog.whole_map_revealed_for_owner(viewer),
         "successful friendly re-admission follows the bulk240=true store"
     );
+}
+
+/// Consumer fixture: one persistent world, ordinary source Unlimbo, hostile
+/// operational gap, actual Techno Limbo, and the shared119/120 sweep gate.
+/// The returned snapshots let client tests inspect pixels without owning sight.
+pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, bool)> {
+    let (mut sim, rules, viewer, gapper, _) = fixture();
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.fog = vision::FogState::new(32, 32);
+    sim.session.current_house = Some(viewer);
+    let source = sim
+        .spawn_object("SIGHT", "Americans", 16, 16, 0, &rules)
+        .expect("source Unlimbo");
+    let mut views = vec![(sim.fog.clone(), viewer, true)];
+    sim.spawn_object("POWER", "Soviet", 2, 2, 0, &rules)
+        .expect("power Unlimbo");
+    let gap = sim
+        .spawn_object("GAGAP", "Soviet", 18, 16, 0, &rules)
+        .expect("gap Unlimbo");
+    power(&mut sim, &rules);
+    sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+    assert!(
+        sim.substrate
+            .entities
+            .get(gap)
+            .unwrap()
+            .gap_generator
+            .viewers()[&viewer]
+            .active()
+    );
+    assert_ne!(viewer, gapper);
+    views.push((sim.fog.clone(), viewer, true));
+    sim.techno_limbo_with_rules(source, &rules, None);
+    refresh(&mut sim, &rules);
+    assert!(!sim.fog.sight_is_latched(source, viewer));
+    views.push((sim.fog.clone(), viewer, true));
+    for (frame, open) in [(119, true), (120, false)] {
+        sim.session.binary_frame = frame;
+        sim.tick_pending_shroud_conceal(UninitContext::with_rules(&rules));
+        assert_eq!(sim.fog.is_cell_revealed(viewer, 16, 16), open);
+        views.push((sim.fog.clone(), viewer, open));
+    }
+    views
+}
+
+/// Nontransitive alliance consumer fixture. Only the diplomacy owner installs
+/// A↔B↔C; ordinary A sight admits B but never becomes B's exported source.
+pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, InternedId)> {
+    let (mut sim, rules, a, b, c) = fixture();
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.fog = vision::FogState::new(32, 32);
+    let hostile = sim.intern("Neutral");
+    sim.houses.insert(
+        hostile,
+        HouseState::new(hostile, 3, None, false, 10_000, 10),
+    );
+    sim.session.house_order.push(hostile);
+    let graph = HouseAllianceMap::from([
+        ("AMERICANS".into(), ["SOVIET".into()].into()),
+        ("SOVIET".into(), ["AMERICANS".into(), "THIRD".into()].into()),
+        ("THIRD".into(), ["SOVIET".into()].into()),
+    ]);
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(graph),
+        &rules,
+    );
+    sim.spawn_object("SIGHT", "Soviet", 25, 25, 0, &rules)
+        .expect("B source");
+    sim.spawn_object("SIGHT", "Third", 25, 10, 0, &rules)
+        .expect("C source");
+    let source = sim
+        .spawn_object("SIGHT", "Americans", 16, 16, 0, &rules)
+        .expect("A source");
+    assert!(sim.fog.sight_is_latched(source, a));
+    assert!(sim.fog.sight_is_latched(source, b));
+    assert!(!sim.fog.sight_is_latched(source, c));
+    sim.spawn_object("POWER", "Neutral", 2, 25, 0, &rules)
+        .expect("hostile power");
+    let gap = sim
+        .spawn_object("GAGAP", "Neutral", 18, 16, 0, &rules)
+        .expect("hostile gap");
+    power(&mut sim, &rules);
+    let mut views = Vec::new();
+    for _ in 0..3 {
+        sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+        refresh(&mut sim, &rules);
+        assert!(sim.fog.is_cell_visible(b, 16, 16));
+        assert!(!sim.fog.is_cell_visible(c, 16, 16));
+        assert!(!sim.fog.is_cell_revealed(c, 16, 16));
+        views.push((sim.fog.clone(), b, c));
+    }
+    sim.techno_limbo_with_rules(gap, &rules, None);
+    assert!(!sim.fog.is_cell_revealed(c, 16, 16));
+    views.push((sim.fog.clone(), b, c));
+    views
+}
+
+#[test]
+fn native_source_consumers_use_lifecycle_and_direct_alliance_owners() {
+    let _ = sustained_source_gap_limbo_views();
+    let _ = nontransitive_source_gap_views();
 }

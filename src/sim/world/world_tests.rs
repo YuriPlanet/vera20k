@@ -2466,7 +2466,22 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
 #[test]
 fn unregister_live_object_clears_flag_when_vector_entry_is_missing() {
     let mut sim = Simulation::new();
-    let entity = GameEntity::test_default(10, "HTNK", "Americans", 4, 5);
+    let owner = sim.interner.intern("Americans");
+    let type_ref = sim.interner.intern("HTNK");
+    let entity = GameEntity::new_at_frame_zero_for_test(
+        10,
+        4,
+        5,
+        0,
+        0,
+        owner,
+        crate::sim::combat::Health::new(100),
+        type_ref,
+        EntityCategory::Unit,
+        0,
+        5,
+        true,
+    );
     sim.substrate.entities.insert(entity);
     sim.reveal(10);
     sim.substrate.logic.set_order_for_test(Vec::new());

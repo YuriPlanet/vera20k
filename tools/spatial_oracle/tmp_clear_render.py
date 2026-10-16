@@ -207,45 +207,65 @@ def prepare():
     return m, inputs, files
 
 
-def execute(m, case):
+def execute(m, case, *, current_cell=None, current_tactical=None, preserve_alpha=False):
+    """Draw either the legacy prepared Cell or an already-produced live Cell.
+
+    A composed caller supplies its own Cell/Tactical and leaves the native A
+    plane intact. The original caller, lighting, selector and raster below are
+    shared; only the legacy component enrollment is conditional.
+    """
     u = m.u
+    cell = CELL if current_cell is None else current_cell
     case = dict(coords=[10, 20], level=0, cell_point=[66, 81], viewport_y=0,
                 clip=[0, 0, WIDTH, HEIGHT], old_z=65535, background=65535, a=127,
                 repeat=1, type='ClearTile', state=0, detail=2) | case
+    if preserve_alpha:
+        case.pop('a', None)
+        case.pop('a_hex', None)
     scenario = scenario_defaults(m)
     offsets = (0x352C, 0x3534, 0x3538, 0x353C, 0x3540, 0x3544)
     keys = ('ambient_percent', 'red_percent', 'green_percent', 'blue_percent', 'ground_units', 'level_units')
     for offset, key in zip(offsets, keys):
         u.mem_write(scenario + offset, dwords(case['scene_lighting'][key]))
-    u.mem_write(CELL + 0x24, struct.pack('<hh', *case['coords']))
-    u.mem_write(CELL + 0x34, dwords(0))
-    u.mem_write(CELL + 0x38, dwords(0))
-    u.mem_write(CELL + 0x48, dwords(-1))
-    u.mem_write(CELL + 0x11A, bytes((0, case['level'] & 255, 0, 0)))
-    u.mem_write(CELL + 0x140, dwords(0))
+    if current_cell is None:
+        u.mem_write(cell + 0x24, struct.pack('<hh', *case['coords']))
+        u.mem_write(cell + 0x34, dwords(0))
+        u.mem_write(cell + 0x38, dwords(0))
+        u.mem_write(cell + 0x48, dwords(-1))
+        u.mem_write(cell + 0x11A, bytes((0, case['level'] & 255, 0, 0)))
+        u.mem_write(cell + 0x140, dwords(0))
+    else:
+        assert list(struct.unpack('<hh', u.mem_read(cell + 0x24, 4))) == case['coords']
+        assert u.mem_read(cell + 0x11B, 1)[0] == case['level'] & 255
     u.mem_write(POINT, dwords(*case['cell_point']))
     u.mem_write(CLIP, dwords(*case['clip']))
     u.mem_write(0x886FA4, dwords(case['viewport_y']))
     u.mem_write(0xA8EB78, dwords(case['detail']))
     u.mem_write(PIXELS, struct.pack('<H', case['background']) * COUNT)
     u.mem_write(Z, struct.pack('<H', case['old_z']) * COUNT)
-    alpha = bytes.fromhex(case['a_hex']) if 'a_hex' in case else bytes([case['a']]) * COUNT
-    assert len(alpha) == COUNT
-    u.mem_write(A, b''.join(struct.pack('<H', value) for value in alpha))
+    if not preserve_alpha:
+        alpha = bytes.fromhex(case['a_hex']) if 'a_hex' in case else bytes([case['a']]) * COUNT
+        assert len(alpha) == COUNT
+        u.mem_write(A, b''.join(struct.pack('<H', value) for value in alpha))
+    alpha_before = bytes(u.mem_read(A, COUNT * 2)) if preserve_alpha else None
     if 'selector_table' in case:
         u.mem_write(SELECTOR_TABLE, dwords(*case['selector_table']))
     u.mem_write(SELECTOR_FLAG, b'\1')
     before = bytes(u.mem_read(LOAD_MAIN, STRUCT_LEN))
     draws, reached, cell_points = [], set(), []
-    tactical = None
+    tactical = current_tactical
     if 'full_view' in case:
-        tactical = m.alloc(0x1000)
-        u.reg_write(UC_X86_REG_ESP, SP)
-        u.reg_write(UC_X86_REG_ESI, tactical)
-        u.reg_write(UC_X86_REG_EBX, 0)
-        run_checked(u, *MATRIX_INITIALIZER)
-        u.mem_write(tactical + 0xB0, dwords(*case['full_view']['view_origin']))
-        u.mem_write(0x887324, dwords(tactical))
+        if tactical is None:
+            tactical = m.alloc(0x1000)
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ESI, tactical)
+            u.reg_write(UC_X86_REG_EBX, 0)
+            run_checked(u, *MATRIX_INITIALIZER)
+            u.mem_write(tactical + 0xB0, dwords(*case['full_view']['view_origin']))
+            u.mem_write(0x887324, dwords(tactical))
+        else:
+            assert ints(u, tactical + 0xB0, 2) == case['full_view']['view_origin']
+            assert m.read32(0x887324) == tactical
         u.mem_write(0x886FA0, dwords(0))
         u.mem_write(POINT + 0x40, dwords(*case['full_view']['redraw_rect']))
     def observe(_u, pc, _size, _data):
@@ -255,7 +275,9 @@ def execute(m, case):
             pointer = m.read32(u.reg_read(UC_X86_REG_ESP) + 4)
             xy = list(struct.unpack('<hh', u.mem_read(pointer, 4)))
             assert pc != 0x5657A0 or xy == case['coords']
-            m.ret(int(xy == case['coords']) if pc == 0x568300 else CELL, 4)
+            if current_cell is not None and pc == 0x5657A0:
+                return  # the composed world's original lookup owns this Cell
+            m.ret(int(xy == case['coords']) if pc == 0x568300 else cell, 4)
             return
         if pc == 0x480350:
             cell_points.append(ints(u, m.read32(u.reg_read(UC_X86_REG_ESP) + 4), 2))
@@ -268,23 +290,25 @@ def execute(m, case):
         u.mem_write(SP, dwords(RET_MAGIC, POINT + 0x40, CLIP) if tactical is not None
                     else dwords(RET_MAGIC, POINT, CLIP, 0))
         u.reg_write(UC_X86_REG_ESP, SP)
-        u.reg_write(UC_X86_REG_ECX, tactical if tactical is not None else CELL)
+        u.reg_write(UC_X86_REG_ECX, tactical if tactical is not None else cell)
         run_checked(u, 0x6D7560 if tactical is not None else 0x480350, RET_MAGIC,
                     count=12000000, timeout_us=120000000)
     u.hook_del(hook)
     assert len(cell_points) == case['repeat'] and draws
     case['cell_point'] = cell_points[0]
     assert bytes(u.mem_read(LOAD_MAIN, STRUCT_LEN)) == before
-    convert = m.read32(CELL + 0x34)
+    if preserve_alpha:
+        assert bytes(u.mem_read(A, COUNT * 2)) == alpha_before
+    convert = m.read32(cell + 0x34)
     assert ints(u, convert + 0x188, 2) == [0xABBED0, 0x885780]
     return dict(name=case['name'], input=case, draws=draws, reached=[f'{pc:08X}' for pc in sorted(reached)],
         output=dict(snapshot(u, case['background'], case['old_z']),
                     selected_file_index=draws[0]['file_index'],
-                    cell_normalized_rgb=list(struct.unpack('<3h', u.mem_read(CELL + 0x110, 6))),
+                    cell_normalized_rgb=list(struct.unpack('<3h', u.mem_read(cell + 0x110, 6))),
                     convert_rgb_key=ints(u, convert + 0x198, 3),
-                    top_scalar=struct.unpack('<h', u.mem_read(CELL + 0x10A, 2))[0],
-                    bottom_scalar=struct.unpack('<h', u.mem_read(CELL + 0x10E, 2))[0],
-                    common_scalar=struct.unpack('<h', u.mem_read(CELL + 0x10C, 2))[0]))
+                    top_scalar=struct.unpack('<h', u.mem_read(cell + 0x10A, 2))[0],
+                    bottom_scalar=struct.unpack('<h', u.mem_read(cell + 0x10E, 2))[0],
+                    common_scalar=struct.unpack('<h', u.mem_read(cell + 0x10C, 2))[0]))
 
 
 def generate():

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary stationary local AMCV successful Unlimbo through canonical Cell knowledge/cache/notification, full native SHROUD A and current flat Clear TMP RGB565/Z; supplied bounded world and House transport, not native whole scenario startup.",
+  "assumptions": [
+    "One existing Mission/PaletteReader VM owns the central join. Its historical MTNK/type/weapon/Anytown Resident preparation prefix is retained as an explicit inherited fixture boundary. Complete original Discovery/Tactical/Cell startup executes before selected AMCV type/source construction; B0CD48 and ordered Map targets are captured. Source/main selector chronology is not a complete natural starting-force bootstrap.",
+    "Physical active RULESMD (expandmd01), ARTMD, MPBATTLEMD and loose GoldSt bytes are pinned; LANGRULE is physically absent. Original AMCV7470D0/747620 and Mission/General/Country readers execute every selected layer. Mission supplies House after original Unit(type,0); the existing original6F3F40..65 InitManagers prefix classifies that owner before Unlimbo, preserving41B/C. Full natural House/constructor chronology is excluded. Native Waypoint3 parser and real Cell486840 derive109,27 and28032,7040,624. Successful737BA0 return/alive/nonlimbo/mark/Logic registration are asserted before drawing.",
+    "Physical authored GoldSt crop90,8..128,46 supplies levels/tile/subtile and original TMP getters supply slope/land. Real47BBF0/485240 execute for every enrolled Cell. Registry prefix, ClearTile0 enrollment for authoredFFFF, bounded zone registration, empty live overlays/residents and eligible local House are supplied; native full map Recalc/LAT, point-light creation and distant objects are excluded.",
+    "Native70AF50,5678E0,4A9CA0,487630,5865F0/Discover and567DA0 execute synchronously. Before/area/border/full-draw snapshots remain distinct; default FogOfWar=no still updates fog cache. Original561910 supplies all369 offsets/counts; ordinary sight clamps10 while border supports11. Source constructor Scenario random phase remains separate; captured supplied streams are unchanged across selected Unlimbo. Unit stage/timer initialization remains the existing UnitUnlimbo owner; no reveal timer/detach body is invented.",
+    "Full6D3660\u21924801F0/47EFE0 draws cold physical SHROUD and FOG resources on one192x160 native A surface. Camera2634,1870 derives from original projection plus supplied view anchor96,80. A is never rewritten by material setup or drawing. Original6D7560 admits only physical clear111,22 under a supplied one-cell bounds transport; actual lookup, projection,480350/cold CellConvert and547CF0/548D90 execute.",
+    "Physical ISOURB source and literal TEMPERAT destination palettes use existing original expansion/LightConvert owners. Explicit normal High detail2, no live point lights/effects and RGB565/MMX gates are bounded inputs. Eight supplied warm selector tables exercise all independently loaded physical clear files. Production chooses its natural variant; this corpus does not certify whole process selector bootstrap.",
+    "Independent cached-release control starts the same Mission owner on its Anytown crop with the declared selected AMCV/GoldSt layers. A supplied ABI-only callback invokes original70B1D0 at the first notification then resumes original5865F0/outer traversal; it is not a claim that stock GoldSt naturally triggers a Tag. Actual final1 Cell writes, persistent cache/latch, border args and later supplied Sight0 early gate are retained.",
+    "Uncached controls execute original70ADC0/5673A0 in the completed central GoldSt VM after every retained central output. Actual567DA0 receives the local CoordStruct already Z-shifted by5673F8/56742A, and projects Z again. Ordered border receivers and immediate cache/dirty priors/results are retained even when a warm prior needs no additional stores. Zero Sight, supplied minimal nonallied House, invalid lifted-center and registered-level127 empty-walk inputs distinguish rejection from an admitted empty walk. Source250/254/260 and supplied RNG streams remain unchanged. Temporary scalar/position/House priors are restored between sequential cases; no expected knowledge/cache/A is supplied.",
+    "The existing prepared-surface owner initializes the circular backing height for this mode, enabling original4112D0 to fill A before each full draw. Legacy prepared-only defaults are unchanged. The uncached followup A redraw uses the same Shroud owner; its output references initial_amcv when byte-identical."
+  ],
+  "substitutions": [
+    "Inherited Mission native-image/CRT/heap/TLS/cached-INI/RawFile and Windows COM/OleRun transports; existing radar-tracker presentation sinks, setup type-visual-asset and wall-clock boundaries, sound-playback sink and existing Resident/House/zone registration boundaries. Measurement phase projection/gameplay substitutions are disabled for this mode.",
+    "One-cell568300 bounds admission only for material full-view transport; no Cell knowledge, radius, geometry, raster, palette or original code/vtable byte is replaced. Callback control adds only a supplied out-of-image call-ABI thunk; original notification/release bodies are unchanged."
+  ],
+  "entry_points": {
+    "cell_ctor": "0x0047BBF0",
+    "cell_set_coords": "0x00485240",
+    "cell_coords": "0x00486840",
+    "waypoint": "0x0068BDE7",
+    "type_ctor": "0x007470D0",
+    "type_reader": "0x00747620",
+    "unit_ctor": "0x007353C0",
+    "unit_unlimbo": "0x00737BA0",
+    "techno_unlimbo": "0x006F6CA0",
+    "update_reveal": "0x0070AF50",
+    "release": "0x0070B1D0",
+    "area": "0x005678E0",
+    "cell_reveal": "0x004A9CA0",
+    "counter_add": "0x00487630",
+    "uncached_reveal": "0x0070ADC0",
+    "conditional_area": "0x005673A0",
+    "counter_release": "0x00487690",
+    "border": "0x00567DA0",
+    "notify": "0x005865F0",
+    "discover": "0x006F4960",
+    "full_shroud": "0x006D3660",
+    "cell_shroud": "0x004801F0",
+    "shroud_leaf": "0x0047EFE0",
+    "full_tile": "0x006D7560",
+    "cell_tile": "0x00480350",
+    "tmp": "0x00547CF0",
+    "tmp_leaf": "0x00548D90"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --frontier",
+  "payload_sha256": "920156aeb65a5673254c26286c83c5b15308c597c7bbdc17955b721f092b5c68"
+}

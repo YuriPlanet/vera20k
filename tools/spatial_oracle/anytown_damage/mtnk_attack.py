@@ -58,10 +58,10 @@ def sound_inputs(m,root,art,*,wanted_names=None):
  m.make_ini(art)
  return dict(sha256=sha(raw),selected=selected,rows=rows,boundary='Original selected SoundList/Defaults/type readers and retained-name lookup; AudioIndex sample names mapped to local indexes; playback7509E0 is a recording boundary, excluding audio Main RNG/device output.')
 
-def prepare():
+def prepare(*,reader_factory=BulletReader):
  root=Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])
  art_raw=(root/'ARTMD.INI').read_bytes();art,art_lines=lexical(art_raw,{'MTNK','GTNK','Cannon','120MM','GUNFIRE','S_CLSN16','S_CLSN22','H2O_EXP1','H2O_EXP2','H2O_EXP3'})
- m=BulletReader(art,root);u=m.u
+ m=reader_factory(art,root);u=m.u
  m.assets.update({name.upper():(ASSETS/name).read_bytes() for name in ATTACK_SHPS})
  sound=sound_inputs(m,root,art)
  initializers=[]

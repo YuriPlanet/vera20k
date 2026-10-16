@@ -4143,6 +4143,7 @@ mod control_group_tests {
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
         let current_house = sim.interner.intern("Americans");
         let allied_house = sim.interner.intern("French");
         let gap_house = sim.interner.intern("Russians");
@@ -4159,6 +4160,9 @@ mod control_group_tests {
         sim.house_alliances = alliances.clone();
         sim.fog.alliances = alliances;
 
+        // Body/status admission is the fixture subject. Supply no sustained
+        // sight source: mark_visible below intentionally tests transient
+        // visibility that a hostile Gap can conceal while Display is retained.
         let mut building = GameEntity::new_at_frame_zero_for_test(
             27,
             12,
@@ -4170,7 +4174,7 @@ mod control_group_tests {
             sim.interner.intern("YAPOWR"),
             EntityCategory::Structure,
             0,
-            5,
+            0,
             false,
         );
         building
@@ -4519,6 +4523,7 @@ mod control_group_tests {
         }
 
         let mut sim = Simulation::new();
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
         let current_house = sim.interner.intern("Americans");
         let ally = sim.interner.intern("French");
         let gap_owner = sim.interner.intern("Russians");
@@ -4535,6 +4540,9 @@ mod control_group_tests {
         sim.house_alliances = allies.clone();
         sim.fog.alliances = allies;
 
+        // Body/status admission is the fixture subject. Supply no sustained
+        // sight source: mark_visible below intentionally tests transient
+        // visibility that a hostile Gap can conceal while Display is retained.
         let mut unit = GameEntity::new_at_frame_zero_for_test(
             80,
             10,
@@ -4546,7 +4554,7 @@ mod control_group_tests {
             sim.interner.intern("MTNK"),
             EntityCategory::Unit,
             0,
-            5,
+            0,
             false,
         );
         unit.selection.set_selected_for_test(true);

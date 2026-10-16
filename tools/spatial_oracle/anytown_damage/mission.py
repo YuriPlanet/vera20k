@@ -38,10 +38,11 @@ def locomotor_com_transport(u,pc,m,events,*,detailed=False):
  return False
 
 class Mission:
- def __init__(self,continuation=None):
+ def __init__(self,continuation=None,*,world_factory=None,reader_factory=None,code_ranges=()):
   self.continuation=continuation
-  self.m,self.typ,self.weapon,self.rules,self.inputs=base.prepare();self.u=self.m.u
-  self.resident,self.world=base.attach_world(self.m,self.rules)
+  self.code_ranges=tuple(code_ranges)
+  self.m,self.typ,self.weapon,self.rules,self.inputs=base.prepare(**({} if reader_factory is None else dict(reader_factory=reader_factory)));self.u=self.m.u
+  self.resident,self.world=(base.attach_world if world_factory is None else world_factory)(self.m,self.rules)
   self.trace=deque(maxlen=200);self.events=[];self.pending={};self.frame=0;self.phase='setup';self.src=0;self.bullets=[];self.shots=[];self.frames=[];self.impacts=[]
   previous=self.resident.observe
   def resident_observer(u,a,n,d):
@@ -101,22 +102,33 @@ class Mission:
    index=u.reg_read(UC_X86_REG_ECX)
    name=m.string(m.read32(m.read32(m.read32(0xB1D37C)+index*4))+0x6C) if index<m.read32(0xB1D388) else str(index)
    self.events.append(dict(kind='sound_boundary',frame=self.frame,name=name,position=base.xyz(u,u.reg_read(UC_X86_REG_EDX))));m.ret(0,4);return
-  if a>=0x7E1000 and a!=RET_MAGIC:raise AssertionError(('non-image-code',hex(a)))
- def setup(self,*,placement_observer=None,context=None):
+  if a>=0x7E1000 and a!=RET_MAGIC and not any(start<=a<end for start,end in self.code_ranges):raise AssertionError(('non-image-code',hex(a)))
+ def setup(self,*,placement_observer=None,context=None,source_cell=(87,50),source_type_name="MTNK",source_layer_paths=None,source_art_bytes=None,source_art_names=None,classify_source_owner=False,stop_after_placement=False):
   if context is not None and not isinstance(context,dict):
    raise TypeError('Mission setup diagnostic context must be a JSON object')
   fixture=type(self).__module__+'.'+type(self).__qualname__
   diagnostic_context={'case':fixture+'.setup',**(context or {}),
    'setup':dict(fixture=fixture,phase=self.phase,frame=self.frame,continuation=self.continuation)}
   m=self.m;u=self.u
+  # Preserve legacy stage-local provider calls; explicit compositions pin one tuple.
+  layer_paths=None if source_layer_paths is None else tuple(source_layer_paths)
+  if source_type_name != "MTNK":
+   assert source_art_bytes is not None
+   art,art_lines=base.lexical(source_art_bytes,set(source_art_names or (source_type_name,)))
+   m.make_ini(art)
+   self.typ=m.alloc(0x2000)
+   m.invoke(0x7470D0,self.typ,(m.cstring(source_type_name),))
+   assert m.string(self.typ+0x24)==source_type_name
+   self.inputs['selected_source_type']=dict(name=source_type_name,
+    ctor='007470D0',art_sha256=hashlib.sha256(source_art_bytes).hexdigest(),art_lines=art_lines)
   # Existing native retirement owner supplies a valid empty Windows SEH chain.
   initialize_empty_windows_seh(u)
   # Actual MissionControl static construction, then the original Rules loop for
   # each physical layer. Source-order caches remain the existing INI boundary.
   m.invoke(0x4E7CF0,0);mission_rows=[]
-  for name,path in base.layers():
+  for name,path in (base.layers() if layer_paths is None else layer_paths):
    if not path.exists():continue
-   sections,lines=base.lexical(path.read_bytes(),{'Attack','Guard','Sleep','Move','MTNK'})
+   sections,lines=base.lexical(path.read_bytes(),{'Attack','Guard','Sleep','Move',source_type_name})
    m.rules_cache(sections)
    u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ESI,RULES);run_checked(u,0x679C92,0x679CAF)
    for reg,v in ((UC_X86_REG_ESP,SP),(UC_X86_REG_EBP,self.typ),(UC_X86_REG_EBX,self.typ+0x24),(UC_X86_REG_ESI,RULES),(UC_X86_REG_EDI,RULES)):u.reg_write(reg,v)
@@ -129,7 +141,7 @@ class Mission:
   self.inputs['mission_layers']=mission_rows
   # Read common Rules sections consumed by complete Foot/Techno AI.
   self.inputs['ai_rules_layers']=[]
-  for name,path in base.layers():
+  for name,path in (base.layers() if layer_paths is None else layer_paths):
    if not path.exists():continue
    raw=path.read_bytes();sections,lines=base.lexical(raw,{'General','Radiation'});m.rules_cache(sections)
    layer_context={**diagnostic_context,'rules_layer':dict(name=name,path=str(path),sha256=hashlib.sha256(raw).hexdigest())}
@@ -151,9 +163,9 @@ class Mission:
   self.inputs['country_side_lists']=dict(sections=sec,source_lines=lines)
   # Whole UnitType reader supplements the frozen shot-only selected readers.
   full_type=[]
-  for name,path in base.layers():
+  for name,path in (base.layers() if layer_paths is None else layer_paths):
    if not path.exists():continue
-   sections,lines=base.lexical(path.read_bytes(),{'MTNK'});m.rules_cache(sections)
+   sections,lines=base.lexical(path.read_bytes(),{source_type_name});m.rules_cache(sections)
    ok=m.invoke(0x747620,self.typ,(RULES,));full_type.append(dict(file=name,admitted_al=ok&255,resolved_image=m.string(self.typ+0x1F8),voxel=u.mem_read(self.typ+0x236,1)[0],primary_flh=base.xyz(u,self.typ+0x89C),turret_offset=base.i32(u,self.typ+0x720)))
   self.inputs['full_type_layers']=full_type
   for p in (0xB0F720,0x8B4108,0xA8EC78,0x8B3DC0,0xB0F5D8,0xB0F6C8):u.mem_write(p,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
@@ -162,13 +174,23 @@ class Mission:
   # Explicit supplied single human House boundary, retaining native source body.
   self.country=self.countries['Americans']
   country_rows=[]
-  for name,path in base.layers():
+  for name,path in (base.layers() if layer_paths is None else layer_paths):
    if not path.exists():continue
    sections,lines=base.lexical(path.read_bytes(),{'Americans'});m.rules_cache(sections);ok=m.invoke(0x511850,self.country,(RULES,));country_rows.append(dict(file=name,source_lines=lines,admitted_al=ok&255,firepower_bits=bytes(u.mem_read(self.country+0xC8,8)).hex(),rof_bits=bytes(u.mem_read(self.country+0xE8,8)).hex(),multiplay_passive=u.mem_read(self.country+0x1A6,1)[0]))
   self.inputs['country_layers']=country_rows
   self.house=m.alloc(0x16000);u.mem_write(self.house+0x34,dwords(self.country));u.mem_write(0xA83D4C,dwords(self.house));u.mem_write(self.src+0x21C,dwords(self.house));u.mem_write(self.src+0x14C,dwords(self.house))
   u.mem_write(self.house+0x188,struct.pack('<d',1.0));u.mem_write(self.house+0x1A8,struct.pack('<d',1.0));u.mem_write(self.house+0x1EC,b'\x01');u.mem_write(self.house+0x1ED,b'\x01')
   for off in (0x5514,0x5564):u.mem_write(self.house+off+4,dwords(m.alloc(4096),1024));u.mem_write(self.house+off+0x10,dwords(0))
+  if classify_source_owner:
+   # This fixture supplies House after the whole constructor. Reuse the
+   # original InitManagers classification prefix after that transport; do not
+   # seed41A or reset either constructor-produced discovery-history byte.
+   from tools.spatial_oracle.jumpjet_entry_discovery import initialize_owner_classification
+   def block(start,end,registers):
+    u.reg_write(UC_X86_REG_ESP,SP)
+    for register,value in registers.items():u.reg_write(register,value)
+    run_checked(u,start,end)
+   initialize_owner_classification(block,owner=self.src)
   u.mem_write(0xA8ED84,dwords(0));u.mem_write(0xA8E9A0,b'\x01')
   m.invoke(0x40CB80,0);m.invoke(0x4A8630,0);m.invoke(0x6D1C20,m.alloc(0x2000))
   surface=m.alloc(0x40);u.mem_write(surface,dwords(0x7E2070,640,480,0,2,0,0,0));u.mem_write(0x880A04,dwords(surface))
@@ -184,12 +206,16 @@ class Mission:
   root=m.alloc(16);buckets=m.alloc(256*24);template=m.alloc(24);m.invoke(0x58AFF0,template,(0,0))
   u.mem_write(template,dwords(0x7ED540));u.mem_write(template+16,dwords(0,20));u.mem_write(buckets,bytes(u.mem_read(template,24))*256);u.mem_write(root,dwords(buckets,0x56CB80,256,20));u.mem_write(map_ptr+0x14,dwords(root))
   m.invoke(0x56C510,map_ptr);self.initial_zone_count=m.read32(map_ptr+0x4C)
-  self.coord=m.alloc(12);m.invoke(0x486840,self.resident.ptrs[87,50],(self.coord,))
+  self.coord=m.alloc(12);m.invoke(0x486840,self.resident.ptrs[source_cell],(self.coord,))
   self.phase='placement';self.placement_result=m.invoke(0x737BA0,self.src,(self.coord,0x80));self.after_placement=self.state()
   # A read-only observer can record the original return before this fixture's
   # later command. The ordinary mission setup and its refusal assertion stay here.
   if placement_observer is not None:placement_observer()
   assert self.placement_result&255==1
+  if stop_after_placement:
+   assert self.after_placement['alive']==1 and self.after_placement['limbo']==0
+   assert self.after_placement['marked']==1 and self.after_placement['logic_registered']==1
+   return
   self.before_continuation=dict(actor=self.state(),rng={k:base.sr.rng_state(u,p) for k,p in self.resident.rngs.items()})
   self.frame=1
   if self.continuation is not None:

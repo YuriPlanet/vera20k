@@ -27,12 +27,14 @@ def packed_words(values):
     return struct.pack('<' + 'H' * len(values), *values)
 
 
-def prepare_surface(u, case):
+def prepare_surface(u, case, *, size=None, initialize_buffer_height=False):
     """Shared original BSurface/circular A/Z transport; caller owns mapping."""
+    width,height=(WIDTH,HEIGHT) if size is None else size
+    count=width*height
     def surface(address, buffer):
         # Original BSurface virtual methods are used for bounds, locks and pitch.
-        u.mem_write(address, words(0x7E2070, WIDTH, HEIGHT, 0, 2,
-                                   buffer, PIXEL_COUNT * 2, 0))
+        u.mem_write(address, words(0x7E2070, width, height, 0, 2,
+                                   buffer, count * 2, 0))
 
     surface(SURFACE, PIXELS)
     surface(ZSURF, Z)
@@ -43,23 +45,26 @@ def prepare_surface(u, case):
     ):
         # Original scanline functions read +14 backing surface, +18/+1c range,
         # +20 bytes, +24 depth baseline and +28 circular-buffer row width.
-        u.mem_write(address, words(0, 0, WIDTH, HEIGHT, 0, backing,
-                                   buffer, buffer + PIXEL_COUNT * 2,
-                                   PIXEL_COUNT * 2, case.get('depth_baseline',1024), WIDTH))
+        u.mem_write(address, words(0, 0, width, height, 0, backing,
+                                   buffer, buffer + count * 2,
+                                   count * 2, case.get('depth_baseline',1024), width))
         u.mem_write(global_, words(address))
         if case.get('scroll_rows', 0):
             # Same physical circular-scroll transport as shroud.py's owner.
-            u.mem_write(address + 0x10, words(case['scroll_rows'] * WIDTH * 2))
-            u.mem_write(address + 0x2c, words(HEIGHT))
+            u.mem_write(address + 0x10, words(case['scroll_rows'] * width * 2))
+        if initialize_buffer_height or case.get('scroll_rows', 0):
+            # Original4112D0 uses this height for a full backing-surface fill.
+            # Legacy prepared-only draws retain their historical zero default.
+            u.mem_write(address + 0x2c, words(height))
     background, old_z = case.get('background', 0xffff), case.get('old_z', 2000)
-    initial = packed_words([background] * PIXEL_COUNT)
-    z_values = [old_z] * PIXEL_COUNT
+    initial = packed_words([background] * count)
+    z_values = [old_z] * count
     for index, value in case.get('z_patches', []):
         z_values[index] = value
     depths = packed_words(z_values)
     u.mem_write(PIXELS, initial)
     u.mem_write(Z, depths)
-    a_values = [case.get('a_value', 127)] * PIXEL_COUNT
+    a_values = [case.get('a_value', 127)] * count
     for index, value in case.get('a_patches', []):
         a_values[index] = value
     lighting = packed_words(a_values)

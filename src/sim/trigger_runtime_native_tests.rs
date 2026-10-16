@@ -2705,7 +2705,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 [&pass["outline"], &pass["unreveal"], &pass["arg6"]],
                 [&json!(0), &json!(0), &json!(0)]
             );
-            probe.reveal_area(
+            let _ = probe.reveal_area(
                 &[player],
                 (
                     (integer(&coord[0]) / 256) as u16,
@@ -2717,6 +2717,8 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 integer(&pass["final"]) != 0,
                 &config,
                 crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::vision::MapRevealProjection::Transient,
+                probe.session.current_house,
             );
             compare(&probe.fog, &pass["states"]);
         }

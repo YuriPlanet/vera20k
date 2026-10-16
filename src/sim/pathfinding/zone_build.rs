@@ -19,6 +19,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainGrid, zone_class};
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::bridge_state::BridgeEndpointRecord;
+use crate::util::lookup_hash::LookupSet;
 
 /// Shared persistent topology projected through all 13 MovementZone rows.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -50,33 +51,44 @@ struct HierarchyTempEdge {
 
 /// Native temporary edge table used by `BuildZoneLevel`.
 ///
-/// The directed `(existing, current)` pair is the identity: a later reversed
-/// pair remains distinct, while reinserting the exact pair preserves its first
-/// flag and discovery position. Buckets drain in ascending index order.
+/// The directed `(existing, current)` pair within its bucket is the identity:
+/// a later reversed pair remains distinct, while reinserting the exact pair
+/// preserves its first flag and discovery position. The bridge transcript can
+/// file one stored pair under several buckets
+/// (`register_native_hierarchy_pair`). Buckets drain in ascending index order.
 struct HierarchyEdgeBuckets {
     buckets: Vec<Vec<HierarchyTempEdge>>,
+    /// Every pushed edge's bucket and pair, so a repeat is found without
+    /// scanning its bucket (large maps hold hundreds per bucket).
+    pushed: LookupSet<u64>,
 }
 
 impl HierarchyEdgeBuckets {
     fn new() -> Self {
         Self {
             buckets: vec![Vec::new(); 256],
+            pushed: LookupSet::default(),
         }
     }
 
     fn register(&mut self, existing: ZoneId, current: ZoneId, flag: u8) {
         let bucket = (((existing & 0x0f) << 4) | (current & 0x0f)) as usize;
-        if self.buckets[bucket]
-            .iter()
-            .any(|edge| edge.existing == existing && edge.current == current)
-        {
-            return;
+        self.push_new(
+            bucket,
+            HierarchyTempEdge {
+                existing,
+                current,
+                flag,
+            },
+        );
+    }
+
+    /// Push `edge` unless `bucket` already holds its exact pair.
+    fn push_new(&mut self, bucket: usize, edge: HierarchyTempEdge) {
+        let key = (bucket as u64) << 32 | u64::from(edge.existing) << 16 | u64::from(edge.current);
+        if self.pushed.insert(key) {
+            self.buckets[bucket].push(edge);
         }
-        self.buckets[bucket].push(HierarchyTempEdge {
-            existing,
-            current,
-            flag,
-        });
     }
 
     fn drain_into(self, graph: &mut ZoneLevelGraph) {

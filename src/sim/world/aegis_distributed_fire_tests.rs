@@ -54,6 +54,9 @@ impl GuardScene {
         assert!(rules.object("ZEP").unwrap().balloon_hover);
 
         let mut sim = crate::sim::arena_fixture::rival_water_arena(&rules, 1284, 64);
+        // The arena supplies terrain/navigation; establish this visibility
+        // domain before Unlimbo can create source and border viewer planes.
+        sim.fog = crate::sim::vision::FogState::new(64, 64);
         sim.session.current_house = Some(sim.interner.intern("Americans"));
         let aegis = sim
             .spawn_object("AEGIS", "Americans", 24, 24, 0, &rules)

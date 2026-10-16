@@ -33,7 +33,7 @@ fn reveal_between_frames(
     }
     if frame % 60 == 0 {
         for final_pass in [false, true] {
-            sim.reveal_area(
+            let _ = sim.reveal_area(
                 &[viewer],
                 (28, 28),
                 0,
@@ -42,6 +42,8 @@ fn reveal_between_frames(
                 final_pass,
                 &config,
                 UninitContext::default(),
+                crate::sim::vision::MapRevealProjection::Transient,
+                sim.session.current_house,
             );
         }
     }

@@ -355,18 +355,11 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // with a hash that skips only that fold) gives this value in the same
 // test, with every tripwire above green.
 // Control removed. Previous: 0x13A7_184B_5F5F_A088.
-// Integrated StateHasher pin after executed scoped feed attribution. The test
-// below recovers current main exactly with retired feeds and preserves serialized
-// gameplay, the live Dummy and all three RNG streams; this is a Rust ratchet.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x4C4F_3B6D_6A3A_B21F;
-
-// ALL01 r6 (fork-local schema345) used DefaultHasher before main's
-// pinned StateHasher, entity/fog digests and owner migrations. These remain
-// historical Rust receipts; they are not comparable to current u64 outputs.
-const BRIDGE_HARNESS_INCOMING_HASH: u64 = 0x38EB_6DC4_C87D_4E43;
-const BRIDGE_HARNESS_R6_FINAL_HASH: u64 = 0xA333_077C_B5E5_6DA3;
-// The legacy-feed control uses this main StateHasher reference.
-const BRIDGE_HARNESS_MAIN_HASH: u64 = 0x7762_A172_3DBE_DA89;
+// Snapshot377 retains raw Type Sight and native250/254/260 admission.
+// The exact-zero gate70AF87 replaces frame-produced empty source caches and
+// default fog owner planes. This is a Rust state ratchet; crossing geometry,
+// per-frame replay and absolute RNG tripwires remain independent.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x4868_04AA_0C67_B6A9;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -951,14 +944,7 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         .last()
         .expect("at least one tick replayed")
         .expect("every replayed frame hashes");
-    println!(
-        "[bridge historical hash receipts] archived_default_incoming={BRIDGE_HARNESS_INCOMING_HASH:016X} archived_r6={BRIDGE_HARNESS_R6_FINAL_HASH:016X}"
-    );
-    super::global_parity_harness_tests::assert_announcement_feed_retirement_hash_control(
-        "bridge",
-        &rep,
-        BRIDGE_HARNESS_MAIN_HASH,
-    );
+    super::global_parity_harness_tests::print_replay_summary("bridge", &rep);
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,
         "committed bridge-harness baseline drifted. Do not paste the observed value \

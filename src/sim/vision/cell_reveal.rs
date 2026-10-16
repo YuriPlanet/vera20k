@@ -2,7 +2,8 @@
 //! Counters and ground knowledge stay with OwnerVisibility. MapCell4A9CA0
 //! updates these derived cache bytes only for the cell it visits, leaving its
 //! neighbors stale; RevealCell4AA050 also rewrites its neighbors' ground
-//! frames. Native constructor47BD3A initializes -2/-2.
+//! frames. Native constructor47BD28/47BD2E initializes -2/-2;
+//! the separate47BD3A store initializes the sight counter to1.
 
 use super::{FogState, GROUND_OPEN, GROUND_VISIBLE, InternedId, OwnerVisibility, ShroudKnowledge};
 use crate::map::cell_index::NativeCellIdentity;
@@ -60,6 +61,18 @@ pub(super) struct DummyVisibility {
 enum VisibilityCell {
     Real(usize),
     Dummy,
+}
+
+/// VERA's derived current-sight projection; the original Cell counter/cache
+/// operation is shared. Sustained sources already have an indexed lifetime,
+/// while action/weapon reveal pairs retain a transient visible observation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MapRevealProjection {
+    Source,
+    Transient,
+    /// Map5673A0 S32=true: skip a fully initialized/open receiver first;
+    /// uncached4A9CA0 final0, not a retained source admission.
+    UncachedConditional,
 }
 
 /// Synchronous MapCell receiver arguments. The coordinate is read after both
@@ -278,6 +291,33 @@ impl OwnerVisibility {
     }
 }
 
+/// Validate source projections through the same real/Dummy identity as the
+/// receiver, including sparse native Cell registries. The supplied query must
+/// be isolated so diagnostics cannot stamp the retained shared Dummy.
+#[cfg(any(test, feature = "test-support"))]
+impl FogState {
+    pub(crate) fn assert_sight_projection_consistent(&self, cells: Option<&NativeCellQuery<'_>>) {
+        for (&(id, viewer), admission) in &self.sight_admissions {
+            if !admission.latched {
+                continue;
+            }
+            let vis = &self.by_owner[&viewer];
+            for &cell in &admission.cells {
+                let key = vis.visibility_cell(cell, cells);
+                let (ground, _) = vis.map_cell_parts(key);
+                assert_eq!(
+                    ground & (GROUND_VISIBLE | GROUND_OPEN),
+                    GROUND_VISIBLE | GROUND_OPEN,
+                    "source {id}: footprint cell {cell:?} lost its ground bits"
+                );
+            }
+        }
+        for vis in self.by_owner.values() {
+            vis.assert_tracked();
+        }
+    }
+}
+
 impl FogState {
     /// Original Map567F70's cell receiver: only counter==0 is concealed.
     /// Negative sustained sight and positive shroud/gap counters survive;
@@ -359,6 +399,49 @@ impl FogState {
         (frame == -2).then_some(MapCellNotification { cell, fresh: true })
     }
 
+    /// Map5673A0 at567856..567870, selected S24=false/S32=true:
+    /// skip only when both ground12C bits8/10 and cache140 bits1/2 are set.
+    pub(crate) fn map_cell_fully_known(
+        &self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let Some(vis) = self.by_owner.get(&viewer) else {
+            return false;
+        };
+        let key = vis.visibility_cell(cell, native_cells);
+        let (ground, cache) = vis.map_cell_parts(key);
+        ground & (GROUND_VISIBLE | GROUND_OPEN) == GROUND_VISIBLE | GROUND_OPEN
+            && cache.initialized
+            && cache.fog_open
+    }
+
+    /// Map567DA0 border tail: recompute only ground frame120 through
+    /// Tactical6D8700. The native dirty138/6DA7D0 is presentation invalidation;
+    /// no sight counter, ground bits, fog frame or discovery callback changes.
+    /// Existing full A reconstruction per Fog view generation consumes these
+    /// cache changes, replacing native dirty138/6DA7D0 without unread state.
+    pub(crate) fn refresh_sight_border_cell(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let frame = self.map_cell_edge_frame(viewer, cell, false, native_cells);
+        let vis = self
+            .by_owner
+            .entry(viewer)
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let (_, _, cache) = vis.map_cell_parts_mut(key);
+        if cache.frames[0] == frame {
+            return false;
+        }
+        cache.frames[0] = frame;
+        true
+    }
+
     /// Original Display4A9890, via Map653810/Execute16. Unlike4A9CA0 it
     /// does not touch sight/gap counters; unlike4AA050 it initializes both
     /// ground and fog edge channels. Fresh and changed are distinct: the
@@ -438,6 +521,7 @@ impl FogState {
         cell: (u16, u16),
         final_pass: bool,
         native_cells: Option<&NativeCellQuery<'_>>,
+        projection: MapRevealProjection,
     ) -> Option<MapCellNotification> {
         let vis = self
             .by_owner
@@ -455,7 +539,9 @@ impl FogState {
         } else {
             state.reveal();
         }
-        state.transient_visible = matches!(key, VisibilityCell::Real(_));
+        if projection != MapRevealProjection::Source {
+            state.transient_visible = matches!(key, VisibilityCell::Real(_));
+        }
         let open = state.open;
         if open {
             *ground |= GROUND_VISIBLE | GROUND_OPEN;
@@ -463,7 +549,9 @@ impl FogState {
             *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         }
         if let VisibilityCell::Real(index) = key {
-            vis.tracked.transient.push(index as u32);
+            if projection != MapRevealProjection::Source {
+                vis.tracked.transient.push(index as u32);
+            }
             if !open {
                 vis.tracked.cleared.push(index as u32);
             }

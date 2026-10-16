@@ -1671,7 +1671,8 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                             .entities()
                             .get(id)
                             .and_then(|entity| {
-                                sim.interner.object_type(entity.type_ref(), &resources.rules)
+                                sim.interner
+                                    .object_type(entity.type_ref(), &resources.rules)
                             })
                             .is_some_and(
                                 crate::app::match_runtime::eva_producers::rally_point_announces,
@@ -3961,6 +3962,9 @@ mod tests {
         let rules = &battle.rules;
         let mut sim = Simulation::new();
         crate::sim::arena_fixture::flat_ground(&mut sim, rules);
+        // Successful Unlimbo now publishes sight immediately; establish the
+        // viewer-plane dimensions before creating any sources.
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
         let chopper = sim
             .spawn_object("SCHP", "Americans", 10, 10, 0, rules)
             .expect("retail Siege Chopper spawns");
@@ -3971,8 +3975,6 @@ mod tests {
             .spawn_object("MTNK", "Americans", 14, 10, 0, rules)
             .expect("retail tank spawns");
         let owner = sim.interner.get("Americans").unwrap();
-        sim.fog.width = 32;
-        sim.fog.height = 32;
         sim.fog.reveal_all_for_owner(owner);
         sim.session.game_mode_nonzero = true;
         sim.session.current_house = Some(owner);

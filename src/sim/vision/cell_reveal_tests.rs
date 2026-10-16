@@ -338,7 +338,10 @@ fn native_reshroud_allocated_cursor_stops_on_null_and_calls_shared_receiver() {
             .collect();
         assert_eq!(json!(cells), row["visits"], "{name}");
         assert!(fog.admit_whole_map_reveal(viewer));
-        fog.transition_whole_map_with_gap_reentry(
+        let mut world = crate::sim::world::Simulation::default();
+        world.fog = fog;
+        world.resolved_terrain = Some(terrain.clone());
+        world.transition_whole_map_with_gap_reentry(
             viewer,
             cells,
             MapTransition::Reshroud,
@@ -346,7 +349,10 @@ fn native_reshroud_allocated_cursor_stops_on_null_and_calls_shared_receiver() {
             &std::collections::BTreeMap::new(),
             Some(&[]),
             &std::collections::BTreeMap::new(),
+            &crate::sim::vision::VisionConfig::default(),
+            crate::sim::world::UninitContext::default(),
         );
+        let fog = world.fog;
         assert_eq!(
             fog.whole_map_revealed_for_owner(viewer),
             row["houses"]["player"]["revealed"] == 1,
@@ -433,6 +439,7 @@ fn native_trigger_reveal_retained_cache_admission_matches_original_histories() {
             pair(&history["cell"]),
             history["final"] == 1,
             Some(&cells),
+            crate::sim::vision::MapRevealProjection::Transient,
         );
         let expected = history["trace"]
             .as_array()

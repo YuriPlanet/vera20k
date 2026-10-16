@@ -96,7 +96,7 @@ pub fn launch(
     let config = sim.sight_reveal_config(Some(rules));
     let viewers = vision::direct_reveal_viewers(&sim.fog, owner, &config, &sim.interner);
     for final_pass in [false, true] {
-        sim.reveal_area(
+        let _ = sim.reveal_area(
             &viewers,
             (target_rx, target_ry),
             coord[2],
@@ -105,6 +105,8 @@ pub fn launch(
             final_pass,
             &config,
             crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::vision::MapRevealProjection::Transient,
+            sim.session.current_house,
         );
     }
     sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {

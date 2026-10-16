@@ -220,21 +220,17 @@ impl Simulation {
     }
 
     /// TechnoUnlimbo6F6EB7..6F6EDE, after successful Reveal and the alive gate,
-    /// before Foot Unlimbo discovery/neighbors. Dead successful Reveal retains
-    /// the constructor-uninitialized cache. Map-less fixtures have no Cell.
+    /// before Foot Unlimbo discovery/neighbors. The caller carries the single
+    /// pre-sight-callback6F6D04 admission; this writer does not recheck alive.
+    /// Initially dead successful Reveal retains the constructor-uninitialized
+    /// cache. Missing objects and map-less fixtures have no current Cell.
     pub(crate) fn spatial_threat_after_unlimbo(
         &mut self,
         id: u64,
         rules: &RuleSet,
         terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     ) {
-        if self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|actor| actor.lifecycle.object_alive())
-            && let Some(cell) = self.spatial_threat_current_cell(id, terrain)
-        {
+        if let Some(cell) = self.spatial_threat_current_cell(id, terrain) {
             self.add_spatial_threat_at(id, cell, rules);
         }
     }

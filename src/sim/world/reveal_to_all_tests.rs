@@ -120,8 +120,8 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
     let russians = sim.interner.get("Russians").unwrap();
     let config = sim.sight_reveal_config(Some(&rules));
     sim.refresh_fog(&config, Some(&rules));
-    assert!(sim.fog.sight_admissions.contains_key(&(id, russians)));
-    assert!(!sim.fog.sight_admissions.contains_key(&(id, americans)));
+    assert!(sim.fog.sight_is_latched(id, russians));
+    assert!(!sim.fog.sight_is_latched(id, americans));
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
     }
@@ -248,7 +248,7 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
         .unwrap();
     let config = sim.sight_reveal_config(Some(&rules));
     sim.refresh_fog(&config, Some(&rules));
-    assert!(sim.fog.sight_admissions.contains_key(&(id, americans)));
+    assert!(sim.fog.sight_is_latched(id, americans));
     let cells = alternate_cells(&sim, id, americans);
 
     for &cell in &cells {
@@ -261,7 +261,12 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
     }
     sim.building_destruction_anims(&rules, id, &mut Vec::new(), |_, _| {});
     assert!(sim.fog.alternate_sight_admissions.is_empty());
-    assert!(!sim.fog.sight_admissions.keys().any(|key| key.0 == id));
+    assert!(
+        !sim.fog
+            .sight_admissions
+            .iter()
+            .any(|(key, source)| key.0 == id && source.latched)
+    );
     for &(x, y) in &cells {
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
         assert_eq!(counter(&sim, americans, (x, y)), 0, "{x},{y}");
@@ -329,7 +334,12 @@ fn a_computer_buildings_death_takes_its_sight_off_the_current_houses_map_twice()
     assert_eq!(counter(&sim, americans, post), 0);
     assert!(sim.fog.is_cell_visible(americans, post.0, post.1));
     assert!(sim.fog.alternate_sight_admissions.is_empty());
-    assert!(!sim.fog.sight_admissions.keys().any(|key| key.0 == id));
+    assert!(
+        !sim.fog
+            .sight_admissions
+            .iter()
+            .any(|(key, source)| key.0 == id && source.latched)
+    );
 }
 
 /// A sold building leaves through Limbo alone. Its `RevealToAll=` branch
@@ -364,7 +374,12 @@ fn a_sold_allys_building_leaves_its_shared_sight_counted() {
     sim.techno_limbo_with_context(id, UninitContext::new(Some(&rules), None));
     sim.refresh_fog(&config, Some(&rules));
     assert!(sim.fog.alternate_sight_admissions.is_empty());
-    assert!(!sim.fog.sight_admissions.keys().any(|key| key.0 == id));
+    assert!(
+        !sim.fog
+            .sight_admissions
+            .iter()
+            .any(|(key, source)| key.0 == id && source.latched)
+    );
     for &(x, y) in &cells {
         assert_eq!(counter(&sim, americans, (x, y)), -1, "{x},{y}");
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
@@ -384,8 +399,10 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     let Some((rules, mut sim, americans)) = world() else {
         return;
     };
-    // Its Unlimbo queues Construction (`0x006F6E2A`, `0x0044D6BD..0x0044D6D0`)
-    // before its DiscoveredBy(owner), which therefore leaves it shut.
+    // Original5678E0 rejects noncurrent ordinary sight before its Cell
+    // callbacks. Thus no invented owner-plane Discover can open this AI
+    // building before Unlimbo queues Construction (6F6E2A/44D6BD..D0) and
+    // the real later owner discovery440E76 leaves it shut.
     let id = sim
         .construct_object_limbo_at_height(
             "NAIRON",
@@ -398,7 +415,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
-    assert_eq!(
+    let (revealed, calls) = trace_reveal_calls(|| {
         sim.reveal_constructed_object_at_height(
             id,
             SITE.0,
@@ -408,8 +425,21 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
             PlacementEvidence::EvaluateMark,
             &rules,
             FrameEffects::default(),
-        ),
-        Some(id)
+        )
+    });
+    assert_eq!(revealed, Some(id));
+    assert!(
+        calls.notifications.is_empty(),
+        "noncurrent logical sight is not a native5865F0 call"
+    );
+    let russians = sim.interner.get("Russians").unwrap();
+    assert!(
+        sim.fog.sight_is_latched(id, russians),
+        "70AF50 caches before Map admission"
+    );
+    assert!(
+        sim.fog.is_cell_revealed(russians, SITE.0, SITE.1),
+        "logical query projection is retained"
     );
     let building = sim.substrate.entities.get(id).unwrap();
     assert_eq!((building.position.rx(), building.position.ry()), SITE);

@@ -41,7 +41,8 @@ def ints(u, address, count):
     return list(struct.unpack('<' + 'i' * count, u.mem_read(address, count * 4)))
 
 
-def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar=False):
+def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar=False,
+                    frontier=False, tmp_names=()):
     root = configured_gamemd().parent
     sources, assets = [], {}
     containers = (
@@ -82,6 +83,13 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
             ('ra2.mix', {'isourb.mix': ('clat10.urb',)}),
             ('ra2md.mix', {'localmd.mix': ('URBANMD.INI',)}),
         )
+    if frontier:
+        containers = (
+            ('ra2.mix', {'isourb.mix': tuple(tmp_names),
+                         'cache.mix': ('isourb.pal', 'temperat.pal', 'palette.pal', 'anim.pal'),
+                         'conquer.mix': ('SHROUD.SHP', 'FOG.SHP')}),
+            ('ra2md.mix', {'localmd.mix': ('ARTMD.INI', 'MPBattleMD.ini', 'URBANMD.INI')}),
+        )
     for outer_name, children in containers:
         outer_raw = (root / outer_name).read_bytes()
         outer = mix(outer_raw)
@@ -90,6 +98,8 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
             inner = mix(inner_raw)
             if tile and inner_name == 'isotemp.mix':
                 assert mix_hash('clear01h.tem') not in inner
+            if frontier and inner_name == 'isourb.mix':
+                assert mix_hash('clear01h.urb') not in inner
             for name in names:
                 raw = inner[mix_hash(name)]
                 assets[name.upper()] = raw
@@ -97,7 +107,7 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
                                     outer_sha256=hashlib.sha256(outer_raw).hexdigest(),
                                     inner_sha256=hashlib.sha256(inner_raw).hexdigest(),
                                     sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw)))
-    if ore or placement:
+    if ore or placement or frontier:
         # Active retail's expansion archive overrides the base RULESMD.
         raw = (root / 'expandmd01.mix').read_bytes()
         rules = mix(raw)[mix_hash('RULESMD.INI')]
@@ -246,7 +256,7 @@ def prepare_tiberium(m, assets):
     return dict(constructor='007216C0', reader='00721A50', layers=layers)
 
 
-def initialize_cell_convert(m):
+def initialize_cell_convert(m, *, source_palette="ISOTEM.PAL", destination_palette="TEMPERAT.PAL"):
     """Original theater palette expansion, default LightConvert and Cell binding.
 
     Physical palette IO is supplied; the original 5454DB expansion loop,
@@ -255,7 +265,7 @@ def initialize_cell_convert(m):
     """
     u = m.u
     palettes = []
-    for name, address in (('ISOTEM.PAL', 0xABBED0), ('TEMPERAT.PAL', 0x885780)):
+    for name, address in ((source_palette, 0xABBED0), (destination_palette, 0x885780)):
         raw = m.assets[name]
         assert len(raw) == 768
         u.mem_write(address, raw)
@@ -297,7 +307,7 @@ def initialize_cell_convert(m):
     assert m.read32(CELL + 0x34) == convert
     assert struct.unpack('<3h', u.mem_read(CELL + 0x10A, 6)) == (1000, 1000, 1000)
     return dict(palettes=palettes, rgb=[1000] * 3, shade_count=53,
-                source_palette='ISOTEM.PAL', destination_palette='TEMPERAT.PAL',
+                source_palette=source_palette, destination_palette=destination_palette,
                 cell_brightness=[1000] * 3,
                 palette_table_sha256=hashlib.sha256(palette_table).hexdigest(),
                 palette_dispatch='RGB565/MMX',

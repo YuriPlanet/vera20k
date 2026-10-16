@@ -39,6 +39,7 @@ fn spawn_turreted(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16, rot_by
     let mut entity = GameEntity::test_default(stable_id, "MTNK", "Americans", rx, ry);
     entity.barrel_facing = Some(FacingClass::new(body_facing_to_turret(0), rot_byte));
     sim.substrate.entities.insert(entity);
+    use_test_interner(sim);
     assert!(matches!(
         sim.reveal(stable_id),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -49,6 +50,7 @@ fn spawn_turreted(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16, rot_by
 fn spawn_target(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16) {
     let entity = GameEntity::test_default(stable_id, "GAPILE", "Soviet", rx, ry);
     sim.substrate.entities.insert(entity);
+    use_test_interner(sim);
     assert!(matches!(
         sim.reveal(stable_id),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -57,7 +59,9 @@ fn spawn_target(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16) {
 
 /// Replace sim's interner with the thread-local test interner so entity
 /// type_ref / owner IDs from `GameEntity::test_default` (which uses
-/// `test_intern`) resolve correctly inside sim functions.
+/// `test_intern`) resolve correctly inside sim functions. Bind after entity
+/// construction and before Reveal/Unlimbo, which resolves identities now;
+/// cloning the interner only after reveal is too late.
 fn use_test_interner(sim: &mut Simulation) {
     sim.interner = crate::sim::intern::test_interner();
 }
@@ -71,7 +75,6 @@ fn one_tick_acquisition_latency_first_tick_no_fire() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100); // ROT=100 → rot_per_frame=25600
     spawn_target(&mut sim, 2, 8, 5);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
 
     // Attach attack_target so combat will try to fire on the next tick.
@@ -102,8 +105,6 @@ fn slow_rot_takes_more_frames_to_align_than_fast_rot() {
     spawn_turreted(&mut sim_fast, 1, 5, 5, 10); // ROT=10 → rot_per_frame=2560
     spawn_target(&mut sim_slow, 2, 5, 8); // 3 cells south
     spawn_target(&mut sim_fast, 2, 5, 8);
-    use_test_interner(&mut sim_slow);
-    use_test_interner(&mut sim_fast);
     let rules_slow = rules_with_mtnk_rot(1);
     let rules_fast = rules_with_mtnk_rot(10);
 
@@ -173,11 +174,11 @@ fn idle_turret_returns_to_body_facing() {
     // ROT=100 → rot_per_frame=25600. Diff from 0 (north turret) to body_facing_to_turret(64) =
     // 64*256 = 16384. Duration = 16384/25600 = 0 → snaps in 1 frame.
     sim.substrate.entities.insert(entity);
+    use_test_interner(&mut sim);
     assert!(matches!(
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
 
     // Run 2 ticks to ensure turret_rotation has had a chance to act.
@@ -250,7 +251,6 @@ fn unit_facing_pass_drives_turret_to_target() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 5);
     spawn_target(&mut sim, 2, 5, 9); // due south
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     sim.substrate
         .entities
@@ -305,7 +305,6 @@ fn unit_authoritative_fire_kills_target_via_advance_tick() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100); // fast ROT — aligns within a frame
     spawn_target(&mut sim, 2, 5, 8); // 3 cells south, in range (Range=6)
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     sim.substrate
         .entities
@@ -403,7 +402,6 @@ fn s3_unit_facing_emitted_for_attacker_and_idle() {
         .unwrap()
         .body_facing
         .snap(0x4000, 0); // body east
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     sim.substrate
         .entities
@@ -452,7 +450,6 @@ fn removed_attacker_returns_to_body_same_tick() {
         .unwrap()
         .health
         .set_for_test(0); // dead at resolve
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     sim.substrate
         .entities
@@ -496,7 +493,6 @@ fn removed_attacker_holds_its_turret_through_the_dwell() {
             .unwrap()
             .health
             .set_for_test(0);
-        use_test_interner(&mut sim);
         let rules = rules_with_mtnk_rot(5);
         sim.session.binary_frame = 100;
         let unit = sim.substrate.entities.get_mut(1).unwrap();
@@ -531,7 +527,6 @@ fn kill_tick_unit_facing_holds_target() {
         .unwrap()
         .health
         .set_for_test(10); // lethal: Damage=65
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     sim.substrate
         .entities
@@ -585,7 +580,6 @@ fn kill_tick_barrel_holds_target_facing() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100);
     spawn_target(&mut sim, 2, 5, 8);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     sim.substrate
         .entities
@@ -679,7 +673,6 @@ fn facing_apply_point_equivalence_no_kill() {
         .unwrap()
         .body_facing
         .snap(0x6000, 0);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(1);
     sim.substrate
         .entities
@@ -745,7 +738,6 @@ fn co_attacker_facing_matches_killer() {
     spawn_turreted(&mut sim, 1, 5, 5, 100); // killer
     spawn_turreted(&mut sim, 3, 8, 8, 100); // co-attacker (out of its own ROF this tick)
     spawn_target(&mut sim, 2, 5, 8);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     sim.substrate
         .entities
@@ -826,7 +818,6 @@ fn save_load_round_trip_on_kill_tick() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100);
     spawn_target(&mut sim, 2, 5, 8);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     sim.substrate
         .entities
@@ -896,12 +887,12 @@ fn a_building_barrel_turns_only_through_mission_attack() {
         .attack_target
         .set_for_test(Some(TargetKind::Entity(2)));
     sim.substrate.entities.insert(tower);
+    use_test_interner(&mut sim);
     assert!(matches!(
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
     spawn_target(&mut sim, 2, 5, 9);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     let aim = |sim: &Simulation| {
         sim.substrate
@@ -944,11 +935,11 @@ fn unit_facing_pass_idles_turret_to_body_without_target() {
     entity.body_facing.snap(0x4000, 0); // body east
     entity.barrel_facing = Some(FacingClass::new(body_facing_to_turret(0), 100));
     sim.substrate.entities.insert(entity);
+    use_test_interner(&mut sim);
     assert!(matches!(
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
 
     let result = run_combat_direct(&mut sim, &rules);
@@ -986,6 +977,7 @@ fn spawn_turretless(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16, rot:
     let mut entity = GameEntity::test_default(stable_id, "MTNK", "Americans", rx, ry);
     entity.set_body_facing_rot(rot);
     sim.substrate.entities.insert(entity);
+    use_test_interner(sim);
     assert!(matches!(
         sim.reveal(stable_id),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -1006,7 +998,6 @@ fn gsi_08_04_turretless_vehicle_turns_its_hull_before_it_fires() {
     let mut sim = Simulation::new();
     spawn_turretless(&mut sim, 1, 5, 5, 5); // facing north (0)
     spawn_target(&mut sim, 2, 5, 9); // due south, inside Range=6
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     sim.substrate
         .entities
@@ -1075,7 +1066,6 @@ fn gsi_08_04_moving_turretless_vehicle_does_not_turn_to_fire() {
     let mut sim = Simulation::new();
     spawn_turretless(&mut sim, 1, 5, 5, 5);
     spawn_target(&mut sim, 2, 5, 9);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     {
         let attacker = sim.substrate.entities.get_mut(1).unwrap();
@@ -1111,7 +1101,6 @@ fn fire_turn_hull(setup: impl FnOnce(&mut GameEntity)) -> Option<u16> {
     let mut sim = Simulation::new();
     spawn_turretless(&mut sim, 1, 5, 5, 5);
     spawn_target(&mut sim, 2, 5, 9);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     let attacker = sim.substrate.entities.get_mut(1).unwrap();
     attacker
@@ -1255,7 +1244,6 @@ fn gsi_08_14_idle_turret_dwell_is_measured_from_the_units_own_last_shot() {
         .unwrap()
         .body_facing
         .snap(0x4000, 0);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
 
     let never_fired = run_combat_direct(&mut sim, &rules);
@@ -1301,7 +1289,6 @@ fn gsi_08_14_idle_turret_leads_toward_the_move_destination() {
         .unwrap()
         .body_facing
         .snap(0x0000, 0); // hull north
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     // A NavCom four cells EAST; a Drive's order starts with an empty path.
     sim.substrate
@@ -1351,7 +1338,6 @@ fn gsi_08_14_idle_turret_returns_to_the_hull_without_a_navcom() {
         .unwrap()
         .body_facing
         .snap(0x0000, 0); // hull north
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     // A route east without a NavCom: Foot+5E0 words toward (9,5).
     sim.substrate
@@ -1383,7 +1369,6 @@ fn gsi_08_14_rotation_latch_suppresses_the_aim_while_the_arc_runs() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 1); // ROT=1 gives a long arc
     spawn_target(&mut sim, 2, 5, 9);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(1);
     sim.substrate
         .entities
@@ -1493,7 +1478,6 @@ fn gsi_08_03_homing_projectile_widens_the_fire_tolerance_to_0x1000() {
         let mut sim = Simulation::new();
         spawn_turreted(&mut sim, 1, 5, 5, 5);
         spawn_target(&mut sim, 2, 5, 9); // due south -> 0x8000
-        use_test_interner(&mut sim);
         sim.substrate
             .entities
             .get_mut(1)
@@ -1554,12 +1538,12 @@ fn gsi_08_14_building_turret_holds_its_last_aim() {
         .attack_target
         .set_for_test(Some(TargetKind::Entity(2)));
     sim.substrate.entities.insert(tower);
+    use_test_interner(&mut sim);
     assert!(matches!(
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
     spawn_target(&mut sim, 2, 5, 9); // due south
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     // On Attack, whose FACING arm aims the turret (`0x0044B187`).
     let now = sim.session.binary_frame;
@@ -1643,9 +1627,9 @@ TurretAnimIsVoxel={}\n\n\
         sim.substrate.entities.insert(tower);
         let target = GameEntity::test_default(2, "TGT", "Soviet", 5, 9); // due south -> 0x8000
         sim.substrate.entities.insert(target);
+        use_test_interner(&mut sim);
         sim.reveal(1);
         sim.reveal(2);
-        use_test_interner(&mut sim);
         !run_combat_direct(&mut sim, &rules)
             .consequences
             .fire_events()
@@ -1700,7 +1684,6 @@ fn gsi_08_04_rotation_latch_refuses_the_shot_until_the_arc_finishes() {
         let mut sim = Simulation::new();
         spawn_turreted(&mut sim, 1, 5, 5, 5);
         spawn_target(&mut sim, 2, 5, 9);
-        use_test_interner(&mut sim);
         let attacker = sim.substrate.entities.get_mut(1).unwrap();
         attacker
             .attack_target
@@ -1746,7 +1729,6 @@ fn gsi_08_04_rotation_latch_refuses_the_shot_until_the_arc_finishes() {
         let mut sim = Simulation::new();
         spawn_turreted(&mut sim, 1, 5, 5, 5);
         spawn_target(&mut sim, 2, 5, 9);
-        use_test_interner(&mut sim);
         let attacker = sim.substrate.entities.get_mut(1).unwrap();
         attacker
             .attack_target
@@ -1798,7 +1780,6 @@ fn gsi_08_04_no_shot_lands_while_the_turret_is_still_swinging() {
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 1); // facing north
     spawn_target(&mut sim, 2, 5, 9); // due south: half a turn away
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(1);
     sim.substrate
         .entities
@@ -1868,7 +1849,6 @@ fn gsi_08_04_a_two_step_re_aim_is_refused_for_the_whole_arc_not_only_its_first_f
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 5);
     spawn_target(&mut sim, 2, 5, 9);
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(5);
     let desired = facing_from_5_5_to_5_9();
     {
@@ -2131,11 +2111,11 @@ fn retail_flying_disk_turret_spins_through_live_advance_tick_without_a_target() 
     disk.barrel_facing = Some(FacingClass::new(0xF800, 100));
     disk.turret_rotation_latch.set_for_test(true);
     sim.substrate.entities.insert(disk);
+    use_test_interner(&mut sim);
     assert!(matches!(
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    use_test_interner(&mut sim);
 
     for destination in [0x0000, 0x0800, 0x1000, 0x1800] {
         sim.advance_tick(&[], Some(&retail.rules), None, None, 67);
@@ -2166,11 +2146,11 @@ fn a_turreted_infantryman_keeps_its_turret_facing() {
     // East, while the body faces north.
     entity.barrel_facing = Some(FacingClass::new(0x4000, 100));
     sim.substrate.entities.insert(entity);
+    use_test_interner(&mut sim);
     assert!(matches!(
         sim.reveal(1),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    use_test_interner(&mut sim);
     let rules = rules_with_mtnk_rot(100);
     for _ in 0..5 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);

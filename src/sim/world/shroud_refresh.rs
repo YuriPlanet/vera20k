@@ -34,6 +34,9 @@ impl SightHeights {
 #[derive(Default)]
 struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
+    /// Actual567DA0 receiver calls from the uncached5673A0 suffix.
+    uncached_border_receivers: Vec<(u16, u16)>,
+    uncached_border_ground_after: Vec<i8>,
     discovery_queries: std::collections::BTreeSet<(u16, u16)>,
     notifications: Vec<((u16, u16), bool)>,
     /// Map578100 receiver calls.
@@ -62,6 +65,34 @@ fn trace_reveal_calls<T>(run: impl FnOnce() -> T) -> (T, RevealCalls) {
     let calls = REVEAL_CALLS.with_borrow_mut(|trace| trace.take().unwrap());
     drop(reset);
     (result, calls)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Matches the native oracle's explicitly supplied first5865F0 callback,
+    /// not a claim that ordinary discovery naturally runs this mutation.
+    static FIRST_CELL_RECEIVER: std::cell::RefCell<Option<Box<dyn FnOnce(&mut Simulation)>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn with_first_cell_receiver<T>(
+    receiver: impl FnOnce(&mut Simulation) + 'static,
+    run: impl FnOnce() -> T,
+) -> T {
+    FIRST_CELL_RECEIVER.with_borrow_mut(|hook| {
+        assert!(hook.is_none());
+        *hook = Some(Box::new(receiver));
+    });
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            FIRST_CELL_RECEIVER.with_borrow_mut(|hook| *hook = None);
+        }
+    }
+    let reset = Reset;
+    let result = run();
+    drop(reset);
+    result
 }
 
 impl Simulation {
@@ -396,7 +427,7 @@ impl Simulation {
         // Outline/unreveal/arg6 are zero and by-height is one. Native final0
         // followed by final1 leaves knowledge with no sustained sight source.
         for final_pass in [false, true] {
-            self.reveal_area(
+            let _ = self.reveal_area(
                 &[viewer],
                 center,
                 z,
@@ -405,6 +436,8 @@ impl Simulation {
                 final_pass,
                 &config,
                 context,
+                crate::sim::vision::MapRevealProjection::Transient,
+                self.session.current_house,
             );
         }
         true
@@ -532,7 +565,7 @@ impl Simulation {
                     height_grid = self.sight_height_grid(&config);
                     height_source = self.path_grid.clone();
                 }
-                self.reveal_area(
+                let _ = self.reveal_area(
                     &[viewer],
                     center,
                     half_level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
@@ -541,6 +574,8 @@ impl Simulation {
                     final_pass,
                     &config,
                     context,
+                    crate::sim::vision::MapRevealProjection::Transient,
+                    self.session.current_house,
                 );
             }
         }
@@ -562,8 +597,18 @@ impl Simulation {
         final_pass: bool,
         config: &vision::VisionConfig,
         context: UninitContext<'_>,
-    ) {
-        let cells = config.collect_area_cells(
+        projection: vision::MapRevealProjection,
+        notification_viewer: Option<crate::sim::intern::InternedId>,
+    ) -> Option<(u16, u16, i32)> {
+        // Original5678E0 resolves/substitutes its House once at567AB4..567B12,
+        // before the loop (backedge567D82→567B2A). Map5673A0 shares this gate
+        // at567570..5675D0. Its admitted House is passed through4A9D88/8D
+        // and586687/690 to virtual198; callbacks do not requery PlayerPtr.
+        // Keep every logical plane's projection, but only this event-entry
+        // native player admission may deliver gameplay notifications. A
+        // projected AI/other plane is not another native client callback.
+        let notification_viewer = notification_viewer.filter(|viewer| viewers.contains(viewer));
+        let (cells, local_origin) = config.collect_area_cells(
             cell,
             radius,
             z,
@@ -583,14 +628,32 @@ impl Simulation {
                         .terrain()
                         .or(self.resolved_terrain.as_ref())
                         .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                    self.fog
-                        .reveal_map_cell(viewer, cell, final_pass, native_cells.as_ref())
+                    if projection == vision::MapRevealProjection::UncachedConditional
+                        && self
+                            .fog
+                            .map_cell_fully_known(viewer, cell, native_cells.as_ref())
+                    {
+                        continue;
+                    }
+                    self.fog.reveal_map_cell(
+                        viewer,
+                        cell,
+                        final_pass,
+                        native_cells.as_ref(),
+                        projection,
+                    )
                 };
-                if let Some(notify) = notify {
+                if let Some(notify) = notify
+                    && notification_viewer == Some(viewer)
+                {
                     self.notify_cell_change(notify.cell, viewer, notify.fresh, context);
                 }
             }
         }
+        //5673A0's native House rejection567570..5D0 skips its border too.
+        //Keep the admitted local XYZ captured before any synchronous callback;
+        //a logical other-viewer projection is not another admitted native call.
+        local_origin.filter(|_| notification_viewer.is_some())
     }
 
     /// Original CellChangeNotify5865F0..586709: seven height-admitted
@@ -605,6 +668,13 @@ impl Simulation {
         fresh: bool,
         context: UninitContext<'_>,
     ) {
+        #[cfg(test)]
+        {
+            let receiver = FIRST_CELL_RECEIVER.with_borrow_mut(Option::take);
+            if let Some(receiver) = receiver {
+                receiver(self);
+            }
+        }
         #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
@@ -914,7 +984,7 @@ impl Simulation {
                     if !own && !allied_building {
                         return None;
                     }
-                    let current = (self.fog.sight_admissions.contains_key(&(id, owner))
+                    let current = (self.fog.sight_is_latched(id, owner)
                         && vision::holds_sight(entity, &config))
                     .then(|| {
                         vision::entity_own_sight(
@@ -948,7 +1018,7 @@ impl Simulation {
             // nested Tags in the original bracket remain the stated residual.
             let mut alternates = self.reveal_to_all_footprints(owner, rules);
             alternates.retain(|id, _| !sources.contains_key(id));
-            self.fog.transition_whole_map_with_gap_reentry(
+            self.transition_whole_map_with_gap_reentry(
                 owner,
                 cells,
                 transition,
@@ -956,12 +1026,476 @@ impl Simulation {
                 &sources,
                 Some(&gaps),
                 &alternates,
+                &config,
+                UninitContext::with_rules(rules),
             );
             //577D90 sets240 before callbacks; every successful6FB170
             //re-admission clears it again, including a friendly generator.
             if admitted_gap {
                 self.fog.invalidate_whole_map_reveal_for_owner(owner);
             }
+        }
+    }
+
+    /// The represented4ADEE0/bulk/4ADCD0 bracket shares the ordinary
+    /// source event owner. Larger House callback admission/discovery arms
+    /// remain the residuals documented by transition_house_map; no separate
+    /// Fog-only counter-writing source port survives.
+    pub(crate) fn transition_whole_map_with_gap_reentry(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        cells: Vec<(u16, u16)>,
+        transition: vision::MapTransition,
+        old_spy_sat_active: bool,
+        sources: &std::collections::BTreeMap<u64, Option<vision::SightAdmission>>,
+        gap_reentry: Option<&[vision::GapGeneratorSource]>,
+        alternates: &std::collections::BTreeMap<u64, vision::SightAdmission>,
+        config: &vision::VisionConfig,
+        context: UninitContext<'_>,
+    ) {
+        #[cfg(any(test, feature = "test-support"))]
+        let fixture_sources: std::collections::BTreeSet<_> = sources
+            .keys()
+            .copied()
+            .filter(|&id| self.substrate.entities.get(id).is_none())
+            .collect();
+        let Some(plan) =
+            self.fog
+                .prepare_map_transition(owner, transition, sources, gap_reentry, alternates)
+        else {
+            return;
+        };
+        for &id in &plan.ids {
+            if plan.held.contains(&id) {
+                self.release_object_sight_for_viewer(id, owner, config, context);
+            }
+            for &gap in plan.gaps.get(&id).into_iter().flatten() {
+                self.fog
+                    .remove_map_transition_gap(owner, gap, old_spy_sat_active);
+            }
+        }
+        self.fog.store_map_transition(owner, cells, transition);
+        for id in plan.ids {
+            if plan.held.contains(&id) {
+                //Live callbacks requery the source after preceding discovery.
+                if self.substrate.entities.get(id).is_some() {
+                    let heights = self.sight_height_grid(config);
+                    self.update_object_sight_in_view(
+                        id,
+                        0,
+                        Some(owner),
+                        config,
+                        heights.levels(),
+                        context,
+                    );
+                } else {
+                    //Only IDs absent at fixture entry may use this supplied
+                    //footprint. A callback-deleted real source must stay gone.
+                    #[cfg(any(test, feature = "test-support"))]
+                    if fixture_sources.contains(&id)
+                        && let Some(Some(source)) = sources.get(&id)
+                    {
+                        self.fog
+                            .retain_sight_admission(id, owner, source.clone(), false);
+                        self.walk_source_sight(
+                            owner,
+                            source,
+                            false,
+                            config,
+                            context,
+                            self.session.current_house,
+                        );
+                    }
+                }
+            }
+            if let Some(source) = alternates.get(&id) {
+                if !self
+                    .fog
+                    .alternate_sight_admissions
+                    .contains_key(&(id, owner))
+                {
+                    self.fog
+                        .retain_sight_admission(id, owner, source.clone(), true);
+                }
+                self.walk_source_sight(
+                    owner,
+                    source,
+                    false,
+                    config,
+                    context,
+                    self.session.current_house,
+                );
+            }
+            for &gap in plan.reentry.get(&id).into_iter().flatten() {
+                self.fog.reenter_map_transition_gap(owner, gap);
+            }
+        }
+        if transition != vision::MapTransition::Reveal {
+            self.fog.invalidate_whole_map_reveal_for_owner(owner);
+        }
+    }
+
+    /// Techno70AF50 ordinary source admission. Metadata250/254/260 and
+    /// every derived viewer index exist before the first Map5678E0 receiver;
+    /// Cell4A9CA0 is the only counter/cache writer. There is no post-callback
+    /// reinsertion, so a nested Limbo cannot resurrect the outer latch.
+    pub(crate) fn update_object_sight_with_context(
+        &mut self,
+        id: u64,
+        radius: i32,
+        only_viewer: Option<crate::sim::intern::InternedId>,
+        context: UninitContext<'_>,
+    ) {
+        let config = self.sight_reveal_config(context.rules());
+        let heights = self.sight_height_grid(&config);
+        self.update_object_sight_in_view(
+            id,
+            radius,
+            only_viewer,
+            &config,
+            heights.levels(),
+            context,
+        );
+    }
+
+    pub(crate) fn update_object_sight_in_view(
+        &mut self,
+        id: u64,
+        radius: i32,
+        only_viewer: Option<crate::sim::intern::InternedId>,
+        config: &vision::VisionConfig,
+        heights: Option<&[u8]>,
+        context: UninitContext<'_>,
+    ) {
+        let notification_viewer = self.session.current_house;
+        self.fog.alliances = self.house_alliances.clone();
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if (config.require_playfield_membership() && !entity.in_playfield())
+            || config.passive_owner(entity.owner())
+        {
+            return;
+        }
+        //70AF87 tests exact raw Type+5E8 zero before the latch. Effective
+        //radius zero from a nonzero raw Sight is admitted and retains250.
+        if entity.sight.is_zero() && radius == 0 {
+            return;
+        }
+        let override_radius = (radius != 0).then_some(radius);
+        let Some(admission) = vision::entity_sight_admission(
+            &self.fog,
+            entity,
+            entity.owner(),
+            config,
+            heights,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+            config.sight_ability(entity, &self.interner, context.rules()),
+            override_radius,
+        ) else {
+            return;
+        };
+        let viewers: Vec<_> = match only_viewer {
+            Some(viewer) => {
+                vision::reveal_admits(&self.fog, entity.owner(), viewer, config, &self.interner)
+                    .then_some(viewer)
+                    .into_iter()
+                    .collect()
+            }
+            None => {
+                vision::direct_reveal_viewers(&self.fog, entity.owner(), config, &self.interner)
+            }
+        };
+        let fresh: Vec<_> = viewers
+            .into_iter()
+            .filter(|&viewer| !self.fog.sight_is_latched(id, viewer))
+            .collect();
+        //Publish the complete transported registration before any callbacks.
+        for &viewer in &fresh {
+            self.fog
+                .retain_sight_admission(id, viewer, admission.clone(), false);
+        }
+        for viewer in fresh {
+            self.walk_source_sight(
+                viewer,
+                &admission,
+                false,
+                config,
+                context,
+                notification_viewer,
+            );
+        }
+    }
+
+    /// ReReveal70B1D0 clears its retained latch before its final1 walk. The
+    /// cached XYZ/radius are transported; LOS and map geometry are re-read
+    /// now, rather than replaying the derived admission's old cell vector.
+    pub(crate) fn release_object_sight_with_context(
+        &mut self,
+        id: u64,
+        context: UninitContext<'_>,
+    ) {
+        let notification_viewer = self.session.current_house;
+        let config = self.sight_reveal_config(context.rules());
+        if self.substrate.entities.get(id).is_some_and(|entity| {
+            (config.require_playfield_membership() && !entity.in_playfield())
+                || config.passive_owner(entity.owner())
+        }) {
+            return;
+        }
+        let held: Vec<_> = self
+            .fog
+            .source_sight_viewers(id)
+            .into_iter()
+            .filter_map(|viewer| {
+                self.fog
+                    .take_sight_admission(id, viewer, false)
+                    .map(|source| (viewer, source))
+            })
+            .collect();
+        for (viewer, source) in held {
+            self.walk_source_sight(viewer, &source, true, &config, context, notification_viewer);
+        }
+    }
+
+    fn release_object_sight_for_viewer(
+        &mut self,
+        id: u64,
+        viewer: crate::sim::intern::InternedId,
+        config: &vision::VisionConfig,
+        context: UninitContext<'_>,
+    ) {
+        if self.substrate.entities.get(id).is_some_and(|entity| {
+            (config.require_playfield_membership() && !entity.in_playfield())
+                || config.passive_owner(entity.owner())
+        }) {
+            return;
+        }
+        if let Some(source) = self.fog.take_sight_admission(id, viewer, false) {
+            self.walk_source_sight(
+                viewer,
+                &source,
+                true,
+                config,
+                context,
+                self.session.current_house,
+            );
+        }
+    }
+
+    fn walk_source_sight(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        source: &vision::SightAdmission,
+        final_pass: bool,
+        config: &vision::VisionConfig,
+        context: UninitContext<'_>,
+        notification_viewer: Option<crate::sim::intern::InternedId>,
+    ) {
+        let heights = self.sight_height_grid(config);
+        // Non-retail negative radii retain their raw cache but walk no cells.
+        // Native567A63 instead indexes before its count table; that out-of-table
+        // traversal is not reproduced. Ordinary positive radii clamp at10.
+        let _ = self.reveal_area(
+            &[viewer],
+            (source.origin.0, source.origin.1),
+            source.origin.2,
+            source.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+            heights.levels(),
+            final_pass,
+            config,
+            context,
+            crate::sim::vision::MapRevealProjection::Source,
+            notification_viewer,
+        );
+    }
+
+    /// Ordinary Unlimbo6F6D27 sight precedes border6F6D61 and HouseAdded.
+    /// The parent rereads current XYZ and cached260 after synchronous
+    /// callbacks, even if they removed the source's retained admission.
+    pub(crate) fn reveal_object_sight_on_unlimbo(&mut self, id: u64, context: UninitContext<'_>) {
+        self.update_object_sight_with_context(id, 0, None, context);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let config = self.sight_reveal_config(context.rules());
+        let origin = (
+            entity.position.rx(),
+            entity.position.ry(),
+            crate::sim::movement::ground_pose::object_world_z_leptons(
+                entity,
+                context.terrain().or(self.resolved_terrain.as_ref()),
+            ),
+        );
+        let viewers =
+            vision::direct_reveal_viewers(&self.fog, entity.owner(), &config, &self.interner);
+        for viewer in viewers {
+            //Each logical plane retains its own cache projection. Native
+            //constructor6F2D96 starts260 at0;70B202 retains it on release.
+            //Only reveal_area's admitted player walk emits native callbacks.
+            let radius = self
+                .fog
+                .sight_admissions
+                .get(&(id, viewer))
+                .map_or(0, |source| source.radius);
+            for cell in vision::sight_border_cells(origin, radius.wrapping_add(3), 0) {
+                let cells = context
+                    .terrain()
+                    .or(self.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                self.fog
+                    .refresh_sight_border_cell(viewer, cell, cells.as_ref());
+            }
+        }
+    }
+
+    /// Techno70ADC0, selected Action40 Map567230 vslot120 callback.
+    /// This is uncached conditional Map5673A0 plus its border, with no
+    ///250/254/260 admission.70AF13/15 push literal1,1;567886/893 selects
+    ///653830 leaf mode0. Active original Unit slot7F5D90=70ADC0.
+    pub(crate) fn reveal_uncached_object_sight(&mut self, id: u64, context: UninitContext<'_>) {
+        let notification_viewer = self.session.current_house;
+        let config = self.sight_reveal_config(context.rules());
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if (config.require_playfield_membership() && !entity.in_playfield())
+            || (self.session.game_mode_nonzero && config.passive_owner(entity.owner()))
+        {
+            return;
+        }
+        let geometry = vision::entity_sight_geometry(
+            entity,
+            entity.owner(),
+            &config,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+            config.sight_ability(entity, &self.interner, context.rules()),
+            None,
+        );
+        //70AEFD exits on zero effective radius before calling5673A0.
+        if geometry.radius == 0 {
+            return;
+        }
+        let viewers =
+            vision::direct_reveal_viewers(&self.fog, entity.owner(), &config, &self.interner);
+        let heights = self.sight_height_grid(&config);
+        for viewer in viewers {
+            let border_origin = self.reveal_area(
+                &[viewer],
+                (geometry.origin.0, geometry.origin.1),
+                geometry.origin.2,
+                geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                heights.levels(),
+                false,
+                &config,
+                context,
+                vision::MapRevealProjection::UncachedConditional,
+                notification_viewer,
+            );
+            let Some(border_origin) = border_origin else {
+                continue;
+            };
+            //5673F8/56742A store translated XY in the Map local XYZ;
+            //5678C0/C7 passes that local to567DA0, which applies its own
+            //height translation. Z is unchanged, not doubled.
+            for cell in
+                vision::sight_border_cells(border_origin, geometry.radius.wrapping_add(3), 0)
+            {
+                let cells = context
+                    .terrain()
+                    .or(self.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                self.fog
+                    .refresh_sight_border_cell(viewer, cell, cells.as_ref());
+                #[cfg(any(test, feature = "test-support"))]
+                REVEAL_CALLS.with_borrow_mut(|trace| {
+                    if let Some(trace) = trace {
+                        trace.uncached_border_receivers.push(cell);
+                        if cell.0 < self.fog.width && cell.1 < self.fog.height {
+                            trace.uncached_border_ground_after.push(
+                                self.fog.by_owner[&viewer]
+                                    .map_cell_edge_cache_for_test(cell)
+                                    .0[0],
+                            );
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    /// Projection-frame maintenance does not move retained footprints or
+    /// replay their native reveal. Lifecycle callers now initialize sight
+    /// synchronously. The remaining owner/alliance reconciliation is the
+    /// existing lifecycle/House-map residual; it uses this same event owner.
+    /// RESIDUAL: a source with no cache can still enter through this fallback
+    /// rather than a native event. This includes missing non-Unlimbo reveal
+    /// producers, owner/alliance re-admission and playfield promotion: native
+    ///6F511A promotion waits until its next reveal/cell arrival, whereas this
+    ///pass reveals sooner. Inactive caches never use that fallback.
+    pub(crate) fn refresh_sight_sources(
+        &mut self,
+        config: &vision::VisionConfig,
+        rules: Option<&RuleSet>,
+    ) {
+        let untracked = self.fog.begin_sight_frame(
+            &self.substrate.entities,
+            self.path_grid.as_deref(),
+            &self.house_alliances,
+        );
+        let context = UninitContext::new(rules, None);
+        let removed: Vec<_> = self
+            .fog
+            .sight_admissions
+            .iter()
+            .filter(|(_, source)| source.latched)
+            .map(|(&(id, _), _)| id)
+            .filter(|&id| {
+                !self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| vision::holds_sight(entity, config))
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        for id in removed {
+            self.release_object_sight_with_context(id, context);
+        }
+        //IDs alone cross callbacks. Requery the live object at every turn.
+        for id in self.substrate.entities.keys_sorted() {
+            let Some(entity) = self
+                .substrate
+                .entities
+                .get(id)
+                .filter(|entity| vision::holds_sight(entity, config))
+            else {
+                continue;
+            };
+            if self.fog.source_cache_is_inactive(id, entity.owner()) {
+                continue;
+            }
+            let viewers =
+                vision::direct_reveal_viewers(&self.fog, entity.owner(), config, &self.interner);
+            if vision::retained_sight_covers(&self.fog, id, entity.owner(), &viewers) {
+                if viewers.iter().any(|viewer| untracked.contains(viewer)) {
+                    self.fog.mark_retained_sight(id);
+                }
+            } else {
+                self.release_object_sight_with_context(id, context);
+                let heights = self.sight_height_grid(config);
+                self.update_object_sight_in_view(id, 0, None, config, heights.levels(), context);
+            }
+        }
+        self.fog.mark_cleared_cells();
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            let cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+            self.fog.assert_sight_projection_consistent(cells.as_ref());
         }
     }
 
@@ -988,7 +1522,7 @@ impl Simulation {
     /// `TechnoClass::ReReveal(0, 0, 0, 0)` (`0x0070B1D0`) then
     /// `UpdateReveal(0, 0, 0, 0, radius)` (`0x0070AF50`): the object's sight
     /// leaves the footprint its last reveal stored (`+0x254`, `+0x260`) and
-    /// opens where it stands ([`vision::force_refresh_entity_vision`]; a
+    /// opens where it stands (a
     /// nonzero `radius` replaces its sight), for an object that holds sight
     /// ([`vision::holds_sight`]). Callers: the Unit and Infantry cell
     /// arrivals (`0x0073AC5F`/`0x0073AC74`, `0x0051A8D7`/`0x0051A8EB`), the
@@ -1006,26 +1540,18 @@ impl Simulation {
         radius: i32,
     ) {
         let config = self.sight_reveal_config(rules);
-        let Some(entity) = self
+        if !self
             .substrate
             .entities
             .get(stable_id)
-            .filter(|entity| vision::holds_sight(entity, &config))
-        else {
+            .is_some_and(|entity| vision::holds_sight(entity, &config))
+        {
             return;
-        };
-        let height_grid = self.sight_height_grid(&config);
-        let ability = config.sight_ability(entity, &self.interner, rules);
-        vision::force_refresh_entity_vision(
-            &mut self.fog,
-            entity,
-            &config,
-            height_grid.levels(),
-            self.resolved_terrain.as_ref(),
-            ability,
-            &self.interner,
-            radius,
-        );
+        }
+        let context = UninitContext::new(rules, None);
+        //The two functions each re-read their receiver after callbacks.
+        self.release_object_sight_with_context(stable_id, context);
+        self.update_object_sight_with_context(stable_id, radius, None, context);
     }
 
     /// The ground levels a reveal under `config` tests its cells' line of
@@ -1083,7 +1609,7 @@ impl Simulation {
     /// gates, the footprint goes to `MapClass::RevealArea @ 0x005678E0` for
     /// the current house rather than the owner (`0x0070B17E..0x0070B1C2`). It
     /// writes the maps a reveal by the current house writes, counted as its
-    /// own sight ([`vision::FogState::admit_alternate_sight`]). Each call
+    /// own sight (the source registry). Each call
     /// counts again; [`Self::rereveal_sight_to_current_house`] takes it back.
     ///
     /// RESIDUALS:
@@ -1116,9 +1642,26 @@ impl Simulation {
         ) else {
             return;
         };
-        for viewer in vision::direct_reveal_viewers(&self.fog, current, &config, &self.interner) {
-            self.fog
-                .admit_alternate_sight(stable_id, viewer, footprint.clone());
+        let viewers = vision::direct_reveal_viewers(&self.fog, current, &config, &self.interner);
+        for &viewer in &viewers {
+            if !self
+                .fog
+                .alternate_sight_admissions
+                .contains_key(&(stable_id, viewer))
+            {
+                self.fog
+                    .retain_sight_admission(stable_id, viewer, footprint.clone(), true);
+            }
+        }
+        for viewer in viewers {
+            self.walk_source_sight(
+                viewer,
+                &footprint,
+                false,
+                &config,
+                UninitContext::with_rules(rules),
+                Some(current),
+            );
         }
     }
 
@@ -1130,7 +1673,7 @@ impl Simulation {
     /// ([`vision::FogState::clear_sight_latch`]), and releases the stored
     /// footprint for the current house whether the latch was set
     /// (`0x0070B20D..0x0070B21B`) or not (`0x0070B234..0x0070B24C`), both at
-    /// `0x0070B24E..0x0070B26C` ([`vision::FogState::withdraw_alternate_sight`]).
+    /// `0x0070B24E..0x0070B26C` (the shared source event owner).
     ///
     /// So a computer house's building that dies leaves the current house's
     /// map twice, death and Limbo, and the sight an `AllyReveal=` ally's sold
@@ -1151,7 +1694,7 @@ impl Simulation {
         {
             return;
         }
-        let footprint = match self.fog.clear_sight_latch(stable_id) {
+        let footprint = match self.fog.clear_sight_latch(stable_id, current) {
             Some(footprint) => Some(footprint),
             None => {
                 let height_grid = self.sight_height_grid(&config);
@@ -1169,8 +1712,19 @@ impl Simulation {
             return;
         };
         let viewers = vision::direct_reveal_viewers(&self.fog, current, &config, &self.interner);
-        self.fog
-            .withdraw_alternate_sight(stable_id, &footprint, &viewers);
+        for &viewer in &viewers {
+            self.fog.take_sight_admission(stable_id, viewer, true);
+        }
+        for viewer in viewers {
+            self.walk_source_sight(
+                viewer,
+                &footprint,
+                true,
+                &config,
+                UninitContext::with_rules(rules),
+                Some(current),
+            );
+        }
     }
 
     /// The sources `0x004ADCD0`'s `RevealToAll=` branch (`0x004ADE26..
@@ -1293,24 +1847,11 @@ impl Simulation {
             return;
         }
         let config = self.sight_reveal_config(rules);
-        let height_grid = self.sight_height_grid(&config);
-        let ability = config.sight_ability(entity, &self.interner, rules);
-        // The two reveal leaves may reject (`vision::holds_sight`); the due
-        // FootAI branch nevertheless reloads its 15 frames after its calls.
-        let holds_sight = vision::holds_sight(entity, &config);
+        //The two leaves reload their own receiver after synchronous discovery.
+        let context = UninitContext::new(rules, None);
         for &viewer in &due {
-            if holds_sight {
-                vision::refresh_entity_vision_for_viewer(
-                    &mut self.fog,
-                    entity,
-                    &config,
-                    height_grid.levels(),
-                    self.resolved_terrain.as_ref(),
-                    ability,
-                    &self.interner,
-                    viewer,
-                );
-            }
+            self.release_object_sight_for_viewer(stable_id, viewer, &config, context);
+            self.update_object_sight_with_context(stable_id, 0, Some(viewer), context);
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             for viewer in due {

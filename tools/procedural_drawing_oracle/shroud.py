@@ -49,6 +49,9 @@ class Shroud:
         self.case = case or {}
         self.rally = rally.Rally(dict(camera=self.case.get('camera', [-320,440])))
         self.u = u = self.rally.u
+        self.size, self.tactical = rally.SIZE, rally.TACTICAL
+        self.abuffer, self.alpha_address, self.scratch = rally.ABUFFER, rally.ALPHA, SCRATCH
+        self.invoke = lambda entry, receiver, args: call(u, entry, receiver, args)
         self.draws, self.cell_calls = [], []
         raw, _identity = asset()
         u.mem_write(SHP, raw)
@@ -82,6 +85,22 @@ class Shroud:
         u.hook_add(UC_HOOK_CODE, self.observe)
         self.reset()
 
+    @classmethod
+    def attach(cls, m, *, size, tactical, abuffer, alpha, cells):
+        """Attach drawing to an existing native world, without enrolling flags.
+
+        The caller owns the already initialized VM, actual Cells, physical
+        resource transport and surface. No constructor or knowledge is replaced.
+        """
+        self = cls.__new__(cls)
+        self.u, self.size, self.tactical = m.u, tuple(size), tactical
+        self.abuffer, self.alpha_address = abuffer, alpha
+        self.scratch, self.cells = m.alloc(0x200), cells
+        self.invoke, self.scroll_rows = m.invoke, 0
+        self.draws, self.cell_calls = [], []
+        self.u.hook_add(UC_HOOK_CODE, self.observe)
+        return self
+
     def observe(self, u, pc, _size, _data):
         sp = u.reg_read(UC_X86_REG_ESP)
         if pc == 0x47EFE0:
@@ -93,15 +112,15 @@ class Shroud:
             self.cell_calls.append(list(struct.unpack('<hh',u.mem_read(p+0x24,4))))
 
     def reset(self):
-        call(self.u, 0x4112D0, rally.ABUFFER, (127,))
-        assert self.alpha() == bytes([127]) * (rally.SIZE[0]*rally.SIZE[1])
+        self.invoke(0x4112D0, self.abuffer, (127,))
+        assert self.alpha() == bytes([127]) * (self.size[0]*self.size[1])
         self.draws, self.cell_calls = [], []
 
     def alpha(self):
         data = [v[0] for v in struct.iter_unpack('<H',self.u.mem_read(
-            rally.ALPHA,rally.SIZE[0]*rally.SIZE[1]*2))]
+            self.alpha_address,self.size[0]*self.size[1]*2))]
         assert max(data) <= 255
-        offset = self.scroll_rows*rally.SIZE[0]
+        offset = self.scroll_rows*self.size[0]
         return bytes(data[offset:]+data[:offset])
 
     def output(self):
@@ -149,18 +168,7 @@ class Shroud:
             self.set_flags(override['cell'],override['flags'])
             self.u.mem_write(self.cells[tuple(override['cell'])]+0x11B,
                              bytes([override.get('level',0)]))
-        self.reset()
-        dirty = case.get('dirty_cells',[[10,20]])
-        self.u.mem_write(rally.TACTICAL+0xE0, words(len(dirty),*[self.cells[tuple(xy)] for xy in dirty]))
-        self.u.mem_write(SCRATCH+0x100,words(0,0,0,0))
-        self.u.mem_write(SCRATCH+0x120,words(0,0,*rally.SIZE))
-        self.u.mem_write(SP,words(native.RET_MAGIC,SCRATCH+0x100,SCRATCH+0x100,
-                                  SCRATCH+0x120,int(case.get('full_redraw',True))))
-        self.u.reg_write(UC_X86_REG_ESP,SP)
-        self.u.reg_write(UC_X86_REG_ECX,rally.TACTICAL)
-        native.run_checked(self.u,0x6D3660,native.RET_MAGIC,count=2_000_000,
-                           required_addresses=[0x6D3660,0x4801F0,0x47EFE0])
-        native_output = self.output()
+        native_output = self.draw_current(case)
         # Replay the exact original per-cell calls in Rust's row order. No
         # Python pixel generator is used; original4801F0/47EFE0 perform stores.
         calls = list(zip(native_output['cell_order'],native_output['draws']))
@@ -180,6 +188,24 @@ class Shroud:
                 rally.ALPHA,rally.SIZE[0]*rally.SIZE[1]*2))]
             result['rally_passes'] = self.rally.draw_passes()
         return result
+
+    def draw_current(self, case, *, preserve_dirty=False):
+        """Full native A drawing from current Cells; no supplied flag writes."""
+        self.reset()
+        if not preserve_dirty:
+            dirty = case.get('dirty_cells',[[10,20]])
+            self.u.mem_write(self.tactical+0xE0, words(len(dirty),*[self.cells[tuple(xy)] for xy in dirty]))
+        self.u.mem_write(self.scratch+0x100,words(0,0,0,0))
+        self.u.mem_write(self.scratch+0x120,words(0,0,*self.size))
+        self.u.mem_write(SP,words(native.RET_MAGIC,self.scratch+0x100,self.scratch+0x100,
+                                  self.scratch+0x120,int(case.get('full_redraw',True))))
+        self.u.reg_write(UC_X86_REG_ESP,SP)
+        self.u.reg_write(UC_X86_REG_ECX,self.tactical)
+        native.run_checked(self.u,0x6D3660,native.RET_MAGIC,
+                           count=case.get('instruction_limit',2_000_000),
+                           timeout_us=case.get('timeout_us',10_000_000),
+                           required_addresses=[0x6D3660,0x4801F0,0x47EFE0])
+        return self.output()
 
 
 class BuildingReveal(Shroud):
@@ -567,6 +593,25 @@ def entity_reveal_metadata():
 
 if __name__=='__main__':
     import sys
+    if '--frontier' in sys.argv[1:]:
+        from tools.procedural_drawing_oracle import shroud_frontier
+        native.finish_vectors(shroud_frontier.generate,
+            Path(__file__).with_name('shroud_frontier.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--frontier'],
+            provenance=shroud_frontier.metadata,
+            source_paths={name:Path(__file__).parents[2]/path for name,path in {
+                'frontier':'tools/procedural_drawing_oracle/shroud_frontier.py',
+                'shroud':'tools/procedural_drawing_oracle/shroud.py',
+                'mission':'tools/spatial_oracle/anytown_damage/mission.py',
+                'mission_inputs':'tools/spatial_oracle/anytown_damage/mtnk_attack.py',
+                'cell':'tools/spatial_oracle/trigger_action_values.py',
+                'discovery':'tools/spatial_oracle/jumpjet_entry_discovery.py',
+                'tmp':'tools/spatial_oracle/tmp_clear_render.py',
+                'surface':'tools/projectile_oracle/bridge_render_shape.py',
+                'palette':'tools/projectile_oracle/bridge_render_inputs_palette.py',
+                'assets':'tools/spatial_oracle/bridge_shadow_render.py',
+            }.items()})
+        raise SystemExit(0)
     if '--health-hover' in sys.argv[1:]:
         native.finish_vectors(generate_health_hover,
             Path(__file__).with_name('health_hover.json'),

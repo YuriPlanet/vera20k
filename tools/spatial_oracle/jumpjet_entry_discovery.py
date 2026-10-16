@@ -52,13 +52,18 @@ def initialize_mark_projection(u, *, projection, secondary, count=6561,
     u.mem_write(0x87F850, dwords(projection, count, secondary))
 
 
+def initialize_owner_classification(block, *, owner):
+    """Original InitManagers owner classification; preserve discovery history."""
+    block(0x6F3F40, 0x6F3F65, {UC_X86_REG_ECX: owner})
+
+
 def initialize_discovery_prefix(u, block, *, owner):
     """Existing native Techno constructor/InitManagers discovery prefixes."""
     block(0x6F2B4B, 0x6F2B4D, {})
     assert u.reg_read(UC_X86_REG_EBX) == 0
     block(0x6F2FB5, 0x6F2FC7, {UC_X86_REG_ESI: owner},
           [0x6F2FB5, 0x6F2FBB, 0x6F2FC1])
-    block(0x6F3F40, 0x6F3F65, {UC_X86_REG_ECX: owner})
+    initialize_owner_classification(block, owner=owner)
 
 
 class Entry(Jumpjet):

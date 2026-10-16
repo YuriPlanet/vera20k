@@ -287,14 +287,12 @@ pub(crate) fn install_world_presentation(
             crate::assets::shp_file::ShpFile::from_bytes(assets.get_ref("shroud.shp")?).ok()?;
         let (frame_pixels, cw, ch) = crate::render::shroud_buffer::extract_shp_brightness(&shp);
         Some(crate::render::shroud_buffer::ShroudBuffer::new(
-            &state.renderer.gpu,
-            state.render_width(),
-            state.render_height(),
-            grid.width(),
-            grid.height(),
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            [state.render_width(), state.render_height()],
+            [grid.width(), grid.height()],
             frame_pixels,
-            cw,
-            ch,
+            [cw, ch],
             crate::render::shroud_buffer::SHROUD_EDGE_LUT,
         ))
     });

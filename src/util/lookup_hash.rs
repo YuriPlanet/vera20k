@@ -3,7 +3,7 @@
 //! names these maps hold, and the same in every process. A map hashed with it
 //! must not let its iteration order reach a result.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 #[derive(Default)]
@@ -33,3 +33,6 @@ impl Hasher for LookupHasher {
 
 /// A lookup-only map hashed with [`LookupHasher`].
 pub(crate) type LookupMap<K, V> = HashMap<K, V, BuildHasherDefault<LookupHasher>>;
+
+/// A membership-only set hashed with [`LookupHasher`].
+pub(crate) type LookupSet<K> = HashSet<K, BuildHasherDefault<LookupHasher>>;

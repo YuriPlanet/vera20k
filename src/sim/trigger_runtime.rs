@@ -44,28 +44,6 @@ const ACTION_SET_SUPER_CHARGE_PERCENTAGE: i32 = 129;
 const ACTION_SET_ALTERNATE_BASE: i32 = 137;
 const ACTION_CLEAR_ALTERNATE_BASE: i32 = 138;
 
-// Rust-only attribution of retiring the former duplicated announcement feed.
-// No native/gameplay state is restored, and release builds contain no control.
-#[cfg(any(test, feature = "test-support"))]
-std::thread_local! {
-    static LEGACY_ANNOUNCEMENT_HASH_CONTROL: std::cell::Cell<bool> = const {
-        std::cell::Cell::new(false)
-    };
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub(crate) fn with_legacy_announcement_hash_control_for_test<R>(read: impl FnOnce() -> R) -> R {
-    struct Restore(bool);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            LEGACY_ANNOUNCEMENT_HASH_CONTROL.with(|control| control.set(self.0));
-        }
-    }
-    let prior = LEGACY_ANNOUNCEMENT_HASH_CONTROL.with(|control| control.replace(true));
-    let _restore = Restore(prior);
-    read()
-}
-
 const EVENT_ANY: i32 = 8;
 const EVENT_GLOBAL_IS_SET: i32 = 27;
 const EVENT_GLOBAL_IS_CLEAR: i32 = 28;
@@ -702,19 +680,6 @@ impl TriggerRuntime {
         self.map_cursor.hash(hasher);
         self.definitions_prepared.hash(hasher);
         self.classified.hash(hasher);
-        #[cfg(any(test, feature = "test-support"))]
-        if LEGACY_ANNOUNCEMENT_HASH_CONTROL.with(std::cell::Cell::get) {
-            // Exact old Rust enum shape at HEAD40bcc7a7. Even None folded
-            // Option's discriminant. These no-Tag replay fixtures never wrote
-            // the placeholder; the current House result owner replaces it.
-            #[allow(dead_code)]
-            #[derive(Hash)]
-            enum LegacyAnnouncementKind {
-                Victory,
-                Defeat,
-            }
-            Option::<LegacyAnnouncementKind>::None.hash(hasher);
-        }
     }
     fn tag(&self, index: usize) -> Option<&LiveTag> {
         self.tags.get(index)?.as_ref()

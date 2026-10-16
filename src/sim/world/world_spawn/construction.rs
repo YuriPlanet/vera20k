@@ -98,8 +98,9 @@ impl Simulation {
         }
 
         stamp_scoring_flags(ge, obj, rules);
-        ge.sight
-            .stamp_zero(obj.is_some_and(|object| object.sight == 0));
+        if let Some(object) = obj {
+            ge.sight.stamp_type_sight(object.sight);
+        }
         // The class constructor's one `+0x388` rate write (`Set_ROT`): `ROT=`
         // for a unit (`0x00735579`), an aircraft (`0x00413FE7`) and a building
         // (`BuildingClass::Init`, `0x00442CA5`, without testing `Turret=`: a

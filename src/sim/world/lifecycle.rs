@@ -1037,14 +1037,13 @@ impl Simulation {
     /// `TechnoClass::Unlimbo`'s barrel elevation writes (`+0x370`,
     /// `0x006F6DC3`, `0x006F6DF5`), aimed by the object's `FireAngle=`, behind
     /// the alive gate that also guards its Added_To_Game (`0x006F6D04`).
-    /// [`Self::try_reveal_entity_with_context`] makes them when it has rules;
-    /// a caller that reveals without rules makes them after its Reveal.
+    /// The parent retains that one pre-callback admission through its suffix;
+    /// this writer only checks that the admitted object still exists.
     pub(crate) fn unlimbo_barrel_elevation(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some(fire_angle) = self
             .substrate
             .entities
             .get(stable_id)
-            .filter(|entity| entity.lifecycle.object_alive)
             .and_then(|entity| self.object_type(entity.type_ref(), rules))
             .map(|object| object.fire_angle)
         else {
@@ -1163,23 +1162,31 @@ impl Simulation {
         // prior byte. Headless fixtures have no MapClass authority and retain
         // the constructor default through this existing writer.
         self.establish_entity_playfield_membership_on_unlimbo(stable_id, context);
-        // `TechnoClass::Unlimbo` calls Added_To_Game once placement succeeded
-        // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
-        // returns success before it).
-        if self
+        // Techno6F6D04/D0C tests +90 once before the synchronous sight
+        // receiver. Original6F6D27..6EDE does not recheck it after callbacks;
+        // carry this admission while each owner retains object-existence safety.
+        let techno_alive_on_entry = self
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.lifecycle.object_alive)
-        {
+            .is_some_and(|entity| entity.lifecycle.object_alive);
+        //6F6D27/6F6D61: source sight and Cell ground-frame border run
+        //synchronously before Added_To_Game and the ordinary discovery tail.
+        if techno_alive_on_entry {
+            self.reveal_object_sight_on_unlimbo(stable_id, context);
+        }
+        // `TechnoClass::Unlimbo` calls Added_To_Game once placement succeeded
+        // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
+        // returns success before it).
+        if techno_alive_on_entry {
             self.house_added_to_game(stable_id);
         }
-        // Techno6F6DAA: only successful placement of an alive Techno snaps
+        // Techno6F6DAA: the admitted successful Techno snaps
         // the body to this call's direction, before barrel elevation and idle.
         // Its original6F6CA0 body is retained in the shared Unlimbo evidence.
-        if let Some(facing) = context.requested_facing
+        if techno_alive_on_entry
+            && let Some(facing) = context.requested_facing
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && entity.lifecycle.object_alive
         {
             entity
                 .body_facing
@@ -1188,7 +1195,7 @@ impl Simulation {
             self.trace_lifecycle_for_test(LifecycleTestEvent::UnlimboBodyFacingSnapped);
         }
         // The barrel elevation writes follow the body snap (`0x006F6DC3`).
-        if let Some(rules) = context.rules {
+        if techno_alive_on_entry && let Some(rules) = context.rules {
             self.unlimbo_barrel_elevation(stable_id, rules);
         }
         // TechnoClass::Unlimbo 0x006F6E2A..0x006F6E4F: Enter_Idle_Mode(1, 1),
@@ -1200,11 +1207,7 @@ impl Simulation {
         // (0x00440A1C..0x00440A2F) before TechnoClass::Unlimbo.
         if !attached_upgrade
             && let Some(rules) = context.rules
-            && self
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|entity| entity.lifecycle.object_alive)
+            && techno_alive_on_entry
         {
             #[cfg(any(test, feature = "test-support"))]
             if context.requested_facing.is_some() {
@@ -1223,11 +1226,7 @@ impl Simulation {
         // must retain history. This precedes Foot4D722F's owner observation.
         // The dead Techno arm still returns success to Foot4D7184, so only
         // this writer is gated: ForceSlope, owner discovery and Sight follow.
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.lifecycle.object_alive)
+        if techno_alive_on_entry
             && self.entity_playfield_membership_mode_one(
                 stable_id,
                 context.terrain().or(self.resolved_terrain.as_ref()),
@@ -1238,7 +1237,7 @@ impl Simulation {
         }
         // Techno6F6ED2/6F6EDE publishes its current threat before the Foot
         // tail. Failed Mark and the dead successful Reveal arm publish none.
-        if let Some(rules) = context.rules {
+        if techno_alive_on_entry && let Some(rules) = context.rules {
             self.spatial_threat_after_unlimbo(stable_id, rules, context.terrain());
         }
         // FootClass::Unlimbo @ 0x004D7170 dispatches active Drive/Ship
@@ -3395,7 +3394,7 @@ impl Simulation {
             });
             match reveal_to_all {
                 Some(rules) => self.rereveal_sight_to_current_house(stable_id, rules),
-                None => self.fog.release_entity_sight(stable_id),
+                None => self.release_object_sight_with_context(stable_id, context),
             }
             self.remove_building_gap_before_limbo(stable_id);
             // Steam gamemd3e81a617, TechnoLimbo6F6B98..6F6BA0 clears an
@@ -5682,6 +5681,7 @@ impl Simulation {
         // Display registration never outlives the object. Fly's phase tail
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);
+        self.fog.forget_sight_source(stable_id);
         let entity = self.substrate.entities.remove(stable_id);
         let anim = self.substrate.anims.remove(stable_id);
         let particle_system = self.substrate.particle_systems.finalize_remove(stable_id);

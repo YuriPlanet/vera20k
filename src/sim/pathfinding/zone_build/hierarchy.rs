@@ -26,6 +26,33 @@ enum HierarchyCellIndex {
     Padding(usize),
 }
 
+impl HierarchyCellIndex {
+    fn zone(self, graph: &ZoneLevelGraph) -> ZoneId {
+        match self {
+            Self::Represented(i) => graph.cell_zone_ids()[i],
+            Self::Padding(i) => graph.native_padding_zone(i),
+        }
+    }
+
+    fn set_zone(self, graph: &mut ZoneLevelGraph, zone: ZoneId) {
+        match self {
+            Self::Represented(i) => graph.cell_zone_ids_mut()[i] = zone,
+            Self::Padding(i) => graph.set_native_padding_zone(i, zone),
+        }
+    }
+}
+
+/// What the hierarchy reads at one position, from a single index computation.
+/// Padding reads as an outside cell at level 0 with base ID 0; the level,
+/// base ID and class answers for absent storage are the same.
+#[derive(Clone, Copy)]
+struct HierarchyCell {
+    index: HierarchyCellIndex,
+    level: u8,
+    base_id: ZoneId,
+    class: u8,
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct HierarchyCells<'a> {
     pub(super) base: &'a BaseZoneTopology,
@@ -62,11 +89,22 @@ impl HierarchyCells<'_> {
         ))
     }
 
-    fn base_index(self, x: i32, y: i32) -> Option<usize> {
-        match self.index(x, y)? {
-            HierarchyCellIndex::Represented(index) => Some(index),
-            HierarchyCellIndex::Padding(_) => None,
-        }
+    fn cell(self, x: i32, y: i32) -> Option<HierarchyCell> {
+        let index = self.index(x, y)?;
+        let (level, base_id, class) = match index {
+            HierarchyCellIndex::Represented(i) => (
+                self.base.levels[i],
+                self.base.zone_ids[i],
+                self.base.movement_classes[i],
+            ),
+            HierarchyCellIndex::Padding(_) => (0, 0, zone_class::OUTSIDE),
+        };
+        Some(HierarchyCell {
+            index,
+            level,
+            base_id,
+            class,
+        })
     }
 
     fn scan_from(mut self, seed: (i32, i32)) -> Self {
@@ -85,31 +123,25 @@ impl HierarchyCells<'_> {
     }
 
     fn level(self, x: i32, y: i32) -> u8 {
-        self.base_index(x, y).map_or(0, |i| self.base.levels[i])
+        self.cell(x, y).map_or(0, |cell| cell.level)
     }
 
     fn base_id(self, x: i32, y: i32) -> ZoneId {
-        self.base_index(x, y).map_or(0, |i| self.base.zone_ids[i])
+        self.cell(x, y).map_or(0, |cell| cell.base_id)
     }
 
     fn class(self, x: i32, y: i32) -> u8 {
-        self.base_index(x, y)
-            .map_or(zone_class::OUTSIDE, |i| self.base.movement_classes[i])
+        self.cell(x, y)
+            .map_or(zone_class::OUTSIDE, |cell| cell.class)
     }
 
     fn zone(self, graph: &ZoneLevelGraph, x: i32, y: i32) -> ZoneId {
-        match self.index(x, y) {
-            Some(HierarchyCellIndex::Represented(i)) => graph.cell_zone_ids()[i],
-            Some(HierarchyCellIndex::Padding(i)) => graph.native_padding_zone(i),
-            None => 0,
-        }
+        self.index(x, y).map_or(0, |index| index.zone(graph))
     }
 
     fn set_zone(self, graph: &mut ZoneLevelGraph, x: i32, y: i32, zone: ZoneId) {
-        match self.index(x, y) {
-            Some(HierarchyCellIndex::Represented(i)) => graph.cell_zone_ids_mut()[i] = zone,
-            Some(HierarchyCellIndex::Padding(i)) => graph.set_native_padding_zone(i, zone),
-            None => {}
+        if let Some(index) = self.index(x, y) {
+            index.set_zone(graph, zone);
         }
     }
 }
@@ -355,7 +387,9 @@ fn build_hierarchy_level(
         while x < i32::from(cells.width) {
             // Full581F90 seeds on cached class only. Live queries occur in
             // flood edge admission; adding a seed query changes native order.
-            if cells.class(x, y) == zone_class::OUTSIDE || cells.zone(&graph, x, y) != 0 {
+            if cells.cell(x, y).is_none_or(|cell| {
+                cell.class == zone_class::OUTSIDE || cell.index.zone(&graph) != 0
+            }) {
                 x += 1;
                 continue;
             }
@@ -588,13 +622,8 @@ pub(super) fn register_native_hierarchy_pair(
         current: packed as u16,
         flag,
     };
-    if !buckets.buckets[bucket]
-        .iter()
-        .any(|other| other.existing == edge.existing && other.current == edge.current)
-    {
-        // No zero/equality filter. First exact key retains its flag and place.
-        buckets.buckets[bucket].push(edge);
-    }
+    // No zero/equality filter. First exact key retains its flag and place.
+    buckets.push_new(bucket, edge);
 }
 
 pub(super) fn flood_fill_hierarchy_scanline(
@@ -607,18 +636,21 @@ pub(super) fn flood_fill_hierarchy_scanline(
     buckets: &mut HierarchyEdgeBuckets,
     query: &mut impl FnMut(i32, i32) -> bool,
 ) -> i32 {
+    // Each position's index is computed once per visit; the order of zone
+    // reads, recursion and queries is the native one.
     let cells = cells.scan_from(seed);
     let (sx, sy) = seed;
     let mut last_neighbor = None;
+    let seed_level = cells.level(sx, sy);
     let mut left = sx;
-    let mut previous = cells.level(sx, sy);
+    let mut previous = seed_level;
     while block.contains(left, sy)
-        && cells.index(left, sy).is_some()
-        && cells.base_id(left, sy) == base_id
-        && cells.level(left, sy).abs_diff(previous) < 2
+        && let Some(cell) = cells.cell(left, sy)
+        && cell.base_id == base_id
+        && cell.level.abs_diff(previous) < 2
     {
-        cells.set_zone(graph, left, sy, zone);
-        previous = cells.level(left, sy);
+        cell.index.set_zone(graph, zone);
+        previous = cell.level;
         left -= 1;
     }
     register_hierarchy_horizontal_edge(
@@ -632,14 +664,14 @@ pub(super) fn flood_fill_hierarchy_scanline(
         &mut last_neighbor,
     );
     let mut right = sx;
-    previous = cells.level(sx, sy);
+    previous = seed_level;
     while block.contains(right, sy)
-        && cells.index(right, sy).is_some()
-        && cells.base_id(right, sy) == base_id
-        && cells.level(right, sy).abs_diff(previous) < 2
+        && let Some(cell) = cells.cell(right, sy)
+        && cell.base_id == base_id
+        && cell.level.abs_diff(previous) < 2
     {
-        cells.set_zone(graph, right, sy, zone);
-        previous = cells.level(right, sy);
+        cell.index.set_zone(graph, zone);
+        previous = cell.level;
         right += 1;
     }
     register_hierarchy_horizontal_edge(
@@ -655,11 +687,13 @@ pub(super) fn flood_fill_hierarchy_scanline(
     for cy in [sy - 1, sy + 1] {
         for cx in left..=right {
             let rx = cx.clamp(left + 1, right - 1);
-            let height_allowed = cells.level(cx, cy).abs_diff(cells.level(rx, sy)) < 2;
-            if cells.index(cx, cy).is_some()
-                && cells.zone(graph, cx, cy) == 0
+            let cell = cells.cell(cx, cy);
+            let level = cell.map_or(0, |cell| cell.level);
+            let height_allowed = level.abs_diff(cells.level(rx, sy)) < 2;
+            if let Some(cell) = cell
+                && cell.index.zone(graph) == 0
                 && block.contains(cx, cy)
-                && cells.base_id(cx, cy) == base_id
+                && cell.base_id == base_id
                 && height_allowed
             {
                 // Recursion owns a fresh last-neighbor; it must not replace
@@ -675,7 +709,7 @@ pub(super) fn flood_fill_hierarchy_scanline(
                     query,
                 );
             }
-            let existing = cells.zone(graph, cx, cy);
+            let existing = cell.map_or(0, |cell| cell.index.zone(graph));
             if existing != 0
                 && existing != zone
                 && last_neighbor != Some(existing)

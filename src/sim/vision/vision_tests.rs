@@ -7,6 +7,80 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern;
 
+/// Persistent production Simulation for source/frame regression fixtures.
+/// Only fixture input construction lives here; all admission, Cell writes,
+/// frame projection and synchronous discovery run through their real owners.
+fn fixture_frame(
+    world: &mut crate::sim::world::Simulation,
+    fog: &mut FogState,
+    entities: &EntityStore,
+    path_grid: Option<&PathGrid>,
+    alliances: &HouseAllianceMap,
+    config: &VisionConfig,
+    height_grid: Option<&[u8]>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    interner: &intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) {
+    assert!(
+        height_grid.is_none(),
+        "fixture heights belong in its PathGrid"
+    );
+    world.fog = std::mem::take(fog);
+    world.substrate.entities = entities.clone();
+    world.interner = interner.clone();
+    world.house_alliances = alliances.clone();
+    world.resolved_terrain = terrain.cloned();
+    world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
+    world.refresh_sight_sources(config, rules);
+    *fog = std::mem::take(&mut world.fog);
+}
+
+fn fixture_visibility(
+    entities: &EntityStore,
+    grid: Option<&PathGrid>,
+    alliances: &HouseAllianceMap,
+    config: &VisionConfig,
+    interner: &intern::StringInterner,
+) -> FogState {
+    fixture_visibility_with_rules(entities, grid, alliances, config, interner, None)
+}
+
+fn fixture_visibility_with_rules(
+    entities: &EntityStore,
+    grid: Option<&PathGrid>,
+    alliances: &HouseAllianceMap,
+    config: &VisionConfig,
+    interner: &intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> FogState {
+    let mut world = crate::sim::world::Simulation::default();
+    let mut fog = FogState::default();
+    fixture_frame(
+        &mut world, &mut fog, entities, grid, alliances, config, None, None, interner, rules,
+    );
+    fog
+}
+
+fn fixture_source_event(
+    world: &mut crate::sim::world::Simulation,
+    fog: &mut FogState,
+    entities: &EntityStore,
+    config: &VisionConfig,
+    interner: &intern::StringInterner,
+    refresh: bool,
+) {
+    world.fog = std::mem::take(fog);
+    world.substrate.entities = entities.clone();
+    world.interner = interner.clone();
+    let context = crate::sim::world::UninitContext::default();
+    if refresh {
+        world.release_object_sight_with_context(1, context);
+    }
+    world.update_object_sight_in_view(1, 0, None, config, None, context);
+    *fog = std::mem::take(&mut world.fog);
+}
+
 fn spawn_with_vision(store: &mut EntityStore, id: u64, owner: &str, rx: u16, ry: u16, range: u16) {
     let mut entity = GameEntity::new_at_frame_zero_for_test(
         id,
@@ -171,7 +245,7 @@ fn test_recompute_visibility_reveals_expected_cells() {
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 5, 5, 2);
 
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(16, 16)),
         &Default::default(),
@@ -194,7 +268,7 @@ fn techno_playfield_stored_membership_gates_same_frame_los() {
         ..default_config()
     };
 
-    let suppressed = recompute_owner_visibility(
+    let suppressed = fixture_visibility(
         &store,
         Some(&PathGrid::new(16, 16)),
         &Default::default(),
@@ -204,7 +278,7 @@ fn techno_playfield_stored_membership_gates_same_frame_los() {
     assert!(!suppressed.is_cell_visible(intern::test_intern("Americans"), 5, 5));
 
     store.get_mut(1).unwrap().set_in_playfield(true);
-    let admitted = recompute_owner_visibility(
+    let admitted = fixture_visibility(
         &store,
         Some(&PathGrid::new(16, 16)),
         &Default::default(),
@@ -219,7 +293,7 @@ fn test_recompute_visibility_clamps_to_grid_bounds() {
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 0, 0, 4);
 
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(3, 3)),
         &Default::default(),
@@ -239,7 +313,7 @@ fn test_recompute_visibility_tracks_multiple_owners() {
     spawn_with_vision(&mut store, 1, "Americans", 2, 2, 1);
     spawn_with_vision(&mut store, 2, "Soviet", 10, 10, 1);
 
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(16, 16)),
         &Default::default(),
@@ -267,7 +341,7 @@ fn test_allied_visibility_is_shared() {
         .or_default()
         .insert("AMERICANS".to_string());
 
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(16, 16)),
         &alliances,
@@ -287,7 +361,7 @@ fn test_sight_capped_at_max_range() {
     // Spawn with sight=15, which exceeds MAX_SIGHT_RANGE (10).
     spawn_with_vision(&mut store, 1, "Americans", 20, 20, 15);
 
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(50, 50)),
         &Default::default(),
@@ -338,7 +412,7 @@ fn gsi_08_12_veteran_sight_multiplies_only_for_sight_ability_holders() {
             reveal_by_height: false,
             ..default_config()
         };
-        recompute_owner_visibility_with_rules(
+        fixture_visibility_with_rules(
             &store,
             Some(&PathGrid::new(30, 30)),
             &Default::default(),
@@ -395,7 +469,7 @@ fn elevation_grants_no_sight_bonus_at_any_reachable_terrain_level() {
         reveal_by_height: false,
         ..default_config()
     };
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(30, 30)),
         &Default::default(),
@@ -438,7 +512,7 @@ fn test_elevation_sight_bonus_z0_gives_no_bonus() {
         reveal_by_height: false,
         ..default_config()
     };
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(30, 30)),
         &Default::default(),
@@ -478,7 +552,7 @@ fn test_elevation_sight_bonus_disabled_when_zero() {
         reveal_by_height: false,
         ..default_config()
     };
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(30, 30)),
         &Default::default(),
@@ -642,7 +716,7 @@ fn test_gap_generator_preserves_admitted_enemy_sight() {
     // Spawn a Soviet unit at (10, 10) with sight 8.
     spawn_with_vision(&mut store, 1, "Soviet", 10, 10, 8);
 
-    let mut fog = recompute_owner_visibility(
+    let mut fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(30, 30)),
         &Default::default(),
@@ -755,6 +829,7 @@ fn gsi_04_18_spy_sat_repeat_is_not_a_new_map_reveal_event() {
 
 #[test]
 fn test_in_place_preserves_revealed() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 5, 5, 2);
     let grid = PathGrid::new(16, 16);
@@ -763,7 +838,8 @@ fn test_in_place_preserves_revealed() {
 
     // First compute: reveals cells around (5,5).
     let mut fog = FogState::default();
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         Some(&grid),
@@ -782,7 +858,8 @@ fn test_in_place_preserves_revealed() {
     spawn_with_vision(&mut store, 2, "Americans", 10, 10, 2);
 
     // Second compute in-place: (5,5) should still be revealed but not visible.
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         Some(&grid),
@@ -800,6 +877,7 @@ fn test_in_place_preserves_revealed() {
 
 #[test]
 fn test_dead_owner_keeps_revealed() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Soviet", 5, 5, 2);
     let grid = PathGrid::new(16, 16);
@@ -807,7 +885,8 @@ fn test_dead_owner_keeps_revealed() {
     let alliances = HouseAllianceMap::default();
 
     let mut fog = FogState::default();
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         Some(&grid),
@@ -822,7 +901,8 @@ fn test_dead_owner_keeps_revealed() {
 
     // Remove all Soviet entities.
     store.remove(1);
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         Some(&grid),
@@ -841,6 +921,7 @@ fn test_dead_owner_keeps_revealed() {
 
 #[test]
 fn test_in_place_matches_fresh() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 5, 5, 3);
     spawn_with_vision(&mut store, 2, "Soviet", 10, 10, 2);
@@ -849,11 +930,12 @@ fn test_in_place_matches_fresh() {
     let alliances = HouseAllianceMap::default();
 
     // Fresh allocation path.
-    let fresh = recompute_owner_visibility(&store, Some(&grid), &alliances, &cfg, &ti());
+    let fresh = fixture_visibility(&store, Some(&grid), &alliances, &cfg, &ti());
 
     // In-place path (from default).
     let mut in_place = FogState::default();
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut in_place,
         &store,
         Some(&grid),
@@ -889,6 +971,7 @@ fn test_in_place_matches_fresh() {
 /// footprint alone, which the pass does not mark, and keeps them off.
 #[test]
 fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let americans = intern::test_intern("Americans");
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 8, 8, 3);
@@ -896,8 +979,9 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
     let cfg = default_config();
     let alliances = HouseAllianceMap::default();
     let interner = ti();
-    let pass = |fog: &mut FogState| {
-        recompute_owner_visibility_in_place(
+    let pass = |sight_world: &mut crate::sim::world::Simulation, fog: &mut FogState| {
+        fixture_frame(
+            sight_world,
             fog,
             &store,
             Some(&grid),
@@ -910,17 +994,31 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
         )
     };
     let mut fog = FogState::default();
-    pass(&mut fog);
-    fog.admit_alternate_sight(
-        2,
-        americans,
-        SightAdmission {
-            owner: intern::test_intern("Soviet"),
-            origin: (18, 18, 0),
-            radius: 1,
-            cells: vec![(18, 18)],
-        },
+    pass(&mut sight_world, &mut fog);
+    sight_world.fog = std::mem::take(&mut fog);
+    let alternate = SightAdmission {
+        latched: true,
+        owner: intern::test_intern("Soviet"),
+        origin: (18, 18, 0),
+        radius: 1,
+        cells: collect_reveal_cells(18, 18, 1, 0, false, None, (24, 24), None),
+    };
+    sight_world
+        .fog
+        .retain_sight_admission(2, americans, alternate, true);
+    let _ = sight_world.reveal_area(
+        &[americans],
+        (18, 18),
+        0,
+        1,
+        None,
+        false,
+        &cfg,
+        crate::sim::world::UninitContext::default(),
+        crate::sim::vision::MapRevealProjection::Transient,
+        sight_world.session.current_house,
     );
+    fog = std::mem::take(&mut sight_world.fog);
     let (covered, alternate) = ((9, 8), (18, 18));
     for (x, y) in [covered, alternate] {
         let vis = fog.by_owner.get_mut(&americans).unwrap();
@@ -935,9 +1033,9 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
     };
     assert_eq!(ground(&fog, covered), 0, "the sweep closes the cell");
     let mut every_cell = fog.clone();
-    pass(&mut fog);
+    pass(&mut sight_world, &mut fog);
     VISIT_EVERY_CELL.set(true);
-    pass(&mut every_cell);
+    pass(&mut sight_world, &mut every_cell);
     VISIT_EVERY_CELL.set(false);
     assert_eq!(ground(&fog, covered), GROUND_VISIBLE | GROUND_OPEN);
     assert_eq!(ground(&fog, alternate), 0);
@@ -955,10 +1053,11 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
 
 #[test]
 fn test_gap_generator_sets_gap_covered_flag() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Soviet", 10, 10, 8);
 
-    let mut fog = recompute_owner_visibility(
+    let mut fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(30, 30)),
         &Default::default(),
@@ -974,7 +1073,8 @@ fn test_gap_generator_sets_gap_covered_flag() {
     // Release the sustained source first: original past_sight retains mapped
     // knowledge at counter0, which the next hostile write can conceal.
     store.remove(1);
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         Some(&PathGrid::new(30, 30)),
@@ -1407,16 +1507,13 @@ fn ring_of(dx: i32, dy: i32) -> usize {
     (far + near / 2) as usize
 }
 
-/// Every spiral entry sits in the ring the cumulative table says it does.
-///
-/// This is what makes the table checkable rather than a wall of magic numbers:
-/// the same rule that places each of the 309 offsets also reproduces all twelve
-/// of the engine's cumulative counts, so a transcription slip in any single
-/// entry fails here.
+/// The ordinary sight prefix through radius10 follows this distance rule.
+/// Native radius11 is a border-only tail with irregular entries; its exact
+/// order and duplicate are checked against executed561910 below.
 #[test]
-fn spiral_ring_membership_matches_the_engines_distance_rule() {
+fn ordinary_spiral_rings_match_the_engines_distance_rule() {
     let mut start = 0usize;
-    for ring in 0..=MAX_SIGHT_RANGE as usize {
+    for ring in 0..=10usize {
         let end = super::REVEAL_RING_SIZES[ring];
         for i in start..end {
             let (dx, dy) = super::REVEAL_SPIRAL[i];
@@ -1430,12 +1527,13 @@ fn spiral_ring_membership_matches_the_engines_distance_rule() {
     }
 }
 
-/// The three tables are indexed in lockstep, so they must not drift apart.
+/// Ordinary sight stops at10 and uses the mirror prefix; border refresh can
+/// reach11 without LOS/mirror entries. Only the ordinary prefix is unique.
 #[test]
-fn spiral_and_mirror_tables_cover_every_reachable_sight() {
-    assert_eq!(super::REVEAL_SPIRAL.len(), super::REVEAL_RING_SIZES[10]);
+fn spiral_and_mirror_tables_cover_ordinary_sight_and_border() {
+    assert_eq!(super::REVEAL_SPIRAL.len(), super::REVEAL_RING_SIZES[11]);
     assert_eq!(super::REVEAL_MIRROR.len(), super::REVEAL_RING_SIZES[10]);
-    let mut seen: Vec<(i8, i8)> = super::REVEAL_SPIRAL.to_vec();
+    let mut seen = super::REVEAL_SPIRAL[..super::REVEAL_RING_SIZES[10]].to_vec();
     seen.sort_unstable();
     let before = seen.len();
     seen.dedup();
@@ -1606,7 +1704,7 @@ fn an_aircrafts_altitude_moves_its_revealed_disc() {
     entity.locomotor = Some(loco);
     store.insert(entity);
 
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(64, 64)),
         &Default::default(),
@@ -1623,6 +1721,7 @@ fn an_aircrafts_altitude_moves_its_revealed_disc() {
 /// Location Z.
 #[test]
 fn a_jumpjet_below_its_floor_sees_from_its_location_z() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
@@ -1653,7 +1752,8 @@ fn a_jumpjet_below_its_floor_sees_from_its_location_z() {
     store.insert(entity);
 
     let mut fog = FogState::default();
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         Some(&PathGrid::new(w, h)),
@@ -1691,7 +1791,7 @@ fn a_ground_viewer_sees_from_its_location_z() {
         .unwrap()
         .position
         .set_exact_z_leptons_for_test(Some(4 * 104));
-    let fog = recompute_owner_visibility(
+    let fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(w, h)),
         &Default::default(),
@@ -1777,6 +1877,8 @@ fn shroud_current_sight_matches_original_native_sequences() {
     let interner = ti();
     for case in corpus["cases"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
+        let mut sight_world = crate::sim::world::Simulation::default();
+        sight_world.interner = interner.clone();
         let mut fog = FogState {
             width: 32,
             height: 32,
@@ -1791,24 +1893,32 @@ fn shroud_current_sight_matches_original_native_sequences() {
             match op {
                 "constructed" => {}
                 "reveal" | "leave" => {
+                    // These corpus operations are actual native UpdateReveal/
+                    // ReReveal events, not a Logic-frame source reconciliation.
+                    // Keep one production Simulation/cache for the entire case,
+                    // including leave followed by reuse of the same source ID.
                     if op == "reveal" {
                         count += 1;
                         spawn_with_vision(&mut store, count, "Americans", 10, 10, 2);
+                    }
+                    sight_world.fog = std::mem::take(&mut fog);
+                    sight_world.substrate.entities = store.clone();
+                    let context = crate::sim::world::UninitContext::default();
+                    if op == "reveal" {
+                        sight_world.update_object_sight_in_view(
+                            count,
+                            0,
+                            None,
+                            &default_config(),
+                            None,
+                            context,
+                        );
                     } else {
+                        sight_world.release_object_sight_with_context(count, context);
                         store.remove(count);
                         count -= 1;
                     }
-                    recompute_owner_visibility_in_place(
-                        &mut fog,
-                        &store,
-                        None,
-                        &Default::default(),
-                        &default_config(),
-                        None,
-                        None,
-                        &interner,
-                        None,
-                    );
+                    fog = std::mem::take(&mut sight_world.fog);
                     apply_gap_generators(&mut fog, &gaps, &interner);
                 }
                 "unshroud" => reveal_radius(&mut fog, owner, 10, 10, 2),
@@ -1875,6 +1985,7 @@ fn shroud_current_sight_matches_original_native_sequences() {
 
 #[test]
 fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let owner = intern::test_intern("Americans");
     let ally = intern::test_intern("Alliance");
     let gapper = intern::test_intern("Soviet");
@@ -1896,7 +2007,8 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
         ..Default::default()
     };
     fog.by_owner.insert(owner, OwnerVisibility::new(32, 32));
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         None,
@@ -1915,7 +2027,8 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
     apply_gap_generators(&mut restored, &[(gapper, 10, 10, 3)], &interner);
     assert!(restored.is_cell_revealed(owner, 10, 10));
     store.remove(1);
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut restored,
         &store,
         None,
@@ -1945,7 +2058,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
     spawn_with_vision(&mut store, 1, "Americans", 10, 10, 3);
     let mut sim = crate::sim::world::Simulation::with_seed(142);
     sim.interner = ti();
-    sim.fog = recompute_owner_visibility(
+    sim.fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(32, 32)),
         &Default::default(),
@@ -1975,6 +2088,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
 
 #[test]
 fn shroud_current_sight_direct_allies_do_not_reexport_immunity() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let a = intern::test_intern("Americans");
     let b = intern::test_intern("Alliance");
     let c = intern::test_intern("Soviet");
@@ -2002,7 +2116,8 @@ fn shroud_current_sight_direct_allies_do_not_reexport_immunity() {
     for owner in [a, b, c] {
         fog.by_owner.insert(owner, OwnerVisibility::new(32, 32));
     }
-    recompute_owner_visibility_in_place(
+    fixture_frame(
+        &mut sight_world,
         &mut fog,
         &store,
         None,
@@ -2052,6 +2167,7 @@ fn shroud_current_sight_queries_observe_fresh_viewer_writers() {
 
 #[test]
 fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
+    let mut sight_world = crate::sim::world::Simulation::default();
     let owner = intern::test_intern("Americans");
     let gapper = intern::test_intern("Soviet");
     let interner = ti();
@@ -2062,8 +2178,11 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
     };
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 10, 10, 2);
-    let refresh = |fog: &mut FogState, store: &EntityStore| {
-        recompute_owner_visibility_in_place(
+    let refresh = |sight_world: &mut crate::sim::world::Simulation,
+                   fog: &mut FogState,
+                   store: &EntityStore| {
+        fixture_frame(
+            sight_world,
             fog,
             store,
             None,
@@ -2075,23 +2194,22 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
             None,
         )
     };
-    refresh(&mut fog, &store);
+    refresh(&mut sight_world, &mut fog, &store);
     let first = [(gapper, 10, 10, 3)];
     let both = [(gapper, 10, 10, 3), (gapper, 10, 10, 3)];
     apply_gap_generators(&mut fog, &first, &interner);
     store.remove(1);
-    refresh(&mut fog, &store);
+    refresh(&mut sight_world, &mut fog, &store);
     apply_gap_generators(&mut fog, &both, &interner);
     assert!(fog.is_cell_gap_covered(owner, 10, 10));
     spawn_with_vision(&mut store, 1, "Americans", 10, 10, 2);
-    reveal_entity_vision(
+    fixture_source_event(
+        &mut sight_world,
         &mut fog,
-        store.get(1).unwrap(),
+        &store,
         &default_config(),
-        None,
-        None,
-        false,
         &interner,
+        false,
     );
     assert!(fog.is_cell_revealed(owner, 10, 10));
     assert!(
@@ -2100,7 +2218,7 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
     );
     let mut fog: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
     for _ in 0..3 {
-        refresh(&mut fog, &store);
+        refresh(&mut sight_world, &mut fog, &store);
         apply_gap_generators(&mut fog, &both, &interner);
     }
     fog.flush_pending_gap_conceal(120);
@@ -2108,7 +2226,7 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
         !fog.is_cell_revealed(owner, 10, 10),
         "original second-gap/return retains pending despite negative counter"
     );
-    refresh(&mut fog, &store);
+    refresh(&mut sight_world, &mut fog, &store);
     apply_gap_generators(&mut fog, &both, &interner);
     assert!(
         !fog.is_cell_revealed(owner, 10, 10),
@@ -2116,15 +2234,13 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
     );
     // Explicit native release/admit is a different event even with identical
     // geometry; this API does not claim the full FootAI timer producer is wired.
-    force_refresh_entity_vision(
+    fixture_source_event(
+        &mut sight_world,
         &mut fog,
-        store.get(1).unwrap(),
+        &store,
         &default_config(),
-        None,
-        None,
-        false,
         &interner,
-        0,
+        true,
     );
     assert!(fog.is_cell_revealed(owner, 10, 10));
     assert!(!fog.is_cell_gap_covered(owner, 10, 10));
@@ -2144,7 +2260,7 @@ fn shroud_current_sight_first_fire_and_psychic_have_distinct_pending_history() {
     sim.fog = psychic;
     let config = default_config();
     for final_pass in [false, true] {
-        sim.reveal_area(
+        let _ = sim.reveal_area(
             &[owner],
             (10, 10),
             0,
@@ -2153,6 +2269,8 @@ fn shroud_current_sight_first_fire_and_psychic_have_distinct_pending_history() {
             final_pass,
             &config,
             crate::sim::world::UninitContext::default(),
+            crate::sim::vision::MapRevealProjection::Transient,
+            sim.session.current_house,
         );
     }
     let mut psychic = sim.fog;
@@ -2183,4 +2301,132 @@ fn shroud_current_sight_timer_gate_matches_original_signed_frame_cases() {
             "{case}"
         );
     }
+}
+
+/// Consume the executed561910 table, including the radius11 border tail.
+/// Ring membership alone cannot establish native order or numeric identity.
+#[test]
+fn reveal_spiral_and_border_match_original_startup_table() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/shroud_frontier.json",
+    ))
+    .unwrap();
+    let native = &corpus["spiral"];
+    assert!(
+        corpus["inputs"]["startup"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.as_str() == Some("00561910"))
+    );
+    assert_eq!(
+        serde_json::json!(super::REVEAL_RING_SIZES),
+        native["counts"]
+    );
+    assert_eq!(super::REVEAL_SPIRAL.len(), 369);
+    let pairs: Vec<[i8; 2]> = super::REVEAL_SPIRAL.iter().map(|&(x, y)| [x, y]).collect();
+    assert_eq!(serde_json::json!(pairs), native["pairs"]);
+    // Zero-height whole-disc output must use this same ordered owner. Offset
+    // translation is fixture input construction; expected offsets are native.
+    for radius in [3_usize, 9, 11] {
+        let actual: Vec<[i32; 2]> = super::sight_border_cells((32, 32, 0), radius as i32, 0)
+            .into_iter()
+            .map(|(x, y)| [i32::from(x) - 32, i32::from(y) - 32])
+            .collect();
+        let count = native["counts"][radius].as_u64().unwrap() as usize;
+        assert_eq!(
+            serde_json::json!(actual),
+            serde_json::json!(&native["pairs"].as_array().unwrap()[..count])
+        );
+    }
+}
+
+/// Selected original70AF50/70B1D0 cache-control values. The production source
+/// events run on an explicitly supplied numeric source; this does not model
+/// the native nested callback, Anytown startup, or its map-wide Cell effects.
+#[test]
+fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/shroud_frontier.json",
+    ))
+    .unwrap();
+    let native = &corpus["controls"]["cached_release"];
+    assert_eq!(native["startup"]["b0cd48"], "60493474535ec23f");
+    let input = &native["release_calls"]["005678E0"]["coords"];
+    let coord = crate::sim::components::DriveCoord {
+        x: input[0].as_i64().unwrap() as i32,
+        y: input[1].as_i64().unwrap() as i32,
+        z: input[2].as_i64().unwrap() as i32,
+    };
+    let mut world = crate::sim::world::Simulation::default();
+    world.interner = ti();
+    world.fog = FogState::new(128, 128);
+    let owner = world.interner.intern("Americans");
+    let amcv = rules.object("AMCV").unwrap();
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        1,
+        0,
+        0,
+        0,
+        0,
+        owner,
+        Health::new(amcv.strength),
+        world.interner.intern("AMCV"),
+        EntityCategory::Unit,
+        0,
+        0,
+        false,
+    );
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity.position.put_location(coord);
+    entity.sight.stamp_type_sight(amcv.sight);
+    world.substrate.entities.insert(entity);
+    let config = default_config();
+    let context = crate::sim::world::UninitContext::default();
+    world.update_object_sight_in_view(1, 0, None, &config, None, context);
+    let assert_cache = |world: &crate::sim::world::Simulation, expected: &serde_json::Value| {
+        let cache = &world.fog.sight_admissions[&(1, owner)];
+        assert_eq!(
+            u64::from(cache.latched),
+            expected["latch"].as_u64().unwrap()
+        );
+        assert_eq!(
+            i64::from(cache.radius),
+            expected["radius"].as_i64().unwrap()
+        );
+        assert_eq!(
+            cache.origin,
+            (
+                crate::util::lepton::lepton_to_cell(expected["xyz"][0].as_i64().unwrap() as i32)
+                    as u16,
+                crate::util::lepton::lepton_to_cell(expected["xyz"][1].as_i64().unwrap() as i32)
+                    as u16,
+                expected["xyz"][2].as_i64().unwrap() as i32,
+            ),
+        );
+        let location = crate::sim::movement::ground_pose::object_location(
+            world.entities().get(1).unwrap(),
+            None,
+        );
+        assert_eq!(
+            serde_json::json!([location.x, location.y, location.z]),
+            expected["xyz"]
+        );
+    };
+    assert_cache(&world, &native["nested"][0]["before"]);
+    world.release_object_sight_with_context(1, context);
+    assert_cache(&world, &native["nested"][0]["after"]);
+    assert!(world.fog.sight_admissions[&(1, owner)].cells.is_empty());
+    world
+        .substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .sight
+        .stamp_type_sight(0);
+    world.update_object_sight_in_view(1, 0, None, &config, None, context);
+    assert_cache(&world, &native["after_sight0_gate"]);
 }

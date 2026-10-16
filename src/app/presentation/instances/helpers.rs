@@ -541,10 +541,29 @@ mod tests {
     #[test]
     fn item83_equal_tactical_keys_keep_live_registration_order() {
         let mut sim = crate::sim::world::Simulation::new();
-        sim.entities_mut()
-            .insert(GameEntity::test_default(1, "E1", "Americans", 10, 10));
-        sim.entities_mut()
-            .insert(GameEntity::test_default(2, "E1", "Americans", 10, 10));
+        sim.fog = FogState::new(32, 32);
+        let owner = sim.interner.intern("Americans");
+        let type_ref = sim.interner.intern("E1");
+        // Stored entities use this Simulation's interner, not the separate
+        // global test interner used by standalone rendering-only fixtures.
+        let entity = |id| {
+            GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                10,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(100),
+                type_ref,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            )
+        };
+        sim.entities_mut().insert(entity(1));
+        sim.entities_mut().insert(entity(2));
         sim.entities_mut()
             .get_mut(2)
             .unwrap()
@@ -559,8 +578,7 @@ mod tests {
         sim.reveal(1);
         sim.set_logic_order_for_test(vec![1, 2]);
         assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
-        sim.entities_mut()
-            .insert(GameEntity::test_default(3, "E1", "Americans", 10, 10));
+        sim.entities_mut().insert(entity(3));
         sim.set_logic_order_for_test(vec![3, 1, 2]);
         assert_eq!(
             tactical_entity_encounter_order(&sim),
@@ -1068,8 +1086,25 @@ mod tests {
         use crate::sim::world::display_layers::DisplayLayer;
 
         let mut sim = Simulation::new();
-        let mut aircraft = entity_with_locomotor("BEAG", LocomotorKind::Fly, 900, 40, 40);
-        aircraft.set_category_for_test(EntityCategory::Aircraft);
+        sim.fog = FogState::new(64, 64);
+        let owner = sim.interner.intern("Americans");
+        let type_ref = sim.interner.intern("BEAG");
+        let mut aircraft = GameEntity::new_at_frame_zero_for_test(
+            1,
+            40,
+            40,
+            0,
+            0,
+            owner,
+            crate::sim::combat::Health::new(100),
+            type_ref,
+            EntityCategory::Aircraft,
+            0,
+            5,
+            true,
+        );
+        aircraft.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
+        aircraft.position.set_exact_z_leptons_for_test(Some(900));
         aircraft.lifecycle.set_in_limbo_for_test(true);
         sim.entities_mut().insert(aircraft);
         sim.reveal(1);

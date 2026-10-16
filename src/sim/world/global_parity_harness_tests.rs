@@ -36,7 +36,7 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use std::io::Write;
 
-/// Optional observations of the two bounded replay fixtures, never golden input.
+/// Optional observations of bounded replay fixtures, never golden input.
 /// The file records existing owners without changing or draining their state.
 pub(super) fn replay_diagnostic_file(name: &str) -> Option<std::io::BufWriter<std::fs::File>> {
     let root = std::path::PathBuf::from(std::env::var_os("VERA20K_REPLAY_DIAGNOSTICS")?);
@@ -130,6 +130,22 @@ pub(super) fn record_replay_diagnostic(
             "rng":{"scenario":sim.scenario_rng.native_state_hex(),
                 "main":sim.main_rng.native_state_hex(),"mapgen":sim.mapgen_rng.native_state_hex()},
             "draws":draws,"retained_path_inputs":retained_path_inputs,
+            "source_admissions":sim.fog.sight_admissions.iter().map(|(&(id,viewer),source)|
+                serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
+            ).collect::<Vec<_>>(),
+            "alternate_sight_admissions":sim.fog.alternate_sight_admissions.iter().map(|(&(id,viewer),source)|
+                serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
+            ).collect::<Vec<_>>(),
+            "fog_owners":sim.fog.by_owner.iter().map(|(owner,view)| {
+                let mut hash = crate::sim::state_hasher::StateHasher::new();
+                view.hash_cells(&mut hash);
+                serde_json::json!({"owner":sim.resolve(*owner),"digest":std::hash::Hasher::finish(&hash)})
+            }).collect::<Vec<_>>(),
+            "default_fog_owner_digest":({
+                let mut hash = crate::sim::state_hasher::StateHasher::new();
+                crate::sim::vision::OwnerVisibility::new(sim.fog.width,sim.fog.height).hash_cells(&mut hash);
+                std::hash::Hasher::finish(&hash)
+            }),
         }),
     )
     .unwrap();
@@ -162,50 +178,13 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
             "streams":[sim.scenario_rng.state(),sim.main_rng.state(),sim.mapgen_rng.state()],
             "actors":actors,"fire_count":sim.fire_events.len(),
             "hash_owners":sim.hash_owner_diagnostics_for_test(),
+            "source_admissions":sim.fog.sight_admissions.iter().map(|(&(id,viewer),source)|
+                serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
+            ).collect::<Vec<_>>(),
+            "alternate_sight_admissions":sim.fog.alternate_sight_admissions.iter().map(|(&(id,viewer),source)|
+                serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
+            ).collect::<Vec<_>>(),
         })
-    );
-}
-
-/// Same-binary Rust hash attribution, independent of gameplay/native goldens.
-/// Only the removed TriggerRuntime last_announcement=None delimiter is fed.
-pub(super) fn assert_announcement_feed_retirement_hash_control(
-    name: &str,
-    sim: &Simulation,
-    expected_state_hasher_pin: u64,
-) {
-    let current = sim.state_hash();
-    let retained_authority = bincode::serialize(sim).expect("retained replay authority");
-    let retained_dummy = sim.effective_shared_cell_dummy().snapshot();
-    let retained_streams = (
-        sim.scenario_rng.state(),
-        sim.main_rng.state(),
-        sim.mapgen_rng.state(),
-    );
-    let control =
-        crate::sim::trigger_runtime::with_legacy_announcement_hash_control_for_test(|| {
-            sim.state_hash()
-        });
-    println!(
-        "[announcement hash attribution {name}] current={current:016X} control={control:016X}"
-    );
-    assert_eq!(
-        control, expected_state_hasher_pin,
-        "restoring only the retired None feed must recover the main StateHasher pin"
-    );
-    assert_eq!(sim.state_hash(), current, "the diagnostic feed is scoped");
-    assert_eq!(
-        bincode::serialize(sim).expect("unchanged replay authority"),
-        retained_authority,
-        "diagnostic feeds cannot alter serialized gameplay state"
-    );
-    assert_eq!(sim.effective_shared_cell_dummy().snapshot(), retained_dummy);
-    assert_eq!(
-        (
-            sim.scenario_rng.state(),
-            sim.main_rng.state(),
-            sim.mapgen_rng.state()
-        ),
-        retained_streams
     );
 }
 
@@ -679,20 +658,11 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // with a hash that skips only that fold) gives this value in the same
 // test, with every tripwire above green.
 // Control removed. Previous: 0xE527_F567_DC13_C55E.
-// Integrated StateHasher pin after executed scoped feed attribution. The test
-// below recovers current main exactly with retired feeds and preserves serialized
-// gameplay, the live Dummy and all three RNG streams; this is a Rust ratchet.
-// Re-pinned after merging main's +0x438/+0x439 latches into the hash.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x3B11_939D_CFE5_8242;
-
-// ALL01 r6 (fork-local schema345) used DefaultHasher before main's
-// pinned StateHasher, entity/fog digests and owner migrations. These remain
-// historical Rust receipts; they are not comparable to current u64 outputs.
-const GLOBAL_HARNESS_INCOMING_HASH: u64 = 0x0D69_4099_AD39_5D63;
-const GLOBAL_HARNESS_R6_FINAL_HASH: u64 = 0x488E_0917_87DF_8E1A;
-// The legacy-feed control uses this main StateHasher reference, which
-// includes the +0x438/+0x439 infantry tracking latches.
-const GLOBAL_HARNESS_MAIN_HASH: u64 = 0x6616_10FD_E8C9_ADDE;
+// Snapshot377 retains raw Type Sight and native250/254/260 admission.
+// The exact-zero gate70AF87 replaces frame-produced empty source caches and
+// default fog owner planes. This is a Rust state ratchet; gameplay and RNG
+// tripwires remain independent of the composite hash.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x9762_01C6_BA92_703C;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1331,7 +1301,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         Some(108),
         "tank 6 takes four 105mm hits (65 * 75% heavy)"
     );
-    let legacy_super_owner = rep.interner.get("Americans").expect("building owner");
+    let building_owner = rep.interner.get("Americans").expect("building owner");
     assert!(
         rep.session.house_order.is_empty(),
         "this fixture runs no House AI"
@@ -1345,40 +1315,8 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             .entities
             .values()
             .filter(|entity| entity.category() == EntityCategory::Structure)
-            .all(|entity| entity.owner() == legacy_super_owner),
-        "the retired initializer visited only this building owner"
-    );
-    let retained_authority = bincode::serialize(&rep).expect("retained replay authority");
-    let retained_dummy = rep.effective_shared_cell_dummy().snapshot();
-    let retained_streams = (
-        rep.scenario_rng.state(),
-        rep.main_rng.state(),
-        rep.mapgen_rng.state(),
-    );
-    let incoming_hash_control =
-        crate::sim::trigger_runtime::with_legacy_announcement_hash_control_for_test(|| {
-            rep.state_hash_with_legacy_empty_super_owner_for_test(legacy_super_owner)
-        });
-    println!(
-        "[global retired hash feeds] current={final_hash:016X} control={incoming_hash_control:016X} main={GLOBAL_HARNESS_MAIN_HASH:016X} archived_default_incoming={GLOBAL_HARNESS_INCOMING_HASH:016X} archived_r6={GLOBAL_HARNESS_R6_FINAL_HASH:016X}"
-    );
-    assert_eq!(
-        incoming_hash_control, GLOBAL_HARNESS_MAIN_HASH,
-        "restoring only the retired None and empty Super owner feeds must recover the main StateHasher pin; other drift needs attribution"
-    );
-    assert_eq!(rep.state_hash(), final_hash, "diagnostic feeds stay scoped");
-    assert!(
-        retained_authority == bincode::serialize(&rep).expect("unchanged replay authority"),
-        "diagnostic feeds cannot alter serialized gameplay state"
-    );
-    assert_eq!(rep.effective_shared_cell_dummy().snapshot(), retained_dummy);
-    assert_eq!(
-        (
-            rep.scenario_rng.state(),
-            rep.main_rng.state(),
-            rep.mapgen_rng.state()
-        ),
-        retained_streams
+            .all(|entity| entity.owner() == building_owner),
+        "all fixture buildings belong to the Allied owner"
     );
     assert_eq!(
         final_hash, GLOBAL_HARNESS_FINAL_HASH,

@@ -442,7 +442,14 @@ fn what_action_on_cell(
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> crate::sim::world::MoveAction {
     use crate::sim::world::{CellActionQuery, MoveAction};
-    let (Some(viewer), Some(id), Some(rules)) = (viewer, best_id, rules) else {
+    // gamemd only asks the selected object's What_Action when a selection exists:
+    // `DisplayClass__DetermineAction @ 0x00692610` returns the vtable `+0x70` answer
+    // from inside `if (g_CurrentObjects_Count != 0)`, so hovering a bare Cell with an
+    // empty selection yields no action and keeps the plain arrow.
+    let Some(id) = best_id else {
+        return MoveAction::None;
+    };
+    let (Some(viewer), Some(rules)) = (viewer, rules) else {
         return MoveAction::Move;
     };
     if sim
@@ -2655,6 +2662,33 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         };
         assert_eq!(cursor(seen), CursorFeedbackKind::Harvest);
         assert_eq!(cursor(hidden), CursorFeedbackKind::Move);
+    }
+
+    /// With nothing selected gamemd never asks a What_Action for the hovered Cell:
+    /// `DisplayClass__DetermineAction @ 0x00692610` returns the selected object's
+    /// vtable `+0x70` answer from inside `if (g_CurrentObjects_Count != 0)`, so an
+    /// empty selection answers no action and the pointer stays the plain arrow —
+    /// including over unexplored ground, where the Move cursor used to appear.
+    #[test]
+    fn an_empty_selection_answers_the_default_cursor_on_a_bare_cell() {
+        use crate::app::input::context_order::OrderModifier;
+        use crate::app::presentation::render::OrderMode;
+        let (sim, rules, _) = Simulation::walk_cell_input_test_scene(false);
+        let owner = sim.interner.get("Local").unwrap();
+
+        assert_eq!(
+            empty_cell_cursor(
+                &sim,
+                Some(&rules),
+                None,
+                Some(owner),
+                None,
+                (9, 5),
+                OrderModifier::Normal,
+                OrderMode::Move,
+            ),
+            CursorFeedbackKind::Default,
+        );
     }
 
     /// `Is_Armed` reads the current weapon slot, slot 0 without `TurretCount=`,

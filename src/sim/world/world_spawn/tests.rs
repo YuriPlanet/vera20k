@@ -1098,8 +1098,8 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             .unwrap();
         assert_eq!(
             entity.sight.range(),
-            0,
-            "all three inputs lose information in fog range"
+            sight,
+            "the native signed Type Sight survives construction"
         );
         assert_eq!(entity.sight.is_zero(), sight == 0);
         let (id, outcome) = sim.unlimbo_after_constructor_managers(
@@ -1128,7 +1128,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             .get_mut(id)
             .unwrap()
             .sight
-            .set_sight_is_zero_for_test(sight != 0);
+            .stamp_type_sight(if sight == 0 { 1 } else { 0 });
         assert_ne!(
             changed_type_predicate.state_hash(),
             hash,

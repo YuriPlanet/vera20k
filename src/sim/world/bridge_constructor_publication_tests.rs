@@ -467,6 +467,9 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
             crate::sim::game_entity::GameEntity::test_default(id, "E1", "Americans", 16, 16);
         object.set_type_ref_for_test(sim.interner.intern("E1"));
         object.set_owner_for_test(sim.interner.intern("Americans"));
+        // This test isolates constructor/deferred-drain effects, including
+        // the retained Dummy. Supply no unrelated native sight walk.
+        object.sight.set_vision_range_for_test(0);
         sim.substrate.entities.insert(object);
         sim.reveal(id);
         if index == 0 {
@@ -494,6 +497,47 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
     assert_eq!(cells(&sim), retained_cells);
     assert_eq!(dummy(&sim), retained_dummy);
     assert_eq!(sim.native_unique_ids.as_ref().unwrap().current_raw(), 1002);
+}
+
+#[test]
+fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
+    let (mut sim, _, _) = fixture();
+    sim.session.binary_frame = 1;
+    sim.fog = crate::sim::vision::FogState::new(33, 33);
+    let owner = sim.interner.intern("Americans");
+    let type_ref = sim.interner.intern("E1");
+    let mut object =
+        crate::sim::game_entity::GameEntity::test_default(101, "E1", "Americans", 16, 16);
+    object.set_type_ref_for_test(type_ref);
+    object.set_owner_for_test(owner);
+    sim.substrate.entities.insert(object);
+    assert!(matches!(
+        sim.reveal(101),
+        crate::sim::world::RevealOutcome::Revealed { .. }
+    ));
+    let admission = &sim.fog.sight_admissions[&(101, owner)];
+    assert!(admission.latched && !admission.cells.is_empty());
+    let cached_geometry = (admission.origin, admission.radius);
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    assert!(
+        admission
+            .cells
+            .iter()
+            .all(|&(x, y)| terrain.cell(x, y).is_some()),
+        "a sparse native hole selects Dummy, never a rectangular sight-count slot"
+    );
+    let retained_dummy = dummy(&sim);
+    let query = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+    sim.fog.assert_sight_projection_consistent(Some(&query));
+    assert_eq!(
+        dummy(&sim),
+        retained_dummy,
+        "diagnostics cannot stamp the retained Dummy"
+    );
+    sim.advance_tick(&[], None, None, None, 67);
+    let admission = &sim.fog.sight_admissions[&(101, owner)];
+    assert!(admission.latched);
+    assert_eq!((admission.origin, admission.radius), cached_geometry);
 }
 
 #[test]

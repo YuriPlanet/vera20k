@@ -124,8 +124,13 @@ fn reveal_cell(sim: &mut Simulation, viewer: InternedId, cell: (u16, u16), final
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
             sim.resolved_terrain.as_ref().unwrap(),
         );
-        sim.fog
-            .reveal_map_cell(viewer, cell, final_pass, Some(&cells))
+        sim.fog.reveal_map_cell(
+            viewer,
+            cell,
+            final_pass,
+            Some(&cells),
+            crate::sim::vision::MapRevealProjection::Transient,
+        )
     };
     if let Some(notification) = notification {
         sim.notify_cell_change(
@@ -602,7 +607,7 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
             .iter()
             .zip(row["histories"].as_array().unwrap())
         {
-            sim.reveal_area(
+            let _ = sim.reveal_area(
                 &[player],
                 pair(&pass["center"]),
                 0,
@@ -611,6 +616,8 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
                 pass["final"] == 1,
                 &config,
                 UninitContext::default(),
+                crate::sim::vision::MapRevealProjection::Transient,
+                sim.session.current_house,
             );
             for state in history["states"].as_array().unwrap() {
                 assert_native_cell_history(

@@ -578,10 +578,21 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         entity.locomotor = Some(loco);
     }
     sim.set_object_height_unmarked(2, 208);
+    sim.update_object_sight_in_view(
+        2,
+        0,
+        None,
+        &vision::VisionConfig::default(),
+        None,
+        UninitContext::default(),
+    );
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     sim.reconcile_active_vision_structures(&rules);
+    // The fixture models native ReReveal before leaving, not a frame
+    // discovering an absent source and inventing its lifecycle event.
+    sim.release_object_sight_with_context(2, UninitContext::default());
     sim.substrate
         .entities
         .get_mut(2)
@@ -598,6 +609,16 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(false);
+    // Re-entry is an explicit UpdateReveal event. Unchanged frames may
+    // not resurrect a retained inactive250 cache.
+    sim.update_object_sight_in_view(
+        2,
+        0,
+        None,
+        &vision::VisionConfig::default(),
+        None,
+        UninitContext::default(),
+    );
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     {
         let clocks = &mut sim
@@ -789,7 +810,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         let entity = sim.substrate.entities.get_mut(2).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.set_in_playfield(true);
-        entity.sight.set_vision_range_for_test(0);
+        entity.sight.stamp_type_sight(-1);
     }
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
@@ -803,7 +824,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     );
     assert!(
         sim.fog.sight_admissions[&(2, owner)].cells.is_empty(),
-        "zero radius still admits the source latch"
+        "a nonzero negative Type Sight still admits the source latch"
     );
 }
 
@@ -818,6 +839,14 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
         let gapper = sim.interner.intern("Soviet");
         let (source, first_gap) = if gap_first { (2, 1) } else { (1, 2) };
         insert_sight_unit(&mut sim, source, owner, 12, 12);
+        sim.update_object_sight_in_view(
+            source,
+            0,
+            None,
+            &vision::VisionConfig::default(),
+            None,
+            UninitContext::default(),
+        );
         sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
         insert_structure(&mut sim, first_gap, gapper, "GAGAP", 12);
         sim.visit_building_operational(
@@ -827,6 +856,9 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             crate::sim::world::FrameEffects::default(),
         );
         sim.reconcile_active_vision_structures(&rules);
+        // The fixture models native ReReveal before leaving, not a frame
+        // discovering an absent source and inventing its lifecycle event.
+        sim.release_object_sight_with_context(source, UninitContext::default());
         sim.substrate
             .entities
             .get_mut(source)
@@ -843,6 +875,16 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(false);
+        // Re-entry is an explicit UpdateReveal event. Unchanged frames may
+        // not resurrect a retained inactive250 cache.
+        sim.update_object_sight_in_view(
+            source,
+            0,
+            None,
+            &vision::VisionConfig::default(),
+            None,
+            UninitContext::default(),
+        );
         sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
         // Actual House transition invokes the map bracket before577A changes.
         // This uplink's own sight is outside the observed cell.

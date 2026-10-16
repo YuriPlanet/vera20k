@@ -579,6 +579,9 @@ impl Simulation {
         sim.session.game_options.short_game = false;
         sim.session.map_width = 16;
         sim.session.map_height = 16;
+        // Native Unlimbo now publishes sight synchronously. Allocate the map
+        // domain before either source can create a viewer plane/cache.
+        sim.fog = crate::sim::vision::FogState::new(16, 16);
         sim.playfield_bounds = Some(bounds());
         sim.playfield_size_height = Some(8);
         let clear = rules
@@ -658,8 +661,6 @@ impl Simulation {
         sim.session.house_order.push(enemy);
         sim.spawn_object("E1", "Enemy", 12, 11, 0, &rules).unwrap();
         sim.resolve_type_handles(&rules);
-        sim.fog.width = 16;
-        sim.fog.height = 16;
         sim.fog.reveal_all_for_owner(owner);
         assert!(sim.entities().get(actor).unwrap().lifecycle.cell_marked());
         (sim, rules, actor)

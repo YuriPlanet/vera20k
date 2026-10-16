@@ -1569,6 +1569,18 @@ def click_shroud_metadata():
             mouse_process_call=0x69325E,mouse_action_call=0x693271,mouse_release_call=0x69328B))
 
 
+def initialize_discovery_geometry(call, read32, u):
+    """Shared original startup group; caller supplies its existing VM transport."""
+    entries = [0x6D1830,0x6D18C0,0x6D1BB0,0x49F2F0,
+               0x561710,0x5617A0,0x5617C0,0x5617E0,0x561910,0x5638D0]
+    for start in (0x8129FC,0x814EA8):
+        entries.extend(read32(start+i*4) for i in range(14))
+    for entry in entries:call(entry,0,[])
+    raw = bytes(u.mem_read(0xB0CD48,8))
+    assert struct.unpack('<Q',raw)[0]==STANDARD_Z_MULTIPLIER_BITS
+    return dict(entries=[f'{entry:08X}' for entry in entries],b0cd48=raw.hex())
+
+
 class DiscoveryFixture(DiscoveryEntry):
     """Reuse Entry's constructor prefixes, original Infantry vtable and transport.
 
@@ -1586,15 +1598,7 @@ class DiscoveryFixture(DiscoveryEntry):
         u=self.uc
         u.mem_map(SCRATCH+0x60000,0x20000)
         self.cell_cursor=SCRATCH+0x68000;self.actor_cursor=SCRATCH+0x60000
-        for entry in (0x6D1830,0x6D18C0,0x6D1BB0,0x49F2F0,
-                      0x561710,0x5617A0,0x5617C0,0x5617E0,0x561910,0x5638D0):
-            self.call(entry,0,[])
-        # Execute the same original Cell/TAction startup constant groups used
-        # by initialize_waypoint_map. The TAction height fields are independent
-        # of Cell's initialized level conversion and cannot use image zeros.
-        for start in (0x8129FC,0x814EA8):
-            for i in range(14):self.call(self.read32(start+i*4),0,[])
-        assert struct.unpack('<Q',u.mem_read(0xB0CD48,8))[0]==STANDARD_Z_MULTIPLIER_BITS
+        initialize_discovery_geometry(self.call,self.read32,u)
         self.constants=dict(adjust_for_z_multiplier_hex=bytes(u.mem_read(0xB0CD48,8)).hex(),
             cell_diagonal_hex=bytes(u.mem_read(0xB0CD78,8)).hex(),
             rad60_hex=bytes(u.mem_read(0xB0CD88,8)).hex(),
@@ -1733,13 +1737,15 @@ class DiscoveryFixture(DiscoveryEntry):
     def cell_state(self, cell):
         return self.pointer_state(self.cells[cell])
 
-    def pointer_state(self, p):
-        return dict(cell=list(struct.unpack('<hh',self.uc.mem_read(p+0x24,4))),
+    def pointer_state(self, p, *, include_dirty=False):
+        result = dict(cell=list(struct.unpack('<hh',self.uc.mem_read(p+0x24,4))),
             level=struct.unpack('<b',self.uc.mem_read(p+0x11B,1))[0],
             counter=struct.unpack('<i',self.uc.mem_read(p+0x130,4))[0],
             gap=struct.unpack('<i',self.uc.mem_read(p+0x134,4))[0],
             flags=self.read32(p+0x140),alt=self.read32(p+0x12C),
             cache=list(struct.unpack('<bb',self.uc.mem_read(p+0x120,2))))
+        if include_dirty:result['dirty'] = self.read32(p+0x138)
+        return result
 
     def topology_input(self):
         return dict(allocated_cells=[self.cell_state(c) for c in sorted(self.cells)],

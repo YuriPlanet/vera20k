@@ -10,8 +10,8 @@ from tools.spatial_oracle.building_body_rules import SP,dwords
 from tools.projectile_oracle import bridge_render_inputs as module
 
 class PaletteReader(module.BulletReader):
- def __init__(self,art):
-  super().__init__(art);self.u.mem_map(0x24400000,0x3c00000)
+ def __init__(self,art,root=None):
+  super().__init__(art,root);self.u.mem_map(0x24400000,0x3c00000)
  def alloc(self,n):
   out=self.cursor;self.cursor+=(n+15)&~15;assert self.cursor<0x28000000;return out
  def hook(self,u,p,n,d):

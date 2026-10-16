@@ -4042,20 +4042,9 @@ impl Simulation {
         // virtual (`0x0070ADC0`), only for human-owned live nonlimbo mobiles;
         // Buildings are explicitly excluded. Rust's owned equivalent commits
         // the sight reveal immediately, before this action returns.
-        let reveal_config = self.sight_reveal_config(rules);
-        let height_grid = self.sight_height_grid(&reveal_config);
         for (stable_id, _, reveal) in membership_updates {
-            if reveal && let Some(entity) = self.substrate.entities.get(stable_id) {
-                let sight_ability = reveal_config.sight_ability(entity, &self.interner, rules);
-                crate::sim::vision::reveal_entity_vision(
-                    &mut self.fog,
-                    entity,
-                    &reveal_config,
-                    height_grid.levels(),
-                    self.resolved_terrain.as_ref(),
-                    sight_ability,
-                    &self.interner,
-                );
+            if reveal {
+                self.reveal_uncached_object_sight(stable_id, UninitContext::new(rules, None));
             }
         }
 
@@ -5112,7 +5101,7 @@ impl Simulation {
             // sight only: what a `RevealToAll=` opening showed the current
             // house stays.
             self.remove_building_gap_before_limbo(stable_id);
-            self.fog.release_entity_sight(stable_id);
+            self.release_object_sight_with_context(stable_id, UninitContext::new(rules, None));
             // Original4483A6 clears PrimaryFactory before the old-house
             //teardown.448C69 initializes it after the delegated owner swap.
             self.production.clear_primary_factory(stable_id);
@@ -6391,27 +6380,11 @@ impl Simulation {
 
     /// The per-frame fog pass: ends last frame's sight, releases the sight of
     /// objects that no longer hold it and admits the sight of objects without
-    /// one (VERA-only, standing in for the lifecycle reveals; residual on
-    /// [`vision::recompute_owner_visibility_in_place`]), then applies SpySat
+    /// one (the remaining House admission reconciliation), then applies SpySat
     /// and Gap Generator effects. Footprints move only at reveal events
     /// ([`Self::refresh_object_sight`]).
     fn refresh_fog(&mut self, config: &vision::VisionConfig, rules: Option<&RuleSet>) {
-        // End last frame's sight (preserving FLAG_REVEALED), then release and
-        // admit sources.
-        let path_grid = self.path_grid.as_deref();
-        let height_grid = self.sight_height_grid(config);
-
-        vision::recompute_owner_visibility_in_place(
-            &mut self.fog,
-            &self.substrate.entities,
-            path_grid,
-            &self.house_alliances,
-            config,
-            height_grid.levels(),
-            self.resolved_terrain.as_ref(),
-            &self.interner,
-            rules,
-        );
+        self.refresh_sight_sources(config, rules);
 
         // Apply SpySat and Gap Generator effects if rules are available.
         if let Some(rules) = rules {
