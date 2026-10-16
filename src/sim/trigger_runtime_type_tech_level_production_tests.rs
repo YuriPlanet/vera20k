@@ -324,7 +324,8 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         &runtime.resources.rules,
         input["house"].as_str().unwrap(),
         "ORCA",
-        FrameEffects::default()
+        FrameEffects::default(),
+        false,
     ));
     let held = runtime
         .simulation
@@ -350,11 +351,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     assert!(paid_frame >= runtime.simulation.session.binary_frame);
     while runtime.simulation.session.binary_frame < paid_frame {
         runtime.simulation.session.binary_frame += 1;
-        production::revalidate_and_step_factories(
-            &mut runtime.simulation,
-            &runtime.resources.rules,
-            FrameEffects::default(),
-        );
+        production::step_factories(&mut runtime.simulation);
     }
     assert_production_state(
         &runtime.simulation,
