@@ -521,19 +521,29 @@ pub(in crate::sim) fn release_delivered_mobile(
 /// (`+0x55A0`, `+0x55B4`, `+0x55C8` or `+0x55DC`) grows unless its type is
 /// `DontScore=` (`+0xC9F`);
 /// [`MatchStatistics::built`](crate::sim::house_state::MatchStatistics) is
-/// the sum of the four. Its other writes are residuals of
-/// `sim::ai_base_building`.
+/// the sum of the four. Before DontScore, each class stores its own Type
+/// ArrayIndex (+26C/+270/+274/+278): TEvent19..22 reads the most recent one,
+/// even for an unscored product. Executed: tag_lifecycle --build-type-events.
+/// Notification90-frame timer/CreateSound remain the documented residuals
+/// in `sim::ai_base_building`, not an alternate production-event dispatcher.
 pub(super) fn record_last_built(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
     type_id: InternedId,
 ) {
-    let scores = sim
-        .object_type(type_id, rules)
-        .is_some_and(|ty| !ty.dont_score);
-    if scores && let Some(house) = sim.houses.get_mut(&owner) {
-        house.stats.record_built();
+    let Some(ty) = sim.object_type(type_id, rules) else {
+        return;
+    };
+    let (category, scores) = (ty.category, !ty.dont_score);
+    let type_index = rules
+        .type_array_index(category, sim.interner.resolve(type_id))
+        .expect("a produced object belongs to its class Type registry");
+    if let Some(house) = sim.houses.get_mut(&owner) {
+        house.record_built_type(category, type_index);
+        if scores {
+            house.stats.record_built();
+        }
     }
 }
 

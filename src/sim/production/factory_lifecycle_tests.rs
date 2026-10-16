@@ -55,6 +55,139 @@ fn world_with(rules: RuleSet, seed: u64) -> (Simulation, RuleSet, InternedId) {
     (sim, rules, owner)
 }
 
+/// Original Record_Last_Built4FB6B0 controls supply actor/type layouts and
+/// existing Counter capacity as priors. This compares its four last-type slots,
+/// the existing aggregate built total and all three complete RNG states.
+/// Place_Production, CreateSound, House+246/timer and a full production world
+/// are outside this comparison.
+#[test]
+fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
+    use crate::rules::object_type::ObjectCategory;
+    use crate::sim::house_state::HouseState;
+
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_build_type_events.json",
+    ))
+    .expect("original built-type controls");
+    let native = &corpus["record_last_built"];
+    assert_eq!(
+        native["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    let rows = native["controls"].as_array().unwrap();
+    assert_eq!(rows.len(), 8);
+    let categories = [
+        (ObjectCategory::Building, "building"),
+        (ObjectCategory::Vehicle, "vehicle"),
+        (ObjectCategory::Infantry, "infantry"),
+        (ObjectCategory::Aircraft, "aircraft"),
+    ];
+    let built_total = |state: &serde_json::Value| {
+        state["built_counters"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|counter| counter["total"].as_u64().unwrap())
+            .sum::<u64>()
+    };
+    for dont_score in [false, true] {
+        // Names are explicit corpus constructor inputs. Apply DontScore through
+        // the actual retail startup/mode/map reader, rather than mutating types.
+        let patch = categories
+            .into_iter()
+            .map(|(_, name)| {
+                let type_name = native["type_constructor_defaults"][name]["name"]
+                    .as_str()
+                    .unwrap();
+                format!(
+                    "[{type_name}]\nDontScore={}\n",
+                    if dont_score { "yes" } else { "no" }
+                )
+            })
+            .collect::<String>();
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str(&patch),
+        ) else {
+            return;
+        };
+        let rules = &retail.rules;
+        for (category, name) in categories {
+            let row = rows
+                .iter()
+                .find(|row| {
+                    row["category"].as_str() == Some(name)
+                        && row["dont_score"].as_bool() == Some(dont_score)
+                })
+                .expect("one native control for each category and DontScore value");
+            let type_prior = &native["type_constructor_defaults"][name];
+            let type_name = type_prior["name"].as_str().unwrap();
+            let native_type_index =
+                i32::try_from(row["native_type_index"].as_i64().unwrap()).unwrap();
+            assert_eq!(type_prior["array_index"], row["native_type_index"]);
+            let ty = rules.object(type_name).unwrap();
+            assert_eq!(ty.category, category);
+            assert_eq!(ty.dont_score, dont_score);
+            assert_eq!(
+                rules.type_array_index(category, type_name),
+                Some(native_type_index)
+            );
+
+            let mut sim = Simulation::with_seed(0);
+            sim.intern_rule_type_ids(rules);
+            sim.resolve_type_handles(rules);
+            let owner = sim.interner.intern("Americans");
+            sim.houses
+                .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+            let type_id = sim.interner.intern(type_name);
+            for (slot, slot_name) in categories {
+                assert_eq!(
+                    i64::from(sim.houses[&owner].last_built_type_index(slot)),
+                    row["before"]["last_built"][slot_name].as_i64().unwrap(),
+                    "{name}, DontScore={dont_score}, before {slot_name}"
+                );
+            }
+            assert_eq!(
+                u64::from(sim.houses[&owner].stats.built()),
+                built_total(&row["before"])
+            );
+            let before = &row["observation"]["rng_before"];
+            sim.scenario_rng =
+                SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
+            sim.main_rng =
+                SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+            sim.mapgen_rng =
+                SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
+
+            super::factory_lifecycle::record_last_built(&mut sim, rules, owner, type_id);
+
+            for (slot, slot_name) in categories {
+                assert_eq!(
+                    i64::from(sim.houses[&owner].last_built_type_index(slot)),
+                    row["after"]["last_built"][slot_name].as_i64().unwrap(),
+                    "{name}, DontScore={dont_score}, after {slot_name}"
+                );
+            }
+            assert_eq!(
+                u64::from(sim.houses[&owner].stats.built()),
+                built_total(&row["after"]),
+                "{name}, DontScore={dont_score}"
+            );
+            let after = &row["observation"]["rng_after"];
+            for (stream, state) in [
+                ("scenario", sim.scenario_rng.native_state_hex()),
+                ("main", sim.main_rng.native_state_hex()),
+                ("mapgen", sim.mapgen_rng.native_state_hex()),
+            ] {
+                assert_eq!(
+                    state,
+                    after[stream].as_str().unwrap(),
+                    "{name}, DontScore={dont_score}, {stream} RNG"
+                );
+            }
+        }
+    }
+}
+
 /// Use physical stock Battle rules through the scenario reader, including its
 /// mode/map passes, and the three original-byte controls documented in
 /// tools/sidebar_oracle/factory_loss.md. The full bound runtime must preserve

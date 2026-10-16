@@ -1640,6 +1640,24 @@ impl Simulation {
         }
         let owner = entity.owner();
         let no_radio = entity.radio_contacts.is_empty();
+        //44D5ED..44D60D records the owner's last BuildingType after shared
+        //discovery admits, outside ScenarioInit, before Grand_Opening.
+        //This shares House's field owner with Record_Last_Built4FB6B0 and
+        //does not score a produced object. Executed: --build-type-events.
+        if !self.object_placement_scope_active()
+            && let Some(rules) = context.rules()
+        {
+            let type_id = self.interner.resolve(entity.type_ref());
+            let type_index = rules
+                .building_type_index(type_id)
+                .expect("a discovered building belongs to its Type registry");
+            if let Some(house) = self.houses.get_mut(&owner) {
+                house.record_built_type(
+                    crate::rules::object_type::ObjectCategory::Building,
+                    type_index,
+                );
+            }
+        }
         let construction = Some(crate::rules::mission_data::MissionType::Construction);
         // Both arms ask Get_Mission (vt+0x184 = 0x005B3040: current, else
         // queued; the computer arm's at 0x0044D679), so a placed building
@@ -1659,6 +1677,9 @@ impl Simulation {
         } else {
             viewer == owner && !effective_construction
         };
+        //44D61A precedes Grand_Opening, independent of ScenarioInit. The
+        //owner's existing House tail sees this request from nested callbacks.
+        self.request_house_tech_tree_recheck(owner);
         if no_radio
             && grand_admitted
             && let Some(rules) = context.rules()
@@ -1672,12 +1693,8 @@ impl Simulation {
                 context.effects(),
             );
         }
-        //44D61A writes1FC after admitted shared discovery, independent of
-        //ScenarioInit; only the26C/246 notification above is init-gated.
-        self.request_house_tech_tree_recheck(owner);
-        //44D5ED..44D63C also writes House26C/246. The retained
-        // built-type Event19 and90-frame notification consumers remain
-        // the large separate mechanism documented in ai_base_building.
+        //House246's 90-frame notification remains the separate timer residual
+        //in ai_base_building; it is not consumed by the built-type predicate.
         true
     }
 

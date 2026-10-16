@@ -1653,6 +1653,32 @@ impl Simulation {
             .clone();
         match condition.kind {
             14 => self.session.scenario_timer_elapsed(),
+            19..=22 => {
+                // Steam3e81a617: HasOccurred71EFEB..71F03D reads incoming
+                // House+26C/+274/+270/+278, not a Country or built count.
+                // Match sets persistence; mismatch leaves it alone. The null
+                // House takes the generic true tail without that write.
+                // Original execution: tag_lifecycle --build-type-events.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                use crate::rules::object_type::ObjectCategory;
+                let category = match condition.kind {
+                    19 => ObjectCategory::Building,
+                    20 => ObjectCategory::Vehicle,
+                    21 => ObjectCategory::Infantry,
+                    22 => ObjectCategory::Aircraft,
+                    _ => unreachable!(),
+                };
+                let matched = self
+                    .houses
+                    .get(&owner)
+                    .is_some_and(|house| house.last_built_type_index(category) == condition.value);
+                if matched {
+                    *persistence = true;
+                }
+                matched
+            }
             12 | 52 => {
                 // Steam3e81a617..08600: HasOccurred71EF01/71EF20 calls
                 // IHouse::AvailableMoney4F6990 on Register7264C0's incoming
@@ -3647,3 +3673,7 @@ mod native_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]
 mod reveal_zone_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_build_type_tests.rs"]
+mod build_type_tests;

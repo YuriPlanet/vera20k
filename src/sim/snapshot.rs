@@ -1049,7 +1049,8 @@ use crate::sim::world::Simulation;
 // 367 -> 368: ordered Techno DistributedFire candidates/scores and history.
 // 368 -> 369: tracked navy scalar and retained Unit Naval/Passengers admission.
 // 369 -> 370: VoxelAnim retains its constructor-assigned native numeric ID.
-const SNAPSHOT_VERSION: u32 = 370;
+// 370 -> 371: House retains four class-local last-built type indices.
+const SNAPSHOT_VERSION: u32 = 371;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4556,7 +4557,8 @@ mod tests {
         // 367 -> 368: retained runtime DistributedFire state.
         // 368 -> 369: tracked navy and its retained type admission.
         // 369 -> 370: constructor-assigned VoxelAnim native IDs.
-        assert_eq!(super::SNAPSHOT_VERSION, 370);
+        // 370 -> 371: retained House last-built type indices.
+        assert_eq!(super::SNAPSHOT_VERSION, 371);
     }
 
     #[test]

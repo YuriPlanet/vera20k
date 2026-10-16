@@ -42,10 +42,9 @@
 //!   `building_missions` record). The exit's `FirestormWall=` placement
 //!   after Unlimbo (`0x00445355..0x004453AE`, `0x00588570`); retail
 //!   `rulesmd.ini` sets the key on no type.
-//! - `Record_Last_Built` also stores the last built type of the object's kind
-//!   (`+0x26C` for buildings), which only the "built building type" trigger
-//!   event reads (`TriggerCondition::Evaluate`, `0x0071EFEB`; VERA's trigger
-//!   runtime has no such event); sets `+0x246`, which only restarts a
+//! - `Record_Last_Built` and Building discovery retain class-local type indices
+//!   through HouseState for built-type triggers19..22. The remaining `+0x246`
+//!   notification only restarts a
 //!   90-frame House timer nothing else reads (`0x004F8DF6..0x004F8E21`); sets
 //!   `+0x1FC`, whose revoke and grant pass on the next House update
 //!   (`0x004F92E9..0x004F9302`) VERA runs at the placement; and plays the

@@ -1856,10 +1856,289 @@ def naval_land_event_source_paths():
     return paths
 
 
+def build_type_record_controls():
+    """Whole Record_Last_Built on the existing reader/Counter/observer owners."""
+    from types import SimpleNamespace
+    from tools.input_oracle.campaign_start import CampaignReader
+    from tools.spatial_oracle.engineer_capture_accounting import AccountingObservation
+    from tools.spatial_oracle.building_body_rules import INI
+    from tools.sidebar_oracle.stock import mix, mix_hash
+    from tools.rules_oracle.bridge_child_sound import sections
+    from tools.native_oracle import image_bytes, image_sha256
+    from tools.native_inspect import selected_ranges, decode_ranges, instruction_row
+    m=CampaignReader();u=m.u
+    m.invoke(0x6832C0,m.scenario)
+    rules=m.alloc(0x2000);u.mem_write(0x8871E0,dwords(rules));m.invoke(0x665650,rules)
+    m.seed_streams(31)
+    country=m.alloc(0x300);m.invoke(0x5113F0,country,(m.cstring('Control'),))
+    house=m.alloc(0x17000);before=m.rng_state();mark=len(m.native_events)
+    m.invoke(0x4F54A0,house,(country,))
+    slots={'building':0x26C,'infantry':0x270,'vehicle':0x274,'aircraft':0x278}
+    constructor=dict(entry='0x004F54A0',
+        input=dict(rng_seed=31,country_ctor_name='Control',rules_constructor=True),
+        last_built={name:struct.unpack('<i',u.mem_read(house+offset,4))[0]
+                    for name,offset in slots.items()},
+        rng_full_before=before,rng_full_after=m.rng_state(),
+        native_events=list(m.native_events[mark:]))
+    # Read only the actual stock prefix needed for ALL07's literal index7.
+    # Keep Reader.invoke's original2M limit; no complete catalog is attempted.
+    raw_rules=(Path('ini')/'rulesmd.ini').read_bytes()
+    physical=sections(raw_rules)
+    first_eight=dict(list(physical['BuildingTypes'].items())[:8])
+    assert len(first_eight)==8
+    u.mem_write(0xA83C68,dwords(0x7EB6D4,m.alloc(64*4),64,1,0,10))
+    prefix_before_count=m.read32(0xA83C78)
+    m.ordered_ini({'BuildingTypes':first_eight});m.invoke(0x672660,rules,(INI,))
+    array,count=m.read32(0xA83C6C),m.read32(0xA83C78)
+    registered=[dict(index=i,name=m.string(m.read32(array+4*i)+0x24),
+        stored_index=m.read32(m.read32(array+4*i)+0xDF8)) for i in range(count)]
+    assert count==8
+    prefix=dict(entry='0x00672660',prior_count=prefix_before_count,
+        physical_rules_sha256=hashlib.sha256(raw_rules).hexdigest(),
+        physical_prefix=first_eight,registered=registered)
+    raw_archive=(Path(os.environ['RA2_DIR'])/'mapsmd03.mix').read_bytes()
+    raw_map=mix(raw_archive)[mix_hash('ALL07SMD.MAP')]
+    values=sections(raw_map);identity,tag_id='0C028AFC','0C029C8C'
+    from tools.spatial_oracle.trigger_event_records import execute as read_events
+    retail=dict(map='ALL07SMD.MAP',map_sha256=hashlib.sha256(raw_map).hexdigest(),
+        archive='mapsmd03.mix',archive_sha256=hashlib.sha256(raw_archive).hexdigest(),
+        trigger_id=identity,trigger=values['Triggers'][identity],
+        tag_id=tag_id,tag=values['Tags'][tag_id],raw_event=values['Events'][identity],
+        native_event=read_events(values['Events'][identity]),actions=values['Actions'][identity],
+        selected_index7=registered[7],map_building_types=values.get('BuildingTypes',{}),
+        langrule_present=(Path('ini')/'langrule.ini').exists())
+    # Use real stock prefixes for all selected classes. Standalone MTNK/ORCA
+    # constructors would assign fixture-local0, unlike their retail indices.
+    # APACHE is the native AircraftTypes first entry but has no physical section
+    # (and no Rust ObjectType); the first7 native entries reach PDPLANE/index6.
+    # Concrete actors below remain supplied layout priors, not constructors.
+    types={'building':m.read32(array+7*4)}
+    stock_type_prefixes={}
+    for category,entry,section,registry,prefix_count in (
+        ('vehicle',0x672360,'VehicleTypes',0xA83CE0,1),
+        ('infantry',0x672280,'InfantryTypes',0xA8E348,1),
+        ('aircraft',0x6723D0,'AircraftTypes',0xA8B218,7)):
+        u.mem_write(registry,dwords(0x7EB6D4,m.alloc(64*4),64,1,0,10))
+        physical_prefix=dict(list(physical[section].items())[:prefix_count])
+        assert len(physical_prefix)==prefix_count
+        prior_count=m.read32(registry+16)
+        m.ordered_ini({section:physical_prefix});m.invoke(entry,rules,(INI,))
+        actual_array,count=m.read32(registry+4),m.read32(registry+16)
+        assert count==prefix_count
+        actual=[]
+        for index in range(count):
+            pointer=m.read32(actual_array+index*4)
+            actual.append(dict(index=index,name=m.string(pointer+0x24),
+                array_index=m.invoke(m.read32(m.read32(pointer)+0x40),pointer),
+                stored_index=m.read32(pointer+0xDF8)))
+        types[category]=m.read32(actual_array+(count-1)*4)
+        assert actual[-1]['name'] in physical
+        stock_type_prefixes[category]=dict(entry=f'0x{entry:08X}',section=section,
+            prior_count=prior_count,physical_prefix=physical_prefix,registered=actual,
+            selected_index=actual[-1]['array_index'],selected_name=actual[-1]['name'])
+    type_defaults={category:dict(name=m.string(p+0x24),vtable=f'0x{m.read32(p):08X}',
+        array_index=m.invoke(m.read32(m.read32(p)+0x40),p),
+        dont_score=u.mem_read(p+0xC9F,1)[0],
+        create_sound=struct.unpack('<i',u.mem_read(p+0x534,4))[0]) for category,p in types.items()}
+    assert all(0<=row['array_index']<8 for row in type_defaults.values())
+    sound_defaults={hex(offset):struct.unpack('<i',u.mem_read(rules+offset,4))[0]
+                    for offset in (0x178,0x17C,0x180)}
+    for offset in (0x178,0x17C,0x180):u.mem_write(rules+offset,dwords(-1))
+    for pointer in types.values():u.mem_write(pointer+0x534,dwords(-1))
+    counter_offsets={'building':0x55A0,'vehicle':0x55B4,'infantry':0x55C8,'aircraft':0x55DC}
+    counter_slots={category:m.alloc(8*4) for category in counter_offsets}
+    actors,virtuals={},{}
+    image=image_bytes()
+    for category,vtable,type_offset in (
+        ('building',0x7E3EBC,0x520),('vehicle',0x7F5C70,0x6C4),
+        ('infantry',0x7EB058,0x6C0),('aircraft',0x7E22A4,0x6C4)):
+        actor=m.alloc(0x1000);u.mem_write(actor,bytes(0x1000))
+        u.mem_write(actor,dwords(vtable));u.mem_write(actor+type_offset,dwords(types[category]))
+        u.mem_write(actor+0x21C,dwords(house));actors[category]=actor
+        targets={label:m.read32(vtable+offset) for label,offset in (('what_am_i',0x2C),('get_type',0x84))}
+        targets['type_array_index']=m.read32(m.read32(types[category])+0x40)
+        assert m.invoke(targets['get_type'],actor)==types[category]
+        virtuals[category]=dict(vtable=f'0x{vtable:08X}',supplied_type_offset=hex(type_offset),
+            original_what_am_i=m.invoke(targets['what_am_i'],actor),
+            entries={label:hex(pc) for label,pc in targets.items()},
+            code=[dict(entry=hex(pc),**decode_ranges(selected_ranges(image,pc,24,code_only=False),
+                  lambda ins:[instruction_row(ins)])) for pc in targets.values()])
+    # Adapt only the reader's buffer/check API to the single accounting observer.
+    # No copied native writer, Counter, allocator, RNG or callee-result seam.
+    def unchanged():
+        m.check_code()
+        return True
+    observed,draws,advances,events=[],[],[],[]
+    facade=SimpleNamespace(u=u,read32=m.read32,rng=m.rng_state,
+        trace=observed,events=events,draws=draws,advances=advances,pending=[],code_unchanged=unchanged)
+    watched_pcs=(0x4FB6B0,0x49FA00,0x7509E0,0x7258D0,0x65C780,0x65C7E0,0x661C10)
+    def observe(_u,pc,size,data):
+        if pc in watched_pcs:
+            row=dict(pc=f'0x{pc:08X}',receiver=u.reg_read(UC_X86_REG_ECX))
+            observed.append(row)
+            if pc in (0x65C780,0x65C7E0,0x661C10):draws.append(row)
+            if pc==0x65C780:advances.append(row)
+            if pc==0x7258D0:events.append(row)
+    hook=u.hook_add(UC_HOOK_CODE,observe)
+    def state():
+        return dict(last_built={category:struct.unpack('<i',u.mem_read(house+offset,4))[0]
+                               for category,offset in slots.items()},
+            built_counters={category:dict(total=m.read32(house+offset+0x10),
+                items=list(struct.unpack('<8I',u.mem_read(counter_slots[category],32))))
+                for category,offset in counter_offsets.items()},
+            notification246=u.mem_read(house+0x246,1)[0],recheck1fc=u.mem_read(house+0x1FC,1)[0],
+            notification_timer=list(struct.unpack('<3i',u.mem_read(house+0x57A4,12))))
+    controls=[]
+    for category in ('building','vehicle','infantry','aircraft'):
+        for dont_score in (False,True):
+            for offset in slots.values():u.mem_write(house+offset,dwords(-1))
+            for label,offset in counter_offsets.items():
+                u.mem_write(house+offset+4,dwords(counter_slots[label],8))
+                u.mem_write(house+offset+0x10,dwords(0));u.mem_write(counter_slots[label],bytes(32))
+            u.mem_write(house+0x246,b'\0');u.mem_write(house+0x1FC,b'\0')
+            u.mem_write(house+0x57A4,dwords(29,17,90))
+            u.mem_write(types[category]+0xC9F,bytes([dont_score]));m.seed_streams(31)
+            before=state();observation=AccountingObservation(facade,{'owner':house})
+            for offset in (*slots.values(),0x57A4,0x57A8,0x57AC):observation.watched[house+offset]='owner'
+            mark=len(observed)
+            m.invoke(0x4FB6B0,house,(actors[category],))
+            after=state()
+            required=(0x4FB6B0,) if dont_score else (0x4FB6B0,0x49FA00,0x49FA47,0x49FA50)
+            receipt=observation.finish(required)
+            assert receipt['rng_before']==receipt['rng_after'] and not receipt['native_draws']
+            assert after['notification_timer']==before['notification_timer']
+            assert not any(row['pc'] in ('0x007509E0','0x007258D0') for row in observed[mark:])
+            controls.append(dict(category=category,dont_score=dont_score,
+                native_type_index=type_defaults[category]['array_index'],before=before,after=after,
+                observation=receipt))
+    u.hook_del(hook);m.check_code()
+    record=dict(native_sha256=image_sha256(),prefix=prefix,stock_type_prefixes=stock_type_prefixes,
+        type_constructor_defaults=type_defaults,
+        rules_constructor_create_sound_defaults=sound_defaults,virtuals=virtuals,controls=controls)
+    return constructor,record,retail
+
+
+def generate_build_type_events():
+    """19..22: native last-built predicates, writers and delayed latch consumer."""
+    from types import SimpleNamespace
+    from tools.native_oracle import image_bytes, image_sha256, file_span, NATIVE_FPCW
+    from tools.input_oracle.campaign_start import CampaignReader
+    from tools.spatial_oracle.trigger_action_values import discovery_building_override
+    m=PowerEventControls(reader_inputs=(),extra_calls=(0x7258D0,))
+    m.SPANS=list(m.SPANS)
+    for start,end in ((0x71F950,0x71FA40),(0x65C6D0,0x65C88D)):
+        m.SPANS.append((start,end));m.original.append(bytes(m.u.mem_read(start,end-start)))
+    scenario=m.arena+0xC0000
+    m.u.mem_write(0xA8B230,dwords(scenario))
+    for pointer in (scenario+0x218,0x886B88,0xABE890):
+        m.fixture.call(0x65C6D0,[31],ecx=pointer)
+    view=SimpleNamespace(u=m.u,scenario=scenario)
+    before=CampaignReader.rng_state(view)
+    controls=[]
+    slots={'building':0x26C,'infantry':0x270,'vehicle':0x274,'aircraft':0x278}
+    for kind,offset in ((19,0x26C),(20,0x274),(21,0x270),(22,0x278)):
+        for name,value,last,house,raised,flag,persistence in (
+            ('match',7,7,0,8,False,0),('miss',7,8,0,8,False,0),
+            ('negative_match',-1,-1,0,8,False,0),
+            ('match_wrong_raise_editor',7,7,0,99,True,0),
+            ('incoming_house1_not_first_country',7,7,1,99,False,0),
+            ('null_incoming',7,8,None,99,True,0),
+            ('miss_retained_one',7,8,0,8,False,1)):
+            for pointer in m.houses:m.u.mem_write(pointer+0x26C,dwords(101,102,103,104))
+            if house is not None:m.u.mem_write(m.houses[house]+offset,dwords(last))
+            priors=[{category:m.integer(pointer+field) for category,field in slots.items()}
+                    for pointer in m.houses]
+            timer_before=list(struct.unpack('<3i',m.u.mem_read(m.timer,12)))
+            m.predicate(f'event{kind}_{name}',f'1,{kind},0,{value}',house_index=house,
+                actor_index=2,raised=raised,scenario_init=flag,initial_persistence=persistence)
+            row=m.predicates[-1]
+            timer_after=list(struct.unpack('<3i',m.u.mem_read(m.timer,12)))
+            assert timer_before==timer_after
+            assert row['event54']==struct.unpack('<i',dwords(0xABCD1234))[0]
+            assert not any(call['pc']=='0x007258D0' for call in row['calls'])
+            controls.append(dict(name=row['name'],kind=kind,value=value,last_built=priors,
+                incoming_house=house,actor_owner=2,raised=raised,scenario_init=flag,
+                initial_persistence=persistence,result=row['result'],persistence=row['persistence'],
+                event54=row['event54'],timer_before=timer_before,timer_after=timer_after,
+                calls=row['calls']))
+    classifiers=[]
+    for kind in (19,20,21,22):
+        m.u.mem_write(m.event+0x2C,dwords(kind))
+        classifiers.append(dict(kind=kind,state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+            state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255))
+    after=CampaignReader.rng_state(view)
+    assert before==after
+    predicate_rng=dict(full_seed31=before,full_after=after,unchanged=True)
+    # INI ALL07 order13,19 becomes this19,13 push-front list. Reuse the
+    # existing Register owner; changing House state cannot undo its latch.
+    raw='1,13,0,10';m.readers[raw]=m.read_event(raw)
+    m.setup_admission(['1,19,0,7',raw],frame=0,timer_start=0,timer_duration=150)
+    m.u.hook_add(UC_HOOK_CODE,m.observe_admission)
+    for frame,value,name in ((0,7,'build_matches_before_timer'),
+                              (149,8,'type_changed_elapsed149'),(150,8,'type_changed_elapsed150')):
+        m.u.mem_write(m.houses[0]+0x26C,dwords(value));m.u.mem_write(0xA8ED84,dwords(frame))
+        m.register_admission(name,8,repeat=False)
+        m.registers[-1].update(frame=frame,last_built_value=value)
+    assert CampaignReader.rng_state(view)==before
+    assert not any(call['pc']=='0x007258D0' for row in m.registers for call in row['calls'])
+    m.assert_unchanged()
+    constructor,record,retail=build_type_record_controls()
+    discovery=discovery_building_override()
+    discovery['writer_bytes']=dict(start='0x0044D5D0',end_exclusive='0x0044D621',
+        hex=file_span(image_bytes(),0x44D5D0,0x51)[1].hex())
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        country_indices=[0,7,0],controls=controls,classification=classifiers,
+        predicate_rng=predicate_rng,register_history=m.registers,
+        constructor=constructor,discovery=discovery,record_last_built=record,retail=retail,
+        code_unchanged=True)
+
+
+def build_type_event_metadata():
+    result=provenance(
+        scope='28 original HasOccurred19..22 controls, eight StateA/StateB calls, three original Register latch steps, real House/Type constructors, existing Building discovery replay, eight whole Record_Last_Built calls and actual ALL07 binding through the first8 stock BuildingTypes entries. Not entire production/placement, full type registry, audio, complete House/Logic/Spring/EVA or campaign parity.',
+        assumptions=[
+            'PowerEventControls/FlagsFixture owns the unchanged HasOccurred/reader/Register VM. Three supplied Houses have Country0/7/0, independent last-built priors and actor2.19/20/21/22 read incoming House+26C/+274/+270/+278, not Event.value Country; null incoming succeeds without persistence mutation. Signed bit-pattern equality, negative-1, mismatch, wrong raised99/A8ED6B, distinct incoming House and initial persistence0/1 execute. Event+54 and timer remain unchanged; successful nonnull matches set persistence1.',
+            'Original StateA71F950 andStateB71F9C0 execute for each of four kinds: four rows/eight calls. Their1/1 result makes successful19 eligible for existing Register completion bits even on a nonrepeating Tag. Actual19/7 then13/10 Register history at0/149/150 records completion1 before the elapsed condition succeeds; changing last-built7 to8 does not undo the latch. Timer[0,0,150] stays unchanged. The existing House8-frame Tag classification/poll owner is not reimplemented or full-world executed here.',
+            'Three native65C6D0 constructors seed31; full0x3F4-byte Scenario/Main/MapGen before/after hex is saved for predicates/classifiers and every Record control. Predicate/Register instructions draw no observed RNG or detach. Full House4F54A0 initialization is separate and DOES consume Scenario RNG; constructor before/after and actual events are retained, not claimed zero-draw.',
+            'CampaignReader executes existing Scenario6832C0, Rules665650, Country5113F0 and House4F54A0 constructors. Four last-built slots initialize-1. Physical RULESMD first8 BuildingTypes cache entries feed real ReadBuildingTypes672660/constructors under the original2M cap and spare vector capacity. Actual index7 and TypeDF8 are GAWEAP/7. Whole cold/reset catalog, ReadTypeData/ART, discovery-appended types and full physical INI layers remain excluded. Real ALL07 map/archive hashes, Trigger0C028AFC, Tag0C029C8C, counted Events and raw Action21 EVA string bind this ordinary route; Spring/EVA execution remains a Rust production consumer check.',
+            'Record inputs use real stock prefixes: GAWEAP/index7 from first8 BuildingTypes, AMCV/index0 from first VehicleTypes via672360, E1/index0 from first InfantryTypes via672280, and PDPLANE/index6 from first7 AircraftTypes via6723D0. Original list readers/constructors/ArrayIndex getters execute and save every registration. Aircraft first entry APACHE has no physical object section; selecting PDPLANE retains its real prefix index instead of treating it as0. This corrects the earlier standalone MTNK/ORCA fixture-local0 inputs; new results are a changed input set, not claimed identical prior controls. Actual instance vtables, type-pointer offsets and owner layouts remain supplied priors, not full Actor constructors/Unlimbo/tracking/PLACE. Original WhatAmI/GetTechnoType/TypeArrayIndex virtuals execute. Original House4FB6B0 executes for each DontScore0/1 through existing AccountingObservation. Last-built writes occur for both flags; built Counter49FA00 is skipped only by DontScore. Capacity8, zero-item/total Counter priors exclude allocation/growth.',
+            'Type CreateSound and Rules+178/+17C/+180 are explicitly-1; actual constructor defaults are retained separately. No native sound/detach entry occurs in these eight Record bodies, and supplied notification timer[29,17,90] stays unchanged while246/1FC set1. Future House90-frame rearm, audible output/audio RNG and full TechTree effects are outside these scalar calls.',
+            'Existing trigger_action_values.discovery_building_override runs actual44D5D0 after shared6F4960 admission, with synthetic TypeDF8=73, priorHouse26C=99 and an already-openedBuilding6E4=1 Grand_Opening fast return. Init2 owner entry preserves99, first current-player discovery atinit0 writes73/246, repeat discovery retains it; exact44D5D0..44D621 bytes are saved. This helper retains its existing three-stream SHA observations, not a new full-state replay claim for that subgraph. Current-player/owner/placement priors, sparse map and existing supplied unrelated calls retain that owner\'s boundaries; no complete first opening, arbitrary discovery or whole-world lifecycle claim.',
+            'Record_Last_Built4FB6B0 and Building44D601 are distinct native writers of the same House slot. Production must use one private House state owner, not count-derived last type, presentation visibility or a new direct build-event dispatcher. No existing reader/VM/Counter/allocator/RNG algorithm is duplicated.'],
+        substitutions=['Inherited FlagsFixture/CampaignReader/DiscoveryFixture CRT, heap, TLS, platform and cached-INI transports. Explicit House/Actor/vector/counter/timer/type/mission priors retain stated limits. No HasOccurred, Register, last-built writer, Counter increment, virtual type getter or selected RNG return is substituted. Existing discovery helper retains its declared presentation/first-opening seams.'],
+        entry_points=dict(has_occurred=0x71E940,building_predicate=0x71EFEB,
+            vehicle_predicate=0x71F003,infantry_predicate=0x71F01D,aircraft_predicate=0x71F037,
+            state_a=0x71F950,state_b=0x71F9C0,register=0x7264C0,
+            house_constructor=0x4F54A0,record_last_built=0x4FB6B0,counter_increment=0x49FA00,
+            building_discovery=0x44D5D0,discovery_last_built_store=0x44D601,
+            building_types_reader=0x672660,vehicle_types_reader=0x672360,
+            infantry_types_reader=0x672280,aircraft_types_reader=0x6723D0,
+            random_seed=0x65C6D0))
+    result['environment']=dict(RA2_DIR='retail installation containing gamemd.exe and mapsmd03.mix',
+        VERA20K_CAMPAIGN_START_ASSETS='existing empty directory; selected constructor/list controls request no assets',
+        checkout_prerequisite='ini/rulesmd.ini is the extracted retail RULESMD')
+    return result
+
+
+def build_type_event_source_paths():
+    from tools.spatial_oracle.trigger_action_values import SOURCE_PATHS
+    paths=source_paths()|power_event_source_paths()
+    paths.update({f'discovery_{name}':path for name,path in SOURCE_PATHS.items()})
+    paths.update(accounting=Path(__file__).with_name('engineer_capture_accounting.py'),
+        native_inspection=Path(__file__).parents[1]/'native_inspect.py',
+        retail_mix=Path(__file__).parents[1]/'sidebar_oracle'/'stock.py',
+        retail_lexical=Path(__file__).parents[1]/'rules_oracle'/'bridge_child_sound.py')
+    return paths
+
+
 if __name__=='__main__':
     import sys
     args=sys.argv[1:]
-    if '--naval-land-events' in args:
+    if '--build-type-events' in args:
+        args.remove('--build-type-events')
+        finish_vectors(generate_build_type_events,Path(__file__).with_name('trigger_build_type_events.json'),
+                       provenance=build_type_event_metadata,source_paths=build_type_event_source_paths(),argv=args)
+    elif '--naval-land-events' in args:
         args.remove('--naval-land-events')
         finish_vectors(generate_naval_land_events,Path(__file__).with_name('trigger_naval_land_events.json'),
                        provenance=naval_land_event_metadata,source_paths=naval_land_event_source_paths(),argv=args)

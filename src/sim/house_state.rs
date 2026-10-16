@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use crate::map::playfield::local_to_packed_cell;
+use crate::rules::object_type::ObjectCategory;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
 use crate::sim::intern::InternedId;
@@ -371,6 +372,17 @@ struct SpyGains {
     veteran_units: bool,
 }
 
+/// The four class-local indices use ObjectCategory's registry order. Keeping
+/// their constructor value here also gives HouseState::default() native -1s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct LastBuiltTypes([i32; 4]);
+
+impl Default for LastBuiltTypes {
+    fn default() -> Self {
+        Self([-1; 4])
+    }
+}
+
 /// Per-player game state.
 ///
 /// Created once per player at game start, lives for the duration of the match.
@@ -596,6 +608,13 @@ pub struct HouseState {
     /// trigger mechanism; retaining this prerequisite does not implement it.
     #[serde(default)]
     building_capture_notified: bool,
+    /// Last type ArrayIndex in each ObjectCategory registry (not a count).
+    /// House4F57DE..4F57F0 initializes +26C/+270/+274/+278 to -1.
+    /// Record_Last_Built4FB6B0 writes before DontScore; Building discovery
+    /// 44D601 also writes its owner's building slot outside ScenarioInit.
+    /// Executed controls: tag_lifecycle --build-type-events (Steam3e81a617).
+    #[serde(default)]
+    last_built_types: LastBuiltTypes,
     /// House+54E0: the last building that left this House through an owner
     /// change. `BuildingClass::ChangeOwner` records it on the old owner after
     /// the Techno owner swap (`0x00448C70`) and forgets it on the new owner
@@ -748,6 +767,17 @@ impl Default for HouseSuperWeaponCells {
 }
 
 impl HouseState {
+    /// The shared House field writer for production4FB6B0 and discovery44D601.
+    /// Scoring, admission and notification effects stay with those callers.
+    pub(crate) fn record_built_type(&mut self, category: ObjectCategory, type_index: i32) {
+        self.last_built_types.0[category as usize] = type_index;
+    }
+
+    /// HasOccurred71EFEB..71F03D reads the incoming House's class-local slot.
+    pub(crate) fn last_built_type_index(&self, category: ObjectCategory) -> i32 {
+        self.last_built_types.0[category as usize]
+    }
+
     /// Original50D610 appends even when an earlier snapshot already exists.
     pub(crate) fn retain_initial_techno(&mut self, type_id: InternedId, cell: (i16, i16)) {
         self.initial_techno_records.push((type_id, cell));
@@ -1112,6 +1142,10 @@ impl HouseState {
         if self.building_capture_notified {
             std::hash::Hash::hash(b"house-building-capture-notification-v1", hasher);
             std::hash::Hash::hash(&self.building_capture_notified, hasher);
+        }
+        if self.last_built_types != LastBuiltTypes::default() {
+            std::hash::Hash::hash(b"house-last-built-types-v1", hasher);
+            std::hash::Hash::hash(&self.last_built_types, hasher);
         }
     }
 
@@ -1521,6 +1555,7 @@ impl HouseState {
             waypoint_edge: 0,
             stats: MatchStatistics::default(),
             building_capture_notified: false,
+            last_built_types: LastBuiltTypes::default(),
             lost_building: None,
             spy_gains: SpyGains::default(),
             powered_unit_centers: 0,
