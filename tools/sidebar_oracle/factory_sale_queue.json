@@ -1,0 +1,1338 @@
+{
+  "controls": [
+    {
+      "after_limbo": {
+        "balance": null,
+        "barracks_limbo": 1,
+        "cash_stall": null,
+        "credits": 10000,
+        "factory_live": false,
+        "factory_present": false,
+        "frame": 1,
+        "held_id": null,
+        "held_present": false,
+        "held_type": null,
+        "identity_cursor": 9,
+        "latch": null,
+        "mission": 19,
+        "product_disposed": true,
+        "queue": [],
+        "rate": null,
+        "spent": 1,
+        "stage": null,
+        "suspended": null,
+        "timer": null
+      },
+      "after_selling": {
+        "balance": 99,
+        "barracks_limbo": 0,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 9,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 9,
+        "latch": 1,
+        "mission": 19,
+        "product_disposed": false,
+        "queue": [
+          "E2"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "caller": "0x5f4d67",
+          "name": "building_detach_all"
+        },
+        {
+          "args": [
+            1,
+            0,
+            0,
+            "local_house"
+          ],
+          "caller": "0x44ee96",
+          "found": false,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            16,
+            7,
+            0,
+            0
+          ],
+          "caller": "0x44eec8",
+          "name": "house_abandon"
+        },
+        {
+          "args": [
+            "E2"
+          ],
+          "caller": "0x4faaf3",
+          "name": "remove_queued_type",
+          "result": true
+        },
+        {
+          "args": [
+            16,
+            0,
+            0
+          ],
+          "caller": "0x445e19",
+          "name": "house_update_factory_queue"
+        },
+        {
+          "args": [
+            1,
+            0,
+            1,
+            "local_house"
+          ],
+          "caller": "0x509216",
+          "found": false,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [],
+          "caller": "0x509221",
+          "name": "factory_abandon",
+          "result": true
+        },
+        {
+          "args": [],
+          "caller": "0x523358",
+          "name": "infantry_destructor"
+        },
+        {
+          "args": [
+            "E2",
+            0,
+            0
+          ],
+          "caller": "0x517de0",
+          "name": "can_build",
+          "result": 0
+        },
+        {
+          "args": [],
+          "caller": "0x509228",
+          "name": "start_next_queued"
+        },
+        {
+          "args": [
+            1
+          ],
+          "caller": "0x5092a3",
+          "name": "factory_scalar_delete"
+        },
+        {
+          "args": [],
+          "caller": "0x4ca7ef",
+          "name": "factory_abandon",
+          "result": false
+        }
+      ],
+      "checkpoints": [
+        {
+          "event": "building_detach_all_entry",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 0,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "E2"
+            ],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "remove_queued_type_return",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "house_abandon_return",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "house_update_factory_queue_entry",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "infantry_destructor_entry",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "factory_abandon_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "start_next_queued_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "factory_abandon_return",
+          "state": {
+            "balance": null,
+            "barracks_limbo": 1,
+            "cash_stall": null,
+            "credits": 10000,
+            "factory_live": false,
+            "factory_present": false,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": null,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": null,
+            "spent": 1,
+            "stage": null,
+            "suspended": null,
+            "timer": null
+          }
+        },
+        {
+          "event": "house_update_factory_queue_return",
+          "state": {
+            "balance": null,
+            "barracks_limbo": 1,
+            "cash_stall": null,
+            "credits": 10000,
+            "factory_live": false,
+            "factory_present": false,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": null,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": null,
+            "spent": 1,
+            "stage": null,
+            "suspended": null,
+            "timer": null
+          }
+        }
+      ],
+      "constructor_count": 0,
+      "factory_start_count": 0,
+      "identity_delta": 0,
+      "initial": {
+        "balance": 99,
+        "barracks_limbo": 0,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 9,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 9,
+        "latch": 1,
+        "mission": 5,
+        "product_disposed": false,
+        "queue": [
+          "E2"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "name": "last_barracks_e2",
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "successor": "E2",
+      "surviving_barracks": false
+    },
+    {
+      "after_limbo": {
+        "balance": null,
+        "barracks_limbo": 1,
+        "cash_stall": null,
+        "credits": 10000,
+        "factory_live": false,
+        "factory_present": false,
+        "frame": 1,
+        "held_id": null,
+        "held_present": false,
+        "held_type": null,
+        "identity_cursor": 9,
+        "latch": null,
+        "mission": 19,
+        "product_disposed": true,
+        "queue": [],
+        "rate": null,
+        "spent": 1,
+        "stage": null,
+        "suspended": null,
+        "timer": null
+      },
+      "after_selling": {
+        "balance": 99,
+        "barracks_limbo": 0,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 9,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 9,
+        "latch": 1,
+        "mission": 19,
+        "product_disposed": false,
+        "queue": [
+          "FLAKT"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "caller": "0x5f4d67",
+          "name": "building_detach_all"
+        },
+        {
+          "args": [
+            1,
+            0,
+            0,
+            "local_house"
+          ],
+          "caller": "0x44ee96",
+          "found": false,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            16,
+            7,
+            0,
+            0
+          ],
+          "caller": "0x44eec8",
+          "name": "house_abandon"
+        },
+        {
+          "args": [
+            "E2"
+          ],
+          "caller": "0x4faaf3",
+          "name": "remove_queued_type",
+          "result": false
+        },
+        {
+          "args": [],
+          "caller": "0x6abbdf",
+          "name": "factory_abandon",
+          "result": true
+        },
+        {
+          "args": [],
+          "caller": "0x523358",
+          "name": "infantry_destructor"
+        },
+        {
+          "args": [
+            "E2",
+            0,
+            0
+          ],
+          "caller": "0x517de0",
+          "name": "can_build",
+          "result": 0
+        },
+        {
+          "args": [],
+          "caller": "0x4fabab",
+          "name": "factory_abandon",
+          "result": false
+        },
+        {
+          "args": [],
+          "caller": "0x4fac9b",
+          "name": "start_next_queued"
+        },
+        {
+          "args": [
+            16,
+            10,
+            0,
+            1
+          ],
+          "caller": "0x4ca60f",
+          "name": "begin_production",
+          "result": 3
+        },
+        {
+          "args": [
+            0,
+            1,
+            1,
+            "local_house"
+          ],
+          "caller": "0x4fa43e",
+          "found": false,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            1,
+            0,
+            1,
+            "local_house"
+          ],
+          "caller": "0x4fa461",
+          "found": false,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            16,
+            0,
+            0
+          ],
+          "caller": "0x445e19",
+          "name": "house_update_factory_queue"
+        },
+        {
+          "args": [
+            1
+          ],
+          "caller": "0x5092a3",
+          "name": "factory_scalar_delete"
+        },
+        {
+          "args": [],
+          "caller": "0x4ca7ef",
+          "name": "factory_abandon",
+          "result": false
+        }
+      ],
+      "checkpoints": [
+        {
+          "event": "building_detach_all_entry",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 0,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "remove_queued_type_return",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "infantry_destructor_entry",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 9,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "factory_abandon_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "factory_abandon_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "begin_production_entry",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "begin_production_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "start_next_queued_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "house_abandon_return",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "house_update_factory_queue_entry",
+          "state": {
+            "balance": 0,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 10000,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": 0,
+            "spent": 1,
+            "stage": 0,
+            "suspended": 1,
+            "timer": {
+              "duration": 0,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "factory_abandon_return",
+          "state": {
+            "balance": null,
+            "barracks_limbo": 1,
+            "cash_stall": null,
+            "credits": 10000,
+            "factory_live": false,
+            "factory_present": false,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": null,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": null,
+            "spent": 1,
+            "stage": null,
+            "suspended": null,
+            "timer": null
+          }
+        },
+        {
+          "event": "house_update_factory_queue_return",
+          "state": {
+            "balance": null,
+            "barracks_limbo": 1,
+            "cash_stall": null,
+            "credits": 10000,
+            "factory_live": false,
+            "factory_present": false,
+            "frame": 1,
+            "held_id": null,
+            "held_present": false,
+            "held_type": null,
+            "identity_cursor": 9,
+            "latch": null,
+            "mission": 19,
+            "product_disposed": true,
+            "queue": [],
+            "rate": null,
+            "spent": 1,
+            "stage": null,
+            "suspended": null,
+            "timer": null
+          }
+        }
+      ],
+      "constructor_count": 0,
+      "factory_start_count": 0,
+      "identity_delta": 0,
+      "initial": {
+        "balance": 99,
+        "barracks_limbo": 0,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 9,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 9,
+        "latch": 1,
+        "mission": 5,
+        "product_disposed": false,
+        "queue": [
+          "FLAKT"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "name": "last_barracks_flakt",
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "successor": "FLAKT",
+      "surviving_barracks": false
+    },
+    {
+      "after_limbo": {
+        "balance": 99,
+        "barracks_limbo": 1,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 10,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 10,
+        "latch": 1,
+        "mission": 19,
+        "product_disposed": false,
+        "queue": [
+          "E2"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "after_selling": {
+        "balance": 99,
+        "barracks_limbo": 0,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 10,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 10,
+        "latch": 1,
+        "mission": 19,
+        "product_disposed": false,
+        "queue": [
+          "E2"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "caller": "0x5f4d67",
+          "name": "building_detach_all"
+        },
+        {
+          "args": [
+            1,
+            0,
+            0,
+            "local_house"
+          ],
+          "caller": "0x44ee96",
+          "found": true,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            16,
+            0,
+            0
+          ],
+          "caller": "0x445e19",
+          "name": "house_update_factory_queue"
+        },
+        {
+          "args": [
+            1,
+            0,
+            1,
+            "local_house"
+          ],
+          "caller": "0x5091c5",
+          "found": true,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            "E2",
+            1,
+            1
+          ],
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1
+        },
+        {
+          "args": [
+            1,
+            0,
+            1,
+            "local_house"
+          ],
+          "caller": "0x509216",
+          "found": true,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            "E2",
+            1,
+            1
+          ],
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1
+        },
+        {
+          "args": [
+            1,
+            1,
+            1,
+            "local_house"
+          ],
+          "caller": "0x509246",
+          "found": true,
+          "name": "type_find_factory"
+        },
+        {
+          "args": [
+            "E2",
+            1,
+            1
+          ],
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1
+        }
+      ],
+      "checkpoints": [
+        {
+          "event": "building_detach_all_entry",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 0,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 10,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 10,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "E2"
+            ],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "house_update_factory_queue_entry",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 10,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 10,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "E2"
+            ],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        },
+        {
+          "event": "house_update_factory_queue_return",
+          "state": {
+            "balance": 99,
+            "barracks_limbo": 1,
+            "cash_stall": 0,
+            "credits": 9999,
+            "factory_live": true,
+            "factory_present": true,
+            "frame": 1,
+            "held_id": 10,
+            "held_present": true,
+            "held_type": "E2",
+            "identity_cursor": 10,
+            "latch": 1,
+            "mission": 19,
+            "product_disposed": false,
+            "queue": [
+              "E2"
+            ],
+            "rate": 1,
+            "spent": 1,
+            "stage": 1,
+            "suspended": 0,
+            "timer": {
+              "duration": 1,
+              "start": 1
+            }
+          }
+        }
+      ],
+      "constructor_count": 0,
+      "factory_start_count": 0,
+      "identity_delta": 0,
+      "initial": {
+        "balance": 99,
+        "barracks_limbo": 0,
+        "cash_stall": 0,
+        "credits": 9999,
+        "factory_live": true,
+        "factory_present": true,
+        "frame": 1,
+        "held_id": 10,
+        "held_present": true,
+        "held_type": "E2",
+        "identity_cursor": 10,
+        "latch": 1,
+        "mission": 5,
+        "product_disposed": false,
+        "queue": [
+          "E2"
+        ],
+        "rate": 1,
+        "spent": 1,
+        "stage": 1,
+        "suspended": 0,
+        "timer": {
+          "duration": 1,
+          "start": 1
+        }
+      },
+      "name": "surviving_second_barracks",
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "725f464f91721a041cd92cbfb82c158e97eead4cd0cc24435f1e09bbde3cbd11"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "725f464f91721a041cd92cbfb82c158e97eead4cd0cc24435f1e09bbde3cbd11"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "successor": "E2",
+      "surviving_barracks": true
+    }
+  ],
+  "input_arena_bytes": 8388608,
+  "schema": 1,
+  "type_inputs": {
+    "E2": {
+      "build_limit": 2147483647,
+      "cost": 100,
+      "index": 7
+    },
+    "FLAKT": {
+      "build_limit": 2147483647,
+      "cost": 300,
+      "index": 10
+    },
+    "NACNST": {
+      "build_limit": 2147483647,
+      "cost": 3000,
+      "index": 4
+    },
+    "NAHAND": {
+      "build_limit": 2147483647,
+      "cost": 500,
+      "index": 6
+    },
+    "NAPOWR": {
+      "build_limit": 2147483647,
+      "cost": 600,
+      "index": 5
+    },
+    "NARADR": {
+      "build_limit": 2147483647,
+      "cost": 1000,
+      "index": 7
+    }
+  }
+}

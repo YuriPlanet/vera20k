@@ -290,13 +290,9 @@ pub(crate) struct ControlGroupStatusOverlayInstances {
 /// `BuildingTypeClass::Dimension2 @0x00464AF0` supplies the foundation width
 /// and height in 256-lepton cells; the caller halves each with signed
 /// truncation, negates X, and uses the shared native coordinate projection.
-fn building_control_group_status_anchor_offset(
-    entity: &crate::sim::game_entity::GameEntity,
-) -> (i32, i32) {
-    let (width, height) =
-        crate::rules::foundation::foundation_dimensions(entity.type_facts.foundation());
-    let width_leptons = i32::from(width) * crate::util::lepton::LEPTONS_PER_CELL_I32;
-    let height_leptons = i32::from(height) * crate::util::lepton::LEPTONS_PER_CELL_I32;
+fn building_control_group_status_anchor_offset(foundation: &str) -> (i32, i32) {
+    let [width_leptons, height_leptons] =
+        crate::rules::foundation::foundation_dimensions_leptons(foundation);
     let half_width = width_leptons / 2;
     let half_height = height_leptons / 2;
     crate::util::lepton::project_absolute_lepton_xy(
@@ -354,7 +350,8 @@ pub(crate) fn build_control_group_status_render_instances(
             crate::app::presentation::instances::interpolated_screen_position_entity(entity);
         let building = entity.category() == EntityCategory::Structure;
         if building {
-            let (foundation_x, foundation_y) = building_control_group_status_anchor_offset(entity);
+            let (foundation_x, foundation_y) =
+                building_control_group_status_anchor_offset(entity.type_facts.foundation());
             screen_x += foundation_x as f32;
             screen_y += foundation_y as f32;
         }

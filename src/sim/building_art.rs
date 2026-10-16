@@ -879,6 +879,7 @@ pub(crate) fn receiver_body_frame(
     entity: &GameEntity,
     object: &ObjectType,
     rules: &RuleSet,
+    tech_level: i32,
 ) -> i32 {
     let art = rules
         .art()
@@ -902,7 +903,7 @@ pub(crate) fn receiver_body_frame(
                     .cargo()
                     .map_or(0, |cargo| cargo.passengers().len() as i32),
             ),
-            tech_level: object.tech_level,
+            tech_level,
             selling: false,
             buildup: [0, 1],
             ordinary: art.map_or([[0, 1]; 4], |art| {

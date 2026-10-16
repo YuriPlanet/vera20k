@@ -404,7 +404,9 @@ impl ProcessedRulesLayers {
     /// state and rebuilds its RuleSet projection; no constructors or IDs replay.
     /// Reject indexes before any projection can dereference a saved type slot.
     pub(crate) fn validate_saved_state(&self) -> Result<(), RulesError> {
-        let families = &self.native_type_construction_trace.registry_state.families;
+        let registry = &self.native_type_construction_trace.registry_state;
+        registry.validate_techno_type_order()?;
+        let families = &registry.families;
         let projectile_count = families
             .get(&RulesTypeFamily::Projectile)
             .map_or(0, Vec::len);
@@ -421,6 +423,15 @@ impl ProcessedRulesLayers {
             ));
         }
         Ok(())
+    }
+
+    /// The live global TechnoType array, not a concatenation of the four
+    /// subtype arrays. Constructors71181D/711ABD append each new identity.
+    /// TAction106's active inline body6DF5D1 scans this order backwards.
+    pub(crate) fn techno_type_states(&self) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .techno_type_states()
     }
 
     /// Allocated AnimTypes and whether their fixed-ART body has actually been
@@ -995,6 +1006,11 @@ impl NativeTypeConstructionTrace {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NativeRulesRegistryState {
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
+    /// TechnoTypeClass::Array A8EB04/countA8EB10. Each pair points to the
+    /// existing family member; names alone cannot distinguish repeated native
+    /// stored IDs allocated from inputs longer than AbstractType's24 bytes.
+    /// Controls: tools/spatial_oracle/trigger_object_tech_level.json (+meta).
+    techno_type_order: Vec<(RulesTypeFamily, usize)>,
     tiberiums: Vec<ProcessedType>,
     /// The existing Colors66D3A0 find-or-create catalog survives ordinary
     /// Process handoffs. Reset6686E6..668711 deletes and clears it alongside
@@ -1024,6 +1040,7 @@ impl Default for NativeRulesRegistryState {
     fn default() -> Self {
         Self {
             families: HashMap::new(),
+            techno_type_order: Vec::new(),
             tiberiums: Vec::new(),
             colors: Vec::new(),
             rules_detail: DetailRules::default(),
@@ -1050,6 +1067,77 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    fn validate_techno_type_order(&self) -> Result<(), RulesError> {
+        let expected = self
+            .families
+            .iter()
+            .filter(|(family, _)| family.object_category().is_some())
+            .map(|(_, members)| members.len())
+            .sum::<usize>();
+        let mut seen = HashSet::with_capacity(expected);
+        if self.techno_type_order.len() != expected
+            || self.techno_type_order.iter().any(|&(family, index)| {
+                family.object_category().is_none()
+                    || self
+                        .families
+                        .get(&family)
+                        .is_none_or(|members| index >= members.len())
+                    || !seen.insert((family, index))
+            })
+        {
+            return Err(RulesError::InvalidSavedState(
+                "global TechnoType order does not identify each live type exactly once",
+            ));
+        }
+        Ok(())
+    }
+
+    fn techno_type_states(&self) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.techno_type_order.iter().map(|&(family, index)| {
+            let member = &self.families[&family][index];
+            (
+                family
+                    .object_category()
+                    .expect("global member is a TechnoType"),
+                member.native_stored_id.as_str(),
+                member.tech_level,
+            )
+        })
+    }
+
+    /// Transfer runtime values back to the process registry only after the
+    /// outgoing Simulation has retired. Prefix Process714570 reads the same
+    /// current field before Reset6686C0 deletes the old Type generation.
+    /// Validate the complete transfer before changing any field. A category
+    /// with duplicate exact stored IDs cannot represent a unique live object.
+    pub(crate) fn consume_outgoing_type_tech_levels(
+        &mut self,
+        updates: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
+    ) -> Result<(), RulesError> {
+        let mut resolved = Vec::new();
+        for (category, id, value) in updates {
+            let family = RulesTypeFamily::from_object_category(category);
+            let mut matching = self
+                .families
+                .get(&family)
+                .into_iter()
+                .flatten()
+                .enumerate()
+                .filter(|(_, member)| member.native_stored_id == id);
+            let index = matching.next().map(|(index, _)| index);
+            if index.is_none() || matching.next().is_some() {
+                return Err(RulesError::InvalidSavedState(
+                    "outgoing TechLevel does not identify one exact live TechnoType",
+                ));
+            }
+            resolved.push((family, index.expect("exact identity validated"), value));
+        }
+        for (family, index, value) in resolved {
+            self.families.get_mut(&family).expect("validated family")[index].tech_level = value;
+        }
+        Ok(())
+    }
+
     pub(crate) fn anim_type_art_read_states(&self) -> impl Iterator<Item = (&str, bool)> {
         self.families
             .get(&RulesTypeFamily::Animation)
@@ -1196,6 +1284,15 @@ const PROJECTED_RULE_TYPE_FAMILIES: &[(&str, RulesTypeFamily)] = &[
 ];
 
 impl RulesTypeFamily {
+    fn from_object_category(category: ObjectCategory) -> Self {
+        match category {
+            ObjectCategory::Building => Self::Building,
+            ObjectCategory::Aircraft => Self::Aircraft,
+            ObjectCategory::Vehicle => Self::Vehicle,
+            ObjectCategory::Infantry => Self::Infantry,
+        }
+    }
+
     fn object_category(self) -> Option<ObjectCategory> {
         match self {
             Self::Building => Some(ObjectCategory::Building),
@@ -1251,6 +1348,10 @@ struct WarheadAnimReadState {
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
+    /// TechnoType ctor711082 initializes+634 to255; ReadInt714570 uses
+    /// its current value, including a prior TAction106 write, as the default.
+    /// Native controls: trigger_object_tech_level.json scalar_layers/lifecycle.
+    tech_level: i32,
     /// HouseType ctor51141C starts Color+C0 at0; each reached ReadINI
     /// passes the current index to the shared ReadColor474A90.
     country_color_scheme: i32,
@@ -1303,6 +1404,7 @@ impl ProcessedType {
     fn new(native_stored_id: String) -> Self {
         Self {
             body: IniSection::new(native_stored_id.clone()),
+            tech_level: 255,
             projectile_art: ProjectileArtState::new(&native_stored_id),
             native_stored_id,
             country_color_scheme: 0,
@@ -1332,6 +1434,7 @@ struct RulesPassProcessor {
     general_type_lists: GeneralTypeLists,
     missile_spawn: MissileSpawnRules,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
+    techno_type_order: Vec<(RulesTypeFamily, usize)>,
     native_type_construction_events: Vec<NativeTypeConstructionEvent>,
     tiberiums: Vec<ProcessedType>,
     colors: Vec<(String, String)>,
@@ -1362,6 +1465,7 @@ impl Default for RulesPassProcessor {
             general_type_lists: GeneralTypeLists::default(),
             missile_spawn: MissileSpawnRules::default(),
             families: HashMap::new(),
+            techno_type_order: Vec::new(),
             native_type_construction_events: Vec::new(),
             tiberiums: Vec::new(),
             colors: Vec::new(),
@@ -1393,6 +1497,7 @@ impl RulesPassProcessor {
     fn with_registry_state(registry_state: NativeRulesRegistryState) -> Self {
         Self {
             families: registry_state.families,
+            techno_type_order: registry_state.techno_type_order,
             tiberiums: registry_state.tiberiums,
             colors: registry_state.colors,
             rules_detail: registry_state.rules_detail,
@@ -1614,6 +1719,11 @@ impl RulesPassProcessor {
         let native_stored_id = abstract_type_stored_id(incoming);
         let index = members.len();
         members.push(ProcessedType::new(native_stored_id.clone()));
+        if family.object_category().is_some() {
+            // TechnoType constructors71181D..711832 /711ABD..711ACB append
+            // to the shared vector at allocation time, including lazy Types.
+            self.techno_type_order.push((family, index));
+        }
         if let Some(family) = family.native_constructor_family() {
             self.native_type_construction_events
                 .push(NativeTypeConstructionEvent {
@@ -2352,6 +2462,13 @@ impl RulesPassProcessor {
             RulesTypeFamily::ParticleSystem,
             0x80,
         );
+        // ReadINI714570..71458A passes the current+634 to ReadInt5276D0.
+        // An absent exact-case key (also physically blank values omitted by
+        // the INI loader) retains it. Present integers stay signed/unclamped.
+        // This precedes the AirstrikeTeam constructor reads.
+        let member = &mut self.family_mut(family)[index];
+        member.tech_level = raw.read_int("TechLevel", member.tech_level);
+
         // Preserve both the six-field fallback order and Aircraft constructor
         // chronology at TechnoType71458A..714654. Later text merging cannot
         // recover an elite value reset by an omitted key in a reached section.
@@ -2799,6 +2916,7 @@ impl RulesPassProcessor {
                 allocated_super_weapon_type_count,
                 registry_state: NativeRulesRegistryState {
                     families: self.families,
+                    techno_type_order: self.techno_type_order,
                     tiberiums: self.tiberiums,
                     colors: self.colors,
                     rules_detail: self.rules_detail,
@@ -2834,6 +2952,10 @@ mod tests;
 #[cfg(test)]
 #[path = "side_registry_tests.rs"]
 mod side_registry_tests;
+
+#[cfg(test)]
+#[path = "native_tech_level_tests.rs"]
+mod native_tech_level_tests;
 
 #[cfg(test)]
 #[path = "projectile_art_tests.rs"]

@@ -71,7 +71,12 @@ fn income_spending_and_factory_refund_share_the_runtime_wallet() {
             _ => Vec::new(),
         };
         runtime
-            .advance_frame(&commands, TICK_MS, crate::sim::world::TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+            .advance_frame(
+                &commands,
+                TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("production frame");
         let cash = runtime.simulation.houses[&owner].economy.credits();
         assert_eq!(
@@ -296,20 +301,60 @@ fn event_tail_enqueue_first_charges_one_rate_later() {
 #[test]
 fn derived_view_state_stays_building_on_underfunded_stall() {
     let (mut sim, rules) = scenario();
-    let (am, _, e1, _) = ids(&sim);
-    // Arm an E1 build directly, then simulate a mid-build underfunded stall.
-    sim.production
+    let (am, ..) = ids(&sim);
+    // Start through the real constructor/rate owner, pay the first step, then
+    // spend the remaining wallet and let FactoryAI enter its cash stall. An
+    // unstarted rate0 kernel fixture is stopped, not an underfunded build.
+    assert!(super::enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "E1",
+        Default::default(),
+        false
+    ));
+    for _ in 0..256 {
+        sim.advance_tick(&[], Some(&rules), None, None, TICK_MS);
+        if sim
+            .production
+            .factories
+            .view(am, ProductionCategory::Infantry)
+            .unwrap()
+            .progress
+            > 0
+        {
+            break;
+        }
+    }
+    let progress = sim
+        .production
         .factories
-        .test_enqueue_kernel(am, ProductionCategory::Infantry, e1, 1, 200);
-    {
+        .view(am, ProductionCategory::Infantry)
+        .unwrap()
+        .progress;
+    assert!(progress > 0 && progress < super::PRODUCTION_STEPS);
+    let cash = crate::sim::credit_income::available_money(&sim, am);
+    crate::sim::credit_income::spend_money(&mut sim, am, cash);
+    for _ in 0..256 {
+        sim.advance_tick(&[], Some(&rules), None, None, TICK_MS);
         let f = sim
             .production
             .factories
-            .test_factory_mut(am, ProductionCategory::Infantry)
+            .view(am, ProductionCategory::Infantry)
             .expect("infantry factory armed");
-        f.progress = 10;
-        f.on_hold = true; // underfunded stall: not paused, not complete
+        if f.on_hold {
+            assert!(f.is_running());
+            assert_eq!(f.progress, progress);
+            break;
+        }
     }
+    assert!(
+        sim.production
+            .factories
+            .view(am, ProductionCategory::Infantry)
+            .unwrap()
+            .on_hold
+    );
     let view = queue_view_for_owner(&sim, &rules, "Americans");
     assert_eq!(
         view.len(),
@@ -533,10 +578,9 @@ fn economy_conservation_through_cancel_refund() {
 
 // ===== P6 — prerequisite / factory-loss revalidation =====
 
-/// A build with NO producing factory (NoFactory -> PermanentlyBlocked) is abandoned and its
-/// queued tail dropped on the next tick's revalidation (which runs at the Phase-7 head, before
-/// the charge sweep). An uncharged abandon refunds nothing; active + queued both disposed ->
-/// the factory is pruned.
+/// Direct509140 boundary with a deliberately supplied no-producer Factory:
+/// prune its tail and abandon the uncharged constructed head synchronously.
+/// Ordinary FactoryAI frames do not independently recheck eligibility.
 #[test]
 fn revalidate_abandons_build_with_no_factory_and_drops_queued() {
     let mut sim = Simulation::new();
@@ -561,7 +605,21 @@ fn revalidate_abandons_build_with_no_factory_and_drops_queued() {
             .view(am, ProductionCategory::Vehicle)
             .is_some()
     );
-    sim.advance_tick(&[], Some(&rules), None, None, TICK_MS);
+    super::construct_active_factory_fixture(
+        &mut sim,
+        &rules,
+        am,
+        ProductionCategory::Vehicle,
+        mtnk,
+    )
+    .unwrap();
+    super::update_factory_queue(
+        &mut sim,
+        &rules,
+        am,
+        ProductionCategory::Vehicle,
+        crate::sim::world::FrameEffects::default(),
+    );
     assert!(
         sim.production
             .factories
@@ -578,8 +636,8 @@ fn revalidate_abandons_build_with_no_factory_and_drops_queued() {
 
 /// A build whose producing factory is DESTROYED mid-progress is abandoned with the C8 PARTIAL
 /// refund (Cost_Of - Balance: exactly the already-charged portion) into
-/// house.economy.credits, and the factory is pruned. Revalidation runs before the charge
-/// sweep, so no extra charge lands the abandon tick.
+/// house.economy.credits, and the factory is pruned inside Building removal,
+/// before any subsequent Factory charge sweep.
 #[test]
 fn revalidate_abandons_active_on_factory_loss_partial_refund() {
     let (mut sim, rules) = scenario();
@@ -618,10 +676,8 @@ fn revalidate_abandons_active_on_factory_loss_partial_refund() {
             .is_some_and(|e| e.type_ref() == gaweap && e.owner() == am),
         "stable_id 3 is Americans' GAWEAP in scenario()"
     );
-    sim.substrate.entities.remove(3);
-
     let credits_before = sim.houses[&am].economy.credits();
-    sim.advance_tick(&[], Some(&rules), None, None, TICK_MS);
+    sim.uninit_with_rules(3, &rules);
     let refund = sim.houses[&am].economy.credits() - credits_before;
     assert_eq!(
         refund, spent,

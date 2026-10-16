@@ -36,6 +36,8 @@ pub(crate) struct PlannedBuildingPieceInstance {
 /// key. Parent order comes exclusively from the retained Display vector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObjectTexture {
+    /// Ordered DSurface calls before this parent's body, with no sprite data.
+    SurfaceLines(usize),
     OverlayAtlas,
     /// Per-piece native destination edit; never a texture-only coalesced draw.
     TerrainShp(crate::render::terrain_draw::TerrainPiece),
@@ -61,6 +63,7 @@ pub(crate) struct PlannedObjectInstance {
     pub parent: ObjectDraw,
     pub pieces: Vec<ObjectPieceInstance>,
     pub building_pieces: Option<Vec<PlannedBuildingPieceInstance>>,
+    pub brackets: Option<crate::app::presentation::selection_brackets::BuildingBracketLines>,
 }
 
 impl PlannedObjectInstance {
@@ -69,6 +72,7 @@ impl PlannedObjectInstance {
             parent,
             pieces,
             building_pieces: None,
+            brackets: None,
         }
     }
 
@@ -77,6 +81,7 @@ impl PlannedObjectInstance {
             parent,
             pieces: Vec::new(),
             building_pieces: Some(pieces),
+            brackets: None,
         }
     }
 }
@@ -98,6 +103,12 @@ pub(crate) struct ObjectDrawRun {
 pub(crate) struct ObjectLayerPass {
     pub instances: Vec<SpriteInstance>,
     pub runs: Vec<ObjectDrawRun>,
+    /// Native6D913C/6D9153 calls, fenced into their Display parent's slot.
+    pub before_lines: Vec<Vec<crate::render::surface_line::SurfaceLine>>,
+    /// Frame-local uploads of `before_lines`, prepared after the shared A plane.
+    pub line_batches: Vec<crate::render::terrain_draw::SurfaceLineBatch>,
+    /// Native6D9789 repeats Extras in the same five retained layer orders.
+    pub extras_lines: Vec<crate::render::surface_line::SurfaceLine>,
     /// Aligned with `instances`; retained for executable ordering checks.
     #[cfg(test)]
     pub owners: Vec<DrawId>,
@@ -203,10 +214,14 @@ pub(crate) fn lower_cell_instances_with_policy(
 pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [ObjectLayerPass; 5] {
     let mut ordinary = BTreeMap::new();
     let mut buildings = BTreeMap::new();
+    let mut brackets = BTreeMap::new();
     let mut inputs = Vec::with_capacity(entries.len());
 
     for entry in entries {
         let id = entry.parent.id;
+        if let Some(lines) = entry.brackets {
+            assert!(brackets.insert(id, lines).is_none());
+        }
         if let Some(pieces) = entry.building_pieces {
             let mut resolved = BTreeMap::new();
             let planned = pieces
@@ -258,6 +273,20 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
         let lowered = &mut layers[usize::from(layer.layer.0)];
         for entry in layer.entries {
             let owner = entry.object().id;
+            if let Some(lines) = brackets.remove(&owner) {
+                let index = lowered.before_lines.len();
+                let mut before = lines.behind;
+                before.extend_from_slice(&lines.extras);
+                lowered.before_lines.push(before);
+                lowered.runs.push(ObjectDrawRun {
+                    target: ObjectTexture::SurfaceLines(index),
+                    render_z: RenderZPolicy::ReadOnly,
+                    packed_parent: None,
+                    start: lowered.instances.len() as u32,
+                    count: 0,
+                });
+                lowered.extras_lines.extend(lines.extras);
+            }
             match entry {
                 crate::render::tactical_draw_plan::LayerEntry::Object(_) => {
                     for piece in ordinary
@@ -341,6 +370,63 @@ mod tests {
     use super::*;
     use crate::render::draw_state::DrawState;
     use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncoding};
+
+    #[test]
+    fn selected_brackets_follow_display_parents_and_fence_body_batching() {
+        use crate::app::presentation::selection_brackets::BuildingBracketLines;
+        use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend};
+        let line = |color| SurfaceLine {
+            from: [0, 0],
+            to: [8, 0],
+            z_adjust: [14, 14],
+            blend: SurfaceLineBlend::Replace(color),
+        };
+        let parent = |id, display_order, selected| {
+            let mut parent = PlannedObjectInstance::object(
+                ObjectDraw {
+                    id,
+                    layer: TacticalLayer(2),
+                    display_order,
+                    policy: BlitPolicy::z_read(SpriteEncoding::Rle),
+                },
+                vec![ObjectPieceInstance {
+                    target: ObjectTexture::OverlayAtlas,
+                    render_z: RenderZPolicy::ReadOnly,
+                    instance: SpriteInstance::default(),
+                }],
+            );
+            if selected {
+                parent.brackets = Some(BuildingBracketLines {
+                    behind: vec![line(id as u16)],
+                    extras: vec![line(id as u16 + 1)],
+                });
+            }
+            parent
+        };
+        // Storage/ID order differs from Display. Original6D913C/9153 precede
+        // this parent's body;6D9789 repeats Extras in that same Display order.
+        let pass = lower_ground_object_instances(vec![
+            parent(1, 2, true),
+            parent(500, 1, false),
+            parent(900, 0, true),
+        ]);
+        assert_eq!(pass.owners, [900, 500, 1]);
+        assert_eq!(
+            pass.before_lines,
+            [vec![line(900), line(901)], vec![line(1), line(2)]]
+        );
+        assert_eq!(pass.extras_lines, [line(901), line(2)]);
+        assert!(matches!(
+            pass.runs[0].target,
+            ObjectTexture::SurfaceLines(0)
+        ));
+        assert_eq!((pass.runs[1].start, pass.runs[1].count), (0, 2));
+        assert!(matches!(
+            pass.runs[2].target,
+            ObjectTexture::SurfaceLines(1)
+        ));
+        assert_eq!((pass.runs[3].start, pass.runs[3].count), (2, 1));
+    }
 
     #[test]
     fn native_non_entity_lifetimes_reach_their_layers_without_family_or_page_sorting() {

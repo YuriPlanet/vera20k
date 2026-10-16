@@ -38,7 +38,8 @@ fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let held = saved
         .production

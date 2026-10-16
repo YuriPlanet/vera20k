@@ -376,7 +376,7 @@ JOINED_ROOT = Path(os.environ.get('VERA20K_BUILDING_CONSTRUCTION_ASSETS',
 JOINED_MEMORY = 0x28000000
 
 
-def joined_inputs(root):
+def joined_inputs(root, *, layers=None):
     """Original constructors and scalar readers; lexical caches/file IO supplied.
 
     Sound owns the source-order INI links; Reader owns the signed-CRC caches,
@@ -412,6 +412,11 @@ def joined_inputs(root):
     m.make_ini({n: art[n] for n in JOINED_ART_NAMES})
     art_cache = bytes(u.mem_read(INI, 0x40))
     m.types = {}
+    if layers is not None:
+        # A selected live-type history retains one real constructor registry.
+        # Legacy fixtures keep their historical supplied registry boundary.
+        u.reg_write(UC_X86_REG_ESP, SP)
+        run_checked(u, 0x4E7A60, 0x4E7A96)
     for name in JOINED_NAMES:
         pointer = m.alloc(0x2000)
         m.invoke(0x45DD90, pointer, (m.cstring(name),))
@@ -425,7 +430,8 @@ def joined_inputs(root):
         if name in JOINED_ART_NAMES and name not in JOINED_NAMES:
             m.invoke(0x428B80, m.cstring(name))
             m.animation_list.append(dict(key=key, name=name))
-    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.mmx'):
+    for filename in (layers if layers is not None else
+                     ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.mmx')):
         path = root / filename
         if not path.is_file():
             assert filename == 'LANGRULE.INI', filename
@@ -504,8 +510,9 @@ class JoinedFixture:
             dict(seed=seed, linked=False, refinery_flag=False, dock_unload=False, human=True))
         u = self.u
         assert u.reg_read(UC_X86_REG_FPCW) == 0x0E7F
-        u.mem_map(HEAP, 0x400000)
-        u.mem_write(HEAP, bytes(inputs.u.mem_read(HEAP, 0x400000)))
+        input_arena_size = getattr(inputs, 'arena_size', 0x400000)
+        u.mem_map(HEAP, input_arena_size)
+        u.mem_write(HEAP, bytes(inputs.u.mem_read(HEAP, input_arena_size)))
         for address, size in ((0x8B4150, 24), (0xB1D378, 24), (0x87E180, 0x12C),
                               (0xA8E3A8, 32 * 32)):
             u.mem_write(address, bytes(inputs.u.mem_read(address, size)))

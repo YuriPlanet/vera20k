@@ -37,7 +37,7 @@ fn original_trigger_tabs_and_cameo_flash_deadlines() {
         .filter(|item| fixture.name(item.id) != "UNLISTED")
         .collect();
     let mut initial = CameoStrips::default();
-    initial.reconcile(&candidates, 3);
+    initial.reconcile(&candidates, 3, true);
     fixture.assert_order(&initial, &native["order"], "114/115 initial order");
     for control in native["tab_controls"].as_array().unwrap() {
         let mut strips = initial.clone();
@@ -456,7 +456,7 @@ fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
         item.available = initial.contains(fixture.name(item.id));
     }
     let mut strips = CameoStrips::default();
-    assert!(strips.reconcile(&candidates, 3).build_inserted());
+    assert!(strips.reconcile(&candidates, 3, true).build_inserted());
     fixture.assert_order(&strips, &context["initial_order"], "initial reconciliation");
 
     let steps = context["steps"].as_array().unwrap();
@@ -464,11 +464,11 @@ fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
         item.available = fixture.name(item.id) != steps[0]["id"].as_str().unwrap();
     }
     assert!(
-        !strips.reconcile(&candidates, 3).build_inserted(),
+        !strips.reconcile(&candidates, 3, true).build_inserted(),
         "full strip rejects the new item before removing the old one"
     );
     fixture.assert_order(&strips, &steps[2]["order"], "first reconciliation");
-    assert!(strips.reconcile(&candidates, 3).build_inserted());
+    assert!(strips.reconcile(&candidates, 3, true).build_inserted());
     fixture.assert_order(&strips, &steps[3]["order"], "second reconciliation");
 }
 
@@ -503,7 +503,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
 
     // The first entry of an empty sidebar selects its own strip.
     let mut strips = CameoStrips::default();
-    let first = strips.reconcile(&[cameo(unit, SidebarTab::Vehicle)], 3);
+    let first = strips.reconcile(&[cameo(unit, SidebarTab::Vehicle)], 3, true);
     assert_eq!(
         first.transitions().tab_button_disabled(SidebarTab::Vehicle),
         Some(false)
@@ -518,7 +518,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
         cameo(unit, SidebarTab::Vehicle),
         cameo(building, SidebarTab::Building),
     ];
-    let second = strips.reconcile(&populated, 3);
+    let second = strips.reconcile(&populated, 3, true);
     assert_eq!(
         second
             .transitions()
@@ -531,7 +531,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
     // button and re-checks the active tab against the first populated strip.
     let mut pruned = populated;
     pruned[0].available = false;
-    let third = strips.reconcile(&pruned, 3);
+    let third = strips.reconcile(&pruned, 3, true);
     assert_eq!(
         third.transitions().tab_button_disabled(SidebarTab::Vehicle),
         Some(true)
@@ -550,7 +550,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
 
     // Re-reconciling the now empty vehicle strip reports no transition: it was
     // already empty, so native never disabled its button on this pass.
-    let fourth = strips.reconcile(&[cameo(building, SidebarTab::Building)], 3);
+    let fourth = strips.reconcile(&[cameo(building, SidebarTab::Building)], 3, true);
     assert_eq!(
         fourth
             .transitions()

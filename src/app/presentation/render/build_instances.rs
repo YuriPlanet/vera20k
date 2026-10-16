@@ -67,11 +67,8 @@ pub(super) struct DebugInstances {
     pub heightmap: Vec<SpriteInstance>,
 }
 
-/// In-game UI overlays: selection brackets, health bars, placement preview, cursor.
+/// In-game UI overlays: health bars, placement preview, cursor.
 pub(super) struct UiInstances {
-    pub bracket_back: Vec<SpriteInstance>,
-    pub bracket_front_first: Vec<SpriteInstance>,
-    pub bracket_front: Vec<SpriteInstance>,
     pub radius_ring: Vec<SpriteInstance>,
     pub building_status: Vec<SpriteInstance>,
     pub bomb_clock: Vec<SpriteInstance>,
@@ -99,8 +96,12 @@ pub(super) struct SidebarInstances {
     /// The bottom command bar's surface layer, in layout space too.
     pub command_bar: Vec<SpriteInstance>,
     pub cameo: Vec<SpriteInstance>,
+    pub unavailable: Vec<SpriteInstance>,
+    pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub cameo_overlay: Vec<SpriteInstance>,
+    pub queue_overlay: Vec<SpriteInstance>,
+    pub queue_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
     pub minimap: Vec<SpriteInstance>,
     pub viewport_rect: Vec<SpriteInstance>,
@@ -116,7 +117,7 @@ impl SidebarInstances {
             self.minimap.len(),
             self.viewport_rect.len(),
             self.radar_anim.len(),
-            self.text.len(),
+            self.text.len() + self.queue_text.len(),
         )
     }
 }
@@ -141,7 +142,12 @@ fn lookup_exact_terrain_variant<T>(
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
 /// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// Ground parents retain Display order; residual effect buckets still sort depth.
-pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> WorldInstances {
+pub(super) fn build_world_instances(
+    state: &mut AppState,
+    sw: f32,
+    sh: f32,
+    bracket_palette: Option<[u16; 2]>,
+) -> WorldInstances {
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in
     // a positive suffix remains absent instead of borrowing pristine UVs.
     let uv_fn_closure;
@@ -263,6 +269,26 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         &state.renderer.batch_renderer,
     );
 
+    // Selection is read by its existing presentation producer; only parents
+    // admitted by the Display/body plan receive commands. Native6D913C and
+    //6D9153 run in that parent's slot, before its body at6D916C.
+    if let Some(palette) = bracket_palette {
+        let camera = [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ]
+        .map(|value| value.floor() as i32);
+        let mut brackets =
+            crate::app::presentation::selection_brackets::build_selection_bracket_lines(
+                state,
+                camera,
+                palette,
+                planned_objects.iter().map(|parent| parent.parent.id),
+            );
+        for parent in &mut planned_objects {
+            parent.brackets = brackets.remove(&parent.parent.id);
+        }
+    }
     let object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
 
     // PixelFX water/ore sparkles — per-frame 1-pixel cell dots.
@@ -574,12 +600,9 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     }
 }
 
-/// Build in-game UI overlay instances: selection brackets, health bars,
+/// Build in-game UI overlay instances: health bars,
 /// drag rectangle, building placement preview, and software cursor.
 pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstances {
-    let bracket = crate::app::presentation::selection_brackets::build_selection_bracket_instances(
-        state, sw, sh,
-    );
     let radius_ring: Vec<SpriteInstance> = build_building_radius_ring_instances(state, sw, sh);
     let building_status: Vec<SpriteInstance> = build_building_status_instances(state, sw, sh);
     let bomb_clock = build_bomb_clock_instances(state, sw, sh);
@@ -680,9 +703,6 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
         );
 
     UiInstances {
-        bracket_back: bracket.back,
-        bracket_front_first: bracket.front_first,
-        bracket_front: bracket.front,
         radius_ring,
         building_status,
         bomb_clock,
@@ -833,11 +853,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
         crate::render::sidebar_text::side_highlight_color(theme)
     };
-    let (cameo, gclock, cameo_overlay) = view
+    let cameo_layers = view
         .as_ref()
         .map(|v| build_sidebar_cameo_instances(state, v, ready_text.as_ref(), hold_text.as_ref()))
         .unwrap_or_default();
-    let mut text = view
+    let mut text_layers = view
         .as_ref()
         .map(|v| {
             build_sidebar_text_instances(
@@ -854,7 +874,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // text colour as the cameo labels.
     if let Some(v) = view.as_ref() {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        text.extend(
+        text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
                 &state.renderer.bit_font,
                 v,
@@ -893,10 +913,14 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     SidebarInstances {
         chrome,
         command_bar,
-        cameo,
-        gclock,
-        cameo_overlay,
-        text,
+        cameo: cameo_layers.cameo,
+        unavailable: cameo_layers.unavailable,
+        flash: cameo_layers.flash,
+        gclock: cameo_layers.gclock,
+        cameo_overlay: cameo_layers.overlay,
+        queue_overlay: cameo_layers.queue_overlay,
+        queue_text: text_layers.queue,
+        text: text_layers.status,
         minimap,
         viewport_rect,
         content_boundary,

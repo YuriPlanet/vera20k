@@ -78,7 +78,8 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 z_origin_y: input["z_origin_y"].as_i64().unwrap() as i32,
                 zoom: 1.,
             };
-            terrain.prepare_surface_lines(
+            terrain.begin_surface_lines();
+            let prepared_lines = terrain.prepare_surface_lines(
                 &gpu.device,
                 &gpu.queue,
                 std::iter::empty(),
@@ -96,7 +97,7 @@ fn production_line_trail_matches_original_full_line_pixels() {
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_surface_lines(&mut encoder, &cv);
+            terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -184,7 +185,8 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
                 terrain.surface_lines.test_operation_limit = forced_chunk;
                 let segments = overlapping_segments(row);
-                terrain.prepare_surface_lines(
+                terrain.begin_surface_lines();
+                let prepared_lines = terrain.prepare_surface_lines(
                     &gpu.device,
                     &gpu.queue,
                     std::iter::empty(),
@@ -202,7 +204,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_surface_lines(&mut encoder, &cv);
+                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),
@@ -263,7 +265,8 @@ fn line_trail_native_fixture_submission_timings() {
             for repetition in 0..22 {
                 let begin = Instant::now();
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-                terrain.prepare_surface_lines(
+                terrain.begin_surface_lines();
+                let prepared_lines = terrain.prepare_surface_lines(
                     &gpu.device,
                     &gpu.queue,
                     std::iter::empty(),
@@ -282,7 +285,7 @@ fn line_trail_native_fixture_submission_timings() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_surface_lines(&mut encoder, &cv);
+                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
                 gpu.queue.submit([encoder.finish()]);
                 gpu.device
                     .poll(wgpu::PollType::wait_indefinitely())

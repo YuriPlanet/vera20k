@@ -343,6 +343,7 @@ pub(crate) fn build_sidebar_view_with_spec(
                 flash_darkened: cameo_order.flash_darkened(entry.identity),
                 queue_category: entry.queue_category,
                 enabled: entry.enabled,
+                at_build_limit: entry.at_build_limit,
                 progress: entry.progress,
                 queued_count: entry.queued_count,
                 is_building_this_type: entry.is_building_this_type,
@@ -489,6 +490,7 @@ struct BuildEntry {
     /// tab is presentation-only grouping and must not replace Ship/Aircraft.
     queue_category: ProductionCategory,
     enabled: bool,
+    at_build_limit: bool,
     progress: f32,
     queued_count: usize,
     /// True when this cameo's linked Factory is actively producing.
@@ -539,6 +541,7 @@ fn collect_build_entries(
                 cost: None,
                 queue_category: ProductionCategory::Defense,
                 enabled: sw.is_online,
+                at_build_limit: false,
                 progress: sw.progress,
                 queued_count: 0,
                 is_building_this_type: !sw.is_ready && sw.is_online && sw.progress > 0.0,
@@ -557,7 +560,9 @@ fn collect_build_entries(
     // instead of spawning a duplicate entry.
     let mut entries: Vec<BuildEntry> = build_options
         .iter()
-        .filter(|opt| category_is_on_tab(category, opt.queue_category) && opt.visible_in_sidebar())
+        // CameoStrips already owns membership. A retained entry must still
+        // draw when Selling makes its current FindFactory query fail.
+        .filter(|opt| category_is_on_tab(category, opt.queue_category))
         .map(|opt| {
             // StripDraw6A9812/6A9822/6A985D reads this entry's linked
             // Factory, even when that Factory holds another type. Queue
@@ -579,7 +584,11 @@ fn collect_build_entries(
                 display_name: opt.display_name.clone(),
                 cost: Some(opt.cost),
                 queue_category: opt.queue_category,
-                enabled: is_ready || opt.enabled,
+                // StripDraw6A98D3 clears unavailable DARKEN for a linked
+                // Factory, including an unfinished product. The unlinked
+                // queued entry still paints its current unavailable overlay.
+                enabled: factory.is_some() || opt.enabled,
+                at_build_limit: opt.at_build_limit,
                 progress: factory
                     .map(|status| f32::from(status.progress) / f32::from(PRODUCTION_STEPS))
                     .unwrap_or(0.0)
@@ -616,6 +625,7 @@ fn collect_build_entries(
                 cost: None,
                 queue_category: r.queue_category,
                 enabled: true,
+                at_build_limit: false,
                 progress: 1.0,
                 queued_count: queue_items
                     .iter()
@@ -843,6 +853,7 @@ mod tests {
             object_category: ObjectCategory::Building,
             queue_category: ProductionCategory::Building,
             enabled,
+            at_build_limit: reason == Some(BuildDisabledReason::AtBuildLimit),
             reason,
         }
     }
@@ -1090,6 +1101,7 @@ mod tests {
             object_category: ObjectCategory::Vehicle,
             queue_category: category,
             enabled: true,
+            at_build_limit: false,
             reason: None,
         }
     }
@@ -1108,6 +1120,109 @@ mod tests {
             state,
             progress,
         }
+    }
+
+    #[test]
+    fn retained_sale_cameos_match_executed_native_draw_decisions() {
+        use super::{CameoFactoryStatus, collect_build_entries};
+
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/factory_sale_sidebar.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for control in native["controls"].as_array().unwrap() {
+            let Some(decisions) = control["decisions"]
+                .as_array()
+                .filter(|rows| !rows.is_empty())
+            else {
+                continue;
+            };
+            let mut interner = StringInterner::new();
+            let factory = &control["prepared"]["factory"];
+            let stage = factory["stage"].as_u64().unwrap() as u16;
+            let complete = stage == crate::sim::production::PRODUCTION_STEPS;
+            let running =
+                factory["rate"].as_i64().unwrap() != 0 && !factory["suspended"].as_bool().unwrap();
+            let mut queue = vec![categorized_queue_item(
+                &mut interner,
+                factory["held_type"].as_str().unwrap(),
+                ProductionCategory::Infantry,
+                if complete {
+                    BuildQueueState::Done
+                } else {
+                    BuildQueueState::Building
+                },
+                stage,
+            )];
+            for name in factory["queue"].as_array().unwrap() {
+                queue.push(categorized_queue_item(
+                    &mut interner,
+                    name.as_str().unwrap(),
+                    ProductionCategory::Infantry,
+                    BuildQueueState::Queued,
+                    0,
+                ));
+            }
+            let mut options = Vec::new();
+            let mut statuses = Vec::new();
+            for decision in decisions {
+                let name = decision["name"].as_str().unwrap();
+                let mut option = unit_option(&mut interner, name, ProductionCategory::Infantry);
+                option.object_category = ObjectCategory::Infantry;
+                option.cost = native["type_inputs"][name]["cost"].as_i64().unwrap() as i32;
+                // Original FindFactory/CanBuild result is this view's input;
+                // the independent final BL and draw commands are its oracle.
+                option.enabled = decision["unavailable"] == 0;
+                if decision["linked"] == 1 {
+                    statuses.push(CameoFactoryStatus {
+                        type_id: option.type_id,
+                        progress: stage,
+                        is_ready: complete,
+                        is_building: running,
+                        is_on_hold: !complete && !running,
+                    });
+                }
+                options.push(option);
+            }
+            let entries = collect_build_entries(
+                ProductionCategory::Infantry,
+                &queue,
+                &statuses,
+                &options,
+                &[],
+                None,
+                Some(&interner),
+                &[],
+            );
+            let commands = control["draw_commands"].as_array().unwrap();
+            for (decision, entry) in decisions.iter().zip(&entries) {
+                assert_eq!(
+                    entry.enabled,
+                    decision["final_bl"] == 0,
+                    "{}",
+                    control["name"]
+                );
+                let drew = |kind: &str| {
+                    commands
+                        .iter()
+                        .any(|command| command["name"] == entry.type_id && command["kind"] == kind)
+                };
+                assert_eq!(!entry.enabled, drew("unavailable_darken"));
+                assert_eq!(entry.is_ready, drew("ready_text"));
+                assert_eq!(entry.is_building_this_type, drew("clock"));
+                assert_eq!(
+                    (entry.progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round()
+                        as u16,
+                    decision["stage"].as_u64().unwrap() as u16,
+                );
+            }
+            compared += 1;
+        }
+        assert_eq!(
+            compared, 5,
+            "all five nonempty native Draw controls consumed"
+        );
     }
 
     fn producer(category: ProductionCategory, stable_id: u64) -> ProducerFocusView {

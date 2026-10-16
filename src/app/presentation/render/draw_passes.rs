@@ -7,10 +7,7 @@
 //! - Internal to `presentation::render` — only called from mod.rs via `dispatch_draw_passes()`.
 
 use crate::app::AppState;
-use crate::app::presentation::sidebar_render::{
-    begin_main_load_pass, begin_main_pass, current_sidebar_chrome_texture,
-    current_sidebar_gclock_texture,
-};
+use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
 use crate::app::presentation::sidebar_surface::SidebarPart;
 use crate::app::presentation::ui_overlays::current_software_cursor_texture;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
@@ -30,6 +27,11 @@ pub(super) struct DrawPassData<'a> {
     pub overlay_render_z: &'a [RenderZPolicy],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
+    pub bracket_extras: crate::render::terrain_draw::SurfaceLineBatch,
+    pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
+    pub sidebar_unavailable: &'a [SpriteInstance],
+    pub sidebar_flash: &'a [SpriteInstance],
+    pub sidebar_gclock: &'a [SpriteInstance],
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -42,19 +44,34 @@ pub(super) struct DrawPassData<'a> {
 /// Radar state/chrome preparation then precedes Update @ 0x00656EC0, whose
 /// content blit, viewport rectangle, and generated-content boundary are the
 /// final retained radar writes in that order.
-fn draw_sidebar_surface(state: &AppState, encoder: &mut wgpu::CommandEncoder) {
-    let Some(surface) = state.renderer.sidebar_surface.as_ref() else {
+fn draw_sidebar_surface(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    data: &DrawPassData<'_>,
+) {
+    let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+    let presentation = &state.match_state.match_presentation;
+    let chrome = presentation.sidebar_chrome.as_ref().and_then(|set| {
+        crate::render::sidebar_chrome::select_sidebar_theme(
+            theme,
+            set.allied.as_ref(),
+            set.soviet.as_ref(),
+            set.yuri.as_ref(),
+        )
+        .map(|(_, atlas)| atlas)
+    });
+    let renderer = &mut state.renderer;
+    let Some(surface) = renderer.sidebar_surface.as_ref() else {
         return;
     };
-    let batch = &state.renderer.batch_renderer;
-    let pool = &state.renderer.instance_pool;
-    let presentation = &state.match_state.match_presentation;
+    let batch = &renderer.batch_renderer;
+    let pool = &renderer.instance_pool;
     let camera = surface.camera(SidebarPart::Column);
     let mut pass = surface.begin_pass(SidebarPart::Column, encoder, super::CLEAR_COLOR);
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    draw(current_sidebar_chrome_texture(state), "sidebar_chrome");
+    draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
     draw(
         presentation
             .sidebar_cameo_atlas
@@ -62,15 +79,95 @@ fn draw_sidebar_surface(state: &AppState, encoder: &mut wgpu::CommandEncoder) {
             .map(|atlas| &atlas.texture),
         "sidebar_cameo",
     );
-    draw(current_sidebar_gclock_texture(state), "sidebar_gclock");
-    let cameo_overlay_tex = state.renderer.bit_font.darken_texture().or_else(|| {
+    drop(pass);
+
+    // Original StripDraw: icon6A9A3E -> unavailable4016A9B46 -> flash404
+    //6A9BC0. All packed operations share one owner and preserve sidebar Z.
+    for (key, instances, texture, kind) in [
+        (
+            "sidebar_unavailable",
+            data.sidebar_unavailable,
+            chrome
+                .and_then(|atlas| atlas.darken.as_ref())
+                .map(|mask| &mask.texture),
+            crate::render::terrain_draw::PackedSpriteKind::IndexMask,
+        ),
+        (
+            "sidebar_flash",
+            data.sidebar_flash,
+            chrome
+                .and_then(|atlas| atlas.darken.as_ref())
+                .map(|mask| &mask.texture),
+            crate::render::terrain_draw::PackedSpriteKind::UiPalette,
+        ),
+    ] {
+        if let (Some((buffer, count)), Some(texture)) = (pool.get(key), texture)
+            && count > 0
+        {
+            assert_eq!(count as usize, instances.len());
+            surface.draw_packed_layer(
+                &mut renderer.terrain_draw_renderer,
+                encoder,
+                batch,
+                buffer,
+                instances,
+                texture,
+                kind,
+            );
+        }
+    }
+
+    let cameo_overlay_tex = renderer.bit_font.darken_texture().or_else(|| {
         presentation
             .selection_overlay
             .as_ref()
             .map(|o| o.white_texture())
     });
+    {
+        // Count badge rect/fill6A9D0C/6A9D4C and glyph6A9D7B precede
+        // the clock. Its404 packed destination read includes these pixels.
+        let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
+        draw_pooled_with_camera(
+            &mut pass,
+            batch,
+            camera,
+            pool,
+            cameo_overlay_tex,
+            "sidebar_queue_overlay",
+        );
+        draw_pooled_with_camera(
+            &mut pass,
+            batch,
+            camera,
+            pool,
+            Some(renderer.bit_font.atlas()),
+            "sidebar_queue_text",
+        );
+    }
+    if let (Some((buffer, count)), Some(texture)) = (
+        pool.get("sidebar_gclock"),
+        chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
+    ) && count > 0
+    {
+        assert_eq!(count as usize, data.sidebar_gclock.len());
+        surface.draw_packed_layer(
+            &mut renderer.terrain_draw_renderer,
+            encoder,
+            batch,
+            buffer,
+            data.sidebar_gclock,
+            texture,
+            crate::render::terrain_draw::PackedSpriteKind::UiPalette,
+        );
+    }
+    // READY skips clock6A9E44; HOLD is after it6AA014. Separate status
+    // layers preserve both without moving the earlier queue badge.
+    let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
+    let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
+        draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
+    };
     draw(cameo_overlay_tex, "sidebar_cameo_overlay");
-    draw(Some(state.renderer.bit_font.atlas()), "sidebar_text");
+    draw(Some(renderer.bit_font.atlas()), "sidebar_text");
     draw(
         presentation.radar_anim.as_ref().map(|ra| ra.texture()),
         "radar_anim",
@@ -88,7 +185,7 @@ fn draw_sidebar_surface(state: &AppState, encoder: &mut wgpu::CommandEncoder) {
         batch,
         surface.camera(SidebarPart::Bar),
         pool,
-        current_sidebar_chrome_texture(state),
+        chrome.map(|atlas| &atlas.texture),
         "command_bar",
     );
 }
@@ -110,11 +207,11 @@ pub(super) fn dispatch_draw_passes(
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
-    let pool: &InstanceBufferPool = &state.renderer.instance_pool;
-    let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
-    draw_sidebar_surface(state, encoder);
+    draw_sidebar_surface(state, encoder, data);
+    let pool: &InstanceBufferPool = &state.renderer.instance_pool;
+    let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let mut pass = begin_main_pass(encoder, view, &state.renderer.depth_view);
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
@@ -263,27 +360,6 @@ pub(super) fn dispatch_draw_passes(
         pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
-
-    // Building selection bracket back/left edges. Drawn before object bodies so
-    // the normal SHP merge naturally occludes the hidden bracket edges.
-    draw_pooled_passthrough_texture(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        bracket_tex,
-        "selection_brackets_back",
-    );
-    // gamemd's first object pass calls DrawExtras before the nonzero +0x104
-    // display call. Re-submit the front/right bracket stubs here; object body
-    // draws can still occlude this first submission, and the later DrawExtras
-    // phase submits them again.
-    draw_pooled_passthrough_texture(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        bracket_tex,
-        "selection_brackets_front_first",
-    );
 
     // Bridge units share the native Ground parent pass below. Their body
     // split changes per-pixel Z, never their position among buildings.
@@ -475,21 +551,15 @@ pub(super) fn dispatch_draw_passes(
     // returning to Tactical. Unit6F5190 submits rank, health, brackets and
     // pips here, before effects6D4664, BandBox6D46BD and action6D4750.
     // Evidence: tools/procedural_drawing_oracle/action_lines instruction packet.
-    // Final selected-building front bracket redraw: gamemd line pixels test Z
-    // but do not write it — the store back into Z sits behind a caller flag
-    // this path leaves clear. Each pixel carries its ground-footprint corner's
-    // depth, so the marks that fall behind the building art lose the test
-    // against the Z the building body wrote in the Ground pass (BUILDNGZ
-    // shaped, `0x004990e0`); no separate depth stamp is needed. The CPU
-    // instance builder already samples the tactical ABuffer for this
-    // post-shroud redraw.
-    draw_pooled_depth_test_texture(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        bracket_tex,
-        "selection_brackets_front",
-    );
+    // Native6D9789: the later Extras sweep uses the same Display order,
+    // completed body destination and live Z;4BFD30 never writes that Z.
+    drop(pass);
+    state
+        .renderer
+        .terrain_draw_renderer
+        .draw_surface_lines(encoder, view, data.bracket_extras);
+    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     // Building health pips: discrete pips from pips.shp atlas.
     let building_status_tex = state
         .match_state
@@ -660,7 +730,7 @@ pub(super) fn dispatch_draw_passes(
     state
         .renderer
         .terrain_draw_renderer
-        .draw_surface_lines(encoder, view);
+        .draw_surface_lines(encoder, view, data.surface_effects);
     let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
@@ -1078,31 +1148,6 @@ pub(crate) fn draw_pooled_overlay_bodies<'a>(
     }
 }
 
-fn draw_pooled_passthrough_texture<'a>(
-    pass: &mut wgpu::RenderPass<'a>,
-    batch: &'a BatchRenderer,
-    pool: &'a InstanceBufferPool,
-    tex: Option<&'a BatchTexture>,
-    key: &'static str,
-) {
-    if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
-        batch.draw_with_buffer_passthrough(pass, t, buf, count);
-    }
-}
-
-/// Draw a pooled buffer that tests the depth buffer and does not write it.
-fn draw_pooled_depth_test_texture<'a>(
-    pass: &mut wgpu::RenderPass<'a>,
-    batch: &'a BatchRenderer,
-    pool: &'a InstanceBufferPool,
-    tex: Option<&'a BatchTexture>,
-    key: &'static str,
-) {
-    if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
-        batch.draw_with_buffer_depth_test(pass, t, buf, count);
-    }
-}
-
 /// Submit the bridge shadow cell sweep between overlay bodies and objects.
 pub(super) fn draw_bridge_shadows(
     encoder: &mut wgpu::CommandEncoder,
@@ -1241,6 +1286,10 @@ mod tests {
         let chrome = source_offset("\"sidebar_chrome\"");
         let cameo = source_offset("\"sidebar_cameo\"");
         let gclock = source_offset("\"sidebar_gclock\"");
+        let unavailable = source_offset("\"sidebar_unavailable\"");
+        let flash = source_offset("\"sidebar_flash\"");
+        let queue_fill = source_offset("\"sidebar_queue_overlay\"");
+        let queue_text = source_offset("\"sidebar_queue_text\"");
         let cameo_overlay = source_offset("\"sidebar_cameo_overlay\"");
         let sidebar_text = source_offset("\"sidebar_text\"");
         let radar_anim = source_offset("\"radar_anim\"");
@@ -1250,7 +1299,11 @@ mod tests {
         let message = source_offset("\"message_text\"");
 
         assert!(chrome < cameo);
-        assert!(cameo < gclock);
+        assert!(cameo < unavailable);
+        assert!(unavailable < flash);
+        assert!(flash < queue_fill);
+        assert!(queue_fill < queue_text);
+        assert!(queue_text < gclock);
         assert!(gclock < cameo_overlay);
         assert!(cameo_overlay < sidebar_text);
         assert!(sidebar_text < radar_anim);
@@ -1268,6 +1321,10 @@ mod tests {
             "\"sidebar_chrome\"",
             "\"sidebar_cameo\"",
             "\"sidebar_gclock\"",
+            "\"sidebar_unavailable\"",
+            "\"sidebar_flash\"",
+            "\"sidebar_queue_overlay\"",
+            "\"sidebar_queue_text\"",
             "\"sidebar_cameo_overlay\"",
             "\"sidebar_text\"",
             "\"radar_anim\"",
@@ -1286,7 +1343,7 @@ mod tests {
     /// begins, and copies it in after the tactical writes, before messages.
     #[test]
     fn gsi_04_01_sidebar_surface_is_finished_before_its_blit() {
-        let surface_pass = source_offset("draw_sidebar_surface(state, encoder);");
+        let surface_pass = source_offset("draw_sidebar_surface(state, encoder, data);");
         let frame_pass = source_offset("let mut pass = begin_main_pass(");
         let timer_text = source_offset("\"super_timer_text\"");
         let blit = source_offset("surface.composite(&mut pass)");

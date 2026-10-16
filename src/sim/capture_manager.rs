@@ -919,7 +919,8 @@ impl Simulation {
 
 impl Simulation {
     /// `CaptureManagerClass::Update @ 0x00471A50`, the Mastermind overload,
-    /// from `TechnoClass::AI_Update` (`0x006FA730`, after the drain block and
+    /// from `TechnoClass::AI_Update` (`0x006FA730`, after mission, targeting,
+    /// the bomb fuse and SlaveManager, and
     /// before the IsAlive gate at `0x006FA735`). Only an infinite manager
     /// overloads. The captive count picks the `Overload*=` row; a damaging row
     /// hits the controller with `C4Warhead=`, plays the overload voice once

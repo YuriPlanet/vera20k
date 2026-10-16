@@ -5,6 +5,7 @@ Usage:
     python tools/render_depth_fixture.py target/depth-comparison/depth-walls-cliff.map
     python tools/render_depth_fixture.py target/depth-comparison/depth-walls.map --walls-only
     python tools/render_depth_fixture.py target/depth-comparison/depth-cliff-back.map --cliff-back
+    python tools/render_depth_fixture.py target/depth-comparison/building-brackets.map --building-brackets
 
 This writes only the requested map. It neither edits game configuration nor
 launches either engine. The cliff fixture deliberately focuses on one cliff
@@ -130,11 +131,13 @@ GAWALL = 2
 C = 48
 
 
-def build_fixture(*, walls_only: bool = False, cliff_back: bool = False) -> str:
-    """Keep the same buildings and front/back units in both comparison scenes."""
+def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
+                  building_brackets: bool = False) -> str:
+    """Keep comparison geometry stable within each selectable scene."""
     cliff_x0, cliff_y0 = C - 8, C - 2   # 2 wide, 3 tall
-    if walls_only and cliff_back:
-        raise ValueError('Choose one cliff mode')
+    if sum((walls_only, cliff_back, building_brackets)) > 1:
+        raise ValueError('Choose one comparison mode')
+    walls_only = walls_only or building_brackets
 
     def high(x, y):
         return y <= x + 6  # Raised ground north-west of the cliff line.
@@ -225,13 +228,37 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False) -> str:
         f'{i}=Americans,E1,256,{x},{y},{s},Guard,{f},None,0,-1,0,1,1'
         for i, (x, y, s, f) in enumerate(gis)
     ]
+    if building_brackets:
+        # Stock2x2 foundations do not intersect; their art/brackets can overlap
+        # across Display parents. The distant voxel retains the capture atlas.
+        structures = [
+            f'{i}=Americans,GAPOWR,256,{x},{y},0,None,0,0,1,0,0,None,None,None,0,0'
+            for i, (x, y) in enumerate(((C, C), (C - 2, C + 1), (C + 2, C - 1)))
+        ]
+        units = [f'0=Computer1,MTNK,256,{C+12},{C+12},64,Guard,None,0,-1,0,-1,1,1']
+        infantry = []
+        overlay[:] = b'\xff' * len(overlay)
+        overlay_data[:] = bytes(len(overlay_data))
     # Stock cliff-back blocking rejects Track/Foot placement in the exact
     # overlap cells. This scenario-only override admits controlled comparison
     # positions in both engines; it does not change ordinary game pathfinding.
     cliff_rules = '\n[General]\nCliffBackImpassability=0\n' if cliff_back else ''
+    # Match normal Battle's AI slot, so the distant voxel also prevents an
+    # empty-house victory from ending sustained selection captures.
+    bracket_house_slot = '\n2=Computer1' if building_brackets else ''
+    bracket_house = '''\n[Computer1]
+Country=YuriCountry
+PlayerControl=no
+IQ=0
+TechLevel=0
+Credits=0
+Edge=South
+Allies=Computer1
+Color=DarkRed
+''' if building_brackets else ''
 
     return f'''[Basic]
-Name=Depth Continuation - {'Cliff Back Edge' if cliff_back else 'Walls and Cliff'}
+Name=Depth Continuation - {'Building Brackets' if building_brackets else 'Cliff Back Edge' if cliff_back else 'Walls and Cliff'}
 NewINIFormat=4
 Player=Americans
 HomeCell={(C + 1) * 1000 + (C - 5)}
@@ -266,7 +293,7 @@ Level=0.032
 
 [Houses]
 0=Americans
-1=Neutral
+1=Neutral{bracket_house_slot}
 
 [Americans]
 Country=Americans
@@ -276,7 +303,7 @@ TechLevel=10
 Credits=50000
 Edge=North
 Allies=Americans,Neutral
-Color=DarkBlue
+Color={'Gold' if building_brackets else 'DarkBlue'}
 
 [Neutral]
 Country=Neutral
@@ -286,7 +313,7 @@ TechLevel=0
 Credits=0
 Edge=North
 Allies=Americans,Neutral
-Color=Grey
+Color=Grey{bracket_house}
 
 [Waypoints]
 0={(C - 15) * 1000 + (C + 11)}
@@ -326,8 +353,13 @@ def main() -> None:
         '--cliff-back', action='store_true',
         help='Use retail Cliff28 back edges with tank/infantry behind the foreground plateau',
     )
+    modes.add_argument(
+        '--building-brackets', action='store_true',
+        help='Use stock selected-building and neighboring-body positions on clear ground',
+    )
     args = parser.parse_args()
-    mission = build_fixture(walls_only=args.walls_only, cliff_back=args.cliff_back)
+    mission = build_fixture(walls_only=args.walls_only, cliff_back=args.cliff_back,
+                            building_brackets=args.building_brackets)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(mission, encoding='ascii')
     print(f'Wrote {args.output} ({len(mission)} characters)')

@@ -259,6 +259,129 @@ fn present(
 }
 
 #[test]
+#[ignore = "requires retail XMP03T4 and GPU; natural first-frame ore, texture publication and retained acknowledgement"]
+fn retail_authored_ore_spread_reaches_uploaded_minimap() {
+    let root = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
+    let profile = crate::test_fixture::json("tools/map_observation.ore-spread.example.json");
+    let launch = serde_json::from_value(profile["launch"].clone()).unwrap();
+    let mut scene =
+        crate::headless_scenario::load_session(&root, "XMP03T4.MAP", 0x12345678, launch).unwrap();
+    let targets = [(71, 24), (72, 24), (73, 24), (71, 25), (71, 26)];
+    for &(rx, ry) in &targets {
+        assert!(
+            scene
+                .runtime
+                .view()
+                .overlay_grid()
+                .unwrap()
+                .cell(rx, ry)
+                .overlay_id
+                .is_none()
+        );
+    }
+    let gpu = Gpu::new();
+    let mut presentations: Vec<_> = [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ]
+    .into_iter()
+    .map(|format| new_presentation(&gpu, &scene, format))
+    .collect();
+    // This exercises the terrain texture owner, whose presenter is enabled here.
+    // The normal MCV-only opening does not yet have an online radar building.
+    present(&gpu, &mut scene, &mut presentations);
+    let before = presentations[0]
+        .minimap
+        .native_radar_terrain
+        .as_ref()
+        .unwrap()
+        .raw_rgb()
+        .to_vec();
+    ordinary_frame(&mut scene, None);
+    let grown: Vec<_> = targets
+        .into_iter()
+        .filter(|&(rx, ry)| {
+            scene
+                .runtime
+                .view()
+                .overlay_grid()
+                .unwrap()
+                .cell(rx, ry)
+                .overlay_id
+                .is_some()
+        })
+        .collect();
+    assert!(
+        !grown.is_empty(),
+        "ordinary first frame creates ore without supplied queues/RNG/timers"
+    );
+    let (dirty, generation) = scene.runtime.view().radar_terrain_dirty();
+    for cell in &grown {
+        assert!(
+            dirty.contains(cell),
+            "new resource membership publishes {cell:?}"
+        );
+    }
+    let commit = present(&gpu, &mut scene, &mut presentations);
+    assert_eq!(commit.consumed_generation, Some(generation));
+    assert!(commit.acknowledged);
+    assert!(scene.runtime.view().radar_terrain_dirty().0.is_empty());
+    let hash = scene.sim().state_hash();
+    for presented in &presentations {
+        let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
+        let geometry = surface.geometry();
+        for &cell in &grown {
+            let (x, y) = geometry.cell_to_raw_pixel(cell);
+            let index = (y * geometry.raw_size().0 + x) as usize;
+            assert_ne!(
+                &surface.raw_rgb()[index..index + 2],
+                &before[index..index + 2]
+            );
+        }
+        let mut expected = presented.minimap.composed_rgba().0.to_vec();
+        if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
+            for pixel in expected.as_chunks_mut::<4>().0 {
+                pixel.swap(0, 2);
+            }
+        }
+        assert_eq!(
+            read_uploaded(&gpu, presented),
+            expected,
+            "uploaded natural ore/{:?}",
+            presented.format
+        );
+        // Original initialization654650/Fill654EA0 consumes current Cell47C060.
+        // Retaining authored map overlays must not hide naturally added cells.
+        let fresh = new_presentation(&gpu, &scene, presented.format);
+        assert_eq!(
+            fresh
+                .minimap
+                .native_radar_terrain
+                .as_ref()
+                .unwrap()
+                .raw_rgb(),
+            surface.raw_rgb(),
+            "reconstruction and incremental publication share live Cell authority"
+        );
+        let mut expected = fresh.minimap.base_terrain_rgba.clone();
+        if fresh.format == wgpu::TextureFormat::Bgra8UnormSrgb {
+            for pixel in expected.as_chunks_mut::<4>().0 {
+                pixel.swap(0, 2);
+            }
+        }
+        assert_eq!(
+            read_uploaded(&gpu, &fresh),
+            expected,
+            "constructor uploads current terrain"
+        );
+    }
+    assert_eq!(scene.sim().state_hash(), hash);
+    let again = present(&gpu, &mut scene, &mut presentations);
+    assert_eq!(again.consumed_generation, None);
+    assert!(!again.acknowledged);
+}
+
+#[test]
 #[ignore = "requires retail GoldSt and GPU; paid radar, real HARV depletion, texture upload and acknowledgement"]
 fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
     let root = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));

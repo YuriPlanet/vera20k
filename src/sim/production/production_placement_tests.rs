@@ -1960,15 +1960,15 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
             .factories
             .test_enqueue_kernel(owner, category, type_id, 1, cost)
     );
-    // The queued wall survives the tick's per-frame queue check
-    // (`FactoryRegistry::plan_revalidation`) and its strip's recheck.
+    // This fixture deliberately leaves BuildCat at native default0. After
+    // Completed clears held, HouseAbandon removes the matching queued copy
+    // first and retains the empty Factory; no successor Begin runs.
     let wall = rules.object("GAWALL").unwrap();
     assert!(super::can_build::find_factory(&sim, &rules, owner, wall, true, false, true).is_some());
     assert!(super::production_tech::strip_keeps(
         &sim, &rules, owner, wall
     ));
-    let mut expected = sim.scenario_rng.clone();
-    let successor_word = (expected.next_u32() & 0xffff) as u16;
+    let expected = sim.scenario_rng.clone();
     let entities_before = sim.substrate.entities.len();
 
     let tick = sim.advance_tick(
@@ -1986,8 +1986,8 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
     );
     assert_eq!(
         sim.substrate.entities.len(),
-        entities_before,
-        "wall consumes one held identity and constructs exactly one successor"
+        entities_before - 1,
+        "BuildCat0 consumes the held wall without a successor constructor"
     );
     assert!(ready_buildings_for_owner(&sim, &rules, "Americans").is_empty());
     let cell = sim.overlay_grid.as_ref().unwrap().cell(12, 10);
@@ -2059,16 +2059,9 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
         )],
         "consumed original wall still owns one raw-zero cue"
     );
-    let successor = super::lifecycle_tests::held_id(&sim, owner, category);
-    assert!(successor > held);
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(successor)
-            .unwrap()
-            .techno_ctor_random_word(),
-        successor_word
-    );
+    let retained = sim.production.factories.view(owner, category).unwrap();
+    assert!(retained.object.is_none() && retained.queue.is_empty());
+    assert!(!retained.is_running());
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     assert_eq!(
         sim.production
@@ -2111,8 +2104,7 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         "fixture must begin with one authoritative completed wall"
     );
     super::tests::arm_build_via(&mut sim, &rules, "Americans", "GAWALL", category, 50);
-    let mut expected_rng = sim.scenario_rng.clone();
-    let successor_word = (expected_rng.next_u32() & 0xffff) as u16;
+    let expected_rng = sim.scenario_rng.clone();
     let overlay_id = registry.id_for_name("GAWALL").expect("wall overlay");
     let origin = (18, 18);
     let endpoints = [(18, 13), (23, 18), (18, 23), (13, 18)];
@@ -2169,24 +2161,10 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         ready_buildings_for_owner(&sim, &rules, "Americans").is_empty(),
         "the primary plus all fillers consume the one ready product"
     );
-    let successor = super::lifecycle_tests::held_id(&sim, owner, category);
-    assert!(successor > held_id);
-    assert_eq!(
-        sim.production
-            .factories
-            .view(owner, category)
-            .unwrap()
-            .progress,
-        0
-    );
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(successor)
-            .unwrap()
-            .techno_ctor_random_word(),
-        successor_word
-    );
+    let retained = sim.production.factories.view(owner, category).unwrap();
+    assert!(retained.object.is_none() && retained.queue.is_empty());
+    assert_eq!(retained.progress, 0);
+    assert!(!retained.is_running());
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state()
@@ -3643,7 +3621,8 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
@@ -3840,7 +3819,8 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
@@ -3948,7 +3928,8 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
@@ -4028,7 +4009,8 @@ fn cloning_vats_do_not_duplicate_yuri_vehicle_factory_output() {
         &rules,
         "YuriCountry",
         "YTNK",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let category = ProductionCategory::Vehicle;
     let cost = sim.cost_of(owner, rules.object("YTNK").unwrap(), &rules);
@@ -4095,7 +4077,8 @@ fn cloning_vat_copies_wait_for_the_source_dock_cell() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
@@ -4229,7 +4212,8 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
             &rules,
             "Americans",
             "ORCA",
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
+            false,
         ));
         let built = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Aircraft);
         let cost = sim.cost_of(owner, rules.object("ORCA").unwrap(), &rules);

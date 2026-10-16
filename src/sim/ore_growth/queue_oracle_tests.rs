@@ -164,16 +164,10 @@ fn queue_state(queue: &NativeTiberiumQueue, bitmap: &BTreeSet<(u16, u16)>) -> Va
         "bitmap_cells": bitmap.iter().map(|&(x,y)| [x,y]).collect::<Vec<_>>()})
 }
 
-pub(crate) fn compare_state(
-    state: &OreGrowthState,
-    rng: &SimRng,
-    expected: &Value,
-    capacity: u32,
-    name: &str,
-) {
+fn compare_queues(state: &OreGrowthState, expected: &Value, capacity: u32, name: &str) {
     assert_eq!(
         state.native_tiberium.classes.len(),
-        4,
+        expected["classes"].as_array().unwrap().len(),
         "{name}: class count"
     );
     for (i, class) in state.native_tiberium.classes.iter().enumerate() {
@@ -214,6 +208,21 @@ pub(crate) fn compare_state(
             "{name}: {i} spread timer"
         );
     }
+}
+
+pub(crate) fn compare_state(
+    state: &OreGrowthState,
+    rng: &SimRng,
+    expected: &Value,
+    capacity: u32,
+    name: &str,
+) {
+    assert_eq!(
+        state.native_tiberium.classes.len(),
+        4,
+        "{name}: supplied class count"
+    );
+    compare_queues(state, expected, capacity, name);
     let view = rng.logical_view();
     assert_eq!(
         json!([view.index_a, view.index_b]),
@@ -901,4 +910,387 @@ fn native_due_spread_driver_runs_when_special_spreads_is_off() {
     for row in rows {
         compare_case(row);
     }
+}
+
+/// Normal authored load, not the supplied-state oracle fixture above. Native
+/// Logic55B4D7/55B4DC runs growth then spread; Cell483780 places amount3 through
+/// 487190 and Mark5FC570. Numeric reload controls remain ore_queue.json's original
+/// execution. This does not claim native whole-map startup/RNG equivalence.
+#[test]
+fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlays() {
+    use crate::sim::world::{DeferredDeleteTicket, FrameEffects, LifecycleTestEvent, TickLane};
+
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let native = crate::test_fixture::json("tools/spatial_oracle/ore_authored_init.json");
+    for input in native["inputs"]["manifest"].as_array().unwrap() {
+        let name = input["name"].as_str().unwrap();
+        let selected = assets.resolve_ref(name);
+        if input["absent"].as_bool().unwrap_or(false) {
+            assert!(selected.is_none(), "actual optional asset {name}");
+        } else {
+            let selected = selected.unwrap_or_else(|| panic!("physical asset {name}"));
+            assert_eq!(json!(selected.bytes.len()), input["bytes"], "{name} length");
+            assert_eq!(
+                json!(crate::util::sha256::sha256_hex(selected.bytes)),
+                input["sha256"],
+                "actual selected input {name} matches native reader bytes"
+            );
+        }
+    }
+    // This checked-in ordinary profile has the same launch as the command-free
+    // XMP L0/L1 exploration. Its selected cells are
+    // integration witnesses; observed Rust variant bytes are not native goldens.
+    let profile = crate::test_fixture::json("tools/map_observation.ore-spread.example.json");
+    assert_eq!(profile["ticks"], 1);
+    assert!(profile["commands"].as_array().unwrap().is_empty());
+    let launch: crate::skirmish_launch::SkirmishLaunchSession =
+        serde_json::from_value(profile["launch"].clone()).unwrap();
+    let map_name = launch.selected_map_file.as_deref().unwrap().to_owned();
+    let selected_map =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, &map_name, &assets)
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(selected_map.source).unwrap()["source_sha256"],
+        native["inputs"]["gates"]["map_sha256"],
+        "actual map source, including loose-file precedence"
+    );
+    let mut scene = crate::headless_scenario::load_session(
+        &root,
+        &map_name,
+        profile["seed"].as_u64().unwrap() as u32,
+        launch,
+    )
+    .unwrap();
+    let witnesses = [(71, 24), (72, 24), (73, 24), (71, 25), (71, 26)];
+    let initial_frame = scene.sim().session.binary_frame;
+    assert_eq!(initial_frame, 0);
+    let rules = &scene.runtime.resources.rules;
+    assert_eq!(
+        rules.tiberium_types.len(),
+        native["inputs"]["effective_types"]
+            .as_array()
+            .unwrap()
+            .len()
+    );
+    for (ty, expected) in rules
+        .tiberium_types
+        .types()
+        .iter()
+        .zip(native["inputs"]["effective_types"].as_array().unwrap())
+    {
+        assert_eq!(
+            json!({
+                "name": ty.section, "type_id": ty.id.0, "growth": ty.growth,
+                "spread": ty.spread, "value": ty.value, "max_density": ty.max_density,
+                "growth_percentage_bits": format!("{:016x}", ty.growth_percentage_bits),
+                "spread_percentage_bits": format!("{:016x}", ty.spread_percentage_bits),
+            }),
+            json!({
+                "name": expected["name"], "type_id": expected["type_id"],
+                "growth": expected["growth"], "spread": expected["spread"],
+                "value": expected["value"], "max_density": expected["max_density"],
+                "growth_percentage_bits": expected["growth_percentage_bits"],
+                "spread_percentage_bits": expected["spread_percentage_bits"],
+            }),
+            "actual layered Tiberium readers"
+        );
+        let variants = scene
+            .runtime
+            .resources
+            .overlay_registry
+            .flat_tiberium_variant_ids(ty)
+            .unwrap();
+        assert_eq!(json!(variants[0]), expected["base_overlay"]);
+        assert_eq!(json!(variants.len()), expected["images"]);
+    }
+    for expected in native["inputs"]["flat_overlay_types"].as_array().unwrap() {
+        let id = expected["index"].as_u64().unwrap() as u8;
+        let registry = &scene.runtime.resources.overlay_registry;
+        assert_eq!(json!(registry.name(id).unwrap()), expected["name"]);
+        assert_eq!(
+            json!(registry.flags(id).unwrap().cell_anim.is_none()),
+            expected["cell_anim_null"]
+        );
+    }
+    let riparius = rules.tiberium_types.id_by_name("Riparius").unwrap();
+    assert!(scene.sim().production.ore_growth_config.grows);
+    assert!(scene.sim().production.ore_growth_config.spreads);
+    assert!(scene.sim().production.ore_growth_config.tiberium_grows_flag);
+
+    let state = &scene.sim().production.ore_growth_state;
+    assert_eq!(
+        json!([state.native_rect().0, state.native_rect().1]),
+        native["native_rect"]
+    );
+    compare_queues(
+        state,
+        &native["state"],
+        native["capacity"].as_u64().unwrap() as u32,
+        "normal authored initialization",
+    );
+    let objects = TiberiumPlacementObjectContext::new(
+        scene.sim().entities(),
+        scene.sim().occupancy(),
+        rules,
+        &scene.sim().interner,
+        &scene.sim().production.terrain_object_cells,
+    );
+    let occupied = objects.object_view().occupied_ground_cells().collect();
+    let admission =
+        NewTiberiumAdmission::runtime(scene.sim().resolved_terrain.as_ref().unwrap(), objects);
+    for expected in native["patch"].as_array().unwrap() {
+        let (rx, ry) = at(&expected["cell"]);
+        let cell = scene
+            .sim()
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(rx, ry)
+            .unwrap();
+        let overlay = scene.sim().overlay_grid.as_ref().unwrap().cell(rx, ry);
+        assert_eq!(json!(!cell.outside_playfield), expected["playfield"]);
+        assert_eq!(
+            json!(
+                rules
+                    .terrain_rules
+                    .semantics_for_land_type(cell.land_type)
+                    .unwrap()
+                    .buildable
+            ),
+            expected["land_buildable"]
+        );
+        assert_eq!(
+            json!(objects.object_view().ground_object_present((rx, ry))),
+            expected["has_ground_object"]
+        );
+        assert_eq!(
+            json!(
+                admit_new_tiberium_target(
+                    scene.sim().overlay_grid.as_ref().unwrap(),
+                    &occupied,
+                    admission,
+                    (rx, ry)
+                )
+                .is_some()
+            ),
+            expected["can_place_riparius"],
+            "original CanPlace4838E0 at {rx},{ry}"
+        );
+        assert_eq!(
+            json!({
+                "tile": cell.final_tile_index, "subtile": cell.final_sub_tile,
+                "level": cell.level, "slope": cell.slope_type, "land": cell.land_type,
+                "overlay": overlay.overlay_id.map(i32::from).unwrap_or(-1),
+                "density": overlay.overlay_data, "tile_allow_tiberium": cell.allows_tiberium,
+            }),
+            json!({
+                "tile": expected["tile"], "subtile": expected["subtile"],
+                "level": expected["level"], "slope": expected["slope"], "land": expected["land"],
+                "overlay": expected["overlay"], "density": expected["density"],
+                "tile_allow_tiberium": expected["tile_allow_tiberium"],
+            }),
+            "native selected source/target prerequisites at {rx},{ry}"
+        );
+        let value = crate::sim::tiberium::tiberium_cell_view(
+            scene.sim().overlay_grid.as_ref().unwrap(),
+            &scene.runtime.resources.overlay_registry,
+            &rules.tiberium_types,
+            (rx, ry),
+        )
+        .map_or(0, |resource| resource.nominal_value);
+        assert_eq!(
+            json!(value),
+            expected["value"],
+            "original GetValue485020 at {rx},{ry}"
+        );
+    }
+    assert_eq!(
+        state.native_rect(),
+        (
+            scene.map.header.width as u16,
+            scene.map.header.height as u16
+        )
+    );
+    let class = &state.native_tiberium_state().classes[riparius.0 as usize];
+    // Queue initialization precedes the final InitCellAttributes(0) and
+    // Technos; never reconstruct its expected membership from final L0 cells.
+    let initial_growth = queue_state(&class.growth, &class.growth_bitmap);
+    let initial_spread = queue_state(&class.spread, &class.spread_bitmap);
+    let initial_pending: BTreeSet<_> = scene
+        .sim()
+        .substrate
+        .pending_delete
+        .retained_tickets()
+        .collect();
+    let initial_overlays: BTreeSet<_> = scene.sim().load_objects.retained_overlay_ids().collect();
+    let event_start = scene.sim().lifecycle_test_events_for_test().len();
+    let serial_before = scene
+        .sim()
+        .native_unique_ids
+        .as_ref()
+        .unwrap()
+        .current_raw();
+    let rng_before = scene.sim().scenario_rng.native_state_hex();
+    for &(rx, ry) in &witnesses {
+        assert!(
+            scene
+                .sim()
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(rx, ry)
+                .overlay_id
+                .is_none()
+        );
+    }
+
+    // The capture's game-speed1 clock is22ms. The generic HeadlessScenario
+    // helper defaults to66ms; use the actual profile clock explicitly here.
+    let (output, draws) = crate::sim::rng::trace_draws(|| {
+        scene
+            .runtime
+            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .unwrap()
+    });
+    assert!(output.tick.frame_committed);
+    assert_eq!(scene.sim().session.binary_frame, initial_frame + 1);
+    assert_ne!(scene.sim().scenario_rng.native_state_hex(), rng_before);
+    assert!(!draws.is_empty());
+
+    let rules = &scene.runtime.resources.rules;
+    let registry = &scene.runtime.resources.overlay_registry;
+    let grid = scene.sim().overlay_grid.as_ref().unwrap();
+    let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
+    // The native initialization packet's first source is the first growth
+    // root. Observe its ordinary Grow483710 effect as well as new-cell spread.
+    let source = &native["patch"][0];
+    let source_cell = at(&source["cell"]);
+    let grown_source = crate::sim::tiberium::tiberium_cell_view(
+        grid,
+        registry,
+        &rules.tiberium_types,
+        source_cell,
+    )
+    .unwrap();
+    assert!(u64::from(grown_source.overlay_data) > source["density"].as_u64().unwrap());
+    assert!(i64::from(grown_source.nominal_value) > source["value"].as_i64().unwrap());
+    let (radar_cells, _) = scene.runtime.view().radar_terrain_dirty();
+    for &(rx, ry) in &witnesses {
+        let resource = crate::sim::tiberium::tiberium_cell_view(
+            grid,
+            registry,
+            &rules.tiberium_types,
+            (rx, ry),
+        )
+        .expect("ordinary natural spread produces an actual resource cell");
+        assert_eq!(resource.tiberium_type, riparius);
+        assert_eq!(resource.overlay_data, 3, "native483780's placement amount");
+        assert_eq!(resource.resource_type, crate::sim::miner::ResourceType::Ore);
+        assert!(
+            resource.nominal_value > 0,
+            "new field is valuable to the production miner consumer"
+        );
+        let cell = terrain.cell(rx, ry).unwrap();
+        assert_eq!(
+            cell.land_type,
+            crate::rules::terrain_rules::LandType::Tiberium.as_index()
+        );
+        assert!(
+            scene
+                .sim()
+                .path_grid()
+                .unwrap()
+                .resolved_cell_is_current(cell, false)
+        );
+        assert!(scene.sim().tactical_dirty_cells.contains(&(rx, ry)));
+        assert!(radar_cells.contains(&(rx, ry)));
+        assert!(
+            output.overlay_updates.iter().any(|entry| {
+                (entry.rx, entry.ry, entry.overlay_id, entry.frame)
+                    == (rx, ry, resource.overlay_id, resource.overlay_data)
+            }),
+            "actual occupied-cell output reaches the render index"
+        );
+        assert!(!output.overlay_removals.contains(&(rx, ry)));
+    }
+    assert!(
+        grid.pending_dirty_cells().is_empty(),
+        "frame finalizer transferred the render facts"
+    );
+    let class = &scene
+        .sim()
+        .production
+        .ore_growth_state
+        .native_tiberium_state()
+        .classes[riparius.0 as usize];
+    assert!(
+        initial_growth != queue_state(&class.growth, &class.growth_bitmap)
+            || initial_spread != queue_state(&class.spread, &class.spread_bitmap)
+    );
+    let native_reload = corpus()["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "growth_then_spread_driver_stock_fast_growth_reload")
+        .unwrap();
+    assert_eq!(class.growth_timer.start_frame(), initial_frame as i32);
+    assert_eq!(class.spread_timer.start_frame(), initial_frame as i32);
+    assert_eq!(
+        json!(class.growth_timer.duration()),
+        native_reload["steps"][0]["state"]["classes"][0]["growth_timer"][2]
+    );
+    assert_eq!(
+        json!(class.spread_timer.duration()),
+        native_reload["steps"][0]["state"]["classes"][0]["spread_timer"][2]
+    );
+
+    let events = &scene.sim().lifecycle_test_events_for_test()[event_start..];
+    let commit = events
+        .iter()
+        .position(|event| matches!(event, LifecycleTestEvent::BinaryFrameCommitted))
+        .unwrap();
+    let drain = events
+        .iter()
+        .position(|event| matches!(event, LifecycleTestEvent::PendingDeleteDrainStarted))
+        .unwrap();
+    assert!(commit < drain);
+    let newly_drained: BTreeSet<_> = events
+        .iter()
+        .enumerate()
+        .filter_map(|(index, event)| {
+            let LifecycleTestEvent::DeferredDeleteSelected {
+                ticket: DeferredDeleteTicket::Overlay(id),
+            } = event
+            else {
+                return None;
+            };
+            assert!(drain < index);
+            (!initial_pending.contains(&DeferredDeleteTicket::Overlay(*id))
+                && !initial_overlays.contains(id))
+            .then_some(*id)
+        })
+        .collect();
+    assert!(
+        newly_drained.len() >= witnesses.len(),
+        "new ordinary Overlay constructions reach the actual frame tail, apart from authored pending objects"
+    );
+    for id in &newly_drained {
+        assert!(!scene.sim().load_objects.has_overlay(*id));
+    }
+    let serial_after = scene
+        .sim()
+        .native_unique_ids
+        .as_ref()
+        .unwrap()
+        .current_raw();
+    assert!(serial_after.wrapping_sub(serial_before) as usize >= newly_drained.len());
+    eprintln!(
+        "normal XMP L0/L1: {} RNG draws across all frame systems, {} newly drained Overlays, native serial {} -> {}; native startup RNG and authored-init queue comparison remain separate",
+        draws.len(),
+        newly_drained.len(),
+        serial_before,
+        serial_after
+    );
 }

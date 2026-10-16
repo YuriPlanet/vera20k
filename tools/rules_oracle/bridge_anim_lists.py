@@ -17,13 +17,25 @@ from tools.spatial_oracle.building_body_rules import Fixture, TYPE, INI, SP, dwo
 HEAP=0x24000000
 KEYS={'MetallicDebris':(0x83CEF0,0x66DA90,0x66DB93,0x13C), 'BridgeExplosions':(0x83CEDC,0x66DB93,0x66DC96,0x158)}
 class Lists:
- def __init__(self):
-  self.f=Fixture();self.u=self.f.u;self.u.mem_map(HEAP,0x400000);self.cursor=HEAP+0x10000
+ def __init__(self,*,arena_size=0x400000):
+  if arena_size<0x400000 or arena_size%0x1000:raise ValueError('Input arena must be at least4MiB and page aligned')
+  self.arena_size=arena_size
+  self.f=Fixture();self.u=self.f.u;self.u.mem_map(HEAP,arena_size);self.cursor=HEAP+0x10000
   self.events=[];self.read_result=None;self.u.hook_add(UC_HOOK_CODE,self.hook)
   for address,items in ((0x8B4150,HEAP+0x1000),(0xB0F670,HEAP+0x4000)):
    self.u.mem_write(address,dwords(0x7EB6D4,items,1024,1,0,10))
   self.initialize_vectors()
   self.initial={k:self.state(k) for k in KEYS}
+ def reserve_arena(self,size):
+  """Grow the same input allocation owner without changing prior pointers.
+
+  Reader's physical SHPs and native operator-new share this cursor/capacity.
+  Runtime JoinedFixture copies the declared mapped capacity. Existing callers
+  retain the historical4MiB mapping; growth is explicit and page aligned.
+  """
+  if size<self.arena_size or size%0x1000:raise ValueError('Input arena must grow in whole pages')
+  if size>self.arena_size:self.u.mem_map(HEAP+self.arena_size,size-self.arena_size)
+  self.arena_size=size
  def initialize_vectors(self,rules_ptr=TYPE):
   """Run the same native vector constructors on a composed Rules object."""
   self.u.reg_write(UC_X86_REG_ESP,SP);self.u.reg_write(UC_X86_REG_ESI,rules_ptr)
@@ -37,7 +49,7 @@ class Lists:
  def hook(self,u,p,n,user):
   if p==0x7C8E17:
    size=self.read32(u.reg_read(UC_X86_REG_ESP)+4);result=self.cursor;self.cursor+=(size+15)&~15
-   assert self.cursor<HEAP+0x400000
+   assert self.cursor<HEAP+self.arena_size
    self.ret(result)
   elif p==0x7C8B3D:self.ret(0)
   elif p==0x7D140B:self.ret(HEAP+0x8000)

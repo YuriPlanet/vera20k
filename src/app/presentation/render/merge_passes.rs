@@ -34,11 +34,11 @@ pub(super) fn draw_native_object_pass<'a>(
     palette_set: Option<&'a PaletteSet>,
     zshape: &'a wgpu::BindGroup,
 ) -> crate::render::terrain_draw::TerrainBatchStats {
-    let Some((buffer, count)) = buffer else {
-        return Default::default();
-    };
     let mut terrain_stats = crate::render::terrain_draw::TerrainBatchStats::default();
-    assert_eq!(count as usize, ground.instances.len());
+    assert_eq!(
+        buffer.map_or(0, |(_, count)| count as usize),
+        ground.instances.len()
+    );
     let packed_binding = |target| match target {
         ObjectTexture::UnitAtlasPage(page) => unit_atlas
             .and_then(|atlas| atlas.page_texture(page))
@@ -75,6 +75,12 @@ pub(super) fn draw_native_object_pass<'a>(
     let mut cursor = 0;
     while cursor < ground.runs.len() {
         let run = &ground.runs[cursor];
+        if let ObjectTexture::SurfaceLines(index) = run.target {
+            terrain.draw_surface_lines(encoder, color, ground.line_batches[index]);
+            cursor += 1;
+            continue;
+        }
+        let (buffer, _) = buffer.expect("a sprite run has an uploaded instance buffer");
         // Only an opaque body's unsafe signed candidates need manual replay.
         // Retain one composite per instance: an ordinary run can coalesce
         // many Display parents, unlike native parent-grouped blend sources.
@@ -223,6 +229,9 @@ pub(super) fn draw_native_object_pass<'a>(
                 break;
             }
             match run.target {
+                ObjectTexture::SurfaceLines(_) => {
+                    unreachable!("surface commands replay before sprite dispatch")
+                }
                 ObjectTexture::TerrainShp(_) | ObjectTexture::ProjectileShp(_, _) => {
                     unreachable!("native destination edits split normal runs")
                 }

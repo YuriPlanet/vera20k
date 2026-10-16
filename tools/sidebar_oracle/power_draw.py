@@ -23,6 +23,27 @@ def machine():
 n=SimpleNamespace(machine=machine,HEAP=0x21000000,STACK=STACK_BASE,STOP=RET_MAGIC,put32=put32,EXPECTED=NATIVE_SHA256)
 
 
+def shape_command(u, read32):
+    """Observe the shared CC_Draw_Shape ABI before its raster boundary."""
+    sp = u.reg_read(UC_X86_REG_ESP)
+    args = struct.unpack('<14I', u.mem_read(sp + 4, 56))
+    return dict(caller=read32(sp), surface=u.reg_read(UC_X86_REG_ECX),
+                converter=u.reg_read(UC_X86_REG_EDX), args=args,
+                point=list(struct.unpack('<2i', u.mem_read(args[2], 8))),
+                clip=list(struct.unpack('<4i', u.mem_read(args[3], 16))))
+
+
+def presentation_return(u, read32, stack_argument_bytes):
+    """Existing transport result/cleanup; volatile values are unspecified."""
+    sp = u.reg_read(UC_X86_REG_ESP)
+    target = read32(sp)
+    u.reg_write(UC_X86_REG_EAX, 0)
+    u.reg_write(UC_X86_REG_ECX, 0x13572468)
+    u.reg_write(UC_X86_REG_EDX, 0x24681357)
+    u.reg_write(UC_X86_REG_ESP, sp + 4 + stack_argument_bytes)
+    u.reg_write(UC_X86_REG_EIP, target)
+
+
 def collect():
     u = n.machine()
     owner, scenario = n.HEAP, n.HEAP + 0x10000
@@ -38,16 +59,6 @@ def collect():
     def read32(address):
         return struct.unpack('<I', u.mem_read(address, 4))[0]
 
-    def return_from_call(stack_argument_bytes):
-        sp = u.reg_read(UC_X86_REG_ESP)
-        target = read32(sp)
-        u.reg_write(UC_X86_REG_EAX, 0)
-        # Poison volatile ECX/EDX to avoid depending on unspecified consumer outputs.
-        u.reg_write(UC_X86_REG_ECX, 0x13572468)
-        u.reg_write(UC_X86_REG_EDX, 0x24681357)
-        u.reg_write(UC_X86_REG_ESP, sp + 4 + stack_argument_bytes)
-        u.reg_write(UC_X86_REG_EIP, target)
-
     def bounds(_u, address, _size, _data):
         assert address == callback
         sp = u.reg_read(UC_X86_REG_ESP)
@@ -55,21 +66,21 @@ def collect():
         assert u.reg_read(UC_X86_REG_ECX) == surface
         u.mem_write(output, struct.pack('<4i', 0, 0, 168, 600))
         bounds_calls.append(True)
-        return_from_call(4)
+        presentation_return(u, read32, 4)
         u.reg_write(UC_X86_REG_EAX, output)
 
     def draw(_u, address, _size, _data):
         assert address == 0x4aed70
-        sp = u.reg_read(UC_X86_REG_ESP)
-        args = struct.unpack('<14I', u.mem_read(sp + 4, 56))
+        command = shape_command(u, read32)
+        args = command['args']
         assert u.reg_read(UC_X86_REG_ECX) == surface
         assert u.reg_read(UC_X86_REG_EDX) == convert
         assert args[0] == shape
-        assert list(struct.unpack('<4i', u.mem_read(args[3], 16))) == [0, 0, 168, 600]
+        assert command['clip'] == [0, 0, 168, 600]
         assert args[4:] == (0x400, 0, 0, 0, 1000, 0, 0, 0, 0, 0)
-        x, y = struct.unpack('<2i', u.mem_read(args[2], 8))
+        x, y = command['point']
         commands.append([args[1], x, y])
-        return_from_call(56)
+        presentation_return(u, read32, 56)
 
     u.hook_add(UC_HOOK_CODE, bounds, begin=callback, end=callback)
     u.hook_add(UC_HOOK_CODE, draw, begin=0x4aed70, end=0x4aed70)

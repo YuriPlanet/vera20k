@@ -1131,7 +1131,9 @@ fn sidebar_cameo_press(
             .map(|factory| {
                 (
                     factory.cameo_state(),
-                    factory.complete_object().map(|object| object.type_id),
+                    factory
+                        .complete_object()
+                        .and_then(|object| object.entity_id.map(|held| (object.type_id, held))),
                 )
             })
     });
@@ -1162,7 +1164,6 @@ fn sidebar_cameo_press(
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
             cancel_build_by_type(state, type_id, all);
         }
-        // ManualPlace4FB852 refuses while any building placement is pending.
         Some(sidebar_eva::CameoOrder::Place) => {
             // Select6AB30D plays GUIBuildSound before ObjectFindFactory5F5C20
             // (0,0) at6AB31A, including repeated pending clicks. A null builder
@@ -1174,18 +1175,18 @@ fn sidebar_cameo_press(
                 let owner_id = sim.interner.get(&owner)?;
                 // Select6AB2CC reads this linked Factory's actual product;
                 // an older cameo can still refer to a rearmed Factory.
-                let held_type = linked_factory?.1?;
-                let held = crate::sim::production::ready_building_entity_for_owner(
-                    sim, rules, owner_id, held_type,
-                )?;
+                let (held_type, held) = linked_factory?.1?;
                 Some((
+                    owner,
                     owner_id,
                     held,
                     sim.interner.resolve(held_type).to_string(),
+                    sim.entities().get(held)?.category() == EntityCategory::Structure,
                     crate::sim::production::object_find_factory(sim, rules, held, false, false),
                 ))
             });
-            let Some((owner_id, held, held_type, builder)) = ready_target else {
+            let Some((owner, owner_id, held, held_type, is_building, builder)) = ready_target
+            else {
                 return;
             };
             let Some(_builder) = builder else {
@@ -1193,6 +1194,15 @@ fn sidebar_cameo_press(
                 push_local_eva(state, sidebar_eva::EVA_UNABLE_TO_COMPLY);
                 return;
             };
+            if !is_building {
+                // Select6AB3D9..6AB459 emits PLACE11 using the requested
+                // cameo's kind/Naval slot and index -1, without HasChanged.
+                // The existing receiver resolves the current complete head.
+                // Source: tools/sidebar_oracle/factory_sale_sidebar.md.
+                schedule_command(state, &owner, Command::PlaceProducedMobile { category });
+                return;
+            }
+            // ManualPlace4FB852 refuses while any building placement is pending.
             if state
                 .match_state
                 .input

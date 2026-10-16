@@ -201,6 +201,13 @@ pub fn foundation_dimensions(value: &str) -> (u16, u16) {
     (def.width, def.height)
 }
 
+/// Shared foundation-table span in world leptons. BuildingType Dimension2
+/// @0x00464AF0 and XY-only consumers of cached type facts use this conversion.
+pub fn foundation_dimensions_leptons(value: &str) -> [i32; 2] {
+    let (width, height) = foundation_dimensions(value);
+    [i32::from(width) << 8, i32::from(height) << 8]
+}
+
 /// Manual cursor Cell -> foundation origin, in packed 16-bit map coordinates.
 /// SetActive4A8C99..4A8CDA obtains list bounds from4A94F0, decrements and
 /// negates each signed short, then divides toward zero. The fixed table's

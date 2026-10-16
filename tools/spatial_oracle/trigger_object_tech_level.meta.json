@@ -1,0 +1,505 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original106 exact global lookup/write/all-House dirty, selected physical MD counted records/scalar layers, Type prefix/reset and bounded ALL05 paid Aircraft production/Strip/event history. No full campaign or Event55 replay.",
+  "assumptions": [
+    "Dispatch controls supply minimal named Type shells in explicit native global registration order and House dirty fields, not full constructors. Same-name reverse control uses distinct Vehicle/Aircraft identities.",
+    "Selected four maps come from physical mapsmd03.mix and patched RULESMD from expandmd01.mix. Real727516..7275A5 counted reader and714570..71458A scalar reader execute; optional layers absent in supported installation. No RA2 base INI is used.",
+    "Lifecycle reuses select_anim_reset.fresh_reset, actual Type vector CRT/constructor/destructor, full Process on declared two-section caches and reset before first post-reset Process. Prefix7/8 are custom inputs, not ALL05 named INI. New objects and deleted objects are distinct lifetimes.",
+    "Three RNG seed31 states use existing trigger ActionFixture SHA256 format. Leaf observations do not assert downstream recheck has no RNG/timer/detach effects.",
+    "ALL05 production reuses ReadyBuildingFixture with explicit RULESMD/optionalLANGRULE/ALL05 layers; Battle/Hills gameplay reads are excluded. Hills provides only the existing flat terrain crop. Local Country is Player, not its ParentCountry Americans.",
+    "Healthy completed GACNST/GAPILE/GAPOWR/GAAIRC and already-open sidebar, TechLevel10 and credits10000 are declared played-world priors. Aircraft real constructors/CRT, actual type readers, General production/prerequisite readers, original paid Factory AI,106, House dirty suffix, wholeStrip and same-frame receive execute.",
+    "Original Building health sampler440042..440074 and House power consumer4F84D9..4F84F1 establish the four completed buildings power cache before production. Native input geometry is the existing16x16 map/32x32 coordinate crop/33x33 class-height plane. Only the admitted local production House is registered in this bounded fixture; inherited unrelated actors do not run AI.",
+    "BeginProduction starts at the recorded initial_frame. Each payment visit increments FRAME before FactoryAI; no frame is rewritten to fit a refund. rng_seed_states imports the three complete native states after fixture setup without reseeding, so comparisons bound the production segment rather than full constructor chronology.",
+    "All three raw Factory timer dwords and writes are observed. Canonical writes name the actual Factory and relative offsets; its unused running middle word can retain native stack bytes. Rust CdTimer comparisons cover start/duration, not a claim about that raw middle word.",
+    "Native type9/count-reader materialization is copied into the joined runtime Action input shell before realExecute. This is an explicit parser-to-runtime input boundary, not a replacement gameplay decision. Event55 and original full-map/GUI startup remain excluded."
+  ],
+  "substitutions": [
+    "Existing original-reader lexical cache, allocation/free, CRT/TLS/Windows and joined physical asset/audio service boundaries are reused. No admission/cancel/refund/timer answer is supplied. Lifecycle free is observed without heap storage reuse.",
+    "Joined Mission COM transport forwards Fly activation to the original6C4A90 factory. Reused type visual-asset boundaries do not certify rendered aircraft/assets or mounted theater/archive precedence. Audio/window/device inputs remain declared existing transports."
+  ],
+  "entry_points": {
+    "action_reader": "0x006DD5B0",
+    "action_execute": "0x006DD8B0",
+    "action106": "0x006DF5D1",
+    "tech_level_reader": "0x00714570",
+    "type_reset": "0x006686C0",
+    "house_tail": "0x004F9265",
+    "can_build": "0x004F7870",
+    "strip_recalculate": "0x006AA600",
+    "building_health_sample": "0x00440042",
+    "house_power_consumer": "0x004F84D9",
+    "begin_production": "0x004FA350",
+    "factory_ai": "0x004C9B20",
+    "held_aircraft_delete": "0x0041C210",
+    "factory_abandon": "0x004C9FF0",
+    "event_receive": "0x006474C7"
+  },
+  "command": "python -m tools.spatial_oracle.trigger_action_values --tech-level --check",
+  "required_inputs": {
+    "VERA20K_TRIGGER_TECH_INPUTS": "existing joined retail asset cache plus physical ALL05UMD.MAP; --inputs is equivalent"
+  },
+  "physical_input_sources": {
+    "files": [
+      {
+        "file": "120MM.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
+      },
+      {
+        "file": "ARTMD.INI",
+        "source": "ra2md.mix/localmd.mix",
+        "archive_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      {
+        "file": "BEAG.HVA",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "d297d7ec3ed352ca52286a4565d2ac5960904810369b20549cc376beaf2adf9c"
+      },
+      {
+        "file": "BEAG.VXL",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "a061f70c5e8381d6d203db83ec035a3adcceef7432ee7ba011658cf61982c320"
+      },
+      {
+        "file": "CLEAR01.TEM",
+        "source": "ra2.mix/isotemp.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "d90df76d78fd9a3e23834c5a728cef666dbdf65b212dd3a66c29b456cbd51ed2"
+      },
+      {
+        "file": "DBRIS1LG.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "e45eee6368cc397d13b56dff989d5695cd605212a0055e64cadbb988a57d8f9f"
+      },
+      {
+        "file": "DBRIS1SM.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "9f39db7add44a9d3ac33c5025705c0511b63ba3313d531074432ee88c4c4e422"
+      },
+      {
+        "file": "DBRIS4LG.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "4262df2a6f4aaf5600c6a726f2b977fbbfc8f8824ba79b4857af0b06a4743bcc"
+      },
+      {
+        "file": "DBRIS4SM.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "81cf49b9f7849b69c71e92844ece9c4494e329abf718edc8fd80c7dc66f299ca"
+      },
+      {
+        "file": "DBRIS5LG.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "db855e5306685a81310789fc3f3ade6e25bc8be36efb05cca38db5323654737d"
+      },
+      {
+        "file": "DBRIS5SM.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "df75d0676499c700358f36377f1b042577ffef82ea38ee871249cdfebf15b432"
+      },
+      {
+        "file": "FALC.HVA",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "b73a3390ffcd11c0755fc23135b12b0df8203444cd1dbb04211bdcab0667cc4e"
+      },
+      {
+        "file": "FALC.VXL",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "1594b9766bf624bffc75887fa5cef70029b63882cf057572a31e19848c1f1d1c"
+      },
+      {
+        "file": "GGAIRC.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "48885a2d7bf2239dcc5e6dffe3000477684209c8982f081f420ef764a34a1c54"
+      },
+      {
+        "file": "GGAIRCBB.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "08f486b3faa91c907050d516e204959bb60405b4f8fed395f91d10a484d56366"
+      },
+      {
+        "file": "GGAIRC_A.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "60d5e4412df46df18dc17ff6b8dfa3fabbcfc73b382adf03568d9d920d7d3c94"
+      },
+      {
+        "file": "GGAIRC_B.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "afe9306b57949759203a749c188557e33908a198ac12eb603640a6680da4aa02"
+      },
+      {
+        "file": "GGAIRC_C.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "525bfcc7424d37bd8a7a79142aea731b331aa2137a69f04f2fcb7a77da50aa9b"
+      },
+      {
+        "file": "GGCNST.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "9b6110016d5cefa2d9509ce7dd62848e4a548c17faa3c2e69681fdb92c57643c"
+      },
+      {
+        "file": "GGCNST_A.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "f7ddb3c50e2a44894db6d0e6b455ba57a6c252eec3b4daba79363daa04135559"
+      },
+      {
+        "file": "GGCNST_B.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "aa037ee1329c2ea6db5275485c0d864554452f2f4b871a4f2c5d38e2f3f8fe25"
+      },
+      {
+        "file": "GGPILE.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "0568894bba630cb6a143a7dbb801f821dc16638544e229e0b2aa3a2fa741734a"
+      },
+      {
+        "file": "GGPILE_A.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "37bd29c741fbe235411c8416e78abd41a59c57f935f60a4fbf091e501462c23e"
+      },
+      {
+        "file": "GGPILL.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "baf5382bd6adb17668591f5a242d3c446584b4bb8758b7f6a0c0cf741e1cbfdf"
+      },
+      {
+        "file": "GGPOWR.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "f758f01ddde6994eb2056d0a45a91e820a544fed513e38a6dad512c14484e37c"
+      },
+      {
+        "file": "GGPOWR_A.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "4761e4c39be2683362baa8987fbbcff9ab0deacda75344848b9427e84c621724"
+      },
+      {
+        "file": "GGPOWR_B.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "f701711759532f597e3e39fcee5e97e7acc032df7a81a3e204b206b1d4e2a950"
+      },
+      {
+        "file": "GGTECH.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "99a8e1c0e036018aa77b6ff488827ddba82287b64a9ed8d3fdb9b1372acbc256"
+      },
+      {
+        "file": "GGTECH_A.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "9310912b6c3911e62c6d652872a6182c579d3bc7c0c7d50a541e183274291e31"
+      },
+      {
+        "file": "GGWEAP.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "050efce4278d44e009d20dbb7d15829d69fbb88ea0534715762f405003182076"
+      },
+      {
+        "file": "GGWEAPBB.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "12007804d0b32f3b7dde1fa1d7d732341246e2394511c479d23beeb9984f7ae1"
+      },
+      {
+        "file": "GGWEAP_1.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "1d2d40582cc68d575a52547ebf599d43d335caccc4ea8c3c1edecdcabfe0a92c"
+      },
+      {
+        "file": "GGWEAP_2.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "6da4c4c07f6d5c7caefc3b249eca906d8fff9df3beb38073446d700a7258796a"
+      },
+      {
+        "file": "GGWEAP_3.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "83bdc33059cd139486d0f587975b6a27ac01b876603c24680189bf30683ad5e2"
+      },
+      {
+        "file": "GGWEAP_4.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "d3d0b4606471ba14aadc7d1283545abda71ab101f458b939bcf885c9a70abdd3"
+      },
+      {
+        "file": "GGWEAP_A.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "e8d623bcffb298eae0062817607fe0ed0bc80a83828be1916987ede5a4684061"
+      },
+      {
+        "file": "GGWEAP_B.SHP",
+        "source": "ra2.mix/generic.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "2be54efd682e97e84cf7c2ba0057a5055f26e794447248b9cd07a258ab0134e2"
+      },
+      {
+        "file": "GI.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "bceaee9c270d6382d80d509f2c4b2893c10565f779096b3add37a4d5321e8be1"
+      },
+      {
+        "file": "GTAIRCMK.SHP",
+        "source": "ra2.mix/isotemp.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "0df05d8d602075ad94adb7bd70a369a8d284cca9ba60076673c711abd8ecae02"
+      },
+      {
+        "file": "GTCNSTMK.SHP",
+        "source": "ra2.mix/isotemp.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "cfefb3b412c48ffd57852ec4e22b1109affdaac62b3061e2a58a7c071daeed46"
+      },
+      {
+        "file": "GTNK.HVA",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "4a15fc9c2633667812465c4b08f28cab5d595ae4f80eddbb77d1a9f9ed0480a4"
+      },
+      {
+        "file": "GTNK.VXL",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "88b326908acb5c2a98860d8f65169e8745ae858c5cbfe98e0bb2f283f49a3b81"
+      },
+      {
+        "file": "GTPILEMK.SHP",
+        "source": "ra2.mix/isotemp.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "bacb42b4048a5077101c6f35fb403a1835def1348567aafb67356f52b6c92297"
+      },
+      {
+        "file": "GTPOWRMK.SHP",
+        "source": "ra2.mix/isotemp.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "0ae9b81804b725ff662a56c81d23b3af031d66ac273554651bb0ccf189fdc873"
+      },
+      {
+        "file": "GUNFIRE.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "863ad6a6a184f8ca1863ea1546af75972f0af973c36efa7e270575ae28a161e9"
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "source": "ra2md.mix/localmd.mix",
+        "archive_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "file": "MTNK.HVA",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "bbc8b8d4cdadc47627fdc955fcc6d30e6844bb736f3b81bfd2f0298b06c39396"
+      },
+      {
+        "file": "MTNK.VXL",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "fe82e553014591635d708e30d1b5088aad4c621ec820fe7c330c052bb188cf77"
+      },
+      {
+        "file": "RTNK.HVA",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "16f3cd28642a66b1a0dc3f6cb4b063889c9f4721e46f12054fd60ed88cdc32ca"
+      },
+      {
+        "file": "RTNK.VXL",
+        "source": "ra2.mix/local.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "5ffa424b33fbb14a51743c69a02d9fe0137922e19b474e32402f5aba0f00f985"
+      },
+      {
+        "file": "RULESMD.INI",
+        "source": "expandmd01.mix",
+        "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "file": "SMOKEY2.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "52f6faf0f78607bb4215c8c22a502c516dbbe0a5734440229f1c9ea4290f30ea"
+      },
+      {
+        "file": "SOUNDMD.INI",
+        "source": "expandmd01.mix",
+        "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+      },
+      {
+        "file": "S_BANG48.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "653bd2cfd875bf71ddb8b0ce48f5855a65869eede7d510bacd4f11cf0a3535c1"
+      },
+      {
+        "file": "S_BRNL58.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "ed2a252d2479facadd219496c9a4d47165b9e52857e239633a62b1a6cfa5d986"
+      },
+      {
+        "file": "S_CLSN16.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "771b2c8f180dc29d6296cd96084425bdb4323c708aa133fe1e339eb0b2d2d3da"
+      },
+      {
+        "file": "S_CLSN22.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "4217fa39c3c970fa718c8e16d500a6bf39ecdb72c1dd7df21a1a6271abb0a294"
+      },
+      {
+        "file": "S_CLSN58.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "8a976413360cd20392bab3b98ec2dafa82c123a4aee4dfee13a3d9e05d019e37"
+      },
+      {
+        "file": "S_TUMU60.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "9a22506695d0a7cb6b94058100b40bb11e52ca3c24987c9bc962af590d90c2fb"
+      },
+      {
+        "file": "TWLT026.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "ceef1aadc2ad3dcd11755b065631836e154041060b3fd3ec09ceb73173d089a7"
+      },
+      {
+        "file": "TWLT036.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "9e210bc3ccd550439fc96e46b9db2f494a18b6ac2b6ff6f953ec42597a3eadee"
+      },
+      {
+        "file": "TWLT070.SHP",
+        "source": "ra2.mix/conquer.mix",
+        "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "2b48d44f23c91591f8b905fbbc9bfcb584e0069784d7472212d6a5e3df5fcd2f"
+      },
+      {
+        "file": "VOXELS.VPL",
+        "source": "ra2md.mix/localmd.mix",
+        "archive_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "2d75fff8a6872ffe98308c7009858a9e904696e1529bc649181a44993979081c"
+      },
+      {
+        "file": "audio.bag",
+        "source": "langmd.mix/audiomd.mix",
+        "archive_sha256": "ea608dca312cd59373f121d164b3bf4cec0472f460f6bf1d1238500959637c88",
+        "sha256": "8917fb579eb9f312b09f626e8b6b085958a36d0aa86b4e7db3f4cfb87016f69f"
+      },
+      {
+        "file": "audio.idx",
+        "source": "langmd.mix/audiomd.mix",
+        "archive_sha256": "ea608dca312cd59373f121d164b3bf4cec0472f460f6bf1d1238500959637c88",
+        "sha256": "b3be1ac75032d062dce3d7415cb7dbe7ceec0b479bc6450241dee3148b7c12c1"
+      },
+      {
+        "file": "Hills.mmx",
+        "source": "Hills.mmx",
+        "sha256": "96de259a741f1fc4d0d4bc4de1a1582755e90a77c2404978814149113fc42f22"
+      },
+      {
+        "file": "Hills.map",
+        "source": "Hills.mmx/Hills.map",
+        "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+      },
+      {
+        "file": "ALL05UMD.MAP",
+        "source": "mapsmd03.mix",
+        "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "sha256": "7ee8148ad4b0092b7970588d9b064ddd6b753fc7bfb352bcc043affeb72c6aed"
+      }
+    ],
+    "missing_candidate_names": [
+      "BEAGBARL.HVA",
+      "BEAGBARL.VXL",
+      "BEAGTUR.HVA",
+      "BEAGTUR.VXL",
+      "FALCBARL.HVA",
+      "FALCBARL.VXL",
+      "FALCTUR.HVA",
+      "FALCTUR.VXL",
+      "GAAIRC.SHP",
+      "GAAIRCBB.SHP",
+      "GAAIRCMK.SHP",
+      "GAAIRC_A.SHP",
+      "GAAIRC_B.SHP",
+      "GAAIRC_C.SHP",
+      "GACNST.SHP",
+      "GACNST_A.SHP",
+      "GACNST_B.SHP",
+      "GAPILE.SHP",
+      "GAPILE_A.SHP",
+      "GAPILL.SHP",
+      "GAPOWR.SHP",
+      "GAPOWR_A.SHP",
+      "GAPOWR_B.SHP",
+      "GGAIRC_AD.SHP",
+      "GGAIRC_BD.SHP",
+      "GGAIRC_CD.SHP",
+      "GTAIRC.SHP",
+      "GTAIRCBB.SHP",
+      "GTAIRC_A.SHP",
+      "GTAIRC_AD.SHP",
+      "GTAIRC_B.SHP",
+      "GTAIRC_BD.SHP",
+      "GTAIRC_C.SHP",
+      "GTAIRC_CD.SHP",
+      "GTCNST.SHP",
+      "GTCNST_A.SHP",
+      "GTCNST_B.SHP",
+      "GTPILE.SHP",
+      "GTPILE_A.SHP",
+      "GTPILL.SHP",
+      "GTPOWR.SHP",
+      "GTPOWR_A.SHP",
+      "GTPOWR_B.SHP"
+    ]
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --tech-level",
+  "payload_sha256": "4c33500bbd58b218d9cbde832906030c2a25db03a4d381d94936f251642d8dc2"
+}

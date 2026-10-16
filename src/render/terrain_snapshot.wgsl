@@ -17,7 +17,7 @@ fn snapshot_at(position: vec4f) -> Snapshot {
     let p = vec2i(position.xy);
     let rgb = vec3u(round(textureLoad(scene, p, 0).rgb * 255.0));
     var output: Snapshot;
-    output.word = ((rgb.r >> 3u) << 11u) | ((rgb.g >> 2u) << 5u) | (rgb.b >> 3u);
+    output.word = native_rgb565_word(rgb);
     output.depth = textureLoad(live_depth, p, 0);
     return output;
 }

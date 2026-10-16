@@ -48,6 +48,7 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
             object_category: ObjectCategory::Building,
             queue_category: ProductionCategory::Building,
             enabled: true,
+            at_build_limit: false,
             reason: None,
         })
         .collect();

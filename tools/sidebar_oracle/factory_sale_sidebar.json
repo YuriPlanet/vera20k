@@ -1,0 +1,2473 @@
+{
+  "controls": [
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": false,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "automatic_place": null,
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "strip_draw",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": true,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97d7",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": true,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x6a97d7",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "FLAKT"
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [
+        {
+          "complete": 0,
+          "final_bl": 0,
+          "linked": 1,
+          "name": "E2",
+          "slot": 0,
+          "stage": 1,
+          "unavailable": 0
+        },
+        {
+          "complete": 0,
+          "final_bl": 0,
+          "linked": 0,
+          "name": "FLAKT",
+          "slot": 2,
+          "stage": 0,
+          "unavailable": 0
+        }
+      ],
+      "detach_count": 0,
+      "draw_commands": [
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9e9c",
+          "flags": 1028,
+          "frame": 2,
+          "kind": "clock",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "FLAKT"
+        }
+      ],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": false,
+        "complete": false,
+        "explicit_recheck": false,
+        "selling": false,
+        "surviving_barracks": false,
+        "target_stage": null
+      },
+      "name": "settled_running",
+      "place_path": [],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [],
+      "text_lookups": [],
+      "total_events": 0
+    },
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": false,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "automatic_place": null,
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "strip_draw",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "FLAKT"
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [
+        {
+          "complete": 0,
+          "final_bl": 0,
+          "linked": 1,
+          "name": "E2",
+          "slot": 0,
+          "stage": 1,
+          "unavailable": 1
+        },
+        {
+          "complete": 0,
+          "final_bl": 1,
+          "linked": 0,
+          "name": "FLAKT",
+          "slot": 2,
+          "stage": 0,
+          "unavailable": 1
+        }
+      ],
+      "detach_count": 0,
+      "draw_commands": [
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9e9c",
+          "flags": 1028,
+          "frame": 2,
+          "kind": "clock",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "FLAKT"
+        },
+        {
+          "caller": "0x6a9b4b",
+          "flags": 1025,
+          "frame": 0,
+          "kind": "unavailable_darken",
+          "name": "FLAKT"
+        }
+      ],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": false,
+        "complete": false,
+        "explicit_recheck": false,
+        "selling": true,
+        "surviving_barracks": false,
+        "target_stage": null
+      },
+      "name": "selling_running",
+      "place_path": [],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [],
+      "text_lookups": [],
+      "total_events": 0
+    },
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 0,
+          "changed": false,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 100,
+          "stage": 53,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 53
+        },
+        "frame": 53,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "automatic_place": null,
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "strip_draw",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "FLAKT"
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [
+        {
+          "complete": 0,
+          "final_bl": 0,
+          "linked": 1,
+          "name": "E2",
+          "slot": 0,
+          "stage": 53,
+          "unavailable": 1
+        },
+        {
+          "complete": 0,
+          "final_bl": 1,
+          "linked": 0,
+          "name": "FLAKT",
+          "slot": 2,
+          "stage": 0,
+          "unavailable": 1
+        }
+      ],
+      "detach_count": 0,
+      "draw_commands": [
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9e9c",
+          "flags": 1028,
+          "frame": 54,
+          "kind": "clock",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "FLAKT"
+        },
+        {
+          "caller": "0x6a9b4b",
+          "flags": 1025,
+          "frame": 0,
+          "kind": "unavailable_darken",
+          "name": "FLAKT"
+        }
+      ],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": false,
+        "complete": false,
+        "explicit_recheck": false,
+        "selling": true,
+        "surviving_barracks": false,
+        "target_stage": 53
+      },
+      "name": "selling_stage53",
+      "place_path": [],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 0,
+          "changed": true,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 100,
+          "stage": 53,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 53
+        },
+        "frame": 53,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [],
+      "text_lookups": [],
+      "total_events": 0
+    },
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 0,
+          "changed": true,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 0,
+          "spent": 100,
+          "stage": 54,
+          "suspended": true,
+          "timer_duration": 0,
+          "timer_start": 54
+        },
+        "frame": 54,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "automatic_place": null,
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x30000000",
+          "name": "strip_draw",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "FLAKT"
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [
+        {
+          "complete": 1,
+          "final_bl": 0,
+          "linked": 1,
+          "name": "E2",
+          "slot": 0,
+          "stage": 54,
+          "unavailable": 1
+        },
+        {
+          "complete": 0,
+          "final_bl": 1,
+          "linked": 0,
+          "name": "FLAKT",
+          "slot": 2,
+          "stage": 0,
+          "unavailable": 1
+        }
+      ],
+      "detach_count": 0,
+      "draw_commands": [
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9e3b",
+          "flags": 322,
+          "kind": "ready_text",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "FLAKT"
+        },
+        {
+          "caller": "0x6a9b4b",
+          "flags": 1025,
+          "frame": 0,
+          "kind": "unavailable_darken",
+          "name": "FLAKT"
+        }
+      ],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": false,
+        "complete": true,
+        "explicit_recheck": false,
+        "selling": true,
+        "surviving_barracks": false,
+        "target_stage": 54
+      },
+      "name": "selling_complete_before_strip_ai",
+      "place_path": [],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 0,
+          "changed": true,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 0,
+          "spent": 100,
+          "stage": 54,
+          "suspended": true,
+          "timer_duration": 0,
+          "timer_start": 54
+        },
+        "frame": 54,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [],
+      "text_lookups": [
+        {
+          "caller": "0x6a9845",
+          "key": "TXT_READY",
+          "name": "E2"
+        }
+      ],
+      "total_events": 0
+    },
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 0,
+          "changed": false,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 0,
+          "spent": 100,
+          "stage": 54,
+          "suspended": true,
+          "timer_duration": 0,
+          "timer_start": 54
+        },
+        "frame": 55,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "automatic_place": {
+        "after_first_action": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": true,
+              "linked_held_type": "E2",
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": false,
+            "credits": 9900,
+            "held_id": 9,
+            "held_type": "E2",
+            "latch": true,
+            "on_hold": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 100,
+            "stage": 54,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 54
+          },
+          "frame": 54,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "after_first_receive": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": true,
+              "linked_held_type": "E2",
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": false,
+            "credits": 9900,
+            "held_id": 9,
+            "held_type": "E2",
+            "latch": true,
+            "on_hold": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 100,
+            "stage": 54,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 54
+          },
+          "frame": 54,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "after_next_factory_ai": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": true,
+              "linked_held_type": "E2",
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": false,
+            "credits": 9900,
+            "held_id": 9,
+            "held_type": "E2",
+            "latch": true,
+            "on_hold": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 100,
+            "stage": 54,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 54
+          },
+          "frame": 55,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "after_second_receive": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": true,
+              "linked_held_type": "E2",
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": false,
+            "credits": 9900,
+            "held_id": 9,
+            "held_type": "E2",
+            "latch": true,
+            "on_hold": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 100,
+            "stage": 54,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 54
+          },
+          "frame": 55,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "first_events": [
+          {
+            "cell": [
+              0,
+              0
+            ],
+            "frame": 54,
+            "index": -1,
+            "instance_kind": 15,
+            "kind": 11,
+            "naval": 0
+          }
+        ],
+        "second_events": [],
+        "second_house_place_calls": 0
+      },
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a8eed",
+          "name": "place_event_constructor",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x4c7110",
+          "index": 4294967295,
+          "instance_kind": 15,
+          "name": "house_place",
+          "naval": 0,
+          "result": false,
+          "returned": true
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "caller": "0x4fb532",
+          "name": "object_find_factory",
+          "result": false,
+          "returned": true
+        },
+        {
+          "caller": "0x5f5c4d",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x30000000",
+          "name": "factory_ai",
+          "returned": true
+        },
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [],
+      "detach_count": 0,
+      "draw_commands": [],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": true,
+        "complete": true,
+        "explicit_recheck": false,
+        "selling": true,
+        "surviving_barracks": false,
+        "target_stage": 54
+      },
+      "name": "selling_complete_auto_place_tail",
+      "place_path": [
+        {
+          "eax": 0,
+          "pc": "0x4fb534"
+        },
+        {
+          "eax": 15,
+          "pc": "0x4fb542"
+        },
+        {
+          "eax": 15,
+          "pc": "0x4fb512"
+        }
+      ],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 0,
+          "changed": true,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 0,
+          "spent": 100,
+          "stage": 54,
+          "suspended": true,
+          "timer_duration": 0,
+          "timer_start": 54
+        },
+        "frame": 54,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [],
+      "text_lookups": [],
+      "total_events": 0
+    },
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 0
+      },
+      "automatic_place": null,
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x4f92e7",
+          "name": "sidebar_recalculate",
+          "returned": true
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6aa773",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6aa773",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "strip_draw",
+          "returned": true,
+          "tab": 2
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [],
+      "detach_count": 0,
+      "draw_commands": [],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": false,
+        "complete": false,
+        "explicit_recheck": true,
+        "selling": true,
+        "surviving_barracks": false,
+        "target_stage": null
+      },
+      "name": "selling_recheck",
+      "place_path": [],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [
+        {
+          "kind": 16,
+          "type": "E2"
+        },
+        {
+          "kind": 46,
+          "type": "E2"
+        },
+        {
+          "kind": 46,
+          "type": "FLAKT"
+        }
+      ],
+      "text_lookups": [],
+      "total_events": 4
+    },
+    {
+      "abandon_count": 0,
+      "after": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": false,
+          "credits": 9999,
+          "held_id": 10,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "automatic_place": null,
+      "before": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 10,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 5,
+        "total_entries": 3
+      },
+      "calls": [
+        {
+          "caller": "0x4457e3",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x4457e3",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x4f92e7",
+          "name": "sidebar_recalculate",
+          "returned": true
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6aa773",
+          "name": "type_find_factory",
+          "result": true,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6aa786",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6aa773",
+          "name": "type_find_factory",
+          "result": true,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x6aa786",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x6a7d38",
+          "name": "strip_recalculate",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "sidebar_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 0
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 1
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a77d2",
+          "name": "strip_ai",
+          "returned": true,
+          "tab": 3
+        },
+        {
+          "caller": "0x30000000",
+          "name": "strip_draw",
+          "returned": true,
+          "tab": 2
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": true,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97d7",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "E2"
+        },
+        {
+          "caller": "0x6a97b0",
+          "name": "type_find_factory",
+          "result": true,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x5f79a8",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "FLAKT"
+        },
+        {
+          "caller": "0x6a97d7",
+          "name": "can_build",
+          "result": 1,
+          "returned": true,
+          "type": "FLAKT"
+        }
+      ],
+      "cleanup_count": 0,
+      "constructor_count": 0,
+      "decisions": [
+        {
+          "complete": 0,
+          "final_bl": 0,
+          "linked": 1,
+          "name": "E2",
+          "slot": 0,
+          "stage": 1,
+          "unavailable": 0
+        },
+        {
+          "complete": 0,
+          "final_bl": 0,
+          "linked": 0,
+          "name": "FLAKT",
+          "slot": 2,
+          "stage": 0,
+          "unavailable": 0
+        }
+      ],
+      "detach_count": 0,
+      "draw_commands": [
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9e9c",
+          "flags": 1028,
+          "frame": 2,
+          "kind": "clock",
+          "name": "E2"
+        },
+        {
+          "caller": "0x6a9a43",
+          "flags": 1024,
+          "frame": 0,
+          "kind": "cameo",
+          "name": "FLAKT"
+        }
+      ],
+      "identity_delta": 0,
+      "inputs": {
+        "auto_receive": false,
+        "complete": false,
+        "explicit_recheck": true,
+        "selling": true,
+        "surviving_barracks": true,
+        "target_stage": null
+      },
+      "name": "surviving_barracks_recheck",
+      "place_path": [],
+      "prepared": {
+        "barracks_limbo": 0,
+        "entries": [
+          {
+            "kind": 16,
+            "linked": true,
+            "linked_held_type": "E2",
+            "name": "E2",
+            "request_state": 0,
+            "slot": 0
+          },
+          {
+            "kind": 16,
+            "linked": false,
+            "linked_held_type": null,
+            "name": "FLAKT",
+            "request_state": 0,
+            "slot": 2
+          }
+        ],
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 10,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "FLAKT"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1,
+        "house_recheck": 0,
+        "mission": 19,
+        "total_entries": 3
+      },
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "725f464f91721a041cd92cbfb82c158e97eead4cd0cc24435f1e09bbde3cbd11"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "725f464f91721a041cd92cbfb82c158e97eead4cd0cc24435f1e09bbde3cbd11"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      },
+      "selected_events": [],
+      "text_lookups": [],
+      "total_events": 0
+    },
+    {
+      "after": {
+        "credits": 10000,
+        "factory_live": true,
+        "held": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": true,
+            "credits": 10000,
+            "held_id": null,
+            "held_type": null,
+            "latch": true,
+            "on_hold": false,
+            "queue": [],
+            "rate": 0,
+            "spent": 100,
+            "stage": 0,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 55
+          },
+          "frame": 55,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "house_factory_present": true,
+        "spent": 100
+      },
+      "after_click": {
+        "credits": 9900,
+        "factory_live": true,
+        "held": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": true,
+              "linked_held_type": "E2",
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": false,
+            "credits": 9900,
+            "held_id": 9,
+            "held_type": "E2",
+            "latch": true,
+            "on_hold": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 100,
+            "stage": 54,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 54
+          },
+          "frame": 55,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "house_factory_present": true,
+        "spent": 100
+      },
+      "before": {
+        "credits": 9900,
+        "factory_live": true,
+        "held": {
+          "barracks_limbo": 0,
+          "entries": [
+            {
+              "kind": 16,
+              "linked": true,
+              "linked_held_type": "E2",
+              "name": "E2",
+              "request_state": 0,
+              "slot": 0
+            },
+            {
+              "kind": 16,
+              "linked": false,
+              "linked_held_type": null,
+              "name": "FLAKT",
+              "request_state": 0,
+              "slot": 2
+            }
+          ],
+          "factory": {
+            "balance": 0,
+            "changed": false,
+            "credits": 9900,
+            "held_id": 9,
+            "held_type": "E2",
+            "latch": true,
+            "on_hold": false,
+            "queue": [
+              "FLAKT"
+            ],
+            "rate": 0,
+            "spent": 100,
+            "stage": 54,
+            "suspended": true,
+            "timer_duration": 0,
+            "timer_start": 54
+          },
+          "frame": 55,
+          "house_recheck": 0,
+          "mission": 19,
+          "total_entries": 3
+        },
+        "house_factory_present": true,
+        "spent": 100
+      },
+      "calls": [
+        {
+          "caller": "0x30000000",
+          "name": "select_action",
+          "returned": true
+        },
+        {
+          "caller": "0x6ab312",
+          "name": "play_gui_sound",
+          "returned": true
+        },
+        {
+          "args": [
+            0,
+            0
+          ],
+          "caller": "0x6ab320",
+          "name": "object_find_factory",
+          "result": false,
+          "returned": true
+        },
+        {
+          "args": [
+            0,
+            0
+          ],
+          "caller": "0x5f5c4d",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true
+        },
+        {
+          "caller": "0x6ab3b6",
+          "name": "eva",
+          "returned": true
+        },
+        {
+          "all": 0,
+          "caller": "0x4c717d",
+          "index": 7,
+          "kind": 16,
+          "name": "house_abandon",
+          "naval": 0,
+          "returned": true
+        },
+        {
+          "caller": "0x4fab79",
+          "name": "sidebar_abandon_factory",
+          "returned": true
+        },
+        {
+          "caller": "0x6abb59",
+          "name": "strip_abandon_factory",
+          "returned": true
+        },
+        {
+          "caller": "0x6abbdf",
+          "name": "factory_abandon",
+          "returned": true
+        },
+        {
+          "caller": "0x523358",
+          "name": "infantry_destructor",
+          "returned": true
+        },
+        {
+          "caller": "0x517e7a",
+          "name": "dispatch_pointer_expired",
+          "returned": true
+        },
+        {
+          "caller": "0x725957",
+          "name": "factory_pointer_expired",
+          "returned": true
+        },
+        {
+          "caller": "0x4fabab",
+          "name": "factory_abandon",
+          "returned": true
+        },
+        {
+          "caller": "0x4fac9b",
+          "name": "start_next_queued",
+          "returned": true
+        },
+        {
+          "caller": "0x4ca60f",
+          "name": "begin_production",
+          "returned": true
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "caller": "0x4fa43e",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true
+        },
+        {
+          "args": [
+            1,
+            0
+          ],
+          "caller": "0x4fa461",
+          "name": "type_find_factory",
+          "result": false,
+          "returned": true
+        }
+      ],
+      "constructor_count": 0,
+      "destructor_count": 1,
+      "detach_count": 1,
+      "eva_requests": [
+        "EVA_UnableToComply"
+      ],
+      "events": [
+        {
+          "cell": null,
+          "frame": 55,
+          "index": 7,
+          "instance_kind": 16,
+          "kind": 16,
+          "naval": 0
+        }
+      ],
+      "identity_delta": 0,
+      "name": "selling_complete_manual_click_tail",
+      "rng": {
+        "after_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "before_sha256": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "raw_advance_count": 0,
+        "request_count": 0,
+        "unchanged": true
+      }
+    }
+  ],
+  "presentation": {
+    "scenario_side": 1,
+    "screen": [
+      640,
+      480
+    ],
+    "shapes": {
+      "DARKEN.SHP": {
+        "bytes": 3552,
+        "header8_hex": "00004b0034000100",
+        "sha256": "c4455fb08203e0089af30dab37553854a892ba73eb3e00bb0fdf049576cf4e8a"
+      },
+      "GCLOCK2.SHP": {
+        "bytes": 85976,
+        "header8_hex": "00003c0030003700",
+        "sha256": "f47fe295e95a5fd7d3049e5c087b016770a28111085aab6c5b8a132562f922bb"
+      }
+    }
+  },
+  "schema": 1,
+  "type_inputs": {
+    "E2": {
+      "build_limit": 2147483647,
+      "cost": 100,
+      "index": 7
+    },
+    "FLAKT": {
+      "build_limit": 2147483647,
+      "cost": 300,
+      "index": 10
+    },
+    "NACNST": {
+      "build_limit": 2147483647,
+      "cost": 3000,
+      "index": 4
+    },
+    "NAHAND": {
+      "build_limit": 2147483647,
+      "cost": 500,
+      "index": 6
+    },
+    "NAPOWR": {
+      "build_limit": 2147483647,
+      "cost": 600,
+      "index": 5
+    },
+    "NARADR": {
+      "build_limit": 2147483647,
+      "cost": 1000,
+      "index": 7
+    }
+  }
+}

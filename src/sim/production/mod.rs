@@ -40,12 +40,14 @@ pub use self::factory_lifecycle::suspend_production;
 pub use self::factory_lifecycle::{
     FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
 };
-pub use self::factory_lifecycle::{cancel_by_type_for_owner, enqueue_by_type};
+pub use self::factory_lifecycle::{
+    ProductionCancellation, cancel_production_for_owner, enqueue_by_type,
+};
 pub use self::production_economy::is_harvester_type;
 pub(crate) use self::production_placement::place_production_with_overlays;
 pub use self::production_placement::{
-    active_producer_for_owner_category, cycle_active_producer_for_owner_category, is_within_build_area,
-    placement_preview_for_owner_with_overlays,
+    active_producer_for_owner_category, cycle_active_producer_for_owner_category,
+    is_within_build_area, placement_preview_for_owner_with_overlays,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use self::production_queue::dispatch_production_changes_for_tests;
@@ -93,11 +95,12 @@ pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::factory_lifecycle::release_delivered_mobile;
 pub(in crate::sim) use self::factory_lifecycle::{
-    abandon_house_factories, recalculate_strips, refresh_factory_rates_for_house,
-    revalidate_and_step_factories,
+    abandon_house_factories, detach_building_production, recalculate_strips,
+    refresh_factory_rates_for_house, step_factories, update_factory_queue,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::production_queue::exit_produced_object;
+pub(crate) use self::production_tech::factory_category_for_building;
 pub(crate) use self::wall_placement::stamp_wall_with_autofill;
 
 #[cfg(test)]

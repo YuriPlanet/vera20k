@@ -129,7 +129,8 @@ fn held_infantry_survives_launch(name: &str) {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let held = sim
         .production

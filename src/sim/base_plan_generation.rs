@@ -12,6 +12,7 @@ use crate::sim::ai_buildable::{
 use crate::sim::base_plan::{BasePlanNode, BasePlanState};
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
+use crate::sim::world::TypeTechLevels;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecalcPreflightError {
@@ -64,6 +65,7 @@ pub(crate) fn preflight_recalc(
 pub(crate) fn recalc_base_plan(
     plan: &mut BasePlanState,
     rules: &RuleSet,
+    type_tech_levels: &TypeTechLevels,
     country_name: &str,
     side_index: u8,
     difficulty: HouseDifficulty,
@@ -83,7 +85,15 @@ pub(crate) fn recalc_base_plan(
         .iter()
         .filter_map(|type_id| rules.object_in_category(ObjectCategory::Building, type_id))
         .filter(|candidate| {
-            recalc_candidate_allowed(candidate, bit, side_index, tech_level, super_weapons, rules)
+            recalc_candidate_allowed(
+                candidate,
+                type_tech_levels,
+                bit,
+                side_index,
+                tech_level,
+                super_weapons,
+                rules,
+            )
         })
         .collect();
     let mut selected = vec![false; eligible.len()];
@@ -245,6 +255,7 @@ pub(crate) fn recalc_base_plan(
 
 fn recalc_candidate_allowed(
     candidate: &ObjectType,
+    type_tech_levels: &TypeTechLevels,
     country_bit: u32,
     side_index: u8,
     tech_level: i32,
@@ -253,7 +264,7 @@ fn recalc_candidate_allowed(
 ) -> bool {
     candidate_allowed(candidate, country_bit, side_index, super_weapons, rules)
         && candidate.ai_build_this
-        && candidate.tech_level <= tech_level
+        && type_tech_levels.get(candidate) <= tech_level
 }
 
 fn move_eligible_seed<'a>(
@@ -387,7 +398,15 @@ mod tests {
         };
         let mut rng = SimRng::new(seed);
         recalc_base_plan(
-            &mut plan, rules, country, side, difficulty, 10, true, &mut rng,
+            &mut plan,
+            rules,
+            &TypeTechLevels::default(),
+            country,
+            side,
+            difficulty,
+            10,
+            true,
+            &mut rng,
         );
         (plan, rng)
     }
@@ -421,6 +440,7 @@ mod tests {
                 rules
                     .object_in_category(ObjectCategory::Building, id)
                     .unwrap(),
+                &TypeTechLevels::default(),
                 bit,
                 0,
                 5,

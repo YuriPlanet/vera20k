@@ -42,7 +42,7 @@ fn terrain_pixel(input: VertexOutput, shadow: bool) -> TerrainOutput {
     var output: TerrainOutput;
     output.depth = stored_native_depth(admitted.candidate);
     if shadow {
-        let word = (textureLoad(old_words, p, 0).r >> 1u) & 0x7befu;
+        let word = native_half_word(textureLoad(old_words, p, 0).r);
         let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
             f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
         output.color = vec4f(srgb_decode(encoded), 1.0);

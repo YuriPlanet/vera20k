@@ -32,7 +32,9 @@ mod sinking;
 mod sound_boundary;
 mod time_warp;
 mod trigger_chrono;
+mod type_tech_levels;
 pub use sound_boundary::{FrameEffects, SoundBoundary};
+pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
@@ -131,13 +133,21 @@ mod world_orders;
 mod world_spawn;
 
 #[cfg(test)]
+mod aegis_distributed_fire_tests;
+#[cfg(test)]
 mod aircraft_deployment_tests;
+#[cfg(test)]
+mod area_rocker_tests;
+#[cfg(test)]
+mod brute_smash_debris_tests;
 #[cfg(test)]
 mod building_fatal_lifecycle_tests;
 #[cfg(test)]
 mod crash_tests;
 #[cfg(test)]
 mod damage_consequence_tests;
+#[cfg(test)]
+mod drone_rocking_tests;
 #[cfg(test)]
 mod engineer_building_repair_tests;
 #[cfg(test)]
@@ -157,19 +167,11 @@ mod jumpjet_infantry_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod lifecycle_tests;
 #[cfg(test)]
+mod mastermind_overload_tests;
+#[cfg(test)]
 mod projectile_trailer_tests;
 #[cfg(test)]
-mod aegis_distributed_fire_tests;
-#[cfg(test)]
-mod brute_smash_debris_tests;
-#[cfg(test)]
 mod squid_grapple_tests;
-#[cfg(test)]
-mod drone_rocking_tests;
-#[cfg(test)]
-mod area_rocker_tests;
-#[cfg(test)]
-mod mastermind_overload_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
@@ -1049,6 +1051,9 @@ where
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
     pub interner: crate::sim::intern::StringInterner,
+    /// Runtime TechnoType+634 writes; RuleSet remains the frozen read projection.
+    #[serde(default)]
+    type_tech_levels: TypeTechLevels,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
@@ -3381,6 +3386,7 @@ impl Simulation {
             path_batch: None,
             scan_batch: None,
             interner: crate::sim::intern::StringInterner::new(),
+            type_tech_levels: TypeTechLevels::default(),
             rule_handles: None,
             production: ProductionState::default(),
             session,
@@ -5392,6 +5398,21 @@ impl Simulation {
         if let Some(rules) = rules {
             self.relink_docked_after_owner_change(stable_id, &taken_along, rules, effects);
         }
+        // Building449267/449284: old House then new House, after lists,
+        // primary and opening moved. Literal BuildCat0 selects the yard's
+        // Building slot; Defense has no extra capture callback.
+        if category == EntityCategory::Structure
+            && let Some(rules) = rules
+            && let Some(factory_category) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                .and_then(crate::sim::production::factory_category_for_building)
+        {
+            production::update_factory_queue(self, rules, old_owner, factory_category, effects);
+            production::update_factory_queue(self, rules, new_owner, factory_category, effects);
+        }
         // RESIDUAL: the computer's sale of a captured building
         // (`0x004492D7..0x0044936E`) is unported, since VERA keeps no
         // InitialOwner. Outside campaign (GameMode != 0), a new owner no human
@@ -7166,7 +7187,7 @@ impl Simulation {
             // Native55AFB0 visits all objects before55B66A's Factory sweep.
             // Depot service now spends inside its Building mission visit, so
             // every factory observes the wallet after that object's repair.
-            production::revalidate_and_step_factories(self, rules, effects);
+            production::step_factories(self);
             #[cfg(any(test, feature = "test-support"))]
             self.trace_house_ai_activation_order(
                 HouseAiActivationOrderTestEvent::ProductionCompleted,

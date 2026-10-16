@@ -1,4 +1,4 @@
-//! LaserDraw, EBolt and LineTrail edits on TerrainDrawRenderer's existing snapshot/Z.
+//! Bracket, LaserDraw, EBolt and LineTrail edits on the existing snapshot/Z.
 //! Different pixels are independent; every repeated operation for one pixel
 //! retains the original registry/segment/raster order. One snapshot and resolve
 //! per bounded chunk avoid a render pass per line or pixel.
@@ -6,6 +6,14 @@
 use super::TerrainDrawRenderer;
 use crate::render::line_trail::{LineTrailSegment, rasterize};
 use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend, SurfaceLineViewport};
+
+/// A frame-local range in the shared line upload. Display parents and the
+/// later Tactical effects pass replay their own ranges against the live Z.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct SurfaceLineBatch {
+    start: usize,
+    end: usize,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -219,6 +227,12 @@ impl SurfaceLineGpu {
 }
 
 impl TerrainDrawRenderer {
+    /// Recycle the derived upload ranges before preparing this composite.
+    pub(crate) fn begin_surface_lines(&mut self) {
+        self.surface_lines.active = 0;
+        self.surface_lines.work.clear();
+    }
+
     /// Prepare only actual raster operations; empty frames allocate/upload nothing.
     /// Native exactness is zoom1. Other zooms expand the same logical pixels.
     pub(crate) fn prepare_surface_lines(
@@ -226,16 +240,16 @@ impl TerrainDrawRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         lasers: impl IntoIterator<Item = crate::render::laser::LaserDraw>,
-        bolt_lines: &[SurfaceLine],
+        lines: &[SurfaceLine],
         segments: &[LineTrailSegment],
         viewport: SurfaceLineViewport,
         mut high_detail: impl FnMut() -> bool,
         mut alpha: impl FnMut([i32; 2]) -> u16,
-    ) {
-        self.surface_lines.active = 0;
+    ) -> SurfaceLineBatch {
+        let start = self.surface_lines.active;
         self.surface_lines.work.clear();
         let Some(targets) = &self.targets else {
-            return;
+            return SurfaceLineBatch::default();
         };
         let size = [targets.source_color.width(), targets.source_color.height()];
         let limit = (device.limits().max_storage_buffer_binding_size as usize
@@ -301,7 +315,7 @@ impl TerrainDrawRenderer {
                 laser.lines(viewport.camera, high_detail(), &mut surface_line);
             }
         }
-        for &line in bolt_lines {
+        for &line in lines {
             surface_line(line);
         }
         for &segment in segments {
@@ -332,20 +346,26 @@ impl TerrainDrawRenderer {
         }
         self.surface_lines
             .upload(device, queue, viewport.zoom, size);
+        SurfaceLineBatch {
+            start,
+            end: self.surface_lines.active,
+        }
     }
 
-    /// Draw after the app's global shroud multiply: native lines consume an
-    /// already-shaded destination and perform their own ABuffer multiplication.
+    /// Replay this range at its native phase: line stores consume the current
+    /// destination and perform their own ABuffer multiplication.
     /// Reuses the SAME snapshot and live depth as ordinary tactical drawing.
     pub(crate) fn draw_surface_lines(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color: &wgpu::TextureView,
+        batch: SurfaceLineBatch,
     ) {
         let Some(targets) = &self.targets else {
             return;
         };
-        for batch in &self.surface_lines.batches[..self.surface_lines.active] {
+        assert!(batch.end <= self.surface_lines.active);
+        for batch in &self.surface_lines.batches[batch.start..batch.end] {
             let [x, y, w, h] = batch.scissor;
             if w == 0 || h == 0 {
                 continue;

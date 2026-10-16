@@ -260,7 +260,7 @@ JOINED_TRANSPORT = frozenset((0x527AF9, 0x527B0C, 0x41C27D, 0x41C2CB, 0x41C28C, 
 
 
 def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound=False,
-                  typed_debris=False):
+                  typed_debris=False, layers=None):
     import hashlib
     from collections import deque
     from types import SimpleNamespace
@@ -278,7 +278,9 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
     building_names = (*bc.JOINED_NAMES, 'CAMISC03') if damage_sound else bc.JOINED_NAMES
     if damage_sound:
         extra_assets += ('CTMISC03.SHP',)
-    m = er.prepare_joined_inputs(root)
+    m = er.prepare_joined_inputs(root, layers=layers)
+    m.input_rule_layers = tuple(layers if layers is not None else
+        ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'))
     u, read = m.u, m.read32
     original_ret = m.ret
     m.ret = lambda eax=0, cleanup=0: original_ret(eax, cleanup)
@@ -337,7 +339,7 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
         pointer = m.alloc(0x1900)
         m.invoke(0x5236A0, pointer, (m.cstring(name),))
         m.types[name] = pointer
-    for registry in (0xA83CE0, 0xA8EB00):
+    for registry in ((0xA83CE0, 0xA8EB00) if layers is None else (0xA83CE0,)):
         u.mem_write(registry, dwords(0x7EB6D4, m.alloc(4096), 1024, 1, 0, 10))
     # Existing BulletReader unused Color registry prior. The Cannon Color key is
     # absent; no represented color decision or native Color body is replaced.
@@ -359,7 +361,7 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
         # full747620 reads the vectors; unknown registry names are dropped by
         # the native sound-list reader. Historical building controls omit this
         # source-death prerequisite and retain their selected registry exactly.
-        for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'):
+        for filename in m.input_rule_layers:
             path = root / filename
             if path.exists():
                 layer = sections(path.read_bytes()).get('MTNK', {})
@@ -368,7 +370,7 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
     if damage_sound:
         # Select the actual authored per-type and fallback names in layer
         # order; original7510D0/45FE50/6691E0 still own their binding.
-        for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'):
+        for filename in m.input_rule_layers:
             path = root / filename
             if path.exists():
                 layer = sections(path.read_bytes())
@@ -411,7 +413,7 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
         native.run_checked(u, begin, end, count=2_000_000)
 
     m.death_layers = []
-    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'):
+    for filename in m.input_rule_layers:
         path = root / filename
         if not path.exists():
             assert filename == 'LANGRULE.INI'
@@ -449,7 +451,8 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
         m.invoke(0x7729F0, weapon)
         m.invoke(0x511850, m.country, (rules_ini,))
         for entry in (0x66D530, 0x66D150, 0x66CF70):
-            m.invoke(entry, m.rules, (rules_ini,))
+            m.invoke(entry, m.rules, (rules_ini,),
+                     timeout_us=60_000_000 if layers is not None else 10_000_000)
         if m.invoke(0x526810, rules_ini, (m.cstring('AudioVisual'),)):
             if damage_sound:
                 m.invoke(0x6691E0, m.rules, (rules_ini,))

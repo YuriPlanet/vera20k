@@ -931,22 +931,26 @@ fn retail_walk_reads_each_object() {
         .unwrap();
     factory.object.as_mut().unwrap().entity_id = Some(built);
     assert_eq!(fact(&sim, built), (false, 2, false), "no rate yet");
-    let set = |sim: &mut Simulation, rate, suspended, manual| {
+    let set = |sim: &mut Simulation, rate, suspended, progress| {
         let factory = sim
             .production
             .factories
             .test_factory_mut(russians, ProductionCategory::Vehicle)
             .unwrap();
-        (factory.step_rate_frames, factory.suspended, factory.manual) = (rate, suspended, manual);
+        (
+            factory.step_rate_frames,
+            factory.suspended,
+            factory.progress,
+        ) = (rate, suspended, progress);
     };
-    set(&mut sim, 5, false, false);
+    set(&mut sim, 5, false, 0);
     assert_eq!(fact(&sim, built), (true, 2, false));
     sim.houses.get_mut(&americans).unwrap().difficulty = HouseDifficulty::Normal;
     assert_eq!(fact(&sim, built), (false, 2, false), "Normal");
     sim.houses.get_mut(&americans).unwrap().difficulty = HouseDifficulty::Hard;
-    set(&mut sim, 5, true, false);
+    set(&mut sim, 5, true, crate::sim::production::PRODUCTION_STEPS);
     assert_eq!(fact(&sim, built), (false, 2, false), "completed");
-    set(&mut sim, 5, false, true);
+    set(&mut sim, 5, true, 1);
     assert_eq!(fact(&sim, built), (false, 2, false), "held");
 }
 

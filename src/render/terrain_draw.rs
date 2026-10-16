@@ -30,6 +30,7 @@ use batching::{TerrainBatches, TerrainCommand};
 pub(crate) use ion_blasts::IonBlastDraw;
 pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind};
 use submission::PassSubmission;
+pub(crate) use surface_lines::SurfaceLineBatch;
 
 // High16 bits select the final admitted body; low16 retain its native word.
 const READ_ONLY_COMMAND_LIMIT: usize = u16::MAX as usize;
@@ -61,6 +62,14 @@ struct Targets {
     // pixel before each read-only chunk. prepare replaces it with target handles.
     read_only: wgpu::BindGroup,
     read_only_rows: u32,
+}
+
+/// Derived destination scratch for another native surface. The surface owner
+/// retains this beside its attachments; switching outputs never replaces the
+/// tactical scratch or creates a second destination-edit renderer.
+pub(crate) struct PackedSurface {
+    targets: Targets,
+    stencil: packed::Stencil,
 }
 
 pub(crate) struct TerrainDrawRenderer {
@@ -141,7 +150,14 @@ impl TerrainDrawRenderer {
         });
         let snapshot_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Terrain encoded RGB565 and native Z snapshot"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("terrain_snapshot.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                format!(
+                    "{}\n{}",
+                    include_str!("native_packed.wgsl"),
+                    include_str!("terrain_snapshot.wgsl")
+                )
+                .into(),
+            ),
         });
         let snapshot_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -398,6 +414,30 @@ impl TerrainDrawRenderer {
         {
             return;
         }
+        self.packed.prepare(color.size());
+        self.targets = Some(self.create_targets(device, color, depth));
+    }
+
+    /// Attach output-local derived scratch without changing the tactical
+    /// camera, frame counters or primary target. Recreate only on resize.
+    pub(crate) fn create_packed_surface(
+        &self,
+        device: &wgpu::Device,
+        color: &wgpu::Texture,
+        depth: &wgpu::TextureView,
+    ) -> PackedSurface {
+        PackedSurface {
+            targets: self.create_targets(device, color, depth),
+            stencil: self.packed.create_stencil(color.size()),
+        }
+    }
+
+    fn create_targets(
+        &self,
+        device: &wgpu::Device,
+        color: &wgpu::Texture,
+        depth: &wgpu::TextureView,
+    ) -> Targets {
         assert!(color.usage().contains(wgpu::TextureUsages::TEXTURE_BINDING));
         assert!(
             depth
@@ -406,7 +446,6 @@ impl TerrainDrawRenderer {
                 .contains(wgpu::TextureUsages::TEXTURE_BINDING)
         );
         assert_eq!(color.size(), depth.texture().size());
-        self.packed.prepare(color.size());
         let encoded_source = color.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Terrain encoded source bytes"),
             format: Some(color.format().remove_srgb_suffix()),
@@ -467,7 +506,7 @@ impl TerrainDrawRenderer {
                 resource: state.as_entire_binding(),
             }],
         });
-        self.targets = Some(Targets {
+        Targets {
             source_color: color.clone(),
             source_depth: depth.clone(),
             _encoded_source: encoded_source,
@@ -477,7 +516,7 @@ impl TerrainDrawRenderer {
             snapshot,
             read_only,
             read_only_rows,
-        });
+        }
     }
 
     /// Replay one contiguous destination-edit span across atlas pages. The

@@ -168,7 +168,8 @@ fn production_laser_pixels_match_original_software_surface() {
                     },
                     color.size(),
                 );
-                terrain.prepare_surface_lines(
+                terrain.begin_surface_lines();
+                let prepared_lines = terrain.prepare_surface_lines(
                     &gpu.device,
                     &gpu.queue,
                     draws(row),
@@ -201,7 +202,7 @@ fn production_laser_pixels_match_original_software_surface() {
                 } else {
                     clear(&mut encoder, &cv, &dv, z[0], wgpu::LoadOp::Load);
                 }
-                terrain.draw_surface_lines(&mut encoder, &cv);
+                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),

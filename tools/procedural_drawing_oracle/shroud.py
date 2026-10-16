@@ -8,15 +8,19 @@ explicitly absent; supplied cell flags are not a reveal-traversal oracle.
 The independent ``--health-hover`` mode reuses BuildingReveal to execute the
 selected/hover health dispatch. Health pixels and selected bracket geometry
 are declared boundaries; it does not regenerate ABuffer/reveal corpora.
+
+``--building-brackets`` composes the existing type-reader, palette-startup and
+packed Surface owners. Original GAPOWR geometry/projection and packed A/Z
+pixels execute on either side of an explicit Surface command boundary.
 """
 from functools import lru_cache
 import hashlib
 from pathlib import Path
 import struct
 
-from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX,
-                              UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESI,
+                              UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_EIP, UC_X86_REG_ESI,
                               UC_X86_REG_ESP)
 
 from tools import native_oracle as native
@@ -591,8 +595,488 @@ def entity_reveal_metadata():
                           viewport_writer=0x6D5F60))
 
 
+def building_bracket_geometry(palette_word):
+    """Original GAPOWR readers/callers, stopping at the packed Surface entry.
+
+    HutTypeReader owns construction, native INI caches and the loaded-image VM.
+    This is a selected field/caller composition, not whole type loading or a
+    Building instance constructor. No alternate geometry implementation exists.
+    """
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.rules_oracle.weapon_laser import physical_layers
+    from tools.spatial_oracle.engineer_bridge_cursor_caller import (
+        HutTypeReader, READER_INI, READER_SP,
+    )
+
+    m = HutTypeReader()
+    u, typ = m.u, m.construct('GAPOWR')
+
+    def fields():
+        return dict(image=m.string(typ + 0x1F8), foundation=m.read32(typ + 0xEF0),
+                    height=m.read32(typ + 0xEF4))
+
+    constructor, readers, reads = fields(), [], []
+
+    def read_observer(_u, pc, _size, _data):
+        if pc in (0x528A10, 0x5276D0, 0x474DA0):
+            sp = u.reg_read(UC_X86_REG_ESP)
+            section, key, default = [m.read32(sp + n) for n in (4, 8, 12)]
+            reads.append(dict(phase=m.phase, reader=f'{pc:08X}',
+                              section=m.string(section), key=m.string(key),
+                              default=m.string(default) if pc == 0x528A10 else default))
+
+    read_hook = u.hook_add(UC_HOOK_CODE, read_observer)
+    for filename, archive, raw in physical_layers():
+        if raw is None:
+            readers.append(dict(file=filename, archive=archive, absent=True))
+            continue
+        sections, _ = lexical(raw, {'GAPOWR'})
+        selected = {name: {key: value for key, value in keys.items() if key == 'Image'}
+                    for name, keys in sections.items()}
+        m.make_ini(selected)
+        m.phase = 'image_' + filename
+        admitted = bool(m.invoke(0x526810, READER_INI, (typ + 0x24,)) & 255)
+        mark = len(reads)
+        if admitted:
+            # Original ObjectType Image caller frame, after section admission.
+            u.mem_write(READER_SP, words(native.RET_MAGIC))
+            u.mem_write(READER_SP + 0x1B4, words(READER_INI))
+            for reg, value in ((UC_X86_REG_ESP, READER_SP), (UC_X86_REG_EBP, typ),
+                               (UC_X86_REG_EBX, typ), (UC_X86_REG_ESI, READER_INI),
+                               (UC_X86_REG_EDI, typ + 0x1F8)):
+                u.reg_write(reg, value)
+            native.run_checked(u, 0x5F92F9, 0x5F9340, count=200000,
+                               required_addresses=(0x528A10,))
+        readers.append(dict(file=filename, archive=archive, bytes=len(raw), sha256=sha(raw),
+                            sections=selected, native_section_present=admitted,
+                            reads=reads[mark:], image_after=fields()['image']))
+
+    # ART is fixed, not another rules layer. Reuse stock's archive transport.
+    yr = stock.mix((native.configured_gamemd().parent / 'ra2md.mix').read_bytes())
+    local = stock.mix(yr[stock.mix_hash('localmd.mix')])
+    raw = local[stock.mix_hash('artmd.ini')]
+    sections, _ = lexical(raw, {'GAPOWR', fields()['image']})
+    selected = {name: {key: value for key, value in keys.items()
+                       if key in ('Height', 'OccupyHeight', 'Foundation')}
+                for name, keys in sections.items()}
+    m.make_ini(selected)
+    m.phase, mark = 'fixed_art', len(reads)
+    for begin, end in ((0x4610D8, 0x461112), (0x461225, 0x46125D)):
+        u.mem_write(READER_SP, words(native.RET_MAGIC))
+        for reg, value in ((UC_X86_REG_ESP, READER_SP), (UC_X86_REG_EBP, typ),
+                           (UC_X86_REG_EBX, typ + 0x24), (UC_X86_REG_ESI, READER_INI),
+                           (UC_X86_REG_EDI, typ + 0x1F8)):
+            u.reg_write(reg, value)
+        native.run_checked(u, begin, end, count=200000)
+    readers.append(dict(file='ARTMD.INI', archive='ra2md.mix/localmd.mix', bytes=len(raw),
+                        sha256=sha(raw), sections=selected, reads=reads[mark:]))
+    u.hook_del(read_hook)
+    u.mem_write(0x89DDB8, words(104))  # declared native startup scalar prior
+    out = m.alloc(12)
+    m.invoke(0x464AF0, typ, (out,))
+    type_result = dict(fields(), dimensions=rally.ints(u, out, 3))
+
+    building, house, tactical, surface, convert, lookup, point, rect = (
+        m.alloc(n) for n in (0x800, 0x6000, 0x200, 0x100, 0x200, 512, 8, 16))
+    supplied = dict(location=[2688, 5248, 0], camera=[-384, 376], size=[160, 160],
+                    clip=[0, 0, 160, 160], ground_relative_height=0, height_factor=104,
+                    projection_factor_f64_bits='3FC25E5374344960')
+    u.mem_write(building, words(0x7E3EBC))
+    u.mem_write(building + 0x520, words(typ))
+    u.mem_write(building + 0x9C, words(*supplied['location']))
+    u.mem_write(building + 0x21C, words(house))
+    u.mem_write(0xA83D4C, words(house))
+    u.mem_write(tactical, words(0x7F4348))
+    u.mem_write(tactical + 0xB0, words(*supplied['camera']))
+    u.mem_write(0x887324, words(tactical))
+    u.mem_write(surface, words(0x7E85D4))
+    u.mem_write(0x887314, words(surface))
+    u.mem_write(0xB0CD48, struct.pack('<Q', int(supplied['projection_factor_f64_bits'], 16)))
+    u.mem_write(0x89E7C0, words(104))
+    u.mem_write(convert + 4, words(2))
+    u.mem_write(convert + 0x174, words(lookup))
+    u.mem_write(lookup + 30, struct.pack('<H', palette_word))
+    u.mem_write(0x87F6C4, words(convert))
+    u.mem_write(rect, words(*supplied['clip']))
+    u.mem_write(0x886FA0, words(*supplied['clip']))
+    u.mem_write(point, words(0, 0))
+    m.invoke(0x447AC0, building, (out,))
+    type_result['center_coords'] = rally.ints(u, out, 3)
+    passes, gate_controls, rng_entries, height_calls = [], [], [], []
+    phase, segments, pending = '', [], None
+
+    def geometry_observer(_u, pc, _size, _data):
+        nonlocal pending
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in (0x65C780, 0x65C7E0):
+            rng_entries.append(dict(phase=phase, entry=f'{pc:08X}'))
+        if pc == 0x5F5F40:
+            height_calls.append(dict(phase=phase, supplied=0))
+            m.ret(0, 0)
+        elif pc == 0x6DBB60:
+            a, b, color, write_z = rally.ints(u, sp + 4, 4)
+            assert pending is None
+            pending = dict(from_world=rally.ints(u, a, 3), to_world=rally.ints(u, b, 3),
+                           packed_color=color, write_z=write_z)
+        elif pc == 0x4BFD30:
+            args = rally.ints(u, sp + 4, 7)
+            assert pending is not None
+            assert (args[3], args[6]) == (pending['packed_color'], pending['write_z'])
+            segments.append(dict(pending, from_screen=rally.ints(u, args[1], 2),
+                                 to_screen=rally.ints(u, args[2], 2),
+                                 z_adjust=args[4:6], clip=rally.ints(u, args[0], 4)))
+            pending = None
+            m.ret(1, 28)  # command boundary; the existing pixel owner runs it below
+
+    geometry_hook = u.hook_add(UC_HOOK_CODE, geometry_observer)
+    for case, selected_flag, sinking in (('normal', True, False),
+                                         ('deselected', False, False),
+                                         ('sinking_control', True, True)):
+        u.mem_write(building + 0x83, bytes([selected_flag]))
+        u.mem_write(building + 0x3CD, bytes([sinking]))
+        counts = {}
+        for leaf, entry in (('behind', 0x6F60D0), ('extras', 0x6F5190)):
+            phase, segments = case + '/' + leaf, []
+            u.mem_write(READER_SP, words(native.RET_MAGIC, point, rect))
+            u.reg_write(UC_X86_REG_ESP, READER_SP)
+            u.reg_write(UC_X86_REG_ECX, building)
+            endpoint = native.run_checked(u, entry, (native.RET_MAGIC, 0x6F5E17),
+                                          count=1000000)
+            assert pending is None
+            counts[leaf] = len(segments)
+            if case == 'normal':
+                passes.append(dict(name=leaf, entry=entry, endpoint=endpoint, segments=segments))
+        if case != 'normal':
+            gate_controls.append(dict(name=case, selected=selected_flag, sinking=sinking,
+                                      segment_counts=counts))
+    u.hook_del(geometry_hook)
+    assert not rng_entries
+    assert [len(row['segments']) for row in passes] == [10, 11]
+    assert all(s['write_z'] == 0 for row in passes for s in row['segments'])
+    m.unchanged()
+    return dict(constructor=constructor, readers=readers, type_result=type_result,
+                input=supplied, passes=passes, gate_controls=gate_controls,
+                height_boundary_calls=height_calls, rng_entries=rng_entries,
+                original_code_unchanged=True)
+
+
+def building_bracket_pixels(geometry, case):
+    """Execute original packed lines on LaserPixels -> Rally's existing A/Z VM."""
+    from tools.spatial_oracle import building_prism
+
+    supplied = dict(size=geometry['input']['size'], camera=geometry['input']['camera'],
+                    clip=geometry['input']['clip'], background=rally.BACKGROUND,
+                    alpha='clear', z=65535)
+    supplied.update(case)
+    f = building_prism.LaserPixels(supplied)
+    u, (w, h) = f.u, f.surface.size
+    if 'native_z_runs' in supplied:
+        for x, y, length, value in supplied['native_z_runs']:
+            assert 0 <= y < h and 0 <= x < x + length <= w
+            u.mem_write(f.z_pixels + (y * w + x) * 2, struct.pack('<H', value) * length)
+    if 'occluding_rect' in supplied:
+        left, top, right, bottom = supplied['occluding_rect']
+        z = [supplied['occluding_z'] if left <= x < right and top <= y < bottom else 65535
+             for y in range(h) for x in range(w)]
+        u.mem_write(f.z_pixels, struct.pack('<' + 'H' * len(z), *z))
+    before_a = bytes(u.mem_read(rally.ALPHA, f.pixel_bytes))
+    before_z = bytes(u.mem_read(f.z_pixels, f.pixel_bytes))
+    stores, segments = [], []
+    z_stores = []
+
+    def store_observer(_u, _access, address, _size, value, _data):
+        if rally.PIXELS <= address < rally.PIXELS + f.pixel_bytes:
+            i = (address - rally.PIXELS) // 2
+            stores.append([i % w, i // w, value & 65535])
+        elif f.z_pixels <= address < f.z_pixels + f.pixel_bytes:
+            i = (address - f.z_pixels) // 2
+            z_stores.append([i % w, i // w, value & 65535])
+
+    hook = u.hook_add(UC_HOOK_MEM_WRITE, store_observer)
+    from_point, to_point = rally.MEM + 0x62000, rally.MEM + 0x62020
+    for draw_pass in geometry['passes']:
+        for index, segment in enumerate(draw_pass['segments']):
+            u.mem_write(from_point, words(*segment['from_screen']))
+            u.mem_write(to_point, words(*segment['to_screen']))
+            begin = len(stores)
+            f.call(building_prism.LASER_PACKED, rally.SURFACE, 0x886FA0,
+                   from_point, to_point, segment['packed_color'],
+                   *segment['z_adjust'], segment['write_z'])
+            segments.append(dict(draw_pass=draw_pass['name'], index=index,
+                                 store_range=[begin, len(stores)]))
+    u.hook_del(hook)
+    raw = bytes(u.mem_read(rally.PIXELS, f.pixel_bytes))
+    assert before_a == bytes(u.mem_read(rally.ALPHA, f.pixel_bytes))
+    assert before_z == bytes(u.mem_read(f.z_pixels, f.pixel_bytes))
+    assert not z_stores and not f.rng_entries
+    assert sha(u.mem_read(building_prism.TEXT_BEGIN, building_prism.TEXT_SIZE)) == f.text_sha256
+    assert f.guard == bytes(u.mem_read(rally.PIXELS - 32, 32))
+    assert f.guard == bytes(u.mem_read(rally.PIXELS + f.pixel_bytes, 32))
+    return dict(name=supplied.pop('name'), input=supplied, segments=segments,
+                stores=stores, pixels=[[i % w, i // w, word[0]]
+                    for i, word in enumerate(struct.iter_unpack('<H', raw))
+                    if raw[i * 2:i * 2 + 2] != f.before[i * 2:i * 2 + 2]],
+                final_color_sha256=sha(raw), a_unchanged=True, z_unchanged=True,
+                rng_entries=f.rng_entries, original_code_unchanged=True)
+
+
+def building_bracket_ground():
+    """Actual flat TMP + placed GAPOWR body depth, on the existing TMP VM.
+
+    Only the native depth plane's row runs cross to the line-consumer control.
+    Complete colors are hashed, not retained as a second body-render corpus.
+    """
+    from tools.projectile_oracle import bridge_render_inputs_palette as palette
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.projectile_oracle.bridge_render_shape import prepare_surface, SURFACE, PIXELS, Z, A
+    from tools.rules_oracle.weapon_laser import physical_layers
+    from tools.spatial_oracle import tmp_clear_render as tmp
+    from tools.spatial_oracle.building_body_rules import RULES as INI_RULES, SP as READER_SP
+
+    m, terrain, _files = tmp.prepare(tmp_names=('clear01.tem',))
+    u, layers = m.u, physical_layers()
+    sources = []
+    for outer_name, inner_name, names in (
+            ('ra2.mix', 'generic.mix', ('GGPOWR.SHP',)),
+            ('ra2.mix', 'cache.mix', ('UNITTEM.PAL',)),
+            ('ra2md.mix', 'conqmd.mix', ('BUILDNGZ.SHA',))):
+        outer = (native.configured_gamemd().parent / outer_name).read_bytes()
+        inner = stock.mix(outer)[stock.mix_hash(inner_name)]
+        files = stock.mix(inner)
+        for name in names:
+            raw = files[stock.mix_hash(name)]
+            m.assets[name] = raw
+            sources.append(dict(name=name, archive=f'{outer_name}/{inner_name}',
+                                bytes=len(raw), sha256=sha(raw)))
+    m.assets['RULESMD.INI'] = layers[0][2]
+    assert all(raw is None or not lexical(raw, {'Colors'})[0].get('Colors', {}).get('LightGold')
+               for _name, _archive, raw in layers[1:])
+    _palette_storage, color_scheme = palette.color_scheme_palette(
+        owner=m, physical_assets=m.assets)
+    m.invoke(0x45B1C0, 0)
+    m.rules = m.alloc(0x5000)
+    u.mem_write(0x8871E0, words(m.rules))
+    m.invoke(0x665650, m.rules)
+    m.invoke(0x4E7CF0, 0)
+    typ = m.alloc(0x2000)
+    m.invoke(0x45DD90, typ, (m.cstring('GAPOWR'),))
+    art, _ = lexical(m.assets['ARTMD.INI'], {'GAPOWR', 'GAPOWR_A', 'GAPOWR_AD', 'GAPOWRMK'})
+    m.make_ini(art)
+    layer_reads = []
+    for name, archive, raw in layers:
+        if raw is None:
+            layer_reads.append(dict(file=name, archive=archive, absent=True))
+            continue
+        sections, _ = lexical(raw, {'GAPOWR'})
+        m.rules_cache(sections)
+        mark = len(m.asset_loaded)
+        admitted = m.invoke(0x45FE50, typ, (INI_RULES,)) & 255
+        layer_reads.append(dict(file=name, archive=archive, sha256=sha(raw),
+                                admitted=bool(admitted), loads=m.asset_loaded[mark:]))
+    m.invoke(0x45E8F0, 0)  # original physical BUILDNGZ load and byte remap
+    assert m.read32(typ + 0xA4) and m.read32(0x89DDBC)
+    assert m.read32(typ + 0x1518) == 0  # no GAPOWR BibShape, no invented bib
+    for entry in (0x561710, 0x5617A0, 0x5617C0, 0x5617E0):
+        m.invoke(entry, 0)
+    u.mem_write(0x89DDB8, words(104))
+    u.mem_write(0xB0CD48, struct.pack('<Q', 0x3FC25E5374344960))
+    building, house = m.alloc(0x800), m.alloc(0x18000)
+    m.invoke(0x43B740, building, (typ, 0))
+    for offset in (0x21C, 0x14C):
+        u.mem_write(building + offset, words(house))
+    u.mem_write(house + 0x1EC, b'\1\1')
+    u.mem_write(house + 0x16054, words(1))
+    u.mem_write(0xA83D4C, words(house))
+    u.mem_write(0xA8B238, words(1))
+    u.mem_write(building + 0x9C, words(2688, 5248, 0))
+    u.mem_write(building + 0xAC, words(5))
+    u.mem_write(building + 0xB4, words(-1))
+    u.mem_write(building + 0x74, b'\1')
+    u.mem_write(building + 0x80, b'\1\0')
+    u.mem_write(building + 0x83, b'\1')
+    u.mem_write(building + 0x6E4, b'\1')
+    m.invoke(0x44D6A0, building, (0, 0))
+    table = m.alloc(512 * 512 * 4)
+    u.mem_write(MAP + 0x13C, words(table, 512 * 512))
+    u.mem_write(MAP + 0xF4, words(16, 16))
+    cells = []
+    for y in range(17, 26):
+        for x in range(7, 16):
+            cell = m.alloc(0x148)
+            m.invoke(0x47BBF0, cell)
+            u.mem_write(cell + 0x24, struct.pack('<hh', x, y))
+            u.mem_write(cell + 0x38, words(0))
+            u.mem_write(cell + 0x48, words(-1))
+            u.mem_write(cell + 0x11A, bytes(4))
+            u.mem_write(cell + 0x12C, words(0x18))
+            u.mem_write(table + (y * 512 + x) * 4, words(cell))
+            cells.append(cell)
+    tactical, point, clip, coord, bounds = (m.alloc(n) for n in (0x200, 8, 16, 12, 16))
+    u.mem_write(tactical, words(0x7F4348))
+    u.mem_write(tactical + 0xB0, words(-384, 376))
+    u.mem_write(0x887324, words(tactical))
+    u.mem_write(0xB73550, words(1))
+    u.mem_write(clip, words(0, 0, 160, 160))
+    u.mem_write(0x886FA0, words(0, 0, 160, 160))
+    u.mem_write(0xB0CE30, words(160, 160))
+    prepare_surface(u, dict(depth_baseline=32768, old_z=65535, a_value=127,
+                            background=rally.BACKGROUND), size=(160, 160))
+    vtable = m.alloc(0x100)
+    u.mem_write(vtable, bytes(u.mem_read(0x7E2070, 0x100)))
+    u.mem_write(vtable + 0x34, words(0x4BFD30))
+    u.mem_write(SURFACE, words(vtable))
+    original_code = sha(u.mem_read(0x401000, 0x3E0000))
+    alpha = bytes(u.mem_read(A, 51200))
+    # Original flat bounds supply each Cell's draw point. Registration and
+    # traversal are prepared; no host formula supplies a TMP pixel or depth.
+    ground_cells = 0
+    for cell in cells:
+        m.invoke(0x47FF80, cell, (bounds,))
+        x, y, w, h = rally.ints(u, bounds, 4)
+        if x < 160 and y < 160 and x + w > 0 and y + h > 0:
+            u.mem_write(READER_SP, words(native.RET_MAGIC, bounds, clip, 0))
+            u.reg_write(UC_X86_REG_ESP, READER_SP)
+            u.reg_write(UC_X86_REG_ECX, cell)
+            native.run_checked(u, 0x480350, native.RET_MAGIC, count=12000000, timeout_us=120000000)
+            ground_cells += 1
+    def snapshot(name):
+        return dict(name=name, color_sha256=sha(u.mem_read(PIXELS, 51200)),
+                    z_sha256=sha(u.mem_read(Z, 51200)))
+    snapshots = [snapshot('ground')]
+    phase, lines, draws, admissions, rng = '', [], [], [], []
+    line_stores = []
+    def finish_line():
+        # The Surface kernel has early returns before its final RET. Finalize
+        # at the next call/parent boundary so rejected lines retain zero stores.
+        if lines and 'begin' in lines[-1]:
+            lines[-1]['stores'] = len(line_stores) - lines[-1].pop('begin')
+    def observe(_u, pc, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in (0x65C780, 0x65C7E0):
+            rng.append(dict(phase=phase, entry=pc))
+        elif pc == 0x4BFD30:
+            finish_line()
+            args = rally.ints(u, sp + 4, 7)
+            lines.append(dict(phase=phase, from_screen=rally.ints(u, args[1], 2),
+                              to_screen=rally.ints(u, args[2], 2), z_adjust=args[4:6],
+                              write_z=args[6], begin=len(line_stores)))
+        elif pc == 0x43D290:
+            args = rally.ints(u, sp + 4, 2)
+            admissions.append(dict(point=rally.ints(u, args[0], 2), clip=rally.ints(u, args[1], 4)))
+        elif pc == 0x4AED70:
+            args = rally.ints(u, sp + 4, 14)
+            draws.append(dict(frame=args[1], point=rally.ints(u, args[2], 2),
+                              flags=args[4], z_adjust=args[6], gradient=args[7],
+                              intensity=args[8], color=args[9], has_zshape=bool(args[10]),
+                              zshape_frame=args[11], zshape_offset=args[12:14]))
+    def store(_u, _access, address, _size, value, _data):
+        if phase != 'body' and PIXELS <= address < PIXELS + 51200:
+            i = (address - PIXELS) // 2
+            line_stores.append([i % 160, i // 160, value & 65535])
+    hooks = [u.hook_add(UC_HOOK_CODE, observe), u.hook_add(UC_HOOK_MEM_WRITE, store)]
+    for phase, entry in (('behind', 0x6F60D0), ('extras', 0x6F5190),
+                          ('body', 0x43CEA0), ('late_extras', 0x6F5190)):
+        if phase == 'body':
+            m.invoke(entry, building, (clip, 1, 0))
+        else:
+            m.invoke(0x447AC0, building, (coord,))
+            m.invoke(0x6D2140, tactical, (coord, point))
+            u.mem_write(READER_SP, words(native.RET_MAGIC, point, clip))
+            u.reg_write(UC_X86_REG_ESP, READER_SP)
+            u.reg_write(UC_X86_REG_ECX, building)
+            native.run_checked(u, entry, (native.RET_MAGIC, 0x6F5E17), count=2000000)
+        finish_line()
+        snapshots.append(snapshot(phase))
+    for hook in hooks:
+        u.hook_del(hook)
+    assert not rng and alpha == bytes(u.mem_read(A, 51200))
+    assert original_code == sha(u.mem_read(0x401000, 0x3E0000))
+    assert admissions == [dict(point=[84, 74], clip=[0, 0, 160, 160])]
+    pixels = sorted({tuple(row) for row in line_stores}, key=lambda row: (row[1], row[0]))
+    assert all(struct.unpack('<H', u.mem_read(PIXELS + (y * 160 + x) * 2, 2))[0] == value
+               for x, y, value in pixels)
+    depth = list(struct.unpack('<25600H', u.mem_read(Z, 51200)))
+    runs = []
+    for y in range(160):
+        x = 0
+        while x < 160:
+            value, start = depth[y * 160 + x], x
+            while x < 160 and depth[y * 160 + x] == value:
+                x += 1
+            if value != 65535:
+                runs.append([start, y, x - start, value])
+    return dict(native_z_runs=runs, physical_inputs=sources, type_layers=layer_reads,
+                terrain_inputs=terrain, color_scheme=color_scheme, ground_cells=ground_cells,
+                body_admission=admissions, body_draws=draws, bib_null=True,
+                input=dict(size=[160, 160], camera=[-384, 376], location=[2688, 5248, 0],
+                           placed_byte_6e4=True, selected=True, alpha=127, depth_baseline=32768,
+                           initial_depth=65535, graphical_client=True, height_factor=104),
+                snapshots=snapshots, line_calls=lines, final_line_pixels=pixels,
+                a_unchanged=True, rng_entries=rng, original_code_unchanged=True)
+
+
+def generate_building_brackets():
+    from tools.procedural_drawing_oracle.action_lines import physical_palette
+
+    row, palette_evidence = physical_palette()
+    word = struct.unpack_from('<H', row, 30)[0]
+    # The existing palette owner reports action-line index3; this caller uses15.
+    palette_evidence['native_convert'].update(selected_index=15, selected_word=word)
+    geometry = building_bracket_geometry(word)
+    ground = building_bracket_ground()
+    controls = [dict(name='clear'), dict(name='mixed_a', alpha='mixed'),
+                dict(name='occluding_z', occluding_rect=[40, 40, 120, 120], occluding_z=32700),
+                dict(name='native_ground_body_z', native_z_runs=ground.pop('native_z_runs'))]
+    return dict(schema_version=1, native_sha256=native.image_sha256(), palette=palette_evidence,
+                geometry=geometry, ground_occlusion=ground,
+                raster_controls=[building_bracket_pixels(geometry, case) for case in controls])
+
+
+def building_brackets_metadata():
+    return native.provenance(
+        scope='Ordinary selected GAPOWR original bracket geometry/projection and packed4BFD30 A/Z controls',
+        assumptions=[
+            'HutTypeReader owns the loaded original image, native allocation/INI cache fixture and complete BuildingType45DD90 constructor. Native HasSection526810 and Image caller5F92F9..5F9340 consume exact-case strings in selected physical RULESMD, optional loose LANGRULE, Battle MPBattleMD and XMP03T4 layers. Fixed ARTMD from ra2md.mix/localmd.mix supplies only Height/OccupyHeight/Foundation to original4610D8..461112 and461225..46125D. Physical archive transport/cache preparation, full type reader/Scenario and unrelated keys are excluded.',
+            'Original Dimension2464AF0 derives dimensions from native Height/Foundation and a declared supplied startup height factor104. Prepared Building/House/type linkage, selected byte, location2688,5248,0, camera[-384,376], viewport160x160 and ordinary no-effect fields are priors. Original GetCoords, helper6F5EF0 and Tactical6DBB60 execute. Complete DrawBehind6F60D0 and DrawExtras6F5190 prefix stop6F5E17 before health; selection generation, placement, full parent/display scheduling and body raster do not execute.',
+            'Existing action_lines.physical_palette/PaletteReader execute original palette initialization on physical ra2.mix/cache.mix ANIM.PAL and PALETTE.PAL. Global87F6C4 middle lookup row index15 supplies the packed word to the geometry VM; it is not a marker color. Original6DBB60 produces integer screen points, paired Z adjustments and writeZ0 from original world endpoints.',
+            'The21 recorded normal Surface commands cross an explicit geometry-to-raster boundary into existing building_prism.LaserPixels->rally.Rally. Original4BFD30 runs with native BSurface lock/stride/unlock, supplied RGB565/A/Z planes, circular offset0 and native clip. No new runtime, INI parser, rasterizer, A/Z authority or packed-color formula produces expected pixels.',
+            'Clear A127/Z65535, existing Rally mixedA pattern(0,1,63,127,255), and a supplied rectangle[40,40,120,120] Z32700 are consumer controls. The rectangle is synthetic depth, not a GAPOWR body/bib/BUILDNGZ result. stores are original ordered color writes; pixels are final row-major changed words. All calls writeZ0; original code, A and Z remain unchanged. No RNG entry is observed in these bounded drawing intervals.',
+            'The fourth native_ground_body_z control instead consumes row runs from actual original flat ClearTile/TMP480350/547CF0 plus placed GAPOWR43CEA0->43D290->705E00->4AED70 body/shadow in the existing tmp_clear_render PaletteReader VM. The full native45FE50 reader consumes the physical layer stack; original45E8F0 loads/remaps physical BUILDNGZ. Existing color_scheme_palette constructs LightGold in this same owner. Native body point[84,74] comes from original virtual+AC459EF0 render coordinates, distinct from bracket center[84,104]; original455C20 bounds and normal graphical-client admission execute.',
+            'That composed control supplies sparse constructed/flat/revealed Cells, one selected ClearTile registry, placement byte6E4=1, local House/color index1, viewport/camera, A127 and startup104. Original43B740/44D6A0/43EF90 own health/idle/frame; active Anim slots stay empty. Native GAPOWR BibShape isNULL. Whole Behind and pre-health Extras run before the body, then pre-health Extras again. All12 lower commands make zero color stores on this flat ground;132 roof pixels remain. Compact final native Z runs become an explicit input to the independent original packed-line/GPU consumer; this does not replace or establish GPU body raster parity.',
+            'Deselected and prepared sinking controls exercise native gates; sinking is not claimed reachable by ordinary stock GAPOWR. Behind/initial Extras are separate command lists here. Native per-parent ordering, intervening building body, later Extras sweep, actual shroud/AlphaShape production, nearby overlapping bodies, GPU composition and a whole native frame remain separate validation gates.',
+        ], substitutions=[
+            'Inherited HutTypeReader supplies bounded allocation/delete/CRT TLS boundaries; physical asset loading in that VM is rejected. Original INI cache lookups and field parsers execute.',
+            'GetHeight5F5F40 returns supplied ground-relative0. Geometry4BFD30 returns1 withRET1C after recording its actual seven arguments. Its full original body executes independently in the existing LaserPixels Surface runtime; this is not whole-native-frame composition.',
+            'Existing PaletteReader physical file/palette transport and existing Rally memory-surface storage replace operating-system/archive I/O and DirectDraw. Native palette conversion, clipping, A/Z tests, packed modulation and stores execute unchanged.',
+            'Composed ground/body mode reuses tmp_clear_render physical archives, native lazy TMP/RawFile transport, palette and Cell drawing owners. Sparse map enrollment and per-Cell traversal are supplied, not whole Map loading or Tactical scheduling. Original render/body/shape/packed-line calls execute without function-result substitutions. Full color/depth crop hashes are retained; bulk planes and screenshots are not corpus payloads.',
+        ], entry_points=dict(type_ctor=0x45DD90, has_section=0x526810,
+            image_begin=0x5F92F9, image_end=0x5F9340, art_height_begin=0x4610D8,
+            art_height_end=0x461112, art_foundation_begin=0x461225,
+            art_foundation_end=0x46125D, dimension2=0x464AF0, behind=0x6F60D0,
+            extras=0x6F5190, extras_stop=0x6F5E17, bracket_pair=0x6F5EF0,
+            tactical_line=0x6DBB60, packed_line=0x4BFD30, building_type_reader=0x45FE50,
+            body_admission=0x43CEA0, body=0x43D290, render_coords=0x459EF0,
+            render_bounds=0x455C20, techno_shape=0x705E00, shape=0x4AED70,
+            building_zshape=0x45E8F0, cell_tile=0x480350, tmp=0x547CF0))
+
+
 if __name__=='__main__':
     import sys
+    if '--building-brackets' in sys.argv[1:]:
+        from tools.procedural_drawing_oracle import action_lines
+        from tools.spatial_oracle import building_prism, engineer_bridge_cursor_caller
+        native.finish_vectors(generate_building_brackets,
+            Path(__file__).with_name('building_brackets.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--building-brackets'],
+            provenance=building_brackets_metadata,
+            source_paths={'oracle':Path(__file__), 'surface_fixture':Path(rally.__file__),
+                          'packed_surface_owner':Path(building_prism.__file__),
+                          'type_reader_owner':Path(engineer_bridge_cursor_caller.__file__),
+                          'palette_owner':Path(action_lines.__file__),
+                          'palette_runtime_owner':Path('tools/projectile_oracle/bridge_render_inputs_palette.py'),
+                          'tmp_owner':Path('tools/spatial_oracle/tmp_clear_render.py'),
+                          'stock_owner':Path(stock.__file__)})
+        raise SystemExit(0)
     if '--frontier' in sys.argv[1:]:
         from tools.procedural_drawing_oracle import shroud_frontier
         native.finish_vectors(shroud_frontier.generate,

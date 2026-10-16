@@ -36,9 +36,7 @@ use crate::sim::movement::jumpjet_movement::jumpjet_flight::{
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::RawCellKey;
 use crate::sim::world::FrameEffects;
-use crate::util::lepton::{
-    GROUND_LEVEL_HEIGHT_LEPTONS, ground_height_leptons, lepton_to_cell_packed,
-};
+use crate::util::lepton::{ground_height_leptons, lepton_to_cell_packed};
 
 struct CruiseHost<'a> {
     sim: &'a mut Simulation,
@@ -208,10 +206,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                         self.sim
                             .interner
                             .object_type(building.type_ref(), rules)
-                            .map(|object| rules.building_launch_height(object))
+                            .map(|object| rules.building_dimensions(object)[2])
                     })
                     .unwrap_or(0)
-                    .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
             });
         let any_techno = self
             .sim
@@ -1744,7 +1741,7 @@ mod tests {
         .expect("height factor parses");
         assert_eq!(
             native["height_factor"].as_i64(),
-            Some(i64::from(GROUND_LEVEL_HEIGHT_LEPTONS))
+            Some(i64::from(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS))
         );
     }
 }

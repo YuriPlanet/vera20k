@@ -45,7 +45,8 @@ class Navigation(Geometry):
   call(0x42A6D0,this=0x87E8B8)
   call(0x42AC00,this=0x87E8B8,args=(MAP+0xEC,))
   call(0x42C1C0,this=0x87E8B8)
- def __init__(self,r,t,tiles,*,case=None,create_actor=True,actor_coord=(87,53),actor_height=4,admission_cells=None,stages=None,scenario_theater=None,cell_inputs_only=False):
+ def __init__(self,r,t,tiles,*,case=None,create_actor=True,actor_coord=(87,53),actor_height=4,admission_cells=None,stages=None,scenario_theater=None,cell_inputs_only=False,terrain_inputs_only=False):
+  assert not (cell_inputs_only and terrain_inputs_only)
   self.create_actor=create_actor;self.actor_coord=actor_coord;self.actor_height=actor_height
   self.admission_cells=admission_cells if admission_cells is not None else [(87,53),(86,54),(87,54),(88,54),(87,55),(85,54),(89,54)]
   self.stages=stages;self.tile_count=t['count']
@@ -75,6 +76,7 @@ class Navigation(Geometry):
   for i,name in t['tiles'].items():
    p=0x44480000+i*0x400;u.mem_write(COORD+0x100,name[:-4].encode('ascii')+b'\0');self.call(0x5447C0,this=p,args=(i,-65,0,COORD+0x100,0),count=10000)
    properties=self.tile_properties[i]
+   if 'allow_tiberium' in properties:u.mem_write(p+0x306,bytes([properties['allow_tiberium']]))
    u.mem_write(p+0x2E1,bytes([int(bool(properties['shadow'] and properties['shadow_tiles']))]))
    anim=properties['animations'].get(i-properties['base'])
    if anim:u.mem_write(p+0x2C8,dwords(anim['index'],anim['values']['XOffset'],anim['values']['YOffset'],anim['values']['AttachesTo'],anim['values']['ZAdjust']))
@@ -106,6 +108,12 @@ class Navigation(Geometry):
    self.call(0x5683C0,args=(COORD,p),count=300000)
    self.terrain_placement.append(dict(key=key,name=name,coord=list(coord),native_xyz=list(struct.unpack('<3i',u.mem_read(p+0x9C,12)))))
   print('native terrain placements ready',flush=True)
+  if terrain_inputs_only:
+   # Full_Init687A85/687A8A initializes ore queues after the existing
+   # Terrain reader/place phase, before Technos and final568BB0. Reuse
+   # the prepared original Cell/TMP/Terrain owner without later graphs.
+   self.initial_cells=self.cell_plane();self.trace.clear();self.writes.clear();self.pending.clear();self.reached={};self.activity='terrain_inputs'
+   return
   self.activity='final_recalc';self.final_tiberium_value=self.call(0x568BB0,args=(0,),count=80000000)
   print('native cell planes established',dict(self.counters),flush=True)
   self.initial_cells=self.cell_plane();self.trace.clear();self.writes.clear();self.pending.clear();self.reached={}

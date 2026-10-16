@@ -117,7 +117,8 @@ def bind_primary_tiles(m, theater, selected_tiles, *, preserve_abstract_registry
         boundary='Physical primary TMP cache supplied with original constructor heads and native default animation/shadow fields. The original archive loader, all tile INI properties and rendering variants are excluded. Existing crop Cell inputs are unchanged; later original Recalc owns land/slope/zone updates.')
 
 class Inputs(ri.Rules):
- def __init__(self,t,*,map_file=None,theater_file='TEMPERATMD.INI',damage_overlays=range(205,233)):
+ def __init__(self,t,*,map_file=None,theater_file='TEMPERATMD.INI',damage_overlays=range(205,233),tiberium_timer_readers=False):
+  self.tiberium_timer_readers=tiberium_timer_readers;self.tiberium_timer_layers=[]
   self.map_file=Path(map_file or MAPFILE);self.theater_file=theater_file;self.damage_overlays=tuple(damage_overlays)
   super().__init__();self.receipts=[];raw,sections,cells=map_inputs(self.map_file);self.physical=cells;self.map_sections=sections
   self.invoke(0x71D580,0)
@@ -153,6 +154,7 @@ class Inputs(ri.Rules):
     if self.invoke(0x5FE770,p,(rules_ini,))&255:overlays.append(i)
    for n,p in self.tiberium_ptrs.items():
     if not self.invoke(0x526810,rules_ini,(p+0x24,)):continue
+    if tiberium_timer_readers:self.block(0x721A78,0x721AFA,{UC_X86_REG_ESI:p,UC_X86_REG_EBX:rules_ini})
     self.block(0x721AFA,0x721B12,{UC_X86_REG_EAX:self.read32(p+0xB8),UC_X86_REG_ECX:rules_ini,UC_X86_REG_EBX:rules_ini,UC_X86_REG_ESI:p,UC_X86_REG_EDI:p+0x24})
     self.u.reg_write(UC_X86_REG_ESP,ri.SP);self.u.reg_write(UC_X86_REG_EBX,rules_ini);self.u.reg_write(UC_X86_REG_ESI,p);self.u.reg_write(UC_X86_REG_EDI,p+0x24);run_checked(self.u,0x721C3F,(0x721C7B,0x721CDC),count=100000)
    if 'MTNK' in lex:
@@ -168,6 +170,7 @@ class Inputs(ri.Rules):
    for n,p in self.terrain_ptrs.items():
     if self.invoke(0x71DEA0,p,(rules_ini,))&255:terrain.append(n)
    self.receipts.append(dict(file=name,sha256=sha(raw),bytes=len(raw),overlay_admitted=overlays,terrain_admitted=terrain))
+   if tiberium_timer_readers:self.tiberium_timer_layers.append(dict(file=name,sha256=sha(raw),types=self.tiberium_queue_inputs()))
   assert all(self.string(p+0x1F8)==n for n,p in self.terrain_ptrs.items()), 'ART alias cache requires expansion'
   self.theater=t
   allnames={f'TileSet{i:04d}' for i in range(300)}
@@ -183,8 +186,30 @@ class Inputs(ri.Rules):
      for suffix,default in [('XOffset',0),('YOffset',0),('AttachesTo',-1),('ZAdjust',0)]:
       value=self.invoke(0x5276D0,ri.INI,(self.cstring(setname),self.cstring(f'Tile{j+1:02d}{suffix}'),default));values[suffix]=struct.unpack('<i',ri.dwords(value))[0]
      animations[j]=dict(name=aname,index=index,values=values)
-   self.tile_properties.append(dict(ordinal=row['ordinal'],base=row['base'],count=row['count'],setname=setname,shadow=shadow,shadow_tiles=count,last_tiles_in_set=last,animations=animations))
+   properties=dict(ordinal=row['ordinal'],base=row['base'],count=row['count'],setname=setname,shadow=shadow,shadow_tiles=count,last_tiles_in_set=last,animations=animations)
+   if tiberium_timer_readers:
+    # Original546124 zeroesEBX;546187..54619B reads this exact Boolean,
+    # then54646D/546AB5 publishes the saved value to IsoTileType+306.
+    properties['allow_tiberium']=self.invoke(0x5295F0,ri.INI,(sn,self.cstring('AllowTiberium'),0))&255
+   self.tile_properties.append(properties)
   assert all(not self.u.mem_read(p+0x16BF,1)[0] and not self.u.mem_read(p+0x16C0,1)[0] for p in self.building_ptrs.values())
+ def tiberium_queue_inputs(self):
+  """Selected original constructor/readers; no host scalar conversion."""
+  signed=lambda p:struct.unpack('<i',self.u.mem_read(p,4))[0]
+  bits=lambda p:f"{struct.unpack('<Q',self.u.mem_read(p,8))[0]:016x}"
+  return [dict(name=n,type_id=self.read32(p+0x98),growth=signed(p+0xA8),spread=signed(p+0x9C),growth_percentage_bits=bits(p+0xB0),spread_percentage_bits=bits(p+0xA0),value=signed(p+0xB8),base_overlay=self.read32(self.read32(p+0xE0)+0x294),max_density=self.read32(p+0xE4),images=self.read32(p+0xE8),extra=self.read32(p+0xEC),growth_timer=list(struct.unpack('<3i',self.u.mem_read(p+0x11C,12))),spread_timer=list(struct.unpack('<3i',self.u.mem_read(p+0x100,12)))) for n,p in self.tiberium_ptrs.items()]
+ def read_map_tiberium_gates(self):
+  """Original pre-init SpecialFlags and Basic growth on this reader VM.
+
+  A temporary Scenario-sized buffer with declared zero flags supplies member
+  storage; this is not Scenario construction or full scenario loading.
+  """
+  raw=self.map_file.read_bytes();lex,_=lexical(raw,{'Basic','SpecialFlags'});self.make_ini(lex)
+  receiver=self.alloc(0x4000);self.u.mem_write(receiver,dwords(0))
+  self.invoke(0x6B8CA0,receiver,(ri.INI,))
+  self.block(0x683848,0x68384F,{UC_X86_REG_EBP:receiver})
+  self.block(0x68A571,0x68A58F,{UC_X86_REG_ESI:receiver,UC_X86_REG_EDI:ri.INI})
+  return dict(flags=self.read32(receiver),basic_growth_enabled=bool(self.u.mem_read(receiver+0x34A6,1)[0]),prior_flags=0,basic_default_store='00683848',basic_reader='0068A571..0068A58F',special_flags_reader='006B8CA0',map_sha256=sha(raw),basic_value=lex.get('Basic',{}).get('TiberiumGrowthEnabled'),special_values=lex.get('SpecialFlags',{}))
  def read_map_theater(self):
   # Full_Init687631..68764F executes the exact Map/Theater read, original
   # 475870 -> 528A10 -> 48DBE0 lookup and Scenario+1258 store. The surrounding

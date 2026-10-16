@@ -39,6 +39,7 @@ use crate::rules::native_processing::{
     ProcessedRulesLayers, RulesLayerKind, RulesLayerStack, process_native_campaign_rules_prepass,
     process_native_noncampaign_rules_prepass, process_native_rules_cold_start,
 };
+use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::SoundRegistry;
 
@@ -71,6 +72,22 @@ enum NativeRulesRegistryOwner {
     /// Completed scenario Rules inputs and their same live registry. Constructor
     /// events have transferred to Scenario; save reads this owner by reference.
     Scenario(Box<ProcessedRulesLayers>),
+}
+
+impl NativeRulesRegistryOwner {
+    /// Retire the old scenario envelope while keeping its sole live Type
+    /// authority for a pre-reset Rules prefix. Constructor events predate the
+    /// next Scenario cursor and are deliberately discarded at this boundary.
+    fn into_registry_state(self) -> NativeRulesRegistryState {
+        match self {
+            Self::ColdStartup(trace) => trace.into_registry_state_discarding_events(),
+            Self::Live(state) => state,
+            Self::Scenario(processed) => (*processed)
+                .into_ini_and_native_type_construction_trace()
+                .1
+                .into_registry_state_discarding_events(),
+        }
+    }
 }
 
 /// The one move-only native Rules authority for a process.
@@ -264,6 +281,30 @@ impl NativeRulesProcessOwner {
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
     }
 
+    /// Consume the outgoing Simulation's runtime Type TechLevels once that
+    /// scenario has retired. While a match is live Simulation owns changes;
+    /// this process owner receives them only for the next pre-reset Process.
+    /// Each update identifies one exact-category, exact-case native stored ID.
+    /// All identities are validated before any TechLevel is changed.
+    ///
+    /// Native714570 reads the current field before Full_Init6876AC enters
+    /// Reset6686C0. That reset deletes old TechnoTypes; new711082 constructors
+    /// start at255, so these values are never transplanted by name across it.
+    /// The retired envelope is no longer available to `saved_scenario_rules`.
+    pub fn consume_outgoing_type_tech_levels(
+        &mut self,
+        updates: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
+    ) -> Result<(), RulesError> {
+        let mut registry = self
+            .registry
+            .take()
+            .expect("native Rules registry transition may not be re-entered")
+            .into_registry_state();
+        let result = registry.consume_outgoing_type_tech_levels(updates);
+        self.registry = Some(NativeRulesRegistryOwner::Live(registry));
+        result
+    }
+
     /// Build the shell-facing compatibility projection without changing the
     /// one native registry owner.
     pub fn startup_compatibility_projection(&self) -> Result<ProcessedRulesLayers, RulesError> {
@@ -288,16 +329,7 @@ impl NativeRulesProcessOwner {
             .registry
             .take()
             .expect("native Rules registry transition may not be re-entered");
-        let pre_reset_state = match registry_owner {
-            NativeRulesRegistryOwner::ColdStartup(trace) => {
-                trace.into_registry_state_discarding_events()
-            }
-            NativeRulesRegistryOwner::Live(state) => state,
-            NativeRulesRegistryOwner::Scenario(processed) => (*processed)
-                .into_ini_and_native_type_construction_trace()
-                .1
-                .into_registry_state_discarding_events(),
-        };
+        let pre_reset_state = registry_owner.into_registry_state();
 
         let (pre_reset_trace, mode_rules_override) = match prefix {
             NativeScenarioRulesPrefix::NonCampaign(mode) => (

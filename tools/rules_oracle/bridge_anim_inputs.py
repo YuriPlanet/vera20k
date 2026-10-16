@@ -41,14 +41,14 @@ def physical_sections(raw):
    k=k.decode('latin1');assert k not in current,('duplicate-key',k);current[k]=v.decode('latin1')
  return {n:v for n,v in result.items() if v}
 class Reader(Lists):
- def __init__(self,root,sections):
+ def __init__(self,root,sections,*,arena_size=0x400000):
   self.assets={p.name.upper():p.read_bytes() for p in root.glob('*')};self.asset_loaded=[];self.asset_ptr={};self.sound_names=[]
-  super().__init__()
+  super().__init__(arena_size=arena_size)
   # Retail startup installs the CRT floating scanner before ReadDouble5283D0.
   self.invoke(0x7C8F5E,0)
   self.make_ini(sections)
  def alloc(self,n):
-  out=self.cursor;self.cursor+=(n+15)&~15;assert self.cursor<HEAP+0x400000;return out
+  out=self.cursor;self.cursor+=(n+15)&~15;assert self.cursor<HEAP+self.arena_size;return out
  def cstring(self,s):
   raw=s.encode('latin1')+b'\0';ptr=self.alloc(len(raw));self.u.mem_write(ptr,raw);return ptr
  def invoke(self,addr,obj,args=(),*,timeout_us=10_000_000,context=None):

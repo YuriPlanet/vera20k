@@ -55,18 +55,21 @@ def initialize(m, *, ordinary=False, early_temperat=False):
   assert u.reg_read(UC_X86_REG_ESP)==SP
  return m
 
-def color_scheme_palette(name='LightGold'):
+def color_scheme_palette(name='LightGold', *, owner=None, physical_assets=None):
  """Native selected temperate palette expansion and whole ColorScheme ctor.
 
  The selected theater/name and spare registry are supplied component inputs;
- no SHP Convert or reconstructed table initializes the voxel Convert.
+ no SHP Convert or reconstructed table initializes the voxel Convert. An
+ existing initialized PaletteReader may own a composed scene; immutable
+ physical_assets then supply the same RULESMD/UNITTEM inputs without another
+ runtime or palette implementation. Default callers retain their old setup.
  """
  from tools.procedural_drawing_oracle.house_color import parse_native_color
- root=module.assets_root();raw=(root/'RULESMD.INI').read_bytes()
+ root=module.assets_root();raw=(physical_assets['RULESMD.INI'] if physical_assets is not None else (root/'RULESMD.INI').read_bytes())
  sections,_=module.lexical(raw,{'Colors'});token=sections['Colors'][name]
  hsv=parse_native_color(name,token)
- m=initialize(PaletteReader({}));u=m.u
- source=m.alloc(768);unit=(root/'UNITTEM.PAL').read_bytes();assert len(unit)==768
+ m=owner if owner is not None else initialize(PaletteReader({}));u=m.u
+ source=m.alloc(768);unit=(physical_assets['UNITTEM.PAL'] if physical_assets is not None else (root/'UNITTEM.PAL').read_bytes());assert len(unit)==768
  u.mem_write(source,unit);u.reg_write(UC_X86_REG_ESI,source)
  u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_EDI,0)
  run_checked(u,0x534cd3,0x534d31,required_addresses=(0x6260d0,))

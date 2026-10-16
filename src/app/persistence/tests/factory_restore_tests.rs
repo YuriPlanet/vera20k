@@ -150,7 +150,8 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         &rules,
         "Americans",
         "PARENT",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     // Seed a partially paid held object, then exercise a different live credit
     // writer before saving. The old factory balance could be stale at this edge.
@@ -228,13 +229,16 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         .view(owner, ProductionCategory::Building)
         .expect("active factory retained");
     assert!(factory.progress > 5 && factory.progress < PRODUCTION_STEPS);
-    assert!(crate::sim::production::cancel_by_type_for_owner(
+    assert!(crate::sim::production::cancel_production_for_owner(
         &mut runtime.simulation,
         &runtime.resources.rules,
         "Americans",
-        "PARENT",
+        crate::sim::production::ProductionCancellation::Type {
+            type_id: "PARENT",
+            naval: false
+        },
         false,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     ));
     assert_eq!(
         crate::sim::production::credits_for_owner(&runtime.simulation, "Americans"),

@@ -584,6 +584,11 @@ pub enum ConcealOutcome {
 /// but the stream preserves the verified native relative ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifecycleOutput {
+    /// Local House4F927C consumes +1FC before4F92E2 recalculates the retained
+    /// sidebar. Sale begin and ordinary StripAI/Draw do not request this pass.
+    SidebarRecalculated {
+        owner: InternedId,
+    },
     /// NodeDelete6380A6 captures its FIRST member successor before removal;
     ///6380EE updates only the local house retained presentation highlight.
     PlanningNodeDeleted {
@@ -1487,6 +1492,31 @@ impl Simulation {
         } else {
             false
         };
+        // Building4415D8: successful normal Unlimbo after opening/base-plan.
+        // The early dead/failed/attached-upgrade paths do not reach this call.
+        if !attached_upgrade
+            && let Some(rules) = context.rules()
+            && let Some((owner, category)) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .filter(|entity| entity.category() == EntityCategory::Structure)
+                .and_then(|entity| {
+                    let object = self.object_type(entity.type_ref(), rules)?;
+                    Some((
+                        entity.owner(),
+                        crate::sim::production::factory_category_for_building(object)?,
+                    ))
+                })
+        {
+            crate::sim::production::update_factory_queue(
+                self,
+                rules,
+                owner,
+                category,
+                context.effects(),
+            );
+        }
         RevealOutcome::Revealed { logic_registered }
     }
 
@@ -3047,6 +3077,31 @@ impl Simulation {
         self.object_conceal_with_context(stable_id, UninitContext::default())
     }
 
+    /// BuildingDetach44EE7F/44EEC8 temporarily excludes only this building
+    /// while the held type queries FindFactory and HouseAbandon runs. Restore
+    /// the old byte after synchronous callbacks; no stored producer binding.
+    pub(crate) fn with_factory_building_in_limbo<R>(
+        &mut self,
+        stable_id: u64,
+        callback: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let prior = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .map(|entity| entity.lifecycle.in_limbo);
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            entity.lifecycle.in_limbo = true;
+        }
+        let result = callback(self);
+        if let Some(prior) = prior
+            && let Some(entity) = self.substrate.entities.get_mut(stable_id)
+        {
+            entity.lifecycle.in_limbo = prior;
+        }
+        result
+    }
+
     fn object_conceal_with_context(
         &mut self,
         stable_id: u64,
@@ -3099,20 +3154,24 @@ impl Simulation {
                 resolvable: self.substrate.entities.contains(stable_id),
             });
         }
-        // The Building prelude of this Detach_All(1) abandons the building's
-        // own factory (`0x0044EC01..0x0044EC21`).
+        // BuildingDetach44EBF0 completes both production arms before the
+        // common Object expiry broadcast (44EC01..44EF24).
         if self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
-            crate::sim::production::detach_building_factory(
+            crate::sim::production::detach_building_production(
                 self,
                 context.rules(),
                 stable_id,
                 context.effects(),
             );
+            //44EED0 repeats OVER_OUT after production, independently of
+            //RadioLimbo65AA91's earlier contact pass. Repeated Conceal
+            //returns before this BuildingDetach arm.
+            crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
         }
         // The Foot prelude (`0x004D9744`) leaves the object's team, before
         // Limbo is set, so the object still takes its idle mode.
@@ -3453,7 +3512,33 @@ impl Simulation {
         // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
         self.gattling_limbo(stable_id, context);
         crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
-        self.object_conceal_with_context(stable_id, context)
+        let outcome = self.object_conceal_with_context(stable_id, context);
+        // Building445DF4..445E14 follows the base Limbo, including the
+        // already-limbo branch4458CE. This is one House/category callback,
+        // never a global eligibility sweep or a boolean-transition latch.
+        if let Some(rules) = context.rules()
+            && let Some((owner, category)) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .filter(|entity| entity.category() == EntityCategory::Structure)
+                .and_then(|entity| {
+                    let object = self.object_type(entity.type_ref(), rules)?;
+                    Some((
+                        entity.owner(),
+                        crate::sim::production::factory_category_for_building(object)?,
+                    ))
+                })
+        {
+            crate::sim::production::update_factory_queue(
+                self,
+                rules,
+                owner,
+                category,
+                context.effects(),
+            );
+        }
+        outcome
     }
 
     /// Guard UnInit's legacy uncredited-loss fallback. Routed RecordTheKill
@@ -3516,31 +3601,18 @@ impl Simulation {
     /// Detach_All @ 0x005F5280` then deselects and announces the expiry
     /// (`0x007258D0`), leaving Logic, occupancy and liveness intact.
     ///
-    /// RESIDUALS: the Building prelude also abandons the building's production
-    /// at the kill (`0x0044EC01..0x0044EEC8`, `0x004FAA10`), deleting its
-    /// object whether or not it is finished. A computer building's own factory
-    /// is abandoned here (`production::detach_building_factory`), but VERA
-    /// keeps the player's production per house, with no factory pointer on
-    /// the building: the next production phase (`revalidate_and_step_factories`)
-    /// abandons an unfinished build that lost its factory and a finished one
-    /// once no factory of its category remains. Trigger: a house with two
-    /// factories of a category loses the one its production is attached to.
-    /// Effect: natively the object is refunded and deleted at the kill; VERA
-    /// keeps it at the surviving factory. When VERA does abandon it, the
-    /// refund's Cost_Of is priced at that later phase, so a FactoryPlant lost
-    /// in the same frame changes it (a quarter of a vehicle's price for an
-    /// Industrial Plant). The Foot prelude removes the object from its team
-    /// (`TeamClass::Remove_Member @ 0x006EA870`, at `0x004D9744`) before its
-    /// radio contact.
+    /// The Building production prelude shares the same44EBF0 owner as
+    /// Conceal: abandon the separate Building Factory, temporarily exclude
+    /// the building, and cancel the House product only without an alternative.
+    /// Foot removes the team at4D9744 before its radio contact.
     pub(crate) fn object_destroy_callback(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(category) = self.substrate.entities.get(stable_id).map(|e| e.category()) else {
             return;
         };
         match category {
             EntityCategory::Structure => {
-                // The Building prelude opens with the building's own factory
-                // (`0x0044EC01..0x0044EC21`).
-                crate::sim::production::detach_building_factory(
+                // Shared BuildingDetach44EBF0 production prelude.
+                crate::sim::production::detach_building_production(
                     self,
                     context.rules(),
                     stable_id,

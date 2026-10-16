@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary selected GAPOWR original bracket geometry/projection and packed4BFD30 A/Z controls",
+  "assumptions": [
+    "HutTypeReader owns the loaded original image, native allocation/INI cache fixture and complete BuildingType45DD90 constructor. Native HasSection526810 and Image caller5F92F9..5F9340 consume exact-case strings in selected physical RULESMD, optional loose LANGRULE, Battle MPBattleMD and XMP03T4 layers. Fixed ARTMD from ra2md.mix/localmd.mix supplies only Height/OccupyHeight/Foundation to original4610D8..461112 and461225..46125D. Physical archive transport/cache preparation, full type reader/Scenario and unrelated keys are excluded.",
+    "Original Dimension2464AF0 derives dimensions from native Height/Foundation and a declared supplied startup height factor104. Prepared Building/House/type linkage, selected byte, location2688,5248,0, camera[-384,376], viewport160x160 and ordinary no-effect fields are priors. Original GetCoords, helper6F5EF0 and Tactical6DBB60 execute. Complete DrawBehind6F60D0 and DrawExtras6F5190 prefix stop6F5E17 before health; selection generation, placement, full parent/display scheduling and body raster do not execute.",
+    "Existing action_lines.physical_palette/PaletteReader execute original palette initialization on physical ra2.mix/cache.mix ANIM.PAL and PALETTE.PAL. Global87F6C4 middle lookup row index15 supplies the packed word to the geometry VM; it is not a marker color. Original6DBB60 produces integer screen points, paired Z adjustments and writeZ0 from original world endpoints.",
+    "The21 recorded normal Surface commands cross an explicit geometry-to-raster boundary into existing building_prism.LaserPixels->rally.Rally. Original4BFD30 runs with native BSurface lock/stride/unlock, supplied RGB565/A/Z planes, circular offset0 and native clip. No new runtime, INI parser, rasterizer, A/Z authority or packed-color formula produces expected pixels.",
+    "Clear A127/Z65535, existing Rally mixedA pattern(0,1,63,127,255), and a supplied rectangle[40,40,120,120] Z32700 are consumer controls. The rectangle is synthetic depth, not a GAPOWR body/bib/BUILDNGZ result. stores are original ordered color writes; pixels are final row-major changed words. All calls writeZ0; original code, A and Z remain unchanged. No RNG entry is observed in these bounded drawing intervals.",
+    "The fourth native_ground_body_z control instead consumes row runs from actual original flat ClearTile/TMP480350/547CF0 plus placed GAPOWR43CEA0->43D290->705E00->4AED70 body/shadow in the existing tmp_clear_render PaletteReader VM. The full native45FE50 reader consumes the physical layer stack; original45E8F0 loads/remaps physical BUILDNGZ. Existing color_scheme_palette constructs LightGold in this same owner. Native body point[84,74] comes from original virtual+AC459EF0 render coordinates, distinct from bracket center[84,104]; original455C20 bounds and normal graphical-client admission execute.",
+    "That composed control supplies sparse constructed/flat/revealed Cells, one selected ClearTile registry, placement byte6E4=1, local House/color index1, viewport/camera, A127 and startup104. Original43B740/44D6A0/43EF90 own health/idle/frame; active Anim slots stay empty. Native GAPOWR BibShape isNULL. Whole Behind and pre-health Extras run before the body, then pre-health Extras again. All12 lower commands make zero color stores on this flat ground;132 roof pixels remain. Compact final native Z runs become an explicit input to the independent original packed-line/GPU consumer; this does not replace or establish GPU body raster parity.",
+    "Deselected and prepared sinking controls exercise native gates; sinking is not claimed reachable by ordinary stock GAPOWR. Behind/initial Extras are separate command lists here. Native per-parent ordering, intervening building body, later Extras sweep, actual shroud/AlphaShape production, nearby overlapping bodies, GPU composition and a whole native frame remain separate validation gates."
+  ],
+  "substitutions": [
+    "Inherited HutTypeReader supplies bounded allocation/delete/CRT TLS boundaries; physical asset loading in that VM is rejected. Original INI cache lookups and field parsers execute.",
+    "GetHeight5F5F40 returns supplied ground-relative0. Geometry4BFD30 returns1 withRET1C after recording its actual seven arguments. Its full original body executes independently in the existing LaserPixels Surface runtime; this is not whole-native-frame composition.",
+    "Existing PaletteReader physical file/palette transport and existing Rally memory-surface storage replace operating-system/archive I/O and DirectDraw. Native palette conversion, clipping, A/Z tests, packed modulation and stores execute unchanged.",
+    "Composed ground/body mode reuses tmp_clear_render physical archives, native lazy TMP/RawFile transport, palette and Cell drawing owners. Sparse map enrollment and per-Cell traversal are supplied, not whole Map loading or Tactical scheduling. Original render/body/shape/packed-line calls execute without function-result substitutions. Full color/depth crop hashes are retained; bulk planes and screenshots are not corpus payloads."
+  ],
+  "entry_points": {
+    "type_ctor": "0x0045DD90",
+    "has_section": "0x00526810",
+    "image_begin": "0x005F92F9",
+    "image_end": "0x005F9340",
+    "art_height_begin": "0x004610D8",
+    "art_height_end": "0x00461112",
+    "art_foundation_begin": "0x00461225",
+    "art_foundation_end": "0x0046125D",
+    "dimension2": "0x00464AF0",
+    "behind": "0x006F60D0",
+    "extras": "0x006F5190",
+    "extras_stop": "0x006F5E17",
+    "bracket_pair": "0x006F5EF0",
+    "tactical_line": "0x006DBB60",
+    "packed_line": "0x004BFD30",
+    "building_type_reader": "0x0045FE50",
+    "body_admission": "0x0043CEA0",
+    "body": "0x0043D290",
+    "render_coords": "0x00459EF0",
+    "render_bounds": "0x00455C20",
+    "techno_shape": "0x00705E00",
+    "shape": "0x004AED70",
+    "building_zshape": "0x0045E8F0",
+    "cell_tile": "0x00480350",
+    "tmp": "0x00547CF0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --building-brackets",
+  "payload_sha256": "f76e9338a41076756e4aeec391004f45f12ceccf4392ee6ef73c899f9be5425c"
+}

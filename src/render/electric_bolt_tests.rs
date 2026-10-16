@@ -372,7 +372,8 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                     let (lines, _, _, main) = visit_lines(row, index);
                     assert_eq!(main, visit["rng_after"]["main"].as_str().unwrap());
                     let trails = trails(row, visit);
-                    terrain.prepare_surface_lines(
+                    terrain.begin_surface_lines();
+                    let prepared_lines = terrain.prepare_surface_lines(
                         &gpu.device,
                         &gpu.queue,
                         laser(row),
@@ -392,7 +393,7 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                     } else {
                         clear(&mut encoder, &cv, &dv, z[0], wgpu::LoadOp::Load);
                     }
-                    terrain.draw_surface_lines(&mut encoder, &cv);
+                    terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
                     let reads = [
                         gpu.read(&mut encoder, &color),
                         gpu.read(&mut encoder, &depth),

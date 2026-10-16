@@ -432,7 +432,7 @@ impl Simulation {
                     0,
                 )
                 .is_none()
-                    || object.tech_level == -1
+                    || self.object_tech_level(object) == -1
                     || object.deploys_into.is_some()
                     || object.speed <= 13
             })

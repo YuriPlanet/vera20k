@@ -171,8 +171,8 @@ pub struct ArtEntry {
     /// Parsed from DamageFireOffset0=X,Y .. DamageFireOffset7=X,Y in art.ini. Max 8.
     pub damage_fire_offsets: Vec<DamageFireOffset>,
     /// Building height in cell-height units (from `Height=` in art.ini).
-    /// Used for health bar vertical positioning: Dimension2.Z = (fh + Height) * 256
-    /// leptons, projected via CoordsToScreen as z_screen = (fh + Height) * 7.5 px.
+    /// BuildingType Dimension2 (464AF0) uses Height * 104 world leptons for Z;
+    /// its X/Y dimensions independently use the foundation's 256-lepton cells.
     pub height: i32,
     /// Fire port pixel offsets for garrison muzzle flashes.
     /// Parsed from `MuzzleFlash0=X,Y` through `MuzzleFlash9=X,Y` in art.ini.

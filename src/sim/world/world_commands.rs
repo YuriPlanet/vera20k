@@ -1155,7 +1155,14 @@ impl Simulation {
             Command::QueueProduction { type_id } => {
                 let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
-                production::enqueue_by_type(self, rules, command_owner, &type_s, frame_effects)
+                production::enqueue_by_type(
+                    self,
+                    rules,
+                    command_owner,
+                    &type_s,
+                    frame_effects,
+                    false,
+                )
             }
             Command::SuspendProduction { category } => {
                 production::suspend_production(self, command_owner, *category)
@@ -1202,11 +1209,14 @@ impl Simulation {
             Command::CancelProductionByType { type_id, all } => {
                 let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
-                production::cancel_by_type_for_owner(
+                production::cancel_production_for_owner(
                     self,
                     rules,
                     command_owner,
-                    &type_s,
+                    crate::sim::production::ProductionCancellation::Type {
+                        type_id: &type_s,
+                        naval: rules.object(&type_s).is_some_and(|object| object.naval),
+                    },
                     *all,
                     frame_effects,
                 )

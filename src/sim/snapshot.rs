@@ -1060,7 +1060,13 @@ use crate::sim::world::Simulation;
 // 376 -> 377: sight cache254/260 persists independently of latch250.
 // Earlier saves omitted inactive caches and are rejected, not reconstructed.
 // 377 -> 378: per-Super recharge override and House scripted offensive target.
-const SNAPSHOT_VERSION: u32 = 378;
+// 378 -> 379: Factory queue cleanup runs at Building lifecycle callbacks;
+// StartNext uses forced Begin admission and Abandon retains held identity
+// through destruction. Layout is unchanged; older sale continuations differ.
+// 379 -> 380: live type TechLevels and the process registry's global type order.
+// 380 -> 381: Factory+70 owns user hold and completion; the duplicate semantic
+// manual flag is removed. Older paused factories have incompatible state/layout.
+const SNAPSHOT_VERSION: u32 = 381;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1245,6 +1251,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("invalid saved TechnoType TechLevel state: {reason}")]
+    InvalidTypeTechLevels { reason: String },
     #[error("invalid scalable Bullet runtime: {0}")]
     InvalidScalableProjectileRuntime(&'static str),
     #[error("invalid radiation site order: {0}")]
@@ -2821,6 +2829,7 @@ impl Simulation {
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
+        self.validate_type_tech_levels(rules)?;
         let (overlay_width, overlay_height, overlay_cell_count, retained_wall_count) = self
             .overlay_grid
             .as_ref()
@@ -4585,7 +4594,10 @@ mod tests {
         // 375 -> 376: retained Foot Ammo and chrono reinforcement pending state.
         // 376 -> 377: retained source cache and independent sight latch.
         // 377 -> 378: Super recharge override and House offensive target.
-        assert_eq!(super::SNAPSHOT_VERSION, 378);
+        // 378 -> 379: synchronous Factory lifecycle and sale continuation.
+        // 379 -> 380: live type TechLevels and global constructor chronology.
+        // 380 -> 381: one Factory suspension authority; no duplicate manual bit.
+        assert_eq!(super::SNAPSHOT_VERSION, 381);
     }
 
     #[test]

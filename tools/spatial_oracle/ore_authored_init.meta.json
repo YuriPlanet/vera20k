@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original authored XMP03T4 Riparius queue allocation and rebuild after native Cell/first Recalc/Terrain placement, before final568BB0; selected native target admission prerequisites. No natural driver or full startup claim.",
+  "assumptions": [
+    "Existing Inputs physical RULESMD/optional LANGRULE/Battle/map layer walker and original Tiberium constructors/Image/Value/Overlay/Land readers; opt-in original721A78..721AFA timer reads share those exact passes/current-field defaults. Physical archive/member bytes are checked by the existing archive owner. Cached lexical strings and registry declaration-order transport remain explicit inputs, not whole native INI loading/registry enumeration.",
+    "Existing Navigation/Geometry VM, actual original Cell constructors, physical primary TMPs, first Recalc and original Terrain constructor/direct Place phase. Whole Terrain Unlimbo/discovery and authored OverlayPack constructor/ID lifetime are excluded. No graph/actor setup, second VM/heap/parser/RNG or host expected queue is introduced.",
+    "Original pre-init6B8CA0 physical SpecialFlags and Basic683848/68A571..68A58F read into temporary declared Scenario member storage on the same reader VM; results copy to the prepared map Scenario. Full_Init687853/689EAB reads these before687A85/687A8A queue initialization; GameMode1 session overwrite687C23 is later and is not substituted as the pre-init flags.",
+    "Original InitGrowth722D00 then InitSpread722240 allocate/reset/rebuild all types; actual578350/578290 traversal,485010/483620/483690 admissions, zero-priority stores, x87 heap operations and42B1C0 bitmap projection execute. Output follows native member pointers. Full native Main/Scenario/MapGen states from existing seeded0 map fixture are checked unchanged across init/final sweep; no Rust startup RNG/queues become golden inputs.",
+    "Final568BB0(0) executes on the same map and retains resource records/queues/timers/RNG. Only compact summaries and selected patch records are retained; no full cell-plane replay. Frame0 ctor timer priors remain unchanged, not reloaded by init.",
+    "Opt-in existing TileSet scalar loop reads AllowTiberium through5295F0/defaultfalse and publishes the native result to existing IsoTile+306, matching original54646D/546AB5 store roles. Selected patch pure4838E0 controls use declared active-game1, actual native Buildable/playfield/Cell inputs. No natural direction/variant draw, driver continuation, complete startup, arbitrary map/type or cache lifetime is claimed."
+  ],
+  "substitutions": [
+    "Existing shared successful allocator/CRT/TLS/file-cache and presentation sinks; actual original Cell/rebuild/heap/admission/reader instructions are not replaced."
+  ],
+  "entry_points": {
+    "init_growth": "0x00722D00",
+    "init_spread": "0x00722240",
+    "rebuild_growth": "0x007233A0",
+    "rebuild_spread": "0x007228B0",
+    "iterator_init": "0x00578350",
+    "iterator_next": "0x00578290",
+    "capacity": "0x0042B1F0",
+    "bitmap_ordinal": "0x0042B1C0",
+    "can_grow": "0x00483620",
+    "can_spread": "0x00483690",
+    "can_place": "0x004838E0",
+    "type_reader": "0x00721A78",
+    "special_flags": "0x006B8CA0",
+    "basic_growth": "0x0068A571",
+    "final_sweep": "0x00568BB0",
+    "tile_allow_reader": "0x00546187"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ore_queue --authored-init",
+  "payload_sha256": "a71e450d1dfa1821484a48137818c0538efaa39700bca6a37c0d108c4d159c87"
+}

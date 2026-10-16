@@ -94,7 +94,7 @@
 //!     only offline factories could build (`FindFactory(1,1,1)`,
 //!     `0x0050924D`), and a build promoted then starts on hold
 //!     (`0x004FA45B`). VERA has neither (residual at
-//!     `FactoryRegistry::plan_revalidation`). Trigger: a building event or a
+//!     `factory_lifecycle::update_factory_queue`). Trigger: a building event or a
 //!     promotion while every factory of the kind is warped; a warp's start
 //!     runs no update (`0x004521C0`). Effect: VERA keeps producing during
 //!     the warp.

@@ -83,14 +83,14 @@ pub struct BuildingPlacementCell {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildDisabledReason {
     /// No building of the house could build it (`FindFactory(1, 0, 0)`):
-    /// off the sidebar.
+    /// rejected by the next strip membership pass.
     NoFactory,
-    /// `HouseClass::CanBuild(type, 0, 1)` refuses it: off the sidebar.
+    /// `HouseClass::CanBuild(type, 0, 1)` refuses it on a membership pass.
     CannotBuild,
-    /// On the sidebar, darkened: no online factory may build it now
+    /// Unlinked cameo is darkened: no online factory may build it now
     /// (`FindFactory(1, 1, 1)`).
     NoReadyFactory,
-    /// On the sidebar, darkened: at its build limit.
+    /// Unlinked cameo is darkened: at its build limit.
     AtBuildLimit,
 }
 
@@ -185,13 +185,17 @@ pub struct BuildOption {
     pub object_category: ObjectCategory,
     pub queue_category: ProductionCategory,
     pub enabled: bool,
+    /// Select6AB656's independent CheckBuildLimit50B370 result. Unavailable
+    /// painting (including NoFactory) does not itself reject a cameo press.
+    pub at_build_limit: bool,
     pub reason: Option<BuildDisabledReason>,
 }
 
 impl BuildOption {
-    /// Whether the sidebar shows a cameo for this option: the strip keeps it
-    /// (`production_tech::strip_keeps`), darkened or not. Money never darkens
-    /// a cameo: a build the house cannot pay for starts and waits on hold.
+    /// Whether a membership pass admits/keeps this option through
+    /// `production_tech::strip_keeps`. The app's retained strip owns actual
+    /// membership between House rechecks. Money never darkens a cameo:
+    /// a build the house cannot pay for starts and stalls its paid steps.
     pub fn visible_in_sidebar(&self) -> bool {
         !matches!(
             self.reason,

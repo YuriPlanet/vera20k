@@ -993,10 +993,9 @@ fn exit_aircraft(
 /// stamp)` where stamp is the factory's construction stamp for the head (older than
 /// every entry queued behind it) or a tail entry's `enqueue_order`.
 ///
-/// `state` is DERIVED: head -> Paused if held by the user (`manual`), else Done if
-/// complete-held (`progress >= PRODUCTION_STEPS`, the blocked-exit case that persists
-/// across ticks), else Building (a cash stall included); tail -> Queued. `progress` is
-/// the factory's step count; a queued tail item has not started.
+/// `state` shares the linked FactoryView's native rate/+70/IsComplete decision
+/// with sidebar drawing and input; a cash stall still has a running rate.
+/// A tail is Queued and has not started; head progress is the factory's stage.
 pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> Vec<QueueItemView> {
     let Some(owner_id) = sim.interner.get(owner) else {
         return Vec::new();
@@ -1008,13 +1007,7 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
             continue;
         }
         if let Some(obj) = f.object.as_ref() {
-            let state = if f.manual {
-                BuildQueueState::Paused
-            } else if f.progress >= PRODUCTION_STEPS {
-                BuildQueueState::Done
-            } else {
-                BuildQueueState::Building
-            };
+            let state = f.view().cameo_state();
             items.push((
                 f.category,
                 f.insertion_seq,

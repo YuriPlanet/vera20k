@@ -1455,7 +1455,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     };
     if building.category() != EntityCategory::Structure
         || !object.can_be_occupied
-        || object.tech_level != -1
+        || sim.object_tech_level(object) != -1
     {
         return false;
     }

@@ -400,19 +400,21 @@ def queue_address(kind, name):
     return ARENA + kind * 0x8000 + (0x4000 if name == 'growth' else 0)
 
 
-def read_queue(u, read32, kind, name, capacity, bitmap_coordinates):
-    counter, _, _, _ = FIELDS[name]
-    q = queue_address(kind, name)
-    count, heap_count = read32(TIBS + kind * 0x200 + counter), read32(q)
+def read_queue(u, read32, kind, name, capacity, bitmap_coordinates, *, tiberium_pointer=None):
+    counter, queue_field, bitmap_field, entries_field = FIELDS[name]
+    tib = TIBS + kind * 0x200 if tiberium_pointer is None else tiberium_pointer
+    q, array = read32(tib + queue_field), read32(tib + entries_field)
+    heap_table, bitmap_pointer = read32(q + 8), read32(tib + bitmap_field)
+    count, heap_count = read32(tib + counter), read32(q)
     assert count <= capacity + 1 and heap_count < capacity
-    entries = [dict(cell=list(struct.unpack('<hh', u.mem_read(q + 0x100 + i * 8, 4))),
-                    priority_bits=read32(q + 0x104 + i * 8)) for i in range(count)]
+    entries = [dict(cell=list(struct.unpack('<hh', u.mem_read(array + i * 8, 4))),
+                    priority_bits=read32(array + i * 8 + 4)) for i in range(count)]
     heap = []
     for slot in range(1, heap_count + 1):
-        delta = read32(q + 0x1000 + slot * 4) - (q + 0x100)
+        delta = read32(heap_table + slot * 4) - array
         assert delta >= 0 and delta % 8 == 0 and delta // 8 < count
         heap.append(delta // 8)
-    bitmap = [i for i, value in enumerate(u.mem_read(q + 0x2000, capacity)) if value]
+    bitmap = [i for i, value in enumerate(u.mem_read(bitmap_pointer, capacity)) if value]
     assert all(i in bitmap_coordinates for i in bitmap)
     bitmap_cells = sorted([bitmap_coordinates[i] for i in bitmap])
     return dict(array_count=count, entries=entries, heap_indices=heap, bitmap_indices=bitmap,
@@ -748,7 +750,209 @@ def generate():
                 timer_reader_cases=timer_reader_cases())
 
 
+def generate_authored_init():
+    """Original queue allocation/rebuild on independently physical authored cells.
+
+    The full-map owner provides its existing pre-final Terrain phase. This
+    composes that owner with these queue bodies; it creates no VM, heap, RNG,
+    parser, Overlay implementation or expected queue on the host.
+    """
+    from collections import Counter
+    from tools.native_oracle import image_sha256
+    from tools.spatial_oracle.anytown_damage.navigation_inputs import (
+        Inputs, identity, ASSETS, extract_tiles,
+    )
+    from tools.spatial_oracle.anytown_damage.navigation import Navigation, sr
+    from tools.spatial_oracle.bridge_shadow_render import physical_assets
+
+    theater = identity.theater()
+    reader = Inputs(theater, map_file=ASSETS / 'XMP03T4.MAP', damage_overlays=(),
+                    tiberium_timer_readers=True)
+    effective_types = reader.tiberium_queue_inputs()
+    scenario_theater = reader.read_map_theater()
+    gates = reader.read_map_tiberium_gates()
+    # The shared extraction/archive owner establishes these actual physical
+    # payloads. No second archive reader or hand-authored winner table is used.
+    ore_assets, ore_sources = physical_assets(ore=True)
+    tile_assets, tile_sources = physical_assets(tile=True)
+    physical_assets_by_name = ore_assets | tile_assets
+    physical_sources = {row['name'].upper(): row for row in ore_sources + tile_sources}
+    source_files = [('RULESMD.INI', identity.ri.ASSETS / 'RULESMD.INI'),
+                    ('ARTMD.INI', identity.ri.ASSETS / 'ARTMD.INI'),
+                    ('MPBATTLEMD.INI', identity.ri.ASSETS / 'MPBattleMD.ini'),
+                    ('TEMPERATMD.INI', identity.ri.ASSETS / 'TEMPERATMD.INI'),
+                    ('XMP03T4.MAP', reader.map_file)]
+    manifest = []
+    for name, path in source_files:
+        assert path.read_bytes() == physical_assets_by_name[name], name
+        manifest.append(physical_sources[name])
+    manifest.append(dict(name='LANGRULE.INI', absent=not (identity.ri.ASSETS / 'LANGRULE.INI').exists(),
+                         boundary='Selected physical extraction bundle; production consumer also checks its actual asset source.'))
+    tiles, tile_receipt = extract_tiles(theater)
+    native_map = Navigation(reader, theater, tiles, create_actor=False,
+                            scenario_theater=scenario_theater, terrain_inputs_only=True)
+    u = native_map.uc
+    read32 = lambda pointer: sr.u32(u, pointer)
+    signed = lambda value: struct.unpack('<i', dwords(value))[0]
+    scenario = read32(0xA8B230)
+    u.mem_write(scenario, dwords(gates['flags']))
+    u.mem_write(scenario + 0x34A6, bytes([gates['basic_growth_enabled']]))
+    pointers = [read32(read32(0xB0F4EC) + i * 4) for i in range(read32(0xB0F4F8))]
+    capacity = native_map.call(0x42B1F0, this=0)
+    bitmap_coordinates = {}
+    iterator = []
+    native_map.call(0x578350)
+    while True:
+        pointer = native_map.call(0x578290)
+        if not pointer:
+            break
+        xy = native_map.coord(pointer)
+        ordinal = native_map.call(0x42B1C0, this=pointer + 0x24)
+        assert ordinal < capacity and ordinal not in bitmap_coordinates
+        bitmap_coordinates[ordinal] = xy
+        iterator.append(xy)
+    assert set(map(tuple, iterator)) == set(native_map.ptrs)
+
+    def rng_bytes():
+        return {name: bytes(u.mem_read(pointer, 1012)) for name, pointer in native_map.rngs.items()}
+
+    def rng_hashes(states):
+        return {name: hashlib.sha256(raw).hexdigest() for name, raw in states.items()}
+
+    def state():
+        classes = []
+        for kind, pointer in enumerate(pointers):
+            assert read32(pointer + 0x98) == kind
+            classes.append(dict(type_id=kind,
+                growth=read_queue(u, read32, kind, 'growth', capacity, bitmap_coordinates,
+                                  tiberium_pointer=pointer),
+                spread=read_queue(u, read32, kind, 'spread', capacity, bitmap_coordinates,
+                                  tiberium_pointer=pointer),
+                growth_timer=list(struct.unpack('<3i', u.mem_read(pointer + 0x11C, 12))),
+                spread_timer=list(struct.unpack('<3i', u.mem_read(pointer + 0x100, 12)))))
+        return dict(classes=classes)
+
+    def cell_state(xy):
+        pointer = native_map.ptrs[tuple(xy)]
+        return dict(cell=list(xy), overlay=sr.i32(u, pointer + 0x44),
+            density=u.mem_read(pointer + 0x11E, 1)[0], tile=sr.i32(u, pointer + 0x38),
+            subtile=u.mem_read(pointer + 0x11A, 1)[0], level=u.mem_read(pointer + 0x11B, 1)[0],
+            slope=u.mem_read(pointer + 0x11C, 1)[0], land=sr.i32(u, pointer + 0xEC),
+            flags=read32(pointer + 0x140), has_ground_object=bool(read32(pointer + 0xE4)),
+            type_id=signed(native_map.call(0x485010, this=pointer)),
+            value=signed(native_map.call(0x485020, this=pointer)),
+            bitmap_ordinal=native_map.call(0x42B1C0, this=pointer + 0x24))
+
+    # Only compact summaries and selected phase controls are retained. The
+    # original full native source plane remains local to its established owner.
+    resources = []
+    for xy in iterator:
+        pointer = native_map.ptrs[tuple(xy)]
+        if sr.i32(u, pointer + 0x44) >= 0 and signed(native_map.call(0x485010, this=pointer)) >= 0:
+            resources.append(cell_state(xy))
+    summaries = []
+    for kind in range(len(pointers)):
+        cells = [row for row in resources if row['type_id'] == kind]
+        summaries.append(dict(type_id=kind, resource_cells=len(cells),
+            density_histogram=dict(sorted(Counter(row['density'] for row in cells).items())),
+            flat_cells=sum(row['slope'] == 0 for row in cells),
+            occupied_cells=sum(row['has_ground_object'] for row in cells)))
+    timers_before = [dict(type_id=kind,
+        growth_timer=list(struct.unpack('<3i', u.mem_read(pointer + 0x11C, 12))),
+        spread_timer=list(struct.unpack('<3i', u.mem_read(pointer + 0x100, 12))))
+        for kind, pointer in enumerate(pointers)]
+    rng_before = rng_bytes()
+    order = []
+
+    def observe(_u, pc, _n, _d):
+        if pc in (REBUILD_GROWTH, REBUILD_SPREAD):
+            order.append(dict(entry=f'{pc:08X}', type_id=read32(u.reg_read(UC_X86_REG_ECX) + 0x98)))
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    native_map.call(0x722D00, this=0, count=100000000)
+    native_map.call(0x722240, this=0, count=100000000)
+    u.hook_del(hook)
+    initialized = state()
+    rng_after_init = rng_bytes()
+    assert rng_before == rng_after_init
+    assert all(before['growth_timer'] == after['growth_timer'] and before['spread_timer'] == after['spread_timer']
+               for before, after in zip(timers_before, initialized['classes']))
+    # Actual final load sweep follows this earlier initialization. Do not
+    # seed expected queues from a later production/Rust cell snapshot.
+    total_value = native_map.call(0x568BB0, args=(0,), count=100000000)
+    final = state()
+    rng_after_final = rng_bytes()
+    assert initialized == final and rng_after_init == rng_after_final
+    assert resources == [cell_state(row['cell']) for row in resources]
+    # These declared patch queries exercise the independently native-read
+    # selected AllowTiberium/Buildable/playfield prerequisites. No driver,
+    # direction selection or startup RNG claim is added by these pure calls.
+    u.mem_write(0xA8E9A0, b'\1')
+    patch = []
+    for xy in ((72, 25), (71, 24), (72, 24), (73, 24), (71, 25), (71, 26)):
+        row = cell_state(xy)
+        pointer = native_map.ptrs[xy]
+        properties = native_map.tile_properties[row['tile']]
+        head = read32(read32(0xA8ED2C) + row['tile'] * 4)
+        row.update(tile_file=theater['tiles'][row['tile']],
+            tile_allow_tiberium=bool(u.mem_read(head + 0x306, 1)[0]),
+            tile_allow_reader=dict(file=reader.theater_file, section=f"TileSet{properties['ordinal']:04d}",
+                key='AllowTiberium', default=False, entry='00546187..0054619B', store='0054646D'),
+            land_buildable=bool(u.mem_read(0x89EA60 + row['land'] * 36, 1)[0]),
+            playfield=bool(native_map.call(0x578460, args=(pointer + 0x24, 0)) & 255),
+            can_place_riparius=bool(native_map.call(CAN_PLACE, this=pointer, args=(0,)) & 255))
+        patch.append(row)
+    assert rng_bytes() == rng_after_final
+    flat_overlays = []
+    for index in range(effective_types[0]['base_overlay'],
+                       effective_types[0]['base_overlay'] + effective_types[0]['images']):
+        pointer = reader.overlay_ptrs[index]
+        flat_overlays.append(dict(index=index, name=reader.names[index],
+                                  cell_anim_null=reader.read32(pointer + 0x29C) == 0))
+    return dict(source='unicorn/gamemd.exe', native_sha256=image_sha256(),
+        native_rect=native_map.case['size'], capacity=capacity,
+        inputs=dict(manifest=manifest, type_readers=reader.tiberium_timer_layers,
+            effective_types=effective_types, gates=gates, scenario_theater=scenario_theater,
+            native_iterator=dict(count=len(iterator), first=iterator[0], last=iterator[-1],
+                order_sha256=hashlib.sha256(b''.join(struct.pack('<hh', *xy) for xy in iterator)).hexdigest()),
+            source_admission_summary=summaries, flat_overlay_types=flat_overlays,
+            physical_tmp_archives=dict(outer_sha256=tile_receipt['outer_sha256'],
+                                      inner_sha256=tile_receipt['inner_sha256']),
+            admission_game_active=1),
+        timers_before=timers_before, rng_before=rng_hashes(rng_before),
+        init_order=order, state=initialized, rng_after_init=rng_hashes(rng_after_init),
+        final_sweep=dict(entry='00568BB0', argument=0, queues_timers_unchanged=initialized == final,
+            source_records_unchanged=True, tiberium_value=total_value,
+            rng_after=rng_hashes(rng_after_final)), patch=patch)
+
+
+def authored_init_metadata():
+    return provenance(scope='Original authored XMP03T4 Riparius queue allocation and rebuild after native Cell/first Recalc/Terrain placement, before final568BB0; selected native target admission prerequisites. No natural driver or full startup claim.',
+        assumptions=[
+            'Existing Inputs physical RULESMD/optional LANGRULE/Battle/map layer walker and original Tiberium constructors/Image/Value/Overlay/Land readers; opt-in original721A78..721AFA timer reads share those exact passes/current-field defaults. Physical archive/member bytes are checked by the existing archive owner. Cached lexical strings and registry declaration-order transport remain explicit inputs, not whole native INI loading/registry enumeration.',
+            'Existing Navigation/Geometry VM, actual original Cell constructors, physical primary TMPs, first Recalc and original Terrain constructor/direct Place phase. Whole Terrain Unlimbo/discovery and authored OverlayPack constructor/ID lifetime are excluded. No graph/actor setup, second VM/heap/parser/RNG or host expected queue is introduced.',
+            'Original pre-init6B8CA0 physical SpecialFlags and Basic683848/68A571..68A58F read into temporary declared Scenario member storage on the same reader VM; results copy to the prepared map Scenario. Full_Init687853/689EAB reads these before687A85/687A8A queue initialization; GameMode1 session overwrite687C23 is later and is not substituted as the pre-init flags.',
+            'Original InitGrowth722D00 then InitSpread722240 allocate/reset/rebuild all types; actual578350/578290 traversal,485010/483620/483690 admissions, zero-priority stores, x87 heap operations and42B1C0 bitmap projection execute. Output follows native member pointers. Full native Main/Scenario/MapGen states from existing seeded0 map fixture are checked unchanged across init/final sweep; no Rust startup RNG/queues become golden inputs.',
+            'Final568BB0(0) executes on the same map and retains resource records/queues/timers/RNG. Only compact summaries and selected patch records are retained; no full cell-plane replay. Frame0 ctor timer priors remain unchanged, not reloaded by init.',
+            'Opt-in existing TileSet scalar loop reads AllowTiberium through5295F0/defaultfalse and publishes the native result to existing IsoTile+306, matching original54646D/546AB5 store roles. Selected patch pure4838E0 controls use declared active-game1, actual native Buildable/playfield/Cell inputs. No natural direction/variant draw, driver continuation, complete startup, arbitrary map/type or cache lifetime is claimed.',
+        ], substitutions=['Existing shared successful allocator/CRT/TLS/file-cache and presentation sinks; actual original Cell/rebuild/heap/admission/reader instructions are not replaced.'],
+        entry_points=dict(init_growth=0x722D00, init_spread=0x722240,
+            rebuild_growth=REBUILD_GROWTH, rebuild_spread=REBUILD_SPREAD,
+            iterator_init=0x578350, iterator_next=0x578290, capacity=0x42B1F0,
+            bitmap_ordinal=0x42B1C0, can_grow=0x483620, can_spread=0x483690,
+            can_place=CAN_PLACE, type_reader=0x721A78, special_flags=0x6B8CA0,
+            basic_growth=0x68A571, final_sweep=0x568BB0, tile_allow_reader=0x546187))
+
+
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--authored-init', action='store_true')
+    selected, remaining = parser.parse_known_args()
+    if selected.authored_init:
+        finish_vectors(generate_authored_init, Path(__file__).with_name('ore_authored_init.json'),
+                       provenance=authored_init_metadata, argv=remaining)
+        raise SystemExit(0)
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
         scope='Bounded original AddToGrowth7235A0/AddToSpread722AF0 enqueue-counter rebuilds, '
               'full RebuildGrowth7233A0/RebuildSpread7228B0, gates, reseeding order, duplicate '

@@ -411,6 +411,246 @@ fn production_shadow_exhausts_all_65536_destination_words() {
     }
 }
 
+/// StripDraw401 uses the same native packed-half kernel with no Z reads or
+/// writes. An output-local camera/scratch must not inherit the tactical view.
+#[test]
+#[ignore = "requires a GPU; executes the production no-Z packed surface"]
+fn production_no_z_mask_exhausts_words_and_preserves_depth() {
+    use super::terrain_draw::{PackedCompositePiece, PackedSpriteKind};
+    let gpu = Gpu::new();
+    let goldens = crate::test_fixture::bytes("tools/terrain_draw_oracle/fixtures/half-rgb565.bin");
+    let half = |word: u16| {
+        let i = usize::from(word) * 2;
+        u16::from_le_bytes([goldens[i], goldens[i + 1]])
+    };
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let size = [256; 2];
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let mut renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        let primary = gpu.target([7, 9], format);
+        let primary_depth = gpu.target([7, 9], wgpu::TextureFormat::Depth32Float);
+        let primary_dv = primary_depth.create_view(&Default::default());
+        renderer.prepare(&gpu.device, &primary, &primary_dv, camera([7, 9]));
+        let color = gpu.target(size, format);
+        let cv = color.create_view(&Default::default());
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let dv = depth.create_view(&Default::default());
+        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv);
+        let offset = [137.25, -31.5];
+        let ui = CameraUniform {
+            camera_pos: offset,
+            ..camera(size)
+        };
+        let (ui_buffer, ui_group) = batch.create_ui_camera(&gpu.device);
+        gpu.queue
+            .write_buffer(&ui_buffer, 0, bytemuck::bytes_of(&ui));
+        let bytes: Vec<_> = (0..=u16::MAX)
+            .flat_map(|word| encoded(word, format))
+            .collect();
+        gpu.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &color,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(1024),
+                rows_per_image: Some(256),
+            },
+            extent(size),
+        );
+        // Source colour, lighting and native candidate are deliberately
+        // irrelevant. Candidate0 versus storedZ0 would fail any Z test.
+        let mask = batch.create_texture_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &[17, 231, 49, 0],
+            1,
+            1,
+            Some(&[255]),
+        );
+        let instance = SpriteInstance {
+            draw_state: super::draw_state::DrawState::from_native_selector(0, 1),
+            ..sprite(offset, [256.0; 2], 65535.0)
+        };
+        let buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Native no-Z mask ABI"),
+                contents: bytemuck::bytes_of(&instance),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let piece = PackedCompositePiece {
+            index: 0,
+            instance: &instance,
+            source: &mask.bind_group,
+            material: batch.default_zshape_bind_group(),
+            kind: PackedSpriteKind::IndexMask,
+        };
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(&mut encoder, &cv, &dv, 0, wgpu::LoadOp::Load);
+        let mut reads = Vec::new();
+        for _ in 0..2 {
+            renderer.draw_packed_surface(
+                &mut encoder,
+                &cv,
+                &dv,
+                &surface,
+                ui,
+                &ui_group,
+                &buffer,
+                &[piece],
+            );
+            reads.push(gpu.read(&mut encoder, &color));
+        }
+        reads.push(gpu.read(&mut encoder, &depth));
+        let output = gpu.finish(encoder, &reads, size);
+        for word in 0..=u16::MAX {
+            let at = usize::from(word) * 4;
+            assert_eq!(
+                output[0][at..at + 4],
+                encoded(half(word), format),
+                "first {format:?} word{word:04x}"
+            );
+            assert_eq!(
+                output[1][at..at + 4],
+                encoded(half(half(word)), format),
+                "repeat {format:?} word{word:04x}"
+            );
+            assert_eq!(
+                f32::from_le_bytes(output[2][at..at + 4].try_into().unwrap()),
+                super::native_z::stored_depth(0)
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires a GPU; executes native N=1 words through the no-Z UI compositor"]
+fn production_no_z_ui_half_blend_matches_native_controls() {
+    use super::terrain_draw::{PackedCompositePiece, PackedSpriteKind};
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/translucent_blitter_a.json",
+    ))
+    .unwrap();
+    let rows: Vec<_> = native["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| {
+            row["route"] == "shp"
+                && row["profile"] == "plain1"
+                && row["selector_bits"] == 4
+                && row["brightness"] == 1000
+                && row["displacement"] == 0
+                && row["writes_depth"] == false
+        })
+        .collect();
+    assert!(!rows.is_empty());
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let size = [rows.len() as u32, 1];
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let mut renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+    let color = gpu.target(size, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    renderer.prepare(&gpu.device, &color, &dv, camera(size));
+    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv);
+    let bytes: Vec<_> = rows
+        .iter()
+        .flat_map(|row| encoded(row["raw"].as_u64().unwrap() as u16, format))
+        .collect();
+    gpu.queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &bytes,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(size[0] * 4),
+            rows_per_image: Some(1),
+        },
+        extent(size),
+    );
+    let indices: Vec<_> = rows
+        .iter()
+        .map(|row| row["index"].as_u64().unwrap() as u8)
+        .collect();
+    // The production clock loader already performs ordinary N=1 conversion.
+    let profile = super::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
+    let rgba: Vec<_> = rows
+        .iter()
+        .flat_map(|row| {
+            profile.quantize_rgba8([
+                row["rgb"][0].as_u64().unwrap() as u8,
+                row["rgb"][1].as_u64().unwrap() as u8,
+                row["rgb"][2].as_u64().unwrap() as u8,
+                255,
+            ])
+        })
+        .collect();
+    let texture =
+        batch.create_texture_on_device(&gpu.device, &gpu.queue, &rgba, size[0], 1, Some(&indices));
+    let instance = SpriteInstance {
+        draw_state: super::draw_state::DrawState::from_native_selector(0, 4),
+        ..sprite([0.0; 2], [size[0] as f32, 1.0], 65535.0)
+    };
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::bytes_of(&instance),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    let piece = PackedCompositePiece {
+        index: 0,
+        instance: &instance,
+        source: &texture.bind_group,
+        material: batch.default_zshape_bind_group(),
+        kind: PackedSpriteKind::UiPalette,
+    };
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    clear(&mut encoder, &cv, &dv, 0, wgpu::LoadOp::Load);
+    renderer.draw_packed_surface(
+        &mut encoder,
+        &cv,
+        &dv,
+        &surface,
+        camera(size),
+        batch.camera_bind_group(),
+        &buffer,
+        &[piece],
+    );
+    let reads = [
+        gpu.read(&mut encoder, &color),
+        gpu.read(&mut encoder, &depth),
+    ];
+    let output = gpu.finish(encoder, &reads, size);
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(
+            output[0][i * 4..i * 4 + 4],
+            encoded(row["colors"][0].as_u64().unwrap() as u16, format),
+            "native control{i}: {row}"
+        );
+        assert_eq!(
+            f32::from_le_bytes(output[1][i * 4..i * 4 + 4].try_into().unwrap()),
+            super::native_z::stored_depth(0)
+        );
+    }
+}
+
 #[test]
 #[ignore = "requires a GPU; original signed/store/repeat leaf cases"]
 fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {

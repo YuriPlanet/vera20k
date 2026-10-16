@@ -192,8 +192,9 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
     );
     let harvester = crate::sim::ai_buildable::first_owner_compatible_harvester(rules, country_bit);
     harvester_decision(&HarvesterFacts {
-        harvester: harvester
-            .and_then(|harvester| Some((unit_index(&harvester.id)?, harvester.tech_level))),
+        harvester: harvester.and_then(|harvester| {
+            Some((unit_index(&harvester.id)?, sim.object_tech_level(harvester)))
+        }),
         refinery: refinery.map(|refinery| refinery.undeploys_into.as_deref().and_then(unit_index)),
         gatherers: house.tracking.resource_gatherers(),
         destinations: house.tracking.resource_destinations(),

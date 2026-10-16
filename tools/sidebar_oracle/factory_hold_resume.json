@@ -1,0 +1,2032 @@
+{
+  "controls": [
+    {
+      "initial": {
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "E2"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1
+      },
+      "inputs": {
+        "completed": false,
+        "poor_wallet": false,
+        "power_drain": 0,
+        "power_output": 99
+      },
+      "name": "affordable",
+      "phases": [
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 1
+            },
+            "frame": 2
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 1
+            },
+            "frame": 2
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                675803376,
+                0
+              ],
+              "caller": "0x30000000",
+              "name": "select_action",
+              "return_eax_raw": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                1065353216,
+                0
+              ],
+              "caller": "0x6aaffd",
+              "name": "play_gui_sound",
+              "return_eax_raw": 672301520,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                4294967295
+              ],
+              "caller": "0x6ab00c",
+              "name": "eva",
+              "request": "EVA_OnHold",
+              "return_eax_raw": 0,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [
+            {
+              "cell": null,
+              "frame": 2,
+              "index": 7,
+              "instance_kind": 16,
+              "kind": 15,
+              "naval": 0
+            }
+          ],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "right_select",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 2
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 1
+            },
+            "frame": 2
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                7,
+                675802624
+              ],
+              "caller": "0x4c7158",
+              "name": "house_suspend",
+              "naval_low_byte": 0,
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                1
+              ],
+              "argument_low_byte": 1,
+              "caller": "0x4fa9aa",
+              "name": "factory_suspend",
+              "return_eax_raw": 1,
+              "return_low_byte": 1,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "suspend_receive",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": [
+            {
+              "after": "02000000",
+              "before": "01000000",
+              "field": "start",
+              "pc": "0x4c9e83",
+              "size": 4
+            },
+            {
+              "after": "00000000",
+              "before": "01000000",
+              "field": "duration",
+              "pc": "0x4c9e8e",
+              "size": 4
+            }
+          ]
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "paused_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "calls": [
+            {
+              "args_raw": [],
+              "caller": "0x30000000",
+              "name": "factory_rate_rewrite",
+              "return_eax_raw": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [],
+              "caller": "0x4ca70b",
+              "held_object": true,
+              "name": "time_to_build",
+              "return_eax_raw": 62,
+              "return_i32": 62,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "rate_refresh",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 12
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 12
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "refreshed_paused_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 13
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 13
+          },
+          "calls": [
+            {
+              "args_raw": [
+                1,
+                675803376,
+                0
+              ],
+              "caller": "0x30000000",
+              "name": "select_action",
+              "return_eax_raw": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                1065353216,
+                0
+              ],
+              "caller": "0x6ab47f",
+              "name": "play_gui_sound",
+              "return_eax_raw": 672302168,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                4294967295
+              ],
+              "caller": "0x6ab49d",
+              "name": "eva",
+              "request": "EVA_Training",
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [],
+              "caller": "0x4c9fbe",
+              "held_object": true,
+              "name": "time_to_build",
+              "return_eax_raw": 62,
+              "return_i32": 62,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [
+            {
+              "cell": null,
+              "frame": 13,
+              "index": 7,
+              "instance_kind": 16,
+              "kind": 14,
+              "naval": 0
+            }
+          ],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "left_select",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 13
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 13
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                7,
+                675802624,
+                0
+              ],
+              "caller": "0x4c7135",
+              "force_low_byte": 0,
+              "name": "begin_production",
+              "naval_low_byte": 0,
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                0,
+                1,
+                1,
+                537526272
+              ],
+              "caller": "0x4fa43e",
+              "name": "type_find_factory",
+              "return_eax_raw": 675793376,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                537526272
+              ],
+              "argument_low_byte": 0,
+              "caller": "0x4fa62d",
+              "name": "set_production_rate",
+              "return_eax_raw": 9985,
+              "return_low_byte": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [],
+              "caller": "0x4c9ef4",
+              "held_object": true,
+              "name": "time_to_build",
+              "return_eax_raw": 62,
+              "return_i32": 62,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                675815616,
+                16,
+                7
+              ],
+              "caller": "0x4fa6af",
+              "name": "sidebar_link_factory",
+              "return_eax_raw": 1,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "resume_receive",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": [
+            {
+              "after": "0d000000",
+              "before": "02000000",
+              "field": "start",
+              "pc": "0x4c9f2b",
+              "size": 4
+            },
+            {
+              "after": "01000000",
+              "before": "00000000",
+              "field": "duration",
+              "pc": "0x4c9f34",
+              "size": 4
+            }
+          ]
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 13
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 13
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "same_frame_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 98,
+              "changed": true,
+              "credits": 9998,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 2,
+              "stage": 2,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 14
+            },
+            "frame": 14
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 14
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "next_frame_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": [
+            {
+              "after": "0e000000",
+              "before": "0d000000",
+              "field": "start",
+              "pc": "0x4c9b92",
+              "size": 4
+            },
+            {
+              "after": "01000000",
+              "before": "01000000",
+              "field": "duration",
+              "pc": "0x4c9b97",
+              "size": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "factory": {
+          "balance": 99,
+          "changed": true,
+          "credits": 9999,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "E2"
+          ],
+          "rate": 1,
+          "spent": 1,
+          "stage": 1,
+          "suspended": false,
+          "timer_duration": 1,
+          "timer_start": 1
+        },
+        "frame": 1
+      },
+      "inputs": {
+        "completed": false,
+        "poor_wallet": true,
+        "power_drain": 0,
+        "power_output": 99
+      },
+      "name": "poor_wallet",
+      "phases": [
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 1
+            },
+            "frame": 2
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 1
+            },
+            "frame": 2
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                675803376,
+                0
+              ],
+              "caller": "0x30000000",
+              "name": "select_action",
+              "return_eax_raw": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                1065353216,
+                0
+              ],
+              "caller": "0x6aaffd",
+              "name": "play_gui_sound",
+              "return_eax_raw": 672301520,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                4294967295
+              ],
+              "caller": "0x6ab00c",
+              "name": "eva",
+              "request": "EVA_OnHold",
+              "return_eax_raw": 0,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [
+            {
+              "cell": null,
+              "frame": 2,
+              "index": 7,
+              "instance_kind": 16,
+              "kind": 15,
+              "naval": 0
+            }
+          ],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "right_select",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 2
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 1
+            },
+            "frame": 2
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                7,
+                675802624
+              ],
+              "caller": "0x4c7158",
+              "name": "house_suspend",
+              "naval_low_byte": 0,
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                1
+              ],
+              "argument_low_byte": 1,
+              "caller": "0x4fa9aa",
+              "name": "factory_suspend",
+              "return_eax_raw": 1,
+              "return_low_byte": 1,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "suspend_receive",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": [
+            {
+              "after": "02000000",
+              "before": "01000000",
+              "field": "start",
+              "pc": "0x4c9e83",
+              "size": 4
+            },
+            {
+              "after": "00000000",
+              "before": "01000000",
+              "field": "duration",
+              "pc": "0x4c9e8e",
+              "size": 4
+            }
+          ]
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "paused_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 11
+          },
+          "calls": [
+            {
+              "args_raw": [],
+              "caller": "0x30000000",
+              "name": "factory_rate_rewrite",
+              "return_eax_raw": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [],
+              "caller": "0x4ca70b",
+              "held_object": true,
+              "name": "time_to_build",
+              "return_eax_raw": 62,
+              "return_i32": 62,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "rate_refresh",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 12
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 12
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "refreshed_paused_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 12
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 9999,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 1,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 12
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "spend_wallet",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 13
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 13
+          },
+          "calls": [
+            {
+              "args_raw": [
+                1,
+                675803376,
+                0
+              ],
+              "caller": "0x30000000",
+              "name": "select_action",
+              "return_eax_raw": 1,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                1065353216,
+                0
+              ],
+              "caller": "0x6ab47f",
+              "name": "play_gui_sound",
+              "return_eax_raw": 672302168,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                4294967295
+              ],
+              "caller": "0x6ab49d",
+              "name": "eva",
+              "request": "EVA_Training",
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [],
+              "caller": "0x4c9fbe",
+              "held_object": true,
+              "name": "time_to_build",
+              "return_eax_raw": 62,
+              "return_i32": 62,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [
+            {
+              "cell": null,
+              "frame": 13,
+              "index": 7,
+              "instance_kind": 16,
+              "kind": 14,
+              "naval": 0
+            }
+          ],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "left_select",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 13
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 2
+            },
+            "frame": 13
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                7,
+                675802624,
+                0
+              ],
+              "caller": "0x4c7135",
+              "force_low_byte": 0,
+              "name": "begin_production",
+              "naval_low_byte": 0,
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                0,
+                1,
+                1,
+                537526272
+              ],
+              "caller": "0x4fa43e",
+              "name": "type_find_factory",
+              "return_eax_raw": 675793376,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                537526272
+              ],
+              "argument_low_byte": 0,
+              "caller": "0x4fa62d",
+              "name": "set_production_rate",
+              "return_eax_raw": 0,
+              "return_low_byte": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [],
+              "caller": "0x4c9ef4",
+              "held_object": true,
+              "name": "time_to_build",
+              "return_eax_raw": 62,
+              "return_i32": 62,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                675815616,
+                16,
+                7
+              ],
+              "caller": "0x4fa6af",
+              "name": "sidebar_link_factory",
+              "return_eax_raw": 1,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "resume_receive",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": [
+            {
+              "after": "0d000000",
+              "before": "02000000",
+              "field": "start",
+              "pc": "0x4c9f2b",
+              "size": 4
+            },
+            {
+              "after": "01000000",
+              "before": "00000000",
+              "field": "duration",
+              "pc": "0x4c9f34",
+              "size": 4
+            }
+          ]
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 13
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 13
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "same_frame_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        },
+        {
+          "after": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": true,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 14
+            },
+            "frame": 14
+          },
+          "before": {
+            "factory": {
+              "balance": 99,
+              "changed": true,
+              "credits": 0,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 1,
+              "spent": 10000,
+              "stage": 1,
+              "suspended": false,
+              "timer_duration": 1,
+              "timer_start": 13
+            },
+            "frame": 14
+          },
+          "calls": [],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "next_frame_ai",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": [
+            {
+              "after": "0e000000",
+              "before": "0d000000",
+              "field": "start",
+              "pc": "0x4c9b92",
+              "size": 4
+            },
+            {
+              "after": "01000000",
+              "before": "01000000",
+              "field": "duration",
+              "pc": "0x4c9b97",
+              "size": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "factory": {
+          "balance": 0,
+          "changed": true,
+          "credits": 9900,
+          "held_id": 9,
+          "held_type": "E2",
+          "latch": true,
+          "on_hold": false,
+          "queue": [
+            "E2"
+          ],
+          "rate": 0,
+          "spent": 100,
+          "stage": 54,
+          "suspended": true,
+          "timer_duration": 0,
+          "timer_start": 54
+        },
+        "frame": 54
+      },
+      "inputs": {
+        "completed": true,
+        "poor_wallet": false,
+        "power_drain": 0,
+        "power_output": 99
+      },
+      "name": "completed_same_type",
+      "phases": [
+        {
+          "after": {
+            "factory": {
+              "balance": 0,
+              "changed": true,
+              "credits": 9900,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 100,
+              "stage": 54,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 54
+            },
+            "frame": 54
+          },
+          "before": {
+            "factory": {
+              "balance": 0,
+              "changed": true,
+              "credits": 9900,
+              "held_id": 9,
+              "held_type": "E2",
+              "latch": true,
+              "on_hold": false,
+              "queue": [
+                "E2"
+              ],
+              "rate": 0,
+              "spent": 100,
+              "stage": 54,
+              "suspended": true,
+              "timer_duration": 0,
+              "timer_start": 54
+            },
+            "frame": 54
+          },
+          "calls": [
+            {
+              "args_raw": [
+                16,
+                7,
+                0,
+                0
+              ],
+              "caller": "0x30000000",
+              "force_low_byte": 0,
+              "name": "begin_production",
+              "naval_low_byte": 0,
+              "return_eax_raw": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                0,
+                1,
+                1,
+                537526272
+              ],
+              "caller": "0x4fa43e",
+              "name": "type_find_factory",
+              "return_eax_raw": 675793376,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                0
+              ],
+              "argument_low_byte": 0,
+              "caller": "0x4fa62d",
+              "name": "set_production_rate",
+              "return_eax_raw": 0,
+              "return_low_byte": 0,
+              "returned": true
+            },
+            {
+              "args_raw": [
+                675815616,
+                16,
+                7
+              ],
+              "caller": "0x4fa6af",
+              "name": "sidebar_link_factory",
+              "return_eax_raw": 1,
+              "returned": true
+            }
+          ],
+          "constructor_count": 0,
+          "destructor_count": 0,
+          "detach_count": 0,
+          "events": [],
+          "factory_identity_unchanged": true,
+          "held_identity_unchanged": true,
+          "identity_delta": 0,
+          "name": "completed_same_type_begin",
+          "rng": {
+            "after_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "before_sha256": {
+              "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+              "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+            },
+            "raw_advance_count": 0,
+            "request_count": 0,
+            "unchanged": true
+          },
+          "timer_writes": []
+        }
+      ]
+    }
+  ],
+  "schema": 1,
+  "type_inputs": {
+    "E2": {
+      "build_limit": 2147483647,
+      "cost": 100,
+      "index": 7
+    },
+    "FLAKT": {
+      "build_limit": 2147483647,
+      "cost": 300,
+      "index": 10
+    },
+    "NACNST": {
+      "build_limit": 2147483647,
+      "cost": 3000,
+      "index": 4
+    },
+    "NAHAND": {
+      "build_limit": 2147483647,
+      "cost": 500,
+      "index": 6
+    },
+    "NAPOWR": {
+      "build_limit": 2147483647,
+      "cost": 600,
+      "index": 5
+    },
+    "NARADR": {
+      "build_limit": 2147483647,
+      "cost": 1000,
+      "index": 7
+    }
+  }
+}
