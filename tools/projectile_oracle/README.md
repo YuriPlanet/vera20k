@@ -197,7 +197,7 @@ checks native failure predicates and successful raw binary64 values. It runs in
 the lib suite; run it alone with:
 
 ```sh
-python -m tools.cargo_run -- test -p vera20k --lib original_arc_solver_domain_and_failure_predicates
+python -m tools.cargo_run -- test -p vera20k-core --lib original_arc_solver_domain_and_failure_predicates
 ```
 
 Shared import/help coverage for all migrated projectile and animation producers

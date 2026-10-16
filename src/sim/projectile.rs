@@ -50,7 +50,7 @@
 //! remains open.
 
 mod homing;
-pub(crate) mod launch;
+pub mod launch;
 pub(crate) mod native_math;
 
 use std::collections::BTreeMap;
@@ -432,7 +432,7 @@ pub(crate) enum ProjectileTargetQuery {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ProjectileCollisionPhase {
+pub enum ProjectileCollisionPhase {
     Ordinary {
         /// Native Bullet+E8 at tail entry: pre-scratch for ordinary, post-ramp for Vertical.
         persistent_velocity: ProjectileVelocity,
@@ -553,7 +553,7 @@ pub fn resolve_impact_coord(
 /// Ordinary AI compares its binary64 candidate before ftol; the bridge and
 /// cell lookups separately consume the integer coordinate (467494..4677D3).
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ProjectileCollisionMotion {
+pub struct ProjectileCollisionMotion {
     pub candidate: [crate::util::native_x87::NativeF64Bits; 3],
     pub velocity: [crate::util::native_x87::NativeF64Bits; 3],
 }
@@ -585,7 +585,7 @@ impl ProjectileCollisionMotion {
 /// Original Bullet AI467666..467778: inverse slope, Elasticity scalar,
 /// negate LOCAL Z, forward slope, negate world Y. Native stores every matrix
 /// intermediate as chopped f32 and retains resulting doubles until copyback.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn projectile_slope_reflect_with_elasticity(
     velocity: ProjectileVelocity,
     slope_type: u8,
@@ -1256,7 +1256,7 @@ impl ProjectileNukeImpact {
 
 /// What `BulletClass::AI`'s `NUKE` block and the wait it starts read
 /// outside the store.
-pub(crate) struct NukeImpactContext<'a> {
+pub struct NukeImpactContext<'a> {
     interner: &'a StringInterner,
     nuke_ball_type: &'a dyn Fn() -> bool,
 }
@@ -1414,7 +1414,7 @@ impl ProjectileStore {
         self.scalable_members.contains(&id)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn scalable_members(&self) -> &[u64] {
         &self.scalable_members
     }
@@ -1487,7 +1487,7 @@ impl ProjectileStore {
         })
     }
 
-    pub(crate) fn get_mut(&mut self, id: u64) -> Option<&mut Projectile> {
+    pub fn get_mut(&mut self, id: u64) -> Option<&mut Projectile> {
         let stored = self.projectiles.len();
         let projectile = self.projectiles.get_mut(&id)?;
         self.touched.note(id, stored);
@@ -1589,7 +1589,7 @@ impl ProjectileStore {
     // AbstractClass::Create_ID @ 0x00410230 obtains this identity from
     // ScenarioClass::NextUniqueID @ 0x0068BCB0; the store never owns a second
     // allocator.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn spawn(&mut self, id: u64, spawn: ProjectileSpawn) -> u64 {
         self.spawn_at(id, 0, spawn, spawn.origin)
     }
@@ -1716,7 +1716,7 @@ impl ProjectileStore {
     /// `AircraftClass::Fire_At @ 0x00415EE0`'s course for the bullet
     /// TechnoClass::FireAt answered: its velocity (`+0xE8`)
     /// ([`launch::aircraft_bullet_velocity`]), and the speed it implies.
-    pub(crate) fn redirect(&mut self, id: u64, velocity: ProjectileVelocity) {
+    pub fn redirect(&mut self, id: u64, velocity: ProjectileVelocity) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.velocity = velocity;
             projectile.speed_leptons_per_frame =
@@ -1764,7 +1764,7 @@ impl ProjectileStore {
     /// ordering and the world's retirement transaction.
     /// `collides_at` is a world-owned terrain/wall admission predicate for the
     /// candidate next coordinate; ordinary object collision is not supplied.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn advance(
         &mut self,
         binary_frame: u32,
@@ -1834,8 +1834,8 @@ impl ProjectileStore {
     /// world's intervening Trailer constructor or retirement transaction. An
     /// awaited pointer obeys [`Self::begin_ai_visit`]. Supplied coordinates serve every query;
     /// world integration tests cover the separate target virtuals.
-    #[cfg(test)]
-    pub(crate) fn advance_one(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn advance_one(
         &mut self,
         id: u64,
         binary_frame: u32,
@@ -2371,7 +2371,7 @@ pub(crate) fn projectile_final_snap_admitted(
 }
 
 /// Live Rules +16B8, with the Type +295 Floater override (4671B9/48ACF0).
-pub(crate) fn projectile_gravity(
+pub fn projectile_gravity(
     rules_gravity: i32,
     floater: bool,
 ) -> crate::util::native_x87::NativeF64Bits {
@@ -2413,7 +2413,7 @@ fn ordinary_motion_candidate(
     motion
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[test]
 fn original_ordinary_repeated_live_gravity_preserves_both_coordinate_versions() {
     use crate::util::native_x87::NativeF64Bits;
@@ -2513,7 +2513,7 @@ fn vertical_velocity_ramp(
     }))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[test]
 fn original_vertical_repeated_motion_preserves_binary64_and_integer_add_order() {
     use crate::util::native_x87::NativeF64Bits;

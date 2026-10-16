@@ -228,7 +228,7 @@ impl BridgeRecalcCatalog {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn with_fixture_files(
         mut self,
         tile: u16,

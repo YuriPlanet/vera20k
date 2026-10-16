@@ -107,7 +107,7 @@ use crate::sim::world::Simulation;
 /// A shot captures no target: expiry reads the building's live
 /// `attack_target`, with the weapon Mission_Attack saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct PendingBuildingFire {
+pub struct PendingBuildingFire {
     /// Signed native timer value, clamped to zero by ProcessDelayedFire after
     /// its pre-decrement.
     remaining_ticks: i32,
@@ -124,19 +124,19 @@ impl PendingBuildingFire {
     }
 
     /// The countdown (`+0x714`).
-    pub(crate) const fn remaining_ticks(self) -> i32 {
+    pub const fn remaining_ticks(self) -> i32 {
         self.remaining_ticks
     }
 
     /// What it fires (`+0x704` mode, `+0x708..+0x710` payload).
-    pub(crate) const fn fire(self) -> DelayedFire {
+    pub const fn fire(self) -> DelayedFire {
         self.fire
     }
 }
 
 /// What a delayed fire does when its countdown ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum DelayedFire {
+pub enum DelayedFire {
     /// Mode 1: FireAt the live target with the saved weapon (`+0x708`).
     Weapon(WeaponSlot),
     /// Mode 2: a Prism support beam (`0x0044ABD0`) to the master's weapon-0
@@ -166,13 +166,13 @@ impl std::hash::Hash for PendingBuildingFire {
 /// ([`Self::count_down`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct BuildingDelayedFire {
+pub struct BuildingDelayedFire {
     pending: Option<PendingBuildingFire>,
 }
 
 impl BuildingDelayedFire {
     /// The armed fire.
-    pub(crate) const fn pending(self) -> Option<PendingBuildingFire> {
+    pub const fn pending(self) -> Option<PendingBuildingFire> {
         self.pending
     }
 
@@ -201,7 +201,7 @@ impl BuildingDelayedFire {
     }
 
     /// Install a fixture's fire.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, pending: Option<PendingBuildingFire>) {
         self.pending = pending;
     }
@@ -966,7 +966,7 @@ fn waits(sim: &Simulation, id: u64) -> bool {
 /// ([`Self::reset`]). The laser's Prism arm reads it through the fire path.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct PrismSupport {
+pub struct PrismSupport {
     count: i32,
 }
 
@@ -987,7 +987,7 @@ impl PrismSupport {
     }
 
     /// Install a fixture's count.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, count: i32) {
         self.count = count;
     }
@@ -1578,7 +1578,7 @@ impl Simulation {
     /// visit (`combat::receiver_fixture`): Mission_Attack when the building
     /// holds a target, then ProcessDelayedFire. Both use the live receiver;
     /// the fixture honours no mission or dispatch timer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn fixture_building_visit(
         &mut self,
         id: u64,

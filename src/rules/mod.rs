@@ -127,7 +127,7 @@ pub mod infantry_sequence;
 pub mod ini_parser;
 // The readers are a child of the raw store, so only they see raw value text.
 pub use ini_parser::ini_value;
-pub(crate) mod audio_sources;
+pub mod audio_sources;
 pub mod jumpjet_params;
 pub mod locomotor_type;
 pub mod mind_control_rules;
@@ -141,11 +141,11 @@ pub mod particle_system_type;
 pub mod particle_type;
 pub mod powerups;
 pub mod prerequisite;
-pub(crate) mod process_owner;
+pub mod process_owner;
 pub mod projectile_type;
 pub mod radar_event_config;
 pub mod recoil;
-pub(crate) mod retail_sources;
+pub mod retail_sources;
 pub mod ruleset;
 pub mod shp_vehicle_sequence;
 pub mod smudge_type;
@@ -157,24 +157,24 @@ pub mod terrain_object_type;
 pub mod terrain_rules;
 pub mod tiberium_type;
 pub mod voxel_anim_type;
-pub(crate) mod voxel_asset_catalog;
+pub mod voxel_asset_catalog;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
 pub mod weapon_type;
 
-#[cfg(test)]
-pub(crate) mod area_guard_tests;
-#[cfg(test)]
-pub(crate) mod deploy_voice_tests;
+#[cfg(any(test, feature = "test-support"))]
+pub mod area_guard_tests;
+#[cfg(any(test, feature = "test-support"))]
+pub mod deploy_voice_tests;
 #[cfg(test)]
 mod ini_token_readers_tests;
 #[cfg(test)]
 mod mirage_disguise_tests;
-#[cfg(test)]
-pub(crate) mod move_sound_tests;
+#[cfg(any(test, feature = "test-support"))]
+pub mod move_sound_tests;
 #[cfg(test)]
 mod path_delay_rules_tests;
 #[cfg(test)]
 mod read_double_percent_tests;
-#[cfg(test)]
-pub(crate) mod retail_ini_fixture;
+#[cfg(any(test, feature = "test-support"))]
+pub mod retail_ini_fixture;

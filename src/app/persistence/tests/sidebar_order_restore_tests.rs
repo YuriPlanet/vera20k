@@ -108,7 +108,7 @@ fn scrolling_fixture() -> (Simulation, RuleSet, InternedId, Vec<Cameo>) {
 
 fn scrolled_projection(owner: InternedId, candidates: &[Cameo]) -> SidebarProjectionState {
     let mut projection = SidebarProjectionState::default();
-    assert!(!projection.reconcile_cameos(owner, candidates, 1));
+    assert!(!projection.reconcile_cameos(owner, candidates, 1).build_inserted());
     for (tab, row) in SidebarTab::all().into_iter().zip(SAVED_SCROLL_ROWS) {
         projection.set_scroll_row(tab, row);
     }
@@ -137,10 +137,10 @@ fn candidates(types: [InternedId; 2], first_cost: i32) -> Vec<Cameo> {
 
 fn retained_history(owner: InternedId, types: [InternedId; 2]) -> SidebarProjectionState {
     let mut projection = SidebarProjectionState::default();
-    assert!(!projection.reconcile_cameos(owner, &candidates(types, 100), 3));
+    assert!(!projection.reconcile_cameos(owner, &candidates(types, 100), 3).build_inserted());
     // The current keys would sort LATER first, but native Recalculate retains
     // survivors. This records history through the actual shared strip owner.
-    assert!(!projection.reconcile_cameos(owner, &candidates(types, 400), 3));
+    assert!(!projection.reconcile_cameos(owner, &candidates(types, 400), 3).build_inserted());
     assert_eq!(
         projection.saved_order().unwrap().strips()[0],
         types.map(SavedCameoId::Object)
@@ -220,7 +220,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     let saved = retained_history(owner, types).saved_order().unwrap();
     let bytes = save(&sim, &rules, Some(&saved));
     let mut outgoing = SidebarProjectionState::default();
-    assert!(!outgoing.reconcile_cameos(owner, &candidates(types, 400), 3));
+    assert!(!outgoing.reconcile_cameos(owner, &candidates(types, 400), 3).build_inserted());
     let before = outgoing.saved_order().unwrap();
     assert_ne!(before, saved);
     let prepared = prepare(&bytes, &sim, &rules).unwrap();
@@ -241,7 +241,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     let committed = prepared.commit_into(&mut runtime);
     outgoing.restore_order(committed.sidebar_order);
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));
-    assert!(!outgoing.reconcile_cameos(owner, &candidates(types, 400), 3));
+    assert!(!outgoing.reconcile_cameos(owner, &candidates(types, 400), 3).build_inserted());
     assert_eq!(outgoing.saved_order(), Some(saved));
 
     // A headless save has no retained UI history: replacing with it resets
@@ -251,7 +251,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     let committed = prepared.commit_into(&mut runtime);
     outgoing.restore_order(committed.sidebar_order);
     assert!(outgoing.saved_order().is_none());
-    assert!(!outgoing.reconcile_cameos(owner, &candidates(types, 400), 3));
+    assert!(!outgoing.reconcile_cameos(owner, &candidates(types, 400), 3).build_inserted());
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
     assert_eq!(loaded.sim.state_hash(), hash);
 
     let mut outgoing = SidebarProjectionState::default();
-    assert!(!outgoing.reconcile_cameos(owner, &candidates, 1));
+    assert!(!outgoing.reconcile_cameos(owner, &candidates, 1).build_inserted());
     let before = outgoing.saved_order();
     assert_eq!(outgoing.cameo_strips().scroll_rows(), [0; 4]);
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
@@ -303,7 +303,7 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
     outgoing.restore_order(committed.sidebar_order);
     assert_eq!(runtime.simulation.houses[&owner].economy.credits(), 50_000);
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));
-    assert!(!outgoing.reconcile_cameos(owner, &candidates, 1));
+    assert!(!outgoing.reconcile_cameos(owner, &candidates, 1).build_inserted());
     assert_eq!(outgoing.saved_order(), Some(saved));
     for (tab, row) in SidebarTab::all().into_iter().zip(SAVED_SCROLL_ROWS) {
         assert_eq!(outgoing.cameo_strips().scroll_row(tab), row);

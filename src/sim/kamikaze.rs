@@ -126,7 +126,7 @@ impl KamikazeTracker {
     }
 
     /// Clear (`0x0054E6F0`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn clear(&mut self, frame: u32) {
         self.nodes.clear();
         self.timer = CdTimer::started(frame as i32, CLEAR_RESTART_FRAMES);

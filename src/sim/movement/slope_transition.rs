@@ -13,7 +13,7 @@ use crate::sim::timer::CdTimer;
 
 /// Literal Drive/Ship slope interpolation duration installed by both native
 /// `Process` implementations.
-pub(crate) const SLOPE_TRANSITION_FRAMES: u8 = 3;
+pub const SLOPE_TRANSITION_FRAMES: u8 = 3;
 
 /// Defined, persistent state owned by one active or stashed Drive/Ship
 /// locomotor. The native unused timer dword is deliberately not represented.
@@ -26,7 +26,7 @@ pub struct SlopeTransitionState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SlopeRenderPhase {
+pub enum SlopeRenderPhase {
     Stable(u8),
     Transition {
         from_slope: u8,
@@ -48,7 +48,7 @@ impl SlopeTransitionState {
     }
 
     /// `Force_Slope`/successful Foot unlimbo synchronizes immediately.
-    pub(crate) fn snap(&mut self, sampled_slope: u8, binary_frame: u32) {
+    pub fn snap(&mut self, sampled_slope: u8, binary_frame: u32) {
         self.previous_slope = sampled_slope;
         self.current_slope = sampled_slope;
         self.start_frame = binary_frame as i32;
@@ -57,7 +57,7 @@ impl SlopeTransitionState {
 
     /// Drive/Ship `Process` entry starts a literal three-frame timer only when
     /// the current containing-cell slope differs from the cached target.
-    pub(crate) fn sample_process_entry(&mut self, sampled_slope: u8, binary_frame: u32) {
+    pub fn sample_process_entry(&mut self, sampled_slope: u8, binary_frame: u32) {
         if sampled_slope == self.current_slope {
             return;
         }
@@ -75,7 +75,7 @@ impl SlopeTransitionState {
             .remaining(binary_frame as i32)
     }
 
-    pub(crate) fn render_phase(&self, binary_frame: u32) -> SlopeRenderPhase {
+    pub fn render_phase(&self, binary_frame: u32) -> SlopeRenderPhase {
         let remaining = self.remaining(binary_frame);
         if self.transition_total == 0 || remaining == 0 {
             return SlopeRenderPhase::Stable(self.current_slope);
@@ -102,7 +102,7 @@ impl SlopeTransitionState {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_fields_for_test(
         previous_slope: u8,
         current_slope: u8,
@@ -127,7 +127,7 @@ fn foot_equivalent(category: EntityCategory) -> bool {
 
 /// The active Drive/Ship locomotor's slope state, as `DriveLocomotionClass::Draw_Matrix`
 /// (`0x004AFF60`) and `ShipLocomotionClass::Draw_Matrix` (`0x0069F670`) read it.
-pub(crate) fn state_for_entity(entity: &GameEntity) -> Option<&SlopeTransitionState> {
+pub fn state_for_entity(entity: &GameEntity) -> Option<&SlopeTransitionState> {
     foot_equivalent(entity.category())
         .then_some(())
         .and_then(|()| entity.locomotor.as_ref()?.active_slope_transition())

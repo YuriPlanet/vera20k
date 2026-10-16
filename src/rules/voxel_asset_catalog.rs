@@ -19,13 +19,13 @@ use crate::rules::voxel_frame_catalog::{
 /// Parsed physical part. Rendering borrows its inputs without owning a second
 /// file-admission policy. Building and raw-image callers explicitly permit an
 /// absent HVA; native Techno main-body admission requires the complete pair.
-pub(crate) struct VoxelPart {
+pub struct VoxelPart {
     vxl: VxlFile,
     hva: Option<HvaFile>,
 }
 
 impl VoxelPart {
-    pub(crate) fn load(assets: &AssetManager, image: &str, require_hva: bool) -> Option<Self> {
+    pub fn load(assets: &AssetManager, image: &str, require_hva: bool) -> Option<Self> {
         let (vxl, hva) = crate::rules::art_data::voxel_asset_names(image);
         let vxl = VxlFile::from_bytes(assets.get_ref(&vxl)?).ok()?;
         let hva = assets
@@ -37,11 +37,11 @@ impl VoxelPart {
         Some(Self { vxl, hva })
     }
 
-    pub(crate) fn vxl(&self) -> &VxlFile {
+    pub fn vxl(&self) -> &VxlFile {
         &self.vxl
     }
 
-    pub(crate) fn hva(&self) -> Option<&HvaFile> {
+    pub fn hva(&self) -> Option<&HvaFile> {
         self.hva.as_ref()
     }
 }
@@ -51,7 +51,7 @@ pub(crate) type MainVoxelParts = (VoxelPart, Vec<(Option<VoxelPart>, Option<Voxe
 /// Native TechnoType7160C7..71611D's main-VXL postpass: first section
 /// SizeY/2+0.5 and SizeX/2, in original voxel units. Every value is exact in
 /// binary32; both simulation and rendering use this physical metadata.
-pub(crate) fn voxel_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
+pub fn voxel_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
     let section = vxl.limbs.first()?;
     Some([
         f32::from(section.size_y) * 0.5 + 0.5,
@@ -69,7 +69,7 @@ pub(crate) fn voxel_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
 /// (Bullet, debris or auxiliary image), retaining its existing optional HVA.
 /// Optional legacy nonindexed gun HVA behavior remains outside this main-body
 /// and indexed-pair admission claim.
-pub(crate) fn load_main_voxel(
+pub fn load_main_voxel(
     assets: &AssetManager,
     type_id: &str,
     rules: Option<&RuleSet>,
@@ -113,6 +113,7 @@ pub(crate) fn load_main_voxel(
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub(crate) struct VoxelAssetCatalog {
     /// Each loaded type's uppercase id and its main body's tilt half sizes
     /// (binary32 bits): what the catalog hashes.
@@ -168,7 +169,7 @@ impl VoxelAssetCatalog {
         self.body(type_id)?.map(|bits| bits.map(f32::from_bits))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn supply_loaded(&mut self, type_id: &str, object: TypeHandle) {
         self.loaded.insert(type_id.to_ascii_uppercase(), None);
         let index = object.0 as usize;

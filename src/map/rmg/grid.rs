@@ -85,7 +85,7 @@ impl RmgGrid {
         self.width
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn diamond_bounds(&self) -> (i32, i32) {
         (self.diamond_min, self.diamond_max)
     }

@@ -134,31 +134,31 @@ pub struct JumpjetFlightParams {
 
 impl JumpjetFlightParams {
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn turn_rate(&self) -> i32 {
         self.turn_rate
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn speed(&self) -> i32 {
         self.speed
     }
 
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_speed_for_test(&mut self, speed: i32) {
         self.speed = speed;
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn climb_bits(&self) -> u32 {
         self.climb_bits
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn crash_bits(&self) -> u32 {
         self.crash_bits
     }
@@ -169,13 +169,13 @@ impl JumpjetFlightParams {
     }
 
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_height_for_test(&mut self, height: i32) {
         self.height = height;
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn accel_bits(&self) -> u32 {
         self.accel_bits
     }
@@ -232,37 +232,37 @@ pub struct JumpjetFlight {
 
 impl JumpjetFlight {
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn facing(&self) -> &FacingClass {
         &self.facing
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn facing_mut(&mut self) -> &mut FacingClass {
         &mut self.facing
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn current_speed_bits(&self) -> u64 {
         self.current_speed_bits
     }
 
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_speed_bits_for_test(&mut self, current_speed_bits: u64) {
         self.current_speed_bits = current_speed_bits;
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn target_speed_bits(&self) -> u64 {
         self.target_speed_bits
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn target_height(&self) -> i32 {
         self.target_height
     }
@@ -273,7 +273,7 @@ impl JumpjetFlight {
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn bob_phase_bits(&self) -> u64 {
         self.bob_phase_bits
     }
@@ -294,7 +294,7 @@ impl JumpjetFlight {
         f64::from_bits(self.current_speed_bits)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn target_speed(&self) -> f64 {
         f64::from_bits(self.target_speed_bits)
     }

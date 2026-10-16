@@ -32,4 +32,4 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Library tests
-        run: cargo test -p vera20k --lib
+        run: cargo test --workspace --lib

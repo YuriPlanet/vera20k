@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 /// `HouseClass::GetSpeedBonus @ 0x0050C050` as the getter calls it: for the
 /// Foot's owner (`Foot+0x21C`) and its type. 1.0 without a type or a House
 /// (rules-less fixtures), like a constructor-default HouseType.
-pub(crate) fn owner_speed_bonus(
+pub fn owner_speed_bonus(
     houses: &BTreeMap<InternedId, HouseState>,
     entity: &GameEntity,
     object: Option<&ObjectType>,
@@ -70,14 +70,14 @@ pub(crate) fn owner_current_speed_from_fraction(
 /// the interner's bound handles, and `VeteranSpeed`. A query that runs every
 /// frame for every Foot must not resolve the type by name.
 #[derive(Clone, Copy)]
-pub(crate) struct SpeedRules<'a> {
+pub struct SpeedRules<'a> {
     rules: &'a RuleSet,
     interner: &'a StringInterner,
     houses: &'a BTreeMap<InternedId, HouseState>,
 }
 
 impl<'a> SpeedRules<'a> {
-    pub(crate) fn new(
+    pub fn new(
         rules: &'a RuleSet,
         interner: &'a StringInterner,
         houses: &'a BTreeMap<InternedId, HouseState>,
@@ -90,7 +90,7 @@ impl<'a> SpeedRules<'a> {
     }
 
     /// Foot4DB1A0 for `entity`, live.
-    pub(crate) fn owner_current_speed(self, entity: &GameEntity) -> i32 {
+    pub fn owner_current_speed(self, entity: &GameEntity) -> i32 {
         owner_current_speed(
             entity,
             self.interner.object_type(entity.type_ref(), self.rules),
@@ -103,7 +103,7 @@ impl<'a> SpeedRules<'a> {
 /// Foot4DB1A0 for the live owner outside a locomotor's own step: its adjusted
 /// type speed and its applied fraction (Foot+578), through the same shared
 /// projection the movers use. FireAt's lead reads it (`0x0070BD4C`).
-pub(crate) fn owner_current_speed(
+pub fn owner_current_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,
     veteran_speed: f64,
@@ -115,7 +115,7 @@ pub(crate) fn owner_current_speed(
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl crate::sim::world::Simulation {
     /// An entity's live GetCurrentSpeed, for tests that observe a step's
     /// speed budget.

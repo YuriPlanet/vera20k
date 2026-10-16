@@ -281,3 +281,45 @@ fn production_shroud_rebuild_workload_timing() {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn clear_tile_shroud_edge_matches_original_a_producer() {
+    let packet: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/tmp_clear_render.json",
+    ))
+    .unwrap();
+    let native = fixture();
+    let Some((frames, canvas)) = stock_frames(&native) else {
+        return;
+    };
+    let edge = &packet["inputs"]["shroud_edge"];
+    assert_eq!(edge["source"]["sha256"], native["stock"]["sha256"]);
+    let size = [
+        packet["surface"]["width"].as_u64().unwrap() as u32,
+        packet["surface"]["height"].as_u64().unwrap() as u32,
+    ];
+    assert_eq!(edge["clip"], serde_json::json!([0, 0, size[0], size[1]]));
+    let frame = BrightnessFrame::new(
+        frames[edge["frame"].as_u64().unwrap() as usize].clone(),
+        canvas,
+    );
+    let mut pixels = vec![edge["initial"].as_u64().unwrap() as u8; (size[0] * size[1]) as usize];
+    blit_frame_pixels(
+        &mut pixels,
+        size[0] as usize,
+        size,
+        &frame,
+        point(&edge["point"]),
+    );
+    let row = packet["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["input"]["name"] == "physical_shroud_edge")
+        .unwrap();
+    assert_eq!(
+        pixels,
+        bytes(row["input"]["a_hex"].as_str().unwrap()),
+        "same physical A bytes consumed by Cell/TMP GPU comparison"
+    );
+}

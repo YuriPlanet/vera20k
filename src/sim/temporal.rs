@@ -199,7 +199,7 @@ impl TemporalState {
 
     /// `TechnoClass+0x278`: the attacker heading the chain warping this
     /// object.
-    pub(crate) fn chain_head(&self) -> Option<u64> {
+    pub fn chain_head(&self) -> Option<u64> {
         self.head
     }
 
@@ -228,8 +228,8 @@ impl TemporalState {
     }
 
     /// A target warped by `head`, for fixtures outside this module.
-    #[cfg(test)]
-    pub(crate) fn warped_by_for_test(head: u64) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn warped_by_for_test(head: u64) -> Self {
         Self {
             link: None,
             head: Some(head),
@@ -835,7 +835,7 @@ impl Simulation {
     /// Temporal firer is a Foot; a building or aircraft firer has no VERA
     /// idle selector.
     fn temporal_owner_idle(&mut self, attacker: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         IDLE_TRACE.with(|trace| trace.borrow_mut().push(attacker));
         if self.substrate.entities.get(attacker).is_some_and(|entity| {
             matches!(
@@ -1331,7 +1331,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Every `Enter_Idle_Mode` this module issues, in order, for the native
     /// corpus.
@@ -1339,7 +1339,7 @@ thread_local! {
 }
 
 /// Drain the idle trace (see `IDLE_TRACE`).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn take_idle_trace() -> Vec<u64> {
     IDLE_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }

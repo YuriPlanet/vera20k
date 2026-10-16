@@ -5,14 +5,14 @@
 
 /// The generated-Building constructor phases that consume Scenario words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RmgConstructionPhase {
+pub enum RmgConstructionPhase {
     BridgeRepairHut,
     NeutralTech,
 }
 
 /// Whether a generated constructor survived placement and entered MapFile.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RmgConstructionOutcome {
+pub enum RmgConstructionOutcome {
     Discarded,
     Emitted {
         entity_index: usize,
@@ -22,25 +22,21 @@ pub(crate) enum RmgConstructionOutcome {
 
 /// One Scenario-consuming generated Building constructor, in native order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RmgConstructionEvent {
-    pub(crate) ordinal: usize,
+pub struct RmgConstructionEvent {
+    pub ordinal: usize,
     pub(crate) phase: RmgConstructionPhase,
     pub(crate) techno_type: String,
-    pub(crate) outcome: RmgConstructionOutcome,
+    pub outcome: RmgConstructionOutcome,
 }
 
 /// Immutable transport of all generated Building constructor effects.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct RmgConstructionTrace {
-    pub(crate) events: Vec<RmgConstructionEvent>,
+pub struct RmgConstructionTrace {
+    pub events: Vec<RmgConstructionEvent>,
 }
 
 impl RmgConstructionTrace {
-    pub(crate) fn push_discarded(
-        &mut self,
-        phase: RmgConstructionPhase,
-        techno_type: String,
-    ) -> usize {
+    pub fn push_discarded(&mut self, phase: RmgConstructionPhase, techno_type: String) -> usize {
         let ordinal = self.events.len();
         self.events.push(RmgConstructionEvent {
             ordinal,
@@ -51,7 +47,7 @@ impl RmgConstructionTrace {
         ordinal
     }
 
-    pub(crate) fn push_emitted(
+    pub fn push_emitted(
         &mut self,
         phase: RmgConstructionPhase,
         techno_type: String,

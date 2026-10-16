@@ -26,7 +26,7 @@ enum NativeFreshIdPhase {
 /// +214 as part of the raw Scenario block;683560 preserves it while resetting
 /// the adjacent RNG. Evidence: tools/spatial_oracle/native_id_snapshot.
 #[derive(Debug, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct NativeUniqueIdCursor {
+pub struct NativeUniqueIdCursor {
     value: u32,
     saved_after_fresh_prefix: u32,
     phase: NativeFreshIdPhase,
@@ -73,7 +73,7 @@ impl NativeUniqueIdCursor {
 
     /// The explicit test/dev simulation entry starts with this declared cursor.
     /// Production descriptors install their original Full_Init prefix instead.
-    pub(crate) fn for_synthetic_simulation() -> Self {
+    pub fn for_synthetic_simulation() -> Self {
         Self {
             value: 0,
             saved_after_fresh_prefix: 0,
@@ -91,7 +91,7 @@ impl NativeUniqueIdCursor {
             .next_id()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_at_current_value(value: u32) -> Self {
         Self {
             value,
@@ -133,19 +133,19 @@ impl NativeUniqueIdCursor {
         Ok(self.value)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn current_raw(&self) -> u32 {
         self.value
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn saved_after_fresh_prefix(&self) -> u32 {
         self.saved_after_fresh_prefix
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum NativeIdentityError {
+pub enum NativeIdentityError {
     #[error("fresh native-ID prefix has not reached its saved Resize checkpoint")]
     FreshPrefixNotFinished,
     #[error("fresh native-ID prefix was already finished")]
@@ -155,7 +155,7 @@ pub(crate) enum NativeIdentityError {
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum NativeMapTubeConstructionError {
+pub enum NativeMapTubeConstructionError {
     #[error("fresh Simulation has no native-ID cursor installed")]
     MissingFreshCursor,
     #[error("fresh Simulation already owns a raw [Tubes] receipt")]
@@ -172,7 +172,7 @@ pub(crate) enum NativeMapTubeConstructionError {
 
 impl Simulation {
     /// Immutable Scenario+214 cursor for capture. Reading never reserves IDs.
-    pub(crate) fn native_identity_cursor(&self) -> Option<u32> {
+    pub fn native_identity_cursor(&self) -> Option<u32> {
         self.native_unique_ids.as_ref().map(|cursor| cursor.value)
     }
 
@@ -199,7 +199,7 @@ impl Simulation {
     /// Apply the one gameplay map-read reservation and construct every raw
     /// `[Tubes]` row in source order. This runs only after fallible asset-root
     /// discovery, so an earlier asset error leaves the saved prefix untouched.
-    pub(crate) fn construct_native_map_tubes(
+    pub fn construct_native_map_tubes(
         &mut self,
         map_ini: &IniFile,
     ) -> Result<(), NativeMapTubeConstructionError> {
@@ -251,7 +251,7 @@ impl Simulation {
 #[derive(Debug)]
 pub(crate) struct NativeFreshIdPrefixReceipt {
     cursor: NativeUniqueIdCursor,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     checkpoints: NativeFreshIdPrefixCheckpoints,
 }
 
@@ -260,13 +260,13 @@ impl NativeFreshIdPrefixReceipt {
         self.cursor
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn checkpoints(&self) -> NativeFreshIdPrefixCheckpoints {
         self.checkpoints
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NativeFreshIdPrefixCheckpoints {
     pub(crate) after_early_types: u32,
@@ -291,33 +291,33 @@ pub(crate) fn build_noncampaign_fresh_id_prefix(
 ) -> NativeFreshIdPrefixReceipt {
     let mut value = FRESH_SCENARIO_NATIVE_ID_SEED;
     value = advance(value, early_type_count);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_early_types = value;
     value = advance(
         value,
         house_block_count(first_house_count, first_super_weapon_type_count),
     );
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_first_house_generation = value;
     value = value.wrapping_add(resize_constructor_count(map_width, map_height));
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_first_resize = value;
     value = advance(value, rebuilt_type_count);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_rebuilt_types = value;
     value = advance(
         value,
         house_block_count(final_house_count, final_super_weapon_type_count),
     );
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_final_house_generation = value;
     value = value.wrapping_add(resize_constructor_count(map_width, map_height));
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_final_resize = value;
 
     NativeFreshIdPrefixReceipt {
         cursor: NativeUniqueIdCursor::from_saved_prefix(value),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         checkpoints: NativeFreshIdPrefixCheckpoints {
             after_early_types,
             after_first_house_generation,

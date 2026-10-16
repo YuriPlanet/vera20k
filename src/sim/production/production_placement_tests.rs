@@ -1062,7 +1062,7 @@ fn place_ready_building_accepts_clear_mixed_height_footprint() {
         "mixed clear heights should not reject placement"
     );
     assert!(
-        preview.cell_valid.iter().all(|valid| *valid),
+        preview.cells.iter().all(|cell| cell.valid),
         "all otherwise-clear mixed-height cells should be individually valid"
     );
 
@@ -1778,7 +1778,11 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
         .expect("ready building should have a preview");
         assert!(!preview.valid, "{blocker_type} must reject the preview");
         assert_eq!(
-            preview.cell_valid,
+            preview
+                .cells
+                .iter()
+                .map(|cell| cell.valid)
+                .collect::<Vec<_>>(),
             vec![true, true, true, false],
             "only the non-origin foundation cell occupied by {blocker_type} should reject"
         );
@@ -1893,7 +1897,14 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
     )
     .expect("ready building should have a preview");
     assert!(!preview.valid, "any ordinary nonempty overlay must reject");
-    assert_eq!(preview.cell_valid, vec![true, true, true, false]);
+    assert_eq!(
+        preview
+            .cells
+            .iter()
+            .map(|cell| cell.valid)
+            .collect::<Vec<_>>(),
+        vec![true, true, true, false]
+    );
 
     let americans = sim.interner.get("Americans").expect("owner interned");
     let gapowr = sim.interner.get("GAPOWR").expect("type interned");
@@ -2297,7 +2308,14 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
     )
     .expect("ready wall preview");
     assert!(preview.valid, "primary wall cell should be legal");
-    assert_eq!(preview.wall_autofill_cells, expected);
+    assert_eq!(
+        preview
+            .wall_autofill_cells
+            .iter()
+            .map(|cell| cell.coord)
+            .collect::<Vec<_>>(),
+        expected
+    );
 
     sim.tactical_dirty_cells.clear();
     sim.radar_terrain_dirty_cells.clear();
@@ -2536,7 +2554,11 @@ fn gsi_04_07_wall_execution_recomputes_preview_gap_after_a_blocker_appears() {
     )
     .expect("ready wall preview");
     assert_eq!(
-        preview.wall_autofill_cells,
+        preview
+            .wall_autofill_cells
+            .iter()
+            .map(|cell| cell.coord)
+            .collect::<Vec<_>>(),
         vec![(19, 18), (20, 18), (21, 18), (22, 18)]
     );
 
@@ -2982,6 +3004,59 @@ fn placement_preview_reports_out_of_build_area() {
 }
 
 #[test]
+fn placement_preview_keeps_shared_dummy_unchanged_across_unallocated_foundation_cells() {
+    let mut sim = placement_sim();
+    let rules = placement_radius_rules();
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 60, 10);
+    ready_building(&mut sim, &rules, "Americans", "GAPOWR");
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let dummy = terrain.shared_cell_dummy();
+    dummy.stamp_coord(-17, 92);
+    dummy.set_level_slope(-128, 7);
+    let before = dummy.snapshot();
+
+    let preview = placement_preview_for_owner_with_overlays(
+        &sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        63,
+        10,
+        None,
+    )
+    .unwrap();
+    assert!(!preview.valid);
+    assert_eq!(preview.reason, Some(BuildingPlacementError::BlockedTerrain));
+    assert_eq!(
+        preview
+            .cells
+            .iter()
+            .filter(|cell| cell.coord.0 == 64)
+            .map(|cell| (cell.coord, cell.valid, cell.level, cell.slope))
+            .collect::<Vec<_>>(),
+        vec![((64, 10), false, -128, 7), ((64, 11), false, -128, 7)],
+    );
+    assert_eq!(
+        dummy.snapshot(),
+        before,
+        "cursor admission must not stamp the live Dummy"
+    );
+
+    // Simulation admission still uses the canonical native lookup and retains
+    // its final failed coordinate for subsequent gameplay consumers.
+    assert!(!crate::sim::build_site::can_place_building_at(
+        &sim,
+        &rules,
+        None,
+        rules.object("GAPOWR").unwrap(),
+        (63, 10),
+        sim.interner.get("Americans"),
+        None,
+    ));
+    assert_eq!(dummy.snapshot().coord, (64, 11));
+}
+
+#[test]
 fn placement_preview_reports_blocked_terrain() {
     let mut sim = placement_sim();
     let rules = placement_radius_rules();
@@ -3066,6 +3141,7 @@ fn place_ready_building_rejects_native_gap_restamp_cells() {
         rules.object("GAPOWR").unwrap(),
         (12, 10),
         Some(americans),
+        None,
     ));
     let records = [crate::sim::bridge_state::BridgeEndpointRecord {
         endpoint_a: (11, 12),
@@ -3118,7 +3194,7 @@ fn place_ready_building_rejects_native_gap_restamp_cells() {
     .expect("preview should exist");
     assert_eq!(preview.reason, Some(BuildingPlacementError::BlockedTerrain));
     assert!(
-        !preview.cell_valid[0],
+        !preview.cells[0].valid,
         "binary CellClass+0x140 bit 0x400 blocks placement even without live bridge deck flags"
     );
 }
@@ -4166,7 +4242,7 @@ fn stock_yuri_cloning_world_with_scenario(
     let fixed_art = crate::rules::retail_ini_fixture::retail_ini("artmd.ini")?;
     let mode_ini = crate::rules::retail_ini_fixture::retail_ini("MPBattleMD.ini")?;
     let mut layers = RulesLayerStack::new(rules_ini);
-    let ini_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ini");
+    let ini_dir = crate::test_fixture::checkout_root().join("ini");
     let langrule_name = std::fs::read_dir(&ini_dir)
         .expect("retail INI directory")
         .filter_map(Result::ok)

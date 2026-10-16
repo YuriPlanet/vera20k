@@ -1,12 +1,19 @@
-//! RA2 Engine — library root.
+//! RA2 Engine — client library root.
 //!
-//! Re-exports all modules so integration tests and future binary targets
+//! Re-exports all modules so the game and the tool binaries in `src/bin/`
 //! can access the engine's functionality. The binary entry point (main.rs)
 //! delegates to this library for all logic.
+//!
+//! The GPU-free engine (assets, rules, map, sim, net, util and the headless
+//! scenario) is the `vera20k-core` crate (`src/core_lib.rs`). Its modules are
+//! re-exported here, so `crate::sim::...` and `vera20k::sim::...` keep naming
+//! them.
+pub use vera20k_core::{
+    assets, headless_scenario, map, net, rules, sim, skirmish_launch, skirmish_modes, util,
+};
 
-// Asset parsers — .mix, .shp, .vxl, .pal, .tmp, .hva, .csf, .aud
-// No dependencies on game modules. Standalone parser library.
-pub mod assets;
+// Opaque process-RNG cursor receipt shared by map generation and simulation.
+use vera20k_core::rng_continuation;
 
 // Headless asset browsing for automated callers — the `asset` binary.
 // Sits above assets/ and rules/; never depends on sim/, ui/, audio/, or net/.
@@ -16,42 +23,14 @@ pub mod asset_tools;
 // Reads from sim/ state but never mutates it.
 pub mod render;
 
-// Game data from rules.ini and art.ini.
-// Defines every unit type, building, weapon, warhead.
-pub mod rules;
-
-// Opaque process-RNG cursor receipt shared by map generation and simulation.
-// Neither owner depends on the other's implementation through this DTO.
-pub(crate) mod rng_continuation;
-
-// Game simulation — EntityStore, fixed-point math, deterministic logic.
-// NEVER depends on render/, ui/, audio/, net/.
-pub mod sim;
-
 // Menus, dialogs and the in-game sidebar: layout and state, drawn by app/ and render/.
 pub mod ui;
 
 // Sound/music via rodio.
 pub mod audio;
 
-// Map loading, terrain tiles, theater system.
-pub mod map;
-
-// Multiplayer — deterministic lockstep command transport.
-pub mod net;
-
-// Shared utilities — config, fixed-point math, color helpers.
-pub mod util;
-
 // The app orchestrator. Public for testing but not intended for direct use.
 pub mod app;
-
-/// Headless retail-scenario loading for parity runs (no GPU, no window).
-pub mod headless_scenario;
-
-// App-level skirmish startup contract shared by the menu shell and map loader.
-pub mod skirmish_launch;
-pub mod skirmish_modes;
 
 // Source-level dependency guards for the domain-boundaries ledger.
 #[cfg(test)]
@@ -59,4 +38,4 @@ mod architecture_guards;
 
 // Fixture files that library tests read from the checkout.
 #[cfg(test)]
-mod test_fixture;
+use vera20k_core::test_fixture;

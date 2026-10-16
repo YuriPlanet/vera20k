@@ -134,7 +134,7 @@ impl crate::sim::world::Simulation {
             self.resolved_terrain.as_ref(),
             self.path_grid.as_deref(),
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(crate::sim::world::LifecycleTestEvent::RawOccupationCleared);
     }
 
@@ -870,7 +870,7 @@ mod tests {
 /// the Foot+5E0 head word's neighbour (Walk 0x0075B5A7), as the admission
 /// request reads it. Pre-head CanEnter75B690 remains the caller's
 /// responsibility.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn prepare_step_head(
     entities: &mut crate::sim::entity_store::EntityStore,
     id: u64,
@@ -1107,7 +1107,7 @@ pub(super) fn commit_walk_head(
 /// [`select_step_head_at`] then [`commit_walk_head`] with no crate on the
 /// head: the test adapters' complete chooser. Production asks the crate
 /// question between the two ([`Simulation::walk_find_sub_cell_dest`]).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn prepare_step_head_at(
     entities: &mut crate::sim::entity_store::EntityStore,
     id: u64,

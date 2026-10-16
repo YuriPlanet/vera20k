@@ -15,7 +15,7 @@ use crate::map::tile_variant_selector::TileVariantSelector;
 /// All fields are private so deserialized values cross the map validator before
 /// they become a grid. Asset bytes, caches and the process dummy are not saved.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SavedTerrainTemplate {
+pub struct SavedTerrainTemplate {
     width: u16,
     height: u16,
     cells: Vec<ResolvedTerrainCell>,
@@ -28,7 +28,7 @@ pub(crate) struct SavedTerrainTemplate {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum SavedTerrainError {
+pub enum SavedTerrainError {
     #[error("saved terrain dimensions {width}x{height} exceed the native cell table")]
     Dimensions { width: u16, height: u16 },
     #[error("saved terrain {plane} storage has {found} entries, expected {expected}")]
@@ -52,11 +52,11 @@ pub(crate) enum SavedTerrainError {
 }
 
 impl SavedTerrainTemplate {
-    pub(crate) fn dimensions(&self) -> (u16, u16) {
+    pub fn dimensions(&self) -> (u16, u16) {
         (self.width, self.height)
     }
 
-    pub(crate) fn validate(&self) -> Result<(), SavedTerrainError> {
+    pub fn validate(&self) -> Result<(), SavedTerrainError> {
         // Resize565C10 owns the fixed512x512 cell table. A one-sided empty
         // rectangle is not a materialized grid produced by the map owner.
         if self.width > 512 || self.height > 512 || (self.width == 0) != (self.height == 0) {
@@ -173,7 +173,7 @@ impl SavedTerrainTemplate {
 }
 
 impl ResolvedTerrainGrid {
-    pub(crate) fn capture_saved_template(&self) -> Result<SavedTerrainTemplate, SavedTerrainError> {
+    pub fn capture_saved_template(&self) -> Result<SavedTerrainTemplate, SavedTerrainError> {
         let saved = SavedTerrainTemplate {
             width: self.width,
             height: self.height,
@@ -246,7 +246,7 @@ impl ResolvedTerrainGrid {
 
     /// Rebind a successfully adopted candidate to the retained process table.
     /// Asset bodies remain shared; only the selector handle changes identity.
-    pub(crate) fn bind_tile_variant_selector(&mut self, selector: TileVariantSelector) {
+    pub fn bind_tile_variant_selector(&mut self, selector: TileVariantSelector) {
         if let Some(catalog) = self.bridge_recalc_catalog.as_mut() {
             Arc::make_mut(catalog).bind_selector(selector);
         }
@@ -255,7 +255,7 @@ impl ResolvedTerrainGrid {
     /// Bind the future-restore baseline after the actual loaded cells have
     /// visited the selector. A baseline is not itself a native loaded-cell pass
     /// and must never initialize a cold table or consume additional Main draws.
-    pub(crate) fn bind_saved_template_assets(
+    pub fn bind_saved_template_assets(
         &mut self,
         theater: &TheaterData,
         assets: &AssetManager,
@@ -286,7 +286,7 @@ impl ResolvedTerrainGrid {
         clippy::too_many_arguments,
         reason = "the existing map binder inputs plus the saved Size and selector continuation"
     )]
-    pub(crate) fn finish_loaded_assets(
+    pub fn finish_loaded_assets(
         &mut self,
         theater: &TheaterData,
         assets: &AssetManager,

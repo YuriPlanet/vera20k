@@ -24,7 +24,7 @@ pub struct VxlSlopeBlend {
 /// y*sin` and `y*cos - x*sin`; on ones and zeros that is exact in binary32,
 /// so the zeros keep the signs those products give (row 2 is -0 in one
 /// column for steps 17..31; `tools/rocket_oracle/draw_matrix.json`).
-pub(crate) fn voxel_body_facing(step: u8) -> Mat4 {
+pub fn voxel_body_facing(step: u8) -> Mat4 {
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(i32::from(step) - 8)
         .expect("five-bit voxel facing fits native trig table");
     affine::rotate_z(Mat4::IDENTITY, sin, cos)
@@ -88,13 +88,13 @@ pub(crate) fn voxel_tilt_offsets(
 /// Jumpjet54DCE8..54DD13 and Ship69F6CD..69F6F8 tilt when either
 /// angle's magnitude, widened to double, is at least 0.005 (`0x007E44E8`); a
 /// NaN never tilts.
-pub(crate) fn voxel_tilt_applies(angles: [f32; 2]) -> bool {
+pub fn voxel_tilt_applies(angles: [f32; 2]) -> bool {
     angles
         .into_iter()
         .any(|angle| f64::from(angle.abs()) >= 0.005)
 }
 
-pub(crate) fn voxel_tilt_frame(angles: [f32; 2], half_sizes: [f32; 2]) -> (Mat4, Mat4) {
+pub fn voxel_tilt_frame(angles: [f32; 2], half_sizes: [f32; 2]) -> (Mat4, Mat4) {
     let [x, y, z] = voxel_tilt_offsets(
         crate::map::retail_trig::TrigTable::embedded(),
         angles,
@@ -108,7 +108,7 @@ pub(crate) fn voxel_tilt_frame(angles: [f32; 2], half_sizes: [f32; 2]) -> (Mat4,
     (lift, affine::rotate_y(frame, sin, cos))
 }
 
-pub(crate) fn voxel_table_rotation(angle: f32) -> (f32, f32) {
+pub fn voxel_table_rotation(angle: f32) -> (f32, f32) {
     let trig = crate::map::retail_trig::TrigTable::embedded();
     let angle = affine::load(angle).expect("finite voxel angle");
     (
@@ -121,7 +121,7 @@ pub(crate) fn voxel_table_rotation(angle: f32) -> (f32, f32) {
 /// **((lift * slope) * facing) * shifted_rotation**, with a float store at
 /// every product. The cached ordinary arm remains the existing slope/facing
 /// owner. Offsets are shared with Jumpjet54DCC0, not another support model.
-pub(crate) fn ground_locomotor_matrix(
+pub fn ground_locomotor_matrix(
     slope_type: u8,
     slope_blend: Option<VxlSlopeBlend>,
     facing_step: u8,
@@ -143,7 +143,7 @@ pub(crate) fn ground_locomotor_matrix(
 
 /// Original `7559B0` table selection, shared with particle/projectile collision.
 /// Native initialization/executable controls: tools/native_slope.py.
-pub(crate) fn compute_slope_rotation(slope_type: u8) -> Mat4 {
+pub fn compute_slope_rotation(slope_type: u8) -> Mat4 {
     slope_matrix_to_mat4(
         crate::map::voxel_slope::slope_matrix(slope_type)
             .unwrap_or_else(|| crate::map::voxel_slope::slope_matrix(0).unwrap()),
@@ -160,7 +160,7 @@ fn slope_matrix_to_mat4(rows: [crate::util::native_x87::NativeF32Bits; 12]) -> M
     )
 }
 
-pub(crate) fn compute_slope_blend_rotation(blend: VxlSlopeBlend) -> Mat4 {
+pub fn compute_slope_blend_rotation(blend: VxlSlopeBlend) -> Mat4 {
     use crate::util::native_x87::X87Chop53 as Fpu;
     // The locomotor passes a double ratio;755A40 stores it to float before
     //646590. Preserve the signed extrapolation and the original stores.

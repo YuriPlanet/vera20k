@@ -17,10 +17,10 @@ use crate::app::presentation::sidebar_render::{
 };
 use crate::app::presentation::ui_overlays::{
     build_bomb_clock_instances, build_building_radius_ring_instances,
-    build_building_status_instances, build_cargo_pip_instances,
-    build_control_group_status_instances, build_occupant_pip_instances,
-    build_repair_wrench_instances, build_self_heal_pip_instances, build_software_cursor_instances,
-    build_unit_status_bg_instances, build_unit_status_fill_instances,
+    build_building_status_instances, build_control_group_status_instances,
+    build_occupant_pip_instances, build_repair_wrench_instances, build_scale_pip_instances,
+    build_self_heal_pip_instances, build_software_cursor_instances, build_unit_status_bg_instances,
+    build_unit_status_fill_instances,
 };
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
@@ -44,7 +44,6 @@ pub(super) struct WorldInstances {
     pub smudge: Vec<SpriteInstance>,
     pub bridge_body: Vec<SpriteInstance>,
     pub bridge_body_shadow: Vec<SpriteInstance>,
-    pub bridge_railing: Vec<SpriteInstance>,
     /// Actual particle pieces observed by the existing map diagnostic policy.
     pub particle_draws: Option<Vec<instances::ParticleDrawObservation>>,
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
@@ -84,11 +83,10 @@ pub(super) struct UiInstances {
     pub control_group_status_outline: Vec<SpriteInstance>,
     pub control_group_status: Vec<SpriteInstance>,
     pub self_heal_pip: Vec<SpriteInstance>,
-    pub cargo_pip: Vec<SpriteInstance>,
+    pub scale_pip: Vec<SpriteInstance>,
     pub software_cursor: Vec<SpriteInstance>,
     pub drag: Vec<SpriteInstance>,
-    pub placement_valid: Vec<SpriteInstance>,
-    pub placement_invalid: Vec<SpriteInstance>,
+    pub placement: Vec<SpriteInstance>,
     pub target_line: Vec<SpriteInstance>,
     pub factory_rally_first: Vec<SpriteInstance>,
     pub factory_rally_second: Vec<SpriteInstance>,
@@ -215,17 +213,13 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         &mut planned_objects,
         &display_order,
     );
-    // Bridge body, shadow, and railing emission live in instances::bridges
+    // Bridge body and shadow emission live in instances::bridges
     // (Phase D). Read live CellClass bridge fields post-tick (NOT OverlayGrid).
     let mut bridge_body: Vec<SpriteInstance> = Vec::new();
     let mut bridge_body_shadow: Vec<SpriteInstance> = Vec::new();
-    let mut bridge_railing: Vec<SpriteInstance> = Vec::new();
     instances::bridges::build_bridge_body_instances(state, sw, sh, &mut bridge_body);
     instances::bridges::build_bridge_shadow_instances(state, sw, sh, &mut bridge_body_shadow);
-    instances::bridges::build_bridge_railing_instances(state, sw, sh, &mut bridge_railing);
-    sort_by_depth_desc(&mut bridge_body);
-    // Shadow emission retains the native cell sweep; its accepted pixels write Z.
-    sort_by_depth_desc(&mut bridge_railing);
+    // Both bridge passes retain native cell sweeps; accepted pixels write Z.
 
     // Smudges: static crater/scorch decals on top of terrain, under entities.
     // Atlas registration for SmudgeType SHPs is a deferred follow-up; until it
@@ -312,7 +306,6 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         smudge,
         bridge_body,
         bridge_body_shadow,
-        bridge_railing,
         particle_draws,
         cell_sparkles,
         weapon_waves,
@@ -596,7 +589,7 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
     let unit_status_fill = build_unit_status_fill_instances(state, sw, sh);
     let control_group_status = build_control_group_status_instances(state, sw, sh);
     let self_heal_pip = build_self_heal_pip_instances(state, sw, sh);
-    let cargo_pip = build_cargo_pip_instances(state, sw, sh);
+    let scale_pip = build_scale_pip_instances(state, sw, sh);
     let software_cursor = build_software_cursor_instances(state);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
@@ -607,7 +600,7 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
         None => Vec::new(),
     };
 
-    let (placement_valid, placement_invalid) = build_placement_preview(state);
+    let placement = build_placement_preview(state);
 
     let input = &state.match_state.input;
     let camera = [input.camera_x.round() as i32, input.camera_y.round() as i32];
@@ -701,44 +694,35 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
         control_group_status_outline: control_group_status.outline,
         control_group_status: control_group_status.text,
         self_heal_pip,
-        cargo_pip,
+        scale_pip,
         software_cursor,
         drag,
-        placement_valid,
-        placement_invalid,
+        placement,
         target_line,
         factory_rally_first,
         factory_rally_second,
     }
 }
 
-/// Build the building placement cells, split into placeable and blocked: the
-/// foundation's cells and, for a wall, its auto-fill cells.
-///
-/// Native placement draws PLACE.SHP cells and never the building being placed:
-/// `Tactical::BuildingPlacement_OverlayRenderer` (`0x006D5030`) draws it only while
-/// `g_IsMapEditor` (`0x00A8ED6B`) is set, which `Parse_Command_Line` (`0x0052F620`) clears and
-/// only the random-map GALITE pass (`0x005A91E0`) sets, restoring it before returning.
-///
-/// Residual: the cells are PLACE.SHP frames 0 and 1 tinted green and red, and auto-fill cells
-/// draw even when the wall is blocked. Native `CellClass::BuildingPlacement_per_cell_draw`
-/// (`0x0047EC90`) draws a blocked cell with frame slope index + 2 (frame 1 marks pending cells),
-/// and the renderer draws auto-fill cells only when every foundation cell is clear (`0x006D53CB`).
-fn build_placement_preview(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    let (Some(o), Some(preview)) = (
-        &state.match_state.match_presentation.selection_overlay,
+/// Active PLACE cells. Tactical6D5030 suppresses the building ghost outside
+/// the map editor; Cell47EC90 supplies frame0 or slope+2. Keep one ordered
+/// stream rather than regrouping overlapping cells by admitted color.
+fn build_placement_preview(state: &AppState) -> Vec<SpriteInstance> {
+    let (Some(shape), Some(preview)) = (
+        state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .and_then(|overlay| overlay.placement_shape()),
         &state.match_state.input.building_placement_preview,
     ) else {
-        return (Vec::new(), Vec::new());
+        return Vec::new();
     };
-    let height_map = state.height_map();
-    let (mut valid, mut invalid) = o.build_building_preview(preview, height_map);
-    // The producer fills auto-fill cells for walls only.
-    let (autofill_valid, autofill_invalid) =
-        o.build_wall_autofill_diamonds(&preview.wall_autofill_cells, preview.valid, height_map);
-    valid.extend(autofill_valid);
-    invalid.extend(autofill_invalid);
-    (valid, invalid)
+    // Residual: native6D53CB suppresses auto-fill when the wall is blocked;
+    // the production list still includes those cells. The ordinary2x2 path
+    // has no filler cells and shares one current-cell presentation transport.
+    shape.build_building_preview(preview)
 }
 
 // ---------------------------------------------------------------------------
@@ -952,19 +936,6 @@ fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
         alpha: 1.0,
         ..Default::default()
     }]
-}
-
-// ---------------------------------------------------------------------------
-// Sort helpers
-// ---------------------------------------------------------------------------
-
-/// Sort instances by depth descending (furthest-back first for back-to-front draw).
-fn sort_by_depth_desc(instances: &mut [SpriteInstance]) {
-    instances.sort_by(|a, b| {
-        b.depth
-            .partial_cmp(&a.depth)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
 }
 
 #[cfg(test)]

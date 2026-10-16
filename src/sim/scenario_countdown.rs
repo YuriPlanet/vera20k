@@ -77,7 +77,7 @@ impl ScenarioSession {
     }
 
     /// Tactical6D4941 draws this line whenever the timer runs, including0.
-    pub(crate) fn scenario_timer_view(&self) -> Option<(i32, &str)> {
+    pub fn scenario_timer_view(&self) -> Option<(i32, &str)> {
         let state = &self.scenario_countdown;
         (state.timer.start_frame() != PAUSED_START_FRAME).then(|| {
             (

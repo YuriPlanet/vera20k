@@ -10,21 +10,17 @@
 //! ## Dependency rules
 //! - Part of render/ — reads from sim/ (Selected, Position) but NEVER mutates sim state.
 
-use std::collections::BTreeMap;
-
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
-use crate::sim::production::BuildingPlacementPreview;
+use crate::sim::production::{BuildingPlacementCell, BuildingPlacementPreview};
 use crate::sim::selection::SelectionState;
 
 /// Drag rectangle color — white.
 const DRAG_RECT_COLOR: [u8; 4] = [255, 255, 255, 255];
-const PREVIEW_VALID_COLOR: [u8; 4] = [0, 200, 4, 255];
-const PREVIEW_INVALID_COLOR: [u8; 4] = [241, 3, 0, 255];
 /// Depth for the drag rectangle — always in front of everything.
 const DRAG_RECT_DEPTH: f32 = 0.001;
 
@@ -41,12 +37,9 @@ const UNIT_PIP_VARIANT_COUNT: u32 = 3;
 pub struct SelectionOverlay {
     /// Solid color texture for drag rectangle lines.
     drag_texture: BatchTexture,
-    /// Texture for placeable building placement cells.
-    preview_valid_texture: BatchTexture,
-    /// Texture for blocked building placement cells.
-    preview_invalid_texture: BatchTexture,
-    /// Canvas height of the placement texture (from place.shp or TILE_WIDTH×TILE_HEIGHT fallback).
-    preview_canvas_h: f32,
+    /// Full physical PLACE frame table in its original palette. Active cells
+    /// select frame0 or slope+2 through the common centered SHP owner.
+    placement_shape: Option<CenteredShapeStrip>,
     /// Solid white texture reused for order markers/cursor feedback.
     white_texture: BatchTexture,
     /// Diamond outline texture for debug cell grid visualization.
@@ -96,12 +89,10 @@ pub struct SelectionOverlay {
     occupant_pip_frame_w: u32,
     occupant_pip_frame_h: u32,
     occupant_pip_canvas_adj: (f32, f32),
-    /// Tiberium cargo pip atlas: 3 frames from pips2.shp packed horizontally.
-    /// Frames 0 (empty), 2 (ore/green), 5 (gem) — used for harvester cargo display.
-    tiberium_pip_texture: Option<BatchTexture>,
-    tiberium_pip_frame_w: u32,
-    tiberium_pip_frame_h: u32,
-    tiberium_pip_canvas_adj: (f32, f32),
+    /// PIPS2.SHP: all raw frames, shared by cargo and MindControl scales.
+    /// Native LoadPipAssets5F76B0 binds AC1480; DrawPipScalePips709AEF
+    /// selects this shape for nonbuildings, in PALETTE.PAL/Convert87F6C4.
+    scale_pips: Option<CenteredShapeStrip>,
     /// BOMBCURS.SHP, the Crazy Ivan bomb clock.
     bomb_clock: Option<CenteredShapeStrip>,
     /// WRENCH.SHP, the repairing building's wrench.
@@ -150,68 +141,134 @@ impl CenteredShapeStrip {
             ..Default::default()
         })
     }
-}
+    /// Cell47EC90 active ordinary draw -> CC_Draw_Shape4AED70. Its native
+    /// flags20600 pick the plain53-row Convert's RLE row4960A0: opaque stores
+    /// without A/Z interaction. Source: placement_render native execution.
+    pub(crate) fn building_placement_instance(
+        &self,
+        cell: BuildingPlacementCell,
+    ) -> Option<SpriteInstance> {
+        let frame = if cell.valid {
+            0
+        } else {
+            usize::from(cell.slope) + 2
+        };
+        // Caller supplies the unraised tile point;47EC90 adds30 to X and
+        // subtracts15*signed_level+1 from Y before the centered shape draw.
+        // iso_to_screen includes that signed level and VERA's shared row bias.
+        let (x, y) = terrain::iso_to_screen(cell.coord.0, cell.coord.1, cell.level as u8);
+        let mut instance = self.instance(frame, (x + 30.0, y - 1.0), 0.0)?;
+        instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
+        Some(instance)
+    }
 
-/// Decode `shp_name` in `pal_name` into a [`CenteredShapeStrip`].
-fn load_centered_shape_strip(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: &AssetManager,
-    shp_name: &str,
-    pal_name: &str,
-) -> Option<CenteredShapeStrip> {
-    let shp = ShpFile::from_bytes(&assets.get(shp_name)?).ok()?;
-    let palette = Palette::from_bytes(&assets.get(pal_name)?).ok()?;
-    let atlas_w: u32 = shp
-        .frames
-        .iter()
-        .map(|f| u32::from(f.frame_width))
-        .sum::<u32>()
-        .max(1);
-    let atlas_h: u32 = shp
-        .frames
-        .iter()
-        .map(|f| u32::from(f.frame_height))
-        .max()
-        .unwrap_or(0)
-        .max(1);
-    let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-    let mut frames = Vec::with_capacity(shp.frames.len());
-    let mut x = 0;
-    for frame in &shp.frames {
-        let (w, h) = (u32::from(frame.frame_width), u32::from(frame.frame_height));
-        for py in 0..h {
-            for px in 0..w {
-                let index = frame.pixels[(py * w + px) as usize];
-                if index == 0 {
-                    continue;
+    /// Decode every raw SHP frame in its named palette. This is the same
+    /// resource path for windowed loading and offscreen GPU checks.
+    pub(crate) fn from_assets_on_device(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        shp_name: &str,
+        pal_name: &str,
+    ) -> Option<Self> {
+        let shp = ShpFile::from_bytes(&assets.get(shp_name)?).ok()?;
+        let palette = Palette::from_bytes(&assets.get(pal_name)?).ok()?;
+        let atlas_w: u32 = shp
+            .frames
+            .iter()
+            .map(|f| u32::from(f.frame_width))
+            .sum::<u32>()
+            .max(1);
+        let atlas_h: u32 = shp
+            .frames
+            .iter()
+            .map(|f| u32::from(f.frame_height))
+            .max()
+            .unwrap_or(0)
+            .max(1);
+        let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+        // Preserve the original indices for the shared Convert palette
+        // resolver. Raw-color icon consumers keep their default PaletteLight;
+        // placement supplies its native plain Convert instead.
+        let mut indices = vec![0u8; (atlas_w * atlas_h) as usize];
+        let mut frames = Vec::with_capacity(shp.frames.len());
+        let mut x = 0;
+        for frame in &shp.frames {
+            let (w, h) = (u32::from(frame.frame_width), u32::from(frame.frame_height));
+            for py in 0..h {
+                for px in 0..w {
+                    let index = frame.pixels[(py * w + px) as usize];
+                    indices[(py * atlas_w + x + px) as usize] = index;
+                    if index == 0 {
+                        continue;
+                    }
+                    let color = palette.colors[index as usize];
+                    let dst = ((py * atlas_w + x + px) * 4) as usize;
+                    rgba[dst..dst + 4].copy_from_slice(&[color.r, color.g, color.b, 255]);
                 }
-                let color = palette.colors[index as usize];
-                let dst = ((py * atlas_w + x + px) * 4) as usize;
-                rgba[dst..dst + 4].copy_from_slice(&[color.r, color.g, color.b, 255]);
+            }
+            frames.push(CenteredShapeFrame {
+                x,
+                w,
+                h,
+                offset: (
+                    i32::from(frame.frame_x) - i32::from(shp.width / 2),
+                    i32::from(frame.frame_y) - i32::from(shp.height / 2),
+                ),
+            });
+            x += w;
+        }
+        log::info!(
+            "{shp_name} strip in {pal_name}: {atlas_w}x{atlas_h}, {} frames",
+            frames.len()
+        );
+        Some(Self {
+            texture: batch.create_texture_on_device(
+                device,
+                queue,
+                &rgba,
+                atlas_w,
+                atlas_h,
+                Some(&indices),
+            ),
+            atlas_w: atlas_w as f32,
+            atlas_h: atlas_h as f32,
+            frames,
+        })
+    }
+    /// Active foundation cells in Tactical6D5030's rectangular draw order.
+    /// Admission and current Cell ground fields are recomputed with the preview;
+    /// this consumer never decides buildability or uses the render height cache.
+    pub fn build_building_preview(
+        &self,
+        preview: &BuildingPlacementPreview,
+    ) -> Vec<SpriteInstance> {
+        let mut instances = Vec::with_capacity(preview.cells.len());
+        // Tactical6D5030 walks rectangular foundation bounds with X outer,
+        // Y inner, independently of the row-major admission/sentinel list.
+        // Reordering by color changes stores where sloped cells overlap.
+        for dx in 0..preview.width {
+            for dy in 0..preview.height {
+                let index = usize::from(dy) * usize::from(preview.width) + usize::from(dx);
+                let Some(cell) = preview.cells.get(index) else {
+                    continue;
+                };
+                if let Some(instance) = self.building_placement_instance(*cell) {
+                    instances.push(instance);
+                }
             }
         }
-        frames.push(CenteredShapeFrame {
-            x,
-            w,
-            h,
-            offset: (
-                i32::from(frame.frame_x) - i32::from(shp.width / 2),
-                i32::from(frame.frame_y) - i32::from(shp.height / 2),
-            ),
-        });
-        x += w;
+        // Preserve existing wall auto-fill admission and order; pending marks
+        // and blocked-wall suppression remain explicit separate residuals.
+        instances.extend(
+            preview
+                .wall_autofill_cells
+                .iter()
+                .filter_map(|cell| self.building_placement_instance(*cell)),
+        );
+        instances
     }
-    log::info!(
-        "{shp_name} strip in {pal_name}: {atlas_w}x{atlas_h}, {} frames",
-        frames.len()
-    );
-    Some(CenteredShapeStrip {
-        texture: batch.create_texture(gpu, &rgba, atlas_w, atlas_h),
-        atlas_w: atlas_w as f32,
-        atlas_h: atlas_h as f32,
-        frames,
-    })
 }
 
 impl SelectionOverlay {
@@ -220,23 +277,19 @@ impl SelectionOverlay {
     pub fn new(gpu: &GpuContext, batch: &BatchRenderer, assets: Option<&AssetManager>) -> Self {
         let drag_texture: BatchTexture =
             batch.create_texture(gpu, &generate_solid_color(DRAG_RECT_COLOR), 2, 2);
-        // Use place.shp from assets for authentic RA2 placement overlay, else procedural.
-        let (preview_valid_texture, preview_invalid_texture, _preview_canvas_w, preview_canvas_h) =
-            load_place_textures(gpu, batch, assets).unwrap_or_else(|| {
-                let valid = batch.create_texture(
-                    gpu,
-                    &generate_diamond_cell(PREVIEW_VALID_COLOR),
-                    TILE_WIDTH as u32,
-                    TILE_HEIGHT as u32,
-                );
-                let invalid = batch.create_texture(
-                    gpu,
-                    &generate_diamond_cell(PREVIEW_INVALID_COLOR),
-                    TILE_WIDTH as u32,
-                    TILE_HEIGHT as u32,
-                );
-                (valid, invalid, TILE_WIDTH, TILE_HEIGHT)
-            });
+        // Display4A885B..4A8873 binds PLACE; InitGame52BF26..52BFC1
+        // binds PALETTE.PAL's plain Convert87F6C4. Missing retail art has no
+        // invented procedural substitute.
+        let placement_shape = assets.and_then(|assets| {
+            CenteredShapeStrip::from_assets_on_device(
+                &gpu.device,
+                &gpu.queue,
+                batch,
+                assets,
+                "place.shp",
+                "palette.pal",
+            )
+        });
         let white_texture: BatchTexture =
             batch.create_texture(gpu, &generate_solid_color([255, 255, 255, 255]), 2, 2);
         let diamond_outline_texture: BatchTexture = batch.create_texture(
@@ -295,41 +348,73 @@ impl SelectionOverlay {
             occ_adj_y,
         ) = load_occupant_pip_atlas(gpu, batch, assets).unwrap_or((None, 0, 0, 0.0, 0.0));
 
-        // Load pips2.shp frames 0, 2, 5 for tiberium cargo pips (harvesters).
-        let (
-            tiberium_pip_texture,
-            tiberium_pip_frame_w,
-            tiberium_pip_frame_h,
-            tib_adj_x,
-            tib_adj_y,
-        ) = load_tiberium_pip_atlas(gpu, batch, assets).unwrap_or((None, 0, 0, 0.0, 0.0));
+        // Native Init_Game52BF26/52BFC1 builds Convert87F6C4 from the
+        // literal PALETTE.PAL; keep the SHP's full raw frame table. The
+        // common centered owner applies each stored frame's own origin.
+        let scale_pips = assets.and_then(|assets| {
+            CenteredShapeStrip::from_assets_on_device(
+                &gpu.device,
+                &gpu.queue,
+                batch,
+                assets,
+                "pips2.shp",
+                "palette.pal",
+            )
+        });
 
         // `Rules+0xFE0`, BOMBCURS.SHP by name (0x0066C5F4), drawn through the
         // convert `[0x0087F6C8]` that Init_Game builds from MOUSEPAL.PAL
         // (0x0052C13D..0x0052C1DD).
         let bomb_clock = assets.and_then(|assets| {
-            load_centered_shape_strip(gpu, batch, assets, "bombcurs.shp", "mousepal.pal")
+            CenteredShapeStrip::from_assets_on_device(
+                &gpu.device,
+                &gpu.queue,
+                batch,
+                assets,
+                "bombcurs.shp",
+                "mousepal.pal",
+            )
         });
         // WRENCH.SHP by name (`0x0045E99E` into `[0x0089DDC8]`), drawn
         // through the same convert.
         let repair_wrench = assets.and_then(|assets| {
-            load_centered_shape_strip(gpu, batch, assets, "wrench.shp", "mousepal.pal")
+            CenteredShapeStrip::from_assets_on_device(
+                &gpu.device,
+                &gpu.queue,
+                batch,
+                assets,
+                "wrench.shp",
+                "mousepal.pal",
+            )
         });
         // PIPS.SHP — the same file the health strip's pips come from, in the
         // unit pips' palette. Its tail (`0x0070A614..0x0070A6BB`) draws the
         // self-heal status pip (index 0x0D organic / 0x14 units) centered on
         // the draw point, so the strip's own frame origins carry the offset.
         let self_heal_pip = assets.and_then(|assets| {
-            load_centered_shape_strip(gpu, batch, assets, "pips.shp", "palette.pal").or_else(|| {
-                load_centered_shape_strip(gpu, batch, assets, "pips.shp", "unittem.pal")
+            CenteredShapeStrip::from_assets_on_device(
+                &gpu.device,
+                &gpu.queue,
+                batch,
+                assets,
+                "pips.shp",
+                "palette.pal",
+            )
+            .or_else(|| {
+                CenteredShapeStrip::from_assets_on_device(
+                    &gpu.device,
+                    &gpu.queue,
+                    batch,
+                    assets,
+                    "pips.shp",
+                    "unittem.pal",
+                )
             })
         });
 
         Self {
             drag_texture,
-            preview_valid_texture,
-            preview_invalid_texture,
-            preview_canvas_h,
+            placement_shape,
             white_texture,
             diamond_outline_texture,
             diamond_filled_texture,
@@ -353,10 +438,7 @@ impl SelectionOverlay {
             occupant_pip_frame_w,
             occupant_pip_frame_h,
             occupant_pip_canvas_adj: (occ_adj_x, occ_adj_y),
-            tiberium_pip_texture,
-            tiberium_pip_frame_w,
-            tiberium_pip_frame_h,
-            tiberium_pip_canvas_adj: (tib_adj_x, tib_adj_y),
+            scale_pips,
             bomb_clock,
             repair_wrench,
             self_heal_pip,
@@ -456,12 +538,8 @@ impl SelectionOverlay {
         &self.drag_texture
     }
 
-    pub fn preview_valid_texture(&self) -> &BatchTexture {
-        &self.preview_valid_texture
-    }
-
-    pub fn preview_invalid_texture(&self) -> &BatchTexture {
-        &self.preview_invalid_texture
+    pub fn placement_shape(&self) -> Option<&CenteredShapeStrip> {
+        self.placement_shape.as_ref()
     }
 
     pub fn white_texture(&self) -> &BatchTexture {
@@ -596,33 +674,10 @@ impl SelectionOverlay {
         self.occupant_pip_canvas_adj
     }
 
-    /// Get the tiberium cargo pip atlas texture (pips2.shp frames 0, 2, 5).
-    pub fn tiberium_pip_texture(&self) -> Option<&BatchTexture> {
-        self.tiberium_pip_texture.as_ref()
-    }
-
-    /// UV origin for a tiberium pip variant: 0=empty, 1=ore, 2=gem.
-    pub fn tiberium_pip_uv_origin(&self, variant: u32) -> [f32; 2] {
-        let v: f32 = (variant.min(TIBERIUM_PIP_VARIANT_COUNT - 1)) as f32;
-        [v / TIBERIUM_PIP_VARIANT_COUNT as f32, 0.0]
-    }
-
-    /// UV size for a single tiberium pip frame in the atlas.
-    pub fn tiberium_pip_uv_size(&self) -> [f32; 2] {
-        [1.0 / TIBERIUM_PIP_VARIANT_COUNT as f32, 1.0]
-    }
-
-    /// Pixel size of one tiberium pip frame.
-    pub fn tiberium_pip_frame_size(&self) -> [f32; 2] {
-        [
-            self.tiberium_pip_frame_w as f32,
-            self.tiberium_pip_frame_h as f32,
-        ]
-    }
-
-    /// Canvas centering adjustment for tiberium cargo pips.
-    pub fn tiberium_pip_canvas_adj(&self) -> (f32, f32) {
-        self.tiberium_pip_canvas_adj
+    /// The one PIPS2.SHP strip: raw frame0 empty,1 occupied,3/4 overload,
+    /// and2/5 ore/gem. Callers supply native frame IDs, not atlas variants.
+    pub fn scale_pips(&self) -> Option<&CenteredShapeStrip> {
+        self.scale_pips.as_ref()
     }
 
     /// Get the pipbrd atlas texture for non-building health bar backgrounds.
@@ -669,102 +724,6 @@ impl SelectionOverlay {
         } else {
             self.pipbrd_vehicle_offset
         }
-    }
-
-    /// Build per-cell diamond overlay instances, split by validity.
-    /// Returns (valid_cells, invalid_cells).
-    ///
-    /// Uses the standard SHP centering formula (drawPoint + CellSize/2 - ShapeSize/2)
-    /// so the place.shp diamond aligns exactly with the terrain tile underneath.
-    pub fn build_building_preview(
-        &self,
-        preview: &BuildingPlacementPreview,
-        height_map: &BTreeMap<(u16, u16), u8>,
-    ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-        let cap: usize = (preview.width as usize) * (preview.height as usize);
-        let mut valid_cells: Vec<SpriteInstance> = Vec::with_capacity(cap);
-        let mut invalid_cells: Vec<SpriteInstance> = Vec::with_capacity(cap);
-        let depth: f32 = DRAG_RECT_DEPTH;
-        // place.shp is a per-cell diamond overlay. Draw each cell at tile size
-        // (TILE_WIDTH × TILE_HEIGHT) positioned at iso_to_screen() — same anchor
-        // as terrain tiles. The UV crops to the diamond region within the canvas.
-        // For place.shp (60×59, frame at y=30 size 60×29), the diamond sits in
-        // the bottom half: UV y from 30/59 to 59/59.
-        let uv_y_start: f32 = if self.preview_canvas_h > TILE_HEIGHT {
-            (self.preview_canvas_h - TILE_HEIGHT) / self.preview_canvas_h
-        } else {
-            0.0
-        };
-        let uv_y_size: f32 = TILE_HEIGHT / self.preview_canvas_h;
-        for dy in 0..preview.height {
-            for dx in 0..preview.width {
-                let idx: usize = (dy as usize) * (preview.width as usize) + (dx as usize);
-                let cell_ok: bool = preview.cell_valid.get(idx).copied().unwrap_or(false);
-                let crx: u16 = preview.rx.saturating_add(dx);
-                let cry: u16 = preview.ry.saturating_add(dy);
-                let z: u8 = height_map.get(&(crx, cry)).copied().unwrap_or(0);
-                let (sx, sy) = terrain::iso_to_screen(crx, cry, z);
-                let inst = SpriteInstance {
-                    position: [sx, sy],
-                    size: [TILE_WIDTH, TILE_HEIGHT],
-                    uv_origin: [0.0, uv_y_start],
-                    uv_size: [1.0, uv_y_size],
-                    depth,
-                    tint: [1.0, 1.0, 1.0],
-                    alpha: 1.0,
-                    ..Default::default()
-                };
-                if cell_ok {
-                    valid_cells.push(inst);
-                } else {
-                    invalid_cells.push(inst);
-                }
-            }
-        }
-        (valid_cells, invalid_cells)
-    }
-
-    /// Build placement diamonds for a list of extra cells (wall auto-fill),
-    /// placeable when `valid` and blocked otherwise.
-    ///
-    /// Draws the place.shp diamond on every intermediate cell between the cursor
-    /// and an existing same-type wall, with the same UV/size as the foundation
-    /// cells.
-    pub fn build_wall_autofill_diamonds(
-        &self,
-        cells: &[(u16, u16)],
-        valid: bool,
-        height_map: &BTreeMap<(u16, u16), u8>,
-    ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-        let mut valid_cells: Vec<SpriteInstance> = Vec::new();
-        let mut invalid_cells: Vec<SpriteInstance> = Vec::new();
-        let depth: f32 = DRAG_RECT_DEPTH;
-        let uv_y_start: f32 = if self.preview_canvas_h > TILE_HEIGHT {
-            (self.preview_canvas_h - TILE_HEIGHT) / self.preview_canvas_h
-        } else {
-            0.0
-        };
-        let uv_y_size: f32 = TILE_HEIGHT / self.preview_canvas_h;
-        for &(rx, ry) in cells {
-            let z: u8 = height_map.get(&(rx, ry)).copied().unwrap_or(0);
-            let (sx, sy) = terrain::iso_to_screen(rx, ry, z);
-            let inst = SpriteInstance {
-                position: [sx, sy],
-                size: [TILE_WIDTH, TILE_HEIGHT],
-                uv_origin: [0.0, uv_y_start],
-                uv_size: [1.0, uv_y_size],
-                depth,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            };
-            if valid {
-                valid_cells.push(inst);
-            } else {
-                invalid_cells.push(inst);
-            }
-        }
-        (valid_cells, invalid_cells)
     }
 }
 
@@ -1098,100 +1057,6 @@ fn load_occupant_pip_atlas(
     Some((Some(texture), max_w, max_h, adj_x, adj_y))
 }
 
-/// Number of tiberium pip variants packed into the tiberium pip atlas (empty, ore, gem).
-const TIBERIUM_PIP_VARIANT_COUNT: u32 = 3;
-
-/// Load pips2.shp frames 0, 2, 5 for tiberium/cargo pip display on harvesters.
-///
-/// pips2.shp frame layout (non-building pip display):
-///   0 = empty pip (dark)
-///   2 = ore pip (green)
-///   5 = gem pip (yellow/blue)
-///
-/// Uses palette.pal for coloring.
-fn load_tiberium_pip_atlas(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: Option<&AssetManager>,
-) -> Option<(Option<BatchTexture>, u32, u32, f32, f32)> {
-    let assets = assets?;
-    let shp_data = assets.get("pips2.shp")?;
-    let shp = ShpFile::from_bytes(&shp_data).ok()?;
-    if shp.frames.len() < 6 {
-        log::warn!(
-            "pips2.shp has fewer than 6 frames ({}), cannot load tiberium pip atlas",
-            shp.frames.len()
-        );
-        return Some((None, 0, 0, 0.0, 0.0));
-    }
-    let pal_data = assets
-        .get("palette.pal")
-        .or_else(|| assets.get("unittem.pal"))?;
-    let palette = Palette::from_bytes(&pal_data).ok()?;
-
-    // Atlas slot order: [empty, ore, gem] from pips2.shp frames [0, 2, 5].
-    let frame_indices: [usize; TIBERIUM_PIP_VARIANT_COUNT as usize] = [0, 2, 5];
-    let mut max_w: u32 = 0;
-    let mut max_h: u32 = 0;
-    for &fi in &frame_indices {
-        let fw: u32 = shp.frames[fi].frame_width as u32;
-        let fh: u32 = shp.frames[fi].frame_height as u32;
-        if fw > max_w {
-            max_w = fw;
-        }
-        if fh > max_h {
-            max_h = fh;
-        }
-    }
-
-    let atlas_w: u32 = max_w * TIBERIUM_PIP_VARIANT_COUNT;
-    let atlas_h: u32 = max_h;
-    let mut rgba: Vec<u8> = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-
-    for (slot, &fi) in frame_indices.iter().enumerate() {
-        let frame = &shp.frames[fi];
-        let fw: u32 = frame.frame_width as u32;
-        let fh: u32 = frame.frame_height as u32;
-        let x_off: u32 = slot as u32 * max_w;
-        let cx: u32 = (max_w - fw) / 2;
-        let cy: u32 = (max_h - fh) / 2;
-        for py in 0..fh {
-            for px in 0..fw {
-                let src_idx: usize = (py * fw + px) as usize;
-                let pal_idx: u8 = frame.pixels[src_idx];
-                if pal_idx == 0 {
-                    continue;
-                }
-                let color = palette.colors[pal_idx as usize];
-                let dst_x: u32 = x_off + cx + px;
-                let dst_y: u32 = cy + py;
-                let dst: usize = ((dst_y * atlas_w + dst_x) * 4) as usize;
-                rgba[dst] = color.r;
-                rgba[dst + 1] = color.g;
-                rgba[dst + 2] = color.b;
-                rgba[dst + 3] = 255;
-            }
-        }
-    }
-
-    let ref_frame = &shp.frames[0];
-    let adj_x: f32 = ref_frame.frame_x as f32 - (shp.width / 2) as f32;
-    let adj_y: f32 = ref_frame.frame_y as f32 - (shp.height / 2) as f32;
-
-    let texture: BatchTexture = batch.create_texture(gpu, &rgba, atlas_w, atlas_h);
-    log::info!(
-        "Tiberium pip atlas: {}x{} (frame {}x{}, {} variants, pips2.shp frames [0,2,5], adj ({:.0},{:.0}))",
-        atlas_w,
-        atlas_h,
-        max_w,
-        max_h,
-        TIBERIUM_PIP_VARIANT_COUNT,
-        adj_x,
-        adj_y,
-    );
-    Some((Some(texture), max_w, max_h, adj_x, adj_y))
-}
-
 type PipbrdAtlas = (Option<BatchTexture>, u32, u32, u32, u32, f32, f32, f32, f32);
 
 /// Load pipbrd.shp and pack 2 health bar background frames into a horizontal strip atlas.
@@ -1308,78 +1173,6 @@ fn load_pipbrd_atlas(
         inf_adj_x,
         inf_adj_y,
     ))
-}
-
-/// Load place.shp (building placement overlay) from RA2 assets.
-///
-/// Frame 0 = valid placement cell, frame 1 = invalid placement cell.
-/// The SHP uses palette index 125 for the diamond shape — we extract the shape
-/// as an alpha mask and tint it green (valid) or red (invalid) so it's visible
-/// regardless of which palette is loaded.
-/// Returns (valid_texture, invalid_texture, canvas_w, canvas_h) or None if not available.
-fn load_place_textures(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: Option<&AssetManager>,
-) -> Option<(BatchTexture, BatchTexture, f32, f32)> {
-    let assets = assets?;
-    let shp_data = assets.get("place.shp")?;
-    let shp = ShpFile::from_bytes(&shp_data).ok()?;
-    if shp.frames.len() < 2 {
-        log::warn!("place.shp has fewer than 2 frames ({})", shp.frames.len());
-        return None;
-    }
-
-    // Render a place.shp frame into its full canvas (shp.width × shp.height),
-    // then use the standard SHP centering formula so the diamond aligns with
-    // the cell the same way buildings do. The caller draws it at iso_to_screen()
-    // with size = (canvas_w, canvas_h) and offset matching the original engine's formula:
-    //   position = cellTopLeft + (CellSizeX/2 - canvasW/2 + frameX, CellSizeY/2 - canvasH/2 + frameY)
-    // But since we blit into the full canvas, frameX/Y are baked in, and the
-    // offset simplifies to (CellSizeX/2 - canvasW/2, CellSizeY/2 - canvasH/2).
-    let canvas_w: u32 = shp.width as u32;
-    let canvas_h: u32 = shp.height as u32;
-    let render_tinted = |frame_idx: usize, color: [u8; 4]| -> Option<BatchTexture> {
-        let frame = &shp.frames[frame_idx];
-        let fw: u32 = frame.frame_width as u32;
-        let fh: u32 = frame.frame_height as u32;
-        if fw == 0 || fh == 0 {
-            return None;
-        }
-        let mut rgba: Vec<u8> = vec![0u8; (canvas_w * canvas_h * 4) as usize];
-        let fx: u32 = frame.frame_x as u32;
-        let fy: u32 = frame.frame_y as u32;
-        for py in 0..fh {
-            for px in 0..fw {
-                let src_idx: usize = (py * fw + px) as usize;
-                let palette_index: u8 = frame.pixels[src_idx];
-                if palette_index == 0 {
-                    continue;
-                }
-                let dst_x: u32 = fx + px;
-                let dst_y: u32 = fy + py;
-                if dst_x >= canvas_w || dst_y >= canvas_h {
-                    continue;
-                }
-                let dst_idx: usize = ((dst_y * canvas_w + dst_x) * 4) as usize;
-                rgba[dst_idx] = color[0];
-                rgba[dst_idx + 1] = color[1];
-                rgba[dst_idx + 2] = color[2];
-                rgba[dst_idx + 3] = color[3];
-            }
-        }
-        Some(batch.create_texture(gpu, &rgba, canvas_w, canvas_h))
-    };
-
-    let valid_tex = render_tinted(0, PREVIEW_VALID_COLOR)?;
-    let invalid_tex = render_tinted(1, PREVIEW_INVALID_COLOR)?;
-    log::info!(
-        "Loaded place.shp for building placement overlay ({}x{}, {} frames)",
-        shp.width,
-        shp.height,
-        shp.frames.len()
-    );
-    Some((valid_tex, invalid_tex, canvas_w as f32, canvas_h as f32))
 }
 
 /// Generate a 1px-thick diamond outline texture (TILE_WIDTH x TILE_HEIGHT).

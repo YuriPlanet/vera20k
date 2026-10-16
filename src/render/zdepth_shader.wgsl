@@ -1,21 +1,9 @@
-// Per-pixel Z-depth shader for TMP terrain tiles and high-bridge bodies.
+// Per-pixel Z-depth shader for TMP terrain tiles.
 //
-// Same vertex shader as batch_shader.wgsl. The fragment shader samples an R8
-// depth atlas (binding 2) at the colour UV and derives the native Z of the
-// pixel from the instance's canvas top row:
-//
-//   tiles   (`TMP_TileBlitter @ 0x00547CF0`): Z = base + zdata,
-//           base = DefaultZ + YOrigin - diamond_top - tileH - tileH*level/2,
-//           carried here as z_adjust = draw_offset.y - tileH - 15*level and
-//           z_sign = +1 (zdata added: higher Z-data is farther);
-//   bridges (`CellClass::DrawOverlay_Body @ 0x0047F6A0` through the extended
-//           blitter with gradient entry 0): Z = seed - row, carried as
-//           z_adjust = -15*(level+4) - 2 and z_sign = -1 with the atlas
-//           storing the row index.
-//
-// The ground row is canvas_top - (z_adjust + z_sign * byte). One native Z
-// unit is one world row; the resulting low16 word is stored independently of
-// map bounds, on the same attachment axis as the sprite paths.
+// TMP_TileBlitter @ 0x00547CF0 adds its Z-data byte to the base.
+// The ground row is canvas_top - (z_adjust + byte), where z_adjust
+// carries draw_offset.y - tileH - 15*level. One native Z unit is one
+// world row; low16 storage shares the sprite paths' attachment axis.
 
 struct Camera {
     screen_size: vec2f,
@@ -41,7 +29,6 @@ struct Instance {
     @location(4) depth: f32,
     @location(5) tint: vec3f,
     @location(6) alpha: f32,
-    @location(9) fx_params: vec4f,
     @location(11) z_adjust: f32,
     @location(14) palette_light: vec4u,
 };
@@ -52,7 +39,6 @@ struct VertexOutput {
     @location(1) tint: vec3f,
     @location(2) @interpolate(flat) canvas_top: f32,
     @location(3) @interpolate(flat) z_adjust: f32,
-    @location(4) @interpolate(flat) z_sign: f32,
     @location(11) @interpolate(flat) palette_light: vec4u,
 };
 
@@ -86,8 +72,6 @@ fn vs_main(
     output.tint = instance.tint;
     output.canvas_top = instance.position.y;
     output.z_adjust = instance.z_adjust;
-    // fx_params.w carries the Z-data sign (+1 tiles, -1 bridges); zero keeps +1.
-    output.z_sign = select(1.0, -1.0, instance.fx_params.w < 0.0);
     output.palette_light = instance.palette_light;
     return output;
 }
@@ -118,7 +102,7 @@ fn fs_main(input: VertexOutput) -> FragOutput {
 
     // R8 depth atlas: byte 0..255 stored as 0..1.
     let z_byte: f32 = round(textureSample(t_zdepth, s_sprite, input.uv).r * 255.0);
-    let ground_row: f32 = input.canvas_top - (input.z_adjust + input.z_sign * z_byte);
+    let ground_row: f32 = input.canvas_top - (input.z_adjust + z_byte);
     let frag_depth: f32 = stored_native_depth(32768 + i32(round(camera.camera_pos.y + camera.native_z_origin_y)) - i32(round(ground_row)));
 
     var output: FragOutput;

@@ -268,7 +268,7 @@ impl OwnerVisibility {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn map_cell_edge_cache_for_test(&self, cell: (u16, u16)) -> ([i8; 2], u32) {
         let cache = self.map_cell_edge_cache[self.index(cell.0, cell.1).unwrap()];
         (
@@ -802,7 +802,7 @@ impl FogState {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl FogState {
     /// Panics unless `viewer`'s lists, when complete, cover `cell` as
     /// [`EdgeCells`] promises. `beside_dummy`: the cell has an unallocated

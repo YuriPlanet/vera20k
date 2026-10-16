@@ -70,5 +70,5 @@ install the existing Unicorn 2.1.4 fixture dependencies, and run from the repo:
 
 ```sh
 PYTHONPATH=. python -m tools.rules_oracle.guided_controls --check
-VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k --lib rules::native_processing::guided_controls_tests::
+VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k-core --lib rules::native_processing::guided_controls_tests::
 ```

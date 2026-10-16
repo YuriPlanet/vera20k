@@ -212,7 +212,7 @@ impl Simulation {
 
     /// For an owner naming an object's `+0x3C` or `+0x50` handle, whether
     /// the object still stands out of Limbo; `None` for any other owner.
-    pub(crate) fn object_sound_owner_alive(&self, owner: u64) -> Option<bool> {
+    pub fn object_sound_owner_alive(&self, owner: u64) -> Option<bool> {
         Some(
             self.object_sound_location(object_sound_object(owner)?)
                 .is_some(),

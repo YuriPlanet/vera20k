@@ -56,12 +56,12 @@ impl AircraftAmmo {
     }
 
     /// Ammo (`+0x2FC`).
-    pub(crate) const fn current(&self) -> i32 {
+    pub const fn current(&self) -> i32 {
         self.current
     }
 
     /// The type's `Ammo=`; only the rearm reads it in production.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn max(&self) -> i32 {
         self.max
     }
@@ -99,7 +99,7 @@ impl AircraftAmmo {
     }
 
     /// Install a fixture's Ammo.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_for_test(&mut self, current: i32) {
         self.current = current;
     }
@@ -122,7 +122,7 @@ impl AircraftAmmo {
         self.pending_release = true;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn release_pending(&self) -> bool {
         self.pending_release
     }

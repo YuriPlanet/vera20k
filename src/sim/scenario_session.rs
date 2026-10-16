@@ -300,8 +300,8 @@ impl ScenarioLightingState {
     }
 
     /// The flash as a test row sets it: status 0, 1 or 2 with its timer.
-    #[cfg(test)]
-    pub(crate) fn set_nuke_flash_for_test(&mut self, status: i32, start: i32, duration: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_nuke_flash_for_test(&mut self, status: i32, start: i32, duration: i32) {
         let status = match status {
             0 => NukeFlashStatus::Off,
             1 => NukeFlashStatus::FadingIn,
@@ -316,7 +316,7 @@ impl ScenarioLightingState {
     }
 
     /// The flash's status (0, 1 or 2) and timer, as native stores them.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn nuke_flash_for_test(&self) -> (i32, i32, i32) {
         let status = match self.nuke_flash.status {
             NukeFlashStatus::Off => 0,
@@ -469,7 +469,7 @@ impl ScenarioDescriptor {
     ///
     /// Map bounds, theater, objects, and active registration order are rebuilt
     /// by the ordinary map loader; a recording is never a snapshot restore.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_native_replay_header(header: &crate::sim::replay::NativeReplayHeader) -> Self {
         Self {
             seed: header.seed,
@@ -494,7 +494,7 @@ struct CampaignScenarioState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum CampaignScenarioStartupError {
+pub enum CampaignScenarioStartupError {
     #[error("campaign startup requires native GameMode zero")]
     NonCampaignMode,
     #[error("campaign Scenario startup inputs were already installed")]
@@ -610,7 +610,7 @@ pub struct ScenarioSession {
 }
 
 impl ScenarioSession {
-    pub(crate) fn install_waypoints(
+    pub fn install_waypoints(
         &mut self,
         waypoints: &std::collections::HashMap<u32, crate::map::waypoints::Waypoint>,
     ) {
@@ -625,13 +625,13 @@ impl ScenarioSession {
     /// Scenario::GetWaypointCoords68BCC0 copies the packed signed words. An
     /// unset valid slot is (0,0); reading outside its702-slot allocation is
     /// not a deterministic malformed-map contract and is rejected here.
-    pub(crate) fn waypoint_cell(&self, index: i32) -> Option<(i16, i16)> {
+    pub fn waypoint_cell(&self, index: i32) -> Option<(i16, i16)> {
         let index = u32::try_from(index).ok()?;
         (index < crate::map::waypoints::WAYPOINT_SLOT_COUNT)
             .then(|| self.waypoints.get(&index).copied().unwrap_or((0, 0)))
     }
 
-    pub(crate) fn first_multiplayer_start(&self) -> Option<crate::map::waypoints::Waypoint> {
+    pub fn first_multiplayer_start(&self) -> Option<crate::map::waypoints::Waypoint> {
         self.waypoints
             .range(crate::map::waypoints::MULTIPLAYER_START_WAYPOINTS)
             .next()
@@ -650,11 +650,11 @@ impl ScenarioSession {
         self.computer_slot_has_team = true;
     }
 
-    pub(crate) const fn input_locked(&self) -> bool {
+    pub const fn input_locked(&self) -> bool {
         self.input_locked
     }
 
-    pub(crate) fn set_input_locked(&mut self, locked: bool) {
+    pub fn set_input_locked(&mut self, locked: bool) {
         self.input_locked = locked;
     }
 
@@ -684,11 +684,11 @@ impl ScenarioSession {
         commands
     }
 
-    pub(crate) const fn started(&self) -> bool {
+    pub const fn started(&self) -> bool {
         self.started
     }
 
-    pub(crate) fn set_started(&mut self, started: bool) {
+    pub fn set_started(&mut self, started: bool) {
         self.started = started;
     }
 
@@ -724,13 +724,13 @@ impl ScenarioSession {
     /// Main_Game55D283 calls BattleControlTerminated686570 on shell exit;
     /// its interior6865B0 resets Scenario+1254 to one. Difficulty and the
     /// current House keep their existing owners and are not rebound here.
-    pub(crate) fn reset_campaign_mission_counter_on_shell_exit(&mut self) {
+    pub fn reset_campaign_mission_counter_on_shell_exit(&mut self) {
         if let Some(campaign) = &mut self.campaign {
             campaign.mission_counter = 1;
         }
     }
 
-    pub(crate) fn campaign_house_difficulties(&self) -> Option<(HouseDifficulty, HouseDifficulty)> {
+    pub fn campaign_house_difficulties(&self) -> Option<(HouseDifficulty, HouseDifficulty)> {
         self.campaign
             .map(|campaign| (campaign.player_difficulty, campaign.computer_difficulty))
     }
@@ -880,7 +880,7 @@ impl ScenarioSession {
 
     /// Scenario+34B4 (`[Basic] IgnoreGlobalAITriggers=`): the computer's
     /// team creation skips the global (`AIMD.INI`) AI triggers.
-    pub(crate) const fn ignore_global_ai_triggers(&self) -> bool {
+    pub const fn ignore_global_ai_triggers(&self) -> bool {
         self.ignore_global_ai_triggers
     }
 

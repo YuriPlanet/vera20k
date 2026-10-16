@@ -58,6 +58,10 @@ fn paid_ready_fixture() -> Option<Fixture> {
     sim.session.house_order.push(owner);
     sim.session.current_house = Some(owner);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    // Like the supplied flat terrain/base, mapped ground is an explicit
+    // fixture prerequisite. This fixture does not execute map reveal startup.
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    sim.fog.reveal_all_for_owner(owner);
     for (name, rx) in [("GACNST", 4), ("GAPOWR", 11), ("GAPILE", 18)] {
         sim.spawn_object(name, "Americans", rx, 4, 0, &rules)
             .unwrap_or_else(|| panic!("healthy retail placement prerequisite {name}"));
@@ -423,7 +427,10 @@ fn submit_current_building(fixture: &mut Fixture, cell: (u16, u16)) -> CommandEn
         Some(&fixture.overlays),
     )
     .expect("ready object's real preview");
-    assert!(preview.valid, "site is admitted before any later blocker");
+    assert!(
+        preview.in_build_area && preview.foundation_visible,
+        "native local proximity/visibility gates admit the PLACE event"
+    );
     fixture.input.building_placement_preview = Some(preview);
     assert_eq!(
         fixture.input.building_placement_issuer(),
@@ -871,8 +878,10 @@ fn assert_same_preview(
             after.width,
             after.height,
             after.valid,
+            after.in_build_area,
+            after.foundation_visible,
             &after.reason,
-            &after.cell_valid,
+            &after.cells,
             &after.wall_autofill_cells,
         ),
         (
@@ -881,8 +890,10 @@ fn assert_same_preview(
             before.width,
             before.height,
             before.valid,
+            before.in_build_area,
+            before.foundation_visible,
             &before.reason,
-            &before.cell_valid,
+            &before.cells,
             &before.wall_autofill_cells,
         ),
         "every placement preview field is retained"
@@ -1137,6 +1148,207 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
             "the gadget prefix does not execute the requested queued-copy Abandon"
         );
     }
+}
+
+/// Supplied 32x32 terrain and healthy base, with paid retail GAPOWR identity.
+/// UpdateFoundationCenter4A9480/4A9485 stores proximity independently of the
+/// footprint's buildability; Cell47EE6C/47EE73 makes every ordinary preview
+/// cell invalid when that flag is zero, before its own IsClearToBuild call.
+/// This regression covers that production decision and queued refusal/input
+/// cleanup, not native terrain production, cursor projection or PLACE raster.
+#[test]
+fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
+    let Some(mut fixture) = paid_ready_fixture() else {
+        return;
+    };
+    let owner = fixture.owner;
+    let product = ready_product(&fixture, "GAPOWR");
+    let other_product = ready_product(&fixture, "GAPILL");
+    let credits = production::credits_for_owner(&fixture.sim, "Americans");
+    let near = (8, 4);
+    let far = (25, 25);
+    let near_clear = arm_gapowr_with_preview(&mut fixture);
+    assert_eq!((near_clear.rx, near_clear.ry), near);
+    assert!(near_clear.cells.iter().all(|cell| cell.valid));
+    let far_clear = production::placement_preview_for_owner_with_overlays(
+        &fixture.sim,
+        &fixture.rules,
+        "Americans",
+        "GAPOWR",
+        far.0,
+        far.1,
+        Some(&fixture.overlays),
+    )
+    .expect("the same paid product has a far preview inside the supplied map");
+    assert_eq!(
+        far_clear.reason,
+        Some(production::BuildingPlacementError::OutOfBuildArea)
+    );
+    assert!(far_clear.cells.iter().all(|cell| !cell.valid));
+
+    // Only current Cell slope is supplied. No ready flag, factory progress,
+    // proximity result or preview admission is forged by this terrain fixture.
+    for cell in [near, far] {
+        fixture
+            .sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(cell.0, cell.1)
+            .unwrap()
+            .slope_type = 1;
+    }
+    let near_mixed = production::placement_preview_for_owner_with_overlays(
+        &fixture.sim,
+        &fixture.rules,
+        "Americans",
+        "GAPOWR",
+        near.0,
+        near.1,
+        Some(&fixture.overlays),
+    )
+    .unwrap();
+    assert!(!near_mixed.valid);
+    assert!(
+        near_mixed.in_build_area && near_mixed.foundation_visible,
+        "red terrain still passes native local event gates"
+    );
+    assert_eq!(
+        near_mixed.reason,
+        Some(production::BuildingPlacementError::BlockedTerrain)
+    );
+    assert!(near_mixed.cells.iter().any(|cell| cell.valid));
+    assert!(near_mixed.cells.iter().any(|cell| !cell.valid));
+    let far_mixed = production::placement_preview_for_owner_with_overlays(
+        &fixture.sim,
+        &fixture.rules,
+        "Americans",
+        "GAPOWR",
+        far.0,
+        far.1,
+        Some(&fixture.overlays),
+    )
+    .unwrap();
+    assert!(!far_mixed.valid);
+    assert!(!far_mixed.in_build_area && far_mixed.foundation_visible);
+    assert_eq!(
+        far_mixed.reason,
+        Some(production::BuildingPlacementError::BlockedTerrain),
+        "the final terrain refusal must not stand in for the proximity result"
+    );
+    assert!(
+        far_mixed.cells.iter().all(|cell| !cell.valid),
+        "proximity denies every far cell, including the otherwise clear cells"
+    );
+    assert_eq!(ready_product(&fixture, "GAPOWR"), product);
+
+    // Check the independent visibility prerequisite on clear terrain before
+    // submitting a red near-base site. This fixture drives the ordinary PLACE
+    // receiver/input transaction, not AppState's physical mouse dispatcher.
+    fixture
+        .sim
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut(near.0, near.1)
+        .unwrap()
+        .slope_type = 0;
+    fixture
+        .sim
+        .fog
+        .set_ground_bits_for_test(owner, near.0, near.1, 0);
+    let hidden = production::placement_preview_for_owner_with_overlays(
+        &fixture.sim,
+        &fixture.rules,
+        "Americans",
+        "GAPOWR",
+        near.0,
+        near.1,
+        Some(&fixture.overlays),
+    )
+    .unwrap();
+    assert!(
+        !hidden.valid,
+        "the independent local visibility gate refuses the click"
+    );
+    assert!(hidden.in_build_area && !hidden.foundation_visible);
+    assert!(!hidden.cells[0].valid);
+    assert!(hidden.cells[1..].iter().all(|cell| cell.valid));
+    assert_eq!(ready_product(&fixture, "GAPOWR"), product);
+    fixture
+        .sim
+        .fog
+        .set_ground_bits_for_test(owner, near.0, near.1, 0x18);
+    fixture
+        .sim
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut(near.0, near.1)
+        .unwrap()
+        .slope_type = 1;
+    let command = submit_current_building(&mut fixture, near);
+    let refused = advance_commands(&mut fixture, &[command]);
+    assert_eq!(
+        placement_facts(&refused),
+        vec![LifecycleOutput::BuildingPlacementRetry { owner }]
+    );
+    assert_eq!(
+        consume_frame_outputs(&mut fixture, &refused, Some(owner)),
+        1
+    );
+    assert_eq!(ready_product(&fixture, "GAPOWR"), product);
+    assert_eq!(
+        fixture
+            .input
+            .building_placement_view()
+            .current
+            .unwrap()
+            .product_id(),
+        Some(product)
+    );
+    assert!(fixture.input.saved_building_placement.is_none());
+    assert!(fixture.input.cancel_building_placement());
+    assert!(fixture.input.targeting_mode.is_none());
+    assert!(fixture.input.building_placement_preview.is_none());
+    assert_eq!(ready_product(&fixture, "GAPOWR"), product);
+
+    fixture
+        .sim
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut(near.0, near.1)
+        .unwrap()
+        .slope_type = 0;
+    let command = submit_ready_building(&mut fixture, "GAPOWR", SidebarTab::Building, near);
+    let accepted = advance_commands(&mut fixture, &[command]);
+    assert!(
+        placement_facts(&accepted).contains(&LifecycleOutput::BuildingPlacementSucceeded { owner })
+    );
+    consume_frame_outputs(&mut fixture, &accepted, Some(owner));
+    let placed = fixture.sim.entities().get(product).unwrap();
+    assert!(!placed.lifecycle.in_limbo());
+    assert!(placed.lifecycle.cell_marked());
+    assert_eq!((placed.position.rx(), placed.position.ry()), near);
+    assert!(
+        production::ready_building_entity_for_owner(
+            &fixture.sim,
+            &fixture.rules,
+            owner,
+            fixture.sim.interner.get("GAPOWR").unwrap(),
+        )
+        .is_none()
+    );
+    assert!(fixture.input.targeting_mode.is_none());
+    assert!(fixture.input.building_placement_preview.is_none());
+    assert!(fixture.input.saved_building_placement.is_none());
+    assert_eq!(ready_product(&fixture, "GAPILL"), other_product);
+    assert_eq!(
+        production::credits_for_owner(&fixture.sim, "Americans"),
+        credits,
+        "refusal, cursor cancel and placement do not purchase another product"
+    );
 }
 
 /// Executed HousePlace4FB35F/4FB395 control: an independent stationary

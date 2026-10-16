@@ -34,7 +34,7 @@ pub(crate) use storage::BuildingStorage;
 /// (+6E6), its StorageClass art, the Stuff flag (+6EA) and the
 /// OnConstructionComplete guard (+6E4).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BuildingArt {
+pub struct BuildingArt {
     /// Retained Building+6E6 animation-transition flag (saved454469).
     /// Selfheal and arbitrary health writes do not refresh this value.
     damage_state_active: bool,
@@ -68,7 +68,7 @@ pub(crate) struct BuildingArt {
 /// Retain the pre-Techno values across save/load because the next render uses
 /// them; the gameplay owners remain the entity's live tint and flash state.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BuildingTintSample {
+pub struct BuildingTintSample {
     frame: u32,
     flashed: bool,
     invulnerability: Option<crate::sim::superweapon::invulnerability::InvulnerabilityState>,
@@ -77,21 +77,21 @@ pub(crate) struct BuildingTintSample {
 }
 
 impl BuildingTintSample {
-    pub(crate) fn frame(&self) -> u32 {
+    pub fn frame(&self) -> u32 {
         self.frame
     }
-    pub(crate) fn flashed(&self) -> bool {
+    pub fn flashed(&self) -> bool {
         self.flashed
     }
-    pub(crate) fn invulnerability(
+    pub fn invulnerability(
         &self,
     ) -> Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState> {
         self.invulnerability.as_ref()
     }
-    pub(crate) fn airstrike(&self) -> &crate::sim::superweapon::airstrike_tint::AirstrikeTintState {
+    pub fn airstrike(&self) -> &crate::sim::superweapon::airstrike_tint::AirstrikeTintState {
         &self.airstrike
     }
-    pub(crate) fn airstrike_active(&self) -> bool {
+    pub fn airstrike_active(&self) -> bool {
         self.airstrike_active
     }
 }
@@ -99,7 +99,7 @@ impl BuildingTintSample {
 impl BuildingArt {
     /// Sample once at Building43FE22, before Techno43FE56 can update either
     /// tint stage, draw Scenario RNG, or decrement the flash countdown.
-    pub(crate) fn capture_tint_sample(
+    pub fn capture_tint_sample(
         &mut self,
         frame: u32,
         flashed: bool,
@@ -116,17 +116,17 @@ impl BuildingArt {
         });
     }
 
-    pub(crate) fn tint_sample(&self) -> Option<&BuildingTintSample> {
+    pub fn tint_sample(&self) -> Option<&BuildingTintSample> {
         self.tint_sample.as_ref()
     }
 
     /// Building+6E6.
-    pub(crate) fn damage_state_active(&self) -> bool {
+    pub fn damage_state_active(&self) -> bool {
         self.damage_state_active
     }
 
     /// Building+55C's slots.
-    pub(crate) fn anim_slots(&self) -> &[Option<u64>; 21] {
+    pub fn anim_slots(&self) -> &[Option<u64>; 21] {
         &self.anim_slots
     }
 
@@ -146,7 +146,7 @@ impl BuildingArt {
     }
 
     /// Building+6E4: OnConstructionComplete has run.
-    pub(crate) fn actually_placed(&self) -> bool {
+    pub fn actually_placed(&self) -> bool {
         self.actually_placed
     }
 
@@ -163,9 +163,9 @@ impl BuildingArt {
 }
 
 /// Fixture setup for tests outside this module.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl BuildingArt {
-    pub(crate) fn set_actually_placed_for_test(&mut self, placed: bool) {
+    pub fn set_actually_placed_for_test(&mut self, placed: bool) {
         self.actually_placed = placed;
     }
 
@@ -204,14 +204,14 @@ impl Default for BuildingArt {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static GRAND_OPENING_CALLS: std::cell::RefCell<Option<Vec<(u64, bool)>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Observe calls into the production owner, including its native6E4 early
 /// return. The trace is test-local and does not enter persisted sim state.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn trace_grand_opening_calls<T>(run: impl FnOnce() -> T) -> (T, Vec<(u64, bool)>) {
     GRAND_OPENING_CALLS.with_borrow_mut(|trace| {
         assert!(trace.is_none(), "nested Grand_Opening traces");
@@ -279,7 +279,7 @@ impl Simulation {
     /// Original Grand_Opening445F80. First-opening effects depend on6E4,
     /// independently of the capture argument. Captures of already placed
     /// buildings still rearm ProduceCash and apply activation/house effects.
-    pub(crate) fn grand_opening(
+    pub fn grand_opening(
         &mut self,
         id: u64,
         captured: bool,
@@ -288,7 +288,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         GRAND_OPENING_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 trace.push((id, captured));
@@ -437,7 +437,7 @@ impl Simulation {
 
     /// `TechnoClass::EngineerRepair @ 0x00701410` passes `GetHealthRatio <= ConditionYellow`
     /// to `0x00451EE0`; `ReceiveDamage` tests the same ratio at `0x00442AA3..0x00442AC4`.
-    pub(crate) fn refresh_building_damage_state(&mut self, id: u64, rules: &RuleSet) {
+    pub fn refresh_building_damage_state(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -482,7 +482,7 @@ impl Simulation {
 
     /// Original451750. Empty selected names leave before451890 and therefore
     /// do not synchronize Building+6E6. Damaged takes precedence over garrison.
-    pub(crate) fn set_building_anim_slot(
+    pub fn set_building_anim_slot(
         &mut self,
         id: u64,
         slot: u8,
@@ -599,7 +599,7 @@ impl Simulation {
         Some(new_id)
     }
 
-    pub(crate) fn clear_building_anim_slot(&mut self, id: u64, slot: u8) {
+    pub fn clear_building_anim_slot(&mut self, id: u64, slot: u8) {
         let old = self
             .substrate
             .entities
@@ -773,13 +773,13 @@ impl Simulation {
     }
 }
 
-pub(crate) fn requested_damage_state(health: Health, strength: i32, yellow: f64) -> bool {
+pub fn requested_damage_state(health: Health, strength: i32, yellow: f64) -> bool {
     health.compare_ratio(strength, yellow) != Greater
 }
 
 /// Completed CanBeOccupied body frame, original43EF90 (43F05C/43F089).
 /// Kept in sim so receiver before/after checks and presentation share predicates.
-pub(crate) fn occupied_body_frame(
+pub fn occupied_body_frame(
     occupants: u32,
     current: i32,
     strength: i32,
@@ -804,7 +804,7 @@ pub(crate) fn occupied_body_frame(
 /// Raw inputs to original Building GetCurrentFrame43EF90. Native frame arithmetic
 /// stays signed32 until the rendering adapter validates an available SHP frame.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct BodyFrameInput {
+pub struct BodyFrameInput {
     pub state: i32,
     pub base_frame: i32,
     pub laser_frame: Option<i32>,
@@ -817,7 +817,7 @@ pub(crate) struct BodyFrameInput {
     pub ordinary: [[i32; 2]; 4],
 }
 
-pub(crate) fn body_frame(
+pub fn body_frame(
     input: BodyFrameInput,
     health: Health,
     strength: i32,
@@ -1012,7 +1012,7 @@ mod body_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
     let art_ini = IniFile::from_str(

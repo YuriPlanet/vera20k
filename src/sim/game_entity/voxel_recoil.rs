@@ -109,7 +109,7 @@ impl GameEntity {
     }
 
     /// Immutable drawing inputs: turret/barrel displacement and cache bypass.
-    pub(crate) fn voxel_recoil(&self) -> ([f32; 2], bool) {
+    pub fn voxel_recoil(&self) -> ([f32; 2], bool) {
         self.voxel_recoil
             .as_ref()
             .map_or(([0.0; 2], false), |recoil| {

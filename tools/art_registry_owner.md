@@ -124,7 +124,7 @@ Run the retail construction checks explicitly (normally ignored):
 
 ```sh
 VERA20K_REQUIRE_RETAIL_INI=1 VERA20K_REQUIRE_RETAIL_ASSETS=1 \
-python -m tools.cargo_run -- test -p vera20k --lib \
+python -m tools.cargo_run -- test -p vera20k-core --lib \
   headless_scenario::retail_construction_tests::retail_ -- --ignored --nocapture
 ```
 

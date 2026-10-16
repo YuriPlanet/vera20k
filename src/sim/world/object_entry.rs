@@ -152,7 +152,7 @@ impl EntryCell {
             Self::Live(cell) => crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
                 live.sim.playfield_bounds,
-                live.terrain(),
+                &crate::map::resolved_terrain::NativeCellQuery::canonical(live.terrain()),
             ),
         }
     }
@@ -1571,6 +1571,7 @@ fn terrain_impassable(
             Some(speed),
             None,
             None,
+            None,
         ) {
             return Ok(true);
         }
@@ -1595,6 +1596,7 @@ fn building_impassable(
             crate::sim::build_site::building_speed_type(obj),
             Some(obj),
             Some(e.owner()),
+            None,
         )
     } else {
         crate::sim::build_site::can_place_building_at(
@@ -1604,6 +1606,7 @@ fn building_impassable(
             obj,
             live.coord(cell),
             Some(e.owner()),
+            None,
         )
     };
     Ok(!admitted)

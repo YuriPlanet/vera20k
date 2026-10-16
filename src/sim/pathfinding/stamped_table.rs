@@ -55,7 +55,7 @@ impl<T: Copy> StampedTable<T> {
     }
 
     /// A table whose running search wrote every one of `values`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn with_all(values: Vec<T>) -> Self {
         Self {
             stamps: vec![1; values.len()],

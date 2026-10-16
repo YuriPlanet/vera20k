@@ -55,7 +55,7 @@ fn native_atan2(y: i32, x: i32) -> X87Value {
 
 /// Original 4CB3D0 finite f32-input kernel. The 4CAE30 double wrapper first
 /// stores each argument as f32, then executes the same table and quadrants.
-pub(crate) fn native_atan2_f32(y: NativeF32Bits, x: NativeF32Bits) -> X87Value {
+pub fn native_atan2_f32(y: NativeF32Bits, x: NativeF32Bits) -> X87Value {
     let zero = load_f32(NativeF32Bits::POSITIVE_ZERO);
     let y = load_f32(y);
     let x = load_f32(x);
@@ -97,7 +97,7 @@ pub(crate) fn native_atan2_f32(y: NativeF32Bits, x: NativeF32Bits) -> X87Value {
 /// stack, by the binary32 step (`FDIV float [0x008650B8]`). The index is
 /// `|ftol(...)|`; 0x1001 or more reads binary32 pi/2 (`0x007E897C`). The entry
 /// is negated when the binary32 copy is below zero (`FCOMP float [0x007E1748]`).
-pub(crate) fn native_atan_from_table(value: X87Value) -> X87Value {
+pub fn native_atan_from_table(value: X87Value) -> X87Value {
     let zero = load_f32(NativeF32Bits::POSITIVE_ZERO);
     let value32 = X87Chop53::store_f32(value)
         .and_then(X87Chop53::load_f32)
@@ -126,7 +126,7 @@ pub fn facing16_from_delta(dx: i32, dy: i32) -> u16 {
 /// Building447BFB..447C36 subtracts the two retained coordinates in x87,
 /// before the atan2 wrapper narrows them to f32. An i32 delta would wrap at
 /// opposite signed coordinate boundaries. Reuse the existing table/conversion.
-pub(crate) fn facing16_between(from: [i32; 2], to: [i32; 2]) -> u16 {
+pub fn facing16_between(from: [i32; 2], to: [i32; 2]) -> u16 {
     let difference = |a, b| {
         X87Chop53::store_f32(X87Chop53::sub(
             X87Chop53::load_i32(a),
@@ -142,7 +142,7 @@ pub(crate) fn facing16_between(from: [i32; 2], to: [i32; 2]) -> u16 {
 
 /// Convert the original atan return to a direction word (shared by Bullet
 /// Draw468090 and the coordinate-facing callers).
-pub(crate) fn facing16_from_angle(angle: X87Value) -> u16 {
+pub fn facing16_from_angle(angle: X87Value) -> u16 {
     let centered = X87Chop53::sub(angle, load_f64(PI_OVER_TWO_F64));
     let scaled = X87Chop53::mul(centered, load_f64(FACING_SCALE_F64));
     X87Chop53::ftol_i64(scaled)

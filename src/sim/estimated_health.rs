@@ -5,20 +5,20 @@
 //! and the scanner prerequisite packet. No floating-point arithmetic lives here.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct EstimatedHealth(i32);
+pub struct EstimatedHealth(i32);
 
 impl EstimatedHealth {
     pub(crate) const fn from_raw(value: i32) -> Self {
         Self(value)
     }
 
-    pub(crate) const fn get(self) -> i32 {
+    pub const fn get(self) -> i32 {
         self.0
     }
 
     /// Full-strength repair/reload and constructor/map/conversion initializers
     /// assign this field explicitly; ordinary actual damage does not.
-    pub(crate) fn reset(&mut self, actual_health: i32) {
+    pub fn reset(&mut self, actual_health: i32) {
         self.0 = actual_health;
     }
 

@@ -48,8 +48,8 @@ impl Tether {
     }
 
     /// Install a fixture's latch.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, partner: Option<u64>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, partner: Option<u64>) {
         self.partner = partner;
     }
 }

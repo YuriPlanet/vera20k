@@ -14,8 +14,8 @@ Run from the checkout root with the normal build owner:
 export RA2_DIR='/path/to/Red Alert 2'
 export VERA20K_REQUIRE_RETAIL_INI=1
 export VERA20K_REQUIRE_RETAIL_ASSETS=1
-python -m tools.cargo_run -- test -p vera20k --lib
-python -m tools.cargo_run -- clippy -p vera20k --lib
+python -m tools.cargo_run -- test --workspace --lib
+python -m tools.cargo_run -- clippy --workspace --lib
 ```
 
 `VERA20K_REQUIRE_RETAIL_INI` continues to require the extracted files in `ini/`.

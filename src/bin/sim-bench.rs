@@ -44,7 +44,7 @@
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
 //! order instead.
 //!
-//! Build with `cargo build --release --bin sim-bench`; timings from a debug
+//! Build with `cargo build --release -p vera20k-core --bin sim-bench`; timings from a debug
 //! build are not meaningful.
 
 mod sim_bench_match;
@@ -53,11 +53,11 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use vera20k::headless_scenario::{self, SIM_TICK_MS};
-use vera20k::sim::command::{Command, CommandEnvelope};
-use vera20k::sim::house_state::HouseState;
-use vera20k::sim::intern::InternedId;
-use vera20k::sim::runtime::SimRuntime;
+use vera20k_core::headless_scenario::{self, SIM_TICK_MS};
+use vera20k_core::sim::command::{Command, CommandEnvelope};
+use vera20k_core::sim::house_state::HouseState;
+use vera20k_core::sim::intern::InternedId;
+use vera20k_core::sim::runtime::SimRuntime;
 
 use sim_bench_match::MatchScenario;
 
@@ -105,7 +105,7 @@ fn parse_args() -> Result<Args, String> {
         order_spread: 30,
         return_at: None,
         hash_every: 0,
-        frame_hash_every: vera20k::sim::replay::PLAY_HASH_INTERVAL,
+        frame_hash_every: vera20k_core::sim::replay::PLAY_HASH_INTERVAL,
         csv: None,
         serial_paths: false,
         serial_scans: false,
@@ -333,7 +333,7 @@ fn march(
                 Command::AttackMove {
                     entity_id: unit.id,
                     target: None,
-                    destination: Some(vera20k::sim::combat::TargetKind::Cell(
+                    destination: Some(vera20k_core::sim::combat::TargetKind::Cell(
                         clamp(target_home.0, unit.offset.0),
                         clamp(target_home.1, unit.offset.1),
                     )),

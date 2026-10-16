@@ -27,7 +27,7 @@ use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTON
 /// What_Action's answer, on a Cell (vt+0x70) or over an object (vt+0x74), in
 /// the rungs a Move click reaches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MoveAction {
+pub enum MoveAction {
     /// Action 0: the arrow cursor, and a click orders nothing.
     None,
     /// Action 1.
@@ -49,17 +49,17 @@ impl MoveAction {
 
 /// How What_Action on a Cell is asked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct CellActionQuery {
+pub struct CellActionQuery {
     /// DetermineAction's (`0x00692610`) third argument, which Techno
     /// `0x00700600` reads as its second: 1 from the cursor update
     /// (`0x0069300B`); 0 from the button release (`0x00693267`), the
     /// selection's click loop (`0x004AE974`), ClickedAction (`0x004D7DA1`) and
     /// the Cell resolver (`0x004DE1E4`). With it set, the Move rungs answer
     /// Move before asking Can_Enter_Cell (`0x00700B51..0x00700B57`).
-    pub(crate) mouse_over: bool,
+    pub mouse_over: bool,
     /// The Shift key (`0x00A8EC08`/`0x00A8EC0C`, `0x00700696..0x007006C5`),
     /// which Ctrl clears (`0x00700706..0x0070071B`).
-    pub(crate) shift: bool,
+    pub shift: bool,
 }
 
 impl Simulation {
@@ -104,7 +104,7 @@ impl Simulation {
     /// soldier over a tube's neighbourhood, which answers 0
     /// (`0x0051F860..0x0051F8A6`); the fogged-object scans; and DirectRocker
     /// (`+0x2A8`, `0x00700617`), which nothing in retail sets.
-    pub(crate) fn cell_move_action(
+    pub fn cell_move_action(
         &self,
         viewer: InternedId,
         id: u64,
@@ -193,7 +193,7 @@ impl Simulation {
     /// coordinate, as Foot What_Action's shroud rung asks it and as the Unit
     /// harvest arms' gate does (`0x007405C1..0x007405E6`), which the app
     /// still answers for the cursor and the click.
-    pub(crate) fn clicked_cell_is_shrouded(
+    pub fn clicked_cell_is_shrouded(
         &self,
         viewer: InternedId,
         cell: (u16, u16),
@@ -228,7 +228,7 @@ impl Simulation {
     /// `None` sends no order. Native comparisons: walk_first_path.json
     /// `gi_reissue` (GI and MTNK What_Action and click rows) and
     /// walk_move_admission.json (the resolver).
-    pub(crate) fn cell_click_destination(
+    pub fn cell_click_destination(
         &self,
         viewer: InternedId,
         id: u64,
@@ -297,7 +297,7 @@ impl Simulation {
     /// - the tails turn 0 into NoMove for a player's Unit or Infantry it
     ///   may control (vt+0xA0; Unit `0x007403EB..0x00740414`, Infantry
     ///   `0x0051F05E..0x0051F08B`).
-    pub(crate) fn foot_object_class_action(
+    pub fn foot_object_class_action(
         &self,
         id: u64,
         action: MoveAction,
@@ -361,7 +361,7 @@ impl Simulation {
     /// shroud return gated on `AllowShroudedSubteranneanMoves` (Rules+0x17EF,
     /// `0x004D785F..0x004D7877`) and FNPC's height flag
     /// (`0x004D7A31..0x004D7A5A`), since no retail type is Subterranean.
-    pub(crate) fn object_move_click(
+    pub fn object_move_click(
         &self,
         viewer: InternedId,
         id: u64,
@@ -842,6 +842,6 @@ fn resolve_foot_object_click(
     Ok(None)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[path = "move_cell_input_tests.rs"]
 mod tests;

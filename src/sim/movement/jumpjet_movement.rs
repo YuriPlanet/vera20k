@@ -150,27 +150,27 @@ fn unit_destination(centre: DriveCoord, host: &impl JumpjetOrderHost) -> DriveCo
 impl JumpjetRuntime {
     pub(crate) const NULL: DriveCoord = DriveCoord { x: 0, y: 0, z: 0 };
 
-    pub(crate) fn destination(&self) -> DriveCoord {
+    pub fn destination(&self) -> DriveCoord {
         self.destination
     }
 
-    pub(crate) fn moving(&self) -> bool {
+    pub fn moving(&self) -> bool {
         self.moving
     }
 
-    pub(crate) fn phase(&self) -> i32 {
+    pub fn phase(&self) -> i32 {
         self.phase
     }
 
-    pub(crate) fn params(&self) -> jumpjet_flight::JumpjetFlightParams {
+    pub fn params(&self) -> jumpjet_flight::JumpjetFlightParams {
         self.params
     }
 
-    pub(crate) fn flight(&self) -> jumpjet_flight::JumpjetFlight {
+    pub fn flight(&self) -> jumpjet_flight::JumpjetFlight {
         self.flight
     }
 
-    pub(crate) fn landing_latched(&self) -> bool {
+    pub fn landing_latched(&self) -> bool {
         self.landing_latched
     }
 
@@ -203,25 +203,25 @@ impl JumpjetRuntime {
         result
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_destination_for_test(mut self, destination: DriveCoord) -> Self {
         self.destination = destination;
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_moving_for_test(mut self, moving: bool) -> Self {
         self.moving = moving;
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_phase_for_test(mut self, phase: i32) -> Self {
         self.phase = phase;
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_params_for_test(
         mut self,
         params: jumpjet_flight::JumpjetFlightParams,
@@ -230,13 +230,13 @@ impl JumpjetRuntime {
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_flight_for_test(mut self, flight: jumpjet_flight::JumpjetFlight) -> Self {
         self.flight = flight;
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_landing_latched_for_test(mut self, landing_latched: bool) -> Self {
         self.landing_latched = landing_latched;
         self
@@ -388,7 +388,7 @@ impl JumpjetRuntime {
     /// `world::jumpjet_cruise` dispatches from `Process 0x0054AEC0`; that is the
     /// single authority. This mirror survives only because the
     /// `jumpjet_coordinates` corpus drives `activate` as one of its actions.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn activate(&mut self) {
         if self.phase == 0 && self.moving {
             self.phase = 1;

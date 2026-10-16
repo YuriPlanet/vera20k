@@ -2240,7 +2240,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                  final GetFireError={:?}; occupant={:?}; target={:?}; trace={trace:#?}",
                 // Ask the live legality owner only after failure, so this
                 // diagnostic cannot change the exercised frame sequence.
-                sim.selected_weapon_fire_error(&rules, house, target, None),
+                sim.selected_weapon_fire_error(&rules, house, target, true, None),
                 sim.entities().get(gi),
                 sim.entities().get(target_id),
             );

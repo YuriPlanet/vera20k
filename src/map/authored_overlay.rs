@@ -77,7 +77,7 @@ impl FinalizedOverlayPayload {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_cells_for_test(
         width: u16,
         height: u16,
@@ -119,7 +119,7 @@ pub(crate) enum AuthoredWallEffect {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AuthoredWallMarkResult {
+pub enum AuthoredWallMarkResult {
     Completed,
     RejectedUnallocatedAnchor,
     RejectedSteepSlope,
@@ -261,7 +261,7 @@ pub(crate) trait AuthoredOverlayLoadHost {
 }
 
 #[derive(Debug)]
-pub(crate) enum AuthoredOverlayFinalizeError<E> {
+pub enum AuthoredOverlayFinalizeError<E> {
     InvalidMapShape { width: i32, height: i32 },
     MalformedOverlayType { overlay_id: u8 },
     ConstructedUnallocatedAnchor { overlay_id: u8, cell: (u16, u16) },
@@ -456,7 +456,7 @@ fn mirror_real_overlay_pair(
 /// anti-diagonal Recalc boundary.
 enum LoadRecalcOwner<'load, 'resources> {
     Borrowed(&'load mut LoadCellRecalcState<'resources>),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Synthetic(Box<LoadCellRecalcState<'resources>>),
 }
 
@@ -464,7 +464,7 @@ impl<'load, 'resources> LoadRecalcOwner<'load, 'resources> {
     fn as_mut(&mut self) -> &mut LoadCellRecalcState<'resources> {
         match self {
             Self::Borrowed(recalc) => recalc,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Self::Synthetic(recalc) => recalc,
         }
     }
@@ -510,7 +510,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn new(
         terrain: &'load mut ResolvedTerrainGrid,
         shape: NativeOverlayMapShape,
@@ -1149,7 +1149,7 @@ impl LiveOverlayCells {
     ///
     /// Native evidence: `OverlayClass::Mark @ 0x005FC570`, wall success corridor
     /// `0x005FC6F4..0x005FC775`, and common tail `0x005FD1FA..0x005FD227`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mark_authored_wall(
         &mut self,
         registry: &OverlayTypeRegistry,
@@ -1267,7 +1267,7 @@ impl LiveOverlayCells {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn real_cell(&self, index: usize) -> FinalizedOverlayCell {
         self.cells[index]
     }

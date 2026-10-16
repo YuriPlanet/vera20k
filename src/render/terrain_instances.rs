@@ -113,8 +113,7 @@ pub fn build_visible_instances(
         //   base = DefaultZ + YOrigin - diamond_top - tileH - tileH*level/2,
         //   pixel = base + zdata, drawn and stored when `pixel <= zbuf`.
         // `z_adjust` is that base relative to the instance's canvas top
-        // (extra-data tiles start above the diamond by `draw_offset.y`), and
-        // `fx_params.w = +1` tells the shader the Z-data byte is added.
+        // (extra-data tiles start above the diamond by `draw_offset.y`).
         let iso_row: f32 = cell.screen_y + f32::from(cell.z as i8) * HEIGHT_STEP;
         let screen_y = iso_row - level as f32 * HEIGHT_STEP;
         let depth: f32 = native_z::depth_for_row(iso_row, grid.origin_y, grid.world_height);
@@ -125,8 +124,7 @@ pub fn build_visible_instances(
         let tint = lighting_grid
             .map(|lights| lights.terrain_tile_tint_at((cell.rx, cell.ry)))
             .unwrap_or(cell.tint);
-        let mut draw_state = DrawState::default();
-        draw_state.fx_params[3] = 1.0;
+        let draw_state = DrawState::default();
         let inst = SpriteInstance {
             position: [
                 cell.screen_x + p.draw_offset[0],
@@ -160,3 +158,208 @@ pub fn build_visible_instances(
 #[cfg(test)]
 #[path = "bridge_pavement_caller_tests.rs"]
 mod pavement_caller_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gsi_04_03c_terrain_instances_have_one_ordinary_bucket() {
+        // Create a small grid manually.
+        let grid: TerrainGrid = TerrainGrid {
+            cells: vec![
+                TerrainCell {
+                    screen_x: 0.0,
+                    screen_y: 0.0,
+                    tile_id: 0,
+                    sub_tile: 0,
+                    z: 0,
+                    rx: 1,
+                    ry: 0,
+                    is_water: false,
+                    variant: 0,
+                    tint: [1.0, 1.0, 1.0],
+                    radar_left: [0, 0, 0],
+                    radar_right: [0, 0, 0],
+                    has_damaged_data: false,
+                },
+                TerrainCell {
+                    screen_x: 5000.0,
+                    screen_y: 5000.0,
+                    tile_id: 0,
+                    sub_tile: 0,
+                    z: 0,
+                    rx: 100,
+                    ry: 100,
+                    is_water: false,
+                    variant: 0,
+                    tint: [1.0, 1.0, 1.0],
+                    radar_left: [0, 0, 0],
+                    radar_right: [0, 0, 0],
+                    has_damaged_data: false,
+                },
+            ],
+            world_width: 5060.0,
+            world_height: 5030.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            local_bounds: None,
+            bridge_middle_tiles: None,
+        };
+
+        // Camera at origin, 1024x768 viewport — only first cell should be visible.
+        let result: TerrainInstances =
+            build_visible_instances(&grid, None, 0.0, 0.0, 1024.0, 768.0, None, None);
+        assert_eq!(result.normal.len(), 1);
+    }
+
+    #[test]
+    fn terrain_tile_instances_consume_per_cell_lighting() {
+        let grid: TerrainGrid = TerrainGrid {
+            cells: vec![
+                TerrainCell {
+                    screen_x: 0.0,
+                    screen_y: 0.0,
+                    tile_id: 0,
+                    sub_tile: 0,
+                    z: 0,
+                    rx: 1,
+                    ry: 0,
+                    is_water: false,
+                    variant: 0,
+                    tint: [1.0, 1.0, 1.0],
+                    radar_left: [0, 0, 0],
+                    radar_right: [0, 0, 0],
+                    has_damaged_data: false,
+                },
+                TerrainCell {
+                    screen_x: 60.0,
+                    screen_y: 0.0,
+                    tile_id: 0,
+                    sub_tile: 0,
+                    z: 4,
+                    rx: 2,
+                    ry: 0,
+                    is_water: false,
+                    variant: 0,
+                    tint: [1.0, 1.0, 1.0],
+                    radar_left: [0, 0, 0],
+                    radar_right: [0, 0, 0],
+                    has_damaged_data: false,
+                },
+            ],
+            world_width: 120.0,
+            world_height: 30.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            local_bounds: None,
+            bridge_middle_tiles: None,
+        };
+        let lights = crate::map::lighting::build_cell_light_grid_from_heights(
+            [((1, 0), 0), ((2, 0), 4)],
+            &crate::map::lighting::LightingConfig::default(),
+        );
+
+        let result =
+            build_visible_instances(&grid, Some(&lights), 0.0, 0.0, 1024.0, 768.0, None, None);
+
+        assert_eq!(result.normal.len(), 2);
+        assert!((result.normal[0].tint[0] - 0.95).abs() < 0.001);
+        assert!((result.normal[1].tint[0] - 0.982).abs() < 0.001);
+    }
+
+    fn live_tile_grid() -> TerrainGrid {
+        TerrainGrid {
+            cells: vec![TerrainCell {
+                screen_x: 0.0,
+                screen_y: 0.0,
+                tile_id: 100,
+                sub_tile: 3,
+                z: 4,
+                rx: 0,
+                ry: 0,
+                is_water: false,
+                variant: 2,
+                tint: [1.0; 3],
+                radar_left: [0; 3],
+                radar_right: [0; 3],
+                has_damaged_data: false,
+            }],
+            world_width: TILE_WIDTH,
+            world_height: TILE_HEIGHT,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            local_bounds: None,
+            bridge_middle_tiles: None,
+        }
+    }
+
+    type LiveTileDraw = (Vec<(u16, u8, u8)>, Vec<(f32, f32)>);
+
+    /// Draws the level-4 grid cell against a live cell holding `live` (tile,
+    /// subtile, level, Recalc variant), with an atlas holding `resident`
+    /// tiles. Returns every lookup and the drawn (screen y, z_adjust).
+    fn draw_live_tile(live: (i32, u8, u8, u8), resident: &[u16]) -> LiveTileDraw {
+        let mut cell = crate::map::resolved_terrain::test_flat_cell(0, 0);
+        (
+            cell.final_tile_index,
+            cell.final_sub_tile,
+            cell.level,
+            cell.variant,
+        ) = live;
+        let terrain =
+            crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(1, 1, vec![cell]);
+        let calls = std::cell::RefCell::new(Vec::new());
+        let lookup = |tid: u16, sub: u8, var: u8| -> Option<TilePlacement> {
+            calls.borrow_mut().push((tid, sub, var));
+            resident.contains(&tid).then_some(TilePlacement {
+                uv_origin: [0.0, 0.0],
+                uv_size: [1.0, 1.0],
+                pixel_size: [TILE_WIDTH, TILE_HEIGHT],
+                draw_offset: [0.0, 0.0],
+            })
+        };
+        let drawn = build_visible_instances(
+            &live_tile_grid(),
+            None,
+            0.0,
+            0.0,
+            1024.0,
+            768.0,
+            Some(&lookup),
+            Some(&terrain),
+        )
+        .normal
+        .iter()
+        .map(|instance| (instance.position[1], instance.z_adjust))
+        .collect();
+        (calls.into_inner(), drawn)
+    }
+
+    #[test]
+    fn draw_reads_the_live_tile_and_level_a_publication_wrote() {
+        let rows = native_z::TILE_HEIGHT_ROWS as f32;
+        // Unchanged cell: grid position (level 4) and its Recalc file.
+        assert_eq!(
+            draw_live_tile((100, 3, 4, 2), &[100]),
+            (vec![(100, 3, 2)], vec![(0.0, -rows - 2.0 * rows)])
+        );
+        // A collapse flood writes a new tile and level 0; Recalc picked file 1.
+        assert_eq!(
+            draw_live_tile((203, 3, 0, 1), &[100, 203]),
+            (vec![(203, 3, 1)], vec![(4.0 * HEIGHT_STEP, -rows)])
+        );
+    }
+
+    #[test]
+    fn draw_keeps_the_grid_tile_when_the_live_tile_is_not_resident() {
+        let rows = native_z::TILE_HEIGHT_ROWS as f32;
+        assert_eq!(
+            draw_live_tile((203, 3, 0, 1), &[100]),
+            (
+                vec![(203, 3, 1), (100, 3, 2)],
+                vec![(0.0, -rows - 2.0 * rows)]
+            )
+        );
+    }
+}

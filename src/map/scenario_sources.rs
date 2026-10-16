@@ -66,7 +66,7 @@ pub fn list_available_maps() -> Result<Vec<MapMenuEntry>> {
 ///
 /// Loose YRO archives become registered while this scan runs and therefore
 /// remain available when the selected scenario is loaded later.
-pub(crate) fn list_skirmish_scenario_records_with_assets(
+pub fn list_skirmish_scenario_records_with_assets(
     ra2_dir: &Path,
     assets: &mut AssetManager,
     csf: Option<&CsfFile>,

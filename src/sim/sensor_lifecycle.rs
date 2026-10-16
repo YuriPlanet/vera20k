@@ -66,7 +66,7 @@ impl SensorDeposit {
     }
 
     /// Install a fixture's stamped cell.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_center_for_test(&mut self, center: (u16, u16)) {
         self.center = center;
     }
@@ -410,7 +410,7 @@ impl Simulation {
 
     /// Foot4D8611/4D8621 executes both receivers for PerCellProcess(2),
     /// including a terminal or chain callback in the same cell.
-    pub(crate) fn refresh_unit_sensor_at_per_cell(&mut self, stable_id: u64, rules: &RuleSet) {
+    pub fn refresh_unit_sensor_at_per_cell(&mut self, stable_id: u64, rules: &RuleSet) {
         let had_unit_deposit = self
             .substrate
             .entities

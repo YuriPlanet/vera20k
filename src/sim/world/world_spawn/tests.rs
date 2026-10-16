@@ -1797,7 +1797,7 @@ fn techno_constructor_raw_entity_constructor_is_world_spawn_only() {
         }
     }
 
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = crate::test_fixture::checkout_root();
     let mut files = Vec::new();
     collect_rust_files(&root.join("src"), &mut files);
     let needle = ["GameEntity::", "new_at_frame_from_constructor_word("].concat();

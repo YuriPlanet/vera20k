@@ -1484,3 +1484,196 @@ pub(crate) fn seed_depth_grid(
     pass.set_bind_group(0, &binding, &[]);
     pass.draw(0..3, 0..1);
 }
+
+/// Physical PIPS2/PALETTE bytes and native centered calls, not native screen
+/// goldens: LoadPipAssets5F76B0 ->709AEF/70A0B5..1D9 ->CC_Draw_Shape4AED70.
+/// The readback protects the shared resource upload/UV/origin/transparency and
+/// production status pipeline; gameplay count/flash admission is tested by app.
+#[test]
+#[ignore = "requires GPU and physical retail assets; actual PIPS2 centered resource/status draw"]
+fn retail_pips2_centered_strip_preserves_native_frames_palette_and_scissor() {
+    use crate::assets::{
+        asset_manager::{AssetManager, MediaArchiveMode},
+        pal_file::Palette,
+        shp_file::ShpFile,
+    };
+    use crate::render::{batch::InstanceBufferPool, selection_overlay::CenteredShapeStrip};
+
+    let root = std::env::var("RA2_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            crate::util::config::GameConfig::load()
+                .unwrap()
+                .paths
+                .ra2_dir
+        });
+    let assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let shp = ShpFile::from_bytes(&assets.get("pips2.shp").unwrap()).unwrap();
+    let palette = Palette::from_bytes(&assets.get("palette.pal").unwrap()).unwrap();
+    assert_eq!((shp.width, shp.height, shp.frames.len()), (8, 15, 19));
+    for frame in &shp.frames[..6] {
+        assert_eq!(
+            (
+                frame.frame_x,
+                frame.frame_y,
+                frame.frame_width,
+                frame.frame_height
+            ),
+            (1, 4, 4, 4),
+        );
+    }
+    // Physical raw indices distinguish transparent empty slots from black
+    // outlines, and native flash3 from idle-overload4. No house tint applies.
+    assert_eq!(&shp.frames[0].pixels[5..7], &[0, 0]);
+    assert_eq!(&shp.frames[3].pixels[5..7], &[0x81, 0x84]);
+    assert_eq!(&shp.frames[4].pixels[5..7], &[0xe5, 0xe8]);
+    let gpu = Gpu::new();
+    let size = [40, 24];
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        batch.write_camera(&gpu.queue, camera(size));
+        let strip = CenteredShapeStrip::from_assets_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            &assets,
+            "pips2.shp",
+            "palette.pal",
+        )
+        .expect("physical PIPS2 uses the production centered-strip owner");
+        assert_eq!((strip.texture().width, strip.texture().height), (91, 14));
+        // Base/extra pip frames and all three former cargo variants share one
+        // texture. Native nonbuilding points advance(+4,0); origin(1,4) minus
+        // integer canvas half(4,7) makes the first stored top-left(5,5).
+        let frames = [0, 1, 3, 4, 0, 2, 5];
+        let mut instances: Vec<_> = frames
+            .iter()
+            .enumerate()
+            .map(|(slot, &frame)| {
+                let instance = strip
+                    .instance(frame, (8.0 + slot as f32 * 4.0, 8.0), 0.0004)
+                    .unwrap();
+                assert_eq!(instance.position, [5.0 + slot as f32 * 4.0, 5.0]);
+                assert_eq!(instance.size, [4.0, 4.0]);
+                instance
+            })
+            .collect();
+        let tail = strip.instance(18, (8.0, 20.0), 0.0004).unwrap();
+        assert_eq!(tail.position, [6.0, 15.0]);
+        assert_eq!(tail.size, [4.0, 9.0]);
+        assert!(strip.instance(19, (8.0, 20.0), 0.0004).is_none());
+        instances.push(tail);
+        let mut pool = InstanceBufferPool::new();
+        pool.upload_on_device(&gpu.device, &gpu.queue, "scale_pips", &instances);
+        let (buffer, count) = pool.get("scale_pips").unwrap();
+        assert_eq!(count, 8);
+        let color = gpu.target(size, format);
+        let cv = color.create_view(&Default::default());
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let dv = depth.create_view(&Default::default());
+        for clip in [[0, 0, 40, 24], [6, 6, 24, 2]] {
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            clear(
+                &mut encoder,
+                &cv,
+                &dv,
+                65535,
+                wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+            );
+            {
+                // The production status path is named no_depth but uses its
+                // real LessEqual/write attachment. Keep its camera and shader.
+                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                    &mut encoder,
+                    &cv,
+                    &dv,
+                );
+                pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
+                batch.draw_with_buffer_no_depth(&mut pass, strip.texture(), buffer, count);
+            }
+            let read = gpu.read(&mut encoder, &color);
+            let output = gpu.finish(encoder, &[read], size).remove(0);
+            let mut expected = vec![[0, 255, 0, 255]; (size[0] * size[1]) as usize];
+            // The oracle is physical source indices at original call positions,
+            // independent of the atlas packing and returned instance UVs.
+            for (frame, left, top) in frames
+                .iter()
+                .enumerate()
+                .map(|(slot, &frame)| (frame, 5 + slot as u32 * 4, 5))
+                .chain(std::iter::once((18, 6, 15)))
+            {
+                let source = &shp.frames[frame];
+                for y in 0..u32::from(source.frame_height) {
+                    for x in 0..u32::from(source.frame_width) {
+                        let (dx, dy) = (left + x, top + y);
+                        let index = source.pixels[(y * u32::from(source.frame_width) + x) as usize];
+                        if index == 0
+                            || dx < clip[0]
+                            || dy < clip[1]
+                            || dx >= clip[0] + clip[2]
+                            || dy >= clip[1] + clip[3]
+                        {
+                            continue;
+                        }
+                        let c = palette.colors[usize::from(index)];
+                        expected[(dy * size[0] + dx) as usize] = [c.r, c.g, c.b, 255];
+                    }
+                }
+            }
+            for (pixel, actual) in output.as_chunks::<4>().0.iter().enumerate() {
+                let actual = if format == wgpu::TextureFormat::Bgra8UnormSrgb {
+                    [actual[2], actual[1], actual[0], actual[3]]
+                } else {
+                    *actual
+                };
+                assert_eq!(
+                    actual,
+                    expected[pixel],
+                    "{format:?} scissor{clip:?},pixel({},{})",
+                    pixel % size[0] as usize,
+                    pixel / size[0] as usize,
+                );
+            }
+        }
+    }
+}
+
+/// Compare losslessly captured native RGB565/Z runs with both GPU attachments.
+/// Shared by terrain, bridge and ordinary Cell caller witnesses.
+pub(crate) fn assert_native_color_and_depth(
+    output: &[Vec<u8>],
+    row: &serde_json::Value,
+    format: wgpu::TextureFormat,
+    size: [u32; 2],
+) {
+    let input = &row["input"];
+    let background = input["background"].as_u64().unwrap() as u16;
+    let old_z = input["old_z"].as_u64().unwrap() as u16;
+    let pixels = (size[0] * size[1]) as usize;
+    // Lossless expansion of captured native buffers. This contains no
+    // projection, depth arithmetic, stencil or color transformation.
+    let mut expected = vec![[background, old_z]; pixels];
+    for run in row["output"]["runs"].as_array().unwrap() {
+        let values: [usize; 5] = std::array::from_fn(|i| run[i].as_u64().unwrap() as usize);
+        let [x, y, count, word, z] = values;
+        let start = y * size[0] as usize + x;
+        expected[start..start + count].fill([word as u16, z as u16]);
+    }
+    for (index, [word, z]) in expected.into_iter().enumerate() {
+        let offset = index * 4;
+        let actual_z = super::native_z::stored_z(f32::from_le_bytes(
+            output[1][offset..offset + 4].try_into().unwrap(),
+        ));
+        assert_eq!(
+            (&output[0][offset..offset + 4], actual_z),
+            (&encoded(word, format)[..], z),
+            "{} {format:?} pixel ({},{})",
+            row["name"],
+            index % size[0] as usize,
+            index / size[0] as usize,
+        );
+    }
+}

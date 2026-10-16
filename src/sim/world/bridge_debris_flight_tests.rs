@@ -232,12 +232,7 @@ fn retail_hills_layered_bridge_landing_inputs_match_original_readers() {
 
     let retail = std::env::var("RA2_DIR")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            crate::util::config::GameConfig::load()
-                .unwrap()
-                .paths
-                .ra2_dir
-        });
+        .unwrap_or_else(|_| crate::test_fixture::game_config().unwrap().paths.ra2_dir);
     let assets = AssetManager::new(&retail, MediaArchiveMode::STOCK_DIGITAL).unwrap();
     let read = |name: &str| IniFile::from_bytes(&assets.get(name).unwrap()).unwrap();
     let root = read("RULESMD.INI");

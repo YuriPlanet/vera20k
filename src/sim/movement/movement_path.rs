@@ -15,17 +15,17 @@ use crate::sim::pathfinding::{
 
 use super::PathfindingContext;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn reset_path_search_used_zone_grid_marker() {
     PATH_SEARCH_USED_ZONE_GRID.with(|used| used.set(false));
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn path_search_used_zone_grid_marker() -> bool {
     PATH_SEARCH_USED_ZONE_GRID.with(|used| used.get())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static PATH_SEARCH_USED_ZONE_GRID: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -174,7 +174,7 @@ pub(super) fn find_move_path(
     };
     let grid = ctx.path_grid.ok_or(MovePathFailure::MissingGrid)?;
     let zone_grid = ctx.zone_grid;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if zone_grid.is_some() {
         PATH_SEARCH_USED_ZONE_GRID.with(|used| used.set(true));
     }

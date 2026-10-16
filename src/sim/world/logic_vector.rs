@@ -17,13 +17,13 @@
 /// the saved vector order (`Simulation::rebuild_logic_membership`); exact
 /// native save/load reconstruction remains unverified.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct LogicMembership {
+pub struct LogicMembership {
     member: bool,
 }
 
 impl LogicMembership {
     /// The object is in the active vector.
-    pub(crate) const fn is_member(self) -> bool {
+    pub const fn is_member(self) -> bool {
         self.member
     }
 
@@ -33,7 +33,7 @@ impl LogicMembership {
     }
 
     /// Install a fixture's membership.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, member: bool) {
         self.member = member;
     }
@@ -45,14 +45,14 @@ pub struct LogicVector {
     order: Vec<u64>,
     /// Deterministic seam for the lifecycle transaction's append-failure test.
     /// Never exists in production builds and is never serialized.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fail_next_insert: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LogicInsertError {
     Capacity,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     ForcedTestFailure,
 }
 
@@ -69,7 +69,7 @@ impl LogicVector {
     /// `LayerClass__Insert @ 0x005519B0` with a zero sort argument, which
     /// appends the new element at the current tail after capacity succeeds.
     pub(crate) fn try_push(&mut self, id: u64) -> Result<(), LogicInsertError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if std::mem::take(&mut self.fail_next_insert) {
             return Err(LogicInsertError::ForcedTestFailure);
         }
@@ -109,13 +109,13 @@ impl LogicVector {
     }
 
     /// Test-only: force a specific order (e.g. opposite stable-id order).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_order_for_test(&mut self, order: Vec<u64>) {
         self.order = order;
     }
 
     /// Test-only: make exactly the next append fail before reserving or mutating.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn force_next_insert_failure_for_test(&mut self) {
         self.fail_next_insert = true;
     }
@@ -132,7 +132,7 @@ impl<'de> serde::Deserialize<'de> for LogicVector {
         let order = Vec::<u64>::deserialize(deserializer)?;
         Ok(Self {
             order,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             fail_next_insert: false,
         })
     }

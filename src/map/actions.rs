@@ -4,10 +4,11 @@
 //! We preserve the raw field list and also expose normalized action entries so
 //! runtime code can stop guessing at the original payload shape.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
+use crate::rules::ruleset::RuleSet;
 
 /// Definition selection performed by original TAction Read6DD5B0. A short
 /// token is a retained registry ordinal; a longer token is a name, including
@@ -251,6 +252,22 @@ fn materialize_waypoint_index(param_type: Option<&str>, token_8: Option<&str>) -
         return Some(0);
     }
     read_waypoint_token(token_8)
+}
+
+/// TAction41's numeric AnimType operands resolve through the same retained
+/// native registry as runtime construction (6E2357), after all rules passes.
+/// Bind through the existing scheduler closure before live triggers run.
+pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<String> {
+    actions
+        .values()
+        .flat_map(|action| &action.entries)
+        .filter(|action| action.kind == 41)
+        .filter_map(|action| action.literal_value())
+        .filter_map(|index| rules.anim_type_name_by_index(index))
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]

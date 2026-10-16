@@ -77,7 +77,7 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 const MUTATE_EXPLOSION_DAMAGE: i32 = 10_000;
 
 /// What [`launch`] called, in the oracle's terms (observation only).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Observed {
     /// Apply_area_damage: the coordinate, the damage and the (source,
@@ -88,7 +88,7 @@ enum Observed {
     ReceiveDamage((i16, i16), crate::sim::combat::EntityDamageEvent),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Observation only: what [`launch`] called on this thread while a test
     /// holds `Some`.
@@ -96,7 +96,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn observe(call: Observed) {
     OBSERVED.with(|log| {
         if let Some(log) = log.borrow_mut().as_mut() {
@@ -142,7 +142,7 @@ pub(crate) fn launch(
             Some(owner),
             sim.interner.intern(&general.mutate_explosion_warhead),
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         observe(Observed::AreaDamage(
             [x, y, z],
             MUTATE_EXPLOSION_DAMAGE,
@@ -188,7 +188,7 @@ pub(crate) fn launch(
                 Some(owner),
                 true,
             ) {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 observe(Observed::ReceiveDamage((x, y), event));
                 sim.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
             }

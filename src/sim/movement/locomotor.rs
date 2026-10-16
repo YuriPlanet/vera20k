@@ -204,13 +204,13 @@ impl LocomotorState {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test_kind(kind: LocomotorKind) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test_kind(kind: LocomotorKind) -> Self {
         Self::for_test_kind_at_frame(kind, 0)
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test_kind_at_frame(kind: LocomotorKind, binary_frame: u32) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test_kind_at_frame(kind: LocomotorKind, binary_frame: u32) -> Self {
         Self::constructed(
             kind,
             Self::spawn_layer(kind),
@@ -222,7 +222,7 @@ impl LocomotorState {
     }
 
     /// Whether this locomotor is in the ground family (Drive/Walk/Hover/Ship).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_ground_mover(&self) -> bool {
         matches!(
             self.kind,
@@ -231,7 +231,7 @@ impl LocomotorState {
     }
 
     /// Whether this locomotor is an air mover (Fly/Jumpjet/Rocket).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_air_mover(&self) -> bool {
         matches!(
             self.kind,
@@ -253,28 +253,26 @@ impl LocomotorState {
         }
     }
 
-    pub(crate) fn rocket_runtime(&self) -> Option<&super::rocket_movement::RocketRuntime> {
+    pub fn rocket_runtime(&self) -> Option<&super::rocket_movement::RocketRuntime> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Rocket, LocomotorRuntimePayload::Rocket(state)) => Some(state),
             _ => None,
         }
     }
 
-    pub(crate) fn rocket_runtime_mut(
-        &mut self,
-    ) -> Option<&mut super::rocket_movement::RocketRuntime> {
+    pub fn rocket_runtime_mut(&mut self) -> Option<&mut super::rocket_movement::RocketRuntime> {
         match (self.kind, &mut self.runtime_payload) {
             (LocomotorKind::Rocket, LocomotorRuntimePayload::Rocket(state)) => Some(state),
             _ => None,
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn fly_target_height(&self) -> i32 {
         self.fly_runtime().map_or(0, |state| state.target_height())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_fly_target_height(&mut self, height: i32) {
         if let Some(state) = self.fly_runtime_mut() {
             state.set_flight_level(height);
@@ -294,7 +292,7 @@ impl LocomotorState {
     }
 
     /// The test flight phase at the object's GetHeight `height`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn air_phase(&self, height: i32) -> AirMovePhase {
         self.fly_runtime()
             .map_or(AirMovePhase::Landed, |state| state.mission_phase(height))
@@ -314,7 +312,7 @@ impl LocomotorState {
     /// the active instance and survives Stop/piggyback/save without sampling
     /// a newly changed ground surface. Native producers75C240/514F70; query
     /// receivers75CA80/517210, tools/spatial_oracle/locomotor_at_coord.
-    pub(crate) fn step_head(&self) -> Option<crate::sim::components::DriveCoord> {
+    pub fn step_head(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.head(),
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => runtime.head(),
@@ -394,7 +392,7 @@ impl LocomotorState {
             .or_else(|| self.piggyback.as_ref()?.teleport_effect_state())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn has_teleport_instance(&self) -> bool {
         self.teleport_runtime().is_some()
             || self
@@ -403,7 +401,7 @@ impl LocomotorState {
                 .is_some_and(|l| l.has_teleport_instance())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn teleport_instance_for_test_mut(
         &mut self,
     ) -> Option<&mut super::teleport_movement::TeleportRuntime> {
@@ -417,20 +415,20 @@ impl LocomotorState {
     }
 
     /// The cell of Walk's destination coordinate.
-    #[cfg(test)]
-    pub(crate) fn walk_destination_cell(&self) -> Option<(u16, u16)> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn walk_destination_cell(&self) -> Option<(u16, u16)> {
         self.walk_destination()
             .map(|c| ((c.x / 256) as u16, (c.y / 256) as u16))
     }
 
-    pub(crate) fn walk_destination(&self) -> Option<crate::sim::components::DriveCoord> {
+    pub fn walk_destination(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.destination(),
             _ => None,
         }
     }
 
-    pub(crate) fn jumpjet_runtime(&self) -> Option<&super::jumpjet_movement::JumpjetRuntime> {
+    pub fn jumpjet_runtime(&self) -> Option<&super::jumpjet_movement::JumpjetRuntime> {
         match (self.active_kind(), &self.runtime_payload) {
             (LocomotorKind::Jumpjet, LocomotorRuntimePayload::Jumpjet(state)) => Some(state),
             _ => None,
@@ -446,7 +444,7 @@ impl LocomotorState {
         }
     }
 
-    pub(crate) fn walk_is_moving(&self) -> Option<bool> {
+    pub fn walk_is_moving(&self) -> Option<bool> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state.moving()),
             _ => None,
@@ -543,7 +541,7 @@ impl LocomotorState {
         }
     }
 
-    pub(crate) fn active_slope_transition_mut(&mut self) -> Option<&mut SlopeTransitionState> {
+    pub fn active_slope_transition_mut(&mut self) -> Option<&mut SlopeTransitionState> {
         match (self.kind, &mut self.runtime_payload) {
             (LocomotorKind::Drive, LocomotorRuntimePayload::Drive(state)) => {
                 Some(state.slope_mut())
@@ -568,7 +566,7 @@ impl LocomotorState {
     }
 
     /// Whether the constructed locomotor is active, with nothing stashed.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_primary_active(&self) -> bool {
         self.piggyback.is_none()
     }
@@ -645,7 +643,7 @@ impl LocomotorState {
     }
 
     /// A fixture's power flag.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_powered_for_test(&mut self, powered: bool) {
         self.powered = powered;
     }
@@ -676,7 +674,7 @@ impl LocomotorState {
     }
 
     /// Class-local state of this locomotor object, for fixtures.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn runtime_payload_mut(&mut self) -> &mut LocomotorRuntimePayload {
         &mut self.runtime_payload
     }
@@ -702,7 +700,7 @@ impl LocomotorState {
     }
 
     /// A fixture's class-local state.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_runtime_payload_for_test(&mut self, payload: LocomotorRuntimePayload) {
         self.runtime_payload = payload;
     }
@@ -715,7 +713,7 @@ impl LocomotorState {
     /// Store the Foot's layer: the piggyback swap's copy and fixtures, and
     /// the unload writers in `transport_unload` until they move to
     /// [`Self::store_ground_layer`].
-    pub(crate) fn set_layer(&mut self, layer: MovementLayer) {
+    pub fn set_layer(&mut self, layer: MovementLayer) {
         self.layer = layer;
     }
 
@@ -738,18 +736,18 @@ impl LocomotorState {
     }
 
     /// A fixture's `BalloonHover=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_balloon_hover_for_test(&mut self, balloon_hover: bool) {
         self.balloon_hover = balloon_hover;
     }
 
     /// The type's `SpeedType=`.
-    pub(crate) fn speed_type(&self) -> SpeedType {
+    pub fn speed_type(&self) -> SpeedType {
         self.speed_type
     }
 
     /// A fixture's `SpeedType=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_speed_type_for_test(&mut self, speed_type: SpeedType) {
         self.speed_type = speed_type;
     }
@@ -760,14 +758,14 @@ impl LocomotorState {
     }
 
     /// A fixture's `MovementZone=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_movement_zone_for_test(&mut self, movement_zone: MovementZone) {
         self.movement_zone = movement_zone;
     }
 
     /// A fixture's class.
-    #[cfg(test)]
-    pub(crate) fn set_kind_for_test(&mut self, kind: LocomotorKind) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_kind_for_test(&mut self, kind: LocomotorKind) {
         self.kind = kind;
     }
 }

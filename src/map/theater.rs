@@ -43,8 +43,8 @@ pub struct TileKey {
 pub struct TileImage {
     pub rgba: Vec<u8>,
     /// Per-pixel Z-depth from TMP file (same dimensions as rgba, one byte per pixel).
-    /// Non-zero values indicate depth offset for occlusion (cliffs, ramps).
-    /// Flat tiles have all zeros.
+    /// Added to the native tile base Z for pixel admission and storage.
+    /// Stock flat Clear01 diamonds also carry nonzero values (1..29).
     pub depth: Vec<u8>,
     pub width: u32,
     pub height: u32,
@@ -442,7 +442,7 @@ impl TilesetLookup {
     /// positive 0xFFFF unchanged, compares every signed boundary with the
     /// original raw input, stops on the first greater boundary, and wrapping-
     /// adds every delta already reached.
-    pub(crate) fn translate_legacy_map_tile_index(&self, raw: i32) -> i32 {
+    pub fn translate_legacy_map_tile_index(&self, raw: i32) -> i32 {
         if raw == i32::from(u16::MAX) {
             return raw;
         }
@@ -744,22 +744,6 @@ impl TheaterData {
         self.cliff_ranges
             .is_on_bridge_ramp_tile(tile_id, slope_byte)
     }
-
-    /// Return the absolute tile_id starts for the two railing table ranges
-    /// written from SlopeSetPieces and SlopeSetPieces2 by gamemd.exe.
-    pub fn bridge_railing_slope_starts(&self) -> Option<(u16, u16)> {
-        let first = self
-            .lookup
-            .bounds()
-            .get(self.slope_set_pieces? as usize)?
-            .start;
-        let second = self
-            .lookup
-            .bounds()
-            .get(self.slope_set_pieces2? as usize)?
-            .start;
-        Some((first, second))
-    }
 }
 
 impl BridgeMiddleTiles {
@@ -974,7 +958,7 @@ fn resolve_contiguous_variant_chains(lookup: &mut TilesetLookup, asset_manager: 
     );
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn resolve_contiguous_variant_chains_for_test(
     lookup: &mut TilesetLookup,
     asset_manager: &AssetManager,

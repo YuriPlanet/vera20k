@@ -284,14 +284,6 @@ impl PreparedSavedGame {
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
         );
-        let bridge_bases = theater.bridge_railing_slope_starts().map(
-            |(slope_set_pieces_start, slope_set_pieces2_start)| {
-                crate::render::bridge_railing_atlas::BridgeRailingTileBases {
-                    slope_set_pieces_start,
-                    slope_set_pieces2_start,
-                }
-            },
-        );
         let overlays = crate::app::frontend::skirmish::build_overlay_presentation(
             &world.map_restore.occupied_overlays,
             map.terrain_objects(),
@@ -306,7 +298,6 @@ impl PreparedSavedGame {
             Some(&theater.iso_palette),
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),
-            bridge_bases,
         );
         let presentation = init_helpers::finish_presentation_assets(
             gpu,

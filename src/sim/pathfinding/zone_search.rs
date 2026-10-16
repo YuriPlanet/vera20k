@@ -184,7 +184,7 @@ fn can_reach_through_explicit_tube(
 
 // Original42C900 compares raw GetZoneID results, including distinct invalid
 // row labels1/FFFF. Compatibility-only test/cache grids have no raw row.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn native_path_zone_equality(
     zones: &ZoneGrid,
     terrain: Option<&ResolvedTerrainGrid>,
@@ -351,7 +351,7 @@ fn admit_zone_search<'a>(
 /// final movement legality because the recovered node flood-fill is 8-neighbor while
 /// the actual step predicate also applies tighter per-move checks. Treat zone gating
 /// here as a best-effort reject, not closed parity.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn find_path_zoned(
     grid: &PathGrid,
     start: (u16, u16),
@@ -377,7 +377,7 @@ pub fn find_path_zoned(
 }
 
 /// [`find_path_zoned_marker_detailed`] asking [`super::WalkableEntry`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn find_path_zoned_marker(
     grid: &PathGrid,
     start: (u16, u16),
@@ -453,7 +453,7 @@ pub(crate) fn find_path_zoned_marker_detailed(
 
 /// The flat search with the native entry's facts given directly (tests),
 /// asking [`super::WalkableEntry`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn find_path_zoned_marker_inner(
     grid: &PathGrid,
     start: (u16, u16),
@@ -572,7 +572,7 @@ fn find_flat_path_after_entry(
 }
 
 /// [`find_layered_path_zoned_marker_detailed`] asking [`super::WalkableEntry`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn find_layered_path_zoned_marker(
     grid: &PathGrid,
     start: (u16, u16),

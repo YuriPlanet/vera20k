@@ -33,9 +33,9 @@ pub use settings::RmgSettings;
 pub use tiles::TileIds;
 pub use x87::{Gaussian, TruncF64};
 
-#[cfg(test)]
-pub(crate) use crate::map::construction_trace::{RmgConstructionEvent, RmgConstructionOutcome};
-pub(crate) use crate::map::construction_trace::{RmgConstructionPhase, RmgConstructionTrace};
+#[cfg(any(test, feature = "test-support"))]
+pub use crate::map::construction_trace::{RmgConstructionEvent, RmgConstructionOutcome};
+pub use crate::map::construction_trace::{RmgConstructionPhase, RmgConstructionTrace};
 use crate::map::map_file::MapFile;
 use crate::rng_continuation::MapGenRngContinuation;
 
@@ -202,11 +202,11 @@ pub struct GeneratedMap {
     /// Exact `g_MapGenRng` continuation after this generation run. Successful
     /// shell completion publishes it before retaining this presentation map;
     /// launch-time `.SED` regeneration transfers its own new receipt.
-    pub(crate) mapgen_continuation: Option<MapGenRngContinuation>,
+    pub mapgen_continuation: Option<MapGenRngContinuation>,
     /// Ordered native Building-constructor effects produced during this RMG
     /// run. Geometry is MapGen-owned; these events are replayed later on the
     /// appropriate Scenario owner (shell preview or match bootstrap).
-    pub(crate) construction_trace: RmgConstructionTrace,
+    pub construction_trace: RmgConstructionTrace,
     /// `(slot, x, y)` per generated start position.
     pub start_waypoints: Vec<(u8, u16, u16)>,
     /// Stages actually executed, in order.
@@ -218,7 +218,7 @@ pub struct GeneratedMap {
 
 impl GeneratedMap {
     /// Transfer this run's process cursor exactly once without drawing from it.
-    pub(crate) fn take_mapgen_continuation(&mut self) -> MapGenRngContinuation {
+    pub fn take_mapgen_continuation(&mut self) -> MapGenRngContinuation {
         self.mapgen_continuation
             .take()
             .expect("completed generation transfers its MapGen continuation once")

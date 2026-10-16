@@ -20,7 +20,7 @@ pub(super) struct GrappleState {
     invalidated: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl ParasiteState {
     pub(crate) fn grapple_timers_for_test(&self) -> (CdTimer, CdTimer) {
         (self.suppression, self.damage)

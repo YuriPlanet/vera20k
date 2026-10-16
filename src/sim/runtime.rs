@@ -61,8 +61,8 @@ pub struct SimRuntime {
 
 impl SimRuntime {
     /// Test adapter for an existing simulation with empty resource inputs.
-    #[cfg(test)]
-    pub(crate) fn from_simulation(simulation: Simulation) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_simulation(simulation: Simulation) -> Self {
         Self {
             simulation,
             resources: SimResources::empty(),
@@ -117,28 +117,28 @@ impl<'a> SimView<'a> {
         self.simulation.path_grid()
     }
 
-    pub(crate) fn resolved_terrain(
+    pub fn resolved_terrain(
         &self,
     ) -> Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid> {
         self.simulation.resolved_terrain.as_ref()
     }
 
-    pub(crate) fn overlay_grid(&self) -> Option<&'a crate::sim::overlay_grid::OverlayGrid> {
+    pub fn overlay_grid(&self) -> Option<&'a crate::sim::overlay_grid::OverlayGrid> {
         self.simulation.overlay_grid.as_ref()
     }
 
     /// Logic scheduling order, consumed separately by the radar pipeline.
-    pub(crate) fn logic_order(&self) -> &'a [u64] {
+    pub fn logic_order(&self) -> &'a [u64] {
         self.simulation.logic_order()
     }
 
-    pub(crate) fn display_layers(&self) -> &'a super::world::display_layers::DisplayLayers {
+    pub fn display_layers(&self) -> &'a super::world::display_layers::DisplayLayers {
         self.simulation.display_layers()
     }
 
     /// Pending radar-terrain batch for the minimap dirty gate. Presentation
     /// acknowledges this exact generation only after a completed update.
-    pub(crate) fn radar_terrain_dirty(&self) -> (&'a [(u16, u16)], u64) {
+    pub fn radar_terrain_dirty(&self) -> (&'a [(u16, u16)], u64) {
         (
             &self.simulation.radar_terrain_dirty_cells,
             self.simulation.radar_terrain_dirty_generation,
@@ -147,9 +147,7 @@ impl<'a> SimView<'a> {
 
     /// Current normalized MapClass LocalSize authority plus the generation of
     /// successful trigger-action-40 writers that rebuilt radar/scroll state.
-    pub(crate) fn playfield_authority(
-        &self,
-    ) -> (Option<crate::map::playfield::PlayfieldBounds>, u64) {
+    pub fn playfield_authority(&self) -> (Option<crate::map::playfield::PlayfieldBounds>, u64) {
         (
             self.simulation.playfield_bounds,
             self.simulation.playfield_revision,
@@ -159,7 +157,7 @@ impl<'a> SimView<'a> {
     /// Full MapClass Size dimensions retained beside normalized LocalSize.
     /// Radar input `0x00653D92..0x00653DE3` reads both values before resolving
     /// its signed click cell through `MapClass::Get_CellClass`.
-    pub(crate) fn playfield_map_size(&self) -> Option<(i32, i32)> {
+    pub fn playfield_map_size(&self) -> Option<(i32, i32)> {
         Some((
             self.simulation.playfield_bounds?.base,
             self.simulation.playfield_size_height?,
@@ -169,7 +167,7 @@ impl<'a> SimView<'a> {
 
 impl SimRuntime {
     /// Clear the exact radar-terrain batch a completed presentation update read.
-    pub(crate) fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
+    pub fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
         self.simulation.acknowledge_radar_terrain_dirty(generation)
     }
 
@@ -194,7 +192,7 @@ impl SimRuntime {
     /// the bound immutable resources. Callers cannot substitute rules, maps,
     /// registries, definitions, or navigation (the simulation pins its own
     /// canonical path snapshot internally).
-    pub(crate) fn advance_frame(
+    pub fn advance_frame(
         &mut self,
         commands: &[crate::sim::command::CommandEnvelope],
         tick_ms: u32,
@@ -208,9 +206,9 @@ impl SimRuntime {
             tick_ms,
             lane,
             Some(crate::sim::world::TriggerInputs {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 events: &self.resources.events,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 actions: &self.resources.actions,
                 rules: Some(&self.resources.rules),
             }),
@@ -219,11 +217,11 @@ impl SimRuntime {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl SimRuntime {
     /// Replace a same-content restored simulation in place. Resource ownership
     /// never changes and callers must already have a running match.
-    pub(crate) fn replace_simulation(&mut self, simulation: Simulation) {
+    pub fn replace_simulation(&mut self, simulation: Simulation) {
         self.simulation = simulation;
     }
 }
@@ -530,7 +528,7 @@ fn project_map_entities(
 /// flags 0x1600 and constructor ZAdjust 0. The delay-zero constructor calls
 /// `Middle`, then the producer writes the tile ZAdjust; the descriptor carries
 /// the producer's explicit +0x196/+0x197 state into the Rust object.
-pub(crate) fn spawn_terrain_tile_animations(
+pub fn spawn_terrain_tile_animations(
     sim: &mut Simulation,
     rules: &RuleSet,
     tile_animations: &[TerrainTileAnimation],
@@ -605,7 +603,7 @@ enum ScenarioPopulationError {
     NativeIdentity(#[from] crate::sim::native_identity::NativeMapTubeConstructionError),
 }
 
-pub(crate) fn populate_staged_scenario_with_generated_inits<F>(
+pub fn populate_staged_scenario_with_generated_inits<F>(
     sim: &mut Simulation,
     map_data: &crate::map::map_file::MapFile,
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
@@ -848,7 +846,7 @@ where
 /// `TiberiumClass::InitSpreadQueues_All @ 0x00722240`, each freeing and
 /// rebuilding every TiberiumClass's queue from the current cell state.
 /// Returns `None` when no overlay grid exists (queues reset empty).
-pub(crate) fn initialize_native_tiberium_queues(
+pub fn initialize_native_tiberium_queues(
     sim: &mut Simulation,
     basic: &crate::map::basic::BasicSection,
     special_flags: &crate::map::basic::SpecialFlagsSection,
@@ -908,13 +906,13 @@ pub(crate) fn initialize_native_tiberium_queues(
 }
 
 #[derive(Debug)]
-pub(crate) struct AuthoredScenarioLoadOutput {
-    pub(crate) resolved_terrain: crate::map::resolved_terrain::ResolvedTerrainGrid,
-    pub(crate) overlay_grid: crate::sim::overlay_grid::OverlayGrid,
+pub struct AuthoredScenarioLoadOutput {
+    pub resolved_terrain: crate::map::resolved_terrain::ResolvedTerrainGrid,
+    pub overlay_grid: crate::sim::overlay_grid::OverlayGrid,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum AuthoredScenarioLoadError {
+pub enum AuthoredScenarioLoadError {
     #[error(transparent)]
     NativeIdentity(#[from] crate::sim::native_identity::NativeMapTubeConstructionError),
     #[error(transparent)]
@@ -936,7 +934,7 @@ pub(crate) enum AuthoredScenarioLoadError {
 /// One `LoadCellRecalcState` and one native-ID cursor span raw Tubes,
 /// OverlayPack + first Recalc, Terrain/queues/Technos/Smudges, scalar deletion,
 /// and the final anti-diagonal Recalc sweep.
-pub(crate) fn finalize_and_populate_staged_authored_scenario<F>(
+pub fn finalize_and_populate_staged_authored_scenario<F>(
     sim: &mut Simulation,
     map_data: &mut crate::map::map_file::MapFile,
     terrain_fill: crate::map::resolved_terrain::AuthoredTerrainFill,
@@ -1138,7 +1136,7 @@ where
 /// runs per cell; it also tests IsAlive (`+0x90`) and Marked (`+0x74`).
 ///
 /// [`object_get_coords`]: crate::sim::movement::ground_pose::object_get_coords
-pub(crate) fn map_wall_owner_candidate_from_building(
+pub fn map_wall_owner_candidate_from_building(
     entity: &crate::sim::game_entity::GameEntity,
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     house_wall_owner: bool,
@@ -1166,7 +1164,7 @@ pub(crate) fn map_wall_owner_candidate_from_building(
 /// ore-spawner terrain seeding, map-wall owner reconstruction from the
 /// spawned structures, overlay-grid installation, smudge-grid seeding, then
 /// the authoritative post-map tail (`ScenarioClass::Post_Map_Init` cone).
-pub(crate) fn finalize_constructed_scenario(
+pub fn finalize_constructed_scenario(
     sim: &mut Simulation,
     map_data: &crate::map::map_file::MapFile,
     rules: &RuleSet,

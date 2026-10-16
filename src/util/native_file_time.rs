@@ -37,7 +37,7 @@ fn is_sentinel(ticks: u64) -> bool {
 }
 
 #[cfg(all(any(windows, unix), feature = "dev-ui"))]
-pub(crate) fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)> {
+pub fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)> {
     let ticks = unix_secs
         .checked_add(WINDOWS_EPOCH_SECONDS)?
         .checked_mul(TICKS_PER_SECOND)?;
@@ -46,7 +46,7 @@ pub(crate) fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)>
 
 /// Format native FILETIME without discarding its epoch or fractional fields.
 #[cfg(windows)]
-pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
+pub fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
     if is_sentinel(ticks) {
         return None;
     }
@@ -181,7 +181,7 @@ fn time_locale() -> Option<libc::locale_t> {
 
 /// FILETIME ticks as local time in the user's locale short date and time.
 #[cfg(unix)]
-pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
+pub fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
     if is_sentinel(ticks) {
         return None;
     }
@@ -211,12 +211,12 @@ pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
 }
 
 #[cfg(all(not(any(windows, unix)), feature = "dev-ui"))]
-pub(crate) fn format_timestamp_parts(_unix_secs: u64) -> Option<(String, String)> {
+pub fn format_timestamp_parts(_unix_secs: u64) -> Option<(String, String)> {
     None
 }
 
 #[cfg(not(any(windows, unix)))]
-pub(crate) fn format_file_time_parts(_ticks: u64) -> Option<(String, String)> {
+pub fn format_file_time_parts(_ticks: u64) -> Option<(String, String)> {
     None
 }
 

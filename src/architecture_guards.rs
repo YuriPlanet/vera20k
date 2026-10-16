@@ -2,6 +2,8 @@
 //!
 //! LAYER_RULES forbids reverse production dependencies and the exception list is
 //! empty. The scanner excludes tests.rs, *_tests.rs and #[cfg(test)] items;
+//! cfg(any(test, feature = "test-support")) items are test-only too, since only
+//! the client crate's dev-dependency enables vera20k-core's test-support feature.
 //! cfg(any(test, debug_assertions)) remains production because debug builds use it.
 //! A separate guard checks the entire sim tree, including tests, for upper-layer
 //! references. Other guards pin frame API and raw INI walk callers and
@@ -96,7 +98,7 @@ fn master_frame_adapters_have_pinned_production_callers() {
             .replace('\\', "/");
         let source =
             fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        let production = strip_test_items(&blank_comments_and_literals(&source));
+        let production = strip_test_items(&source);
         for (symbol, files) in allowed {
             if production.contains(symbol) && !files.contains(&rel.as_str()) {
                 violations.push(format!("{rel}: {symbol}"));
@@ -165,7 +167,7 @@ fn raw_ini_walks_have_pinned_production_callers() {
             .replace('\\', "/");
         let source =
             fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        let production = strip_test_items(&blank_comments_and_literals(&source));
+        let production = strip_test_items(&source);
         for &(symbol, _) in pinned {
             let count = count_identifier(&production, symbol);
             if count > 0 {
@@ -211,7 +213,7 @@ fn scan_forbidden_edges(src_root: &Path) -> BTreeSet<(String, String)> {
             }
             let source =
                 fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-            let production = strip_test_items(&blank_comments_and_literals(&source));
+            let production = strip_test_items(&source);
             for root in *forbidden {
                 if contains_crate_ref(&production, root) || group_contains_root(&production, root) {
                     let rel = path
@@ -312,7 +314,13 @@ fn blank_comments_and_literals(source: &str) -> String {
                 i += 1;
                 while i < bytes.len() {
                     if bytes[i] == b'\\' {
-                        out.extend_from_slice(b"  ");
+                        // Keep a line continuation's newline so lines stay aligned.
+                        out.push(b' ');
+                        out.push(if bytes.get(i + 1) == Some(&b'\n') {
+                            b'\n'
+                        } else {
+                            b' '
+                        });
                         i += 2;
                     } else if bytes[i] == b'"' {
                         out.push(b' ');
@@ -371,18 +379,24 @@ fn is_raw_string_start(bytes: &[u8], i: usize) -> bool {
     bytes.get(j) == Some(&b'"')
 }
 
-/// Remove `#[cfg(test)]` items (attribute plus the following item, braced or
-/// single-statement) from already-blanked source. `cfg(all(test, …))` counts
-/// as test-only; `cfg(any(test, debug_assertions))` does not.
-fn strip_test_items(text: &str) -> String {
+/// Blank comments and literals, then remove `#[cfg(test)]` items (attribute
+/// plus the following item, braced or single-statement). `cfg(all(test, …))`
+/// and `cfg(any(test, feature = "test-support"))` count as test-only;
+/// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
+/// the source line, since blanking erases its string.
+fn strip_test_items(source: &str) -> String {
+    let text = blank_comments_and_literals(source);
     let mut out = String::with_capacity(text.len());
     let mut depth: i64 = 0;
     let mut skip_above: Option<i64> = None;
     let mut awaiting_item = false;
-    for line in text.lines() {
+    for (line, source_line) in text.lines().zip(source.lines()) {
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
-        let is_test_attr = line.contains("cfg(test") || line.contains("cfg(all(test");
+        let is_test_attr = line.contains("cfg(test")
+            || line.contains("cfg(all(test")
+            || (line.trim_start().starts_with("#[")
+                && source_line.contains(r#"cfg(any(test, feature = "test-support"))"#));
         let mut emit = true;
 
         if skip_above.is_some() {

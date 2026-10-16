@@ -19,7 +19,7 @@ use crate::util::lookup_hash::LookupMap;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 /// Retained House+57E4 reader. No Map/GetCell lookup belongs to585F40.
-pub(crate) struct ZonePrecheckThreat<'a> {
+pub struct ZonePrecheckThreat<'a> {
     coefficient: NativeF64Bits,
     padded_lookup: &'a dyn Fn(i32) -> Result<i32, String>,
 }
@@ -202,7 +202,7 @@ impl ZoneEdgeRecord {
 
 /// One hierarchy level. Index 0 is the invalid sentinel zone.
 #[derive(Debug, Clone)]
-pub(crate) struct ZoneLevelGraph {
+pub struct ZoneLevelGraph {
     records: Vec<Option<ZoneRecord>>,
     edges: Vec<Vec<ZoneEdgeRecord>>,
     cell_zone_ids: Vec<ZoneId>,
@@ -321,7 +321,7 @@ impl ZoneLevelGraph {
         self.records.len().saturating_sub(1) as ZoneId
     }
 
-    pub(crate) fn zone_at(&self, x: u16, y: u16) -> ZoneId {
+    pub fn zone_at(&self, x: u16, y: u16) -> ZoneId {
         if x >= self.width || y >= self.height {
             return ZONE_INVALID;
         }
@@ -408,7 +408,7 @@ impl ZoneLevelGraph {
 
 /// Three-level hierarchy searched by `Zone_precheck` @ `0x0042C290`.
 #[derive(Debug, Clone)]
-pub(crate) struct ZoneHierarchy {
+pub struct ZoneHierarchy {
     levels: [ZoneLevelGraph; ZONE_PRECHECK_LEVELS],
     memo: PrecheckMemo,
 }
@@ -467,7 +467,7 @@ impl ZoneHierarchy {
         }
     }
 
-    pub(crate) fn level(&self, level: usize) -> Option<&ZoneLevelGraph> {
+    pub fn level(&self, level: usize) -> Option<&ZoneLevelGraph> {
         self.levels.get(level)
     }
 
@@ -513,12 +513,12 @@ impl ZoneEdgeKey {
 /// This is the consumer side only. The exact failed-A* producer that chooses
 /// which edge to invalidate remains deferred.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ZonePrecheckExclusions {
+pub struct ZonePrecheckExclusions {
     lookup: [BTreeSet<ZoneEdgeKey>; ZONE_PRECHECK_LEVELS],
 }
 
 impl ZonePrecheckExclusions {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn insert(&mut self, level: usize, a: ZoneId, b: ZoneId) -> bool {
         let Some(key) = ZoneEdgeKey::new(a, b) else {
             return false;
@@ -543,7 +543,7 @@ impl ZonePrecheckExclusions {
 /// zone id. The cell A*'s corridor gate asks it for every neighbour, so
 /// membership is one word test.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct MarkedZones {
+pub struct MarkedZones {
     /// Bit `z % 64` of word `z / 64` is set for each marked zone `z`; the last
     /// word holds the highest marked zone, so equal sets compare equal.
     bits: Vec<u64>,
@@ -574,10 +574,10 @@ impl FromIterator<ZoneId> for MarkedZones {
 
 /// Successful precheck output: selected paths and marker sets per hierarchy level.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ZonePrecheckResult {
+pub struct ZonePrecheckResult {
     pub paths: [Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
     pub marked: [MarkedZones; ZONE_PRECHECK_LEVELS],
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub pops: Vec<(usize, ZoneId, u32, u32)>,
 }
 
@@ -586,14 +586,14 @@ impl ZonePrecheckResult {
         Self {
             paths: std::array::from_fn(|_| Vec::new()),
             marked: std::array::from_fn(|_| MarkedZones::default()),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             pops: Vec::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ZonePrecheckOutcome {
+pub enum ZonePrecheckOutcome {
     Passed(ZonePrecheckResult),
     Failed,
 }
@@ -649,7 +649,7 @@ fn precheck_edge_cost(cost: NativeF32Bits, base: i32, threat: i32, flag: u8) -> 
 #[derive(Clone, Debug, PartialEq)]
 struct PrecheckLevelResult {
     path: Vec<ZoneId>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pops: Vec<(usize, ZoneId, u32, u32)>,
 }
 
@@ -705,7 +705,7 @@ impl PrecheckMemo {
             let answer = Option::clone(&answer);
             // Every test that prechecks also checks the memo against a new
             // search, including after production hierarchy repairs.
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             assert_eq!(answer, search()?, "a kept precheck answer went stale");
             return Ok(answer);
         }
@@ -727,7 +727,7 @@ impl PrecheckMemo {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn len(&self) -> usize {
         self.0.iter().flatten().map(|shard| lock(shard).len()).sum()
     }
@@ -754,7 +754,7 @@ impl std::fmt::Debug for PrecheckMemo {
 /// parent/passability and exclusion gates, multiplied by Foot4DC760's
 /// coefficient, and converted by original7C5F00 before the binary32 cost spill.
 /// `None` models its NULL Foot input; live Foot callers supply the shared House.
-pub(crate) fn zone_precheck_flat(
+pub fn zone_precheck_flat(
     hierarchy: &ZoneHierarchy,
     start_level0: ZoneId,
     goal_level0: ZoneId,
@@ -819,7 +819,7 @@ pub(crate) fn zone_precheck_flat(
         };
         result.marked[level] = selected.path.iter().copied().collect();
         result.paths[level] = selected.path;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         result.pops.extend(selected.pops);
     }
 
@@ -899,7 +899,7 @@ fn search_precheck_level_in(
     if start == goal {
         return Ok(Some(PrecheckLevelResult {
             path: vec![start],
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             pops: Vec::new(),
         }));
     }
@@ -917,18 +917,18 @@ fn search_precheck_level_in(
     });
     best.set(usize::from(start), NativeF32Bits::from_bits(0));
     heap.push(0, by_cost(nodes));
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let mut pops = Vec::new();
 
     while let Some(index) = heap.pop(by_cost(nodes)) {
         let node = &nodes[index];
         let (zone, cost, depth) = (node.zone, node.cost, node.depth);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         pops.push((level, zone, cost.bits(), depth));
         if zone == goal {
             return Ok(Some(PrecheckLevelResult {
                 path: reconstruct_zone_path(nodes, index),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 pops,
             }));
         }

@@ -347,11 +347,6 @@ impl BinkFile {
         })
     }
 
-    /// Convenience: parse from a byte slice by copying into an `Arc`.
-    pub fn parse_from_slice(data: &[u8]) -> Result<Self, AssetError> {
-        Self::parse(Arc::<[u8]>::from(data))
-    }
-
     /// Return the bitstream bytes for video frame `i` (audio already skipped).
     pub fn video_packet(&self, i: usize) -> Result<&[u8], AssetError> {
         let entry = self
@@ -658,7 +653,7 @@ mod tests {
         h.extend_from_slice(&[1u8, 2, 3, 4, 5, 6, 7, 8]); // audio bytes
         h.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // video bytes
 
-        let f = BinkFile::parse_from_slice(&h).unwrap();
+        let f = BinkFile::parse(Arc::from(h)).unwrap();
         let video = f.video_packet(0).unwrap();
         assert_eq!(video, &[0xAA, 0xBB, 0xCC, 0xDD]);
 

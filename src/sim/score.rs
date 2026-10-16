@@ -18,7 +18,7 @@ use crate::sim::world::Simulation;
 
 /// One sim-owned row before localization, colour selection, or display sorting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TerminalScoreRowSnapshot {
+pub struct TerminalScoreRowSnapshot {
     pub owner: InternedId,
     pub country: Option<InternedId>,
     pub survived: bool,
@@ -31,13 +31,13 @@ pub(crate) struct TerminalScoreRowSnapshot {
 
 /// The one-shot raw score result for a finished match.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TerminalScoreSnapshot {
+pub struct TerminalScoreSnapshot {
     pub rows: Vec<TerminalScoreRowSnapshot>,
 }
 
 impl Simulation {
     /// Read the already-finalized raw terminal score rows without mutation.
-    pub(crate) fn terminal_score_snapshot(&self) -> Option<&TerminalScoreSnapshot> {
+    pub fn terminal_score_snapshot(&self) -> Option<&TerminalScoreSnapshot> {
         self.terminal_score_snapshot.as_ref()
     }
 

@@ -15,7 +15,7 @@ use crate::sim::world::{
 use crate::util::lepton;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DepartureRoute {
+pub enum DepartureRoute {
     Vehicle,
     LandedAircraft,
     Paradrop,
@@ -30,7 +30,7 @@ pub(crate) enum DepartureRoute {
 
 /// The phase which refused departure, rather than a caller-owned rollback plan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DepartureFailure {
+pub enum DepartureFailure {
     NoCargo,
     MissingPassenger,
     NotReady,
@@ -42,7 +42,7 @@ pub(crate) enum DepartureFailure {
 
 /// Run one complete cargo-head attempt. Only the passenger ID is exposed to the
 /// placement operation; admission-time size and head restoration stay here.
-pub(crate) fn depart_cargo_head(
+pub fn depart_cargo_head(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -187,7 +187,7 @@ fn restore_departure(
 
 /// The spot a caller already placed the passenger in at an exit cell: the
 /// passenger's `sub_cell` offset inside `(rx, ry)` at level `z`.
-pub(crate) fn exit_cell_position(
+pub fn exit_cell_position(
     sim: &Simulation,
     passenger_id: u64,
     rx: u16,
@@ -214,7 +214,7 @@ pub(crate) fn exit_cell_position(
 /// copy before departure queues its Move. Original reader/kernel and
 /// coefficient-copy execution: tools/spatial_oracle/astar_threat_inputs.json
 /// and astar_mtnk_inputs.json.
-pub(crate) fn reveal_unloaded_passenger(
+pub fn reveal_unloaded_passenger(
     sim: &mut Simulation,
     rules: &RuleSet,
     transport_id: u64,

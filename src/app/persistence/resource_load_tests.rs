@@ -78,8 +78,11 @@ fn bound_saved_world(
     // Match the existing fresh-loader publication after its Fill pass. The
     // saved-load candidate must later replace these retained theater values.
     cache.complete_theater_registry_load(theater.rmg_tiles.clear_tile, theater.rmg_tiles.water_set);
-    let roots =
-        init_helpers::scheduler_anim_roots(&rules, &overlay_registry, terrain.tile_animations());
+    let roots = crate::map::resolved_terrain::scheduler_anim_roots(
+        &rules,
+        &overlay_registry,
+        terrain.tile_animations(),
+    );
     init_helpers::bind_rules_asset_closure(
         &mut rules,
         &processed,

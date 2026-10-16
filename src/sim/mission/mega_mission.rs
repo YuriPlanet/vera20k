@@ -49,13 +49,13 @@ pub(crate) struct MegaMission {
 impl MegaMission {
     /// An attack-move that has found nothing yet, with this MegaDestination
     /// and no MegaTarget.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn attack_move(destination: Option<TargetKind>) -> Self {
         Self::for_test(true, destination, None, false)
     }
 
     /// Any field values, as a native state supplies them.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn for_test(
         attack_move: bool,
         destination: Option<TargetKind>,
@@ -87,7 +87,7 @@ impl MegaMission {
     }
 
     /// MegaDestination.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn destination(&self) -> Option<TargetKind> {
         self.destination
     }
@@ -141,7 +141,7 @@ impl Simulation {
     /// `Can_Attack_Move` (vt+0x4C0): Infantry `0x005228C0` and Unit
     /// `0x00746CC0` jump to `TechnoClass::Can_Attack_Move @ 0x0070F090`, which
     /// asks the type ([`crate::rules::object_type::ObjectType::can_attack_move`]).
-    pub(crate) fn techno_can_attack_move(&self, id: u64, rules: &RuleSet) -> bool {
+    pub fn techno_can_attack_move(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate
             .entities
             .get(id)

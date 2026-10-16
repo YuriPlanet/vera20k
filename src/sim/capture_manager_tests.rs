@@ -997,6 +997,18 @@ fn native_overload_update_corpus() {
         );
         assert_eq!(manager.overload_sound_played, constructed["latch"] != 0);
         assert_eq!(manager.infinite, constructed["infinite"] != 0);
+        if !infinite {
+            assert_eq!(
+                manager.overload_pip_state(),
+                None,
+                "{name}: a finite manager above capacity has no overload pip"
+            );
+        }
+        assert_eq!(
+            manager.overload_pip_countdown,
+            constructed["flash"].as_i64().unwrap() as i32,
+            "{name}: constructor pip countdown"
+        );
         let entity = sim.substrate.entities.get_mut(mind).unwrap();
         entity.capture_manager = Some(manager);
         if input.get("kill").is_some() {
@@ -1041,6 +1053,23 @@ fn native_overload_update_corpus() {
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
+
+            // Event checkpoints record the original manager after Update.
+            // A retired Rust owner has no presentation state to compare;
+            // the legacy killing callback does not establish its lifetime.
+            if let (Some(native), Some(manager)) = (
+                native_frames.get(&frame),
+                sim.substrate
+                    .entities
+                    .get(mind)
+                    .and_then(|entity| entity.capture_manager.as_ref()),
+            ) {
+                assert_eq!(
+                    manager.overload_pip_countdown,
+                    native["after"]["flash"].as_i64().unwrap() as i32,
+                    "{name} frame {frame}: native pip countdown"
+                );
+            }
 
             let events: Vec<&serde_json::Value> = native_frames
                 .get(&frame)
@@ -1162,6 +1191,11 @@ fn native_overload_update_corpus() {
                 final_state["latch"] != 0,
                 "{name}"
             );
+            assert_eq!(
+                manager.overload_pip_countdown,
+                final_state["flash"].as_i64().unwrap() as i32,
+                "{name}: final native pip countdown"
+            );
         }
         assert_eq!(
             sim.scenario_rng.next_u32(),
@@ -1254,8 +1288,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
             json!(u8::from(manager.overload_sound_played)),
             expected["latch"]
         );
-        // Native flash+44 remains a separate presentation residual; neither
-        // this snapshot nor the rate comparison invents a Rust flash owner.
+        assert_eq!(json!(manager.overload_pip_countdown), expected["flash"]);
     };
     let rows = corpus["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 5);
@@ -1427,6 +1460,16 @@ fn a_mastermind_overloads_above_three_captives() {
             crate::sim::world::FrameEffects::default()
         ));
     }
+    let manager = sim
+        .substrate
+        .entities
+        .get(mind)
+        .unwrap()
+        .capture_manager
+        .as_ref()
+        .unwrap();
+    assert_eq!(manager.count(), 3);
+    assert_eq!(manager.overload_pip_state(), None);
     // 30 quiet frames, then a free check at three captives.
     let health = sim.substrate.entities.get(mind).unwrap().health.current();
     let before = sim.scenario_rng.state();
@@ -1451,6 +1494,18 @@ fn a_mastermind_overloads_above_three_captives() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(mind)
+            .unwrap()
+            .capture_manager
+            .as_ref()
+            .unwrap()
+            .overload_pip_state(),
+        Some(false),
+        "overcapacity precedes the first damaging check"
+    );
     for _ in 0..30 {
         sim.capture_manager_update(
             mind,
@@ -1477,17 +1532,57 @@ fn a_mastermind_overloads_above_three_captives() {
         health - 50
     );
     assert_eq!(voc_sounds(&sim), ["MasterMindOverloadVoice"]);
+    let manager = sim
+        .substrate
+        .entities
+        .get(mind)
+        .unwrap()
+        .capture_manager
+        .as_ref()
+        .unwrap();
+    assert_eq!(manager.overload_pip_countdown, 10);
+    assert_eq!(manager.overload_pip_state(), Some(true));
     // The next check is 60 frames on, and the voice does not repeat.
-    let quiet = sim.scenario_rng.state();
-    for _ in 0..60 {
+    let quiet = (
+        sim.main_rng.native_state_hex(),
+        sim.scenario_rng.native_state_hex(),
+        sim.mapgen_rng.native_state_hex(),
+    );
+    for visit in 1..=60 {
         sim.capture_manager_update(
             mind,
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
+        let expected = match visit {
+            1 => Some((9, true)),
+            9 => Some((1, true)),
+            10 | 60 => Some((0, false)),
+            _ => None,
+        };
+        if let Some((remaining, active)) = expected {
+            let manager = sim
+                .substrate
+                .entities
+                .get(mind)
+                .unwrap()
+                .capture_manager
+                .as_ref()
+                .unwrap();
+            assert_eq!(manager.overload_pip_countdown, remaining, "visit {visit}");
+            assert_eq!(manager.overload_pip_state(), Some(active), "visit {visit}");
+        }
     }
-    assert_eq!(sim.scenario_rng.state(), quiet);
+    assert_eq!(
+        (
+            sim.main_rng.native_state_hex(),
+            sim.scenario_rng.native_state_hex(),
+            sim.mapgen_rng.native_state_hex(),
+        ),
+        quiet,
+        "pip countdown visits draw from none of the three streams"
+    );
     sim.sound_events.clear();
     sim.capture_manager_update(
         mind,
@@ -1500,10 +1595,95 @@ fn a_mastermind_overloads_above_three_captives() {
         health - 100
     );
     assert!(voc_sounds(&sim).is_empty());
+    assert!(sim.free_unit(
+        mind,
+        captives[3],
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let manager = sim
+        .substrate
+        .entities
+        .get(mind)
+        .unwrap()
+        .capture_manager
+        .as_ref()
+        .unwrap();
+    assert_eq!(manager.count(), 3);
+    assert_eq!(manager.overload_pip_countdown, 10);
+    assert_eq!(
+        manager.overload_pip_state(),
+        None,
+        "release hides the extra pip"
+    );
 }
 
-/// Nodes (with their original house) and the victim's link survive a save,
-/// and both are hashed.
+/// Declared retained-field controls for the original Infinite gate and the
+/// positive-only decrement before both quiet and non-damaging returns.
+#[test]
+fn overload_pip_counter_obeys_finite_and_non_damaging_update_gates() {
+    let rules = rules();
+    for (kind, counter, countdown, expected_counter, expected_countdown) in [
+        ("YURI", 3, 7, 3, 7),
+        ("MIND", 3, 7, 2, 6),
+        ("MIND", 3, 0, 2, 30),
+        ("MIND", 0, 7, 0, 6),
+        ("MIND", -1, 7, -1, 6),
+    ] {
+        let mut sim = sim(20);
+        let controller = spawn(&mut sim, &rules, kind, "YuriCountry", 10, 10);
+        let manager = sim
+            .substrate
+            .entities
+            .get_mut(controller)
+            .unwrap()
+            .capture_manager
+            .as_mut()
+            .unwrap();
+        manager.overload_pip_countdown = counter;
+        manager.overload_countdown = countdown;
+        let before = (
+            sim.main_rng.native_state_hex(),
+            sim.scenario_rng.native_state_hex(),
+            sim.mapgen_rng.native_state_hex(),
+        );
+        sim.capture_manager_update(
+            controller,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let manager = sim
+            .substrate
+            .entities
+            .get(controller)
+            .unwrap()
+            .capture_manager
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            manager.overload_pip_countdown, expected_counter,
+            "{kind} {counter}/{countdown}"
+        );
+        assert_eq!(
+            manager.overload_countdown, expected_countdown,
+            "{kind} {counter}/{countdown}"
+        );
+        assert_eq!(manager.overload_pip_state(), None, "no captive overload");
+        assert_eq!(
+            (
+                sim.main_rng.native_state_hex(),
+                sim.scenario_rng.native_state_hex(),
+                sim.mapgen_rng.native_state_hex(),
+            ),
+            before
+        );
+    }
+}
+
+/// Nodes (with their original house), the pip countdown and the victim's
+/// link survive a save, and each retained state participates in the hash.
 #[test]
 fn mind_control_state_round_trips_and_is_hashed() {
     let rules = rules();
@@ -1526,6 +1706,9 @@ fn mind_control_state_round_trips_and_is_hashed() {
             .unwrap();
         manager.overload_countdown = 7;
         manager.overload_sound_played = true;
+        // Declared nonzero persistence input; the real pulse above owns
+        // natural initialization and expiry of this field.
+        manager.overload_pip_countdown = 5;
     }
 
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "mind_control", 0);
@@ -1547,14 +1730,38 @@ fn mind_control_state_round_trips_and_is_hashed() {
         .unwrap();
     assert_eq!(manager.original_owner(gi), Some(americans));
     assert_eq!(
-        (manager.overload_countdown, manager.overload_sound_played),
-        (7, true)
+        (
+            manager.overload_countdown,
+            manager.overload_sound_played,
+            manager.overload_pip_countdown,
+        ),
+        (7, true, 5)
     );
     let entity = restored.substrate.entities.get(gi).unwrap();
     assert_eq!(entity.mind_control.controller(), Some(yuri));
     assert!(entity.mind_control.ring_anim.is_some());
 
     let linked = restored.state_hash();
+    restored
+        .substrate
+        .entities
+        .get_mut(yuri)
+        .unwrap()
+        .capture_manager
+        .as_mut()
+        .unwrap()
+        .overload_pip_countdown = 4;
+    assert_ne!(restored.state_hash(), linked, "the pip countdown is hashed");
+    restored
+        .substrate
+        .entities
+        .get_mut(yuri)
+        .unwrap()
+        .capture_manager
+        .as_mut()
+        .unwrap()
+        .overload_pip_countdown = 5;
+    assert_eq!(restored.state_hash(), linked);
     restored
         .substrate
         .entities

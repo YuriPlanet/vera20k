@@ -85,7 +85,7 @@ pub fn sim_from_f32(val: f32) -> SimFixed {
 
 /// Convert `f64` to `SimFixed` for intermediate calculations during data loading.
 /// Only use at data-load boundaries — never within sim tick logic.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[inline]
 pub fn sim_from_f64(val: f64) -> SimFixed {
     SimFixed::from_num(val)
@@ -141,7 +141,7 @@ pub fn dir_to_cell_delta(facing: u8) -> (i32, i32) {
 /// multiply by256/100 and cap at255 whole leptons per native frame.
 /// A missing/-1 override retains native type initialization; callers here
 /// resolve that to their existing zero default before conversion.
-pub(crate) fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
+pub fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
     (raw_speed.clamp(0, 100) * 256 / 100).min(255)
 }
 
@@ -158,7 +158,7 @@ pub(crate) fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
 ///
 /// Examples: Speed=4 (HARV) → ~0.586 cells/sec, Speed=6 (MTNK) → ~0.879,
 /// Speed=11 (E1) → ~1.641, Speed=100 → ~14.941. Speed=0 → 0 (immobile).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn ra2_speed_to_cells_per_second(raw_speed: i32) -> SimFixed {
     let leptons_per_tick = ra2_speed_to_leptons_per_frame(raw_speed);
     SimFixed::from_num(leptons_per_tick * 15) / SimFixed::from_num(256)

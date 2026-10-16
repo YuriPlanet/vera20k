@@ -15,7 +15,7 @@ use crate::map::houses::are_houses_friendly;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::canonical_cell_coord;
 use crate::sim::combat;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::combat::combat_aoe::expire_cell_target_references;
 use crate::sim::command::{
@@ -31,7 +31,7 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::production;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WallSellZoneRepairTestStep {
     pub(crate) repair_cell: (u16, u16),
@@ -39,7 +39,7 @@ pub(crate) struct WallSellZoneRepairTestStep {
     pub(crate) movement_class_cross: [u8; 5],
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 std::thread_local! {
     static WALL_SELL_ZONE_REPAIR_TEST_TRACE:
         std::cell::RefCell<Vec<WallSellZoneRepairTestStep>> = const {
@@ -47,17 +47,17 @@ std::thread_local! {
         };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn clear_wall_sell_zone_repair_test_trace() {
     WALL_SELL_ZONE_REPAIR_TEST_TRACE.with(|trace| trace.borrow_mut().clear());
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn take_wall_sell_zone_repair_test_trace() -> Vec<WallSellZoneRepairTestStep> {
     WALL_SELL_ZONE_REPAIR_TEST_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn trace_wall_sell_zone_repair_step(
     zone_grid: &crate::sim::pathfinding::zone_map::ZoneGrid,
     tail_grid: &PathGrid,
@@ -91,14 +91,14 @@ fn trace_wall_sell_zone_repair_step(
 impl Simulation {
     /// ScatterSelectedObjects730FE0 admits Techno vt+A0, without Guard's
     /// IsActive test or miner exception. All retained entities are Technos.
-    pub(crate) fn scatter_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
+    pub fn scatter_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         self.techno_player_controllable(id, rules)
             .then_some(Command::Scatter { entity_id: id })
     }
 
     /// ClickedEvent6FFE00 ->4C65E0 stores issuer registration and actor UID
     /// independently. Ownership is not rechecked by Event7 at execution.
-    pub(crate) fn encode_scatter_record(
+    pub fn encode_scatter_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
         entity_id: u64,
@@ -130,7 +130,7 @@ impl Simulation {
     /// accept. Unit slave-manager/Harvester fallback bypasses both.
     /// Existing controllability lifecycle residuals remain documented at
     /// that owner. This is an input producer, never an event-execution gate.
-    pub(crate) fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
+    pub fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         let actor = self.substrate.entities.get(id)?;
         if actor.category() == EntityCategory::Structure {
             return None;
@@ -156,7 +156,7 @@ impl Simulation {
     /// `EventClass__BuildMegaMissionEnvelope` at `gamemd.exe` `0x004C6860`
     /// stores HouseClass registration and Abstract stable identity separately;
     /// the source therefore need not belong to the issuing house.
-    pub(crate) fn encode_megamission_record(
+    pub fn encode_megamission_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
         command: &Command,
@@ -258,7 +258,7 @@ impl Simulation {
 
     /// Encode the native synchronized record for one locally issued wall sale.
     /// House bytes are HouseClass registration indices, never interner ids.
-    pub(crate) fn encode_sell_wall_at_cell_record(
+    pub fn encode_sell_wall_at_cell_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
         x: i16,
@@ -285,7 +285,7 @@ impl Simulation {
 
     /// Encode the header-only native EXIT event issued by Abort confirmation.
     /// House bytes are HouseClass registration indices, never interner ids.
-    pub(crate) fn encode_exit_record(
+    pub fn encode_exit_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
     ) -> Option<CommandRecord> {
@@ -309,7 +309,7 @@ impl Simulation {
     /// Decode one synchronized record after its queue has admitted the stamped
     /// frame. The semantic envelope is only a typed execution view of the raw
     /// bytes; timing/processed-bit ownership remains with the raw queue.
-    pub(crate) fn decode_native_command_record(
+    pub fn decode_native_command_record(
         &self,
         record: &CommandRecord,
         execute_tick: u64,
@@ -477,12 +477,12 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "test-support")))]
         let _ = sold_cell;
         let Some(_zone_grid) = self.zone_grid.as_mut() else {
             return;
         };
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         trace_wall_sell_zone_repair_step(_zone_grid, tail_grid, sold_cell, repair_cell);
         super::repair_zone_after_recalc(
             &mut self.zone_grid,
@@ -579,13 +579,13 @@ impl Simulation {
         // Selling invokes exactly one PostDestructionWallCleanup at the sold
         // cell: N, E, S, W, self. It is not damage's four-cardinal fan-out.
         const CROSS: [(i32, i32); 5] = [(0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)];
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         let mut detach_trace: Vec<CellTargetDetach> = Vec::new();
         for (dx, dy) in CROSS {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
                     entities: &mut self.substrate.entities,
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "test-support"))]
                     detach_trace: &mut detach_trace,
                     radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
                     radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
@@ -664,7 +664,7 @@ impl Simulation {
             &mut self.substrate.entities,
             rx,
             ry,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             &mut detach_trace,
         );
 
@@ -687,8 +687,8 @@ impl Simulation {
     }
 
     /// Dispatch a single command, returning true if it was successfully applied.
-    #[cfg(test)]
-    pub(crate) fn apply_command(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn apply_command(
         &mut self,
         command_owner: &str,
         cmd: &Command,
@@ -2032,7 +2032,7 @@ impl Simulation {
     /// an `UndeploysInto=` type (`0x0044377E`); the undeploy arm's
     /// repack-and-move order is not ported. The click and the event share
     /// this rule so no building the event ignores is announced.
-    pub(crate) fn takes_rally_point(&self, stable_id: u64, owner: &str, rules: &RuleSet) -> bool {
+    pub fn takes_rally_point(&self, stable_id: u64, owner: &str, rules: &RuleSet) -> bool {
         self.substrate
             .entities
             .get(stable_id)
@@ -2082,7 +2082,7 @@ impl Simulation {
     /// Native +D0(1) is the disguise House: Unit7465F0 may return NULL;
     /// Infantry5226C0 defaults it to the current House. Reuse the existing
     /// +C8 disguise owner instead of treating current fog as selectability.
-    pub(crate) fn object_is_selectable(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    pub fn object_is_selectable(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
@@ -2119,7 +2119,7 @@ impl Simulation {
     /// and committed selection. Membership and pending placement are caller
     /// state: input checks its newest ledger/placement, the sim its stored bit.
     /// Original does not read Alive or Health here; search/click callers do.
-    pub(crate) fn can_select_object(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    pub fn can_select_object(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };

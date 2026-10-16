@@ -274,7 +274,7 @@ fn minimum_range_blocks(weapon: &WeaponType, src: (i64, i64, i64), tgt: (i64, i6
 ///
 /// `src` is caller-supplied as `(attacker_x_lep, attacker_y_lep,
 /// object_world_z_leptons(attacker, Some(terrain)))`.
-pub(crate) fn compute_in_range(
+pub fn compute_in_range(
     attacker: &GameEntity,
     src: (i64, i64, i64),
     target: &TargetKind,
@@ -698,7 +698,7 @@ fn target_own_z_leptons(
 /// unsupported slopes, or fixtures lacking exact physical Z and terrain;
 /// ordinary live objects retain exact coordinates. Cell targets recover their
 /// allocation before source queries, without restamping a retained Dummy.
-pub(crate) fn fire_source_coords(
+pub fn fire_source_coords(
     attacker: &GameEntity,
     target: &TargetKind,
     weapon: &WeaponType,
@@ -814,7 +814,7 @@ mod cell_query_tests;
 /// `0x006F7780`, which is `CanFireAt(target, SelectWeapon(target))`
 /// (`0x006F77B0`) and ordinary `TechnoClass::InRange` @ `0x006F7220`. It asks
 /// no legality: a target the weapon may not fire at is still in range.
-pub(crate) fn can_fire_at_target(
+pub fn can_fire_at_target(
     entities: &EntityStore,
     rules: &RuleSet,
     interner: &StringInterner,
@@ -872,7 +872,7 @@ impl crate::sim::world::Simulation {
 /// Ordinary callers select against `Some(target)`; the deployed Unit action
 /// wrappers (740793/7403AA) explicitly select against NULL before measuring
 /// their original target. The range itself remains one owner.
-pub(crate) fn can_fire_at_target_in_query(
+pub fn can_fire_at_target_in_query(
     entities: &EntityStore,
     rules: &RuleSet,
     interner: &StringInterner,
@@ -923,7 +923,7 @@ pub(crate) fn can_fire_at_target_in_query(
 ///
 /// Takes individual fields rather than a `&Position`, for use with snapshots
 /// where positions are destructured.
-pub(crate) fn lepton_distance_sq_raw(
+pub fn lepton_distance_sq_raw(
     ax_cell: u16,
     ay_cell: u16,
     ax_sub: SimFixed,
@@ -981,7 +981,7 @@ pub(crate) fn lepton_distance_sq_raw(
 /// fixtures, pre-map bring-up): the fire gate, the threat scan and the
 /// cursor. None of them can run a walk, so they agree with each other rather
 /// than diverging.
-pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixed) -> bool {
+pub fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixed) -> bool {
     let range_leptons: i64 = (i64::from(range_cells.to_bits()) * 256) >> 16;
     let range_sq: i64 = range_leptons * range_leptons;
     dist_sq_leptons <= range_sq

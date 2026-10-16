@@ -74,7 +74,7 @@ use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::parachute_descent::begin_parachute_descent;
 use crate::sim::movement::{ground_pose, walk_head};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::passenger::PassengerRole;
 use crate::sim::passenger::{DepartureFailure, DepartureRoute, depart_cargo_head};
 use crate::sim::world::{
@@ -92,7 +92,7 @@ const V_PATTERN_RADIUS_LEPTONS: i32 = 128;
 const PARADROP_UNLIMBO_FACING: u8 = 0x80;
 
 /// What [`drop_payload`] called, in the oracle's terms (observation only).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Observed {
     /// Map[coord] (`0x00565730`) for the landing point, then for the spot.
@@ -116,7 +116,7 @@ pub(crate) enum Observed {
     Conceal(u64),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Observation only: what [`drop_payload`] called on this thread while a
     /// test holds `Some`.
@@ -124,7 +124,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn observe(call: Observed) {
     OBSERVED.with(|log| {
         if let Some(log) = log.borrow_mut().as_mut() {
@@ -179,7 +179,7 @@ pub(crate) fn drop_payload(
     if let (Err(failure), Some(passenger)) = (result, head)
         && failure != DepartureFailure::NoCargo
     {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             observe(Observed::Limbo(passenger));
             observe(Observed::Conceal(passenger));
@@ -232,13 +232,13 @@ fn drop_passenger(
     );
     let z = ground_pose::object_world_z_leptons(plane_entity, terrain);
     let point = DriveCoord { x, y, z };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::CellAt([x, y, z]));
     let cell = terrain.map(|terrain| NativeCellQuery::canonical(terrain).lookup_world(x, y));
 
     // Headless fixtures have no map cells to ask.
     if let Some(cell) = cell {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         observe(Observed::CanEnter(passenger, ammo));
         match sim.foot_can_enter(passenger, cell, InfantryEntryArgs::REPAIR, rules, registry) {
             Ok(0) => {}
@@ -250,7 +250,7 @@ fn drop_passenger(
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::Subposition([x, y, z]));
     let Some(spot) = sim.place_infantry_in_ground_cell(rules, point) else {
         return Err(DepartureFailure::Placement);
@@ -279,7 +279,7 @@ fn spawn_parachuted(
     spot: u8,
     effects: FrameEffects<'_>,
 ) -> Result<(), DepartureFailure> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::SpawnParachuted(
         passenger,
         [landing.x, landing.y, landing.z],
@@ -297,12 +297,12 @@ fn spawn_parachuted(
     } else {
         MissionType::Hunt
     });
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::Queue(passenger, mission));
     if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
         crate::sim::mission::authority::queue_entity_mission_deferred(rider, mission);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::DoAction(passenger, DO_PARADROP, true));
     if let Err(cause) = sim.infantry_do_action(passenger, DO_PARADROP, true, rules, effects) {
         log::debug!("paradrop passenger {passenger} Do_Action: {cause}");
@@ -488,7 +488,7 @@ fn land_tail(
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {
         return;
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     {
         let location = ground_pose::object_location(plane_entity, sim.resolved_terrain.as_ref());
         observe(Observed::PlayAt([location.x, location.y, location.z]));
@@ -497,14 +497,14 @@ fn land_tail(
         rx: plane_entity.position.rx(),
         ry: plane_entity.position.ry(),
     });
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::CellAt([landing.x, landing.y, landing.z]));
     sim.foot_neighbors_after_payload_drop(
         passenger,
         ((landing.x / 256) as i16, (landing.y / 256) as i16),
     );
     if let Some((team, _)) = sim.team_script_vm.team_for_member(plane) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         observe(Observed::RemoveMember(passenger));
         sim.team_remove_member(team, passenger, false, Some(rules), effects);
     }

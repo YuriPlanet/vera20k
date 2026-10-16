@@ -115,11 +115,11 @@ impl HouseTeamCreation {
         }
     }
 
-    pub(crate) const fn timer(&self) -> CdTimer {
+    pub const fn timer(&self) -> CdTimer {
         self.timer
     }
 
-    pub(crate) const fn ratio(&self) -> i32 {
+    pub const fn ratio(&self) -> i32 {
         self.ratio
     }
 }

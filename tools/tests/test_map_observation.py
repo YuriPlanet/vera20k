@@ -1275,6 +1275,99 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(actual['after']['local_input']['building_placement'], empty)
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    @staticmethod
+    def placement_preview_observation():
+        # Synthetic observer transport, not a native raster/placement golden.
+        return {'origin': [106, 34], 'foundation': [2, 2], 'valid': False,
+                'in_build_area': True, 'foundation_visible': True, 'reason': 'Blocked terrain',
+                'cells': [{'coord': [106, 34], 'valid': False, 'level': 5, 'slope': 1},
+                          {'coord': [107, 34], 'valid': True, 'level': 6, 'slope': 0},
+                          {'coord': [106, 35], 'valid': False, 'level': 5, 'slope': 1},
+                          {'coord': [107, 35], 'valid': True, 'level': 6, 'slope': 0}],
+                'wall_autofill_cells': [[108, 35]]}
+
+    def test_building_placement_current_preview_roundtrips_and_charges_all_rows(self):
+        self.keyboard_profile()
+        placement = {'current': {'type_id': 'GAPOWR', 'product_id': 13, 'issuer': 'ActualIssuer'},
+                     'saved_retry': None, 'current_preview_present': True, 'saved_preview_present': False,
+                     'current_preview': self.placement_preview_observation()}
+        local = dict(self.local_input_observation(), building_placement=placement)
+        self.assertEqual(observation._local_input_observation(local, 'preview'), 8)
+        # Historical captures can have only the retained-presence flag.
+        historical = deepcopy(local)
+        historical['building_placement'].pop('current_preview')
+        self.assertEqual(observation._local_input_observation(historical, 'historical'), 2)
+        self.gesture_receipts[0]['before']['local_input']['building_placement'] = placement
+        self.input_frames[1]['local_input']['building_placement'] = deepcopy(placement)
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        self.assertEqual(transcript['receipts'][0]['before']['local_input']['building_placement'], placement)
+        self.assertEqual(report['capture']['observations']['frames'][1]['input']['local_input']
+                         ['building_placement'], placement)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        count = observation._gesture_observations(transcript, self.profile)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count - 1), self.assertRaises(ValidationError):
+            observation._gesture_observations(transcript, self.profile)
+
+    def test_building_placement_current_preview_accepts_native_widths_and_empty_cells(self):
+        preview = self.placement_preview_observation()
+        preview['origin'] = [0, 65535]
+        preview['foundation'] = [65535, 0]
+        preview['cells'][0].update(coord=[65535, 0], level=-128, slope=255)
+        preview['cells'][1].update(level=127)
+        self.assertEqual(observation._placement_preview_observation(preview, 'widths'), 6)
+        # A preview with no installed terrain can retain an empty cell list.
+        preview.update(cells=[], wall_autofill_cells=[])
+        for reason in (None, 'Not ready for placement', 'Not a building', 'Blocked terrain',
+                       'Overlaps structure', 'Outside build radius'):
+            with self.subTest(reason=reason):
+                preview['reason'] = reason
+                self.assertEqual(observation._placement_preview_observation(preview, 'empty'), 1)
+
+    def test_building_placement_current_preview_rejects_malformed_fields_and_presence(self):
+        local = dict(self.local_input_observation(), building_placement={
+            'current': {'type_id': 'GAPOWR', 'product_id': 13, 'issuer': 'ActualIssuer'},
+            'saved_retry': None, 'current_preview_present': True, 'saved_preview_present': False,
+            'current_preview': self.placement_preview_observation()})
+        mutations = [lambda p: p.update(extra=True), lambda p: p.update(reason='BlockedTerrain'),
+                     lambda p: p.update(reason=False), lambda p: p.update(reason=[]),
+                     lambda p: p.update(cells=None), lambda p: p.update(cells={}),
+                     lambda p: p.update(wall_autofill_cells=None),
+                     lambda p: p.update(wall_autofill_cells=[[1]]),
+                     lambda p: p.update(wall_autofill_cells=[[1, 65536]]),
+                     lambda p: p['cells'].__setitem__(0, None),
+                     lambda p: p['cells'][0].update(extra=True),
+                     lambda p: p['cells'][0].update(valid=1)]
+        for key in self.placement_preview_observation():
+            mutations.append(lambda p, key=key: p.pop(key))
+        for key in ('origin', 'foundation'):
+            for value in (None, [1], [1, 2, 3], [-1, 0], [0, 65536], [True, 0], [1.0, 0]):
+                mutations.append(lambda p, key=key, value=value: p.update({key: value}))
+        for key in ('valid', 'in_build_area', 'foundation_visible'):
+            mutations.append(lambda p, key=key: p.update({key: 1}))
+        for key, values in (('coord', ([1], [-1, 0], [0, True])),
+                            ('level', (-129, 128, True, 5.0)), ('slope', (-1, 256, False, 1.0))):
+            mutations.append(lambda p, key=key: p['cells'][0].pop(key))
+            for value in values:
+                mutations.append(lambda p, key=key, value=value: p['cells'][0].update({key: value}))
+        for index, mutation in enumerate(mutations):
+            candidate = deepcopy(local)
+            mutation(candidate['building_placement']['current_preview'])
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                observation._local_input_observation(candidate, 'malformed-preview')
+        for value in (None, [], False):
+            candidate = deepcopy(local)
+            candidate['building_placement']['current_preview'] = value
+            with self.subTest(preview=value), self.assertRaises(ValidationError):
+                observation._local_input_observation(candidate, 'not-a-preview')
+        local['building_placement']['current_preview_present'] = False
+        with self.assertRaisesRegex(ValidationError, 'presence flag'):
+            observation._local_input_observation(local, 'inconsistent-presence')
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', 5), self.assertRaisesRegex(
+                ValidationError, 'sample budget'):
+            observation._placement_preview_observation(self.placement_preview_observation(), 'bounded')
+
     def test_building_placement_projection_rejects_malformed_references_and_flags(self):
         local = dict(self.local_input_observation(), building_placement={
             'current': {'type_id': 'GAPILL', 'product_id': 13, 'issuer': 'ActualIssuer'},

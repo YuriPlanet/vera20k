@@ -16,7 +16,7 @@ use crate::sim::runtime::SimResources;
 /// Frozen inputs for rebuilding a saved world's resident resources. Caches,
 /// process identities, RNG streams and GPU objects are deliberately absent.
 #[derive(Serialize, Deserialize)]
-pub(crate) struct SavedScenarioResources {
+pub struct SavedScenarioResources {
     processed_rules: ProcessedRulesLayers,
     fixed_art_hash: u64,
     scheduler_anim_roots: Vec<String>,
@@ -31,7 +31,7 @@ pub(crate) struct SavedScenarioResources {
 /// Serialization borrows the sole retained Rules authority. In particular it
 /// cannot clone or replay the move-only constructor chronology.
 #[derive(Serialize)]
-pub(crate) struct SavedScenarioResourcesRef<'a> {
+pub struct SavedScenarioResourcesRef<'a> {
     processed_rules: &'a ProcessedRulesLayers,
     fixed_art_hash: u64,
     scheduler_anim_roots: Vec<String>,
@@ -44,7 +44,7 @@ pub(crate) struct SavedScenarioResourcesRef<'a> {
 }
 
 impl<'a> SavedScenarioResourcesRef<'a> {
-    pub(crate) fn capture(
+    pub fn capture(
         resources: &'a SimResources,
         processed_rules: &'a ProcessedRulesLayers,
         fixed_art_hash: u64,
@@ -72,30 +72,30 @@ impl<'a> SavedScenarioResourcesRef<'a> {
 }
 
 impl SavedScenarioResources {
-    pub(crate) fn processed_rules(&self) -> &ProcessedRulesLayers {
+    pub fn processed_rules(&self) -> &ProcessedRulesLayers {
         &self.processed_rules
     }
 
-    pub(crate) fn fixed_art_hash(&self) -> u64 {
+    pub fn fixed_art_hash(&self) -> u64 {
         self.fixed_art_hash
     }
 
-    pub(crate) fn scheduler_anim_roots(&self) -> &[String] {
+    pub fn scheduler_anim_roots(&self) -> &[String] {
         &self.scheduler_anim_roots
     }
 
-    pub(crate) fn terrain(&self) -> &SavedTerrainTemplate {
+    pub fn terrain(&self) -> &SavedTerrainTemplate {
         &self.terrain
     }
 
-    pub(crate) fn map(&self) -> &SavedMapMetadata {
+    pub fn map(&self) -> &SavedMapMetadata {
         &self.map
     }
 
     /// Consume the payload into the existing runtime and process owners.
     /// Rules have been projected; the map owner admits its saved values here.
     /// Resident assets and live-cell selector admission follow dynamic restore.
-    pub(crate) fn into_restored_parts(
+    pub fn into_restored_parts(
         self,
         rules: RuleSet,
         overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry,
@@ -122,7 +122,7 @@ impl SavedScenarioResources {
 /// Coordinates, live terrain/object state, theater and lighting timers remain
 /// in Simulation.
 #[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct SavedMapMetadata {
+pub struct SavedMapMetadata {
     map_hash: u64,
     #[serde(with = "source_identity")]
     source: crate::map::source::LoadedMapSource,
@@ -145,7 +145,7 @@ impl SavedMapMetadata {
         clippy::too_many_arguments,
         reason = "capture existing map, presentation, clock and Theme owners at one save boundary"
     )]
-    pub(crate) fn capture(
+    pub fn capture(
         map_hash: u64,
         source: &crate::map::source::LoadedMapSource,
         basic: &crate::map::basic::BasicSection,
@@ -171,35 +171,35 @@ impl SavedMapMetadata {
         }
     }
 
-    pub(crate) fn map_hash(&self) -> u64 {
+    pub fn map_hash(&self) -> u64 {
         self.map_hash
     }
-    pub(crate) fn source(&self) -> &crate::map::source::LoadedMapSource {
+    pub fn source(&self) -> &crate::map::source::LoadedMapSource {
         &self.source
     }
-    pub(crate) fn basic(&self) -> &crate::map::basic::BasicSection {
+    pub fn basic(&self) -> &crate::map::basic::BasicSection {
         &self.basic
     }
-    pub(crate) fn terrain_objects(&self) -> &[crate::map::overlay::TerrainObject] {
+    pub fn terrain_objects(&self) -> &[crate::map::overlay::TerrainObject] {
         &self.terrain_objects
     }
-    pub(crate) fn house_roster(&self) -> &crate::map::houses::HouseRoster {
+    pub fn house_roster(&self) -> &crate::map::houses::HouseRoster {
         &self.house_roster
     }
-    pub(crate) fn house_colors(&self) -> &crate::map::houses::HouseColorMap {
+    pub fn house_colors(&self) -> &crate::map::houses::HouseColorMap {
         &self.house_colors
     }
-    pub(crate) fn lighting(&self) -> &crate::map::lighting::LightingConfig {
+    pub fn lighting(&self) -> &crate::map::lighting::LightingConfig {
         &self.lighting
     }
 
-    pub(crate) fn elapsed_buckets(&self) -> u32 {
+    pub fn elapsed_buckets(&self) -> u32 {
         self.elapsed_buckets
     }
-    pub(crate) fn local_player_name(&self) -> Option<&str> {
+    pub fn local_player_name(&self) -> Option<&str> {
         self.local_player_name.as_deref()
     }
-    pub(crate) fn theme_slots(&self) -> [i32; 2] {
+    pub fn theme_slots(&self) -> [i32; 2] {
         self.theme_slots
     }
 }

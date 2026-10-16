@@ -284,12 +284,11 @@ pub fn decode_bag_audio(entry: &AudioBagEntry, data: &[u8]) -> Option<BagAudio> 
     })
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
+/// Index fixtures, shared with client tests through `test-support`.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
     /// Build a minimal valid idx with the given entries.
-    pub(crate) fn build_idx(entries: &[(&str, u32, u32, u32, u32)]) -> Vec<u8> {
+    pub fn build_idx(entries: &[(&str, u32, u32, u32, u32)]) -> Vec<u8> {
         let mut idx = Vec::new();
         // Header: magic(0) + version(1) + count
         idx.extend_from_slice(&0u32.to_le_bytes()); // magic
@@ -308,6 +307,12 @@ pub(crate) mod tests {
         }
         idx
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::build_idx;
+    use super::*;
 
     #[test]
     fn test_parse_valid_idx() {

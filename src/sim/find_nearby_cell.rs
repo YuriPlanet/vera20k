@@ -171,7 +171,7 @@ pub struct NearbyQuery<'a> {
 #[derive(Debug, Clone, Copy)]
 struct Candidate {
     cell: (i32, i32),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     direct: bool,
 }
 
@@ -313,7 +313,7 @@ fn nearest_to_target(
 /// early-out there, while selection still re-runs the projection on every stored
 /// candidate to split the pools. That is why bridge-aware collection stores no
 /// projection result below.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn collect_candidates(
     seed: (i32, i32),
     q: &NearbyQuery<'_>,
@@ -369,7 +369,7 @@ where
             direct_found |= q.passability.bridge_aware_zone || direct;
             out.push(Candidate {
                 cell: (cx, cy),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 direct,
             });
             // The candidate cap is checked after every accept, mid-ring — the

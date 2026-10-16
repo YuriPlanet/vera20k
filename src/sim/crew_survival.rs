@@ -169,7 +169,7 @@ impl HasBeenCaptured {
     }
 
     /// Install a fixture's byte.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, set: bool) {
         self.set = set;
     }

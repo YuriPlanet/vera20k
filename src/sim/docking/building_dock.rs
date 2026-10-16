@@ -1001,7 +1001,7 @@ impl PendingEntry {
 }
 
 /// A fixture's pending entry.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_pending_entry(sim: &mut Simulation, id: u64, depot: Option<u64>) {
     if let Some(unit) = sim.substrate.entities.get_mut(id) {
         unit.set_pending_entry(depot);

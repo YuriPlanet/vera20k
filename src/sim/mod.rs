@@ -25,12 +25,12 @@ pub(crate) mod ai_base_building;
 pub(crate) mod ai_base_defense;
 pub(crate) mod ai_base_site;
 pub mod anim_class;
-#[cfg(test)]
-pub(crate) mod arena_fixture;
+#[cfg(any(test, feature = "test-support"))]
+pub mod arena_fixture;
 pub(crate) mod build_site;
-pub(crate) mod building_art;
+pub mod building_art;
 pub(crate) mod building_entry;
-pub(crate) mod building_construction;
+pub mod building_construction;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
@@ -39,8 +39,8 @@ pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;
 pub mod components;
-#[cfg(test)]
-pub(crate) mod health_ratio_fixture;
+#[cfg(any(test, feature = "test-support"))]
+pub mod health_ratio_fixture;
 pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
 pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
 pub(crate) mod conversion_health;
@@ -56,16 +56,16 @@ pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8
 pub(crate) mod lifecycle_request;
 pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomotor 0x00710000)
 pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= building (Deactivate 0x0070FC90)
-pub(crate) mod light_sources;
+pub mod light_sources;
 pub mod multiplayer_checksum;
-pub(crate) mod native_identity;
+pub mod native_identity;
 pub(crate) mod parallel; // order-preserving work over scoped threads
-pub(crate) mod radiation_light;
+pub mod radiation_light;
 pub mod rng;
-pub(crate) mod scenario_bootstrap;
-pub(crate) mod scenario_post_map;
+pub mod scenario_bootstrap;
+pub mod scenario_post_map;
 pub mod scenario_session; // app->sim launch descriptor (per-match seed pipeline)
-pub(crate) mod score;
+pub mod score;
 pub mod sensor_lifecycle;
 pub mod spy_infiltration; // BuildingClass::Infiltrate (a spy's effects on the building it enters)
 pub(crate) mod stage;
@@ -146,7 +146,7 @@ pub mod radiation;
 pub mod parity_digest;
 pub mod passenger;
 pub(crate) mod slave_deposit;
-pub(crate) mod slave_manager;
+pub mod slave_manager;
 pub mod spawn_manager;
 pub mod transport_unload;
 
@@ -158,7 +158,7 @@ pub mod rocking;
 pub mod terrain_object;
 pub mod terrain_spawn;
 pub mod tiberium;
-pub(crate) mod tiberium_germinate;
+pub mod tiberium_germinate;
 
 // --- Per-match settings, per-player state ---
 pub mod game_options;

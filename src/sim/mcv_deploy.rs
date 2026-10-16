@@ -46,7 +46,7 @@ impl DeployContinuation {
     }
 
     /// Install a fixture's latch.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, pending: bool) {
         self.pending = pending;
     }
@@ -240,6 +240,7 @@ pub(crate) fn try_to_deploy(
             yard,
             origin_of(cell),
             None,
+            None,
         ) {
             sim.foot_mark_put(id, Some(rules), registry, effects);
             return true;
@@ -256,6 +257,7 @@ pub(crate) fn try_to_deploy(
                     registry,
                     yard,
                     origin_of(site),
+                    None,
                     None,
                 )
             })

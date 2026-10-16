@@ -135,7 +135,7 @@ pub struct SparkCollisionWorld<'a> {
 }
 
 /// Selector calls in order: `(role, world x, world y)`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 type SparkSelectionTranscript = Vec<(SparkCellSelectionRole, i32, i32)>;
 
 impl<'a> SparkCollisionWorld<'a> {
@@ -156,7 +156,7 @@ impl<'a> SparkCollisionWorld<'a> {
         self.query_with_selector(motion, |role, x, y| select_cell(terrain, role, x, y))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn query_with_transcript(
         &self,
         motion: SparkMotionStep,

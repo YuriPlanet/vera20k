@@ -148,7 +148,7 @@ impl ParasiteState {
         self.grapple.anim
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn suppression(&self) -> &CdTimer {
         &self.suppression
     }
@@ -169,7 +169,7 @@ impl ParasiteState {
 /// eater attached to it as a victim, the launch lock, its paralysis and the
 /// reselect memo.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct FootParasite {
+pub struct FootParasite {
     /// Foot+69C `ParasiteImUsing`: this owner's ParasiteClass, allocated by
     /// `TechnoClass::Init_Managers @ 0x006F4145` for a weapon-0 Parasite
     /// warhead (attack dog, Terror Drone). Hashed and persisted (v193).
@@ -255,13 +255,13 @@ impl FootParasite {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl FootParasite {
     pub(crate) fn set_eater_for_test(&mut self, eater: Option<u64>) {
         self.eater = eater;
     }
 
-    pub(crate) fn set_paralysis_for_test(&mut self, paralysis: CdTimer) {
+    pub fn set_paralysis_for_test(&mut self, paralysis: CdTimer) {
         self.paralysis = paralysis;
     }
 }

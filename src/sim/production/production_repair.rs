@@ -75,13 +75,13 @@ use crate::rules::foundation::foundation_dimensions;
 /// `TechnoClass::DrawExtras` draws over a repairing building.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct RepairByte {
+pub struct RepairByte {
     on: bool,
 }
 
 impl RepairByte {
     /// The building is repairing.
-    pub(crate) const fn is_on(self) -> bool {
+    pub const fn is_on(self) -> bool {
         self.on
     }
 
@@ -91,7 +91,7 @@ impl RepairByte {
     }
 
     /// Install a fixture's byte.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, on: bool) {
         self.on = on;
     }
@@ -162,19 +162,19 @@ impl AiSellRepair {
     }
 
     /// Install a fixture's `+0x3D1`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_was_attacked_by_enemy_for_test(&mut self, value: bool) {
         self.was_attacked_by_enemy = value;
     }
 
     /// Install a fixture's `+0x6DC`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ai_sellable_for_test(&mut self, value: bool) {
         self.ai_sellable = value;
     }
 
     /// Install a fixture's `+0x6CB`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ai_repairable_for_test(&mut self, value: bool) {
         self.ai_repairable = value;
     }
@@ -298,7 +298,7 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
 /// `Repairable=` type (TechnoType `+0xCCC`) has it below Strength
 /// (`0x00701140`). Every building of a computer house asks each frame, so
 /// the undeploy test's type lookup runs last.
-pub(crate) fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };

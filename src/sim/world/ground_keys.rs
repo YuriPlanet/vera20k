@@ -17,7 +17,7 @@ use crate::util::lookup_hash::LookupMap;
 
 /// What a Ground member's last read left valid until the member is forgotten.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum KeptSortKey {
+pub enum KeptSortKey {
     /// Nothing: read the member again at its next comparison.
     Unknown,
     /// The member's key.
@@ -29,7 +29,7 @@ pub(crate) enum KeptSortKey {
 
 /// GetYSort for Ground comparisons. Reads are pure. Production scans read
 /// through `display_registry`'s view, which forgets what changed first.
-pub(crate) trait GroundSortKeys {
+pub trait GroundSortKeys {
     /// `id`'s key read live, and what of it may be kept.
     fn read(&self, id: u64) -> (i32, KeptSortKey);
     /// The term an [`KeptSortKey::Attached`] member adds for `owner`, read live.
@@ -38,7 +38,7 @@ pub(crate) trait GroundSortKeys {
 
 /// A test's plain key function keeps nothing. Members an earlier scan kept
 /// are still compared by their kept reads.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl<F: Fn(u64) -> i32> GroundSortKeys for F {
     fn read(&self, id: u64) -> (i32, KeptSortKey) {
         (self(id), KeptSortKey::Unknown)
@@ -250,7 +250,7 @@ impl GroundKeys {
     }
 
     /// Whether the slots cover exactly `members`, each through its own slot.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn aligned_with(&self, members: &[u64]) -> bool {
         self.slots.len() == members.len()
             && self.key_at.len() == members.len()

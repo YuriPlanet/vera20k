@@ -28,7 +28,7 @@ pub fn credits_for_owner(sim: &Simulation, owner: &str) -> i32 {
 
 /// `owner`'s house, created as a human house holding [`STARTING_CREDITS`]
 /// when the test never made one.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) fn house_for_test<'a>(
     sim: &'a mut Simulation,
     owner: &str,
@@ -172,8 +172,8 @@ pub fn publish_production_changes(sim: &mut Simulation, rules: &RuleSet) {
 /// Exercise the next frame's prefix publication and its event tail in focused owner tests,
 /// without running unrelated world AI. The ordinary production runtime uses
 /// publish_production_changes plus the world's existing scheduled tail.
-#[cfg(test)]
-pub(crate) fn dispatch_production_changes_for_tests(
+#[cfg(any(test, feature = "test-support"))]
+pub fn dispatch_production_changes_for_tests(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,

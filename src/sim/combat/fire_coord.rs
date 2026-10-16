@@ -186,7 +186,7 @@ impl From<&AttackerSnapshot> for FireSource {
 ///
 /// Drive/Ship use the same physical-model and locomotor matrix inputs as
 /// GetFLH, including the translation of a rocking hull.
-pub(crate) fn turret_pivot_coordinate(
+pub fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
     entity: &GameEntity,
@@ -518,7 +518,7 @@ fn fire_coordinate_base<'r>(
 }
 
 /// The art section GetFLH reads a type's FLH from: its `Image=`, else its ID.
-pub(crate) fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntry> {
+pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntry> {
     rules
         .art()
         .get(&obj.image)
@@ -578,7 +578,7 @@ fn building_fire_facings(
 /// (`0x0044B162`, `0x0044B19B`, `0x0044B1F2`), its voxel-turret retry
 /// (`0x0044B056`), GetFireError's FACING test (`0x00447FF8`) and the fire
 /// facing aim through it. `None` for a target no longer stored.
-pub(crate) fn building_direction_to(
+pub fn building_direction_to(
     world: &Simulation,
     rules: &RuleSet,
     building: &GameEntity,
@@ -761,7 +761,7 @@ pub(crate) fn muzzle_anim_name(
 /// gamemd-derived, `0x006FF3D9..0x006FF427`: `-((fire.Y - coords.Y) / 4)` with
 /// the signed divide rounding toward zero, clamped to at most zero; an occupied
 /// building then overwrites it with `-200`.
-pub(crate) fn building_muzzle_z_adjust(offset_y: i32, occupied: bool) -> i32 {
+pub fn building_muzzle_z_adjust(offset_y: i32, occupied: bool) -> i32 {
     if occupied {
         return OCCUPIED_MUZZLE_Z_ADJUST;
     }

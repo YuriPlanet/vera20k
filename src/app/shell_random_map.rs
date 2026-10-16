@@ -1227,10 +1227,11 @@ impl App {
         let mut generate_requested = false;
         let mut accept_requested = false;
         let mut open_browser: Option<SavedSeedMode> = None;
-        let mut main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_mut(),
-            &mut state.frontend.frontend_main_rng,
-        );
+        let mut main =
+            crate::ui::skirmish_shell::MainRngRanged(crate::app::state::process_main_draws(
+                state.match_state.sim_runtime.as_mut(),
+                &mut state.frontend.frontend_main_rng,
+            ));
         match released.expect("checked equal to pressed control") {
             Control::Randomize0x621 => {
                 modal.randomize_options(&settings, &mut main, &description);

@@ -2456,7 +2456,7 @@ mod tests {
         let retail_dir = std::env::var_os("RA2_DIR")
             .map(PathBuf::from)
             .or_else(|| {
-                crate::util::config::GameConfig::load()
+                crate::test_fixture::game_config()
                     .ok()
                     .map(|config| config.paths.ra2_dir)
             })

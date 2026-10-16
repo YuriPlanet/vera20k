@@ -9,7 +9,7 @@ use crate::map::entities::EntityCategory;
 /// Entity-owned Mission state whose layout depends on the concrete Techno
 /// family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum MissionLeafState {
+pub enum MissionLeafState {
     Unit(UnitMissionLeaf),
     Infantry(InfantryMissionLeaf),
     Aircraft(AircraftMissionLeaf),
@@ -18,7 +18,7 @@ pub(crate) enum MissionLeafState {
 
 /// Unit readiness bytes and its inherited Foot firing byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct UnitMissionLeaf {
+pub struct UnitMissionLeaf {
     /// Inherited Foot+6B3, constructed clear at4D3438. Foot4D82B0
     /// admits one base idle entry until the live FootAI4DA54E reset.
     #[serde(default)]
@@ -36,7 +36,7 @@ pub(crate) struct UnitMissionLeaf {
 
 /// Infantry readiness inputs owned by the firing and Doing authorities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct InfantryMissionLeaf {
+pub struct InfantryMissionLeaf {
     #[serde(default)]
     idle_entry_latch: u8,
     firing_sequence_latch: u8,
@@ -60,7 +60,7 @@ const fn initial_infantry_water_state() -> i32 {
 
 /// Aircraft policy and readiness bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AircraftMissionLeaf {
+pub struct AircraftMissionLeaf {
     #[serde(default)]
     idle_entry_latch: u8,
     /// The same inherited Foot+68D, retained by the raw Aircraft6D8 load.
@@ -83,7 +83,7 @@ const fn initial_paradrop_passes() -> i8 {
 
 /// Building reusable mission-ready latch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BuildingMissionLeaf {
+pub struct BuildingMissionLeaf {
     ready_latch: u8,
     /// Independent Building+620 StageClass (ctor43B7F5; Repair44BBF2).
     repair_progress: crate::sim::stage::StageClass,
@@ -103,7 +103,7 @@ const fn no_firing_super_weapon() -> i32 {
 /// A Doing value rejected by the verified Infantry writer domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("Infantry Doing value is outside the verified writer domain: {0}")]
-pub(crate) struct InvalidInfantryDoing(pub(crate) i32);
+pub struct InvalidInfantryDoing(pub(crate) i32);
 
 impl MissionLeafState {
     /// One inherited byte per Foot; Building does not inherit Foot6B3.
@@ -128,7 +128,7 @@ impl MissionLeafState {
     }
 
     /// Frame-zero constructor used by prepared test fixtures.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn for_entity_category(category: EntityCategory) -> Self {
         Self::constructed(category, 0)
     }
@@ -169,7 +169,7 @@ impl MissionLeafState {
         self.expect_building_mut().repair_progress.set_value(0);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install_building_repair_progress_fixture(
         &mut self,
         stage: crate::sim::stage::StageClass,
@@ -178,7 +178,7 @@ impl MissionLeafState {
     }
 
     /// Borrow the Unit inputs without permitting mutation.
-    pub(crate) const fn as_unit(&self) -> Option<&UnitMissionLeaf> {
+    pub const fn as_unit(&self) -> Option<&UnitMissionLeaf> {
         match self {
             Self::Unit(leaf) => Some(leaf),
             _ => None,
@@ -186,7 +186,7 @@ impl MissionLeafState {
     }
 
     /// Borrow the Infantry inputs without permitting mutation.
-    pub(crate) const fn as_infantry(&self) -> Option<&InfantryMissionLeaf> {
+    pub const fn as_infantry(&self) -> Option<&InfantryMissionLeaf> {
         match self {
             Self::Infantry(leaf) => Some(leaf),
             _ => None,
@@ -221,12 +221,12 @@ impl MissionLeafState {
         self.expect_unit_mut().deploy_reverse_active = raw;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_unit_tracker_byte_18(&mut self, raw: u8) {
         self.expect_unit_mut().tracker_byte_18 = raw;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_unit_tracker_byte_19(&mut self, raw: u8) {
         self.expect_unit_mut().tracker_byte_19 = raw;
     }
@@ -234,7 +234,7 @@ impl MissionLeafState {
     /// The one inherited Foot+68D view used by Foot handlers. Infantry's
     /// concrete readiness view reads that same variant field. Buildings do
     /// not inherit this byte.
-    pub(crate) const fn foot_firing_sequence_latch(&self) -> u8 {
+    pub const fn foot_firing_sequence_latch(&self) -> u8 {
         match self {
             Self::Unit(leaf) => leaf.firing_sequence_latch,
             Self::Infantry(leaf) => leaf.firing_sequence_latch,
@@ -258,10 +258,7 @@ impl MissionLeafState {
     }
 
     /// Write only values accepted by the verified 42-entry Doing table.
-    pub(crate) fn set_infantry_doing_verified(
-        &mut self,
-        doing: i32,
-    ) -> Result<(), InvalidInfantryDoing> {
+    pub fn set_infantry_doing_verified(&mut self, doing: i32) -> Result<(), InvalidInfantryDoing> {
         let leaf = self.expect_infantry_mut();
         if doing != -1 && !(0..=41).contains(&doing) {
             return Err(InvalidInfantryDoing(doing));
@@ -282,7 +279,7 @@ impl MissionLeafState {
         self.expect_infantry_mut().water_state = initial_infantry_water_state();
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install_infantry_water_state_fixture(&mut self, raw: i32) {
         self.expect_infantry_mut().water_state = raw;
     }
@@ -313,7 +310,7 @@ impl MissionLeafState {
         self.expect_aircraft_mut().paradrop_passes = initial_paradrop_passes();
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_paradrop_passes_for_test(&mut self, passes: i8) {
         self.expect_aircraft_mut().paradrop_passes = passes;
     }
@@ -377,7 +374,7 @@ impl MissionLeafState {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn unit_raw_for_test(
         deploy_begin_active: u8,
         deploy_reverse_active: u8,
@@ -395,7 +392,7 @@ impl MissionLeafState {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn infantry_raw_for_test(firing_sequence_latch: u8, doing: i32) -> Self {
         Self::Infantry(InfantryMissionLeaf {
             idle_entry_latch: 0,
@@ -406,7 +403,7 @@ impl MissionLeafState {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn aircraft_raw_for_test(
         action_latch: u8,
         transition_ready_latch: u8,
@@ -420,7 +417,7 @@ impl MissionLeafState {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn building_raw_for_test(ready_latch: u8) -> Self {
         let mut leaf = Self::constructed(EntityCategory::Structure, 0);
         leaf.set_building_ready_latch(ready_latch);
@@ -441,15 +438,15 @@ impl UnitMissionLeaf {
         }
     }
 
-    pub(crate) const fn deployed(&self) -> u8 {
+    pub const fn deployed(&self) -> u8 {
         self.deployed
     }
 
-    pub(crate) const fn deploy_begin_active(&self) -> u8 {
+    pub const fn deploy_begin_active(&self) -> u8 {
         self.deploy_begin_active
     }
 
-    pub(crate) const fn deploy_reverse_active(&self) -> u8 {
+    pub const fn deploy_reverse_active(&self) -> u8 {
         self.deploy_reverse_active
     }
 
@@ -477,7 +474,7 @@ impl InfantryMissionLeaf {
         self.firing_sequence_latch
     }
 
-    pub(crate) const fn doing(&self) -> i32 {
+    pub const fn doing(&self) -> i32 {
         self.doing
     }
 

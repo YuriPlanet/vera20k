@@ -31,15 +31,15 @@ pub mod native_x87;
 pub(crate) mod native_quaternion;
 pub mod pixel_conversion;
 pub mod read_helpers;
-pub(crate) mod retail_pointer_sort;
-pub(crate) mod sha256;
+pub mod retail_pointer_sort;
+pub mod sha256;
 pub mod single_instance;
 pub mod version;
-pub(crate) mod rect;
+pub mod rect;
 // pub mod color;
 
-pub(crate) mod native_file_time;
+pub mod native_file_time;
 
 pub mod native_file_name;
 
-pub(crate) mod native_affine;
+pub mod native_affine;

@@ -104,8 +104,8 @@ impl CrashLatch {
     }
 
     /// Install a fixture's latch.
-    #[cfg(test)]
-    pub(crate) fn set_crashing_for_test(&mut self, crashing: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_crashing_for_test(&mut self, crashing: bool) {
         self.crashing = crashing;
     }
 }

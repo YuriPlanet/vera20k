@@ -91,7 +91,7 @@ impl PoweredCenter {
     }
 
     /// Install a fixture's share.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, counted: bool) {
         self.counted = counted;
     }
@@ -103,19 +103,19 @@ impl PoweredCenter {
 /// voxel draw read it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct Deactivation {
+pub struct Deactivation {
     offline: bool,
 }
 
 impl Deactivation {
     /// The object is offline.
-    pub(crate) const fn is_offline(self) -> bool {
+    pub const fn is_offline(self) -> bool {
         self.offline
     }
 
     /// Install a fixture's state.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, offline: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, offline: bool) {
         self.offline = offline;
     }
 }

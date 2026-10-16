@@ -12,10 +12,10 @@ use crate::map::houses::HouseRoster;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::crates::CratePlacement;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::ore_growth::NativeTiberiumRebuildStats;
 use crate::sim::world::Simulation;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::skirmish_launch::SkirmishLaunchSession;
 
 /// Immutable inputs for the one-shot post-map scenario command.
@@ -33,16 +33,16 @@ pub(crate) struct ScenarioPostMapInput<'a> {
 
 /// Presentation/logging facts returned after authoritative initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ScenarioPostMapOutput {
-    pub(crate) navigation_published: bool,
-    pub(crate) crates: Option<CratePlacement>,
+pub struct ScenarioPostMapOutput {
+    pub navigation_published: bool,
+    pub crates: Option<CratePlacement>,
     pub(crate) ore_twinkle: crate::sim::ore_twinkle::OreTwinkleReceipt,
-    pub(crate) opening_view_cell: Option<(u16, u16)>,
-    #[cfg(test)]
+    pub opening_view_cell: Option<(u16, u16)>,
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) skirmish_order: [Option<ScenarioPostMapStep>; 3],
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScenarioPostMapStep {
     StartupCrates,
@@ -64,12 +64,12 @@ impl Simulation {
         // placement below reads the newly published canonical grid.
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         let mut skirmish_order = [None; 3];
         let crates = if let Some(descriptor) = input.skirmish_session {
             let session = descriptor.session();
             let player_count = crate::sim::crates::human_player_count(self);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
             }
@@ -88,12 +88,12 @@ impl Simulation {
             // Startup OverlayClass::Mark completes synchronously before native
             // proceeds to AI credits; the placement refreshed the bridge
             // records and navigation from the now-final CellClass state.
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[1] = Some(ScenarioPostMapStep::AiOpeningCredits);
             }
             crate::sim::scenario_bootstrap::apply_skirmish_ai_opening_credits(self, input.rules);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[2] = Some(ScenarioPostMapStep::LaunchAlliances);
             }
@@ -172,7 +172,7 @@ impl Simulation {
             crates,
             ore_twinkle,
             opening_view_cell,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             skirmish_order,
         }
     }

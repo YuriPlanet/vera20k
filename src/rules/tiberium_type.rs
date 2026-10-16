@@ -84,7 +84,7 @@ impl TiberiumTypeRegistry {
         self.types.get(id.0 as usize)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn id_by_name(&self, name: &str) -> Option<TiberiumTypeId> {
         self.types
             .iter()

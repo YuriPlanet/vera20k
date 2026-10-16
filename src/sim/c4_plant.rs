@@ -168,7 +168,7 @@ impl C4Detonation {
     }
 
     /// Install a fixture's latch.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, pending: Option<PendingC4Detonation>) {
         self.pending = pending;
     }

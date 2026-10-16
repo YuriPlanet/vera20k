@@ -10,7 +10,7 @@ use crate::sim::world::Simulation;
 /// Native LandType defaults are not buildable; an arena intended to host
 /// ordinary buildings must supply the retail Clear `Buildable=yes` input.
 /// Merge the scene last so its deliberate overrides still take precedence.
-pub(crate) fn clear_ground_ini(source: &str) -> crate::rules::ini_parser::IniFile {
+pub fn clear_ground_ini(source: &str) -> crate::rules::ini_parser::IniFile {
     let mut ini = crate::rules::ini_parser::IniFile::from_str("[Clear]\nBuildable=yes\n");
     ini.merge(&crate::rules::ini_parser::IniFile::from_str(source));
     ini
@@ -56,7 +56,7 @@ pub(crate) fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Si
 /// The rival-house arena with flat Water cells and the production rules'
 /// land semantics. Ships enter through ordinary Unlimbo; no movement tuning
 /// or missing-terrain placement bypass is needed.
-pub(crate) fn rival_water_arena(rules: &RuleSet, seed: u64, size: u16) -> Simulation {
+pub fn rival_water_arena(rules: &RuleSet, seed: u64, size: u16) -> Simulation {
     use crate::rules::terrain_rules::LandType;
 
     let mut sim = rival_arena_with_size(rules, seed, size);
@@ -99,14 +99,14 @@ pub(crate) fn rival_water_arena(rules: &RuleSet, seed: u64, size: u16) -> Simula
 
 /// Install the arena on `sim`, with commands executing on the next tick, and
 /// return its path grid.
-pub(crate) fn flat_arena(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
+pub fn flat_arena(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
     sim.input_delay_ticks = 0;
     flat_ground(sim, rules)
 }
 
 /// Install the arena's ground, playfield and navigation on `sim` and return
 /// its path grid.
-pub(crate) fn flat_ground(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
+pub fn flat_ground(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
     flat_ground_with_size(sim, rules, 32)
 }
 
@@ -153,7 +153,7 @@ fn clear_ground(size: u16) -> crate::map::resolved_terrain::ResolvedTerrainGrid 
 /// for those cells, generous LocalSize bounds, and the path grid. Inputs the
 /// fixture already installed are kept, including a zone grid built before a
 /// later terrain change; rebuild zones after editing cells.
-pub(crate) fn supply_native_map(sim: &mut Simulation) {
+pub fn supply_native_map(sim: &mut Simulation) {
     if sim.resolved_terrain.is_none() {
         // A newly supplied map also owns its saved real CellClass values.
         // Keep already installed terrain and deliberate native priors intact.
@@ -188,3 +188,6 @@ pub(crate) fn supply_native_map(sim: &mut Simulation) {
     sim.playfield_size_height.get_or_insert(size.1);
     sim.install_fixture_path_grid(Some(&grid));
 }
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod mastermind;

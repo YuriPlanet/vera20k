@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ordinary GAPOWR Cell placement marker/full bounded foundation caller on physical PLACE.SHP, plus GAREFN prerequisite readers and native fixed-foundation centering/mark lifetime; original53-row plain Convert and opaque no-Z/A raster. No native whole scenario or ready-factory lifecycle execution.",
+  "assumptions": [
+    "Shared physical archive/lexical/PaletteReader/surface/raster owners. Original TEMPERAT load52BC49..52BCBB precedes original PALETTE Convert constructor/publication52BE61..52BFCE, matching native Init_Game order. No palette/shape pixels are reconstructed by Python.",
+    "Actual BuildingType45DD90 constructor, full45FE50 RULESMD/MPBattleMD/GoldSt reads, ART Foundation, land rules674000, static foundation45B1C0, getter45EC20 and full ToTile postpass465CC0 execute. LANGRULE is absent in the selected installation. Physical Rmpfx03.urb and its selected W/E neighbor files execute the original full lazy TMP loaders/getters. Full47D2B0/47CA80 executes twice per selected cell with actual native theater projection and Rules CliffBack reads; sparse selected type/zone storage and neighbor publications are supplied. Whole registry/map loading remains excluded.",
+    "Sparse authored GoldSt coordinates and supplied live levels/slopes/empty objects/visibility/proximity are component priors. Original578080 ground and586360 visibility execute; all-visible Dummy represents supplied revealed surrounding cells. Signed-128, pending and surface controls are boundaries, not natural stock producers.",
+    "Original47EC90/47C620/4AED70/490E50/437A10/4960A0 executes without behavior replacements.20600 uses plain palette translation and ignores both A and Z; output runs include retained Z. Foundation scene executes6D5030, actual matrix/projection/mouse queries and mark producer4A8BF0; its X-outer rectangular order is independent of the row-major physical occupied list.",
+    "Additive centering controls execute original GAREFN45DD90, layered Image5F92F9..5F9340 and Adjacent45FFAF..45FFC7, fixed ART Foundation461225..46125D, occupied-table binding46152C..461547, getters and ObjectGetFootprint5F5B90 on a supplied Building shell. Whole GAREFN45FE50/visual Bib loading is excluded; complete reader/visual-loader instructions retain the selected foundation/occupied-pointer/Adjacent fields after these blocks. All22 fixed selector values and sparse revealed level0 Cell shells are supplied numeric priors. Original4A94F0/4A8BF0/4A95A0 capture bounds, signed division and marker origins; move4A91B0 stops at4A943A after mark/center publication, before proximity/visibility. No event or ManualPlace execution is added."
+  ],
+  "substitutions": [
+    "Existing allocation/archive/TLS services; CRT atexit registration is a no-op service. Sparse map storage and initialized surface priors supplied. No placement/admission/projection/raster body is replaced."
+  ],
+  "entry_points": {
+    "cell": "0x0047EC90",
+    "admission": "0x0047C620",
+    "foundation": "0x006D5030",
+    "marker_startup": "0x004A885B",
+    "convert": "0x0048E740",
+    "shape": "0x004AED70",
+    "rowwalker": "0x00437A10",
+    "leaf": "0x004960A0",
+    "ground": "0x00578080",
+    "visibility": "0x00586360",
+    "foundation_bounds": "0x004A94F0",
+    "set_active": "0x004A8BF0",
+    "mark": "0x004A95A0",
+    "update_center_prefix": "0x004A91B0",
+    "update_center_stop": "0x004A943A"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --placement",
+  "payload_sha256": "2bc63bc3462cbd8bc363969e7b0fb252cebf4a3ac65a975f5d6719424c1b624d"
+}

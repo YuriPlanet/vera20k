@@ -57,7 +57,7 @@ impl GapDeposit {
 /// change of sample runs the operational edges.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct LastOperational {
+pub struct LastOperational {
     operational: bool,
 }
 
@@ -68,7 +68,7 @@ impl LastOperational {
     }
 
     /// Install a fixture's sample.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, operational: bool) {
         self.operational = operational;
     }
@@ -87,7 +87,7 @@ impl Simulation {
     /// Shared4555D0 inputs represented by Building and House owners. Native
     /// The warp's HasPower latch and Tesla charger list retain separate owners.
     /// EMP remains outside this adapter's represented inputs.
-    pub(crate) fn building_operational_state(&self, id: u64, rules: &RuleSet) -> Option<bool> {
+    pub fn building_operational_state(&self, id: u64, rules: &RuleSet) -> Option<bool> {
         let entity = self.substrate.entities.get(id)?;
         if entity.category() != EntityCategory::Structure {
             return None;

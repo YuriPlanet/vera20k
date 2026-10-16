@@ -130,7 +130,7 @@ impl TerrainAnimationState {
         false
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn advance_for_test(&mut self, binary_frame: u32, rng: &mut SimRng) {
         self.tick(binary_frame, true, true, rng);
     }
@@ -242,7 +242,7 @@ impl<'a> TerrainSpawnContext<'a> {
 
 /// Test adapter over the same single-object animation and spread owners.
 /// Production dispatch follows retained Logic order, not this cell-key order.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn tick_terrain_animations_stateful(
     spawners: &mut BTreeMap<(u16, u16), TerrainAnimationState>,
     mut ctx: TerrainSpawnContext<'_>,
@@ -651,7 +651,7 @@ pub fn seed_terrain_spawner_animation(
 ///
 /// Test convenience. The production load path calls the two halves separately
 /// so construction keeps its native position ahead of `[Units]`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn seed_terrain_animations(
     sim: &mut crate::sim::world::Simulation,
     terrain_objects: &[crate::map::overlay::TerrainObject],

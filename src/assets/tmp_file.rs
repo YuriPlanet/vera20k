@@ -61,7 +61,7 @@ impl TmpFile {
     /// Native 0x547150 returns header height + stored Y - extra Y when bit 0
     /// is set; sparse slots use header height. Consumers apply subtile modulo
     /// to this type-owned table. No canvas union or extra bottom participates.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn draw_heights_from_bytes(data: &[u8]) -> Result<Vec<i32>, AssetError> {
         Self::pristine_header_fields_from_bytes(data)
             .map(|rows| rows.into_iter().map(|row| row.0).collect())

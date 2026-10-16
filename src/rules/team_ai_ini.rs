@@ -216,7 +216,7 @@ impl TeamAiIniRegistry {
     /// Retail provenance: `Load_Game_Rules @ 0x0052CD70` opens `AIMD.INI` as
     /// its standalone root, never merged with the Rules layers; the scenario
     /// passes of [`Self::from_sources`] then extend each registry.
-    pub(crate) fn load_retail(
+    pub fn load_retail(
         assets: &AssetManager,
         scenario: &IniFile,
         game_mode_nonzero: bool,

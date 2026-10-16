@@ -16,7 +16,7 @@ use crate::sim::state_hasher::{self, StateHasher};
 
 // Rust-only attribution of the retired global initializer's empty Super map.
 // The production registry remains untouched; no control exists in release.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 std::thread_local! {
     static LEGACY_EMPTY_SUPER_OWNER_HASH_CONTROL: std::cell::Cell<Option<crate::sim::intern::InternedId>> = const {
         std::cell::Cell::new(None)
@@ -506,7 +506,7 @@ impl Simulation {
     /// The fixture now installs its map through the existing map owner. This
     /// control changes only the Hash feed, retaining the correctly captured
     /// 64x64 zero-flag authority and the actual gameplay/persistence state.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn state_hash_with_legacy_absent_real_cell_authority_for_test(&self) -> u64 {
         let terrain = self.resolved_terrain.as_ref().expect("fixture map");
         assert_eq!((terrain.width(), terrain.height()), (64, 64));
@@ -532,7 +532,7 @@ impl Simulation {
     /// Attribute the owner-only feed from the former global Super initializer.
     /// Its refresh inserted an empty map even when no Building provided a Super.
     /// Only an empty actual registry is admitted, so no instance/order is hidden.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn state_hash_with_legacy_empty_super_owner_for_test(
         &self,
         owner: crate::sim::intern::InternedId,
@@ -552,7 +552,7 @@ impl Simulation {
 
     /// Read-only Rust diagnostic projections through the existing hash owners.
     /// These are attribution receipts, never gameplay/native golden inputs.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn hash_owner_diagnostics_for_test(&self) -> [(&'static str, u64); 13] {
         fn digest(fold: impl FnOnce(&mut StateHasher)) -> u64 {
             let mut hasher = StateHasher::new();
@@ -738,13 +738,13 @@ impl Simulation {
         // Historical pre-v28/pre-v29 provenance probes must omit both this
         // schema tag and the value authority introduced at snapshot v90.
         b"real-cell-bridge-flags-v2".hash(hasher);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if LEGACY_ABSENT_REAL_CELL_HASH_CONTROL.with(std::cell::Cell::get) {
             crate::map::resolved_terrain::RealCellBridgeFlags0x1180::default().hash(hasher);
         } else {
             self.real_cell_bridge_flags_0x1180.hash(hasher);
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "test-support")))]
         self.real_cell_bridge_flags_0x1180.hash(hasher);
         b"dynamic-terrain-cells-v1".hash(hasher);
         self.dynamic_terrain_cells.hash(hasher);
@@ -1068,7 +1068,7 @@ impl Simulation {
 
     /// The owner's stored buildings and other objects whose destruction is
     /// not yet recorded (test observation of the retired per-house counts).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn owned_object_counts(&self, owner: crate::sim::intern::InternedId) -> (u32, u32) {
         self.substrate
             .entities
@@ -1506,7 +1506,7 @@ impl Simulation {
 
     /// Hash per-house superweapon state and active lightning storm.
     fn hash_super_weapons(&self, hasher: &mut impl Hasher) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(owner) = LEGACY_EMPTY_SUPER_OWNER_HASH_CONTROL.with(std::cell::Cell::get) {
             // HEAD's global tick -> refresh_super_weapons_for_owner inserted
             // this owner even with no granted types, before this unchanged fold.

@@ -159,13 +159,13 @@ pub(super) fn apply(
                     })
                 });
                 if let Some(request) = request {
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "test-support"))]
                     let before = words(world, id);
                     apply_rocker_impulse(
                         &mut world.substrate.entities.get_mut(id).unwrap().rocking,
                         request,
                     );
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "test-support"))]
                     CALLS.with_borrow_mut(|capture| {
                         let Some(calls) = capture.as_mut() else {
                             return;
@@ -191,7 +191,7 @@ pub(super) fn apply(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug)]
 struct ObservedCall {
     id: u64,
@@ -201,13 +201,13 @@ struct ObservedCall {
     after: [u32; 4],
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     //Comparison capture only; no observer state in Simulation/save/hash.
     static CALLS: std::cell::RefCell<Option<Vec<ObservedCall>>> = const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn words(world: &Simulation, id: u64) -> [u32; 4] {
     world
         .substrate

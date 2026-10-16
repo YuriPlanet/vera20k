@@ -23,7 +23,6 @@ pub mod batch;
 pub mod bink_movie;
 pub mod bit_font;
 pub mod bridge_atlas;
-pub mod bridge_railing_atlas;
 pub mod building_light;
 pub mod building_zshape;
 pub(crate) mod chrono_screen;

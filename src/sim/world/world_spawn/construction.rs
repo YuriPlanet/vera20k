@@ -368,7 +368,7 @@ impl CrushableFacts {
     }
 
     /// Install a fixture's `Crushable=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_crushable_for_test(&mut self, value: bool) {
         self.crushable = value;
     }
@@ -449,25 +449,25 @@ impl MoverFacts {
     }
 
     /// Install a fixture's `OmniCrusher=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_omni_crusher_for_test(&mut self, value: bool) {
         self.omni_crusher = value;
     }
 
     /// Install a fixture's `Crusher=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_regular_crusher_for_test(&mut self, value: bool) {
         self.regular_crusher = value;
     }
 
     /// Install a fixture's `Accelerates=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_drive_accelerates_for_test(&mut self, value: bool) {
         self.drive_accelerates = value;
     }
 
     /// Install a fixture's `OmniCrushResistant=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_omni_crush_resistant_for_test(&mut self, value: bool) {
         self.omni_crush_resistant = value;
     }
@@ -484,7 +484,7 @@ fn default_true() -> bool {
 /// reader owns the native reads (the matching `ObjectType` fields). Only the
 /// construction stamp writes them.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TypeFacts {
+pub struct TypeFacts {
     /// Aircraft `Spawned=yes` and `MissileSpawn=no`, read by Techno6FCE05
     /// before its mid-attack retarget rejection. Independent of SpawnOwner.
     #[serde(default)]
@@ -566,7 +566,7 @@ impl TypeFacts {
     }
 
     /// `Foundation=`, as its rules string.
-    pub(crate) fn foundation(&self) -> &str {
+    pub fn foundation(&self) -> &str {
         &self.foundation
     }
 
@@ -612,13 +612,13 @@ impl TypeFacts {
     }
 
     /// Install a fixture's `foundation`.
-    #[cfg(test)]
-    pub(crate) fn set_foundation_for_test(&mut self, value: String) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_foundation_for_test(&mut self, value: String) {
         self.foundation = value;
     }
 
     /// Install a fixture's `building_hidden_occupancy`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_building_hidden_occupancy_for_test(
         &mut self,
         value: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
@@ -627,37 +627,37 @@ impl TypeFacts {
     }
 
     /// Install a fixture's `base_reservation_spacing`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_reservation_spacing_for_test(&mut self, value: Option<i32>) {
         self.base_reservation_spacing = value;
     }
 
     /// Install a fixture's `determines_waypoint_edge`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_determines_waypoint_edge_for_test(&mut self, value: bool) {
         self.determines_waypoint_edge = value;
     }
 
     /// Install a fixture's `build_const_eligible`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_build_const_eligible_for_test(&mut self, value: bool) {
         self.build_const_eligible = value;
     }
 
     /// Install a fixture's `base_plan_type_index`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_plan_type_index_for_test(&mut self, value: i32) {
         self.base_plan_type_index = value;
     }
 
     /// Install a fixture's `base_plan_is_defense`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_plan_is_defense_for_test(&mut self, value: bool) {
         self.base_plan_is_defense = value;
     }
 
     /// Install a fixture's `base_plan_has_undeploy_target`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_plan_has_undeploy_target_for_test(&mut self, value: bool) {
         self.base_plan_has_undeploy_target = value;
     }

@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-pub(crate) struct Sha256 {
+pub struct Sha256 {
     state: [u32; 8],
     block: [u8; 64],
     block_len: usize,
@@ -10,7 +10,7 @@ pub(crate) struct Sha256 {
 }
 
 impl Sha256 {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: [
                 0x6a09_e667,
@@ -28,7 +28,7 @@ impl Sha256 {
         }
     }
 
-    pub(crate) fn update(&mut self, mut bytes: &[u8]) {
+    pub fn update(&mut self, mut bytes: &[u8]) {
         self.total_len = self
             .total_len
             .checked_add(bytes.len() as u64)
@@ -56,7 +56,7 @@ impl Sha256 {
         self.block_len = bytes.len();
     }
 
-    pub(crate) fn finalize(mut self) -> [u8; 32] {
+    pub fn finalize(mut self) -> [u8; 32] {
         let bit_length = self
             .total_len
             .checked_mul(8)
@@ -191,7 +191,7 @@ impl Sha256 {
     }
 }
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     digest_hex(sha256_bytes(bytes))
 }
 
@@ -201,7 +201,7 @@ pub(crate) fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
     sha.finalize()
 }
 
-pub(crate) fn digest_hex(digest: [u8; 32]) -> String {
+pub fn digest_hex(digest: [u8; 32]) -> String {
     let mut output = String::with_capacity(64);
     for byte in digest {
         write!(&mut output, "{byte:02x}").expect("writing into String cannot fail");

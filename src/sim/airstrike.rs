@@ -21,7 +21,7 @@ use std::hash::{Hash, Hasher};
 /// Techno+294 has one identity: an owned manager or a borrowed aircraft/marker
 /// link. Its manager ID is the owning Techno's stable ID, not a second entity.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct AirstrikeState {
+pub struct AirstrikeState {
     link: Option<u64>,
     manager: Option<AirstrikeManager>,
 }
@@ -71,8 +71,8 @@ impl AirstrikeState {
             m.returned_at.hash(h);
         }
     }
-    #[cfg(test)]
-    pub(crate) fn set_test_link(&mut self, link: Option<u64>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_test_link(&mut self, link: Option<u64>) {
         self.link = link;
     }
 }
@@ -81,7 +81,7 @@ impl GameEntity {
     pub(crate) fn airstrike_link(&self) -> Option<u64> {
         self.airstrike.link
     }
-    pub(crate) fn has_airstrike_marker(&self) -> bool {
+    pub fn has_airstrike_marker(&self) -> bool {
         self.airstrike.link.is_some()
     }
 }
@@ -507,7 +507,7 @@ impl Simulation {
                 .is_some_and(|e| e.is_object_alive() && e.health.current() > 0)
     }
 
-    pub(crate) fn airstrike_tint_active(&self, target: u64) -> bool {
+    pub fn airstrike_tint_active(&self, target: u64) -> bool {
         self.substrate
             .entities
             .get(target)

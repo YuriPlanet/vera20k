@@ -12,7 +12,7 @@
 // Original 0084F084 table, extracted and checked by walk_direction_table.py.
 // The small FLH arrays below are derived lookups for its different, f32-narrowed
 // angle input. Walk uses a full signed direction and must not quantize to 32 steps.
-pub(crate) const RETAIL_SINE_TABLE: &[u8; 10241 * 4] = include_bytes!("native_trig_table.bin");
+pub const RETAIL_SINE_TABLE: &[u8; 10241 * 4] = include_bytes!("native_trig_table.bin");
 
 fn sine_table_bits(index: usize) -> u32 {
     let offset = index * 4;
@@ -63,7 +63,7 @@ fn advance_integer_coordinate(origin: i32, speed: i32, coefficient: u32) -> i32 
 /// and subsequent placement owned by the caller. Table products remain exact
 /// at the simulation's bounded integer movement speeds; final truncation is
 /// toward zero, after adding each displacement to its world coordinate.
-pub(crate) fn facing_step_world_xy(current: [i32; 2], facing: u16, speed: i32) -> [i32; 2] {
+pub fn facing_step_world_xy(current: [i32; 2], facing: u16, speed: i32) -> [i32; 2] {
     let index = walk_sine_index(facing);
     [
         advance_integer_coordinate(current[0], speed, sine_table_bits(index + 2048)),

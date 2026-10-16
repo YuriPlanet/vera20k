@@ -57,8 +57,8 @@ continuation. It does not establish the stock NAMISL Building producer or the
 earlier Anim Middle callback.
 
 ```sh
-python -m tools.cargo_run -- test -p vera20k --lib native_anim_boundary_and_reset_vectors
-python -m tools.cargo_run -- test -p vera20k --lib combat_anim_shadow_endpoint_retires_in_runtime_and_survives_restore
+python -m tools.cargo_run -- test -p vera20k-core --lib native_anim_boundary_and_reset_vectors
+python -m tools.cargo_run -- test -p vera20k-core --lib combat_anim_shadow_endpoint_retires_in_runtime_and_survives_restore
 python -m unittest tools.tests.test_anim_boundary -v
 ```
 

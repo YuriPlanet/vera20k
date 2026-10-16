@@ -102,7 +102,7 @@ impl TerrainObjectState {
 
     /// Terrain VT7F522C+48 inherits Object GetCoords5F65A0. Its XY is
     /// the authored cell center; Z is the coordinate retained at construction.
-    pub(crate) fn world_coord(&self) -> crate::sim::projectile::ProjectileCoord {
+    pub fn world_coord(&self) -> crate::sim::projectile::ProjectileCoord {
         let [x, y] = terrain_cell_center(self.cell());
         crate::sim::projectile::ProjectileCoord::new(x, y, self.world_z_leptons)
     }
@@ -143,8 +143,8 @@ impl TerrainObjectState {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test(stable_id: u64, type_ref: InternedId, rx: u16, ry: u16) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(stable_id: u64, type_ref: InternedId, rx: u16, ry: u16) -> Self {
         Self {
             stable_id,
             native_unique_id: None,
@@ -206,7 +206,7 @@ pub(crate) enum TerrainAreaReceiveResult {
 /// The adapter lends these fields to a private world that runs the production
 /// receiver. Production Terrain authority stays resident in Simulation; this
 /// container and its transfers exist only in tests.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Default, Clone)]
 pub(crate) struct TerrainAreaState {
     terrain_animations: BTreeMap<(u16, u16), TerrainAnimationState>,
@@ -218,7 +218,7 @@ pub(crate) struct TerrainAreaState {
     finalizing_terrain: BTreeSet<u64>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl TerrainAreaState {
     pub(crate) fn take_fixture_progress(&mut self) -> (Vec<(u16, u16)>, BTreeSet<u64>) {
         (
@@ -401,7 +401,7 @@ pub fn unmark_terrain_occupation(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn limbo_terrain_object_at_cell(
     production: &mut ProductionState,
     cell: (u16, u16),
@@ -463,7 +463,7 @@ fn limbo_terrain_object_at_cell_parts(
     Some(stable_id)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn damage_terrain_object_at_cell(
     production: &mut ProductionState,
     raw_occupation: &mut RawCellOccupationGrid,

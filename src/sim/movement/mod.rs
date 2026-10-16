@@ -34,20 +34,20 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use crate::map::entities::EntityCategory;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::entity_store::EntityStore;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::facing_from_delta_int;
 
@@ -63,14 +63,14 @@ mod foot_coordinate;
 pub(crate) mod foot_mark;
 mod foot_path;
 pub(crate) use drive_locomotion::drive_do_turn;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_path::FindPathResult;
 pub(crate) use foot_path::FootPathOutcome;
 pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};
 mod foot_range_stop;
 mod foot_speed;
-pub(crate) mod ground_pose;
+pub mod ground_pose;
 pub(crate) mod infantry_action;
 pub(crate) mod infantry_entry;
 mod infantry_scatter;
@@ -78,7 +78,7 @@ pub(crate) mod locomotor_owner;
 pub(crate) mod locomotor_ready;
 mod locomotor_turn;
 pub(crate) use locomotor_turn::locomotor_do_turn;
-pub(crate) mod motion_query;
+pub mod motion_query;
 pub(crate) mod movement_bridge;
 mod movement_commands;
 mod movement_path;
@@ -86,14 +86,14 @@ mod movement_step;
 pub(crate) mod movement_tick;
 mod nav_list;
 pub(crate) mod navcom;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use navcom::set_walk_destination_coord;
 pub(crate) use navcom::{building_dock_cell, building_dock_coordinate, nav_target_coordinate};
 #[cfg(test)]
 pub(crate) mod fresh_oracle_seam;
 pub(crate) mod path_batch;
 mod path_markers;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use path_markers::fixture_path_replay;
 mod per_cell;
 pub(crate) use per_cell::PerCellReason;
@@ -103,7 +103,7 @@ mod scatter;
 pub(crate) use infantry_scatter::answered_process;
 pub(crate) use scatter::{DamageRetaliation, ScatterFlags};
 mod scatter_cell;
-pub(crate) mod slope_transition;
+pub mod slope_transition;
 mod track_continuation;
 mod track_fresh;
 mod track_fresh_dispatch;
@@ -111,7 +111,7 @@ pub(crate) mod track_head;
 mod track_host;
 mod track_path;
 pub(crate) use track_path::SetterForceReassign;
-pub(crate) mod track_process;
+pub mod track_process;
 mod track_speed;
 pub(crate) mod track_turn;
 mod walk_admission;
@@ -140,18 +140,17 @@ pub mod turret;
 
 pub use facing_class::FacingClass;
 
-#[cfg(test)]
-pub(crate) use drive_locomotion::{DriveLocomotionRuntime, ShipLocomotionRuntime};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
+pub use drive_locomotion::{DriveLocomotionRuntime, ShipLocomotionRuntime};
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_speed::owner_current_speed_from_fraction;
-pub(crate) use foot_speed::owner_speed_bonus;
-pub(crate) use foot_speed::{SpeedRules, owner_current_speed};
+pub use foot_speed::owner_speed_bonus;
+pub use foot_speed::{SpeedRules, owner_current_speed};
 
 pub use movement_commands::DestinationTiming;
-pub(crate) use movement_commands::{
-    can_accept_destination, movement_goal_cell, prepare_walk_destination,
-};
-#[cfg(test)]
+pub use movement_commands::movement_goal_cell;
+pub(crate) use movement_commands::{can_accept_destination, prepare_walk_destination};
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
 };
@@ -160,7 +159,7 @@ pub(crate) use navcom::{
     track_stop_moving,
 };
 // Legacy batch tick used by focused movement fixtures.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use movement_tick::tick_movement_with_grids;
 
 // ---------------------------------------------------------------------------
@@ -253,7 +252,7 @@ pub fn facing_from_delta(dx: i32, dy: i32) -> u8 {
 // ---------------------------------------------------------------------------
 
 /// Run one ground movement visit for every entity, in id order.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn tick_movement(
     entities: &mut EntityStore,
     interner: &mut crate::sim::intern::StringInterner,
@@ -275,7 +274,7 @@ pub(crate) fn tick_movement(
 }
 
 /// Advance movement and perform deterministic blocked-cell recovery.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn tick_movement_with_grid(
     entities: &mut EntityStore,
     path_grid: Option<&PathGrid>,

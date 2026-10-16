@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 use std::mem::size_of;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::num::NonZeroU8;
 use std::num::NonZeroU32;
 
@@ -32,12 +32,12 @@ pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
 const FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET: usize = 0;
 const FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET: usize = 4;
 const FRAMEINFO_DELAY_PAYLOAD_OFFSET: usize = 6;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const QUEUE_ONLY_EVENT_OPCODE_0C: u8 = 0x0c;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const QUEUE_ONLY_EVENT_OPCODE_22: u8 = 0x22;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[inline]
 const fn queue_consumes_without_execute(opcode: u8) -> bool {
     matches!(
@@ -221,13 +221,13 @@ impl MultiplayerChecksumHistory {
         self.values[(frame & 0xff) as usize] = checksum;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn get(&self, frame: u32) -> u32 {
         self.values[(frame & 0xff) as usize]
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn compare(&self, frame_info: FrameInfo) -> Result<(), ChecksumMismatch> {
         let history_index = frame_info.history_index();
         let local_checksum = self.values[history_index];
@@ -297,14 +297,14 @@ impl SynchronizedCommand {
         self.record.payload_mut()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn into_record(self) -> CommandRecord {
         self.record
     }
 
     /// Decode the bounded native command set at the synchronized execution
     /// seam. No semantic sidecar is retained beside the authoritative bytes.
-    pub(crate) fn decode_for_simulation(
+    pub fn decode_for_simulation(
         &self,
         sim: &crate::sim::world::Simulation,
         execute_tick: u64,
@@ -312,12 +312,12 @@ impl SynchronizedCommand {
         sim.decode_native_command_record(&self.record, execute_tick)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn stages_as_megamission(&self) -> bool {
         self.record.opcode() == MEGAMISSION_EVENT_OPCODE
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn stamp_for_network(&mut self, house_id: i8, execute_frame: u32) {
         self.record.set_house_id(house_id);
         self.record.set_frame_stamp(execute_frame as i32);
@@ -344,7 +344,7 @@ pub struct DispatchSummary {
     pub retired: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy)]
 enum DispatchMode<'a> {
     Offline,
@@ -394,24 +394,24 @@ impl SynchronizedCommandQueue {
         Self::default()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn local_len(&self) -> usize {
         self.local.len()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn do_list_len(&self) -> usize {
         self.do_list.len()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn local_records(&self) -> impl Iterator<Item = &SynchronizedCommand> {
         self.local.iter()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn synchronized_records(&self) -> impl Iterator<Item = &SynchronizedCommand> {
         self.do_list.iter()
     }
@@ -425,7 +425,7 @@ impl SynchronizedCommandQueue {
     ///
     /// VERIFIED: gamemd.exe `EventClass__Execute @ 0x004C7600` case `0x20`
     /// publishes the adjusted window consumed by `FUN_0064C380 @ 0x0064C380`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn apply_timing_update(
         &mut self,
         event_frame: i32,
@@ -482,14 +482,14 @@ impl SynchronizedCommandQueue {
     }
 
     /// Admit an unknown fixed-width record without interpreting its payload.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn admit_bytes(&mut self, bytes: &[u8]) -> Result<bool, CommandRecordError> {
         let record = CommandRecord::admit_exact(bytes)?;
         Ok(self.admit(SynchronizedCommand::opaque(record)))
     }
 
     /// Single-player transfer: preserve the issue-frame and house bytes.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn transfer_single_player(&mut self) -> usize {
         let drained = self.local.len();
         while let Some(mut command) = self.local.pop_front() {
@@ -509,7 +509,7 @@ impl SynchronizedCommandQueue {
     /// `0x2000 - DoListCount` local-mirror allowance. Physical packet sizing,
     /// packet splitting, compression, and extended payload ownership remain
     /// transport-layer work.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn transfer_network(
         &mut self,
         current_frame: u32,
@@ -561,7 +561,7 @@ impl SynchronizedCommandQueue {
     /// member executes. The execute callback runs before bit 0 is marked.
     /// House ids and native dispatch eligibility are supplied explicitly by
     /// the session owner.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn dispatch_due_offline<A, F>(
         &mut self,
         current_frame: i32,
@@ -589,7 +589,7 @@ impl SynchronizedCommandQueue {
     /// without acknowledgement. Expired records are still retired when the
     /// contiguous DoList head reaches them. Current-frame FRAMEINFO is compared
     /// only when the supplied native timing gate is open.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn dispatch_due_network<L, A, F>(
         &mut self,
         current_frame: i32,
@@ -618,7 +618,7 @@ impl SynchronizedCommandQueue {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn dispatch_due_inner<L, A, F>(
         &mut self,
         current_frame: i32,

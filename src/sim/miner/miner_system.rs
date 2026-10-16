@@ -536,7 +536,7 @@ pub(crate) fn tick_miners(sim: &mut Simulation, rules: &RuleSet, config: &MinerC
     );
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn tick_miners_test_walk(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -851,7 +851,7 @@ fn harvest_cutting(
 }
 
 /// [`harvest_ore_tick`] on `id` alone, as the oracle calls it.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn harvest_ore_tick_for_test(
     sim: &mut Simulation,
     rules: &RuleSet,

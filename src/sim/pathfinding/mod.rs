@@ -27,7 +27,7 @@ pub mod terrain_speed;
 
 // Zone connectivity (flood-fill zones, hierarchy, zone-aware search)
 pub(crate) mod zone_build;
-pub(crate) mod zone_hierarchy;
+pub mod zone_hierarchy;
 pub(crate) mod zone_incremental;
 pub mod zone_map;
 pub mod zone_search;

@@ -14,23 +14,23 @@
 /// Each writer's value is kept with all its bits. `+0xF4` is a parity cache
 /// for drawing, not a separate gameplay timer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct Flashing {
+pub struct Flashing {
     frames: i32,
 }
 
 impl Flashing {
     /// The countdown's remaining frames.
-    pub(crate) fn frames(&self) -> i32 {
+    pub fn frames(&self) -> i32 {
         self.frames
     }
 
     /// Bit 1 of the countdown: the phase in which the object draws flashed.
-    pub(crate) fn flashed(&self) -> bool {
+    pub fn flashed(&self) -> bool {
         self.frames & 2 != 0
     }
 
     /// Seed the countdown, as each native writer stores its operand.
-    pub(crate) fn start(&mut self, frames: i32) {
+    pub fn start(&mut self, frames: i32) {
         self.frames = frames;
     }
 

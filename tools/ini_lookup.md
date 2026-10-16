@@ -75,7 +75,7 @@ Reproduce the additional production witnesses with the existing tools:
 
 ```sh
 VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k --lib app::random_map_lifecycle_tests::gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges -- --ignored --exact
-python -m tools.cargo_run -- build --release -p vera20k --bin parity-digest --bin vera20k
+python -m tools.cargo_run -- build --release --workspace --bin parity-digest --bin vera20k
 parity_bin=$(python -m tools.cargo_run --resolve parity-digest --profile release)
 "$parity_bin" --ra2-dir "$RA2_DIR" --map Hills.mmx --seed 305419896 --ticks 30 --out <NEW_JSONL>
 ```

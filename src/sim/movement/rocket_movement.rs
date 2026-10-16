@@ -149,26 +149,26 @@ impl RocketRuntime {
 
     /// CurrentPitch in radians above the horizon, as
     /// `RocketLocomotionClass::Draw_Matrix @ 0x00663470` tilts the body by it.
-    pub(crate) fn draw_pitch(&self) -> f32 {
+    pub fn draw_pitch(&self) -> f32 {
         f32::from_bits(self.current_pitch)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_mission_state_for_test(&mut self, state: i32) {
         self.mission_state = state;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mission_state_for_test(&self) -> i32 {
         self.mission_state
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn destination_for_test(&self) -> DriveCoord {
         self.destination
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn current_speed_for_test(&self) -> f64 {
         f64::from_bits(self.current_speed)
     }
@@ -241,7 +241,7 @@ pub(crate) trait RocketHost {
 /// `Move_To @ 0x006632E0`. Only an empty Destination accepts: a rocket in
 /// flight keeps its first target. The pause starts when the block has one,
 /// otherwise the tilt, and the pitch starts at `PitchInitial` quarter turns.
-pub(crate) fn move_to(
+pub fn move_to(
     rocket: &mut RocketRuntime,
     block: &MissileSpawnParams,
     to: DriveCoord,

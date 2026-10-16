@@ -21,6 +21,8 @@
 
 #[cfg(test)]
 mod bridge_shadow_gpu_tests;
+#[cfg(test)]
+mod placement_gpu_tests;
 mod build_instances;
 mod draw_passes;
 #[cfg(test)]
@@ -403,11 +405,6 @@ fn upload_to_gpu(
         "overlay_bridge_body_shadow",
         &world.bridge_body_shadow,
     );
-    pool.upload(
-        &state.renderer.gpu,
-        "overlay_bridge_railing",
-        &world.bridge_railing,
-    );
     // Smudges: drawn inside the terrain layer, before the bridge body and
     // before overlays, matching the native per-cell tile-then-smudge dispatch.
     pool.upload(&state.renderer.gpu, "smudge", &world.smudge);
@@ -471,14 +468,9 @@ fn upload_to_gpu(
         &ui.control_group_status,
     );
     pool.upload(&state.renderer.gpu, "self_heal_pips", &ui.self_heal_pip);
-    pool.upload(&state.renderer.gpu, "cargo_pips", &ui.cargo_pip);
+    pool.upload(&state.renderer.gpu, "scale_pips", &ui.scale_pip);
     pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
-    pool.upload(&state.renderer.gpu, "placement_valid", &ui.placement_valid);
-    pool.upload(
-        &state.renderer.gpu,
-        "placement_invalid",
-        &ui.placement_invalid,
-    );
+    pool.upload(&state.renderer.gpu, "placement", &ui.placement);
     pool.upload(
         &state.renderer.gpu,
         "factory_rally_first",

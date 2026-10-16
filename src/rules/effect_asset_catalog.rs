@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::shp_file::ShpFile;
 use crate::rules::art_data;
+use crate::rules::ini_parser::IniFile;
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 
 /// Raw and consumer-visible frame counts for one authoritative effect asset.
@@ -108,13 +110,13 @@ impl EffectAssetCatalog {
     /// AnimType body/shadow split. Native behavior for a modded particle image
     /// carrying `Shadow=yes` remains UNCHECKED; retaining both values prevents
     /// the catalog from baking that policy decision into asset binding.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn raw_frame_count(&self, name: &str) -> Option<u16> {
         self.entry(name).map(|counts| counts.raw)
     }
 
     /// Entries in canonical asset-name order.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn iter(&self) -> impl Iterator<Item = (&str, EffectAssetFrameCounts)> {
         self.entries
             .iter()
@@ -141,7 +143,7 @@ impl EffectAssetCatalog {
             .insert(name, EffectAssetFrameCounts { raw, available });
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, name: &str, raw: u16, available: u16) {
         self.insert(name.to_string(), raw, available);
     }
@@ -357,6 +359,28 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     roots.into_iter().collect()
 }
 
+/// AnimClass asset roots bound tolerantly: a type whose SHP is missing draws
+/// nothing, as natively, instead of failing the load.
+///
+/// Building animations belong here, not in the strict scheduler closure. Art
+/// defines building sections no rules list names and whose sprites retail never
+/// shipped (`[CAARAY]` with `ActiveAnim=CAARAY_A`), and a few real buildings
+/// name animations no archive holds (`GAGAP_A`, `GAREFNL4`), so requiring every
+/// art building animation made every retail map fail to load. (Most of the
+/// names that first failed were a separate resolver fault, since fixed in
+/// `art_data::anim_shp_candidates`.)
+pub fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
+    let mut roots = anim_class_roots(rules);
+    roots.extend(
+        rules
+            .art()
+            .building_anim_roots()
+            .into_iter()
+            .filter(|name| rules.anim_type_names.contains(name)),
+    );
+    roots
+}
+
 /// Report how many `anim_class_roots` the tolerant binder could not bind.
 ///
 /// The binder already emits a per-name `warn!`, but a per-name line is invisible
@@ -369,6 +393,37 @@ pub fn log_unbound_combat_explosion_roots(unbound: usize) {
         return;
     }
     log::info!("{unbound} AnimClass animation root(s) did not bind and will draw nothing");
+}
+
+/// Overlay type IDs whose native SHP candidates load as an SHP from the active
+/// theater's archives. Authored-overlay finalization (`map::authored_overlay`)
+/// reads it on graphical and headless loads alike.
+pub fn resolved_overlay_shp_ids(
+    registry: &OverlayTypeRegistry,
+    rules_ini: &IniFile,
+    art: &art_data::ArtRegistry,
+    asset_manager: &AssetManager,
+    theater_ext: &str,
+    theater_name: &str,
+) -> BTreeSet<u8> {
+    let mut available = BTreeSet::new();
+    for raw_id in 0..registry.len().min(usize::from(u8::MAX) + 1) {
+        let overlay_id = raw_id as u8;
+        let Some(name) = registry.name(overlay_id) else {
+            continue;
+        };
+        let image_id = art.resolve_overlay_image_id(name, rules_ini);
+        let native_names =
+            art_data::native_overlay_shp_names(art, &image_id, theater_ext, theater_name);
+        if native_names
+            .iter()
+            .filter_map(|candidate| asset_manager.load_file_from_mix(candidate))
+            .any(|loaded| ShpFile::from_bytes(&loaded.bytes).is_ok())
+        {
+            available.insert(overlay_id);
+        }
+    }
+    available
 }
 
 fn authoritative_effect_roots(rules: &RuleSet) -> BTreeSet<String> {

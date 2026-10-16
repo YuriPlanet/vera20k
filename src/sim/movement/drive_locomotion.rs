@@ -10,7 +10,7 @@ use super::locomotor::LocomotorState;
 use super::slope_transition::SlopeTransitionState;
 use super::track_process::TrackFamily;
 use crate::rules::locomotor_type::LocomotorKind;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::components::FootSpeedState;
 use crate::sim::components::{DriveCoord, DriveOccupationFootprint, TrackProgress};
 use crate::sim::game_entity::GameEntity;
@@ -104,72 +104,72 @@ impl Default for DriveLocomotionRuntime {
 }
 
 impl DriveLocomotionRuntime {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn destination(&self) -> Option<DriveCoord> {
         self.destination
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn head_to(&self) -> Option<DriveCoord> {
         self.head_to
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn track(&self) -> TrackProgress {
         self.track
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn track_valid(&self) -> bool {
         self.track_valid
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn turn_latched(&self) -> bool {
         self.turn_latched
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn target_speed_fraction(&self) -> SimFixed {
         self.target_speed_fraction
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn occupation_head_to(&self) -> Option<DriveOccupationFootprint> {
         self.occupation_head_to
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn occupation_handoff(&self) -> Option<DriveOccupationFootprint> {
         self.occupation_handoff
     }
     pub(crate) fn end_permitted(&self) -> bool {
         self.end_permitted
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_destination_for_test(mut self, value: Option<DriveCoord>) -> Self {
         self.destination = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_head_to_for_test(mut self, value: Option<DriveCoord>) -> Self {
         self.head_to = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_track_for_test(mut self, value: TrackProgress) -> Self {
         self.track = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_track_valid_for_test(mut self, value: bool) -> Self {
         self.track_valid = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_turn_latched_for_test(mut self, value: bool) -> Self {
         self.turn_latched = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_target_speed_fraction_for_test(mut self, value: SimFixed) -> Self {
         self.target_speed_fraction = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_occupation_head_to_for_test(
         mut self,
         value: Option<DriveOccupationFootprint>,
@@ -177,7 +177,7 @@ impl DriveLocomotionRuntime {
         self.occupation_head_to = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_occupation_handoff_for_test(
         mut self,
         value: Option<DriveOccupationFootprint>,
@@ -185,7 +185,7 @@ impl DriveLocomotionRuntime {
         self.occupation_handoff = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_end_permitted_for_test(mut self, value: bool) -> Self {
         self.end_permitted = value;
         self
@@ -193,64 +193,64 @@ impl DriveLocomotionRuntime {
 }
 
 impl ShipLocomotionRuntime {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn destination(&self) -> Option<DriveCoord> {
         self.destination
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn head_to(&self) -> Option<DriveCoord> {
         self.head_to
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn track(&self) -> TrackProgress {
         self.track
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn track_valid(&self) -> bool {
         self.track_valid
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn turn_latched(&self) -> bool {
         self.turn_latched
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn target_speed_fraction(&self) -> SimFixed {
         self.target_speed_fraction
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn occupation_head_to(&self) -> Option<DriveOccupationFootprint> {
         self.occupation_head_to
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn occupation_handoff(&self) -> Option<DriveOccupationFootprint> {
         self.occupation_handoff
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_destination_for_test(mut self, value: Option<DriveCoord>) -> Self {
         self.destination = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_head_to_for_test(mut self, value: Option<DriveCoord>) -> Self {
         self.head_to = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_track_for_test(mut self, value: TrackProgress) -> Self {
         self.track = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_track_valid_for_test(mut self, value: bool) -> Self {
         self.track_valid = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_target_speed_fraction_for_test(mut self, value: SimFixed) -> Self {
         self.target_speed_fraction = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_occupation_head_to_for_test(
         mut self,
         value: Option<DriveOccupationFootprint>,
@@ -258,7 +258,7 @@ impl ShipLocomotionRuntime {
         self.occupation_head_to = value;
         self
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_occupation_handoff_for_test(
         mut self,
         value: Option<DriveOccupationFootprint>,
@@ -546,14 +546,14 @@ impl LocomotorState {
     }
 
     /// Selected immutable class view; this never dispatches suspended Process.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn selected_drive_runtime(&self) -> Option<&DriveRuntime> {
         match self.selected_track_runtime(TrackFamily::Drive)? {
             TrackRuntimeRef::Drive(state) => Some(state),
             _ => None,
         }
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn selected_ship_runtime(&self) -> Option<&ShipRuntime> {
         match self.selected_track_runtime(TrackFamily::Ship)? {
             TrackRuntimeRef::Ship(state) => Some(state),
@@ -563,7 +563,7 @@ impl LocomotorState {
 
     /// Only existing lazy allocation sites may call this. Stashes are never
     /// selected, reset or materialized by an installed-instance initializer.
-    pub(crate) fn ensure_installed_track_state(&mut self) -> bool {
+    pub fn ensure_installed_track_state(&mut self) -> bool {
         if let Some(state) = self.drive_runtime_mut() {
             state.retained.get_or_insert_with(Default::default);
             true
@@ -578,19 +578,19 @@ impl LocomotorState {
     pub(crate) fn has_track_state(&self, family: TrackFamily) -> bool {
         self.selected_track_retained(family).is_some()
     }
-    pub(crate) fn track_destination(&self, family: TrackFamily) -> Option<DriveCoord> {
+    pub fn track_destination(&self, family: TrackFamily) -> Option<DriveCoord> {
         self.selected_track_retained(family)
             .and_then(|state| state.destination())
     }
-    pub(crate) fn track_head(&self, family: TrackFamily) -> Option<DriveCoord> {
+    pub fn track_head(&self, family: TrackFamily) -> Option<DriveCoord> {
         self.selected_track_retained(family)
             .and_then(|state| state.head_to())
     }
-    pub(crate) fn track_progress(&self, family: TrackFamily) -> Option<TrackProgress> {
+    pub fn track_progress(&self, family: TrackFamily) -> Option<TrackProgress> {
         self.selected_track_retained(family)
             .map(|state| state.track())
     }
-    pub(crate) fn track_valid(&self, family: TrackFamily) -> Option<bool> {
+    pub fn track_valid(&self, family: TrackFamily) -> Option<bool> {
         self.selected_track_retained(family)
             .map(|state| state.track_valid())
     }
@@ -634,7 +634,7 @@ impl LocomotorState {
             TrackStorageSelection::Absent => false,
         }
     }
-    pub(crate) fn store_track_destination(
+    pub fn store_track_destination(
         &mut self,
         family: TrackFamily,
         value: Option<DriveCoord>,
@@ -762,7 +762,7 @@ impl LocomotorState {
         self.visit_family_occupation(TrackFamily::Ship, &mut visitor);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install_drive_state_for_test(
         &mut self,
         retained: Option<DriveLocomotionRuntime>,
@@ -783,7 +783,7 @@ impl LocomotorState {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install_ship_state_for_test(
         &mut self,
         retained: Option<ShipLocomotionRuntime>,

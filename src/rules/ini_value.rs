@@ -826,7 +826,7 @@ fn scan_hex_u32(token: &[u8]) -> Option<u32> {
 
 /// `INIClass__PutUTF16AsHexCSV` @ `0x00528E00`: each code unit as unpadded
 /// lowercase hex followed by a comma, including after the last unit.
-pub(crate) fn encode_comma_hex_utf16(units: &[u16]) -> String {
+pub fn encode_comma_hex_utf16(units: &[u16]) -> String {
     let mut out = String::with_capacity(units.len() * 5);
     for unit in units.iter().take_while(|unit| **unit != 0) {
         out.push_str(&format!("{unit:x}"));
@@ -950,7 +950,7 @@ fn is_crt_space(byte: u8) -> bool {
 /// the first other byte; the running total wraps in 32 bits and a leading `-`
 /// negates it. `5cells`->5, `abc`->0, ``->0, ` 7`->7, `-50`->-50, `+9`->9,
 /// `0x1A`->0 (ReadInt's `$`/`h` hex branches are separate).
-pub(crate) fn crt_atoi(s: &str) -> i32 {
+pub fn crt_atoi(s: &str) -> i32 {
     let bytes = s.as_bytes();
     let mut index = bytes
         .iter()

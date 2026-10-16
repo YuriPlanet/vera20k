@@ -1009,6 +1009,27 @@ struct MapBuildingPlacementTargetObservation {
     issuer: String,
 }
 
+/// Read-only fields from one production preview cell.
+#[derive(Debug, Serialize)]
+struct MapPlacementCellObservation {
+    coord: (u16, u16),
+    valid: bool,
+    level: i8,
+    slope: u8,
+}
+
+#[derive(Debug, Serialize)]
+struct MapPlacementPreviewObservation {
+    origin: [u16; 2],
+    foundation: [u16; 2],
+    valid: bool,
+    in_build_area: bool,
+    foundation_visible: bool,
+    reason: Option<&'static str>,
+    cells: Vec<MapPlacementCellObservation>,
+    wall_autofill_cells: Vec<(u16, u16)>,
+}
+
 /// Borrow the current input owner's references without retaining a second
 /// placement transaction. Issuers resolve against this observation's world.
 #[derive(Debug, Serialize)]
@@ -1017,6 +1038,9 @@ struct MapBuildingPlacementObservation {
     saved_retry: Option<MapBuildingPlacementTargetObservation>,
     current_preview_present: bool,
     saved_preview_present: bool,
+    /// Read the active preview, never recompute placement in diagnostics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_preview: Option<MapPlacementPreviewObservation>,
 }
 
 impl MapBuildingPlacementObservation {
@@ -1035,13 +1059,42 @@ impl MapBuildingPlacementObservation {
         Self {
             current: view.current.map(target),
             saved_retry: view.saved_retry.map(target),
+            current_preview: input.building_placement_preview.as_ref().map(|preview| {
+                MapPlacementPreviewObservation {
+                    origin: [preview.rx, preview.ry],
+                    foundation: [preview.width, preview.height],
+                    valid: preview.valid,
+                    in_build_area: preview.in_build_area,
+                    foundation_visible: preview.foundation_visible,
+                    reason: preview.reason.as_ref().map(|reason| reason.label()),
+                    cells: preview
+                        .cells
+                        .iter()
+                        .map(|cell| MapPlacementCellObservation {
+                            coord: cell.coord,
+                            valid: cell.valid,
+                            level: cell.level,
+                            slope: cell.slope,
+                        })
+                        .collect(),
+                    wall_autofill_cells: preview
+                        .wall_autofill_cells
+                        .iter()
+                        .map(|cell| cell.coord)
+                        .collect(),
+                }
+            }),
             current_preview_present: view.current_preview_present,
             saved_preview_present: view.saved_preview_present,
         }
     }
 
     fn sample_count(&self) -> usize {
-        1 + usize::from(self.current.is_some()) + usize::from(self.saved_retry.is_some())
+        1 + usize::from(self.current.is_some())
+            + usize::from(self.saved_retry.is_some())
+            + self.current_preview.as_ref().map_or(0, |preview| {
+                1 + preview.cells.len() + preview.wall_autofill_cells.len()
+            })
     }
 }
 
@@ -4223,6 +4276,42 @@ mod tests {
             expected,
             "observing does not consume the saved retry"
         );
+
+        input.building_placement_preview = Some(crate::sim::production::BuildingPlacementPreview {
+            rx: 106,
+            ry: 34,
+            width: 1,
+            height: 1,
+            valid: false,
+            in_build_area: true,
+            foundation_visible: true,
+            reason: Some(crate::sim::production::BuildingPlacementError::BlockedTerrain),
+            cells: vec![crate::sim::production::BuildingPlacementCell {
+                coord: (106, 34),
+                valid: false,
+                level: -128,
+                slope: 1,
+            }],
+            wall_autofill_cells: vec![],
+        });
+        let observed = MapBuildingPlacementObservation::capture(&input, &interner);
+        assert_eq!(
+            observed.sample_count(),
+            5,
+            "preview and cell consume bounded observation samples"
+        );
+        let value = serde_json::to_value(observed).unwrap();
+        assert_eq!(
+            value["current_preview"]["cells"],
+            json!([{ "coord": [106,34], "valid": false, "level": -128, "slope": 1 }])
+        );
+        assert_eq!(value["current_preview"]["in_build_area"], true);
+        assert_eq!(value["current_preview"]["foundation_visible"], true);
+        assert!(
+            input.building_placement_preview.is_some(),
+            "observation retains the actual preview"
+        );
+        input.building_placement_preview = None;
 
         input.building_placement_pointer_expired(40);
         let orphan = MapBuildingPlacementObservation::capture(&input, &interner);

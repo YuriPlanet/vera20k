@@ -25,7 +25,7 @@ Reproduce focused checks with the indexed build owner:
 ```sh
 python -m tools.cargo_run -- test -p vera20k --lib app::frontend::startup_options::
 python -m tools.cargo_run -- test -p vera20k --lib app::frontend::launch::
-python -m tools.cargo_run -- test -p vera20k --lib assets::asset_manager::
+python -m tools.cargo_run -- test -p vera20k-core --lib assets::asset_manager::
 python -m tools.cargo_run -- test -p vera20k --lib app::loading::pump::tests::absent_and_lost_loading_managers_preserve_media_policy
 ```
 

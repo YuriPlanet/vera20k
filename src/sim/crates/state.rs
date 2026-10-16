@@ -61,17 +61,17 @@ impl CrateAuthority {
         self.slots.iter().position(|slot| slot.is_empty())
     }
 
-    pub(crate) fn slots(&self) -> &[CrateSlot; CRATE_SLOT_CAPACITY] {
+    pub fn slots(&self) -> &[CrateSlot; CRATE_SLOT_CAPACITY] {
         &self.slots
     }
 
-    pub(crate) fn slot_mut(&mut self, index: usize) -> &mut CrateSlot {
+    pub fn slot_mut(&mut self, index: usize) -> &mut CrateSlot {
         &mut self.slots[index]
     }
 
     /// Accepted coordinates in native ascending slot order. Negative packed
     /// values are malformed snapshot state and cannot name a Rust grid cell.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn occupied_cells(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
         self.slots.iter().filter_map(|slot| {
             if slot.is_empty() {

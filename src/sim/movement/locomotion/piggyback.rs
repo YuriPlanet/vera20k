@@ -55,7 +55,7 @@ pub struct WalkRuntime {
 
 impl WalkRuntime {
     /// A fixture's state.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn for_test(
         head: Option<crate::sim::components::DriveCoord>,
         destination: Option<crate::sim::components::DriveCoord>,
@@ -203,7 +203,7 @@ impl StashedLocomotor {
         self.0.warp_teleport_mut()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(in crate::sim::movement) fn install_drive_state_for_test(
         &mut self,
         retained: Option<super::super::drive_locomotion::DriveLocomotionRuntime>,
@@ -211,7 +211,7 @@ impl StashedLocomotor {
         self.0.install_drive_state_for_test(retained)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(in crate::sim::movement) fn install_ship_state_for_test(
         &mut self,
         retained: Option<super::super::drive_locomotion::ShipLocomotionRuntime>,
@@ -221,7 +221,7 @@ impl StashedLocomotor {
 
     /// The suspended object, for fixtures. Production writes only a suspended
     /// warp Teleport's state ([`Self::warp_teleport_mut`]).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn suspended_mut_for_test(&mut self) -> &mut LocomotorState {
         &mut self.0
     }
@@ -262,8 +262,8 @@ fn begin_with(state: &mut LocomotorState, incoming: Option<LocomotorState>) -> B
 
 /// Supply an effect instance beneath a fixture's existing active class without
 /// reconstructing the active class or dropping its retained state.
-#[cfg(test)]
-pub(crate) fn suspend_effect_for_test(
+#[cfg(any(test, feature = "test-support"))]
+pub fn suspend_effect_for_test(
     active: LocomotorState,
     mut effect: LocomotorState,
 ) -> LocomotorState {
@@ -285,7 +285,7 @@ pub fn begin(state: &mut LocomotorState, kind: LocomotorKind, binary_frame: u32)
 /// Transfer the suspended object into an explicit output location. The active
 /// state is unchanged because native END transfers an interface; the caller
 /// decides when to install it.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn end_into(
     state: &mut LocomotorState,
     output: Option<&mut Option<LocomotorState>>,
@@ -316,7 +316,7 @@ pub fn end(state: &mut LocomotorState) -> Option<LocomotorState> {
 
 /// The nested-object save marker used by the clean-room snapshot seam.
 /// Serde persists the following boxed object only when this returns one.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn serialized_presence(state: &LocomotorState) -> u8 {
     u8::from(state.piggyback().is_some())
 }

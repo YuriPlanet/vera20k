@@ -10,7 +10,7 @@
 //! Steam3e81a617..08600 controls: trigger_action_values --all-to-hunt;
 //! Unlimbo/Team/UnInit remain declared dependencies in that corpus.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use super::PassengerRole;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -363,7 +363,7 @@ pub struct DestroyedGarrisonBuilding {
 ///
 /// Returns the count of occupants successfully ejected (excludes those killed
 /// when no edge cell can be used).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn eject_destruction_garrison(
     sim: &mut Simulation,
     rules: &RuleSet,

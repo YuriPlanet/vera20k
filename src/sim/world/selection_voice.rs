@@ -33,7 +33,7 @@ mod tests;
 /// from the audio pending line.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct DeployVoiceSuppression(bool);
+pub struct DeployVoiceSuppression(bool);
 
 impl DeployVoiceSuppression {
     /// Whether the next VoiceDeploy is silenced.
@@ -42,7 +42,7 @@ impl DeployVoiceSuppression {
     }
 
     /// The SlaveManager relocation's store (`0x006B01C4`).
-    pub(crate) fn suppress(&mut self) {
+    pub fn suppress(&mut self) {
         self.0 = true;
     }
 
@@ -58,7 +58,7 @@ impl Simulation {
     /// voice latch is enabled (6FBFF4..6FC018). Rejection consumes no draw.
     /// The returned registered sound name is a presentation request; this
     /// operation changes only the existing process Main cursor.
-    pub(crate) fn selection_voice_request<'a>(
+    pub fn selection_voice_request<'a>(
         &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
@@ -89,7 +89,7 @@ impl Simulation {
     /// QueueVoice's human-house gate follows the draw. Caller loops decide
     /// whether to suppress later actors (click dispatch does, Guard key does
     /// not). This request never changes the deterministic Scenario stream.
-    pub(crate) fn default_order_voice_request<'a>(
+    pub fn default_order_voice_request<'a>(
         &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
@@ -107,7 +107,7 @@ impl Simulation {
     /// QueueVoice708D90's sole admission predicate. The caller owns any list
     /// draw and House50B6F0 query; the audio owner alone retains the pending
     /// and playing slots. Scalar requests consume no random draw.
-    pub(crate) fn queue_voice_request(
+    pub fn queue_voice_request(
         sound: Option<&str>,
         voices_enabled: bool,
         human_player: bool,
@@ -121,7 +121,7 @@ impl Simulation {
     /// +590; a missing slot stays silent, with no fallback or Main draw.
     /// Source: tools/input_oracle/slave_miner_pack_voice.{json,meta.json};
     /// original1cdd1180.
-    pub(crate) fn deploy_voice_request<'a>(
+    pub fn deploy_voice_request<'a>(
         &mut self,
         rules: &'a RuleSet,
         entity_id: u64,

@@ -86,10 +86,10 @@ python -m tools.cargo_run -- build --locked --release --no-default-features --bi
 ## Cargo ownership and labeled builds
 
 ```sh
-python -m tools.cargo_run -- test -p vera20k --lib
-python -m tools.cargo_run -- clippy -p vera20k --lib
+python -m tools.cargo_run -- test --workspace --lib
+python -m tools.cargo_run -- clippy --workspace --lib
 python -m tools.cargo_run --label release-before -- build --locked --release -p vera20k --bin vera20k
-python -m tools.cargo_run --label tests-before -- test -p vera20k --lib --no-run
+python -m tools.cargo_run --label tests-before -- test --workspace --lib --no-run
 python -m tools.cargo_run --resolve asset --profile release
 python -m tools.cargo_run --resolve vera20k --profile release --from-label release-before
 python -m unittest tools.tests.test_cargo_run -v

@@ -576,7 +576,6 @@ impl App {
                     sprite_atlas: None,
                     overlay_atlas: None,
                     bridge_atlas: None,
-                    bridge_railing_atlas: None,
                     sidebar_cameo_atlas: None,
                     sidebar_chrome: None,
                     software_cursor: startup_software_cursor,

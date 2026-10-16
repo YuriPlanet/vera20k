@@ -194,7 +194,7 @@ impl HouseBaseState {
 
     /// An oracle row's House+68, in its order; an id no object holds stands
     /// for a null entry.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn replace_buildings_for_test(&mut self, buildings: Vec<u64>) {
         self.buildings = buildings;
     }
@@ -279,7 +279,7 @@ impl crate::sim::house_state::HouseState {
     }
 
     /// Supplied physical House+5490/+5498 inputs in native query corpora.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_geometry_for_test(&mut self, primary: Option<(u16, u16)>, radius: i32) {
         self.retain_base_geometry(primary, radius);
     }
@@ -500,7 +500,7 @@ impl Simulation {
     }
 
     /// TechnoType virtual `+0x84` for `owner`'s House ([`RuleSet::cost_of`]).
-    pub(crate) fn cost_of(&self, owner: InternedId, object: &ObjectType, rules: &RuleSet) -> i32 {
+    pub fn cost_of(&self, owner: InternedId, object: &ObjectType, rules: &RuleSet) -> i32 {
         debug_assert!(
             self.houses.get(&owner).is_none_or(|house| {
                 house.country_cost_mults.0
@@ -615,8 +615,8 @@ impl Simulation {
 
     /// For a fixture that stores a building directly: the House+68 append its
     /// Unlimbo would make ([`Self::append_house_base_building`]).
-    #[cfg(test)]
-    pub(crate) fn append_house_base_building_for_test(&mut self, id: u64) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn append_house_base_building_for_test(&mut self, id: u64) {
         self.append_house_base_building(id);
     }
 

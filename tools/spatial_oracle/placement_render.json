@@ -1,0 +1,8312 @@
+{
+  "centering": {
+    "boundary": "Original GAREFN constructor and layered Image/Adjacent plus fixed ART Foundation blocks, native occupied-table binding/getters and ObjectGetFootprint on a supplied Building shell. All22 selector priors are supplied numeric controls. Sparse level0/revealed Cell shells and cursor centers are supplied. Move stops after center/mark publication at4A943A, before proximity/visibility. No whole ReadINI/Bib resource, paid GAREFN/ManualPlace, inverse, event or map bootstrap claim.",
+    "building": {
+      "art_fields": {
+        "BibShape": "GAREFNBB",
+        "Buildup": "GAREFNMK",
+        "DemandLoadBuildup": "true",
+        "Foundation": "4x3",
+        "NewTheater": "yes"
+      },
+      "constructor": {
+        "adjacent": 3,
+        "foundation": 0,
+        "image": "GAREFN"
+      },
+      "dimensions": [
+        4,
+        3
+      ],
+      "foundation_selector": 12,
+      "layers": [
+        {
+          "file": "RULESMD.INI",
+          "physical_keys": {
+            "AIBasePlanningSide": "0",
+            "AIBuildThis": "yes",
+            "Adjacent": "2",
+            "Armor": "wood",
+            "Bib": "yes",
+            "BuildCat": "Resource",
+            "Capturable": "true",
+            "Cost": "2000",
+            "Crewed": "yes",
+            "DamageSmokeOffset": "410, 100, 165",
+            "DebrisAnims": "DBRIS1LG,DBRIS1SM,DBRIS4LG,DBRIS4SM,DBRIS5LG,DBRIS5SM",
+            "DockUnload": "yes",
+            "Drainable": "yes",
+            "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+            "FreeUnit": "CMIN",
+            "HalfDamageSmokeLocation1": "0,0,0",
+            "ImmuneToPsionics": "no",
+            "MaxDebris": "10",
+            "MinDebris": "5",
+            "Name": "Allied Ore Refinery",
+            "NumberImpassableRows": "3",
+            "NumberOfDocks": "1",
+            "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+            "PipScale": "Tiberium",
+            "Points": "80",
+            "Power": "-50",
+            "Prerequisite": "POWER,GACNST",
+            "Refinery": "yes",
+            "RefinerySmokeFrames": "50",
+            "RefinerySmokeOffsetOne": "-92, -208, 312",
+            "RefinerySmokeOffsetTwo": "-92, 208, 312",
+            "RefinerySmokeParticleSystem": "SmallGreySSys",
+            "ResourceDestination": "yes",
+            "Sight": "6",
+            "Soylent": "300",
+            "Spyable": "yes",
+            "Storage": "200",
+            "Strength": "1000",
+            "TechLevel": "1",
+            "ThreatPosed": "0",
+            "TogglePower": "no",
+            "UIName": "Name:GAREFN"
+          },
+          "retained": {
+            "adjacent": 2,
+            "foundation": 0,
+            "image": "GAREFN"
+          }
+        },
+        {
+          "file": "MPBattleMD.ini",
+          "physical_keys": null,
+          "retained": {
+            "adjacent": 2,
+            "foundation": 0,
+            "image": "GAREFN"
+          }
+        },
+        {
+          "file": "GoldSt.mmx",
+          "physical_keys": null,
+          "retained": {
+            "adjacent": 2,
+            "foundation": 0,
+            "image": "GAREFN"
+          }
+        }
+      ],
+      "name": "GAREFN",
+      "object_footprint_matches_type": true,
+      "offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    },
+    "controls": [
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x1",
+          "selector": 0
+        },
+        "output": {
+          "bounds": [
+            1,
+            1
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x1",
+          "selector": 1
+        },
+        "output": {
+          "bounds": [
+            2,
+            1
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x2",
+          "selector": 2
+        },
+        "output": {
+          "bounds": [
+            1,
+            2
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x2",
+          "selector": 3
+        },
+        "output": {
+          "bounds": [
+            2,
+            2
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x3",
+          "selector": 4
+        },
+        "output": {
+          "bounds": [
+            2,
+            3
+          ],
+          "marker_origin": [
+            110,
+            32
+          ],
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x2",
+          "selector": 5
+        },
+        "output": {
+          "bounds": [
+            3,
+            2
+          ],
+          "marker_origin": [
+            109,
+            33
+          ],
+          "offset": [
+            -1,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x3",
+          "selector": 6
+        },
+        "output": {
+          "bounds": [
+            3,
+            3
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x5",
+          "selector": 7
+        },
+        "output": {
+          "bounds": [
+            3,
+            5
+          ],
+          "marker_origin": [
+            109,
+            31
+          ],
+          "offset": [
+            -1,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "4x2",
+          "selector": 8
+        },
+        "output": {
+          "bounds": [
+            4,
+            2
+          ],
+          "marker_origin": [
+            109,
+            33
+          ],
+          "offset": [
+            -1,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x3Refinery",
+          "selector": 9
+        },
+        "output": {
+          "bounds": [
+            3,
+            3
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x3",
+          "selector": 10
+        },
+        "output": {
+          "bounds": [
+            1,
+            3
+          ],
+          "marker_origin": [
+            110,
+            32
+          ],
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x1",
+          "selector": 11
+        },
+        "output": {
+          "bounds": [
+            3,
+            1
+          ],
+          "marker_origin": [
+            109,
+            33
+          ],
+          "offset": [
+            -1,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "4x3",
+          "selector": 12
+        },
+        "output": {
+          "bounds": [
+            4,
+            3
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x4",
+          "selector": 13
+        },
+        "output": {
+          "bounds": [
+            1,
+            4
+          ],
+          "marker_origin": [
+            110,
+            32
+          ],
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "1x5",
+          "selector": 14
+        },
+        "output": {
+          "bounds": [
+            1,
+            5
+          ],
+          "marker_origin": [
+            110,
+            31
+          ],
+          "offset": [
+            0,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x6",
+          "selector": 15
+        },
+        "output": {
+          "bounds": [
+            2,
+            6
+          ],
+          "marker_origin": [
+            110,
+            31
+          ],
+          "offset": [
+            0,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "2x5",
+          "selector": 16
+        },
+        "output": {
+          "bounds": [
+            2,
+            5
+          ],
+          "marker_origin": [
+            110,
+            31
+          ],
+          "offset": [
+            0,
+            -2
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "5x3",
+          "selector": 17
+        },
+        "output": {
+          "bounds": [
+            5,
+            3
+          ],
+          "marker_origin": [
+            108,
+            32
+          ],
+          "offset": [
+            -2,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "4x4",
+          "selector": 18
+        },
+        "output": {
+          "bounds": [
+            4,
+            4
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "3x4",
+          "selector": 19
+        },
+        "output": {
+          "bounds": [
+            3,
+            4
+          ],
+          "marker_origin": [
+            109,
+            32
+          ],
+          "offset": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "6x4",
+          "selector": 20
+        },
+        "output": {
+          "bounds": [
+            6,
+            4
+          ],
+          "marker_origin": [
+            108,
+            32
+          ],
+          "offset": [
+            -2,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            110,
+            33
+          ],
+          "name": "0x0",
+          "selector": 21
+        },
+        "output": {
+          "bounds": [
+            1,
+            1
+          ],
+          "marker_origin": [
+            110,
+            33
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        }
+      }
+    ],
+    "edge_controls": [
+      {
+        "input": {
+          "center": [
+            0,
+            0
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            -1,
+            -1
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            1,
+            1
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            32767,
+            32767
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            32766,
+            32766
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            32768,
+            32768
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            32767,
+            32767
+          ]
+        }
+      },
+      {
+        "input": {
+          "center": [
+            65535,
+            65535
+          ],
+          "selector": 12
+        },
+        "output": {
+          "marker_origin": [
+            -2,
+            -2
+          ]
+        }
+      }
+    ],
+    "lifecycle": {
+      "input": {
+        "initial_center": [
+          110,
+          33
+        ],
+        "moved_center": [
+          111,
+          34
+        ]
+      },
+      "steps": [
+        {
+          "action": "activate",
+          "marker_calls": [
+            {
+              "mark": true,
+              "origin": [
+                109,
+                32
+              ]
+            }
+          ],
+          "output": {
+            "center": [
+              110,
+              33
+            ],
+            "marked": [
+              [
+                109,
+                32
+              ],
+              [
+                109,
+                33
+              ],
+              [
+                109,
+                34
+              ],
+              [
+                110,
+                32
+              ],
+              [
+                110,
+                33
+              ],
+              [
+                110,
+                34
+              ],
+              [
+                111,
+                32
+              ],
+              [
+                111,
+                33
+              ],
+              [
+                111,
+                34
+              ],
+              [
+                112,
+                32
+              ],
+              [
+                112,
+                33
+              ],
+              [
+                112,
+                34
+              ]
+            ],
+            "offset": [
+              -1,
+              -1
+            ]
+          }
+        },
+        {
+          "action": "move",
+          "marker_calls": [
+            {
+              "mark": false,
+              "origin": [
+                109,
+                32
+              ]
+            },
+            {
+              "mark": true,
+              "origin": [
+                110,
+                33
+              ]
+            }
+          ],
+          "output": {
+            "center": [
+              111,
+              34
+            ],
+            "marked": [
+              [
+                110,
+                33
+              ],
+              [
+                110,
+                34
+              ],
+              [
+                110,
+                35
+              ],
+              [
+                111,
+                33
+              ],
+              [
+                111,
+                34
+              ],
+              [
+                111,
+                35
+              ],
+              [
+                112,
+                33
+              ],
+              [
+                112,
+                34
+              ],
+              [
+                112,
+                35
+              ],
+              [
+                113,
+                33
+              ],
+              [
+                113,
+                34
+              ],
+              [
+                113,
+                35
+              ]
+            ],
+            "offset": [
+              -1,
+              -1
+            ]
+          }
+        },
+        {
+          "action": "clear",
+          "marker_calls": [
+            {
+              "mark": false,
+              "origin": [
+                110,
+                33
+              ]
+            }
+          ],
+          "output": {
+            "center": [
+              111,
+              34
+            ],
+            "marked": [],
+            "offset": [
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "inputs": {
+    "art_source_lines": [
+      {
+        "key": "Normalized",
+        "line": 3207,
+        "section": "GAPOWR",
+        "value": "yes"
+      },
+      {
+        "key": "Remapable",
+        "line": 3208,
+        "section": "GAPOWR",
+        "value": "yes"
+      },
+      {
+        "key": "Cameo",
+        "line": 3209,
+        "section": "GAPOWR",
+        "value": "POWRICON"
+      },
+      {
+        "key": "Foundation",
+        "line": 3210,
+        "section": "GAPOWR",
+        "value": "2x2"
+      },
+      {
+        "key": "Buildup",
+        "line": 3211,
+        "section": "GAPOWR",
+        "value": "GAPOWRMK"
+      },
+      {
+        "key": "DemandLoadBuildup",
+        "line": 3212,
+        "section": "GAPOWR",
+        "value": "true"
+      },
+      {
+        "key": "FreeBuildup",
+        "line": 3213,
+        "section": "GAPOWR",
+        "value": "true"
+      },
+      {
+        "key": "NewTheater",
+        "line": 3214,
+        "section": "GAPOWR",
+        "value": "yes"
+      },
+      {
+        "key": "Height",
+        "line": 3215,
+        "section": "GAPOWR",
+        "value": "4"
+      },
+      {
+        "key": "ActiveAnim",
+        "line": 3216,
+        "section": "GAPOWR",
+        "value": "GAPOWR_A"
+      },
+      {
+        "key": "ActiveAnimDamaged",
+        "line": 3217,
+        "section": "GAPOWR",
+        "value": "GAPOWR_AD"
+      },
+      {
+        "key": "ActiveAnimZAdjust",
+        "line": 3218,
+        "section": "GAPOWR",
+        "value": "-32"
+      },
+      {
+        "key": "ActiveAnimYSort",
+        "line": 3219,
+        "section": "GAPOWR",
+        "value": "362"
+      },
+      {
+        "key": "CanHideThings",
+        "line": 3220,
+        "section": "GAPOWR",
+        "value": "True"
+      },
+      {
+        "key": "CanBeHidden",
+        "line": 3221,
+        "section": "GAPOWR",
+        "value": "False"
+      },
+      {
+        "key": "OccupyHeight",
+        "line": 3222,
+        "section": "GAPOWR",
+        "value": "3"
+      },
+      {
+        "key": "DamageFireOffset0",
+        "line": 3223,
+        "section": "GAPOWR",
+        "value": "-20,32"
+      },
+      {
+        "key": "DamageFireOffset1",
+        "line": 3224,
+        "section": "GAPOWR",
+        "value": "3,12"
+      },
+      {
+        "key": "ActiveAnimPoweredSpecial",
+        "line": 3225,
+        "section": "GAPOWR",
+        "value": "true"
+      },
+      {
+        "key": "ActiveAnimPowered",
+        "line": 3226,
+        "section": "GAPOWR",
+        "value": "false"
+      },
+      {
+        "key": "Theater",
+        "line": 13112,
+        "section": "BRIDGE",
+        "value": "yes"
+      },
+      {
+        "key": "Theater",
+        "line": 13115,
+        "section": "BRIDGB",
+        "value": "yes"
+      }
+    ],
+    "building": {
+      "constructor": {
+        "adjacent": 3,
+        "foundation": 0,
+        "gate": 0,
+        "laser_fence": 0,
+        "laser_fence_post": 0,
+        "naval": 0,
+        "place_anywhere": 0,
+        "powers_up_building_first_byte": 0,
+        "speed_type": 0,
+        "to_overlay": 0,
+        "to_tile": 0
+      },
+      "dimensions": [
+        2,
+        2
+      ],
+      "langrule_absent": true,
+      "layers": [
+        {
+          "admitted": 1,
+          "file": "RULESMD.INI",
+          "physical_keys": {
+            "AIBasePlanningSide": "0",
+            "Adjacent": "2",
+            "Armor": "wood",
+            "BuildCat": "Power",
+            "Capturable": "true",
+            "Cost": "800",
+            "Crewed": "yes",
+            "DamageSmokeOffset": "300, 300, 450",
+            "DebrisAnims": "DBRIS1LG,DBRIS1SM,DBRIS4LG,DBRIS4SM,DBRIS5LG,DBRIS5SM",
+            "DieSound": "PowerPlantDie",
+            "Drainable": "yes",
+            "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60,gtpowexp",
+            "ImmuneToPsionics": "no",
+            "MaxDebris": "6",
+            "MinDebris": "4",
+            "Name": "Allied Power Plant",
+            "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+            "Points": "40",
+            "Power": "200",
+            "PoweredSpecial": "yes",
+            "Prerequisite": "GACNST",
+            "Sight": "4",
+            "Spyable": "yes",
+            "Strength": "750",
+            "TechLevel": "1",
+            "ThreatPosed": "0",
+            "TogglePower": "no",
+            "UIName": "Name:GAPOWR",
+            "Upgrades": "2"
+          },
+          "retained": {
+            "adjacent": 2,
+            "foundation": 3,
+            "gate": 0,
+            "laser_fence": 0,
+            "laser_fence_post": 0,
+            "naval": 0,
+            "place_anywhere": 0,
+            "powers_up_building_first_byte": 0,
+            "speed_type": -1,
+            "to_overlay": 0,
+            "to_tile": 0
+          },
+          "source_lines": [
+            {
+              "key": "UIName",
+              "line": 11,
+              "section": "General",
+              "value": "Name:General"
+            },
+            {
+              "key": "Name",
+              "line": 12,
+              "section": "General",
+              "value": "Red Alert 2 Yuri's Revenge -- Official Rules of Engagement"
+            },
+            {
+              "key": "VeteranRatio",
+              "line": 15,
+              "section": "General",
+              "value": "3.0"
+            },
+            {
+              "key": "VeteranCombat",
+              "line": 16,
+              "section": "General",
+              "value": "1.1"
+            },
+            {
+              "key": "VeteranSpeed",
+              "line": 17,
+              "section": "General",
+              "value": "1.2"
+            },
+            {
+              "key": "VeteranSight",
+              "line": 18,
+              "section": "General",
+              "value": "0.0"
+            },
+            {
+              "key": "VeteranArmor",
+              "line": 19,
+              "section": "General",
+              "value": "1.5"
+            },
+            {
+              "key": "VeteranROF",
+              "line": 20,
+              "section": "General",
+              "value": "0.6"
+            },
+            {
+              "key": "VeteranCap",
+              "line": 21,
+              "section": "General",
+              "value": "2"
+            },
+            {
+              "key": "InitialVeteran",
+              "line": 22,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "RefundPercent",
+              "line": 25,
+              "section": "General",
+              "value": "50%"
+            },
+            {
+              "key": "ReloadRate",
+              "line": 26,
+              "section": "General",
+              "value": ".3"
+            },
+            {
+              "key": "RepairPercent",
+              "line": 27,
+              "section": "General",
+              "value": "15%"
+            },
+            {
+              "key": "RepairRate",
+              "line": 28,
+              "section": "General",
+              "value": ".016"
+            },
+            {
+              "key": "RepairStep",
+              "line": 29,
+              "section": "General",
+              "value": "8"
+            },
+            {
+              "key": "URepairRate",
+              "line": 30,
+              "section": "General",
+              "value": ".016"
+            },
+            {
+              "key": "IRepairRate",
+              "line": 31,
+              "section": "General",
+              "value": ".001"
+            },
+            {
+              "key": "IRepairStep",
+              "line": 32,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "TiberiumHeal",
+              "line": 33,
+              "section": "General",
+              "value": ".010"
+            },
+            {
+              "key": "SelfHealInfantryFrames",
+              "line": 34,
+              "section": "General",
+              "value": "50"
+            },
+            {
+              "key": "SelfHealInfantryAmount",
+              "line": 35,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "SelfHealUnitFrames",
+              "line": 36,
+              "section": "General",
+              "value": "75"
+            },
+            {
+              "key": "SelfHealUnitAmount",
+              "line": 37,
+              "section": "General",
+              "value": "5"
+            },
+            {
+              "key": "BuildSpeed",
+              "line": 41,
+              "section": "General",
+              "value": ".7"
+            },
+            {
+              "key": "BuildupTime",
+              "line": 42,
+              "section": "General",
+              "value": ".06"
+            },
+            {
+              "key": "GrowthRate",
+              "line": 43,
+              "section": "General",
+              "value": "5"
+            },
+            {
+              "key": "TiberiumGrows",
+              "line": 44,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "TiberiumSpreads",
+              "line": 45,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "SeparateAircraft",
+              "line": 46,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "SurvivorRate",
+              "line": 47,
+              "section": "General",
+              "value": ".4"
+            },
+            {
+              "key": "AlliedSurvivorDivisor",
+              "line": 48,
+              "section": "General",
+              "value": "500"
+            },
+            {
+              "key": "SovietSurvivorDivisor",
+              "line": 49,
+              "section": "General",
+              "value": "250"
+            },
+            {
+              "key": "ThirdSurvivorDivisor",
+              "line": 50,
+              "section": "General",
+              "value": "750"
+            },
+            {
+              "key": "PlacementDelay",
+              "line": 51,
+              "section": "General",
+              "value": ".05"
+            },
+            {
+              "key": "WeedCapacity",
+              "line": 52,
+              "section": "General",
+              "value": "56"
+            },
+            {
+              "key": "CurleyShuffle",
+              "line": 55,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "BaseBias",
+              "line": 56,
+              "section": "General",
+              "value": "2"
+            },
+            {
+              "key": "BaseDefenseDelay",
+              "line": 57,
+              "section": "General",
+              "value": ".25"
+            },
+            {
+              "key": "CloseEnough",
+              "line": 58,
+              "section": "General",
+              "value": "2.25"
+            },
+            {
+              "key": "DamageDelay",
+              "line": 59,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "GameSpeedBias",
+              "line": 60,
+              "section": "General",
+              "value": "1.6"
+            },
+            {
+              "key": "Stray",
+              "line": 62,
+              "section": "General",
+              "value": "2.0"
+            },
+            {
+              "key": "RelaxedStray",
+              "line": 63,
+              "section": "General",
+              "value": "3.0"
+            },
+            {
+              "key": "CloakDelay",
+              "line": 64,
+              "section": "General",
+              "value": ".02"
+            },
+            {
+              "key": "SuspendDelay",
+              "line": 65,
+              "section": "General",
+              "value": "2"
+            },
+            {
+              "key": "SuspendPriority",
+              "line": 66,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "FlightLevel",
+              "line": 67,
+              "section": "General",
+              "value": "1500"
+            },
+            {
+              "key": "ParachuteMaxFallRate",
+              "line": 68,
+              "section": "General",
+              "value": "-3"
+            },
+            {
+              "key": "NoParachuteMaxFallRate",
+              "line": 69,
+              "section": "General",
+              "value": "-100"
+            },
+            {
+              "key": "GuardModeStray",
+              "line": 70,
+              "section": "General",
+              "value": "2.0"
+            },
+            {
+              "key": "MissileSpeedVar",
+              "line": 73,
+              "section": "General",
+              "value": ".25"
+            },
+            {
+              "key": "MissileROTVar",
+              "line": 74,
+              "section": "General",
+              "value": ".25"
+            },
+            {
+              "key": "MissileSafetyAltitude",
+              "line": 75,
+              "section": "General",
+              "value": "750"
+            },
+            {
+              "key": "TeamDelays",
+              "line": 78,
+              "section": "General",
+              "value": "2000,2500,3500"
+            },
+            {
+              "key": "AIHateDelays",
+              "line": 81,
+              "section": "General",
+              "value": "30,50,70"
+            },
+            {
+              "key": "AIAlternateProductionCreditCutoff",
+              "line": 82,
+              "section": "General",
+              "value": "1000"
+            },
+            {
+              "key": "NodAIBuildsWalls",
+              "line": 84,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "AIBuildsWalls",
+              "line": 85,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "MultiplayerAICM",
+              "line": 88,
+              "section": "General",
+              "value": "400,0,0"
+            },
+            {
+              "key": "AIVirtualPurifiers",
+              "line": 89,
+              "section": "General",
+              "value": "4,2,0"
+            },
+            {
+              "key": "AISlaveMinerNumber",
+              "line": 90,
+              "section": "General",
+              "value": "4,3,2"
+            },
+            {
+              "key": "HarvestersPerRefinery",
+              "line": 91,
+              "section": "General",
+              "value": "2,2,1"
+            },
+            {
+              "key": "AIExtraRefineries",
+              "line": 92,
+              "section": "General",
+              "value": "2,1,0"
+            },
+            {
+              "key": "HealScanRadius",
+              "line": 93,
+              "section": "General",
+              "value": "10"
+            },
+            {
+              "key": "FillEarliestTeamProbability",
+              "line": 95,
+              "section": "General",
+              "value": "100,100,100"
+            },
+            {
+              "key": "MinimumAIDefensiveTeams",
+              "line": 98,
+              "section": "General",
+              "value": "1,1,1"
+            },
+            {
+              "key": "MaximumAIDefensiveTeams",
+              "line": 99,
+              "section": "General",
+              "value": "2,2,2"
+            },
+            {
+              "key": "TotalAITeamCap",
+              "line": 100,
+              "section": "General",
+              "value": "30,30,30"
+            },
+            {
+              "key": "UseMinDefenseRule",
+              "line": 101,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "DissolveUnfilledTeamDelay",
+              "line": 102,
+              "section": "General",
+              "value": "5000"
+            },
+            {
+              "key": "LargeVisceroid",
+              "line": 104,
+              "section": "General",
+              "value": "VISC_LRG"
+            },
+            {
+              "key": "SmallVisceroid",
+              "line": 105,
+              "section": "General",
+              "value": "VISC_SML"
+            },
+            {
+              "key": "AIIonCannonConYardValue",
+              "line": 115,
+              "section": "General",
+              "value": "100,100,100"
+            },
+            {
+              "key": "AIIonCannonWarFactoryValue",
+              "line": 116,
+              "section": "General",
+              "value": "100,100,100"
+            },
+            {
+              "key": "AIIonCannonPowerValue",
+              "line": 117,
+              "section": "General",
+              "value": "60,100,100"
+            },
+            {
+              "key": "AIIonCannonTechCenterValue",
+              "line": 118,
+              "section": "General",
+              "value": "100,100,100"
+            },
+            {
+              "key": "AIIonCannonEngineerValue",
+              "line": 119,
+              "section": "General",
+              "value": "1,1,1"
+            },
+            {
+              "key": "AIIonCannonThiefValue",
+              "line": 120,
+              "section": "General",
+              "value": "1,1,1"
+            },
+            {
+              "key": "AIIonCannonHarvesterValue",
+              "line": 121,
+              "section": "General",
+              "value": "1,1,1"
+            },
+            {
+              "key": "AIIonCannonMCVValue",
+              "line": 122,
+              "section": "General",
+              "value": "1,1,1"
+            },
+            {
+              "key": "AIIonCannonAPCValue",
+              "line": 123,
+              "section": "General",
+              "value": "1,1,1"
+            },
+            {
+              "key": "AIIonCannonBaseDefenseValue",
+              "line": 124,
+              "section": "General",
+              "value": "35,35,35"
+            },
+            {
+              "key": "LightningDeferment",
+              "line": 130,
+              "section": "General",
+              "value": "250"
+            },
+            {
+              "key": "LightningDamage",
+              "line": 131,
+              "section": "General",
+              "value": "250"
+            },
+            {
+              "key": "LightningStormDuration",
+              "line": 132,
+              "section": "General",
+              "value": "180"
+            },
+            {
+              "key": "LightningWarhead",
+              "line": 133,
+              "section": "General",
+              "value": "IonWH"
+            },
+            {
+              "key": "LightningHitDelay",
+              "line": 134,
+              "section": "General",
+              "value": "10"
+            },
+            {
+              "key": "LightningScatterDelay",
+              "line": 135,
+              "section": "General",
+              "value": "5"
+            },
+            {
+              "key": "LightningCellSpread",
+              "line": 136,
+              "section": "General",
+              "value": "10"
+            },
+            {
+              "key": "LightningSeparation",
+              "line": 137,
+              "section": "General",
+              "value": "3"
+            },
+            {
+              "key": "IonStorms",
+              "line": 138,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "ForceShieldRadius",
+              "line": 141,
+              "section": "General",
+              "value": "4"
+            },
+            {
+              "key": "ForceShieldDuration",
+              "line": 142,
+              "section": "General",
+              "value": "500"
+            },
+            {
+              "key": "ForceShieldBlackoutDuration",
+              "line": 143,
+              "section": "General",
+              "value": "1000"
+            },
+            {
+              "key": "ForceShieldPlayFadeSoundTime",
+              "line": 144,
+              "section": "General",
+              "value": "75"
+            },
+            {
+              "key": "MutateExplosion",
+              "line": 146,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "PrismType",
+              "line": 149,
+              "section": "General",
+              "value": "ATESLA"
+            },
+            {
+              "key": "PrismSupportModifier",
+              "line": 150,
+              "section": "General",
+              "value": "150%"
+            },
+            {
+              "key": "PrismSupportMax",
+              "line": 151,
+              "section": "General",
+              "value": "8"
+            },
+            {
+              "key": "PrismSupportDelay",
+              "line": 152,
+              "section": "General",
+              "value": "45"
+            },
+            {
+              "key": "PrismSupportDuration",
+              "line": 153,
+              "section": "General",
+              "value": "15"
+            },
+            {
+              "key": "PrismSupportHeight",
+              "line": 154,
+              "section": "General",
+              "value": "420"
+            },
+            {
+              "key": "V3RocketPauseFrames",
+              "line": 157,
+              "section": "General",
+              "value": "0"
+            },
+            {
+              "key": "V3RocketTiltFrames",
+              "line": 158,
+              "section": "General",
+              "value": "60"
+            },
+            {
+              "key": "V3RocketPitchInitial",
+              "line": 159,
+              "section": "General",
+              "value": "0.21"
+            },
+            {
+              "key": "V3RocketPitchFinal",
+              "line": 160,
+              "section": "General",
+              "value": "0.5"
+            },
+            {
+              "key": "V3RocketTurnRate",
+              "line": 161,
+              "section": "General",
+              "value": "0.05"
+            },
+            {
+              "key": "V3RocketRaiseRate",
+              "line": 162,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "V3RocketAcceleration",
+              "line": 163,
+              "section": "General",
+              "value": "0.4"
+            },
+            {
+              "key": "V3RocketAltitude",
+              "line": 164,
+              "section": "General",
+              "value": "768"
+            },
+            {
+              "key": "V3RocketDamage",
+              "line": 165,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "V3RocketEliteDamage",
+              "line": 166,
+              "section": "General",
+              "value": "400"
+            },
+            {
+              "key": "V3RocketBodyLength",
+              "line": 167,
+              "section": "General",
+              "value": "256"
+            },
+            {
+              "key": "V3RocketLazyCurve",
+              "line": 168,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "V3RocketType",
+              "line": 169,
+              "section": "General",
+              "value": "V3ROCKET"
+            },
+            {
+              "key": "DMislPauseFrames",
+              "line": 172,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "DMislTiltFrames",
+              "line": 173,
+              "section": "General",
+              "value": "60"
+            },
+            {
+              "key": "DMislPitchInitial",
+              "line": 174,
+              "section": "General",
+              "value": "0"
+            },
+            {
+              "key": "DMislPitchFinal",
+              "line": 175,
+              "section": "General",
+              "value": "0.5"
+            },
+            {
+              "key": "DMislTurnRate",
+              "line": 176,
+              "section": "General",
+              "value": "0.08"
+            },
+            {
+              "key": "DMislRaiseRate",
+              "line": 177,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "DMislAcceleration",
+              "line": 178,
+              "section": "General",
+              "value": "0.8"
+            },
+            {
+              "key": "DMislAltitude",
+              "line": 179,
+              "section": "General",
+              "value": "768"
+            },
+            {
+              "key": "DMislDamage",
+              "line": 180,
+              "section": "General",
+              "value": "300"
+            },
+            {
+              "key": "DMislEliteDamage",
+              "line": 181,
+              "section": "General",
+              "value": "600"
+            },
+            {
+              "key": "DMislBodyLength",
+              "line": 182,
+              "section": "General",
+              "value": "128"
+            },
+            {
+              "key": "DMislLazyCurve",
+              "line": 183,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "DMislType",
+              "line": 184,
+              "section": "General",
+              "value": "DMISL"
+            },
+            {
+              "key": "CMislPauseFrames",
+              "line": 187,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "CMislTiltFrames",
+              "line": 188,
+              "section": "General",
+              "value": "100"
+            },
+            {
+              "key": "CMislPitchInitial",
+              "line": 189,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "CMislPitchFinal",
+              "line": 190,
+              "section": "General",
+              "value": "1.0"
+            },
+            {
+              "key": "CMislTurnRate",
+              "line": 191,
+              "section": "General",
+              "value": "0.10"
+            },
+            {
+              "key": "CMislRaiseRate",
+              "line": 192,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "CMislAcceleration",
+              "line": 193,
+              "section": "General",
+              "value": "1.0"
+            },
+            {
+              "key": "CMislAltitude",
+              "line": 194,
+              "section": "General",
+              "value": "768"
+            },
+            {
+              "key": "CMislDamage",
+              "line": 195,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "CMislEliteDamage",
+              "line": 196,
+              "section": "General",
+              "value": "250"
+            },
+            {
+              "key": "CMislBodyLength",
+              "line": 197,
+              "section": "General",
+              "value": "128"
+            },
+            {
+              "key": "CMislLazyCurve",
+              "line": 198,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "CMislType",
+              "line": 199,
+              "section": "General",
+              "value": "CMISL"
+            },
+            {
+              "key": "ParadropRadius",
+              "line": 202,
+              "section": "General",
+              "value": "1024"
+            },
+            {
+              "key": "FogOfWar",
+              "line": 205,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "Visceroids",
+              "line": 206,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "Meteorites",
+              "line": 207,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "CrewEscape",
+              "line": 208,
+              "section": "General",
+              "value": "50%"
+            },
+            {
+              "key": "CameraRange",
+              "line": 209,
+              "section": "General",
+              "value": "9"
+            },
+            {
+              "key": "FineDiffControl",
+              "line": 210,
+              "section": "General",
+              "value": "no"
+            },
+            {
+              "key": "Pilot",
+              "line": 211,
+              "section": "General",
+              "value": "E1"
+            },
+            {
+              "key": "AlliedCrew",
+              "line": 212,
+              "section": "General",
+              "value": "E1"
+            },
+            {
+              "key": "SovietCrew",
+              "line": 213,
+              "section": "General",
+              "value": "E2"
+            },
+            {
+              "key": "ThirdCrew",
+              "line": 214,
+              "section": "General",
+              "value": "INIT"
+            },
+            {
+              "key": "Technician",
+              "line": 215,
+              "section": "General",
+              "value": "CTECH"
+            },
+            {
+              "key": "Engineer",
+              "line": 216,
+              "section": "General",
+              "value": "ENGINEER"
+            },
+            {
+              "key": "PParatrooper",
+              "line": 217,
+              "section": "General",
+              "value": "E1"
+            },
+            {
+              "key": "ChronoDelay",
+              "line": 221,
+              "section": "General",
+              "value": "60"
+            },
+            {
+              "key": "ChronoReinfDelay",
+              "line": 222,
+              "section": "General",
+              "value": "180"
+            },
+            {
+              "key": "ChronoDistanceFactor",
+              "line": 223,
+              "section": "General",
+              "value": "48"
+            },
+            {
+              "key": "ChronoTrigger",
+              "line": 224,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "ChronoMinimumDelay",
+              "line": 225,
+              "section": "General",
+              "value": "16"
+            },
+            {
+              "key": "ChronoRangeMinimum",
+              "line": 227,
+              "section": "General",
+              "value": "0"
+            },
+            {
+              "key": "AmerParaDropInf",
+              "line": 241,
+              "section": "General",
+              "value": "E1"
+            },
+            {
+              "key": "AmerParaDropNum",
+              "line": 242,
+              "section": "General",
+              "value": "8"
+            },
+            {
+              "key": "AllyParaDropInf",
+              "line": 244,
+              "section": "General",
+              "value": "E1"
+            },
+            {
+              "key": "AllyParaDropNum",
+              "line": 245,
+              "section": "General",
+              "value": "6"
+            },
+            {
+              "key": "SovParaDropInf",
+              "line": 247,
+              "section": "General",
+              "value": "E2"
+            },
+            {
+              "key": "SovParaDropNum",
+              "line": 248,
+              "section": "General",
+              "value": "9"
+            },
+            {
+              "key": "YuriParaDropInf",
+              "line": 250,
+              "section": "General",
+              "value": "INIT"
+            },
+            {
+              "key": "YuriParaDropNum",
+              "line": 251,
+              "section": "General",
+              "value": "6"
+            },
+            {
+              "key": "AnimToInfantry",
+              "line": 258,
+              "section": "General",
+              "value": "BRUTE"
+            },
+            {
+              "key": "SecretInfantry",
+              "line": 263,
+              "section": "General",
+              "value": "SNIPE,TERROR,DESO,YURI"
+            },
+            {
+              "key": "SecretUnits",
+              "line": 265,
+              "section": "General",
+              "value": "TNKD,TTNK,DTRUCK"
+            },
+            {
+              "key": "SecretBuildings",
+              "line": 267,
+              "section": "General",
+              "value": "GTGCAN"
+            },
+            {
+              "key": "AlliedDisguise",
+              "line": 274,
+              "section": "General",
+              "value": "E1"
+            },
+            {
+              "key": "SovietDisguise",
+              "line": 275,
+              "section": "General",
+              "value": "E2"
+            },
+            {
+              "key": "ThirdDisguise",
+              "line": 276,
+              "section": "General",
+              "value": "INIT"
+            },
+            {
+              "key": "SpyPowerBlackout",
+              "line": 277,
+              "section": "General",
+              "value": "1000"
+            },
+            {
+              "key": "SpyMoneyStealPercent",
+              "line": 278,
+              "section": "General",
+              "value": ".5"
+            },
+            {
+              "key": "AttackCursorOnDisguise",
+              "line": 281,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "DefaultMirageDisguises",
+              "line": 285,
+              "section": "General",
+              "value": "TREE01,TREE02,TREE03,TREE04"
+            },
+            {
+              "key": "InfantryBlinkDisguiseTime",
+              "line": 286,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "MaximumCheerRate",
+              "line": 288,
+              "section": "General",
+              "value": "300"
+            },
+            {
+              "key": "AISafeDistance",
+              "line": 291,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "AIMinorSuperReadyPercent",
+              "line": 292,
+              "section": "General",
+              "value": ".7"
+            },
+            {
+              "key": "HarvesterTooFarDistance",
+              "line": 293,
+              "section": "General",
+              "value": "5"
+            },
+            {
+              "key": "ChronoHarvTooFarDistance",
+              "line": 294,
+              "section": "General",
+              "value": "50"
+            },
+            {
+              "key": "AlliedBaseDefenseCounts",
+              "line": 295,
+              "section": "General",
+              "value": "25,20,6"
+            },
+            {
+              "key": "SovietBaseDefenseCounts",
+              "line": 296,
+              "section": "General",
+              "value": "25,22,6"
+            },
+            {
+              "key": "ThirdBaseDefenseCounts",
+              "line": 297,
+              "section": "General",
+              "value": "25,22,6"
+            },
+            {
+              "key": "AIPickWallDefensePercent",
+              "line": 298,
+              "section": "General",
+              "value": "50,25,10"
+            },
+            {
+              "key": "AIRestrictReplaceTime",
+              "line": 299,
+              "section": "General",
+              "value": "400"
+            },
+            {
+              "key": "ThreatPerOccupant",
+              "line": 300,
+              "section": "General",
+              "value": "10"
+            },
+            {
+              "key": "ApproachTargetResetMultiplier",
+              "line": 301,
+              "section": "General",
+              "value": "1.5"
+            },
+            {
+              "key": "CampaignMoneyDeltaEasy",
+              "line": 302,
+              "section": "General",
+              "value": "0"
+            },
+            {
+              "key": "CampaignMoneyDeltaHard",
+              "line": 303,
+              "section": "General",
+              "value": "0"
+            },
+            {
+              "key": "GuardAreaTargetingDelay",
+              "line": 304,
+              "section": "General",
+              "value": "36"
+            },
+            {
+              "key": "NormalTargetingDelay",
+              "line": 305,
+              "section": "General",
+              "value": "27"
+            },
+            {
+              "key": "AINavalYardAdjacency",
+              "line": 306,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "DisabledDisguiseDetectionPercent",
+              "line": 307,
+              "section": "General",
+              "value": "15,5,2"
+            },
+            {
+              "key": "AIAutoDeployFrameDelay",
+              "line": 308,
+              "section": "General",
+              "value": "15,25,100"
+            },
+            {
+              "key": "MaximumBuildingPlacementFailures",
+              "line": 309,
+              "section": "General",
+              "value": "3"
+            },
+            {
+              "key": "TiberiumShortScan",
+              "line": 311,
+              "section": "General",
+              "value": "6"
+            },
+            {
+              "key": "TiberiumLongScan",
+              "line": 312,
+              "section": "General",
+              "value": "48"
+            },
+            {
+              "key": "SlaveMinerShortScan",
+              "line": 313,
+              "section": "General",
+              "value": "8"
+            },
+            {
+              "key": "SlaveMinerSlaveScan",
+              "line": 314,
+              "section": "General",
+              "value": "14"
+            },
+            {
+              "key": "SlaveMinerLongScan",
+              "line": 315,
+              "section": "General",
+              "value": "48"
+            },
+            {
+              "key": "SlaveMinerScanCorrection",
+              "line": 316,
+              "section": "General",
+              "value": "3"
+            },
+            {
+              "key": "SlaveMinerKickFrameDelay",
+              "line": 317,
+              "section": "General",
+              "value": "150"
+            },
+            {
+              "key": "AISuperDefenseProbability",
+              "line": 320,
+              "section": "General",
+              "value": "90,50,10"
+            },
+            {
+              "key": "AISuperDefenseFrames",
+              "line": 321,
+              "section": "General",
+              "value": "50"
+            },
+            {
+              "key": "AISuperDefenseDistance",
+              "line": 322,
+              "section": "General",
+              "value": "12"
+            },
+            {
+              "key": "AICaptureNormal",
+              "line": 327,
+              "section": "General",
+              "value": "75,5,5,15"
+            },
+            {
+              "key": "AICaptureWounded",
+              "line": 328,
+              "section": "General",
+              "value": "15,40,40,5"
+            },
+            {
+              "key": "AICaptureLowPower",
+              "line": 329,
+              "section": "General",
+              "value": "15,5,75,5"
+            },
+            {
+              "key": "AICaptureLowMoney",
+              "line": 330,
+              "section": "General",
+              "value": "15,75,5,5"
+            },
+            {
+              "key": "AICaptureLowMoneyMark",
+              "line": 333,
+              "section": "General",
+              "value": "2000"
+            },
+            {
+              "key": "AICaptureWoundedMark",
+              "line": 334,
+              "section": "General",
+              "value": ".25"
+            },
+            {
+              "key": "PurifierBonus",
+              "line": 340,
+              "section": "General",
+              "value": ".25"
+            },
+            {
+              "key": "DropPodWeapon",
+              "line": 343,
+              "section": "General",
+              "value": "Vulcan2"
+            },
+            {
+              "key": "DropPodHeight",
+              "line": 344,
+              "section": "General",
+              "value": "2000"
+            },
+            {
+              "key": "DropPodSpeed",
+              "line": 345,
+              "section": "General",
+              "value": "75"
+            },
+            {
+              "key": "DropPodAngle",
+              "line": 346,
+              "section": "General",
+              "value": "0.79"
+            },
+            {
+              "key": "HoverHeight",
+              "line": 349,
+              "section": "General",
+              "value": "120"
+            },
+            {
+              "key": "HoverDampen",
+              "line": 350,
+              "section": "General",
+              "value": "40%"
+            },
+            {
+              "key": "HoverBob",
+              "line": 351,
+              "section": "General",
+              "value": ".04"
+            },
+            {
+              "key": "HoverBoost",
+              "line": 352,
+              "section": "General",
+              "value": "150%"
+            },
+            {
+              "key": "HoverAcceleration",
+              "line": 353,
+              "section": "General",
+              "value": ".02"
+            },
+            {
+              "key": "HoverBrake",
+              "line": 354,
+              "section": "General",
+              "value": ".03"
+            },
+            {
+              "key": "BalloonHoverHeight",
+              "line": 357,
+              "section": "General",
+              "value": "1000"
+            },
+            {
+              "key": "BalloonHoverDampen",
+              "line": 358,
+              "section": "General",
+              "value": "20%"
+            },
+            {
+              "key": "BalloonHoverBob",
+              "line": 359,
+              "section": "General",
+              "value": "1.2"
+            },
+            {
+              "key": "BalloonHoverBoost",
+              "line": 360,
+              "section": "General",
+              "value": "150%"
+            },
+            {
+              "key": "BalloonHoverAcceleration",
+              "line": 361,
+              "section": "General",
+              "value": ".04"
+            },
+            {
+              "key": "BalloonHoverBrake",
+              "line": 362,
+              "section": "General",
+              "value": ".03"
+            },
+            {
+              "key": "TunnelSpeed",
+              "line": 365,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "MultipleFactory",
+              "line": 368,
+              "section": "General",
+              "value": "0.8"
+            },
+            {
+              "key": "MinLowPowerProductionSpeed",
+              "line": 369,
+              "section": "General",
+              "value": ".5"
+            },
+            {
+              "key": "MaxLowPowerProductionSpeed",
+              "line": 370,
+              "section": "General",
+              "value": ".8"
+            },
+            {
+              "key": "LowPowerPenaltyModifier",
+              "line": 371,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "GDIGateOne",
+              "line": 374,
+              "section": "General",
+              "value": "GADUMY"
+            },
+            {
+              "key": "GDIGateTwo",
+              "line": 375,
+              "section": "General",
+              "value": "GADUMY"
+            },
+            {
+              "key": "WallTower",
+              "line": 376,
+              "section": "General",
+              "value": "GADUMY"
+            },
+            {
+              "key": "Shipyard",
+              "line": 377,
+              "section": "General",
+              "value": "GAYARD,NAYARD,YAYARD"
+            },
+            {
+              "key": "NodGateOne",
+              "line": 378,
+              "section": "General",
+              "value": "GADUMY"
+            },
+            {
+              "key": "NodGateTwo",
+              "line": 379,
+              "section": "General",
+              "value": "GADUMY"
+            },
+            {
+              "key": "NodRegularPower",
+              "line": 380,
+              "section": "General",
+              "value": "NAPOWR"
+            },
+            {
+              "key": "NodAdvancedPower",
+              "line": 381,
+              "section": "General",
+              "value": "NANRCT"
+            },
+            {
+              "key": "GDIPowerPlant",
+              "line": 382,
+              "section": "General",
+              "value": "GAPOWR"
+            },
+            {
+              "key": "ThirdPowerPlant",
+              "line": 383,
+              "section": "General",
+              "value": "YAPOWR"
+            },
+            {
+              "key": "RepairBay",
+              "line": 389,
+              "section": "General",
+              "value": "GADEPT,NADEPT,CAOUTP"
+            },
+            {
+              "key": "BaseUnit",
+              "line": 390,
+              "section": "General",
+              "value": "AMCV,SMCV,PCV"
+            },
+            {
+              "key": "HarvesterUnit",
+              "line": 393,
+              "section": "General",
+              "value": "HARV,CMIN"
+            },
+            {
+              "key": "PadAircraft",
+              "line": 395,
+              "section": "General",
+              "value": "ORCA,BEAG"
+            },
+            {
+              "key": "TreeStrength",
+              "line": 398,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "WindDirection",
+              "line": 399,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "TrackedUphill",
+              "line": 401,
+              "section": "General",
+              "value": "1.0"
+            },
+            {
+              "key": "TrackedDownhill",
+              "line": 402,
+              "section": "General",
+              "value": "1.2"
+            },
+            {
+              "key": "WheeledUphill",
+              "line": 403,
+              "section": "General",
+              "value": "1.0"
+            },
+            {
+              "key": "WheeledDownhill",
+              "line": 404,
+              "section": "General",
+              "value": "1.2"
+            },
+            {
+              "key": "LeptonsPerSightIncrease",
+              "line": 405,
+              "section": "General",
+              "value": "2000"
+            },
+            {
+              "key": "LeptonsPerFireIncrease",
+              "line": 406,
+              "section": "General",
+              "value": "2000"
+            },
+            {
+              "key": "AttackingAircraftSightRange",
+              "line": 407,
+              "section": "General",
+              "value": "2"
+            },
+            {
+              "key": "BlendedFog",
+              "line": 408,
+              "section": "General",
+              "value": "yes"
+            },
+            {
+              "key": "CliffBackImpassability",
+              "line": 409,
+              "section": "General",
+              "value": "2"
+            },
+            {
+              "key": "IceCrackingWeight",
+              "line": 410,
+              "section": "General",
+              "value": "50.0"
+            },
+            {
+              "key": "IceBreakingWeight",
+              "line": 411,
+              "section": "General",
+              "value": "50.0"
+            },
+            {
+              "key": "ShipSinkingWeight",
+              "line": 412,
+              "section": "General",
+              "value": "3.0"
+            },
+            {
+              "key": "CloakingStages",
+              "line": 413,
+              "section": "General",
+              "value": "9"
+            },
+            {
+              "key": "TiberiumTransmogrify",
+              "line": 414,
+              "section": "General",
+              "value": "40"
+            },
+            {
+              "key": "TreeFlammability",
+              "line": 415,
+              "section": "General",
+              "value": "0.0"
+            },
+            {
+              "key": "CraterLevel",
+              "line": 416,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "BridgeVoxelMax",
+              "line": 419,
+              "section": "General",
+              "value": "3"
+            },
+            {
+              "key": "WallBuildSpeedCoefficient",
+              "line": 420,
+              "section": "General",
+              "value": "3.0"
+            },
+            {
+              "key": "AllowShroudedSubteranneanMoves",
+              "line": 421,
+              "section": "General",
+              "value": "true"
+            },
+            {
+              "key": "AircraftFogReveal",
+              "line": 422,
+              "section": "General",
+              "value": "6"
+            },
+            {
+              "key": "MaximumQueuedObjects",
+              "line": 423,
+              "section": "General",
+              "value": "29"
+            },
+            {
+              "key": "MaxWaypointPathLength",
+              "line": 424,
+              "section": "General",
+              "value": "15"
+            },
+            {
+              "key": "ChargeToDrainRatio",
+              "line": 427,
+              "section": "General",
+              "value": ".333"
+            },
+            {
+              "key": "DamageToFirestormDamageCoefficient",
+              "line": 428,
+              "section": "General",
+              "value": ".1"
+            },
+            {
+              "key": "VeinholeGrowthRate",
+              "line": 432,
+              "section": "General",
+              "value": "300"
+            },
+            {
+              "key": "VeinholeShrinkRate",
+              "line": 433,
+              "section": "General",
+              "value": "100"
+            },
+            {
+              "key": "MaxVeinholeGrowth",
+              "line": 434,
+              "section": "General",
+              "value": "2000"
+            },
+            {
+              "key": "VeinDamage",
+              "line": 435,
+              "section": "General",
+              "value": "0"
+            },
+            {
+              "key": "VeinholeTypeClass",
+              "line": 436,
+              "section": "General",
+              "value": "VEINTREE"
+            },
+            {
+              "key": "AITriggerSuccessWeightDelta",
+              "line": 440,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "AITriggerFailureWeightDelta",
+              "line": 441,
+              "section": "General",
+              "value": "-50"
+            },
+            {
+              "key": "AITriggerTrackRecordCoefficient",
+              "line": 442,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "SpotlightSpeed",
+              "line": 445,
+              "section": "General",
+              "value": ".015"
+            },
+            {
+              "key": "SpotlightMovementRadius",
+              "line": 446,
+              "section": "General",
+              "value": "2000"
+            },
+            {
+              "key": "SpotlightLocationRadius",
+              "line": 447,
+              "section": "General",
+              "value": "1000"
+            },
+            {
+              "key": "SpotlightAcceleration",
+              "line": 448,
+              "section": "General",
+              "value": ".0025"
+            },
+            {
+              "key": "SpotlightAngle",
+              "line": 449,
+              "section": "General",
+              "value": ".5"
+            },
+            {
+              "key": "RadarEventSuppressionDistances",
+              "line": 462,
+              "section": "General",
+              "value": "8, 8, 8, 8, 8, 6"
+            },
+            {
+              "key": "RadarEventVisibilityDurations",
+              "line": 463,
+              "section": "General",
+              "value": "200,200,200,200,200,200"
+            },
+            {
+              "key": "RadarEventDurations",
+              "line": 464,
+              "section": "General",
+              "value": "400,400,400,400,400,400"
+            },
+            {
+              "key": "FlashFrameTime",
+              "line": 465,
+              "section": "General",
+              "value": "7"
+            },
+            {
+              "key": "RadarCombatFlashTime",
+              "line": 466,
+              "section": "General",
+              "value": "49"
+            },
+            {
+              "key": "RadarEventMinRadius",
+              "line": 467,
+              "section": "General",
+              "value": "8"
+            },
+            {
+              "key": "RadarEventSpeed",
+              "line": 468,
+              "section": "General",
+              "value": "1.2"
+            },
+            {
+              "key": "RadarEventRotationSpeed",
+              "line": 469,
+              "section": "General",
+              "value": ".05"
+            },
+            {
+              "key": "RadarEventColorSpeed",
+              "line": 470,
+              "section": "General",
+              "value": ".1"
+            },
+            {
+              "key": "RevealTriggerRadius",
+              "line": 472,
+              "section": "General",
+              "value": "9"
+            },
+            {
+              "key": "ExplosiveVoxelDebris",
+              "line": 475,
+              "section": "General",
+              "value": "GASTANK,PIECE"
+            },
+            {
+              "key": "TireVoxelDebris",
+              "line": 476,
+              "section": "General",
+              "value": "TIRE"
+            },
+            {
+              "key": "ScrapVoxelDebris",
+              "line": 477,
+              "section": "General",
+              "value": "PIECE"
+            },
+            {
+              "key": "OKBuildingSmokeSystem",
+              "line": 478,
+              "section": "General",
+              "value": "SmokeStackSys"
+            },
+            {
+              "key": "DamagedBuildingSmokeSystem",
+              "line": 479,
+              "section": "General",
+              "value": "SmallSmokeSys"
+            },
+            {
+              "key": "DamagedUnitSmokeSystem",
+              "line": 480,
+              "section": "General",
+              "value": "VSSmokeSys"
+            },
+            {
+              "key": "DebrisSmokeSystem",
+              "line": 481,
+              "section": "General",
+              "value": "VSSmokeSys"
+            },
+            {
+              "key": "PrerequisitePower",
+              "line": 484,
+              "section": "General",
+              "value": "GAPOWR,NAPOWR,NANRCT,YAPOWR"
+            },
+            {
+              "key": "PrerequisiteFactory",
+              "line": 485,
+              "section": "General",
+              "value": "GAWEAP,NAWEAP,YAWEAP"
+            },
+            {
+              "key": "PrerequisiteBarracks",
+              "line": 486,
+              "section": "General",
+              "value": "NAHAND,GAPILE,YABRCK"
+            },
+            {
+              "key": "PrerequisiteRadar",
+              "line": 487,
+              "section": "General",
+              "value": "GAAIRC,NARADR,AMRADR,NAPSIS"
+            },
+            {
+              "key": "PrerequisiteTech",
+              "line": 488,
+              "section": "General",
+              "value": "GATECH,NATECH,YATECH"
+            },
+            {
+              "key": "PrerequisiteProc",
+              "line": 489,
+              "section": "General",
+              "value": "GAREFN,NAREFN,YAREFN"
+            },
+            {
+              "key": "PrerequisiteProcAlternate",
+              "line": 490,
+              "section": "General",
+              "value": "SMIN"
+            },
+            {
+              "key": "HunterSeekerDetonateProximity",
+              "line": 493,
+              "section": "General",
+              "value": "150"
+            },
+            {
+              "key": "HunterSeekerDescendProximity",
+              "line": 494,
+              "section": "General",
+              "value": "700"
+            },
+            {
+              "key": "HunterSeekerAscentSpeed",
+              "line": 495,
+              "section": "General",
+              "value": "40"
+            },
+            {
+              "key": "HunterSeekerDescentSpeed",
+              "line": 496,
+              "section": "General",
+              "value": "50"
+            },
+            {
+              "key": "HunterSeekerEmergeSpeed",
+              "line": 497,
+              "section": "General",
+              "value": "6"
+            },
+            {
+              "key": "MyEffectivenessCoefficientDefault",
+              "line": 500,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "TargetEffectivenessCoefficientDefault",
+              "line": 501,
+              "section": "General",
+              "value": "-200"
+            },
+            {
+              "key": "TargetSpecialThreatCoefficientDefault",
+              "line": 502,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "TargetStrengthCoefficientDefault",
+              "line": 503,
+              "section": "General",
+              "value": "-200"
+            },
+            {
+              "key": "TargetDistanceCoefficientDefault",
+              "line": 504,
+              "section": "General",
+              "value": "-10"
+            },
+            {
+              "key": "DumbMyEffectivenessCoefficient",
+              "line": 507,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "DumbTargetEffectivenessCoefficient",
+              "line": 508,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "DumbTargetSpecialThreatCoefficient",
+              "line": 509,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "DumbTargetStrengthCoefficient",
+              "line": 510,
+              "section": "General",
+              "value": "200"
+            },
+            {
+              "key": "DumbTargetDistanceCoefficient",
+              "line": 511,
+              "section": "General",
+              "value": "-1"
+            },
+            {
+              "key": "EnemyHouseThreatBonus",
+              "line": 513,
+              "section": "General",
+              "value": "400"
+            },
+            {
+              "key": "DamageFireTypes",
+              "line": 519,
+              "section": "General",
+              "value": "FIRE01,FIRE02,FIRE03"
+            },
+            {
+              "key": "OreTwinkle",
+              "line": 520,
+              "section": "General",
+              "value": "TWNK1"
+            },
+            {
+              "key": "BarrelExplode",
+              "line": 521,
+              "section": "General",
+              "value": "EXPLOLRG"
+            },
+            {
+              "key": "BarrelDebris",
+              "line": 522,
+              "section": "General",
+              "value": "GASTANK,PIECE"
+            },
+            {
+              "key": "BarrelParticle",
+              "line": 523,
+              "section": "General",
+              "value": "SmallGreySSys"
+            },
+            {
+              "key": "NukeTakeOff",
+              "line": 524,
+              "section": "General",
+              "value": "NUKETO"
+            },
+            {
+              "key": "Wake",
+              "line": 525,
+              "section": "General",
+              "value": "WAKE1"
+            },
+            {
+              "key": "DropPod",
+              "line": 526,
+              "section": "General",
+              "value": "DROPPOD,DROPPOD2"
+            },
+            {
+              "key": "DeadBodies",
+              "line": 527,
+              "section": "General",
+              "value": "DEATH_A,DEATH_B,DEATH_C,DEATH_D,DEATH_E,DEATH_F"
+            },
+            {
+              "key": "MetallicDebris",
+              "line": 528,
+              "section": "General",
+              "value": "DBRIS1LG,DBRIS2LG,DBRIS3LG,DBRIS4LG,DBRIS5LG,DBRIS6LG,DBRIS7LG,DBRIS8LG,DBRIS9LG,DBRS10LG,DBRIS1SM,DBRIS2SM,DBRIS3SM,DBRIS4SM,DBRIS5SM,DBRIS6SM,DBRIS7SM,DBRIS8SM,DBRIS9SM,DBRS10SM"
+            },
+            {
+              "key": "BridgeExplosions",
+              "line": 529,
+              "section": "General",
+              "value": "TWLT026,TWLT036,TWLT050,TWLT070"
+            },
+            {
+              "key": "IonBlast",
+              "line": 530,
+              "section": "General",
+              "value": "RING1"
+            },
+            {
+              "key": "IonBeam",
+              "line": 531,
+              "section": "General",
+              "value": "IONBEAM"
+            },
+            {
+              "key": "WeatherConClouds",
+              "line": 532,
+              "section": "General",
+              "value": "WCCLOUD1,WCCLOUD2,WCCLOUD3"
+            },
+            {
+              "key": "WeatherConBolts",
+              "line": 533,
+              "section": "General",
+              "value": "WCLBOLT1,WCLBOLT2,WCLBOLT3"
+            },
+            {
+              "key": "WeatherConBoltExplosion",
+              "line": 534,
+              "section": "General",
+              "value": "EXPLOLB"
+            },
+            {
+              "key": "DominatorWarhead",
+              "line": 537,
+              "section": "General",
+              "value": "DominatorWH"
+            },
+            {
+              "key": "DominatorDamage",
+              "line": 538,
+              "section": "General",
+              "value": "1000"
+            },
+            {
+              "key": "DominatorCaptureRange",
+              "line": 539,
+              "section": "General",
+              "value": "1"
+            },
+            {
+              "key": "DominatorFirstAnim",
+              "line": 540,
+              "section": "General",
+              "value": "PDFXCLD"
+            },
+            {
+              "key": "DominatorSecondAnim",
+              "line": 541,
+              "section": "General",
+              "value": "PDFXLOC"
+            },
+            {
+              "key": "DominatorFireAtPercentage",
+              "line": 542,
+              "section": "General",
+              "value": "20"
+            },
+            {
+              "key": "ChronoPlacement",
+              "line": 544,
+              "section": "General",
+              "value": "CHRONOAR"
+            },
+            {
+              "key": "ChronoBeam",
+              "line": 545,
+              "section": "General",
+              "value": "CHRONOBM"
+            },
+            {
+              "key": "ChronoBlast",
+              "line": 546,
+              "section": "General",
+              "value": "CHRONOFD"
+            },
+            {
+              "key": "ChronoBlastDest",
+              "line": 547,
+              "section": "General",
+              "value": "CHRONOTG"
+            },
+            {
+              "key": "WarpIn",
+              "line": 548,
+              "section": "General",
+              "value": "WARPIN"
+            },
+            {
+              "key": "WarpOut",
+              "line": 549,
+              "section": "General",
+              "value": "WARPOUT"
+            },
+            {
+              "key": "WarpAway",
+              "line": 550,
+              "section": "General",
+              "value": "WARPAWAY"
+            },
+            {
+              "key": "IronCurtainInvokeAnim",
+              "line": 551,
+              "section": "General",
+              "value": "IRONBLST"
+            },
+            {
+              "key": "ForceShieldInvokeAnim",
+              "line": 552,
+              "section": "General",
+              "value": "FORCSHLD"
+            },
+            {
+              "key": "WeaponNullifyAnim",
+              "line": 553,
+              "section": "General",
+              "value": "IRONFX"
+            },
+            {
+              "key": "ChronoSparkle1",
+              "line": 554,
+              "section": "General",
+              "value": "CHRONOSK"
+            },
+            {
+              "key": "InfantryExplode",
+              "line": 555,
+              "section": "General",
+              "value": "S_BANG34"
+            },
+            {
+              "key": "FlamingInfantry",
+              "line": 556,
+              "section": "General",
+              "value": "FLAMEGUY"
+            },
+            {
+              "key": "InfantryHeadPop",
+              "line": 557,
+              "section": "General",
+              "value": "YURIDIE"
+            },
+            {
+              "key": "InfantryNuked",
+              "line": 558,
+              "section": "General",
+              "value": "NUKEDIE"
+            },
+            {
+              "key": "InfantryVirus",
+              "line": 559,
+              "section": "General",
+              "value": "VIRUSD"
+            },
+            {
+              "key": "InfantryBrute",
+              "line": 560,
+              "section": "General",
+              "value": "BRUTDIE"
+            },
+            {
+              "key": "InfantryMutate",
+              "line": 561,
+              "section": "General",
+              "value": "GENDEATH"
+            },
+            {
+              "key": "Behind",
+              "line": 562,
+              "section": "General",
+              "value": "BEHIND"
+            },
+            {
+              "key": "MoveFlash",
+              "line": 563,
+              "section": "General",
+              "value": "RING"
+            },
+            {
+              "key": "Parachute",
+              "line": 564,
+              "section": "General",
+              "value": "PARACH"
+            },
+            {
+              "key": "BombParachute",
+              "line": 565,
+              "section": "General",
+              "value": "PARABOMB"
+            },
+            {
+              "key": "DropZoneAnim",
+              "line": 566,
+              "section": "General",
+              "value": "BEACON"
+            },
+            {
+              "key": "EMPulseSparkles",
+              "line": 567,
+              "section": "General",
+              "value": "EMP_FX01"
+            },
+            {
+              "key": "UIName",
+              "line": 11656,
+              "section": "GAPOWR",
+              "value": "Name:GAPOWR"
+            },
+            {
+              "key": "Name",
+              "line": 11657,
+              "section": "GAPOWR",
+              "value": "Allied Power Plant"
+            },
+            {
+              "key": "BuildCat",
+              "line": 11658,
+              "section": "GAPOWR",
+              "value": "Power"
+            },
+            {
+              "key": "Prerequisite",
+              "line": 11659,
+              "section": "GAPOWR",
+              "value": "GACNST"
+            },
+            {
+              "key": "Strength",
+              "line": 11660,
+              "section": "GAPOWR",
+              "value": "750"
+            },
+            {
+              "key": "Armor",
+              "line": 11661,
+              "section": "GAPOWR",
+              "value": "wood"
+            },
+            {
+              "key": "TechLevel",
+              "line": 11662,
+              "section": "GAPOWR",
+              "value": "1"
+            },
+            {
+              "key": "Adjacent",
+              "line": 11663,
+              "section": "GAPOWR",
+              "value": "2"
+            },
+            {
+              "key": "Sight",
+              "line": 11664,
+              "section": "GAPOWR",
+              "value": "4"
+            },
+            {
+              "key": "Owner",
+              "line": 11665,
+              "section": "GAPOWR",
+              "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+            },
+            {
+              "key": "AIBasePlanningSide",
+              "line": 11666,
+              "section": "GAPOWR",
+              "value": "0"
+            },
+            {
+              "key": "Cost",
+              "line": 11667,
+              "section": "GAPOWR",
+              "value": "800"
+            },
+            {
+              "key": "Points",
+              "line": 11668,
+              "section": "GAPOWR",
+              "value": "40"
+            },
+            {
+              "key": "Power",
+              "line": 11669,
+              "section": "GAPOWR",
+              "value": "200"
+            },
+            {
+              "key": "Capturable",
+              "line": 11670,
+              "section": "GAPOWR",
+              "value": "true"
+            },
+            {
+              "key": "Crewed",
+              "line": 11671,
+              "section": "GAPOWR",
+              "value": "yes"
+            },
+            {
+              "key": "Explosion",
+              "line": 11672,
+              "section": "GAPOWR",
+              "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60,gtpowexp"
+            },
+            {
+              "key": "Upgrades",
+              "line": 11673,
+              "section": "GAPOWR",
+              "value": "2"
+            },
+            {
+              "key": "DebrisAnims",
+              "line": 11674,
+              "section": "GAPOWR",
+              "value": "DBRIS1LG,DBRIS1SM,DBRIS4LG,DBRIS4SM,DBRIS5LG,DBRIS5SM"
+            },
+            {
+              "key": "MaxDebris",
+              "line": 11675,
+              "section": "GAPOWR",
+              "value": "6"
+            },
+            {
+              "key": "MinDebris",
+              "line": 11676,
+              "section": "GAPOWR",
+              "value": "4"
+            },
+            {
+              "key": "ThreatPosed",
+              "line": 11677,
+              "section": "GAPOWR",
+              "value": "0"
+            },
+            {
+              "key": "DamageSmokeOffset",
+              "line": 11679,
+              "section": "GAPOWR",
+              "value": "300, 300, 450"
+            },
+            {
+              "key": "TogglePower",
+              "line": 11680,
+              "section": "GAPOWR",
+              "value": "no"
+            },
+            {
+              "key": "Spyable",
+              "line": 11681,
+              "section": "GAPOWR",
+              "value": "yes"
+            },
+            {
+              "key": "DieSound",
+              "line": 11682,
+              "section": "GAPOWR",
+              "value": "PowerPlantDie"
+            },
+            {
+              "key": "ImmuneToPsionics",
+              "line": 11683,
+              "section": "GAPOWR",
+              "value": "no"
+            },
+            {
+              "key": "Drainable",
+              "line": 11684,
+              "section": "GAPOWR",
+              "value": "yes"
+            },
+            {
+              "key": "PoweredSpecial",
+              "line": 11685,
+              "section": "GAPOWR",
+              "value": "yes"
+            },
+            {
+              "key": "Foot",
+              "line": 30192,
+              "section": "Clear",
+              "value": "100%"
+            },
+            {
+              "key": "Track",
+              "line": 30193,
+              "section": "Clear",
+              "value": "100%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30194,
+              "section": "Clear",
+              "value": "100%"
+            },
+            {
+              "key": "Float",
+              "line": 30195,
+              "section": "Clear",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30196,
+              "section": "Clear",
+              "value": "50%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30197,
+              "section": "Clear",
+              "value": "80%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30198,
+              "section": "Clear",
+              "value": "0%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30199,
+              "section": "Clear",
+              "value": "yes"
+            },
+            {
+              "key": "Foot",
+              "line": 30213,
+              "section": "Rough",
+              "value": "100%"
+            },
+            {
+              "key": "Track",
+              "line": 30214,
+              "section": "Rough",
+              "value": "100%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30215,
+              "section": "Rough",
+              "value": "100%"
+            },
+            {
+              "key": "Float",
+              "line": 30216,
+              "section": "Rough",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30217,
+              "section": "Rough",
+              "value": "50%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30218,
+              "section": "Rough",
+              "value": "80%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30219,
+              "section": "Rough",
+              "value": "0%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30220,
+              "section": "Rough",
+              "value": "yes"
+            },
+            {
+              "key": "Foot",
+              "line": 30224,
+              "section": "Road",
+              "value": "100%"
+            },
+            {
+              "key": "Track",
+              "line": 30225,
+              "section": "Road",
+              "value": "100%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30226,
+              "section": "Road",
+              "value": "100%"
+            },
+            {
+              "key": "Hover",
+              "line": 30227,
+              "section": "Road",
+              "value": "75%"
+            },
+            {
+              "key": "Float",
+              "line": 30228,
+              "section": "Road",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30229,
+              "section": "Road",
+              "value": "0%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30230,
+              "section": "Road",
+              "value": "100%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30231,
+              "section": "Road",
+              "value": "yes"
+            },
+            {
+              "key": "Foot",
+              "line": 30235,
+              "section": "Water",
+              "value": "0%"
+            },
+            {
+              "key": "Track",
+              "line": 30236,
+              "section": "Water",
+              "value": "0%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30237,
+              "section": "Water",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30238,
+              "section": "Water",
+              "value": "100%"
+            },
+            {
+              "key": "Float",
+              "line": 30239,
+              "section": "Water",
+              "value": "100%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30240,
+              "section": "Water",
+              "value": "100%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30241,
+              "section": "Water",
+              "value": "100%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30242,
+              "section": "Water",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30246,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "Track",
+              "line": 30247,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30248,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "Float",
+              "line": 30249,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30250,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30251,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30252,
+              "section": "Rock",
+              "value": "0%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30253,
+              "section": "Rock",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30268,
+              "section": "Tiberium",
+              "value": "90%"
+            },
+            {
+              "key": "Track",
+              "line": 30269,
+              "section": "Tiberium",
+              "value": "70%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30270,
+              "section": "Tiberium",
+              "value": "50%"
+            },
+            {
+              "key": "Float",
+              "line": 30271,
+              "section": "Tiberium",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30272,
+              "section": "Tiberium",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30273,
+              "section": "Tiberium",
+              "value": "50%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30274,
+              "section": "Tiberium",
+              "value": "50%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30275,
+              "section": "Tiberium",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30279,
+              "section": "Weeds",
+              "value": "50%"
+            },
+            {
+              "key": "Track",
+              "line": 30280,
+              "section": "Weeds",
+              "value": "70%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30281,
+              "section": "Weeds",
+              "value": "50%"
+            },
+            {
+              "key": "Float",
+              "line": 30282,
+              "section": "Weeds",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30283,
+              "section": "Weeds",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30284,
+              "section": "Weeds",
+              "value": "100%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30285,
+              "section": "Weeds",
+              "value": "50%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30286,
+              "section": "Weeds",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30290,
+              "section": "Beach",
+              "value": "0%"
+            },
+            {
+              "key": "Track",
+              "line": 30291,
+              "section": "Beach",
+              "value": "0%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30292,
+              "section": "Beach",
+              "value": "0%"
+            },
+            {
+              "key": "Float",
+              "line": 30293,
+              "section": "Beach",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30294,
+              "section": "Beach",
+              "value": "100%"
+            },
+            {
+              "key": "Hover",
+              "line": 30295,
+              "section": "Beach",
+              "value": "75%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30296,
+              "section": "Beach",
+              "value": "60%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30297,
+              "section": "Beach",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30301,
+              "section": "Ice",
+              "value": "50%"
+            },
+            {
+              "key": "Track",
+              "line": 30302,
+              "section": "Ice",
+              "value": "80%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30303,
+              "section": "Ice",
+              "value": "50%"
+            },
+            {
+              "key": "Float",
+              "line": 30304,
+              "section": "Ice",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30305,
+              "section": "Ice",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30306,
+              "section": "Ice",
+              "value": "100%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30307,
+              "section": "Ice",
+              "value": "50%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30308,
+              "section": "Ice",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30312,
+              "section": "Railroad",
+              "value": "90%"
+            },
+            {
+              "key": "Track",
+              "line": 30313,
+              "section": "Railroad",
+              "value": "100%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30314,
+              "section": "Railroad",
+              "value": "50%"
+            },
+            {
+              "key": "Float",
+              "line": 30315,
+              "section": "Railroad",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30316,
+              "section": "Railroad",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30317,
+              "section": "Railroad",
+              "value": "100%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30318,
+              "section": "Railroad",
+              "value": "50%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30319,
+              "section": "Railroad",
+              "value": "no"
+            },
+            {
+              "key": "Foot",
+              "line": 30323,
+              "section": "Tunnel",
+              "value": "100%"
+            },
+            {
+              "key": "Track",
+              "line": 30324,
+              "section": "Tunnel",
+              "value": "100%"
+            },
+            {
+              "key": "Wheel",
+              "line": 30325,
+              "section": "Tunnel",
+              "value": "100%"
+            },
+            {
+              "key": "Float",
+              "line": 30326,
+              "section": "Tunnel",
+              "value": "0%"
+            },
+            {
+              "key": "FloatBeach",
+              "line": 30327,
+              "section": "Tunnel",
+              "value": "0%"
+            },
+            {
+              "key": "Hover",
+              "line": 30328,
+              "section": "Tunnel",
+              "value": "100%"
+            },
+            {
+              "key": "Amphibious",
+              "line": 30329,
+              "section": "Tunnel",
+              "value": "100%"
+            },
+            {
+              "key": "Buildable",
+              "line": 30330,
+              "section": "Tunnel",
+              "value": "no"
+            }
+          ]
+        },
+        {
+          "admitted": 0,
+          "file": "MPBattleMD.ini",
+          "physical_keys": null,
+          "retained": {
+            "adjacent": 2,
+            "foundation": 3,
+            "gate": 0,
+            "laser_fence": 0,
+            "laser_fence_post": 0,
+            "naval": 0,
+            "place_anywhere": 0,
+            "powers_up_building_first_byte": 0,
+            "speed_type": -1,
+            "to_overlay": 0,
+            "to_tile": 0
+          },
+          "source_lines": []
+        },
+        {
+          "admitted": 0,
+          "file": "GoldSt.mmx",
+          "physical_keys": null,
+          "retained": {
+            "adjacent": 2,
+            "foundation": 3,
+            "gate": 0,
+            "laser_fence": 0,
+            "laser_fence_post": 0,
+            "naval": 0,
+            "place_anywhere": 0,
+            "powers_up_building_first_byte": 0,
+            "speed_type": -1,
+            "to_overlay": 0,
+            "to_tile": 0
+          },
+          "source_lines": []
+        }
+      ],
+      "name": "GAPOWR",
+      "offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "to_tile_after_postpass": 0,
+      "to_tile_reads": [
+        {
+          "ini": "0x20006000",
+          "key": "ToTile",
+          "reader": "0x528a10",
+          "section": "GAPOWR"
+        }
+      ],
+      "to_tile_registry_boundary": "Supplied one-entry selected BuildingType registry containing the actually constructed GAPOWR; original complete postpass executes."
+    },
+    "convert": {
+      "constructor": "0048E740",
+      "destination": "TEMPERAT.PAL",
+      "destination_expanded_sha256": "7622cc7b8c27c79b9f1b4f8c582ea961c46e3a47d6b7add66ecb8f58cef67a22",
+      "global_address": "0087F6C4",
+      "shade_count": 53,
+      "source": "PALETTE.PAL",
+      "table_sha256": "1dc2f4ec92a8ae139a4aca26b5b3d66e3670d2e1dc1ebb78abe0453006411439"
+    },
+    "layers": [],
+    "map": {
+      "boundary": "Physical authored packs; sparse live Cell/visibility priors are supplied, not whole native scenario loading.",
+      "cells": [
+        {
+          "coords": [
+            106,
+            34
+          ],
+          "frame": 0,
+          "ice": 0,
+          "level": 5,
+          "overlay": null,
+          "subtile": 0,
+          "tile": 512
+        },
+        {
+          "coords": [
+            106,
+            35
+          ],
+          "frame": 0,
+          "ice": 0,
+          "level": 5,
+          "overlay": null,
+          "subtile": 0,
+          "tile": 512
+        },
+        {
+          "coords": [
+            107,
+            34
+          ],
+          "frame": 0,
+          "ice": 0,
+          "level": 6,
+          "overlay": null,
+          "subtile": 0,
+          "tile": 294
+        },
+        {
+          "coords": [
+            107,
+            35
+          ],
+          "frame": 0,
+          "ice": 0,
+          "level": 6,
+          "overlay": null,
+          "subtile": 0,
+          "tile": 294
+        }
+      ],
+      "name": "GoldSt.mmx",
+      "native_recalc": {
+        "boundary": "Original full Recalc/LAT on physically loaded pristine TMPs with native theater/Rules reads and source-derived neighbor flat publications. Sparse selected registry/zone storage and two repeated selected calls are supplied; not whole native map initialization/sweeps.",
+        "cliff_back_layers": [
+          {
+            "file": "RULESMD.INI",
+            "value": 2
+          },
+          {
+            "file": "MPBATTLEMD.INI",
+            "value": 2
+          },
+          {
+            "file": "GOLDST.MMX",
+            "value": 2
+          }
+        ],
+        "entry": "0047D2B0",
+        "repeats": 2,
+        "rows": [
+          {
+            "coords": [
+              106,
+              34
+            ],
+            "neighbors": [
+              {
+                "authored_tile": 135,
+                "coords": [
+                  105,
+                  34
+                ],
+                "level": 5,
+                "slope": 0,
+                "source": "clat04.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  107,
+                  34
+                ],
+                "level": 6,
+                "slope": 0,
+                "source": "proad02.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 40,
+                "coords": [
+                  106,
+                  33
+                ],
+                "level": 5,
+                "source": "slope12.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  108,
+                  36
+                ],
+                "level": 6,
+                "source": "proad02.urb",
+                "subtile": 1
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  107,
+                  35
+                ],
+                "level": 6,
+                "source": "proad02.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 134,
+                "coords": [
+                  105,
+                  35
+                ],
+                "level": 5,
+                "source": "clat03.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 312,
+                "coords": [
+                  107,
+                  33
+                ],
+                "level": 6,
+                "source": "proad20.urb",
+                "subtile": 12
+              }
+            ],
+            "output": {
+              "land": 0,
+              "level": 5,
+              "slope": 1,
+              "subtile": 0,
+              "tile": 512
+            }
+          },
+          {
+            "coords": [
+              106,
+              35
+            ],
+            "neighbors": [
+              {
+                "authored_tile": 134,
+                "coords": [
+                  105,
+                  35
+                ],
+                "level": 5,
+                "slope": 0,
+                "source": "clat03.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  107,
+                  35
+                ],
+                "level": 6,
+                "slope": 0,
+                "source": "proad02.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 512,
+                "coords": [
+                  106,
+                  34
+                ],
+                "level": 5,
+                "source": "rmpfx03.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  108,
+                  37
+                ],
+                "level": 6,
+                "source": "proad02.urb",
+                "subtile": 1
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  107,
+                  36
+                ],
+                "level": 6,
+                "source": "proad02.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 134,
+                "coords": [
+                  105,
+                  36
+                ],
+                "level": 5,
+                "source": "clat03.urb",
+                "subtile": 0
+              },
+              {
+                "authored_tile": 294,
+                "coords": [
+                  107,
+                  34
+                ],
+                "level": 6,
+                "source": "proad02.urb",
+                "subtile": 0
+              }
+            ],
+            "output": {
+              "land": 0,
+              "level": 5,
+              "slope": 1,
+              "subtile": 0,
+              "tile": 512
+            }
+          }
+        ],
+        "shadow_caster": 0,
+        "tile_animation": -1
+      },
+      "physical_map_section": [
+        [
+          "Theater",
+          "URBAN",
+          664
+        ],
+        [
+          "Size",
+          "0,0,103,82",
+          665
+        ],
+        [
+          "LocalSize",
+          "2,4,99,72",
+          666
+        ]
+      ]
+    },
+    "physical_art": {
+      "BRIDGB": {
+        "Theater": "yes"
+      },
+      "BRIDGE": {
+        "Theater": "yes"
+      },
+      "GAPOWR": {
+        "ActiveAnim": "GAPOWR_A",
+        "ActiveAnimDamaged": "GAPOWR_AD",
+        "ActiveAnimPowered": "false",
+        "ActiveAnimPoweredSpecial": "true",
+        "ActiveAnimYSort": "362",
+        "ActiveAnimZAdjust": "-32",
+        "Buildup": "GAPOWRMK",
+        "Cameo": "POWRICON",
+        "CanBeHidden": "False",
+        "CanHideThings": "True",
+        "DamageFireOffset0": "-20,32",
+        "DamageFireOffset1": "3,12",
+        "DemandLoadBuildup": "true",
+        "Foundation": "2x2",
+        "FreeBuildup": "true",
+        "Height": "4",
+        "NewTheater": "yes",
+        "Normalized": "yes",
+        "OccupyHeight": "3",
+        "Remapable": "yes"
+      }
+    },
+    "place": {
+      "canvas": [
+        60,
+        59
+      ],
+      "loaded": [
+        {
+          "bytes": 22584,
+          "header8_hex": "00003c003b002600",
+          "name": "PLACE.SHP",
+          "sha256": "1e24868b3baa9b8a4eb08d8674c6d197c161a6771614f2db5da4c3d0649c4cdf"
+        }
+      ]
+    },
+    "ramp": {
+      "boundary": "Original full lazy readers/getters; selected pristine registrations are supplied for the following full Cell Recalc comparison, not whole map construction.",
+      "file_io": [
+        {
+          "bytes": 2352,
+          "kind": "CreateFile",
+          "name": "rmpfx03.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 1,
+          "sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+        },
+        {
+          "bytes": 2352,
+          "kind": "CreateFile",
+          "name": "rmpfx03.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 2,
+          "sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+        },
+        {
+          "bytes": 2352,
+          "kind": "CreateFile",
+          "name": "rmpfx03.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 3,
+          "sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+        },
+        {
+          "bytes": 2352,
+          "kind": "CreateFile",
+          "name": "rmpfx03.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 4,
+          "sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+        },
+        {
+          "bytes": 2352,
+          "kind": "CreateFile",
+          "name": "rmpfx03.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 5,
+          "sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+        },
+        {
+          "kind": "ReadFile",
+          "name": "rmpfx03.urb",
+          "offset_after": 2352,
+          "offset_before": 0,
+          "pc": "0x0065CD5D",
+          "phase": "placement_tmp_loading",
+          "reported_bytes": 2352,
+          "source_sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat03.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 6,
+          "sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat03.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 7,
+          "sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat03.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 8,
+          "sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat03.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 9,
+          "sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat03.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 10,
+          "sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+        },
+        {
+          "kind": "ReadFile",
+          "name": "clat03.urb",
+          "offset_after": 1872,
+          "offset_before": 0,
+          "pc": "0x0065CD5D",
+          "phase": "placement_tmp_loading",
+          "reported_bytes": 1872,
+          "source_sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat04.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 11,
+          "sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat04.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 12,
+          "sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat04.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 13,
+          "sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat04.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 14,
+          "sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat04.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 15,
+          "sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+        },
+        {
+          "kind": "ReadFile",
+          "name": "clat04.urb",
+          "offset_after": 1872,
+          "offset_before": 0,
+          "pc": "0x0065CD5D",
+          "phase": "placement_tmp_loading",
+          "reported_bytes": 1872,
+          "source_sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+        },
+        {
+          "bytes": 5584,
+          "kind": "CreateFile",
+          "name": "proad02.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 16,
+          "sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+        },
+        {
+          "bytes": 5584,
+          "kind": "CreateFile",
+          "name": "proad02.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 17,
+          "sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+        },
+        {
+          "bytes": 5584,
+          "kind": "CreateFile",
+          "name": "proad02.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 18,
+          "sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+        },
+        {
+          "bytes": 5584,
+          "kind": "CreateFile",
+          "name": "proad02.urb",
+          "pc": "0x0065CC59",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 19,
+          "sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+        },
+        {
+          "bytes": 5584,
+          "kind": "CreateFile",
+          "name": "proad02.urb",
+          "pc": "0x0065CBBB",
+          "phase": "placement_tmp_loading",
+          "prepared_physical_winner": true,
+          "result": 20,
+          "sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+        },
+        {
+          "kind": "ReadFile",
+          "name": "proad02.urb",
+          "offset_after": 5584,
+          "offset_before": 0,
+          "pc": "0x0065CD5D",
+          "phase": "placement_tmp_loading",
+          "reported_bytes": 5584,
+          "source_sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+        }
+      ],
+      "land": 0,
+      "mapping": {
+        "base": 510,
+        "boundary": "Native INI scalar/string reads; prefix accumulation is the supplied selected theater registration boundary.",
+        "file_name": "Rmpfx",
+        "section": "TileSet0043",
+        "tile_id": 512,
+        "tiles_in_set": 12
+      },
+      "name": "rmpfx03.urb",
+      "slope": 1,
+      "subtile": 0
+    },
+    "registry_prefix": [],
+    "shape_aliases": [],
+    "sources": [
+      {
+        "bytes": 22584,
+        "inner": "conquer.mix",
+        "inner_sha256": "e0e4be2af64ce35da8e9c865b32ab56b342329de24d3d0a75b1c636f6928d714",
+        "name": "PLACE.SHP",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "1e24868b3baa9b8a4eb08d8674c6d197c161a6771614f2db5da4c3d0649c4cdf"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "palette.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "e85c535002573b5f95f7c361c4bdb95ee43e4914ddc926afda9ace995c54242b"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "anim.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "341e85171041e7c8be53d5533d96a9bf86b402d9d67335713369354aaa5707af"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "temperat.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "5903b69868b84f494cfbb4e7100398015ef9775b37726019a0d7b5fb6cb33b55"
+      },
+      {
+        "bytes": 2352,
+        "inner": "isourb.mix",
+        "inner_sha256": "e25899a843243807ce78050c5b9e6a6bb721e69a112c161c270355ab59de55b5",
+        "name": "rmpfx03.urb",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "e1b29dd329e3241086b49dd354fdda5825fa84de76afbf6f0976bcb37b126cb0"
+      },
+      {
+        "bytes": 1872,
+        "inner": "isourb.mix",
+        "inner_sha256": "e25899a843243807ce78050c5b9e6a6bb721e69a112c161c270355ab59de55b5",
+        "name": "clat03.urb",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "8ce540f0badf6a65eb0fb5efcb906115333af837600991f5932945957c000ed6"
+      },
+      {
+        "bytes": 1872,
+        "inner": "isourb.mix",
+        "inner_sha256": "e25899a843243807ce78050c5b9e6a6bb721e69a112c161c270355ab59de55b5",
+        "name": "clat04.urb",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "81ee6850d3c7f6d24f258e190c68782b0ef616c92c6d8fe7ea0851ff2b2415fd"
+      },
+      {
+        "bytes": 5584,
+        "inner": "isourb.mix",
+        "inner_sha256": "e25899a843243807ce78050c5b9e6a6bb721e69a112c161c270355ab59de55b5",
+        "name": "proad02.urb",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "17da1e4a4e52d080c38d861f20487eb76686b0d9daefc700b4ebe8b5ce908391"
+      },
+      {
+        "bytes": 336535,
+        "inner": "localmd.mix",
+        "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "name": "ARTMD.INI",
+        "outer": "ra2md.mix",
+        "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      {
+        "bytes": 295,
+        "inner": "localmd.mix",
+        "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "name": "MPBattleMD.ini",
+        "outer": "ra2md.mix",
+        "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "bytes": 30237,
+        "inner": "localmd.mix",
+        "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "name": "URBANMD.INI",
+        "outer": "ra2md.mix",
+        "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "d1ac06c81c58d4694009f036d062b10a238caeb19fa8cfac4d96c54342e6cd75"
+      },
+      {
+        "bytes": 743215,
+        "inner": null,
+        "name": "RULESMD.INI",
+        "outer": "expandmd01.mix",
+        "outer_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "bytes": 192104,
+        "inner": null,
+        "kind": "loose",
+        "name": "GoldSt.mmx",
+        "outer": null,
+        "sha256": "846a51b4d2f98f751f3e1550712def3ee20de56c39f69d751f619a7add124c24"
+      }
+    ]
+  },
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "rows": [
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "active_slope1",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        1
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 0,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -77
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 0,
+        "viewport_y": 0
+      },
+      "name": "active_flat",
+      "output": {
+        "color_sha256": "6cda8d82896d064ce4373d1f1570766a0ee8f05ba2111f3fc5919b1bd3ba2bbe",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            94,
+            81,
+            4,
+            1568,
+            65535
+          ],
+          [
+            92,
+            82,
+            8,
+            1568,
+            65535
+          ],
+          [
+            90,
+            83,
+            12,
+            1568,
+            65535
+          ],
+          [
+            88,
+            84,
+            16,
+            1568,
+            65535
+          ],
+          [
+            86,
+            85,
+            20,
+            1568,
+            65535
+          ],
+          [
+            84,
+            86,
+            24,
+            1568,
+            65535
+          ],
+          [
+            82,
+            87,
+            28,
+            1568,
+            65535
+          ],
+          [
+            80,
+            88,
+            32,
+            1568,
+            65535
+          ],
+          [
+            78,
+            89,
+            36,
+            1568,
+            65535
+          ],
+          [
+            76,
+            90,
+            40,
+            1568,
+            65535
+          ],
+          [
+            74,
+            91,
+            44,
+            1568,
+            65535
+          ],
+          [
+            72,
+            92,
+            48,
+            1568,
+            65535
+          ],
+          [
+            70,
+            93,
+            52,
+            1568,
+            65535
+          ],
+          [
+            68,
+            94,
+            56,
+            1568,
+            65535
+          ],
+          [
+            66,
+            95,
+            60,
+            1568,
+            65535
+          ],
+          [
+            68,
+            96,
+            56,
+            1568,
+            65535
+          ],
+          [
+            70,
+            97,
+            52,
+            1568,
+            65535
+          ],
+          [
+            72,
+            98,
+            48,
+            1568,
+            65535
+          ],
+          [
+            74,
+            99,
+            44,
+            1568,
+            65535
+          ],
+          [
+            76,
+            100,
+            40,
+            1568,
+            65535
+          ],
+          [
+            78,
+            101,
+            36,
+            1568,
+            65535
+          ],
+          [
+            80,
+            102,
+            32,
+            1568,
+            65535
+          ],
+          [
+            82,
+            103,
+            28,
+            1568,
+            65535
+          ],
+          [
+            84,
+            104,
+            24,
+            1568,
+            65535
+          ],
+          [
+            86,
+            105,
+            20,
+            1568,
+            65535
+          ],
+          [
+            88,
+            106,
+            16,
+            1568,
+            65535
+          ],
+          [
+            90,
+            107,
+            12,
+            1568,
+            65535
+          ],
+          [
+            92,
+            108,
+            8,
+            1568,
+            65535
+          ],
+          [
+            94,
+            109,
+            4,
+            1568,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 520
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            520
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 1,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 4,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "pending_slope1",
+      "output": {
+        "color_sha256": "a22345fa6e8c08a17a87ece1db468432ba2b0595e22617add24b9a44f44a002b",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            94,
+            81,
+            4,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            8,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            12,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            16,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            20,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            24,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            28,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            32,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            36,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            40,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            44,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            48,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            52,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            56,
+            59392,
+            65535
+          ],
+          [
+            66,
+            95,
+            60,
+            59392,
+            65535
+          ],
+          [
+            68,
+            96,
+            56,
+            59392,
+            65535
+          ],
+          [
+            70,
+            97,
+            52,
+            59392,
+            65535
+          ],
+          [
+            72,
+            98,
+            48,
+            59392,
+            65535
+          ],
+          [
+            74,
+            99,
+            44,
+            59392,
+            65535
+          ],
+          [
+            76,
+            100,
+            40,
+            59392,
+            65535
+          ],
+          [
+            78,
+            101,
+            36,
+            59392,
+            65535
+          ],
+          [
+            80,
+            102,
+            32,
+            59392,
+            65535
+          ],
+          [
+            82,
+            103,
+            28,
+            59392,
+            65535
+          ],
+          [
+            84,
+            104,
+            24,
+            59392,
+            65535
+          ],
+          [
+            86,
+            105,
+            20,
+            59392,
+            65535
+          ],
+          [
+            88,
+            106,
+            16,
+            59392,
+            65535
+          ],
+          [
+            90,
+            107,
+            12,
+            59392,
+            65535
+          ],
+          [
+            92,
+            108,
+            8,
+            59392,
+            65535
+          ],
+          [
+            94,
+            109,
+            4,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [],
+      "reached": [
+        "00437A10",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 0,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "no_marker",
+      "output": {
+        "color_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": []
+      },
+      "queries": [],
+      "reached": []
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 2,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -77
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": false,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 0,
+        "viewport_y": 0
+      },
+      "name": "outside_proximity",
+      "output": {
+        "color_sha256": "a22345fa6e8c08a17a87ece1db468432ba2b0595e22617add24b9a44f44a002b",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            94,
+            81,
+            4,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            8,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            12,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            16,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            20,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            24,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            28,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            32,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            36,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            40,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            44,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            48,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            52,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            56,
+            59392,
+            65535
+          ],
+          [
+            66,
+            95,
+            60,
+            59392,
+            65535
+          ],
+          [
+            68,
+            96,
+            56,
+            59392,
+            65535
+          ],
+          [
+            70,
+            97,
+            52,
+            59392,
+            65535
+          ],
+          [
+            72,
+            98,
+            48,
+            59392,
+            65535
+          ],
+          [
+            74,
+            99,
+            44,
+            59392,
+            65535
+          ],
+          [
+            76,
+            100,
+            40,
+            59392,
+            65535
+          ],
+          [
+            78,
+            101,
+            36,
+            59392,
+            65535
+          ],
+          [
+            80,
+            102,
+            32,
+            59392,
+            65535
+          ],
+          [
+            82,
+            103,
+            28,
+            59392,
+            65535
+          ],
+          [
+            84,
+            104,
+            24,
+            59392,
+            65535
+          ],
+          [
+            86,
+            105,
+            20,
+            59392,
+            65535
+          ],
+          [
+            88,
+            106,
+            16,
+            59392,
+            65535
+          ],
+          [
+            90,
+            107,
+            12,
+            59392,
+            65535
+          ],
+          [
+            92,
+            108,
+            8,
+            59392,
+            65535
+          ],
+          [
+            94,
+            109,
+            4,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 520
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            520
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": false,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "hidden",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 1
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 0,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "a_zero",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 0,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "old_z_zero",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "0693f6bfa2117a9b14f9ceca13d3a5611de5dca226bf999f20a7f615fbd08dff",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            0
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            0
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            0
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            0
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            0
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            0
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            0
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            0
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            0
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            0
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            0
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            0
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            0
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            0
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            0
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 32768,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "old_z_mid",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "1cda335afb84f5fc7fb2bd0332a56a327c1732fe696a903761325cff5b007aca",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            32768
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            32768
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            32768
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            32768
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            32768
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            32768
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            32768
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            32768
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            32768
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            32768
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            32768
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            32768
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            32768
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            32768
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            32768
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            100,
+            88
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          100,
+          88
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "clipped",
+      "output": {
+        "color_sha256": "32de972daa9e426ebf5e31f2b2f4490d023cabaf5e6d5b81b66e1607bc762cbe",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            4,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            6,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            8,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            10,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            12,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            14,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            16,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            18,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0,
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        },
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          156
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 5,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 2,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "repeat",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 572
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            572
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -12
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          81
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 0,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "level_0",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 52
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            52
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -102
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          171
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": 6,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "level_6",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": 676
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            676
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    },
+    {
+      "admitted": [
+        0
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 132608,
+          "frame": 3,
+          "gradient": 0,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": 1908
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "cell_point": [
+          66,
+          -1839
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          106,
+          34
+        ],
+        "flags": 2,
+        "level": -128,
+        "old_z": 65535,
+        "proximity": true,
+        "repeat": 1,
+        "revealed": true,
+        "slope": 1,
+        "viewport_y": 0
+      },
+      "name": "level_-128",
+      "output": {
+        "color_sha256": "9e8abe476708a7fa4af0b144bb450ebcfc95c42e3684a9d78cac4661e5756ab1",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ]
+        ]
+      },
+      "queries": [
+        {
+          "coords": [
+            27264,
+            8832,
+            0
+          ],
+          "kind": "00578080",
+          "result": -13259
+        },
+        {
+          "coords": [
+            27264,
+            8832,
+            -13259
+          ],
+          "kind": "00586360",
+          "result": 0
+        }
+      ],
+      "reached": [
+        "00437A10",
+        "0047C620",
+        "00490E50",
+        "004960A0",
+        "004AED70"
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "cells": [
+        {
+          "cell_point": [
+            66,
+            156
+          ],
+          "coords": [
+            106,
+            34
+          ],
+          "flags": 2,
+          "level": 5,
+          "revealed": true,
+          "slope": 1
+        },
+        {
+          "cell_point": [
+            36,
+            171
+          ],
+          "coords": [
+            106,
+            35
+          ],
+          "flags": 2,
+          "level": 5,
+          "revealed": true,
+          "slope": 1
+        },
+        {
+          "cell_point": [
+            96,
+            171
+          ],
+          "coords": [
+            107,
+            34
+          ],
+          "flags": 2,
+          "level": 6,
+          "revealed": true,
+          "slope": 0
+        },
+        {
+          "cell_point": [
+            66,
+            186
+          ],
+          "coords": [
+            107,
+            35
+          ],
+          "flags": 2,
+          "level": 6,
+          "revealed": true,
+          "slope": 0
+        }
+      ],
+      "draws": [
+        {
+          "brightness": 1000,
+          "flags": 132608,
+          "frame": 3,
+          "point": [
+            96,
+            80
+          ],
+          "z_adjust": -87
+        },
+        {
+          "brightness": 1000,
+          "flags": 132608,
+          "frame": 3,
+          "point": [
+            66,
+            95
+          ],
+          "z_adjust": -87
+        },
+        {
+          "brightness": 1000,
+          "flags": 132608,
+          "frame": 0,
+          "point": [
+            126,
+            80
+          ],
+          "z_adjust": -92
+        },
+        {
+          "brightness": 1000,
+          "flags": 132608,
+          "frame": 0,
+          "point": [
+            96,
+            95
+          ],
+          "z_adjust": -92
+        }
+      ],
+      "input": {
+        "a": 127,
+        "background": 65535,
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "old_z": 65535,
+        "view_origin": [
+          2064,
+          1944
+        ]
+      },
+      "name": "goldst_mixed_foundation",
+      "native_order": [
+        [
+          106,
+          34
+        ],
+        [
+          106,
+          35
+        ],
+        [
+          107,
+          34
+        ],
+        [
+          107,
+          35
+        ]
+      ],
+      "output": {
+        "color_sha256": "9a26565bc5017957c2db176c122ada59f476af3c1b75833293ff348b4945204d",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": [
+          [
+            96,
+            80,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            81,
+            30,
+            59392,
+            65535
+          ],
+          [
+            124,
+            81,
+            4,
+            1568,
+            65535
+          ],
+          [
+            92,
+            82,
+            30,
+            59392,
+            65535
+          ],
+          [
+            122,
+            82,
+            8,
+            1568,
+            65535
+          ],
+          [
+            90,
+            83,
+            30,
+            59392,
+            65535
+          ],
+          [
+            120,
+            83,
+            12,
+            1568,
+            65535
+          ],
+          [
+            88,
+            84,
+            30,
+            59392,
+            65535
+          ],
+          [
+            118,
+            84,
+            16,
+            1568,
+            65535
+          ],
+          [
+            86,
+            85,
+            30,
+            59392,
+            65535
+          ],
+          [
+            116,
+            85,
+            20,
+            1568,
+            65535
+          ],
+          [
+            84,
+            86,
+            30,
+            59392,
+            65535
+          ],
+          [
+            114,
+            86,
+            24,
+            1568,
+            65535
+          ],
+          [
+            82,
+            87,
+            30,
+            59392,
+            65535
+          ],
+          [
+            112,
+            87,
+            28,
+            1568,
+            65535
+          ],
+          [
+            80,
+            88,
+            30,
+            59392,
+            65535
+          ],
+          [
+            110,
+            88,
+            32,
+            1568,
+            65535
+          ],
+          [
+            78,
+            89,
+            30,
+            59392,
+            65535
+          ],
+          [
+            108,
+            89,
+            36,
+            1568,
+            65535
+          ],
+          [
+            76,
+            90,
+            30,
+            59392,
+            65535
+          ],
+          [
+            106,
+            90,
+            40,
+            1568,
+            65535
+          ],
+          [
+            74,
+            91,
+            30,
+            59392,
+            65535
+          ],
+          [
+            104,
+            91,
+            44,
+            1568,
+            65535
+          ],
+          [
+            72,
+            92,
+            30,
+            59392,
+            65535
+          ],
+          [
+            102,
+            92,
+            48,
+            1568,
+            65535
+          ],
+          [
+            70,
+            93,
+            30,
+            59392,
+            65535
+          ],
+          [
+            100,
+            93,
+            52,
+            1568,
+            65535
+          ],
+          [
+            68,
+            94,
+            30,
+            59392,
+            65535
+          ],
+          [
+            98,
+            94,
+            56,
+            1568,
+            65535
+          ],
+          [
+            66,
+            95,
+            30,
+            59392,
+            65535
+          ],
+          [
+            96,
+            95,
+            60,
+            1568,
+            65535
+          ],
+          [
+            64,
+            96,
+            30,
+            59392,
+            65535
+          ],
+          [
+            94,
+            96,
+            60,
+            1568,
+            65535
+          ],
+          [
+            62,
+            97,
+            30,
+            59392,
+            65535
+          ],
+          [
+            92,
+            97,
+            60,
+            1568,
+            65535
+          ],
+          [
+            60,
+            98,
+            30,
+            59392,
+            65535
+          ],
+          [
+            90,
+            98,
+            60,
+            1568,
+            65535
+          ],
+          [
+            58,
+            99,
+            30,
+            59392,
+            65535
+          ],
+          [
+            88,
+            99,
+            60,
+            1568,
+            65535
+          ],
+          [
+            56,
+            100,
+            30,
+            59392,
+            65535
+          ],
+          [
+            86,
+            100,
+            60,
+            1568,
+            65535
+          ],
+          [
+            54,
+            101,
+            30,
+            59392,
+            65535
+          ],
+          [
+            84,
+            101,
+            60,
+            1568,
+            65535
+          ],
+          [
+            52,
+            102,
+            30,
+            59392,
+            65535
+          ],
+          [
+            82,
+            102,
+            60,
+            1568,
+            65535
+          ],
+          [
+            50,
+            103,
+            30,
+            59392,
+            65535
+          ],
+          [
+            80,
+            103,
+            60,
+            1568,
+            65535
+          ],
+          [
+            48,
+            104,
+            30,
+            59392,
+            65535
+          ],
+          [
+            78,
+            104,
+            60,
+            1568,
+            65535
+          ],
+          [
+            46,
+            105,
+            30,
+            59392,
+            65535
+          ],
+          [
+            76,
+            105,
+            60,
+            1568,
+            65535
+          ],
+          [
+            44,
+            106,
+            30,
+            59392,
+            65535
+          ],
+          [
+            74,
+            106,
+            60,
+            1568,
+            65535
+          ],
+          [
+            42,
+            107,
+            30,
+            59392,
+            65535
+          ],
+          [
+            72,
+            107,
+            60,
+            1568,
+            65535
+          ],
+          [
+            40,
+            108,
+            30,
+            59392,
+            65535
+          ],
+          [
+            70,
+            108,
+            60,
+            1568,
+            65535
+          ],
+          [
+            38,
+            109,
+            30,
+            59392,
+            65535
+          ],
+          [
+            68,
+            109,
+            60,
+            1568,
+            65535
+          ],
+          [
+            66,
+            110,
+            60,
+            1568,
+            65535
+          ],
+          [
+            68,
+            111,
+            56,
+            1568,
+            65535
+          ],
+          [
+            70,
+            112,
+            52,
+            1568,
+            65535
+          ],
+          [
+            72,
+            113,
+            48,
+            1568,
+            65535
+          ],
+          [
+            74,
+            114,
+            44,
+            1568,
+            65535
+          ],
+          [
+            76,
+            115,
+            40,
+            1568,
+            65535
+          ],
+          [
+            78,
+            116,
+            36,
+            1568,
+            65535
+          ],
+          [
+            80,
+            117,
+            32,
+            1568,
+            65535
+          ],
+          [
+            82,
+            118,
+            28,
+            1568,
+            65535
+          ],
+          [
+            84,
+            119,
+            24,
+            1568,
+            65535
+          ],
+          [
+            86,
+            120,
+            20,
+            1568,
+            65535
+          ],
+          [
+            88,
+            121,
+            16,
+            1568,
+            65535
+          ],
+          [
+            90,
+            122,
+            12,
+            1568,
+            65535
+          ],
+          [
+            92,
+            123,
+            8,
+            1568,
+            65535
+          ],
+          [
+            94,
+            124,
+            4,
+            1568,
+            65535
+          ]
+        ]
+      }
+    }
+  ],
+  "surface": {
+    "bytes_per_pixel": 2,
+    "height": 160,
+    "width": 192
+  }
+}

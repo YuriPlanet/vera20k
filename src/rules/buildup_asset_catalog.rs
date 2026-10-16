@@ -68,7 +68,7 @@ pub fn buildup_control(
 
 /// The two files the Buildup load tries (`0x0045F24A..`): `Buildup=` plus
 /// `.SHP` through the theater lookup (`art_data::theater_shp_names`).
-pub(crate) fn buildup_shp_names(buildup: &str, theater_name: &str) -> [String; 2] {
+pub fn buildup_shp_names(buildup: &str, theater_name: &str) -> [String; 2] {
     crate::rules::art_data::theater_shp_names(&buildup.to_ascii_uppercase(), theater_name)
         .map(|name| format!("{name}.SHP"))
 }
@@ -138,7 +138,7 @@ impl BuildupAssetCatalog {
     }
 
     /// Install one control directly (test fixtures without assets).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn insert_for_test(&mut self, type_id: &str, control: [i32; 3]) {
         self.controls.insert(type_id.to_ascii_uppercase(), control);
     }

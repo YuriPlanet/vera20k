@@ -169,12 +169,7 @@ impl GroundSortKeys for GroundSortView<'_> {
 }
 
 impl Simulation {
-    pub(crate) fn submit_object_display(
-        &mut self,
-        id: u64,
-        layer: DisplayLayer,
-        rules: Option<&RuleSet>,
-    ) {
+    pub fn submit_object_display(&mut self, id: u64, layer: DisplayLayer, rules: Option<&RuleSet>) {
         if layer == DisplayLayer::GROUND {
             self.forget_changed_ground_keys(rules);
         }
@@ -242,8 +237,8 @@ impl Simulation {
 
     /// Resubmit `id`'s display from its current state, as a native
     /// resubmission site does.
-    #[cfg(test)]
-    pub(crate) fn resubmit_entity_display_for_test(&mut self, id: u64) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn resubmit_entity_display_for_test(&mut self, id: u64) {
         self.submit_entity_display(id, None, None);
     }
 

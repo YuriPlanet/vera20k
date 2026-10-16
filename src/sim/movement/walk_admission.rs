@@ -234,7 +234,7 @@ impl Simulation {
 
     /// The native decoder corpus starts after+1AC at75B696. It supplies
     ///only that result, preserving this exact production response body.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn replay_walk_admission_response(
         &mut self,
         id: u64,

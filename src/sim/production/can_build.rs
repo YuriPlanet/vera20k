@@ -321,7 +321,7 @@ pub(crate) fn check_build_limit(
 /// cameo6AB31A and the PLACE receiver4FB1DA use (0,0); mobile delivery uses
 /// (0,1), with an aircraft-only (1,1) retry. Source: cameo_order.md's retained
 /// ready-building histories and the existing factory output oracle.
-pub(crate) fn object_find_factory(
+pub fn object_find_factory(
     sim: &Simulation,
     rules: &RuleSet,
     object_id: u64,

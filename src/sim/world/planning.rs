@@ -76,63 +76,63 @@ struct PlanningPath {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PlanningPathView {
-    pub(crate) actor_id: u64,
-    pub(crate) cells: Vec<(u16, u16)>,
-    pub(crate) loop_start: Option<usize>,
-    pub(crate) editing: bool,
+pub struct PlanningPathView {
+    pub actor_id: u64,
+    pub cells: Vec<(u16, u16)>,
+    pub loop_start: Option<usize>,
+    pub editing: bool,
 }
 
 /// A fresh read projection of the authoritative shared graph. Pixel colors,
 /// palette packing, line patterns and selection remain presentation-owned.
 #[derive(Debug, Clone)]
-pub(crate) struct PlanningDrawGraph {
-    pub(crate) nodes: Vec<PlanningDrawNode>,
-    pub(crate) actors: Vec<PlanningDrawActor>,
-    #[cfg(test)]
+pub struct PlanningDrawGraph {
+    pub nodes: Vec<PlanningDrawNode>,
+    pub actors: Vec<PlanningDrawActor>,
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) hovered_node: Option<u64>,
-    pub(crate) highlighted_node: Option<u64>,
-    pub(crate) hovered_coord: Option<DriveCoord>,
-    pub(crate) highlighted_coord: Option<DriveCoord>,
-    pub(crate) highlighted_members: Vec<u64>,
+    pub highlighted_node: Option<u64>,
+    pub hovered_coord: Option<DriveCoord>,
+    pub highlighted_coord: Option<DriveCoord>,
+    pub highlighted_members: Vec<u64>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PlanningDrawNode {
-    #[cfg(test)]
+pub struct PlanningDrawNode {
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) id: u64,
-    pub(crate) coord: DriveCoord,
-    pub(crate) members: Vec<u64>,
-    pub(crate) incoming: Vec<PlanningDrawSegment>,
-    pub(crate) loop_segment: Option<PlanningDrawSegment>,
-    pub(crate) marker_owner: InternedId,
-    pub(crate) marker_bright: bool,
-    pub(crate) badge: Option<PlanningBadgeKind>,
+    pub coord: DriveCoord,
+    pub members: Vec<u64>,
+    pub incoming: Vec<PlanningDrawSegment>,
+    pub loop_segment: Option<PlanningDrawSegment>,
+    pub marker_owner: InternedId,
+    pub marker_bright: bool,
+    pub badge: Option<PlanningBadgeKind>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PlanningDrawSegment {
-    pub(crate) source: DriveCoord,
-    pub(crate) target: DriveCoord,
-    pub(crate) owner: InternedId,
-    pub(crate) bright: bool,
+pub struct PlanningDrawSegment {
+    pub source: DriveCoord,
+    pub target: DriveCoord,
+    pub owner: InternedId,
+    pub bright: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PlanningDrawActor {
-    pub(crate) actor_id: u64,
-    pub(crate) owner: InternedId,
-    pub(crate) connection: Option<PlanningDrawSegment>,
-    pub(crate) badge: Option<PlanningBadgeKind>,
-    pub(crate) current_leg: Option<PlanningDrawSegment>,
-    pub(crate) current_badge: Option<PlanningBadgeKind>,
-    pub(crate) mega_leg: Option<PlanningDrawSegment>,
-    pub(crate) mega_badge: Option<PlanningBadgeKind>,
-    pub(crate) marker_only: Option<DriveCoord>,
+pub struct PlanningDrawActor {
+    pub actor_id: u64,
+    pub owner: InternedId,
+    pub connection: Option<PlanningDrawSegment>,
+    pub badge: Option<PlanningBadgeKind>,
+    pub current_leg: Option<PlanningDrawSegment>,
+    pub current_badge: Option<PlanningBadgeKind>,
+    pub mega_leg: Option<PlanningDrawSegment>,
+    pub mega_badge: Option<PlanningBadgeKind>,
+    pub marker_only: Option<DriveCoord>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PlanningBadgeKind {
+pub enum PlanningBadgeKind {
     AreaGuard,
     AttackMove,
 }
@@ -413,7 +413,7 @@ impl Simulation {
         .ok()
     }
 
-    pub(crate) fn encode_planning_order_record(
+    pub fn encode_planning_order_record(
         &self,
         owner: InternedId,
         command: &Command,
@@ -423,12 +423,12 @@ impl Simulation {
         Some(record)
     }
 
-    pub(crate) fn encode_plan_commit_record(&self, owner: InternedId) -> Option<CommandRecord> {
+    pub fn encode_plan_commit_record(&self, owner: InternedId) -> Option<CommandRecord> {
         // Event constructor4C66C0: header only, no route packet.
         self.planning_header(owner, 0x2b)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn encode_plan_connect_record(
         &self,
         owner: InternedId,
@@ -440,7 +440,7 @@ impl Simulation {
         self.planning_connect_record_to_node(owner, actor_id, node)
     }
 
-    pub(crate) fn encode_plan_connect_record_at_screen(
+    pub fn encode_plan_connect_record_at_screen(
         &self,
         owner: InternedId,
         actor_id: u64,
@@ -471,7 +471,7 @@ impl Simulation {
         Some(record)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn encode_plan_node_delete_record(
         &self,
         owner: InternedId,
@@ -481,7 +481,7 @@ impl Simulation {
         self.planning_delete_record_for_node(owner, node)
     }
 
-    pub(crate) fn encode_plan_node_delete_record_at_screen(
+    pub fn encode_plan_node_delete_record_at_screen(
         &self,
         owner: InternedId,
         point: [i32; 2],
@@ -502,7 +502,7 @@ impl Simulation {
         Some(record)
     }
 
-    pub(crate) fn planning_paths(&self, owner: InternedId) -> Vec<PlanningPathView> {
+    pub fn planning_paths(&self, owner: InternedId) -> Vec<PlanningPathView> {
         self.planning
             .paths
             .iter()
@@ -529,7 +529,7 @@ impl Simulation {
     /// PlanMgr63B150 and node63CAE0 traverse shared nodes before actor links.
     /// Association634CC0/634E10 groups predecessor records by their live XYZ;
     /// the first remaining occurrence of a node supplies each actor's index.
-    pub(crate) fn planning_draw_graph(
+    pub fn planning_draw_graph(
         &self,
         viewer: InternedId,
         hover_point: Option<[i32; 2]>,
@@ -636,7 +636,7 @@ impl Simulation {
                 || (first_path.pending != -1
                     && positions[&(head, node.id)] as i32 >= first_path.pending);
             nodes.push(PlanningDrawNode {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 id: node.id,
                 coord,
                 members,
@@ -748,7 +748,7 @@ impl Simulation {
         PlanningDrawGraph {
             nodes,
             actors,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             hovered_node,
             highlighted_node,
             hovered_coord: hovered_node.and_then(|id| self.planning_node_coords(id)),
@@ -760,13 +760,13 @@ impl Simulation {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn planning_node_at_cell(&self, owner: InternedId, cell: (u16, u16)) -> bool {
         self.planning_node_id_at_cell(owner, cell).is_some()
     }
 
     /// Node634220 projects634550's live XYZ; its half-open hit box is16x16.
-    pub(crate) fn planning_node_at_screen(
+    pub fn planning_node_at_screen(
         &self,
         owner: InternedId,
         point: [i32; 2],
@@ -792,7 +792,7 @@ impl Simulation {
 
     /// Connect639740 expands each selected actor's tail group in encounter
     /// order. A selected actor without a path contributes only itself.
-    pub(crate) fn planning_connect_actors(&self, owner: InternedId, selected: &[u64]) -> Vec<u64> {
+    pub fn planning_connect_actors(&self, owner: InternedId, selected: &[u64]) -> Vec<u64> {
         let mut actors = Vec::new();
         let mut seen = BTreeSet::new();
         for &actor in selected {
@@ -887,7 +887,7 @@ impl Simulation {
             .filter(move |id| self.planning_node_house(*id) == Some(owner))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn planning_node_id_at_cell(&self, owner: InternedId, cell: (u16, u16)) -> Option<u64> {
         self.planning_candidates(owner, cell)
             .filter(|id| self.planning_node_coords(*id).and_then(coord_cell) == Some(cell))

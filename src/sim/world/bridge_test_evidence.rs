@@ -187,7 +187,7 @@ fn damage_bridge(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum RetailHighBridgeScene {
+pub enum RetailHighBridgeScene {
     HillsWood,
     PacificConcrete,
 }
@@ -199,7 +199,7 @@ pub(crate) enum RetailHighBridgeScene {
 /// admission and hut entry must succeed. No bridge facts are assigned here.
 /// Native body publication: tools/spatial_oracle/bridge_body_publication.
 /// Damage enters at the receiver; an ordinary projectile launch is not claimed.
-pub(crate) fn visit_retail_high_bridge_stages(
+pub fn visit_retail_high_bridge_stages(
     kind: RetailHighBridgeScene,
     mut visit: impl FnMut(&str, &HeadlessScenario),
 ) {
@@ -287,7 +287,7 @@ pub(crate) fn visit_retail_high_bridge_stages(
 /// The physical map's one concrete chain, shared by simulation and GPU witnesses.
 /// Damage is admitted through the area-damage owner; rebuilding uses the ordinary
 /// Engineer command and object turns, including its entry and consumption.
-pub(crate) fn visit_anytown_concrete_stages(mut visit: impl FnMut(&str, &HeadlessScenario)) {
+pub fn visit_anytown_concrete_stages(mut visit: impl FnMut(&str, &HeadlessScenario)) {
     visit_anytown_concrete_stages_with_repair_orders(
         |phase, scene| visit(phase, scene),
         ordinary_repair_orders,
@@ -299,7 +299,7 @@ pub(crate) fn visit_anytown_concrete_stages(mut visit: impl FnMut(&str, &Headles
 /// it does not replace Engineer construction, the repair loop or its resources.
 /// Mutable phase observation permits an app test to construct a fresh ordinary
 /// actor for a healthy no-order probe after the repaired actor was consumed.
-pub(crate) fn visit_anytown_concrete_stages_with_repair_orders(
+pub fn visit_anytown_concrete_stages_with_repair_orders(
     mut visit: impl FnMut(&str, &mut HeadlessScenario),
     mut producer: impl FnMut(
         &Simulation,
@@ -352,14 +352,14 @@ fn repair_shrapnel_wood_with_orders(
     assert_repaired_ground_row(scene, 114..=116, 59, 83..=86);
 }
 
-pub(crate) fn visit_shrapnel_wood_stages(mut visit: impl FnMut(&str, &HeadlessScenario)) {
+pub fn visit_shrapnel_wood_stages(mut visit: impl FnMut(&str, &HeadlessScenario)) {
     visit_shrapnel_wood_stages_with_repair_orders(
         |phase, scene| visit(phase, scene),
         ordinary_repair_orders,
     );
 }
 
-pub(crate) fn visit_shrapnel_wood_stages_with_repair_orders(
+pub fn visit_shrapnel_wood_stages_with_repair_orders(
     mut visit: impl FnMut(&str, &mut HeadlessScenario),
     mut producer: impl FnMut(
         &Simulation,

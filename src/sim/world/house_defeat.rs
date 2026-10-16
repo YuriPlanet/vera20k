@@ -90,7 +90,7 @@ pub(crate) enum HouseBlowupSubset {
 
 impl Simulation {
     /// The house rung with its defeat pass: see [`Self::house_rung`].
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn check_defeat(
         &mut self,
         rules: Option<&RuleSet>,
@@ -219,7 +219,7 @@ impl Simulation {
             }
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame);
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 if self
                     .house_update_append_after_test
                     .is_some_and(|(after, _)| after == owner)
@@ -511,7 +511,7 @@ impl Simulation {
     /// the House radar recheck (`0x004F84FB`), the Lightning Storm's outages
     /// (`0x00539FE0`), the superweapon EVA lines (`0x004468DA`, `0x006CCCF0`
     /// and the other `SuperClass::Launch` cases) and selection navigation.
-    pub(crate) fn local_player_defeated(&self) -> bool {
+    pub fn local_player_defeated(&self) -> bool {
         self.session
             .current_house
             .and_then(|house| self.houses.get(&house))
@@ -569,7 +569,7 @@ impl Simulation {
                     arg6: true,
                 },
             );
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             BLOWUP_TRACE.with(|trace| trace.borrow_mut().push(event));
             self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
             last = Some(id);
@@ -697,14 +697,14 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Blowup_All's receiver calls, in order, for the native comparison.
     static BLOWUP_TRACE: std::cell::RefCell<Vec<EntityDamageEvent>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn take_blowup_trace() -> Vec<EntityDamageEvent> {
     BLOWUP_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }

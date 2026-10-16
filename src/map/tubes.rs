@@ -50,24 +50,24 @@ impl RawTubeSection {
 
 /// Native constructor identity retained beside the successful Tube fact.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct TubeNativeInit {
-    pub(crate) source_entry_ordinal: usize,
-    pub(crate) native_unique_id: i32,
+pub struct TubeNativeInit {
+    pub source_entry_ordinal: usize,
+    pub native_unique_id: i32,
 }
 
 /// One successfully allocated, assigned, and parsed authored Tube record.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ConstructedMapTube {
-    pub(crate) fact: TubeFact,
-    pub(crate) native_init: TubeNativeInit,
+pub struct ConstructedMapTube {
+    pub fact: TubeFact,
+    pub native_init: TubeNativeInit,
 }
 
 /// Consumed-once successful/partial receipt for the raw Tube boundary. `Some`
 /// with zero entries distinguishes an empty section whose reservation ran from
 /// a load that never reached the boundary.
 #[derive(Debug, Default)]
-pub(crate) struct NativeMapTubeReceipt {
-    pub(crate) entries: Vec<ConstructedMapTube>,
+pub struct NativeMapTubeReceipt {
+    pub entries: Vec<ConstructedMapTube>,
 }
 
 /// Consumed-once ownership state for the raw `[Tubes]` boundary.
@@ -80,7 +80,7 @@ pub(crate) enum NativeMapTubesState {
 }
 
 impl NativeMapTubesState {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn as_ref(&self) -> Option<&NativeMapTubeReceipt> {
         match self {
             Self::Pending(receipt) => Some(receipt),
@@ -90,7 +90,7 @@ impl NativeMapTubesState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum AllocatedTubeParseError {
+pub enum AllocatedTubeParseError {
     #[error("row has {actual} fields; at least {minimum} are required before the path")]
     MissingFixedFields { actual: usize, minimum: usize },
     #[error("path runs out of fields before -1 or the native 100-iteration bound")]
@@ -98,7 +98,7 @@ pub(crate) enum AllocatedTubeParseError {
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum TubeConstructionError {
+pub enum TubeConstructionError {
     #[error("[Tubes] source row {ordinal} allocation returned null before native ID assignment")]
     AllocationNull { ordinal: usize },
     #[error("[Tubes] source row {ordinal} failed after native ID {native_unique_id}: {error}")]

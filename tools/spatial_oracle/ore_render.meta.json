@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original flat Riparius Cell body on physical TIB01..12 and global ordinary Convert, reduction1\u21920\u2192empty and native active-caller empty admission; bounded RGB565/Z rows and signed numeric image selector controls. No native whole map loader or normal harvest scheduling claim.",
+  "assumptions": [
+    "Shares physical_assets/prepare/execute/snapshot and the original raster VM with bridge modes. Full original OverlayType constructors/readers and Riparius7216C0/721A50 execute on physical expansion RULESMD, MPBattleMD and GoldSt lexical layers. Original physical ART/image readers bind TEMPERATE art; all12 URBAN aliases and URBAN.PAL are byte-identical. Map pack coordinates/id/data/level are physical inputs, not derived native slope/flags.",
+    "Ordinary global87F6B8 executes original Init_Game TEMPERAT.PAL load/expansion52BC49..52BCBB and full basic Convert construction/publication52BE0F..52BE48 through48E740/4BBB00/48EBF0. Source/destination885780, RGB565 surface and53shades. No ISO Cell LightConvert or generated table is injected.",
+    "The8rows cover densities4/1/0 and empty at123,33 level5, a124,33 display variant and three one-scanline near/equal/far controls. Cell slope0/flags0/level/projected point, viewport/clip, A127, backgroundFFFF and oldZ are supplied component state. These are not native GoldSt constructed cells. Numeric controls execute47F8D7..47F900 directly with native reader-derived divisor/base and signed16 Cell coordinates.",
+    "The same VM executes original480A80 twice with amount1 and full original47D2B0 against supplied sentinel TMPFFFF, sparse103x82 map, empty neighbors/Dummy, CliffBack0 and no LAT. Original queue/bitmap gates and native direction initialization run; both native RNG states are unchanged. Reduction result drives the next raster density. Post-clear native Tactical suffix6D6E5B..6D71D3 itself skips both calls because identity=-1. Its map/admission/rectangle/draw transport remains the existing traversal owner. Actual GoldSt terrain recalc and full harvester scheduler remain with existing consumed terrain_recalc/harvest_field/ore_queue comparisons.",
+    "The caller, shape metadata/clipping, selector490E50, rowwalker437A10 and opaque4990E0 execute unchanged. Native pixels/Z supply all output runs; depth control candidates come from original raster output, not a host depth formula. This fixture does not certify GPU submission, shroud composition, all ordinary overlay branches, FoggedObject lifecycle or other theaters."
+  ],
+  "substitutions": [
+    "Existing PaletteReader allocation/TLS/archive-resource/RGB565 surface services remain. Full original Cell body, palette generation and raster execute. Reduction Radar6551C0/Tactical6D2790 calls are recorded transport sinks; no reduction, Recalc, queue or RNG result is substituted."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "flat_selector": "0x0047F8D7",
+    "overlay_type_constructor": "0x005FE250",
+    "overlay_reader": "0x005FE770",
+    "tiberium_constructor": "0x007216C0",
+    "tiberium_reader": "0x00721A50",
+    "ordinary_palette_begin": "0x0052BC49",
+    "ordinary_palette_end": "0x0052BCBB",
+    "ordinary_convert_begin": "0x0052BE0F",
+    "ordinary_convert_end": "0x0052BE48",
+    "convert_constructor": "0x0048E740",
+    "shade_builder": "0x004BBB00",
+    "reduce_tiberium": "0x00480A80",
+    "recalc": "0x0047D2B0",
+    "rle_selector": "0x00490E50",
+    "rle_rowwalker": "0x00437A10",
+    "opaque_body_leaf": "0x004990E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --ore",
+  "payload_sha256": "e2df9d797a0b92bbb564a424fda8b9cc3ed5b4e48f7411636ad377c1c4b74669"
+}

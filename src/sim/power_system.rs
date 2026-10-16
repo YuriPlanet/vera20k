@@ -112,7 +112,7 @@ impl PowerState {
         self.radar_dirty |= radar;
     }
 
-    pub(crate) fn blackout_remaining(&self, binary_frame: u32) -> i32 {
+    pub fn blackout_remaining(&self, binary_frame: u32) -> i32 {
         self.blackout_timer.remaining(binary_frame as i32)
     }
 
@@ -152,7 +152,7 @@ impl PowerState {
     }
 
     /// A state its House update already assessed: nothing to recheck.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn settled_for_test() -> Self {
         Self {
             power_dirty: false,
@@ -162,29 +162,29 @@ impl PowerState {
     }
 
     /// House+5779: the next House update reassesses radar.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn radar_recheck_for_test(&self) -> bool {
         self.radar_dirty
     }
 
     /// House+5778: the next House update reassesses power.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn power_recheck_for_test(&self) -> bool {
         self.power_dirty
     }
 
     /// House+2A4/+2AC.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn blackout_timer_for_test(&self) -> crate::sim::timer::CdTimer {
         self.blackout_timer
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_radar_outage_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
         self.radar_outage_timer = timer;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn radar_outage_for_test(&self) -> crate::sim::timer::CdTimer {
         self.radar_outage_timer
     }
@@ -404,7 +404,7 @@ fn recalculate_power_for_owner(
 /// House through Simulation's native House receiver, using its own dirty
 /// bytes and ordered building list. Kernel fixtures explicitly invalidate
 /// every assessment because they mutate EntityStore without lifecycle calls.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn tick_power_states(
     power_states: &mut BTreeMap<InternedId, PowerState>,
     entities: &mut EntityStore,

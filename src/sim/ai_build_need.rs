@@ -70,7 +70,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::production::{SellOrder, can_sell_building, sell_back, techno_refund};
 use crate::sim::world::{FrameEffects, Simulation};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Observation only: the [`manage_build_queue`] calls on this thread
     /// while a test holds `Some`.
@@ -303,7 +303,7 @@ pub(crate) fn manage_build_queue(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     MANAGE_CALLS.with(|calls| calls.set(calls.get().map(|count| count + 1)));
     let Some(house) = sim.houses.get(&owner) else {
         return;

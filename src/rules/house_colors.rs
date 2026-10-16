@@ -115,6 +115,7 @@ static FALLBACK_RAMP: [Color; RAMP_SIZE] = [Color {
 /// `RuleSet`. `Default` (empty) is used only when rules are unavailable (headless tests, missing
 /// assets); `ramp()` then yields the flat fallback.
 #[derive(Debug, Default)]
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub struct HouseColorRamps {
     ramps: Vec<[Color; RAMP_SIZE]>,
 }

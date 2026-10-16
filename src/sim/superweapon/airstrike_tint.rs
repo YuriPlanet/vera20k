@@ -14,7 +14,7 @@ use crate::sim::timer::CdTimer;
 /// Techno+1A8 outer timer, +1B4 phase timer and +1C0 phase. Separate from
 /// Iron Curtain: both advance in native Techno AI, Iron first, on one stream.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AirstrikeTintState {
+pub struct AirstrikeTintState {
     timer: CdTimer,
     tint_timer: CdTimer,
     tint_stage: u8,
@@ -23,7 +23,7 @@ pub(crate) struct AirstrikeTintState {
 impl AirstrikeTintState {
     /// 0070E300 resets the phase and starts the outer timer, retaining the
     /// phase timer until phase zero overwrites it at the next admitted AI.
-    pub(crate) fn start(&mut self, frame: i32, duration: i32) {
+    pub fn start(&mut self, frame: i32, duration: i32) {
         self.timer.start(frame, duration);
         self.tint_stage = 0;
     }
@@ -36,7 +36,7 @@ impl AirstrikeTintState {
     /// 0070E920 admits only a building with a marker whose manager targets
     /// that building. Losing admission resets only the phase. Stage two
     /// draws Scenario RandomRanged(-5,5) once (0070EA4B); no other stage draws.
-    pub(crate) fn update_tint(&mut self, frame: i32, active: bool, rng: &mut SimRng) {
+    pub fn update_tint(&mut self, frame: i32, active: bool, rng: &mut SimRng) {
         if !active {
             self.tint_stage = 0;
             return;
@@ -71,7 +71,7 @@ impl AirstrikeTintState {
     /// ScaleByAirstrikeTintPhase 0070E4B0: called after Iron's scaling and
     /// cap, even if the airstrike marker was lost since the last AI. Signed
     /// division truncates toward zero; products and shifts wrap in 32 bits.
-    pub(crate) fn effect_tint_intensity(&self, intensity: i32, frame: i32) -> i32 {
+    pub fn effect_tint_intensity(&self, intensity: i32, frame: i32) -> i32 {
         let left = self.tint_timer.remaining(frame);
         let scale = match self.tint_stage {
             1 | 7 => (12i32.wrapping_sub(left) << 8) / 6,
@@ -95,7 +95,7 @@ impl AirstrikeTintState {
         self.tint_stage.hash(hasher);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_tint(tint_stage: u8, tint_timer: CdTimer) -> Self {
         Self {
             tint_stage,

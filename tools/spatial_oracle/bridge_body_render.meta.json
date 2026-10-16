@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight original high-bridge body caller/raster controls and one adjacent-anchor composition on physical BRIDGE/BRIDGB art, native default Cell LightConvert and strict RGB565/Z leaves; 41 caller-boundary controls including all16 LatinSquare positions. No whole scenario, GPU, snapshot drawing or complete47F6A0 parity.",
+  "assumptions": [
+    "Shares physical_assets, prepare, execute and snapshot with the retained shadow oracle. Original four OverlayType constructors/full rules readers and ART/image binding execute on physical RULESMD/MPBattleMD and ARTMD lexical inputs. No map override, LANGRULE or complete map-loader execution is claimed.",
+    "Physical ISOTEM.PAL and TEMPERAT.PAL are supplied at original theater source/destination storage. Original5454DB..5454EB expansion loop executes for each palette, then545000..5450EF constructs/publishes the default ISO-source LightConvert through555DA0/556090 and native blitter initialization. Original483E30 binds it to the Cell and writes explicitly supplied unity lighting/brightness1000. Full scenario lighting, type/tile loading and asynchronous lighting history are excluded.",
+    "RGB565 format2 and MMX dispatch bytes are supplied as established by the existing palette owner capture. Actual full-constructor table is compared byte-for-byte to tools.palette_oracle.oracle.palette_table original execution with the same physical expanded source and unity triple. No generated table is injected into the body VM.",
+    "Cell current overlay/type, raw state, signed byte level, flags, coordinates, z0-projected point, clip and viewport are explicit component inputs. All raster rows use ordinary0x180 high-anchor flags and valid stock state/orientation/material combinations; no natural producer is claimed for extra boundary flags/signed-level controls.",
+    "Original47F6A0,480110,5FDCC0,4AED70, shape metadata/pixels, selector490E50, rowwalker437A10 and opaque4990E0 execute unchanged. controls stop BEFORE4AED70 and therefore make no raster claim. Body dirty cache+64 is explicitly invalidated before each invocation, including repeats, so both repeats reach the original raster.",
+    "A127, backgroundFFFF and oldZ are supplied RGB565 surface state. Final color/Z runs are lossless original output. Three one-row near/equal/far oldZ controls derive their candidate from an original probe raster pixel, then rerun the caller; equality/far emit no stores. Full shape crop is retained in the four material/orientation controls. Repeat output remains unchanged after an actual second body raster.",
+    "Physical body artwork is temperate; the shared loader also records other theater asset identities but body equivalence across theaters is not claimed. Ordinary0x80-clear fallback is caller-boundary research only; its renderer and FoggedObjectClass4D1AB5 consumer remain separate open branches.",
+    "The adjacent-anchor scene reuses OriginalBridgeConstructor success fixture: two original5FC380/Mark/setter calls at16,16 and16,17 on its supplied sparse9x9 map, rawtype25 and synthetic resident Road TMP, with supplied level1. Produced overlay/state/flags cross into the existing physical-body raster VM. Its existing original Tactical suffix6D6E5B..6D71D3 supplies body order and call points with origin16,16/vieworigin-90,375; map lookup/admission/visibility/draws are sinks only for this traversal. Raster executes separately in that observed order on one retained framebuffer/Z. It is not a native map loader or xbayopigs whole-scene claim."
+  ],
+  "substitutions": [
+    "Existing PaletteReader allocator, TLS, archive-resource and RGB565 primary surface transport are retained. Spare native registries and explicit Cell/A/Z/surface state are supplied. No body caller, palette expansion/color generation, shape, selector, rowwalker or opaque pixel leaf is substituted."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "cell_draw_offset": "0x00480110",
+    "overlay_draw_offset": "0x005FDCC0",
+    "shape": "0x004AED70",
+    "theater_palette_expand": "0x005454DB",
+    "default_cell_convert": "0x00545000",
+    "default_cell_convert_stop": "0x005450EF",
+    "cell_bind": "0x00483E30",
+    "light_convert_ctor": "0x00555DA0",
+    "light_convert_colors": "0x00556090",
+    "mmx_rgb565": "0x007DE200",
+    "rle_selector": "0x00490E50",
+    "rle_rowwalker": "0x00437A10",
+    "opaque_body_leaf": "0x004990E0",
+    "overlay_constructor": "0x005FC380",
+    "overlay_mark": "0x005FC570",
+    "tactical_sweeps_begin": "0x006D6E5B",
+    "tactical_sweeps_end": "0x006D71D3"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --body",
+  "payload_sha256": "93d523b1e181ef7ba01240d77bd176044b945d3316baeed6a6b1b737a8cdf2e5"
+}

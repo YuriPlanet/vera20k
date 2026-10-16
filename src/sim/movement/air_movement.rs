@@ -234,7 +234,7 @@ pub(crate) fn fly_speed_facts(
 /// replacing an existing live turn. The body's rate stands in for `ROT=`:
 /// the Aircraft constructor (`0x00413FD2..0x00414015`) gives both
 /// controllers that one value.
-pub(crate) fn ensure_fly_secondary_facing(entity: &mut crate::sim::game_entity::GameEntity) {
+pub fn ensure_fly_secondary_facing(entity: &mut crate::sim::game_entity::GameEntity) {
     let initial = entity.body_facing.destination();
     let body = &entity.body_facing;
     entity
@@ -290,7 +290,7 @@ pub struct AirMovementTickStats {
 /// stands on its ground ([`object_world_z_leptons`]), so its height is 0.
 ///
 /// [`object_world_z_leptons`]: super::ground_pose::object_world_z_leptons
-pub(crate) fn current_fly_height(
+pub fn current_fly_height(
     entity: &crate::sim::game_entity::GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> i32 {

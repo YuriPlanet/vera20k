@@ -272,9 +272,9 @@ pub(crate) fn apply_area_damage_in_run(
     );
     let mut effects = DeathEffects::default();
     append_fixture_tiberium(world, &mut effects.tiberium_reduction_requests);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     effects.wall_mutations.extend(area.aoe.wall_mutations);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     effects
         .cell_target_detaches
         .extend(area.aoe.cell_target_detaches);
@@ -772,7 +772,7 @@ pub(crate) fn commit_entities(
             building_entry_frame,
             state: receive_state,
             entered_techno_death,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
                 reached_exact_zero: _,
             postmortem_candidate,
             fatal_category,
@@ -799,7 +799,7 @@ pub(crate) fn commit_entities(
         // Object Tags, Kill and Destroy have already returned, followed by
         // the immediate live-owner House anger update at Techno701E68.
         let _ = house_threat_delta;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(delta) = house_threat_delta {
             death
                 .receiver_stage_trace
@@ -824,7 +824,7 @@ pub(crate) fn commit_entities(
             target.lifecycle.restore_alive();
             target.health.set(1);
             target.death.restore();
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             death
                 .receiver_stage_trace
                 .push(ReceiverStageTrace::PostMortem { target_id });
@@ -1018,7 +1018,7 @@ pub(crate) fn commit_entities(
         // Process at once.
         if synchronous_retaliation {
             let retaliates = attacker_id != RAD_NO_ATTACKER && {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 death
                     .receiver_stage_trace
                     .push(ReceiverStageTrace::ShouldRetaliate { target_id });
@@ -2299,10 +2299,10 @@ fn emit_detonation_receivers<'r>(
                 ),
             );
             append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             out.effects.wall_mutations.extend(area.aoe.wall_mutations);
 
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             out.effects
                 .cell_target_detaches
                 .extend(area.aoe.cell_target_detaches);

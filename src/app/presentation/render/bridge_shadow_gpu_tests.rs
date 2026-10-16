@@ -125,11 +125,13 @@ fn bridge_shadow_submission_matches_native_color_depth_and_repeat() {
     }
 }
 
-use crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner;
+use crate::app::presentation::instances::bridges::{
+    build_bridge_body_instances_inner, build_bridge_shadow_instances_inner,
+};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::render::batch::{CameraUniform, SpriteInstance};
-use crate::render::bridge_atlas::{BridgeAtlas, build_bridge_atlas};
+use crate::render::bridge_atlas::{BridgeAtlas, BridgeFrameKind, build_bridge_atlas};
 use crate::render::terrain_draw_gpu_tests::extent;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -212,48 +214,77 @@ impl RetailBridgeFixture {
         input: &Value,
         atlas: &BridgeAtlas,
         size: [u32; 2],
+        kind: BridgeFrameKind,
     ) -> (CameraUniform, Vec<SpriteInstance>) {
-        let rx = input["coords"][0].as_u64().unwrap() as u16;
-        let ry = input["coords"][1].as_u64().unwrap() as u16;
-        let mut terrain = test_grid(rx + 1, ry + 1, test_flat_cell);
-        let cell = terrain.cell_mut(rx, ry).unwrap();
-        cell.level = input["level"].as_i64().unwrap() as u8;
-        cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
-        cell.bridge_facts.state_byte = input["state"].as_u64().unwrap() as u8;
-        cell.bridge_facts.overlay_id = Some(
-            self.registry
-                .id_for_name(input["type"].as_str().unwrap())
-                .unwrap(),
+        let cells: Vec<&Value> = input.get("cells").map_or_else(
+            || vec![input],
+            |cells| cells.as_array().unwrap().iter().collect(),
         );
+        let coords = |cell: &Value, axis: usize| cell["coords"][axis].as_u64().unwrap() as u16;
+        let mut terrain = test_grid(
+            cells.iter().map(|c| coords(c, 0)).max().unwrap() + 1,
+            cells.iter().map(|c| coords(c, 1)).max().unwrap() + 1,
+            test_flat_cell,
+        );
+        for cell_input in &cells {
+            let cell = terrain
+                .cell_mut(coords(cell_input, 0), coords(cell_input, 1))
+                .unwrap();
+            cell.level = cell_input["level"].as_i64().unwrap() as u8;
+            cell.bridge_facts.raw_flags = cell_input["flags"].as_u64().unwrap() as u32;
+            cell.bridge_facts.state_byte = cell_input["state"].as_u64().unwrap() as u8;
+            cell.bridge_facts.overlay_id = Some(
+                self.registry
+                    .id_for_name(cell_input["type"].as_str().unwrap())
+                    .unwrap(),
+            );
+        }
+        let first = cells[0];
+        let (rx, ry) = (coords(first, 0), coords(first, 1));
         // These original caller cases supply the unraised cell screen point.
         // Align the existing isometric projection with that seam. The actual
         // bridge builder must apply the live signed height, flags and frame.
         let point = crate::map::terrain::iso_to_screen(rx, ry, 0);
         let mut camera = camera(size);
         camera.camera_pos = [
-            point.0 - input["cell_point"][0].as_i64().unwrap() as f32,
+            point.0 - first["cell_point"][0].as_i64().unwrap() as f32,
             point.1
-                - input["cell_point"][1].as_i64().unwrap() as f32
+                - first["cell_point"][1].as_i64().unwrap() as f32
                 - input["viewport_y"].as_i64().unwrap() as f32,
         ];
         // Native fixture viewport +Y moves the shape; its Z-buffer origin is
         // independently zero. Do not use viewport Y as a second depth bias.
         let mut instances = Vec::new();
-        build_bridge_shadow_instances_inner(
-            &terrain,
-            atlas,
-            &self.names,
-            camera.world_origin_y,
-            camera.world_height,
-            camera.camera_pos[0],
-            camera.camera_pos[1],
-            size[0] as f32,
-            size[1] as f32,
-            &mut instances,
-        );
+        match kind {
+            BridgeFrameKind::Shadow => build_bridge_shadow_instances_inner(
+                &terrain,
+                atlas,
+                &self.names,
+                camera.world_origin_y,
+                camera.world_height,
+                camera.camera_pos[0],
+                camera.camera_pos[1],
+                size[0] as f32,
+                size[1] as f32,
+                &mut instances,
+            ),
+            BridgeFrameKind::Body => build_bridge_body_instances_inner(
+                &terrain,
+                atlas,
+                &self.names,
+                &crate::map::lighting::CellLightGrid::new(),
+                camera.world_origin_y,
+                camera.world_height,
+                camera.camera_pos[0],
+                camera.camera_pos[1],
+                size[0] as f32,
+                size[1] as f32,
+                &mut instances,
+            ),
+        }
         assert_eq!(
             instances.len(),
-            1,
+            cells.len(),
             "original caller admits {}",
             input["name"]
         );
@@ -301,7 +332,7 @@ fn assert_native_cell_sweep_order(
             "cell_point":[(point.0+600.0) as i32,(point.1-200.0) as i32], "viewport_y":0});
         // A single emitted instance identifies its source cell. The ordering
         // expectation itself is the recorded original Display traversal.
-        let (_, one) = fixture.instances(&input, atlas, [1024, 1024]);
+        let (_, one) = fixture.instances(&input, atlas, [1024, 1024], BridgeFrameKind::Shadow);
         assert!(
             identity_by_position
                 .insert(one[0].position.map(f32::to_bits), coords)
@@ -365,7 +396,8 @@ fn retail_bridge_caller_matches_native_color_and_depth_attachments() {
         let mut pool = InstanceBufferPool::new();
         for row in packet["rows"].as_array().unwrap() {
             let input = &row["input"];
-            let (camera, instances) = fixture.instances(input, &atlas, size);
+            let (camera, instances) =
+                fixture.instances(input, &atlas, size, BridgeFrameKind::Shadow);
             batch.write_camera(&gpu.queue, camera);
             terrain.prepare(&gpu.device, &color, &dv, camera);
             pool.upload_on_device(&gpu.device, &gpu.queue, "bridge-native-row", &instances);
@@ -406,35 +438,103 @@ fn retail_bridge_caller_matches_native_color_and_depth_attachments() {
                 gpu.read(&mut encoder, &depth),
             ];
             let output = gpu.finish(encoder, &reads, size);
-            // Lossless expansion of captured native buffers. This contains no
-            // projection, depth arithmetic, stencil or color transformation.
-            let mut expected = vec![[background, old_z]; pixels];
-            for run in row["output"]["runs"].as_array().unwrap() {
-                let values: [usize; 5] = std::array::from_fn(|i| run[i].as_u64().unwrap() as usize);
-                let [x, y, count, word, z] = values;
-                let start = y * size[0] as usize + x;
-                expected[start..start + count].fill([word as u16, z as u16]);
-            }
-            for (index, [word, z]) in expected.into_iter().enumerate() {
-                let offset = index * 4;
-                let actual_z = stored_z(f32::from_le_bytes(
-                    output[1][offset..offset + 4].try_into().unwrap(),
-                ));
-                assert_eq!(
-                    (&output[0][offset..offset + 4], actual_z),
-                    (&encoded(word, format)[..], z),
-                    "{} {format:?} pixel ({},{})",
-                    row["name"],
-                    index % size[0] as usize,
-                    index / size[0] as usize,
-                );
-            }
+            crate::render::terrain_draw_gpu_tests::assert_native_color_and_depth(
+                &output, row, format, size,
+            );
         }
     }
     eprintln!(
         "{} full original bridge caller/shape rows matched production atlas, live-cell builder, GPU color and depth in both sRGB formats",
         packet["rows"].as_array().unwrap().len()
     );
+}
+
+#[test]
+#[ignore = "requires GPU and retail assets; original high-bridge body through atlas, live-cell builder and production submission"]
+fn retail_bridge_body_matches_native_color_and_depth_attachments() {
+    let packet: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_body_render.json",
+    ))
+    .unwrap();
+    let size = [
+        packet["surface"]["width"].as_u64().unwrap() as u32,
+        packet["surface"]["height"].as_u64().unwrap() as u32,
+    ];
+    let fixture = RetailBridgeFixture::load(&packet);
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let atlas = fixture.atlas(&gpu, &batch);
+        let color = gpu.target(size, format);
+        let cv = color.create_view(&Default::default());
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let dv = depth.create_view(&Default::default());
+        let mut pool = InstanceBufferPool::new();
+        for row in packet["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(packet["scenes"].as_array().unwrap())
+        {
+            let input = &row["input"];
+            let mut builder_input = input.clone();
+            if let Some(cells) = row.get("cells") {
+                builder_input["cells"] = cells.clone();
+            }
+            let (camera, instances) =
+                fixture.instances(&builder_input, &atlas, size, BridgeFrameKind::Body);
+            batch.write_camera(&gpu.queue, camera);
+            pool.upload_on_device(&gpu.device, &gpu.queue, "bridge-native-body", &instances);
+            let background = input["background"].as_u64().unwrap() as u16;
+            let old_z = input["old_z"].as_u64().unwrap() as u16;
+            let initial = encoded(background, format).repeat((size[0] * size[1]) as usize);
+            gpu.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &color,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &initial,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(size[0] * 4),
+                    rows_per_image: Some(size[1]),
+                },
+                extent(size),
+            );
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
+            {
+                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                    &mut encoder,
+                    &cv,
+                    &dv,
+                );
+                let clip: [u32; 4] =
+                    std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
+                pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
+                super::draw_passes::draw_pooled_bridge_bodies(
+                    &mut pass,
+                    &batch,
+                    &pool,
+                    Some(&atlas),
+                    "bridge-native-body",
+                );
+            }
+            let reads = [
+                gpu.read(&mut encoder, &color),
+                gpu.read(&mut encoder, &depth),
+            ];
+            let output = gpu.finish(encoder, &reads, size);
+            crate::render::terrain_draw_gpu_tests::assert_native_color_and_depth(
+                &output, row, format, size,
+            );
+        }
+    }
 }
 
 #[test]
@@ -452,7 +552,7 @@ fn retail_bridge_shadow_workload_timing() {
     let atlas = fixture.atlas(&gpu, &batch);
     let mut input = packet["rows"][0]["input"].clone();
     input["cell_point"] = serde_json::json!([180, 200]);
-    let (camera, one) = fixture.instances(&input, &atlas, size);
+    let (camera, one) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
     batch.write_camera(&gpu.queue, camera);
     let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
     let color = gpu.target(size, format);

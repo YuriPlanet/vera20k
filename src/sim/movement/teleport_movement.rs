@@ -152,24 +152,24 @@ impl TeleportState {
         self.phase
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn chrono_delay_ticks(&self) -> u32 {
         self.delay_timer.duration().max(0) as u32
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn destination(&self) -> Option<DriveCoord> {
         self.destination
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn target_cell(&self) -> Option<(u16, u16)> {
         self.destination
             .map(|coord| ((coord.x / 256) as u16, (coord.y / 256) as u16))
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test(phase: TeleportPhase, rx: u16, ry: u16, ticks: u32) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(phase: TeleportPhase, rx: u16, ry: u16, ticks: u32) -> Self {
         Self {
             phase,
             destination: Some(DriveCoord::cell(rx, ry, 0)),
@@ -177,17 +177,17 @@ impl TeleportState {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_phase_for_test(&mut self, phase: TeleportPhase) {
         self.phase = phase;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_destination_for_test(&mut self, destination: DriveCoord) {
         self.destination = Some(destination);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ticks_for_test(&mut self, ticks: u32) {
         self.delay_timer =
             crate::sim::timer::CdTimer::from_raw(self.delay_timer.start_frame(), ticks as i32);
@@ -202,7 +202,7 @@ impl TeleportState {
 
     /// The relocation frame is removed from normal targeting before its cell
     /// and occupancy mutation; it becomes targetable again while materializing.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_targetable(&self) -> bool {
         self.phase == TeleportPhase::ChronoDelay
     }
@@ -417,8 +417,8 @@ impl crate::sim::game_entity::GameEntity {
         self.locomotor.as_ref()?.teleport_effect_state()
     }
 
-    #[cfg(test)]
-    pub(crate) fn install_teleport_state_for_test(&mut self, state: Option<TeleportState>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn install_teleport_state_for_test(&mut self, state: Option<TeleportState>) {
         use super::locomotor::LocomotorState;
         if self
             .locomotor
@@ -453,7 +453,7 @@ impl crate::sim::game_entity::GameEntity {
         runtime.warp = state;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn teleport_state_for_test_mut(&mut self) -> Option<&mut TeleportState> {
         self.locomotor
             .as_mut()?

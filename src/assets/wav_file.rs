@@ -5,20 +5,20 @@
 //! is deliberately different from both the WAV average rate and playback length.
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct WavFile<'a> {
-    pub(crate) format_tag: u16,
-    pub(crate) channels: u16,
-    pub(crate) sample_rate: u32,
-    pub(crate) block_align: u16,
-    pub(crate) bits_per_sample: u16,
+pub struct WavFile<'a> {
+    pub format_tag: u16,
+    pub channels: u16,
+    pub sample_rate: u32,
+    pub block_align: u16,
+    pub bits_per_sample: u16,
     pub(crate) declared_data_len: u32,
-    pub(crate) data: &'a [u8],
+    pub data: &'a [u8],
 }
 
 impl<'a> WavFile<'a> {
     /// Preserve the playback parser's first data-after-fmt choice, bounded data
     /// slice and word-aligned chunk walk. Malformed short fmt chunks fail safely.
-    pub(crate) fn parse(bytes: &'a [u8]) -> Option<Self> {
+    pub fn parse(bytes: &'a [u8]) -> Option<Self> {
         if bytes.len() < 44 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
             return None;
         }
@@ -69,7 +69,7 @@ impl<'a> WavFile<'a> {
     /// (bits / 8) * channels * sample_rate. `408560` divides data*1000 by that
     /// rate, then `7208D3..7208EC` divides by1000 before storing float seconds.
     /// Ordinary positive audio sizes/rates are covered by sound_theme_metadata.
-    pub(crate) fn native_duration_seconds(&self) -> Option<u32> {
+    pub fn native_duration_seconds(&self) -> Option<u32> {
         let sample_bytes = match self.format_tag {
             1 => u32::from(self.bits_per_sample >> 3),
             0x11 => 2,

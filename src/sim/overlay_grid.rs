@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 /// The overlay index `BuildingClass::AfterDestruction` stamps on a destroyed
 /// building's foundation (`MOV [ESI+0x44],0xEF` at `0x0044202C`). Retail
 /// `[OverlayTypes]` puts `RUBBLE_OVERLAY` (`IsRubble=yes`) there.
-pub(crate) const RUBBLE_OVERLAY_INDEX: u8 = 0xEF;
+pub const RUBBLE_OVERLAY_INDEX: u8 = 0xEF;
 
 const MARK_MAX_SLOPE: u8 = 4;
 const MARK_STEEP_SLOPE_EXCEPTION_ID: u8 = 0xB2;
@@ -150,7 +150,7 @@ pub struct OverlayGrid {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OverlayRecalcOutcome {
+pub struct OverlayRecalcOutcome {
     pub navigation_changed: bool,
     pub zone_changed: bool,
 }
@@ -214,7 +214,7 @@ impl OverlayGrid {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn seed_neighbor_counts_for_tests(&mut self, value: u8) {
         self.retained_neighbor_counts.fill(value);
         self.wall_plane_epoch = self.wall_plane_epoch.wrapping_add(1);
@@ -312,7 +312,7 @@ impl OverlayGrid {
     /// The native map reader performs the data-pack overwrite after stamping
     /// overlay identities, including cells whose overlay identity is empty.
     /// Initialization writes directly so it creates no runtime dirtiness.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_overlay_packs(
         entries: &[OverlayEntry],
         data: &OverlayDataPack,
@@ -450,12 +450,7 @@ impl OverlayGrid {
     /// it performs its terrain recalc synchronously in the world cascade. This
     /// deliberately avoids the ordinary dirty-cell channel used by independent
     /// runtime overlay placement/removal.
-    pub(crate) fn write_bridge_overlay_identity(
-        &mut self,
-        rx: u16,
-        ry: u16,
-        overlay_byte: u8,
-    ) -> bool {
+    pub fn write_bridge_overlay_identity(&mut self, rx: u16, ry: u16, overlay_byte: u8) -> bool {
         let Some(idx) = index_of(self.width, self.height, rx, ry) else {
             return false;
         };
@@ -861,7 +856,7 @@ impl OverlayGrid {
     /// Pending overlay/radar dirty coordinates without consuming the runtime
     /// receipt. Initial presentation uses this to include every real cell
     /// written by a multi-cell startup Mark transaction.
-    pub(crate) fn pending_dirty_cells(&self) -> &[(u16, u16)] {
+    pub fn pending_dirty_cells(&self) -> &[(u16, u16)] {
         &self.dirty_cells
     }
 
@@ -920,7 +915,7 @@ impl OverlayGrid {
     }
 
     /// Stamp a player-owned wall overlay at a cell.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn place_owned_wall(
         &mut self,
         rx: u16,
@@ -1019,7 +1014,7 @@ impl OverlayGrid {
     /// @ 0x00480630 runs Recalc @ 0x00480969, compares old/new zone at
     /// 0x0048096E..0x00480977, then repairs the graph before its neighbor-count
     /// tail. The caller still owns those callbacks in their native slots.
-    pub(crate) fn recalculate_runtime_cell(
+    pub fn recalculate_runtime_cell(
         &mut self,
         terrain: &mut ResolvedTerrainGrid,
         registry: &OverlayTypeRegistry,
@@ -1053,7 +1048,7 @@ impl OverlayGrid {
     /// Drained at the first frame boundary with rules, resolved terrain, and an
     /// overlay registry. Partial-input frames retain it so derived terrain and
     /// navigation cannot miss the mutation. Runtime-only; never serialized.
-    pub(crate) fn take_dirty_cells(&mut self) -> Vec<(u16, u16)> {
+    pub fn take_dirty_cells(&mut self) -> Vec<(u16, u16)> {
         std::mem::take(&mut self.dirty_cells)
     }
 }
@@ -1072,7 +1067,7 @@ impl OverlayGrid {
 /// finalizer replay and bridge-owned immediate publication. Ordinary runtime
 /// overlay mutations use `OverlayGrid::recalculate_runtime_cell` to keep projection
 /// and downstream notification together.
-pub(crate) fn recalc_overlay_passability(
+pub fn recalc_overlay_passability(
     overlay_grid: &mut OverlayGrid,
     resolved_terrain: &mut ResolvedTerrainGrid,
     registry: &OverlayTypeRegistry,
@@ -1270,17 +1265,17 @@ pub struct WallDamageResult {
     pub destroyed_cells: Vec<(u16, u16)>,
     /// Exact mutation order. This is deliberately a wall-local trace, not a
     /// generalized gameplay event system.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub mutations: Vec<WallMutation>,
     /// Diagnostic trace of packed CellStruct values submitted to
     /// MarkTerrainDirty, deduplicated in first-call order. Production mutation
     /// authority is the synchronous host callback, never replay of this list.
     /// True-dummy coordinates retain their raw signed-word bit patterns.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub radar_dirty_cells: Vec<(u16, u16)>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn push_wall_radar_dirty(result: &mut WallDamageResult, coord: (u16, u16)) {
     if !result.radar_dirty_cells.contains(&coord) {
         result.radar_dirty_cells.push(coord);
@@ -1296,7 +1291,7 @@ fn publish_wall_dirty_step(
     if let Some(host) = host.as_deref_mut() {
         host.dirty_step(step, packed_coord);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if step == WallDirtyStep::Radar {
         push_wall_radar_dirty(_result, packed_coord);
     }
@@ -1346,7 +1341,7 @@ pub fn damage_wall_overlay(
 /// Runtime-authoritative wall damage. Finalized grids require the resolved
 /// CellClass lookup state so each terminal removal reverses exactly one
 /// wrapping eight-neighbor wall contribution, including fixed-stride aliases.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn damage_wall_overlay_with_terrain(
     overlay_grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1505,7 +1500,7 @@ fn damage_wall_recursive(
         if let NativeRuntimeOverlayCell::Real(rx, ry) = target {
             grid.dirty_cells.push((rx, ry));
             result.changed_cells.push((rx, ry));
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             result.mutations.push(WallMutation {
                 rx,
                 ry,
@@ -1519,7 +1514,7 @@ fn damage_wall_recursive(
     clear_native_runtime_overlay_target(grid, resolved_terrain.as_deref(), target, false);
     if let NativeRuntimeOverlayCell::Real(rx, ry) = target {
         result.destroyed_cells.push((rx, ry));
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         result.mutations.push(WallMutation {
             rx,
             ry,
@@ -1605,7 +1600,7 @@ fn auto_destruct_threshold(overlay_id: u8, full_byte: u8) -> bool {
 /// then apply the per-type auto-destruct safety net.
 ///
 /// Same-type-only matching.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn recompute_wall_connectivity_at(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1618,7 +1613,7 @@ pub fn recompute_wall_connectivity_at(
 /// Runtime form of [`recompute_wall_connectivity_at`] using native fixed-grid
 /// cardinal lookup. The coordinate being recomputed is already a real cell;
 /// only its neighbor probes pass through Get_CellClass semantics.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn recompute_wall_connectivity_at_with_terrain(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1932,7 +1927,7 @@ pub(crate) fn refresh_wall_connectivity_after_placement_with_host(
 ///
 /// N/W/S/E receivers each receive a N/E/S/W/self cross update in table order.
 /// Cleanup removals do not recursively expand this fixed scope.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn cleanup_wall_neighbors(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -2029,7 +2024,7 @@ fn cleanup_wall_neighbors_into(
                 RecomputeResult::NoChange => {}
                 RecomputeResult::Updated => {
                     result.changed_cells.push((nx, ny));
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "test-support"))]
                     result.mutations.push(WallMutation {
                         rx: nx,
                         ry: ny,
@@ -2038,7 +2033,7 @@ fn cleanup_wall_neighbors_into(
                 }
                 RecomputeResult::Destroyed => {
                     result.destroyed_cells.push((nx, ny));
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "test-support"))]
                     result.mutations.push(WallMutation {
                         rx: nx,
                         ry: ny,
@@ -2082,7 +2077,7 @@ fn cleanup_wall_neighbors_into(
 }
 
 /// 8-direction offsets: N, NE, E, SE, S, SW, W, NW.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const ADJACENT_8: [(i32, i32); 8] = [
     (0, -1),
     (1, -1),

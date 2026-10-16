@@ -74,8 +74,8 @@ Use Unicorn 2.1.4 and run from the repository root:
 ```sh
 PYTHONPATH=. python tools/rules_oracle/weapon_speed.py --check
 PYTHONPATH=. python tools/rules_oracle/weapon_speed_order.py --check
-VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k --lib rules::native_processing::weapon_speed_tests::
-VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k --lib sim::projectile::launch::tests::
+VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k-core --lib rules::native_processing::weapon_speed_tests::
+VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k-core --lib sim::projectile::launch::tests::
 ```
 
 Cached INI indexes, allocator/CRT/TLS/archive boundaries, one preconstructed

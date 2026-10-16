@@ -87,7 +87,7 @@ impl GameEntity {
 
     /// Raw native state for component oracle inputs; production uses the
     /// constructor, SetGunnerWeapon and charge AI above.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_gunner_selection_for_test(&mut self, weapon: i32, turret: i32) {
         self.turret_selection.current_weapon_number = weapon;
         self.turret_selection.current_turret_index = turret;

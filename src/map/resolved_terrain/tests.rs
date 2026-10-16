@@ -1073,6 +1073,33 @@ fn a_detached_dummy_stamps_a_private_cell_word() {
     );
 }
 
+/// A run nested in another starts from the shared word, not the enclosing
+/// copy, and a stamp that changed the copy counts even when a later one
+/// restored it.
+#[test]
+fn a_nested_detached_run_starts_from_the_shared_word() {
+    let dummy = SharedCellDummy::fresh();
+    dummy.stamp_coord(-7, 11);
+    let ((nested, after), changed) = dummy.detached_stamps(|| {
+        dummy.stamp_coord(40, -2);
+        let nested = dummy.detached(|| dummy.snapshot().coord);
+        let after = dummy.snapshot().coord;
+        dummy.stamp_coord(-7, 11);
+        (nested, after)
+    });
+    assert_eq!(nested, (-7, 11), "a nested run starts from the shared word");
+    assert_eq!(after, (40, -2), "the enclosing copy resumes after it");
+    assert!(
+        changed,
+        "a stamp changed the copy before another restored it"
+    );
+    let ((), restamped) = dummy.detached_stamps(|| dummy.stamp_coord(-7, 11));
+    assert!(
+        !restamped,
+        "restamping the word the copy holds changes nothing"
+    );
+}
+
 #[test]
 fn gsi_04_01_resize_clears_bridge_bits_without_replacing_dummy_identity() {
     let dummy = SharedCellDummy::fresh();

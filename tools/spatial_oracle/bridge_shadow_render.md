@@ -156,11 +156,34 @@ demonstrate their integration.
 - Only the live Tactical two-sweep suffix is covered. FoggedObject snapshot
   traversal and native whole-scene composition remain outside this claim.
 - The separate tile-shadow emitter `0x00547230` and its `C_SHADOW.SHP` resource
-  do not occur in this high bridge own-shadow call chain. Its slope/caster
-  selection and the existing RAILBRDG path remain a separate investigation.
+  do not occur in this high bridge own-shadow call chain. Its stock inactivity
+  and the removed, misidentified railing route are described below.
 - No RNG draws, gameplay timer writes or detach calls occur in the selected
   draw chain. Frame/visibility caching and graphics resource creation are
   presentation concerns; this change must not alter simulation state.
+
+## Inactive retail tile shadows
+
+`CellClass::DrawTileShadow @ 0x004802A0` tests tile-type byte `+0x2E1` before
+calling `IsometricTileTypeClass::Draw_Tile_Shadow @ 0x00547230`. The constructor
+clears this byte (`0x00544880`). The selected-theater reader `0x00545150` enables
+it only when the tile's `TileSet####` section reads both `ShadowCaster=true`
+(default false) and `ShadowTiles!=0` (default zero); base and variant stores are
+`0x005464A6` and `0x00546AF8`. These inputs come from the selected theater MD
+INI, independently of layered map/rules files. None of the six stock files
+enables the gate. The earlier lazy TMP image lookup remains with its existing
+tile/variant owner.
+
+The emitter binds literal `C_SHADOW.SHP` (`0x00545214..0x0054524D`), not
+`RAILBRDG.<theater>`. Its tables select zero-based frames 0..13, all empty in
+the six identical stock C_SHADOW images. `CC_Draw_Shape` forwards the frame
+unchanged to frame bounds and pixels (`0x004AEE60..0x004AEE88`); darkening flags
+do not add half the frame count. The production retail regression
+`map::theater::theater_tests::active_retail_tile_shadow_route_is_dormant` checks the
+actual theater readers and shape metadata. A custom theater that enables the
+gate and replaces the image requires a separate implementation. The former
+RAILBRDG atlas, bridge-overlay admission and passthrough pass represented
+neither this native path nor the bridge's own overlay shadow and were removed.
 
 
 ## Renderer ownership and validation
@@ -250,8 +273,8 @@ The [validation receipt](bridge_shadow_render.validation.json) records exact
 commands, source/log hashes and the corrected lifecycle fixture's separate run.
 
 ```sh
-VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k --lib
-VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- clippy -p vera20k --lib --bins --test '*' --examples
+VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test --workspace --lib
+VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- clippy --workspace --lib --bins --test '*' --examples
 VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k --lib app::presentation::render::bridge_shadow_gpu_tests:: -- --ignored --nocapture --test-threads=1
 ```
 

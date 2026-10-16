@@ -153,8 +153,8 @@ pub(super) fn dispatch_draw_passes(
         "smudge",
     );
 
-    // --- Step 2: Bridge body (Z-depth pipeline) ---
-    draw_pooled_bridge_zdepth(
+    // --- Step 2: Bridge bodies (native SHP row depth, strict Less + write) ---
+    draw_pooled_bridge_bodies(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
@@ -222,22 +222,13 @@ pub(super) fn dispatch_draw_passes(
     // irrelevant either
     // way — this pass neither reads nor writes the depth buffer.)
 
-    // Native 0x547230 railing draw is reached through 0x4802A0 / 0x6D7C00
-    // in the cell-content layer (0x6D3040), before the object loop (0x6D3D10).
-    // This separate tile-shadow/railing path retains its existing policy.
-    // It does not select the bridge overlay shadow frames handled above.
-    // Its C_SHADOW/RAILBRDG binding remains a separate rendering residual.
-    draw_pooled_bridge_railing(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .bridge_railing_atlas
-            .as_ref(),
-        "overlay_bridge_railing",
-    );
+    // CellClass::DrawTileShadow4802A0 -> IsometricTileTypeClass547230 is
+    // separate from overlay shadows: tile+2E1 starts false at544880 and is
+    // enabled only by TileSet ShadowCaster && ShadowTiles!=0 (5464A6/546AF8).
+    // All six stock MD theater INIs leave it disabled. Its literal resource is
+    // C_SHADOW.SHP (545214..54524D), never RAILBRDG. Do not synthesize a bridge
+    // railing pass from its tables. Retail gate/resource regression:
+    // map::theater::theater_tests::active_retail_tile_shadow_route_is_dormant.
 
     let bracket_tex = state
         .match_state
@@ -589,6 +580,23 @@ pub(super) fn dispatch_draw_passes(
         unit_fill_tex,
         "status_unit_fill",
     );
+    // Native709A90 draws the PIPS2 scale strip before self-heal70A6BB
+    // and the control-group tail70A6FD. One atlas serves cargo and MindControl.
+    let scale_pip_tex = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .and_then(|overlay| overlay.scale_pips())
+        .map(|pips| pips.texture());
+    draw_pooled_no_depth(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        scale_pip_tex,
+        "scale_pips",
+    );
+
     // The self-heal status pip `DrawPipScalePips` draws after the strip
     // (pips.shp frames 0x0D / 0x14).
     let self_heal_pip_tex = state
@@ -607,7 +615,7 @@ pub(super) fn dispatch_draw_passes(
     );
     // DrawPipScalePips fills the black backing, draws its one-pixel House-color
     // outline, then submits the GAME.FNT glyph. Keep those layers under the
-    // same tactical camera/scissor and between self-heal and cargo pips.
+    // same tactical camera/scissor after the scale and self-heal pips.
     let control_group_bg_tex = state
         .match_state
         .match_presentation
@@ -629,30 +637,13 @@ pub(super) fn dispatch_draw_passes(
         "control_group_status_outline",
     );
     // Control-group digits are the GAME.FNT tail of DrawPipScalePips, after
-    // the native backing and outline and before cargo/spawn count pips.
+    // the native backing and outline after the scale and self-heal pips.
     draw_pooled_no_depth(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
         Some(state.renderer.bit_font.atlas()),
         "control_group_status",
-    );
-    // Tiberium cargo pips for harvesters (pips2.shp frames 0, 2, 5).
-    let cargo_pip_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| {
-            o.tiberium_pip_texture()
-                .unwrap_or_else(|| o.white_texture())
-        });
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        cargo_pip_tex,
-        "cargo_pips",
     );
 
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
@@ -715,33 +706,25 @@ pub(super) fn dispatch_draw_passes(
         bracket_tex,
         "building_radius_rings",
     );
-    // Placement cells — world-space, uses world camera (zoom).
-    let valid_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.preview_valid_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        valid_tex,
-        "placement_valid",
-    );
-    let invalid_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.preview_invalid_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        invalid_tex,
-        "placement_invalid",
-    );
+    // Cell47EC90 flags20600 -> plain Convert/RLE4960A0: opaque stores,
+    // world camera, neither A nor Z reads/writes. The shared neutral-A surface
+    // binding and passthrough pipeline implement that material directly.
+    if let (Some(shape), Some((buffer, count))) = (
+        state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .and_then(|overlay| overlay.placement_shape()),
+        pool.get("placement"),
+    ) {
+        state.renderer.batch_renderer.draw_with_buffer_passthrough(
+            &mut pass,
+            shape.texture(),
+            buffer,
+            count,
+        );
+    }
 
     // --- Step 10.5: PixelFX water/ore sparkles ---
     // gamemd writes these opaque one-pixel effects at the tactical tail, after
@@ -944,7 +927,7 @@ fn draw_pooled_zdepth<'a>(
     }
 }
 
-fn draw_pooled_bridge_zdepth<'a>(
+pub(super) fn draw_pooled_bridge_bodies<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
     pool: &'a InstanceBufferPool,
@@ -952,7 +935,18 @@ fn draw_pooled_bridge_zdepth<'a>(
     key: &'static str,
 ) {
     if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_with_buffer_zdepth(pass, &a.zdepth_bind_group, buf, count);
+        // Cell47F80B flags4E00 selects the opaque SHP leaf4990E0:
+        // strict signed candidate<oldZ, unlike TMP547CF0's <= policy.
+        // Reuse the native SHP row/gradient owner and its read/write pipeline.
+        batch.draw_zsprite_range(
+            pass,
+            &a.texture,
+            batch.default_zshape_bind_group(),
+            buf,
+            0,
+            count,
+            true,
+        );
     }
 }
 
@@ -1145,20 +1139,6 @@ pub(super) fn draw_bridge_shadows(
     )
 }
 
-/// Draw a pooled buffer using the bridge railing atlas with passthrough
-/// (Z-test ON, Z-write OFF).
-fn draw_pooled_bridge_railing<'a>(
-    pass: &mut wgpu::RenderPass<'a>,
-    batch: &'a BatchRenderer,
-    pool: &'a InstanceBufferPool,
-    atlas: Option<&'a crate::render::bridge_railing_atlas::BridgeRailingAtlas>,
-    key: &'static str,
-) {
-    if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_passthrough_range(pass, &a.texture, buf, 0, count);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{RenderZPolicy, overlay_policy_runs};
@@ -1192,7 +1172,7 @@ mod tests {
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
         let status = source_offset("\"status_unit_fill\"");
-        let placement = source_offset("\"placement_invalid\"");
+        let placement = source_offset("pool.get(\"placement\")");
         let sparkle = source_offset("pool.get(\"cell_sparkles\")");
         let timer_fill = source_offset("\"super_timer_fill\"");
         let timer_text = source_offset("\"super_timer_text\"");
@@ -1371,3 +1351,7 @@ mod tests {
         assert!(fill < border);
     }
 }
+
+#[cfg(test)]
+#[path = "tmp_clear_gpu_tests.rs"]
+mod tmp_clear_gpu_tests;

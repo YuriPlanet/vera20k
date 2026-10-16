@@ -21,7 +21,7 @@ use crate::rng_continuation::MapGenRngContinuation;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::find_nearby_cell::{
     NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
@@ -38,17 +38,17 @@ use crate::util::direction_tables::CELL_DELTAS;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, sqrt_approx_f32};
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct NativeStartBounds {
-    pub(crate) min_rx: u16,
-    pub(crate) min_ry: u16,
-    pub(crate) width: u16,
-    pub(crate) height: u16,
+pub struct NativeStartBounds {
+    pub min_rx: u16,
+    pub min_ry: u16,
+    pub width: u16,
+    pub height: u16,
 }
 
 impl NativeStartBounds {
     /// Construct the post-Resize cell-array rectangle directly from parsed
     /// `[Map] Size`, before Fill has produced a resolved terrain grid.
-    pub(crate) fn from_map_header(header: &MapHeader) -> Option<Self> {
+    pub fn from_map_header(header: &MapHeader) -> Option<Self> {
         if header.width == 0 || header.height == 0 {
             return None;
         }
@@ -77,7 +77,7 @@ impl NativeStartBounds {
     /// band constants only, never an axis-aligned bound. Treating LocalSize
     /// as a cell rectangle here previously rejected most authored starts and
     /// clamped every displaced MCV onto the false edge.
-    pub(crate) fn from_session(sim: &Simulation, terrain: &ResolvedTerrainGrid) -> Self {
+    pub fn from_session(sim: &Simulation, terrain: &ResolvedTerrainGrid) -> Self {
         // `session.map_width/height` hold the canonical cell-array extent
         // (~SizeW+SizeH), so the native rect side is that extent minus one.
         // Sessions without header data (headless fixtures) fall back to the
@@ -126,8 +126,8 @@ impl NativeStartBounds {
 /// authored starts are deficient, each retry consumes the two asymmetric
 /// ranged draws and runs the 8x8 nearby-passable search; invalid searches do
 /// not advance the vector and have no artificial retry cap.
-#[cfg(test)]
-pub(crate) fn native_gather_start_positions(
+#[cfg(any(test, feature = "test-support"))]
+pub fn native_gather_start_positions(
     waypoints: &HashMap<u32, Waypoint>,
     participant_count: usize,
     terrain: &ResolvedTerrainGrid,
@@ -272,8 +272,8 @@ fn find_nearby_pre_fill_start_rect(
 // reject-overlay=0, height=0, obstacle=0, allow-bridge=1, null-reference,
 // param15=0, final-occupancy=0)` to
 // `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20`.
-#[cfg(test)]
-pub(crate) fn find_nearby_start_rect(
+#[cfg(any(test, feature = "test-support"))]
+pub fn find_nearby_start_rect(
     terrain: &ResolvedTerrainGrid,
     occupancy: &crate::sim::occupancy::OccupancyGrid,
     playfield_bounds: Option<PlayfieldBounds>,
@@ -322,17 +322,17 @@ pub(crate) fn find_nearby_start_rect(
 /// Retain the native start-table ownership and resolved placement for one
 /// stock-offline assignment callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NativeStartAssignment {
-    pub(crate) placements: Vec<(usize, Waypoint)>,
-    pub(crate) start_table: Vec<Option<usize>>,
+pub struct NativeStartAssignment {
+    pub placements: Vec<(usize, Waypoint)>,
+    pub start_table: Vec<Option<usize>>,
 }
 
-pub(crate) const HOUSE_CONSTRUCTOR_TIMER_MIN: u32 = 450;
-pub(crate) const HOUSE_CONSTRUCTOR_TIMER_MAX: u32 = 1800;
+pub const HOUSE_CONSTRUCTOR_TIMER_MIN: u32 = 450;
+pub const HOUSE_CONSTRUCTOR_TIMER_MAX: u32 = 1800;
 
 /// The selected active-retail start callback used by offline noncampaign Full Init.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StockOfflineStartCallbackFamily {
+pub enum StockOfflineStartCallbackFamily {
     Battle,
     Cooperative,
 }
@@ -344,9 +344,9 @@ pub(crate) enum StockOfflineStartCallbackFamily {
 /// the second House pass. Only the second Gather vector and its retained
 /// assignment are projected later; projection is deliberately draw-free.
 #[derive(Debug)]
-pub(crate) struct PreFillScenarioPrefixPlan {
+pub struct PreFillScenarioPrefixPlan {
     projection: StockOfflinePrefixProjection,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     first_gathered_starts: Vec<Waypoint>,
     first_house_timers: Vec<u32>,
     second_house_timers: Vec<u32>,
@@ -356,14 +356,14 @@ pub(crate) struct PreFillScenarioPrefixPlan {
     scenario_rng_after_cursor: SimRng,
     native_resize_width: u32,
     native_resize_height: u32,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     rng_checkpoints: ScenarioPrefixRngCheckpoints,
 }
 
 /// Paired Scenario-RNG and native numeric-ID prefix for one supported fresh
 /// stock-offline Full_Init. Neither half can reach production independently.
 #[derive(Debug)]
-pub(crate) struct BoundStockOfflineFreshPrefixPlan {
+pub struct BoundStockOfflineFreshPrefixPlan {
     scenario: PreFillScenarioPrefixPlan,
     native_ids: crate::sim::native_identity::NativeFreshIdPrefixReceipt,
 }
@@ -375,7 +375,7 @@ pub(crate) struct BoundStockOfflineFreshPrefixPlan {
     clippy::large_enum_variant,
     reason = "built once per scenario load and consumed immediately"
 )]
-pub(crate) enum FreshScenarioPrefix<'a> {
+pub enum FreshScenarioPrefix<'a> {
     StockOffline(BoundStockOfflineFreshPrefixPlan),
     Campaign {
         native_rules_receipt: crate::rules::process_owner::NativeScenarioRulesReceipt,
@@ -388,7 +388,7 @@ pub(crate) enum FreshScenarioPrefix<'a> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum FreshScenarioPrefixError {
+pub enum FreshScenarioPrefixError {
     #[error(transparent)]
     Offline(#[from] PreFillScenarioPrefixPlanError),
     #[error(transparent)]
@@ -413,7 +413,7 @@ pub(crate) enum FreshScenarioPrefixError {
 /// consumed.  It can place the final Houses and expose loading markers, but it
 /// owns no RNG and cannot replay the prefix.
 #[derive(Debug)]
-pub(crate) struct StockOfflinePrefixProjection {
+pub struct StockOfflinePrefixProjection {
     /// Raw active Scenario waypoint table after the authored read or accepted
     /// RMG staging copy. Gather may derive fallback cells from this table, but
     /// loading markers and the live Scenario/session owner retain these exact
@@ -423,7 +423,7 @@ pub(crate) struct StockOfflinePrefixProjection {
     assignment: NativeStartAssignment,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScenarioPrefixRngCheckpoints {
     pub(crate) after_first_house_pass: SimRngLogicalState,
@@ -434,7 +434,7 @@ pub(crate) struct ScenarioPrefixRngCheckpoints {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum PreFillScenarioPrefixPlanError {
+pub enum PreFillScenarioPrefixPlanError {
     #[error(
         "pre-Fill Scenario prefix expected RNG fingerprint {expected:#018x}, got {actual:#018x}"
     )]
@@ -453,36 +453,36 @@ pub(crate) enum PreFillScenarioPrefixPlanError {
 }
 
 impl PreFillScenarioPrefixPlan {
-    pub(crate) fn projection(&self) -> &StockOfflinePrefixProjection {
+    pub fn projection(&self) -> &StockOfflinePrefixProjection {
         &self.projection
     }
 
-    #[cfg(test)]
-    pub(crate) fn first_gathered_starts(&self) -> &[Waypoint] {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn first_gathered_starts(&self) -> &[Waypoint] {
         &self.first_gathered_starts
     }
 
-    #[cfg(test)]
-    pub(crate) fn final_gathered_starts(&self) -> &[Waypoint] {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn final_gathered_starts(&self) -> &[Waypoint] {
         self.projection.final_gathered_starts()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn assignment(&self) -> &NativeStartAssignment {
         self.projection.assignment()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn first_house_timers(&self) -> &[u32] {
         &self.first_house_timers
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn second_house_timers(&self) -> &[u32] {
         &self.second_house_timers
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn rng_checkpoints(&self) -> &ScenarioPrefixRngCheckpoints {
         &self.rng_checkpoints
     }
@@ -491,7 +491,7 @@ impl PreFillScenarioPrefixPlan {
     /// Resize, and Scenario prefix. Type/House/Cell constructors advance only
     /// the independent native-ID cursor; Scenario RNG remains byte-for-byte
     /// owned by this plan.
-    pub(crate) fn bind_native_rules_receipt(
+    pub fn bind_native_rules_receipt(
         self,
         receipt: crate::rules::process_owner::NativeScenarioRulesReceipt,
     ) -> BoundStockOfflineFreshPrefixPlan {
@@ -535,7 +535,7 @@ impl PreFillScenarioPrefixPlan {
 }
 
 impl BoundStockOfflineFreshPrefixPlan {
-    pub(crate) fn projection(&self) -> &StockOfflinePrefixProjection {
+    pub fn projection(&self) -> &StockOfflinePrefixProjection {
         self.scenario.projection()
     }
 
@@ -550,15 +550,15 @@ impl BoundStockOfflineFreshPrefixPlan {
 }
 
 impl StockOfflinePrefixProjection {
-    pub(crate) fn active_scenario_waypoints(&self) -> &HashMap<u32, Waypoint> {
+    pub fn active_scenario_waypoints(&self) -> &HashMap<u32, Waypoint> {
         &self.active_scenario_waypoints
     }
 
-    pub(crate) fn final_gathered_starts(&self) -> &[Waypoint] {
+    pub fn final_gathered_starts(&self) -> &[Waypoint] {
         &self.final_gathered_starts
     }
 
-    pub(crate) fn start_table(&self) -> &[Option<usize>] {
+    pub fn start_table(&self) -> &[Option<usize>] {
         &self.assignment.start_table
     }
 
@@ -573,7 +573,7 @@ impl StockOfflinePrefixProjection {
 /// authored maps pass the parsed map table, while accepted Battle/FFA `.SED`
 /// launches pass the provenance-bearing setup staging. Both Gather callbacks
 /// operate only on the resized default-cell view derived from `[Map]`.
-pub(crate) fn prepare_stock_offline_scenario_prefix_plan(
+pub fn prepare_stock_offline_scenario_prefix_plan(
     descriptor: &MatchLaunchDescriptor,
     map_data: &MapFile,
     start_waypoints: &HashMap<u32, Waypoint>,
@@ -596,7 +596,7 @@ pub(crate) fn prepare_stock_offline_scenario_prefix_plan(
 
     let first_house_timers =
         advance_pre_fill_house_constructor_pass(&session.pre_fill_house_roster, &mut scenario_rng);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_first_house_pass = scenario_rng.logical_state();
     let first_gathered_starts = native_gather_pre_fill_start_positions(
         start_waypoints,
@@ -605,7 +605,7 @@ pub(crate) fn prepare_stock_offline_scenario_prefix_plan(
         &mut scenario_rng,
     )
     .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_first_gather = scenario_rng.logical_state();
     let preassignment = native_preassign_launch_start_table(session, first_gathered_starts.len());
 
@@ -639,18 +639,18 @@ pub(crate) fn prepare_stock_offline_scenario_prefix_plan(
             )
         }
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_second_gather_and_chooser = scenario_rng.logical_state();
 
     // Native deletes every disposable first-pass House here. Destruction and
     // the following rules/basic reset consume no Scenario draw, so the second
     // pass begins at the chooser's exact cursor.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_zero_draw_reset = scenario_rng.logical_state();
     let second_house_timers =
         advance_pre_fill_house_constructor_pass(&session.pre_fill_house_roster, &mut scenario_rng);
     let scenario_rng_after = scenario_rng.logical_state();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let after_second_house_pass = scenario_rng_after.clone();
 
     Ok(PreFillScenarioPrefixPlan {
@@ -659,7 +659,7 @@ pub(crate) fn prepare_stock_offline_scenario_prefix_plan(
             final_gathered_starts,
             assignment,
         },
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         first_gathered_starts,
         first_house_timers,
         second_house_timers,
@@ -669,7 +669,7 @@ pub(crate) fn prepare_stock_offline_scenario_prefix_plan(
         scenario_rng_after_cursor: scenario_rng,
         native_resize_width: map_data.header.width,
         native_resize_height: map_data.header.height,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         rng_checkpoints: ScenarioPrefixRngCheckpoints {
             after_first_house_pass,
             after_first_gather,
@@ -701,7 +701,7 @@ fn draw_house_constructor_timer(rng: &mut SimRng) -> u32 {
     rng.next_range_u32_inclusive(HOUSE_CONSTRUCTOR_TIMER_MIN, HOUSE_CONSTRUCTOR_TIMER_MAX)
 }
 
-pub(crate) fn stock_offline_start_callback_family(
+pub fn stock_offline_start_callback_family(
     session: &SkirmishLaunchSession,
 ) -> Result<StockOfflineStartCallbackFamily, PreFillScenarioPrefixPlanError> {
     let mode = &session.mode;
@@ -816,8 +816,8 @@ pub(crate) fn stock_offline_start_callback_family(
     }
 }
 
-#[cfg(test)]
-pub(crate) fn native_assign_launch_starts(
+#[cfg(any(test, feature = "test-support"))]
+pub fn native_assign_launch_starts(
     session: &SkirmishLaunchSession,
     starts: &[Waypoint],
     rng: &mut SimRng,
@@ -906,8 +906,8 @@ fn native_assign_launch_starts_from_preassignment(
 /// all of its entries before HouseClass iteration; automatic human placement
 /// draws within the prefix and probes forward, while the remaining houses
 /// take the first free suffix entry without a draw.
-#[cfg(test)]
-pub(crate) fn native_assign_cooperative_launch_starts(
+#[cfg(any(test, feature = "test-support"))]
+pub fn native_assign_cooperative_launch_starts(
     session: &SkirmishLaunchSession,
     starts: &[Waypoint],
     human_start_spots: usize,
@@ -982,7 +982,7 @@ fn native_assign_cooperative_starts_from_preassignment(
     }
 }
 
-pub(crate) fn choose_battle_automatic_start(
+pub fn choose_battle_automatic_start(
     starts: &[Waypoint],
     occupied: &[bool],
     rng: &mut SimRng,
@@ -1020,7 +1020,7 @@ pub(crate) fn choose_battle_automatic_start(
     selected
 }
 
-pub(crate) fn native_start_distance(left: Waypoint, right: Waypoint) -> i32 {
+pub fn native_start_distance(left: Waypoint, right: Waypoint) -> i32 {
     let dx = i32::from((left.rx as i16).wrapping_sub(right.rx as i16));
     let dy = i32::from((left.ry as i16).wrapping_sub(right.ry as i16));
     let squared_distance = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
@@ -1033,20 +1033,20 @@ const DEFICIENT_START_RECT_W: u16 = 8;
 const DEFICIENT_START_RECT_H: u16 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SkirmishLaunchApplyResult {
-    pub(crate) local_owner: Option<String>,
-    pub(crate) spawned_mcvs: u32,
-    pub(crate) active_slots: usize,
+pub struct SkirmishLaunchApplyResult {
+    pub local_owner: Option<String>,
+    pub spawned_mcvs: u32,
+    pub active_slots: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NormalizedSkirmishSlot {
-    pub(crate) owner_name: String,
+pub struct NormalizedSkirmishSlot {
+    pub owner_name: String,
     pub(crate) country: LaunchCountry,
-    pub(crate) color_index: u8,
+    pub color_index: u8,
     pub(crate) start_position: LaunchStartPosition,
     pub(crate) team: LaunchTeam,
-    pub(crate) is_human: bool,
+    pub is_human: bool,
     pub(crate) difficulty: HouseDifficulty,
 }
 
@@ -1117,7 +1117,7 @@ impl MatchLaunchDescriptor {
     }
 
     /// The resolved session's gameplay facts.
-    pub(crate) fn session(&self) -> &SkirmishLaunchSession {
+    pub fn session(&self) -> &SkirmishLaunchSession {
         &self.session
     }
 }
@@ -1130,7 +1130,7 @@ impl MatchLaunchDescriptor {
 /// then Neutral and Special. Object construction and Reveal can therefore
 /// commit the house tracking counts and house-indexed base reservations
 /// directly, without a repair pass.
-pub(crate) fn initialize_skirmish_launch_houses(
+pub fn initialize_skirmish_launch_houses(
     sim: &mut Simulation,
     house_roster: &HouseRoster,
     rules: &RuleSet,
@@ -1182,8 +1182,8 @@ pub(crate) fn apply_skirmish_launch_alliances(
 }
 
 /// Test-only compatibility path for direct post-Fill launch fixtures.
-#[cfg(test)]
-pub(crate) fn apply_explicit_skirmish_launch_session(
+#[cfg(any(test, feature = "test-support"))]
+pub fn apply_explicit_skirmish_launch_session(
     sim: &mut Simulation,
     map_data: &MapFile,
     house_roster: &HouseRoster,
@@ -1206,8 +1206,8 @@ pub(crate) fn apply_explicit_skirmish_launch_session(
 /// Apply the retained stock-offline House/start projection without repeating
 /// any prefix draw. Existing starting-force and later initialization draws
 /// remain after this projection.
-#[cfg(test)]
-pub(crate) fn apply_pre_fill_scenario_prefix_launch_session(
+#[cfg(any(test, feature = "test-support"))]
+pub fn apply_pre_fill_scenario_prefix_launch_session(
     sim: &mut Simulation,
     map_data: &MapFile,
     house_roster: &HouseRoster,
@@ -1228,7 +1228,7 @@ pub(crate) fn apply_pre_fill_scenario_prefix_launch_session(
     )
 }
 
-pub(crate) fn apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+pub fn apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
     sim: &mut Simulation,
     map_data: &MapFile,
     house_roster: &HouseRoster,
@@ -1252,7 +1252,7 @@ pub(crate) fn apply_pre_fill_scenario_prefix_launch_session_with_overlay_registr
 
 enum LaunchStartResolution<'a> {
     Prefix(&'a StockOfflinePrefixProjection),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     PostFillTestCompatibility,
 }
 
@@ -1315,7 +1315,7 @@ fn apply_resolved_skirmish_launch_session(
                 plan.assignment().clone(),
             )
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         LaunchStartResolution::PostFillTestCompatibility => {
             let cooperative = session
                 .mode
@@ -1464,7 +1464,7 @@ fn project_pre_fill_start_assignment(
 /// `finalize_scenario_post_map` runs later. The reveal reads none of them,
 /// and a noncampaign CellPUT already discovered every object for the current
 /// house (`discover_cell_put_object`), so no effect is known.
-pub(crate) fn apply_launch_shroud_option(
+pub fn apply_launch_shroud_option(
     sim: &mut Simulation,
     context: crate::sim::world::UninitContext<'_>,
 ) {
@@ -1499,9 +1499,7 @@ fn assign_launch_base_centers(
     }
 }
 
-pub(crate) fn normalized_launch_slots(
-    session: &SkirmishLaunchSession,
-) -> Vec<NormalizedSkirmishSlot> {
+pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<NormalizedSkirmishSlot> {
     // Native 687F10 allocates a distinct House before copying its names;
     // 688092..6880A4 stores the participant handle separately from +15FF4.
     // Our shared owner-key projection must likewise avoid merging the local
@@ -1547,11 +1545,7 @@ pub(crate) fn normalized_launch_slots(
     slots
 }
 
-pub(crate) fn populate_special_houses(
-    sim: &mut Simulation,
-    house_roster: &HouseRoster,
-    rules: &RuleSet,
-) {
+pub fn populate_special_houses(sim: &mut Simulation, house_roster: &HouseRoster, rules: &RuleSet) {
     for special_name in ["Neutral", "Special"] {
         let definition = house_roster
             .houses
@@ -1593,7 +1587,7 @@ pub(crate) fn populate_special_houses(
     }
 }
 
-pub(crate) fn populate_launch_houses(
+pub fn populate_launch_houses(
     sim: &mut Simulation,
     slots: &[NormalizedSkirmishSlot],
     rules: &RuleSet,
@@ -1691,7 +1685,7 @@ pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
 /// the leftover starting-unit budget credited by `seed_starting_extra_units`
 /// (pure integer arithmetic on the native side: `CDQ/SAR/IDIV` budget thirds
 /// and integer cost subtraction, no x87 involvement).
-pub(crate) fn apply_skirmish_ai_opening_credits(sim: &mut Simulation, rules: &RuleSet) {
+pub fn apply_skirmish_ai_opening_credits(sim: &mut Simulation, rules: &RuleSet) {
     for house in sim.houses.values_mut() {
         if house.is_human || house.multiplay_passive {
             continue;
@@ -1711,7 +1705,7 @@ fn normalize_house_key(name: &str) -> String {
     name.trim().to_ascii_uppercase()
 }
 
-pub(crate) fn launch_alliance_map(
+pub fn launch_alliance_map(
     house_roster: &HouseRoster,
     slots: &[NormalizedSkirmishSlot],
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
@@ -1758,9 +1752,9 @@ pub(crate) fn launch_alliance_map(
     alliances
 }
 
-pub(crate) const STARTING_MCV_FACING: u8 = 64;
-pub(crate) const STARTING_MCV_FALLBACK_MAX_RADIUS: i32 = 31;
-pub(crate) const STARTING_EXTRA_UNIT_FALLBACK_START_RADIUS: i32 = 4;
+pub const STARTING_MCV_FACING: u8 = 64;
+pub const STARTING_MCV_FALLBACK_MAX_RADIUS: i32 = 31;
+pub const STARTING_EXTRA_UNIT_FALLBACK_START_RADIUS: i32 = 4;
 
 fn place_starting_mcv(
     sim: &mut Simulation,
@@ -1895,22 +1889,22 @@ fn place_starting_object_near_base(
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct StartingUnitCandidate {
-    pub(crate) type_id: String,
+pub struct StartingUnitCandidate {
+    pub type_id: String,
     pub(crate) cost: i32,
 }
 
-pub(crate) const STARTING_EXTRA_UNIT_MAX_PLACEMENT_FAILURES: u8 = 20;
+pub const STARTING_EXTRA_UNIT_MAX_PLACEMENT_FAILURES: u8 = 20;
 
-pub(crate) fn starting_unit_prefers_vehicle(spent: i32, budget: i32) -> bool {
+pub fn starting_unit_prefers_vehicle(spent: i32, budget: i32) -> bool {
     // gamemd 0x005D7337..0x005D7349 compares remaining budget against
     // trunc(initial_budget / 3). Expressed through `spent`, the strict
     // boundary is initial_budget - trunc(initial_budget / 3).
     spent < budget.wrapping_sub(budget / 3)
 }
 
-#[cfg(test)]
-pub(crate) fn seed_starting_extra_units(
+#[cfg(any(test, feature = "test-support"))]
+pub fn seed_starting_extra_units(
     sim: &mut Simulation,
     slots: &[NormalizedSkirmishSlot],
     rules: &RuleSet,
@@ -2056,7 +2050,7 @@ fn seed_starting_extra_units_with_overlay_registry(
     spawned
 }
 
-pub(crate) fn starting_unit_budget(
+pub fn starting_unit_budget(
     rules: &RuleSet,
     slots: &[NormalizedSkirmishSlot],
     tech_level: i32,
@@ -2110,12 +2104,12 @@ pub(crate) fn starting_unit_budget(
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct StartingUnitCandidates {
-    pub(crate) vehicles: Vec<StartingUnitCandidate>,
-    pub(crate) infantry: Vec<StartingUnitCandidate>,
+pub struct StartingUnitCandidates {
+    pub vehicles: Vec<StartingUnitCandidate>,
+    pub infantry: Vec<StartingUnitCandidate>,
 }
 
-pub(crate) fn starting_unit_candidates_for_country(
+pub fn starting_unit_candidates_for_country(
     rules: &RuleSet,
     country: LaunchCountry,
     tech_level: i32,
@@ -2225,7 +2219,7 @@ fn starting_object_cell_placeable(
     cell.zone_type == crate::map::resolved_terrain::zone_class::GROUND
 }
 
-pub(crate) fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> &str {
+pub fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> &str {
     rules
         .general
         .base_unit_types
@@ -2273,25 +2267,25 @@ fn launch_country_can_own_object(
 /// wrappers and may transport the launch-generated MapGen continuation, but it
 /// cannot replace, extract, or draw from those cursors. Consuming this owner is
 /// the only production handoff into a freshly constructed Simulation.
-pub(crate) struct ScenarioBootstrapRng {
+pub struct ScenarioBootstrapRng {
     scenario: SimRng,
     main: SimRng,
     mapgen: Option<SimRng>,
 }
 
 /// Scenario-stream access granted only to the terrain Fill callback.
-pub(crate) struct ScenarioFillRng<'a> {
+pub struct ScenarioFillRng<'a> {
     rng: &'a mut SimRng,
 }
 
 impl ScenarioFillRng<'_> {
-    pub(crate) fn next_range_u32_inclusive(&mut self, low: u32, high: u32) -> u32 {
+    pub fn next_range_u32_inclusive(&mut self, low: u32, high: u32) -> u32 {
         self.rng.next_range_u32_inclusive(low, high)
     }
 }
 
 impl ScenarioBootstrapRng {
-    pub(crate) fn new(seed: u32) -> Self {
+    pub fn new(seed: u32) -> Self {
         let seed = u64::from(seed);
         Self {
             scenario: SimRng::new(seed),
@@ -2303,10 +2297,7 @@ impl ScenarioBootstrapRng {
     /// Install the previous process-global cursor exactly once. Authored
     /// loads retain it; a completed .SED generation has already published its
     /// newer cursor through the app's one process-retention owner.
-    pub(crate) fn install_process_mapgen_continuation(
-        &mut self,
-        continuation: MapGenRngContinuation,
-    ) {
+    pub fn install_process_mapgen_continuation(&mut self, continuation: MapGenRngContinuation) {
         assert!(
             self.mapgen.is_none(),
             "process MapGen continuation may only be installed once"
@@ -2315,8 +2306,8 @@ impl ScenarioBootstrapRng {
     }
 
     /// Install the already-resolved stock-offline pre-Fill prefix exactly once.
-    #[cfg(test)]
-    pub(crate) fn install_pre_fill_scenario_prefix_plan(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn install_pre_fill_scenario_prefix_plan(
         &mut self,
         plan: PreFillScenarioPrefixPlan,
     ) -> Result<StockOfflinePrefixProjection, PreFillScenarioPrefixPlanError> {
@@ -2325,7 +2316,7 @@ impl ScenarioBootstrapRng {
 
     /// Consume the paired stock-offline RNG/native-ID prefix into the one staged
     /// Simulation before terrain Fill.
-    pub(crate) fn into_stock_offline_staged_simulation(
+    pub fn into_stock_offline_staged_simulation(
         mut self,
         descriptor: &ScenarioDescriptor,
         bound_prefix: BoundStockOfflineFreshPrefixPlan,
@@ -2341,7 +2332,7 @@ impl ScenarioBootstrapRng {
     /// terrain Fill can draw or construct any map object. The campaign arm
     /// follows original Full_Init686B20: E/P types, one actual House/Super
     /// generation, current-House selection, then one Resize checkpoint.
-    pub(crate) fn into_fresh_staged_simulation(
+    pub fn into_fresh_staged_simulation(
         self,
         descriptor: &ScenarioDescriptor,
         prefix: FreshScenarioPrefix<'_>,
@@ -2434,8 +2425,8 @@ impl ScenarioBootstrapRng {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn logical_states_for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn logical_states_for_test(
         &self,
     ) -> (
         crate::sim::rng::SimRngLogicalState,
@@ -2450,7 +2441,7 @@ impl ScenarioBootstrapRng {
     }
 
     /// Finish the app-to-sim construction handoff with every bound cursor.
-    pub(crate) fn into_simulation(self, descriptor: &ScenarioDescriptor) -> Simulation {
+    pub fn into_simulation(self, descriptor: &ScenarioDescriptor) -> Simulation {
         let mut sim = Simulation::from_descriptor(descriptor);
         sim.install_terrain_load_advanced_scenario_rng(self.scenario);
         sim.install_variant_advanced_main_rng(self.main);
@@ -2502,9 +2493,7 @@ fn replay_generated_construction_trace_with_rng(
 impl Simulation {
     /// Borrow the two load-time streams from the already-staged gameplay owner.
     /// No second bootstrap owner can exist after `into_simulation` consumes it.
-    pub(crate) fn terrain_load_draws(
-        &mut self,
-    ) -> (ScenarioFillRng<'_>, crate::sim::rng::MainRngDraws) {
+    pub fn terrain_load_draws(&mut self) -> (ScenarioFillRng<'_>, crate::sim::rng::MainRngDraws) {
         (
             ScenarioFillRng {
                 rng: &mut self.scenario_rng,
@@ -2524,7 +2513,7 @@ impl Simulation {
     /// gamemd provenance: TechnoClass constructor 0x006F3254 consumes one raw
     /// Scenario word before RMG placement can succeed or fail. Launch reader
     /// 0x00684620 regenerates the accepted `.SED` after match RNG reseeding.
-    pub(crate) fn replay_staged_generated_construction_trace(
+    pub fn replay_staged_generated_construction_trace(
         &mut self,
         trace: &crate::map::construction_trace::RmgConstructionTrace,
     ) -> Result<
@@ -2538,8 +2527,8 @@ impl Simulation {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn gather_native_start_positions(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn gather_native_start_positions(
         &mut self,
         waypoints: &HashMap<u32, Waypoint>,
         participant_count: usize,
@@ -2561,7 +2550,7 @@ impl Simulation {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn assign_native_battle_starts(
         &mut self,
         session: &SkirmishLaunchSession,
@@ -2570,7 +2559,7 @@ impl Simulation {
         native_assign_launch_starts(session, starts, &mut self.scenario_rng)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn assign_native_cooperative_starts(
         &mut self,
         session: &SkirmishLaunchSession,
@@ -2591,7 +2580,7 @@ impl Simulation {
 /// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
 /// Empty dev substrates retain unavailable identity; this is not a claim that
 /// native can launch an empty House array.
-pub(crate) fn initialize_campaign_current_house(
+pub fn initialize_campaign_current_house(
     sim: &mut Simulation,
     roster: &HouseRoster,
     ini: &crate::rules::ini_parser::IniFile,
@@ -2620,7 +2609,7 @@ pub(crate) fn initialize_campaign_current_house(
 
 /// Map-roster house construction shared by app and headless (F09):
 /// native order requires houses before every object section.
-pub(crate) fn initialize_map_roster_houses(
+pub fn initialize_map_roster_houses(
     sim: &mut Simulation,
     house_roster: &HouseRoster,
     rules: Option<&RuleSet>,
@@ -3474,6 +3463,37 @@ mod tests {
         assert_eq!(bounds.clamp(137, 137), (137, 137));
         assert_eq!(bounds.clamp(138, 138), (137, 137));
         assert_eq!(bounds.clamp(i32::MIN, i32::MAX), (1, 137));
+    }
+
+    /// Retail starts sit outside `[Map] Size=`: Dustbowl's Size is 70x76 and
+    /// its starts are at rx 70 and 79. Start bounds and the session's cell
+    /// extent therefore come from the Resize cell array, which must hold every
+    /// authored start without the fallback clamp moving it.
+    #[test]
+    fn retail_dustbowl_starts_need_the_cell_array_not_the_size_rect() {
+        let Some((root, _assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = crate::map::map_file::load_from_path(&root.join("Dustbowl.mmx"))
+            .expect("retail Dustbowl.mmx parses");
+        let bounds = NativeStartBounds::from_map_header(&map.header).expect("valid Size=");
+        let starts = crate::map::waypoints::multiplayer_start_waypoints(&map.waypoints);
+        assert!(!starts.is_empty());
+        for start in &starts {
+            assert_eq!(
+                bounds.clamp(i32::from(start.rx), i32::from(start.ry)),
+                (start.rx, start.ry),
+                "start {}",
+                start.index
+            );
+        }
+        assert!(
+            starts
+                .iter()
+                .any(|start| u32::from(start.rx) >= map.header.width
+                    || u32::from(start.ry) >= map.header.height),
+            "some authored start lies outside the Size= rect"
+        );
     }
 
     #[test]

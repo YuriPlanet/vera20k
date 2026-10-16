@@ -1528,6 +1528,39 @@ def _terrain(value: Any, expected_cell: Any, label: str) -> None:
             raise ValidationError(f'{label}.{key} must be a boolean')
 
 
+def _placement_preview_observation(value: Any, label: str) -> int:
+    preview = require_object(value, label)
+    require_exact_keys(preview, ('origin', 'foundation', 'valid', 'in_build_area',
+                                 'foundation_visible', 'reason', 'cells', 'wall_autofill_cells'), label)
+    for key in ('origin', 'foundation'):
+        _coordinate(preview[key], f'{label}.{key}')
+    for key in ('valid', 'in_build_area', 'foundation_visible'):
+        if type(preview[key]) is not bool:
+            raise ValidationError(f'{label}.{key} must be boolean')
+    if preview['reason'] not in (None, 'Not ready for placement', 'Not a building',
+                                 'Blocked terrain', 'Overlaps structure', 'Outside build radius'):
+        raise ValidationError(f'{label}.reason is unknown')
+    cells = require_array(preview['cells'], f'{label}.cells')
+    walls = require_array(preview['wall_autofill_cells'], f'{label}.wall_autofill_cells')
+    # Match MapBuildingPlacementObservation::sample_count without rebuilding
+    # admission or deriving a second footprint/terrain authority here.
+    samples = 1 + len(cells) + len(walls)
+    if samples > MAX_OBSERVATION_SAMPLES:
+        raise ValidationError(f'{label} exceeds its retained sample budget')
+    for index, value in enumerate(cells):
+        cell_label = f'{label}.cells[{index}]'
+        cell = require_object(value, cell_label)
+        require_exact_keys(cell, ('coord', 'valid', 'level', 'slope'), cell_label)
+        _coordinate(cell['coord'], f'{cell_label}.coord')
+        if type(cell['valid']) is not bool:
+            raise ValidationError(f'{cell_label}.valid must be boolean')
+        _bounded_int(cell['level'], f'{cell_label}.level', -128, 127)
+        _bounded_int(cell['slope'], f'{cell_label}.slope', 0, 255)
+    for index, coord in enumerate(walls):
+        _coordinate(coord, f'{label}.wall_autofill_cells[{index}]')
+    return samples
+
+
 def _local_input_observation(value: Any, label: str) -> int:
     row = require_object(value, label)
     require_exact_keys(row, ('camera_top_left', 'camera_zoom', 'follow_target', 'repair_mode',
@@ -1575,7 +1608,8 @@ def _local_input_observation(value: Any, label: str) -> int:
         placement_label = f'{label}.building_placement'
         placement = require_object(row['building_placement'], placement_label)
         require_exact_keys(placement, ('current', 'saved_retry', 'current_preview_present',
-                                       'saved_preview_present'), placement_label)
+                                       'saved_preview_present',
+                                       *(('current_preview',) if 'current_preview' in placement else ())), placement_label)
         for key in ('current_preview_present', 'saved_preview_present'):
             if type(placement[key]) is not bool:
                 raise ValidationError(f'{placement_label}.{key} must be boolean')
@@ -1592,6 +1626,11 @@ def _local_input_observation(value: Any, label: str) -> int:
             if target['product_id'] is not None:
                 _bounded_int(target['product_id'], f'{target_label}.product_id', 1, (1 << 64) - 1)
             samples += 1
+        if 'current_preview' in placement:
+            if not placement['current_preview_present']:
+                raise ValidationError(f'{placement_label}.current_preview requires its presence flag')
+            samples += _placement_preview_observation(
+                placement['current_preview'], f'{placement_label}.current_preview')
     if 'selection_scope' in row:
         scope_label = f'{label}.selection_scope'
         scope = require_object(row['selection_scope'], scope_label)

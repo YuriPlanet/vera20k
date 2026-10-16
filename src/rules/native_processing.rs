@@ -677,7 +677,7 @@ impl ProcessedRulesLayers {
     /// Country+C0 after each reached HouseType ReadINI51193D. The typed
     /// value preserves catalog availability at the actual read, unlike final
     /// projected Color strings resolved against later additions.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn country_color_scheme(&self, country: &str) -> Option<i32> {
         self.native_type_construction_trace
             .registry_state()
@@ -864,7 +864,7 @@ impl ProcessedRulesLayers {
         &self.general_type_lists.default_mirage_disguises
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn native_type_construction_trace(&self) -> &NativeTypeConstructionTrace {
         &self.native_type_construction_trace
     }
@@ -914,12 +914,12 @@ pub(crate) struct NativeTypeConstructionEvent {
 }
 
 impl NativeTypeConstructionEvent {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn family(&self) -> NativeTypeConstructorFamily {
         self.family
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn native_stored_id(&self) -> &str {
         &self.native_stored_id
     }
@@ -941,17 +941,17 @@ pub(crate) struct NativeTypeConstructionTrace {
 }
 
 impl NativeTypeConstructionTrace {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn events(&self) -> &[NativeTypeConstructionEvent] {
         &self.events
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn event_count(&self) -> usize {
         self.events.len()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn allocated_super_weapon_type_count(&self) -> usize {
         self.allocated_super_weapon_type_count
     }
@@ -1058,13 +1058,13 @@ impl NativeRulesRegistryState {
             .map(|member| (member.native_stored_id.as_str(), member.anim_art_read))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn side_country_members(&self, side: &str) -> Option<&[i32]> {
         self.side_registry_states()
             .find_map(|(id, members)| id.eq_ignore_ascii_case(side).then_some(members))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn side_registry_states(&self) -> impl Iterator<Item = (&str, &[i32])> {
         self.families
             .get(&RulesTypeFamily::Side)
@@ -1078,7 +1078,7 @@ impl NativeRulesRegistryState {
             })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn family_len(&self, family: NativeTypeConstructorFamily) -> usize {
         self.families
             .iter()
@@ -1091,7 +1091,7 @@ impl NativeRulesRegistryState {
     /// Supply the exact Rules+1150 prior of a bounded native ReadAI control.
     /// This is fixture state, not a second reader or a production writer.
     /// Native controls: tools/team_recruit_oracle.py --patrol.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_patrol_scan_minutes_for_test(mut self, minutes: NativeF64Bits) -> Self {
         self.rules_patrol_scan_minutes = minutes;
         self

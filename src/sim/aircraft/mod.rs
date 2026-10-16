@@ -17,7 +17,7 @@ pub(crate) mod guard_mission;
 mod hunt_mission;
 mod idle_entry;
 pub(crate) use idle_entry::enter_idle_mode_for;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use idle_entry::record_idle_calls_for_test;
 pub(crate) mod landing_base;
 mod leave_map;
@@ -63,7 +63,7 @@ const MISSION_STUB_FRAMES: i32 = 450;
 /// forced `ObjectSelect @ 0x005F4578` has a separate vt+0xA0 prerequisite.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct MissionOnly(bool);
+pub struct MissionOnly(bool);
 
 impl MissionOnly {
     /// Whether the object is mission-only.
@@ -72,7 +72,7 @@ impl MissionOnly {
     }
 
     /// Mark the object mission-only, for the rest of its life.
-    pub(crate) fn mark(&mut self) {
+    pub fn mark(&mut self) {
         self.0 = true;
     }
 }
@@ -80,7 +80,7 @@ impl MissionOnly {
 /// Batch driver for fixtures that dispatch every aircraft without the live
 /// object pass. Production dispatches each aircraft in its own LogicVector
 /// slot through [`dispatch_mission`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn tick_aircraft_missions(
     sim: &mut Simulation,
     rules: &RuleSet,

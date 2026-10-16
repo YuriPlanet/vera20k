@@ -73,13 +73,13 @@ impl CrateMultipliers {
     }
 
     /// Install a fixture's armor multiplier.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_armor_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.armor = value;
     }
 
     /// Install a fixture's firepower multiplier.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_firepower_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.firepower = value;
     }

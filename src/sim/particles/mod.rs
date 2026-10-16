@@ -137,7 +137,7 @@ impl Particle {
     pub fn stable_id(&self) -> u64 {
         self.stable_id
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_velocity_for_test(&mut self, velocity: NativeF32Bits) {
         self.velocity = velocity;
     }
@@ -250,7 +250,7 @@ impl ParticleSystem {
     pub fn in_limbo(&self) -> bool {
         self.in_limbo
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_spawn_timer_for_test(&mut self, value: NativeF32Bits) {
         self.spawn_timer = value;
     }
@@ -265,7 +265,7 @@ impl ParticleSystem {
 
     /// Declared synthetic state for tests that exercise storage or AI directly.
     /// Runtime construction always goes through `Simulation::spawn_particle_system`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_fixture(
         stable_id: u64,
         type_id: ParticleSystemTypeId,
@@ -294,7 +294,7 @@ impl ParticleSystem {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Particle {
     /// Synthetic particle state without allocating a runtime identity or RNG draw.
     pub(crate) fn test_fixture(type_id: ParticleTypeId, coords: IVec3) -> Self {

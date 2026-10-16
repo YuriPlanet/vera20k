@@ -36,7 +36,7 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::bridge_state::ramp_repair::{self, Family as HutBridgeFamily};
 use crate::sim::bridge_state::{Axis, BridgeDamageEvent, DispatchPath};
@@ -70,8 +70,8 @@ mod debris_tests;
 /// `TickResult.bridge_state_changed` so the app consumes the already-published
 /// navigation and refreshes presentation. Each driver runs its own cascade
 /// (fallout, rim, zones) synchronously.
-#[cfg(test)]
-pub(crate) fn apply_bridge_damage_events(
+#[cfg(any(test, feature = "test-support"))]
+pub fn apply_bridge_damage_events(
     sim: &mut Simulation,
     rules: &RuleSet,
     events: &[BridgeDamageEvent],
@@ -193,7 +193,7 @@ fn apply_one_bridge_damage_event(
 ///
 /// Caller ensures the hut itself is not damaged — the hut survives the
 /// collapse, mirroring the original game's `BridgeRepairHut` death branch.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 /// `MapClass::DestroyBridge_High_OnHutDeath` 0x00574000 and
 /// `DestroyBridge_Low_OnHutDeath` 0x00574C20 — the CABHUT death entry.
 /// Concrete callers are `BombClass::Detonate` 0x00438720 (0x00438982)
@@ -204,7 +204,7 @@ fn apply_one_bridge_damage_event(
 /// `_High` 0x005749C0, which classify the anchor overlay into the NS or EW
 /// band, walk back up to two cells to the canonical edge anchor, and call
 /// the matching `CollapseBridge_*`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn dispatch_bridge_collapse_from_hut(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -247,7 +247,7 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
 /// producer gets an isolated fallback identity, so hover cadence cannot change
 /// simulation state. The query still retains that identity across all nested
 /// lookups; the live records and registered TMP metadata remain map-owned.
-pub(crate) fn bridge_hut_can_repair(sim: &Simulation, hut_center: (u16, u16)) -> bool {
+pub fn bridge_hut_can_repair(sim: &Simulation, hut_center: (u16, u16)) -> bool {
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return false;
     };
@@ -262,7 +262,7 @@ pub(crate) fn bridge_hut_can_repair(sim: &Simulation, hut_center: (u16, u16)) ->
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn hut_span_can_repair(terrain: &ResolvedTerrainGrid, hut_center: (u16, u16)) -> bool {
     crate::sim::bridge_state::repair_query::can_repair(
         &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),

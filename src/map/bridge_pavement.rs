@@ -2,7 +2,7 @@
 //! Evidence: tools/spatial_oracle/bridge_pavement.py/json. Each child captures
 //! its own current tile; the parent retains its membership tile across callbacks.
 
-pub(crate) const DAMAGED_PAVEMENT: u32 = 0x2000;
+pub const DAMAGED_PAVEMENT: u32 = 0x2000;
 pub(crate) type Coord = (i16, i16);
 
 pub(crate) trait PavementHost {

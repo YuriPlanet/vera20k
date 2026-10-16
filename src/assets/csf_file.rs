@@ -375,16 +375,57 @@ fn normalize_whitespace(units: &[u16]) -> Vec<u16> {
     out
 }
 
+/// Encode a string into CSF format (UTF-16-LE then bitwise-NOT).
+#[cfg(any(test, feature = "test-support"))]
+fn encode_csf_string(s: &str) -> Vec<u8> {
+    let utf16: Vec<u16> = s.encode_utf16().collect();
+    utf16
+        .iter()
+        .flat_map(|c| c.to_le_bytes())
+        .map(|b| !b)
+        .collect()
+}
+
+/// Build a minimal CSF file with one label entry.
+#[cfg(any(test, feature = "test-support"))]
+fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
+    let encoded_value: Vec<u8> = encode_csf_string(value);
+    let char_count: u32 = value.encode_utf16().count() as u32;
+
+    let mut data: Vec<u8> = Vec::new();
+
+    // Header (24 bytes).
+    data.extend_from_slice(&HEADER_MAGIC.to_le_bytes()); // " FSC"
+    data.extend_from_slice(&3u32.to_le_bytes()); // version
+    data.extend_from_slice(&1u32.to_le_bytes()); // label count
+    data.extend_from_slice(&1u32.to_le_bytes()); // string pair count
+    data.extend_from_slice(&0xAABB_CCDDu32.to_le_bytes()); // reserved
+    data.extend_from_slice(&0u32.to_le_bytes()); // language (US English)
+
+    // Label entry.
+    data.extend_from_slice(&LABEL_MAGIC.to_le_bytes()); // " LBL"
+    data.extend_from_slice(&1u32.to_le_bytes()); // 1 string pair
+    data.extend_from_slice(&(label.len() as u32).to_le_bytes());
+    data.extend_from_slice(label.as_bytes());
+
+    // String value.
+    data.extend_from_slice(&STRING_MAGIC.to_le_bytes()); // " RTS"
+    data.extend_from_slice(&char_count.to_le_bytes());
+    data.extend_from_slice(&encoded_value);
+
+    data
+}
+
 /// Authored localization fixture using the CSF owner's binary encoder.
-#[cfg(test)]
-pub(crate) fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     assert!(!entries.is_empty());
-    let mut data = tests::build_test_csf(entries[0].0, entries[0].1);
+    let mut data = build_test_csf(entries[0].0, entries[0].1);
     let count = u32::try_from(entries.len()).unwrap().to_le_bytes();
     data[8..12].copy_from_slice(&count);
     data[12..16].copy_from_slice(&count);
     for &(key, value) in &entries[1..] {
-        data.extend_from_slice(&tests::build_test_csf(key, value)[24..]);
+        data.extend_from_slice(&build_test_csf(key, value)[24..]);
     }
     CsfFile::from_bytes(&data).unwrap()
 }
@@ -392,45 +433,6 @@ pub(crate) fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Encode a string into CSF format (UTF-16-LE then bitwise-NOT).
-    fn encode_csf_string(s: &str) -> Vec<u8> {
-        let utf16: Vec<u16> = s.encode_utf16().collect();
-        utf16
-            .iter()
-            .flat_map(|c| c.to_le_bytes())
-            .map(|b| !b)
-            .collect()
-    }
-
-    /// Build a minimal CSF file with one label entry.
-    pub(super) fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
-        let encoded_value: Vec<u8> = encode_csf_string(value);
-        let char_count: u32 = value.encode_utf16().count() as u32;
-
-        let mut data: Vec<u8> = Vec::new();
-
-        // Header (24 bytes).
-        data.extend_from_slice(&HEADER_MAGIC.to_le_bytes()); // " FSC"
-        data.extend_from_slice(&3u32.to_le_bytes()); // version
-        data.extend_from_slice(&1u32.to_le_bytes()); // label count
-        data.extend_from_slice(&1u32.to_le_bytes()); // string pair count
-        data.extend_from_slice(&0xAABB_CCDDu32.to_le_bytes()); // reserved
-        data.extend_from_slice(&0u32.to_le_bytes()); // language (US English)
-
-        // Label entry.
-        data.extend_from_slice(&LABEL_MAGIC.to_le_bytes()); // " LBL"
-        data.extend_from_slice(&1u32.to_le_bytes()); // 1 string pair
-        data.extend_from_slice(&(label.len() as u32).to_le_bytes());
-        data.extend_from_slice(label.as_bytes());
-
-        // String value.
-        data.extend_from_slice(&STRING_MAGIC.to_le_bytes()); // " RTS"
-        data.extend_from_slice(&char_count.to_le_bytes());
-        data.extend_from_slice(&encoded_value);
-
-        data
-    }
 
     #[test]
     fn format_csf_consumes_specifiers_in_order_and_keeps_literals() {

@@ -7,7 +7,7 @@ use super::publication::CellCoord;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Family {
+pub enum Family {
     High,
     Low,
 }

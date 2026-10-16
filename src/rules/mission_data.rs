@@ -111,7 +111,7 @@ impl MissionType {
     }
 
     /// Alias of [`MissionType::id`] for dispatch call sites.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn dispatch_id(self) -> u8 {
         self as u8
@@ -378,7 +378,7 @@ impl MissionControl {
     /// Install an original-executed frame projection for executable replay.
     /// Distinctive controls directly write native double fields; their saved
     /// conversion receipts bypass INI scanning. Retail uses the reader below.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_native_rate_frames_for_test(&mut self, mission: MissionType, frames: i32) {
         self.entries.get_mut(&mission).unwrap().rate_frames = frames;
     }

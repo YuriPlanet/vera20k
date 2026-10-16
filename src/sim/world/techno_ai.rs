@@ -18,11 +18,11 @@ mod aircraft_guard;
 mod building_missile;
 mod building_missions;
 mod building_retaliation;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
 pub(crate) use building_missions::PrismSupport;
 pub(crate) use building_missions::queue_and_commence;
-pub(crate) use building_missions::{BuildingDelayedFire, DelayedFire};
+pub use building_missions::{BuildingDelayedFire, DelayedFire};
 mod mission_handlers;
 mod scan_batch;
 mod target_scan;
@@ -30,7 +30,7 @@ pub(crate) use mission_handlers::dispatch_foot_mission;
 pub(crate) use mission_handlers::enter_idle_mode;
 pub(crate) use mission_handlers::foot_enter_idle_mode_selection;
 pub(crate) use mission_handlers::techno_unlimbo_idle_mode;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use mission_handlers::*;
 pub(crate) use scan_batch::ScanBatch;
 pub(crate) use target_scan::PassiveScan;
@@ -65,7 +65,7 @@ pub(crate) struct ObjectAiCtx<'a> {
 /// Ephemeral outputs of a single live AI visit, forwarded to the frame result.
 #[derive(Default)]
 pub(super) struct ObjectAiOutcome {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) visited: bool,
     pub(super) bridge_state_changed: bool,
     ownership_changed: bool,
@@ -76,7 +76,7 @@ pub(super) struct ObjectAiOutcome {
 impl ObjectAiOutcome {
     pub(super) fn visited() -> Self {
         Self {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             visited: true,
             ..Default::default()
         }
@@ -152,7 +152,7 @@ impl Simulation {
     /// `techno_ai_shell` for the `+0xC4`
     /// AI-counter increment and queued-mission promotion at the verified
     /// per-category AI position (see `Simulation::mission_host_promote`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_ai_stage(&mut self, rules: Option<&RuleSet>) {
         self.object_ai_stage_with(rules, ObjectAiCtx::default());
     }
@@ -180,7 +180,7 @@ impl Simulation {
     ///
     /// The AI counter is NOT ticked here. Native increments it once per AI pass,
     /// and the pre-movement mission step already did so for every category.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_ai_post_movement_promote(&mut self, rules: Option<&RuleSet>) {
         let Some(rules) = rules else {
             return;
@@ -254,7 +254,7 @@ impl Simulation {
     /// the deferred finalization list; here the object leaves the LogicVector
     /// and the store in the same step, because nothing resolves debris by id
     /// between the two points.
-    pub(crate) fn visit_voxel_anim(&mut self, id: u64, rules: Option<&RuleSet>) {
+    pub fn visit_voxel_anim(&mut self, id: u64, rules: Option<&RuleSet>) {
         let Some(mut debris) = self.substrate.voxel_anims.remove(id) else {
             return;
         };
@@ -589,7 +589,7 @@ impl Simulation {
         outcome
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_ai_visit_one(
         &mut self,
         id: u64,
@@ -602,7 +602,7 @@ impl Simulation {
 
     /// [`Simulation::object_ai_stage`] with the world context the dispatched
     /// mission handler bodies need (the production spine entry).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_ai_stage_with(&mut self, rules: Option<&RuleSet>, ctx: ObjectAiCtx<'_>) {
         let visited = self.object_ai_walk(cfg!(debug_assertions), rules, ctx);
 
@@ -626,7 +626,7 @@ impl Simulation {
     /// not enter the ordinary per-category shell. When `record`, return the
     /// visited ids in order (debug/test observation); otherwise the returned
     /// `Vec` is empty and unallocated.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn object_ai_walk(
         &mut self,
         record: bool,
@@ -8288,5 +8288,5 @@ mod mirage_disguise_tests;
 #[path = "techno_ai/target_reach_tests.rs"]
 mod target_reach_tests;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use super::bridge_test_evidence;

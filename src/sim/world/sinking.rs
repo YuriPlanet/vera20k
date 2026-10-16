@@ -27,13 +27,13 @@ pub(crate) enum LivingSinkTrigger {
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
-pub(crate) struct SinkingState {
+pub struct SinkingState {
     active: bool,
     sound_edge_seen: bool,
 }
 
 impl SinkingState {
-    pub(crate) fn is_active(self) -> bool {
+    pub fn is_active(self) -> bool {
         self.active
     }
 
@@ -41,7 +41,7 @@ impl SinkingState {
         self == Self::default()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn sound_edge_seen(self) -> bool {
         self.sound_edge_seen
     }
@@ -52,7 +52,7 @@ impl Simulation {
     /// Stun. Keep cell marking and passenger/crew work at the receiver's
     /// existing postlude, after this call. Object's exact-zero callback has
     /// already consumed the kill before Destroy and Techno death effects.
-    pub(crate) fn begin_ship_sinking(
+    pub fn begin_ship_sinking(
         &mut self,
         id: u64,
         rules: &RuleSet,

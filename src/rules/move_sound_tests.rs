@@ -10,7 +10,7 @@ use super::sound_ini::SoundRegistry;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub(crate) fn native() -> Value {
+pub fn native() -> Value {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/fv_cell_attack/foot_move_sound.json",
     ))

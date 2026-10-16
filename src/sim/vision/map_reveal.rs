@@ -15,7 +15,7 @@ pub(crate) enum MapTransition {
 impl FogState {
     /// House+240, the existing Map reveal/gap authority. The separately
     /// stored House+241 map-clear byte does not decide reveal admission.
-    pub(crate) fn whole_map_revealed_for_owner(&self, owner: InternedId) -> bool {
+    pub fn whole_map_revealed_for_owner(&self, owner: InternedId) -> bool {
         self.whole_map_revealed_owners.contains(&owner)
     }
 
@@ -35,7 +35,7 @@ impl FogState {
         std::hash::Hash::hash(&self.whole_map_revealed_owners, hasher);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn transition_whole_map_for_owner(
         &mut self,
         owner: InternedId,
@@ -61,7 +61,7 @@ impl FogState {
         );
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn transition_whole_map_with_sources(
         &mut self,
         owner: InternedId,

@@ -21,7 +21,7 @@ use crate::util::fixed_math::{SimFixed, facing_from_delta_int_u16};
 /// 8-bit facing space. No production caller; the live shortest-arc logic is the
 /// signed 16-bit subtraction inside `FacingClass::current`.
 /// Returns a value in -128..=127 (positive = clockwise, negative = counter-clockwise).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn shortest_rotation(current: u8, target: u8) -> i16 {
     let diff: i16 = target as i16 - current as i16;
     // Wrap into -128..127 range for shortest path.
@@ -57,7 +57,7 @@ pub fn facing_toward_lepton(
 
 /// Convert an 8-bit facing to a 16-bit one (shifts into the upper byte).
 /// No production caller; test fixtures author 8-bit facings.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn body_facing_to_turret(body: u8) -> u16 {
     (body as u16) << 8
 }
@@ -78,7 +78,7 @@ pub fn body_facing_to_turret(body: u8) -> u16 {
 /// both objects; for a `BuildingClass` that slot returns the FOUNDATION CENTRE,
 /// not the north-west anchor cell. `combat::resolve_target_coords` applies the
 /// same centre shift, so route through it rather than reading `position`.
-pub(crate) fn facing_toward_target(
+pub fn facing_toward_target(
     entity: &GameEntity,
     target: &crate::sim::combat::TargetKind,
     entities: &EntityStore,

@@ -282,13 +282,13 @@ impl CloakRuntime {
     }
 
     /// Install a fixture's state.
-    #[cfg(test)]
-    pub(crate) fn set_state_for_test(&mut self, state: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_state_for_test(&mut self, state: i32) {
         self.state = state;
     }
 
     /// Install a fixture's progress.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_depth_for_test(&mut self, depth: u32) {
         self.depth = depth;
     }
@@ -607,7 +607,7 @@ pub enum DisguiseGateOutcome {
 
 #[path = "cloak_transitions.rs"]
 pub(crate) mod transitions;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use transitions::{StartCloakingResult, StartUncloakingResult};
 
 /// Retained Techno disguise identity and re-disguise timer. Original

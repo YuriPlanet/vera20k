@@ -283,8 +283,15 @@ fn idle_saved_view_replaces_outgoing_building_placement_and_preview() {
         width: 1,
         height: 1,
         valid: true,
+        in_build_area: true,
+        foundation_visible: true,
         reason: None,
-        cell_valid: vec![true],
+        cells: vec![crate::sim::production::BuildingPlacementCell {
+            coord: (10, 20),
+            valid: true,
+            level: 0,
+            slope: 0,
+        }],
         wall_autofill_cells: vec![],
     });
     outgoing.submit_building_placement();

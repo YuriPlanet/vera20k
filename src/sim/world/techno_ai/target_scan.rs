@@ -60,7 +60,7 @@ const PASSIVE_SCAN_CONSTRUCTION_DELAY_FRAMES: u32 = 45;
 ///   scan's drop step (`0x007098C3`), the off-mission clear and the Unit
 ///   approach's OmniCrusher arm (`0x0074162D`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct PassiveScan {
+pub struct PassiveScan {
     timer: MissionTimer,
     last_scan_frame: u32,
     acquired: bool,
@@ -83,7 +83,7 @@ impl PassiveScan {
     }
 
     /// The targeting timer.
-    pub(crate) const fn timer(self) -> MissionTimer {
+    pub const fn timer(self) -> MissionTimer {
         self.timer
     }
 
@@ -93,7 +93,7 @@ impl PassiveScan {
     }
 
     /// The current target came from the passive scan.
-    pub(crate) const fn acquired(self) -> bool {
+    pub const fn acquired(self) -> bool {
         self.acquired
     }
 
@@ -120,25 +120,25 @@ impl PassiveScan {
     }
 
     /// Install a fixture's timer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_passive_scan_timer_for_test(&mut self, timer: MissionTimer) {
         self.timer = timer;
     }
 
     /// A fixture's handle on the timer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn timer_mut_for_test(&mut self) -> &mut MissionTimer {
         &mut self.timer
     }
 
     /// Install a fixture's last scan frame.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_last_target_scan_frame_for_test(&mut self, frame: u32) {
         self.last_scan_frame = frame;
     }
 
     /// Install a fixture's acquisition mark.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_passively_acquired_target_for_test(&mut self, acquired: bool) {
         self.acquired = acquired;
     }
@@ -656,17 +656,19 @@ pub(super) fn fire_error_at(
 }
 
 impl Simulation {
-    /// GetFireError (vt+0x3C0, range asked) of the slot SelectWeapon
-    /// (vt+0x2E4) picks for `target`. `TechnoClass::What_Action_OnObject @
-    /// 0x006FFEC0` asks it (`0x0070022D`, `0x00700542`): ILLEGAL ends an
-    /// unforced Attack action (`0x00700548`) unless the Infiltrate arm
-    /// (`0x007004A0..0x00700531`) overrides it. `Coordinate_Attack` asks it
-    /// of the team leader (`0x006EB5B0..0x006EB5CD`).
-    pub(crate) fn selected_weapon_fire_error(
+    /// GetFireError (vt+0x3C0, range asked when `check_range`) of the slot
+    /// SelectWeapon (vt+0x2E4) picks for `target`.
+    /// `TechnoClass::What_Action_OnObject @ 0x006FFEC0` asks it with range
+    /// (`0x0070022D`, `0x00700542`): ILLEGAL ends an unforced Attack action
+    /// (`0x00700548`) unless the Infiltrate arm (`0x007004A0..0x00700531`)
+    /// overrides it. `Coordinate_Attack` asks it of the team leader with
+    /// range (`0x006EB5B0..0x006EB5CD`).
+    pub fn selected_weapon_fire_error(
         &self,
         rules: &RuleSet,
         id: u64,
         target: TargetKind,
+        check_range: bool,
         overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> FireError {
         let weapon = select_weapon(self, rules, id, Some(target));
@@ -676,7 +678,7 @@ impl Simulation {
             id,
             Some(target),
             weapon,
-            true,
+            check_range,
             overlay_registry,
         )
     }

@@ -340,7 +340,7 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// Bunker's vehicle released (`+0x2E4`, `0x004593A0`), RUN_AWAY to every
 /// contact (`0x0044AB68`) and the damage-fire anims released (`+0x5C8`,
 /// `0x0044AB87..0x0044ABAA`).
-pub(crate) fn sell_stage_zero(
+pub fn sell_stage_zero(
     sim: &mut Simulation,
     rules: Option<&RuleSet>,
     id: u64,
@@ -578,8 +578,8 @@ pub(crate) fn sell_complete(
 /// captives), then the stage-0, stage-1 and completing visits. As in play,
 /// only a type with a Buildup control sells. Returns whether the sale
 /// completed.
-#[cfg(test)]
-pub(crate) fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
+#[cfg(any(test, feature = "test-support"))]
+pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
     if !sell_back(
         sim,
         rules,

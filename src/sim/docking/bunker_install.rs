@@ -83,13 +83,13 @@ impl BunkerRuntime {
     }
 
     /// Install a fixture's state.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_state_for_test(&mut self, state: BunkerState) {
         self.state = state;
     }
 
     /// Install a fixture's installing unit.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_installing_unit_for_test(&mut self, unit: Option<u64>) {
         self.installing_unit = unit;
     }

@@ -41,11 +41,11 @@
 pub(crate) mod damage_dispatch;
 pub(crate) mod gap_restamp;
 pub(crate) mod occupants;
-pub(crate) mod ordinary;
+pub mod ordinary;
 pub(crate) mod ordinary_damage;
 pub(crate) mod ordinary_repair;
 pub(crate) mod publication;
-pub(crate) mod ramp_repair;
+pub mod ramp_repair;
 mod record_scan;
 pub(crate) mod repair_query;
 pub(crate) mod rim;
@@ -316,7 +316,7 @@ pub struct BridgeRuntimeState {
 
 impl BridgeRuntimeState {
     /// Production entry with the raw Map Size authority, not backing dimensions.
-    pub(crate) fn from_resolved_terrain_with_map_size(
+    pub fn from_resolved_terrain_with_map_size(
         terrain: &ResolvedTerrainGrid,
         destroyable: bool,
         bridge_strength: i32,
@@ -325,7 +325,7 @@ impl BridgeRuntimeState {
         Self::build_from_terrain(terrain, destroyable, bridge_strength, Some(size))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_resolved_terrain(
         terrain: &ResolvedTerrainGrid,
         destroyable: bool,
@@ -360,7 +360,7 @@ impl BridgeRuntimeState {
         self.bridge_destroyable_flag
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_set_endpoint_records(&mut self, records: Vec<BridgeEndpointRecord>) {
         self.endpoint_records = records;
     }

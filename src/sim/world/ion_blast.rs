@@ -73,7 +73,7 @@ impl Simulation {
 
     /// Each blast's coordinate and frame, in vector order; DrawAll visits them
     /// last to first.
-    pub(crate) fn ion_blasts(&self) -> impl DoubleEndedIterator<Item = ([i32; 3], i32)> + '_ {
+    pub fn ion_blasts(&self) -> impl DoubleEndedIterator<Item = ([i32; 3], i32)> + '_ {
         self.ion_blasts
             .iter()
             .map(|blast| (blast.coord, blast.frame))

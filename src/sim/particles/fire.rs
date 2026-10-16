@@ -42,14 +42,14 @@
 use super::spawn::spawn_particle_with_insert;
 use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::ParticleType;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::rules::particle_type::ParticleTypeId;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use glam::IVec3;
 
 /// `SpawnParticleWithInsert` range used by fire systems — particles inserted
@@ -122,7 +122,7 @@ pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, rng: &mut SimRn
 /// Bridge-layer interaction is deferred to C6 — fire particles pass
 /// through bridges in the binary too (no bridge check in fire move).
 // Ground-height ownership is not wired into the live particle tick yet.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn move_fire(p: &mut Particle, old_ground: i32, new_ground: i32) {
     if matches!(
         X87::compare(X87::load_f32(p.velocity), X87::load_i32(0)),

@@ -58,7 +58,7 @@ use crate::util::native_x87::{
 /// The charge-turret model index reads this with the saved +2F8 duration
 /// (6FA540); `game_entity::gunner` owns that presentation state.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct RearmTimer {
+pub struct RearmTimer {
     timer: crate::sim::timer::CdTimer,
 }
 
@@ -71,22 +71,22 @@ impl RearmTimer {
     }
 
     /// The countdown as a timer.
-    pub(crate) const fn timer(self) -> crate::sim::timer::CdTimer {
+    pub const fn timer(self) -> crate::sim::timer::CdTimer {
         self.timer
     }
 
     /// The frame it was last started.
-    pub(crate) const fn start_frame(self) -> i32 {
+    pub const fn start_frame(self) -> i32 {
         self.timer.start_frame()
     }
 
     /// Its duration (`+0x2F4`).
-    pub(crate) const fn duration(self) -> i32 {
+    pub const fn duration(self) -> i32 {
         self.timer.duration()
     }
 
     /// The frames left at `current_frame`.
-    pub(crate) fn remaining(self, current_frame: i32) -> i32 {
+    pub fn remaining(self, current_frame: i32) -> i32 {
         self.timer.remaining(current_frame)
     }
 
@@ -96,8 +96,8 @@ impl RearmTimer {
     }
 
     /// Install a fixture's countdown.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
         self.timer = timer;
     }
 }

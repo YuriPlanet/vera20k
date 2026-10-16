@@ -37,7 +37,7 @@ pub(crate) struct TeslaCharger {
 }
 
 impl TeslaCharger {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn for_test(active: bool) -> Self {
         Self { active }
     }

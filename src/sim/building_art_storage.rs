@@ -13,13 +13,13 @@ pub(crate) struct BuildingStorage {
 
 impl BuildingStorage {
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_amounts_for_test(&mut self, amounts: [NativeF32Bits; 4]) {
         self.amounts = amounts;
     }
 
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_refinery_tier_for_test(&mut self, refinery_tier: i32) {
         self.refinery_tier = refinery_tier;
     }

@@ -7,15 +7,12 @@
 use std::cmp::Ordering;
 
 /// Sort record indices, keeping the records under their existing owner.
-pub(crate) fn sort_indices_by(
-    indices: &mut [usize],
-    mut compare: impl FnMut(usize, usize) -> Ordering,
-) {
+pub fn sort_indices_by(indices: &mut [usize], mut compare: impl FnMut(usize, usize) -> Ordering) {
     sort_by(indices, |&left, &right| compare(left, right));
 }
 
 /// qsort over the records themselves, as native swaps them in place.
-pub(crate) fn sort_by<T>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> Ordering) {
+pub fn sort_by<T>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> Ordering) {
     if items.len() < 2 {
         return;
     }

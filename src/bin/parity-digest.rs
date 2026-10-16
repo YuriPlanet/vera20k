@@ -18,12 +18,12 @@
 
 use std::path::PathBuf;
 
-use vera20k::headless_scenario::{self, SIM_TICK_MS};
-use vera20k::map::entities::EntityCategory;
-use vera20k::sim::combat::Health;
-use vera20k::sim::house_state::HouseState;
-use vera20k::sim::parity_digest::ParityDigestSink;
-use vera20k::sim::world::Simulation;
+use vera20k_core::headless_scenario::{self, SIM_TICK_MS};
+use vera20k_core::map::entities::EntityCategory;
+use vera20k_core::sim::combat::Health;
+use vera20k_core::sim::house_state::HouseState;
+use vera20k_core::sim::parity_digest::ParityDigestSink;
+use vera20k_core::sim::world::Simulation;
 
 const DEFAULT_TICKS: u64 = 600;
 /// Arbitrary but fixed, so two synthetic runs are comparable to each other.
@@ -155,9 +155,9 @@ fn main() -> Result<(), String> {
             // runtime transaction as everything else. Empty resources stand in
             // for the "no rules loaded" contract the synthetic scenario always
             // had; synthetic digests are self-comparable, not parity evidence.
-            let mut runtime = vera20k::sim::runtime::SimRuntime {
+            let mut runtime = vera20k_core::sim::runtime::SimRuntime {
                 simulation: build_synthetic_simulation(args.seed),
-                resources: vera20k::sim::runtime::SimResources::empty(),
+                resources: vera20k_core::sim::runtime::SimResources::empty(),
             };
             for _ in 0..args.ticks {
                 runtime

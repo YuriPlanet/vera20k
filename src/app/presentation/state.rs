@@ -14,7 +14,6 @@ use crate::map::houses::{HouseColorMap, HouseRoster};
 use crate::map::overlay::TerrainObject;
 use crate::map::terrain::TerrainGrid;
 use crate::render::bridge_atlas::BridgeAtlas;
-use crate::render::bridge_railing_atlas::BridgeRailingAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::radar::minimap::MinimapRenderer;
 use crate::render::selection_overlay::SelectionOverlay;
@@ -41,7 +40,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     pub(crate) overlay_atlas: Option<OverlayAtlas>,
     pub(crate) bridge_atlas: Option<BridgeAtlas>,
-    pub(crate) bridge_railing_atlas: Option<BridgeRailingAtlas>,
     pub(crate) sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
     pub(crate) sidebar_chrome: Option<SidebarChromeSet>,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,

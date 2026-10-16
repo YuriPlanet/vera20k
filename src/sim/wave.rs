@@ -219,7 +219,7 @@ impl Wave {
         wave
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn replace_recorded_cells(&mut self, cells: Vec<WaveRecordedCell>) {
         self.recorded_cells = cells;
     }
@@ -656,23 +656,23 @@ struct Type0NonmagneticGeometry {
     target: ProjectileCoord,
     edges: WaveEdgeGeometry,
     direction_octant: i32,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     horizontal: i32,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     sqrt_bits: NativeF32Bits,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     acos_index: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     angle_bits: NativeF32Bits,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     trig_units: i32,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     sin_index: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     cos_index: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     target_screen: (i32, i32),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     firer_b_screen: (i32, i32),
 }
 
@@ -833,7 +833,7 @@ fn type0_nonmagnetic_geometry(
     let angle_length = load_f32(angle_length_bits);
 
     // The index is kept for the machine fixtures only.
-    #[cfg_attr(not(test), expect(unused_variables))]
+    #[cfg_attr(not(any(test, feature = "test-support")), expect(unused_variables))]
     let (acos_index, mut angle) = if horizontal == 0 {
         (0, acos.acos_lookup_nan())
     } else {
@@ -900,23 +900,23 @@ fn type0_nonmagnetic_geometry(
         target,
         edges,
         direction_octant: direction_from_projected(target_screen, firer_b_screen),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         horizontal,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         sqrt_bits,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         acos_index,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         angle_bits,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         trig_units,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         sin_index,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         cos_index,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         target_screen,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         firer_b_screen,
     }
 }

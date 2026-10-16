@@ -44,14 +44,14 @@ impl Simulation {
     /// Insertion order, stamps and payloads are copied without admitting,
     /// draining or exposing writable queue state. Ordinary rendering does not
     /// call this diagnostic boundary.
-    pub(crate) fn pending_command_snapshot(&self) -> Vec<CommandEnvelope> {
+    pub fn pending_command_snapshot(&self) -> Vec<CommandEnvelope> {
         self.pending_commands.clone()
     }
 
     /// Whether provisional local selection still has authoritative queued
     /// work. Derive this from the existing queue; selected-bit equality cannot
     /// distinguish an unconsumed snapshot from later lifecycle deselection.
-    pub(crate) fn has_pending_selection_commands(&self) -> bool {
+    pub fn has_pending_selection_commands(&self) -> bool {
         self.pending_commands
             .iter()
             .any(|command| matches!(command.payload, Command::Select { .. }))
@@ -62,7 +62,7 @@ impl Simulation {
     ///
     /// This read-only projection lets fresh-map and snapshot replacement sync
     /// client UI without consuming or applying a pending authoritative command.
-    pub(crate) fn projected_in_game_options_speed(&self) -> Option<u8> {
+    pub fn projected_in_game_options_speed(&self) -> Option<u8> {
         let mut projected = u8::try_from(self.session.game_options.game_speed)
             .ok()
             .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
@@ -88,7 +88,7 @@ impl Simulation {
     }
 
     /// Consume the terminal edge raised by one executed EXIT command.
-    pub(crate) fn take_executed_exit_owner(&mut self) -> Option<InternedId> {
+    pub fn take_executed_exit_owner(&mut self) -> Option<InternedId> {
         self.executed_exit_owner.take()
     }
 
@@ -175,7 +175,7 @@ impl Simulation {
     /// due filter, malformed future-stamped replay entries are discarded, and
     /// unrelated/future simulation work remains untouched. Keeping a consumed
     /// PLACE would leave replay/save state different from the ordinary app.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn take_due_replay_commands(
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,

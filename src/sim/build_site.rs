@@ -21,7 +21,7 @@
 
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -65,6 +65,8 @@ pub(crate) fn building_speed_type(ty: &ObjectType) -> Option<SpeedType> {
 /// shared dummy off the map) and tested — the walk does not stop at the first
 /// refusal. The foundation must be clear everywhere, except for a `ToTile=`
 /// type, which needs one clear cell (`0x00716260..0x00716280`).
+/// Simulation callers use the canonical lookup (`None`); presentation carries
+/// its isolated query through this same walk and every nested Cell decision.
 pub(crate) fn can_place_building_at(
     sim: &Simulation,
     rules: &RuleSet,
@@ -72,6 +74,7 @@ pub(crate) fn can_place_building_at(
     ty: &ObjectType,
     origin: (i16, i16),
     house: Option<InternedId>,
+    native_cells: Option<&NativeCellQuery<'_>>,
 ) -> bool {
     if ty.place_anywhere {
         return true;
@@ -82,13 +85,23 @@ pub(crate) fn can_place_building_at(
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return false;
     };
+    let canonical = NativeCellQuery::canonical(terrain);
+    let cells = native_cells.unwrap_or(&canonical);
     let speed = building_speed_type(ty);
     let mut refused = false;
     let mut admitted = false;
     for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(&ty.foundation) {
-        let cell =
-            terrain.native_cell_identity((origin.0.wrapping_add(dx), origin.1.wrapping_add(dy)));
-        if is_clear_to_build(sim, rules, registry, cell, speed, Some(ty), house) {
+        let cell = cells.lookup((origin.0.wrapping_add(dx), origin.1.wrapping_add(dy)));
+        if is_clear_to_build(
+            sim,
+            rules,
+            registry,
+            cell,
+            speed,
+            Some(ty),
+            house,
+            Some(cells),
+        ) {
             admitted = true;
         } else {
             refused = true;
@@ -104,6 +117,8 @@ pub(crate) fn can_place_building_at(
 /// `CellClass::Is_Clear_To_Build @ 0x0047C620` for `cell`, `speed` (`None` is
 /// -1), the building type (`None` for a TerrainType's test) and the placing
 /// house (`None` is null; it matches an unowned wall).
+/// A supplied query must be the context that resolved `cell`, so retained
+/// Dummy coordinates/ground fields come from that identity without relookup.
 pub(crate) fn is_clear_to_build(
     sim: &Simulation,
     rules: &RuleSet,
@@ -112,6 +127,7 @@ pub(crate) fn is_clear_to_build(
     speed: Option<SpeedType>,
     ty: Option<&ObjectType>,
     house: Option<InternedId>,
+    native_cells: Option<&NativeCellQuery<'_>>,
 ) -> bool {
     // Original47C632 returns true while the shared A8E7AC bracket is raised.
     // Building440580 still enters449440; the bypass belongs to this cell
@@ -122,16 +138,18 @@ pub(crate) fn is_clear_to_build(
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return false;
     };
+    let canonical = NativeCellQuery::canonical(terrain);
+    let cells = native_cells.unwrap_or(&canonical);
     if let Some(ty) = ty
         && !objects_admit(sim, rules, terrain, cell, ty, house)
     {
         return false;
     }
-    if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, sim.playfield_bounds, terrain) {
+    if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, sim.playfield_bounds, cells) {
         return false;
     }
-    let flags = terrain.native_cell_flags(cell);
-    let slope = terrain.native_cell_ground_fields(cell).1;
+    let flags = cells.flags(cell);
+    let slope = cells.ground_fields(cell).1;
     if let NativeCellIdentity::Real(index) = cell {
         let (rx, ry) = (terrain.cells()[index].rx, terrain.cells()[index].ry);
         if let Some(overlay) = sim.overlay_grid.as_ref().map(|grid| *grid.cell(rx, ry))
@@ -154,7 +172,7 @@ pub(crate) fn is_clear_to_build(
     // rules layer leaves its row as the process started it, 0.0 speeds and
     // not Buildable (`RulesClass::ReadSpeedTypeLandTypeTable @ 0x00674000`
     // skips it); a missing key reads 1.0 or false.
-    let land = land_type(terrain, cell);
+    let land = cells.land_type(cell) as u8;
     let semantics = rules.terrain_rules.semantics_for_land_type(land);
     match speed {
         None => {
@@ -410,20 +428,10 @@ fn overlay_admits(
     false
 }
 
-/// CellClass+0xEC through the retained identity.
-fn land_type(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> u8 {
-    match cell {
-        NativeCellIdentity::Real(index) => terrain.cells()[index].yr_cell_land_type,
-        NativeCellIdentity::Dummy => {
-            crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).land_type(cell) as u8
-        }
-    }
-}
-
 /// BuildingType+0xE58: `ToTile=` resolves (`0x00465CC0` → `0x00544CE0`) only
 /// when the theater registers that tile name. A terrain without a resident
 /// tile registry registers none.
-fn resolved_to_tile(terrain: &ResolvedTerrainGrid, ty: &ObjectType) -> bool {
+pub(crate) fn resolved_to_tile(terrain: &ResolvedTerrainGrid, ty: &ObjectType) -> bool {
     ty.to_tile.as_deref().is_some_and(|name| {
         terrain
             .resolve_registered_tile_name(name)

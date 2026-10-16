@@ -34,11 +34,11 @@ impl SmudgeObject {
     pub(crate) fn stable_id(&self) -> u64 {
         self.stable_id
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn native_unique_id(&self) -> i32 {
         self.native_unique_id
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn type_id(&self) -> u16 {
         self.type_id
     }
@@ -181,7 +181,7 @@ impl SmudgeGrid {
         self.objects.get(&id)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_count(&self) -> usize {
         self.objects.len()
     }
@@ -334,7 +334,7 @@ impl SmudgeGrid {
     /// Test-only direct cell mutation. Bypasses CanPlaceHere — use only in
     /// unit tests that need to seed a known SmudgeGrid state for hashing or
     /// snapshot round-trip verification.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn test_force_set(&mut self, rx: u16, ry: u16, cell: SmudgeCell) {
         if let Some(idx) = self.index_of(rx, ry) {
             self.cells[idx] = cell;
@@ -626,7 +626,7 @@ impl SmudgeGrid {
         } else {
             // Existing primitive oracles hook the full constructor and check
             // only numeric placement. Production always owns its lifetime.
-            #[cfg(not(test))]
+            #[cfg(not(any(test, feature = "test-support")))]
             panic!("runtime Smudge requires the shared ID owners");
         }
         self.write_footprint(origin, chosen_id, chosen.width, chosen.height, terrain);

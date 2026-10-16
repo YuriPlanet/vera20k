@@ -1020,16 +1020,6 @@ fn terrain_and_building_depth_hide_only_behind_pixels_and_preserve_holes() {
         "TMP per-pixel depth byte was ignored"
     );
 
-    // The high-bridge atlas stores row bytes with the opposite sign from TMP.
-    let mut bridge = Layer::solid(Shader::Terrain, RED, 0.0);
-    bridge.z_bytes.fill(8);
-    bridge.instance.draw_state.fx_params[3] = -1.0;
-    let pixels = gpu.render(&[bridge, Layer::solid(Shader::SpriteRead, BLUE, 0.0)]);
-    assert!(
-        pixels.iter().all(|pixel| *pixel == RED),
-        "bridge row atlas sign failed to occlude the behind sprite"
-    );
-
     // A nearer read-only sprite may change color, but must not prevent a
     // later, intermediate-depth sprite from drawing (native unit blitters
     // 0x494B60/0x497FD0 test existing Z without writing it).

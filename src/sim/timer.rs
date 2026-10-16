@@ -101,7 +101,7 @@ impl CdTimer {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub const fn is_paused(self) -> bool {
         self.start_frame == PAUSED_START_FRAME

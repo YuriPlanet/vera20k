@@ -113,7 +113,7 @@ impl AiFireArm {
 
 /// What [`try_fire`] did, and each Fire_SW, in the oracle's terms
 /// (observation only).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AiFireEvent {
     /// AI_TryFireSW ran (the Strategy replay's gate).
@@ -128,7 +128,7 @@ pub(crate) enum AiFireEvent {
     Fire(InternedId, (u16, u16)),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Observation only: what [`try_fire`] and Fire_SW did on this thread
     /// while a test holds `Some`.
@@ -136,7 +136,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn observe(event: AiFireEvent) {
     AI_FIRE_LOG.with(|log| {
         if let Some(log) = log.borrow_mut().as_mut() {
@@ -153,7 +153,7 @@ pub(crate) fn try_fire(
     registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
     if sim
         .houses
@@ -173,7 +173,7 @@ pub(crate) fn try_fire(
             continue;
         }
         let arm = AiFireArm::of(sw.kind);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if matches!(
             arm,
             AiFireArm::GroundRallyPoint | AiFireArm::PsychicDominator | AiFireArm::GeneticMutator
@@ -205,7 +205,7 @@ pub(crate) fn try_fire(
 /// fires nothing.
 fn rally_target(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) -> Option<(u16, u16)> {
     let enemy = sim.houses.get(&owner)?.enemy_house?;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::BestRallyTarget);
     let (x, y) = find_best_rally_target(sim, rules, owner, enemy);
     // A cell left of or above the map wraps like the native CellStruct.

@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn sim_does_not_reference_the_generator() {
         let mut offenders = Vec::new();
-        for path in rust_files(std::path::Path::new("src/sim")) {
+        for path in rust_files(&crate::test_fixture::checkout_root().join("src/sim")) {
             let text = std::fs::read_to_string(&path).unwrap_or_default();
             if text.contains("map::rmg") {
                 offenders.push(path.display().to_string());

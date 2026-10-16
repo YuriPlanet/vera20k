@@ -15,7 +15,7 @@ const NORMALIZED_DELAY_SHORT: [[u16; 8]; 4] = [
 ];
 
 /// Highest stored value emitted by the retail in-game speed trackbar.
-pub(crate) const IN_GAME_OPTIONS_MAX_SPEED: u8 = 6;
+pub const IN_GAME_OPTIONS_MAX_SPEED: u8 = 6;
 
 /// Per-match game settings from the lobby / `[MultiplayerDialogSettings]`.
 ///

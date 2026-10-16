@@ -41,18 +41,25 @@ fn scene_with(rules: &RuleSet, cells: &[(u16, u16)]) -> (Simulation, u64, Vec<u6
     (sim, scanner, riflemen)
 }
 
+/// Put `scanner` on `mission`.
+fn on_mission(sim: &mut Simulation, scanner: u64, mission: crate::sim::mission::MissionType) {
+    sim.substrate
+        .entities
+        .get_mut(scanner)
+        .unwrap()
+        .mission
+        .set_current_for_test(MissionId::from_known(mission), 0);
+}
+
 /// Put `scanner` on Area Guard at `post`.
 fn area_guard(sim: &mut Simulation, scanner: u64, post: (u16, u16)) {
+    on_mission(sim, scanner, crate::sim::mission::MissionType::AreaGuard);
     let entity = sim.substrate.entities.get_mut(scanner).unwrap();
-    entity.mission.set_current_for_test(
-        MissionId::from_known(crate::sim::mission::MissionType::AreaGuard),
-        0,
-    );
     entity.set_archive_target(Some(TargetKind::Cell(post.0, post.1)));
 }
 
 /// Run `scanner`'s mission handler; answers its target.
-fn guard(sim: &mut Simulation, rules: &RuleSet, scanner: u64) -> Option<TargetKind> {
+fn run_mission(sim: &mut Simulation, rules: &RuleSet, scanner: u64) -> Option<TargetKind> {
     super::super::mission_handlers::dispatch_foot_mission(
         sim,
         scanner,
@@ -147,12 +154,12 @@ fn an_area_guards_handler_takes_the_answer_for_its_post() {
     let rules = &fixture.rules;
     let (mut serial, scanner, _) = scene(rules);
     area_guard(&mut serial, scanner, (12, 12));
-    let live = guard(&mut serial, rules, scanner);
+    let live = run_mission(&mut serial, rules, scanner);
     assert!(live.is_some(), "the area guard picks a rifleman");
     let (mut batched, _, _) = scene(rules);
     area_guard(&mut batched, scanner, (12, 12));
     batched.answer_batched_scans(Some(rules), None);
-    assert_eq!(guard(&mut batched, rules, scanner), live);
+    assert_eq!(run_mission(&mut batched, rules, scanner), live);
     assert_eq!(batched.batched_scans_used(), 1);
     assert_eq!(batched.state_hash(), serial.state_hash());
 
@@ -165,7 +172,7 @@ fn an_area_guards_handler_takes_the_answer_for_its_post() {
         .get_mut(scanner)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(12, 13)));
-    assert!(guard(&mut moved, rules, scanner).is_some());
+    assert!(run_mission(&mut moved, rules, scanner).is_some());
     assert_eq!(moved.batched_scans_used(), 0);
 }
 
@@ -180,12 +187,12 @@ fn an_area_guard_takes_a_pick_beyond_weapon_range() {
     let far = [(19, 12)];
     let (mut serial, scanner, riflemen) = scene_with(rules, &far);
     area_guard(&mut serial, scanner, (12, 12));
-    let live = guard(&mut serial, rules, scanner);
+    let live = run_mission(&mut serial, rules, scanner);
     assert_eq!(live, Some(TargetKind::Entity(riflemen[0])));
     let (mut batched, _, _) = scene_with(rules, &far);
     area_guard(&mut batched, scanner, (12, 12));
     batched.answer_batched_scans(Some(rules), None);
-    assert_eq!(guard(&mut batched, rules, scanner), live);
+    assert_eq!(run_mission(&mut batched, rules, scanner), live);
     assert_eq!(batched.batched_scans_used(), 1);
     assert_eq!(batched.state_hash(), serial.state_hash());
 }
@@ -200,11 +207,11 @@ fn an_area_guard_sent_back_to_its_post_scans_live() {
     let rules = &fixture.rules;
     let (mut serial, scanner, _) = scene(rules);
     area_guard(&mut serial, scanner, (1, 1));
-    let live = guard(&mut serial, rules, scanner);
+    let live = run_mission(&mut serial, rules, scanner);
     let (mut batched, _, _) = scene(rules);
     area_guard(&mut batched, scanner, (1, 1));
     batched.answer_batched_scans(Some(rules), None);
-    assert_eq!(guard(&mut batched, rules, scanner), live);
+    assert_eq!(run_mission(&mut batched, rules, scanner), live);
     assert!(
         batched
             .substrate
@@ -217,6 +224,28 @@ fn an_area_guard_sent_back_to_its_post_scans_live() {
         "the leash sends it back"
     );
     assert_eq!(batched.batched_scans_used(), 0);
+    assert_eq!(batched.state_hash(), serial.state_hash());
+}
+
+/// A hunter's handler scans the whole map: a rifleman across the arena is
+/// the answer, and the scan takes it.
+#[test]
+fn a_hunters_handler_takes_the_answer() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    let far = [(26, 26)];
+    let hunt = crate::sim::mission::MissionType::Hunt;
+    let (mut serial, scanner, riflemen) = scene_with(rules, &far);
+    on_mission(&mut serial, scanner, hunt);
+    let live = run_mission(&mut serial, rules, scanner);
+    assert_eq!(live, Some(TargetKind::Entity(riflemen[0])));
+    let (mut batched, _, _) = scene_with(rules, &far);
+    on_mission(&mut batched, scanner, hunt);
+    batched.answer_batched_scans(Some(rules), None);
+    assert_eq!(run_mission(&mut batched, rules, scanner), live);
+    assert_eq!(batched.batched_scans_used(), 1);
     assert_eq!(batched.state_hash(), serial.state_hash());
 }
 
@@ -366,6 +395,38 @@ fn a_save_keeps_the_setting_and_drops_the_answers() {
     );
 }
 
+/// `frames` frames, with scans batched, of a `size` arena that `setup`
+/// fills, on a worker pool of `threads`: each frame's state hash, and the
+/// answers scans took.
+fn batched_frames(
+    rules: &RuleSet,
+    size: u16,
+    threads: usize,
+    frames: usize,
+    setup: impl Fn(&mut Simulation) + Sync,
+) -> (Vec<u64>, usize) {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .expect("a worker pool");
+    pool.install(|| {
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 626, size);
+        let grid = sim
+            .path_grid_snapshot()
+            .map(|grid| (*grid).clone())
+            .expect("arena grid");
+        setup(&mut sim);
+        sim.batch_target_scans();
+        let hashes = (0..frames)
+            .map(|_| {
+                sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+                sim.state_hash()
+            })
+            .collect();
+        (hashes, sim.batched_scans_used())
+    })
+}
+
 /// Whole frames do not depend on the thread count: two rifle squads face
 /// each other across the arena, and every frame's state hash is the same on
 /// one worker thread as on four.
@@ -375,34 +436,42 @@ fn whole_frames_do_not_depend_on_the_thread_count() {
         return;
     };
     let rules = &fixture.rules;
-    let run = |threads: usize| {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .expect("a worker pool");
-        pool.install(|| {
-            let mut sim = crate::sim::arena_fixture::rival_arena(rules, 626);
-            let grid = sim
-                .path_grid_snapshot()
-                .map(|grid| (*grid).clone())
-                .expect("arena grid");
-            for i in 0..8u16 {
-                for (house, x) in [("Americans", 10), ("Russians", 15)] {
-                    sim.spawn_object("E1", house, x, 8 + 2 * i, 0, rules)
+    let squads = |sim: &mut Simulation| {
+        for i in 0..8u16 {
+            for (house, x) in [("Americans", 10), ("Russians", 15)] {
+                sim.spawn_object("E1", house, x, 8 + 2 * i, 0, rules)
+                    .unwrap();
+            }
+        }
+    };
+    let (one, used) = batched_frames(rules, 32, 1, 90, squads);
+    assert!(used > 0, "the squads' scans take batched answers");
+    assert_eq!(batched_frames(rules, 32, 4, 90, squads), (one, used));
+}
+
+/// Two hunting companies of 150 riflemen: each Hunt scan walks more objects
+/// than `greatest_threat::flat_scores` scores one by one, so it scores them
+/// side by side inside the batch's side-by-side answers, and every frame's
+/// state hash is still the same on one worker thread as on four.
+#[test]
+fn nested_side_by_side_hunt_scans_do_not_depend_on_the_thread_count() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    let companies = |sim: &mut Simulation| {
+        for i in 0..15u16 {
+            for j in 0..10u16 {
+                for (house, x) in [("Americans", 4), ("Russians", 30)] {
+                    let id = sim
+                        .spawn_object("E1", house, x + j, 4 + 2 * i, 0, rules)
                         .unwrap();
+                    on_mission(sim, id, crate::sim::mission::MissionType::Hunt);
                 }
             }
-            sim.batch_target_scans();
-            let hashes: Vec<u64> = (0..90)
-                .map(|_| {
-                    sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-                    sim.state_hash()
-                })
-                .collect();
-            (hashes, sim.batched_scans_used())
-        })
+        }
     };
-    let (one, used) = run(1);
-    assert!(used > 0, "the squads' scans take batched answers");
-    assert_eq!(run(4), (one, used));
+    let (one, used) = batched_frames(rules, 48, 1, 10, companies);
+    assert!(used > 0, "the hunters' scans take batched answers");
+    assert_eq!(batched_frames(rules, 48, 4, 10, companies), (one, used));
 }

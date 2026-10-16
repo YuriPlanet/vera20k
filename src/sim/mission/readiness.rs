@@ -22,7 +22,7 @@ const MISSION_AIRCRAFT_ACTION_EXCEPTION: MissionId = MissionId::from_raw(0x1e);
 
 /// An exact input that the current Rust owner could not supply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum ReadyUnavailable {
+pub enum ReadyUnavailable {
     #[error("exact locomotor readiness input is unavailable")]
     Locomotor,
     #[error("exact signed object height is unavailable")]
@@ -125,7 +125,7 @@ pub(crate) struct BuildingReadyView<'a> {
 
 /// Base MissionClass, RadioClass, and FootClass add no readiness gate.
 #[inline]
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) const fn base_ready_to_commence() -> ReadyResult {
     Ok(true)
 }

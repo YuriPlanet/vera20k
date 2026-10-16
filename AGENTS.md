@@ -130,6 +130,11 @@ gameplay, range and overflow behavior. Presentation must not affect simulation
 determinism.
 
 `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`.
+The engine (`util`, `assets`, `rules`, `map`, `sim`, `net` and the headless and
+skirmish roots) is the `vera20k-core` crate (`src/Cargo.toml`); `app`, `render`,
+`ui`, `audio` and `asset_tools` stay in `vera20k`, which re-exports core's modules.
+Core's test-only code also compiles under its `test-support` feature, so client
+tests reach it; only test modules and the hooks into them stay `#[cfg(test)]`.
 App code orchestrates without owning duplicate gameplay. Current module contracts
 and `advance_tick` phases describe the architecture. Name coordinate frames/units.
 
@@ -230,14 +235,15 @@ production behavior and protection against regressions.
 Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
 Before fixing a bug whose expected behavior is established, first make a focused test fail on it where practical.
 
-- Working Rust: `cargo check -p vera20k` as needed; focused
-  `cargo test -p vera20k --lib <module_path>::`.
+- Working Rust: `cargo check --workspace` as needed; focused
+  `cargo test -p <crate> --lib <module_path>::`, where `<crate>` is `vera20k-core`
+  for engine modules and `vera20k` for `app`, `render`, `ui`, `audio` and `asset_tools`.
 - Rust PR readiness: once per PR, after any critic fixes, one full
-  `cargo test -p vera20k --lib` with retail `ini/` and `VERA20K_REQUIRE_RETAIL_INI=1`;
+  `cargo test --workspace --lib` with retail `ini/` and `VERA20K_REQUIRE_RETAIL_INI=1`;
   no baseline runs, and rerun only after a failure or a `main` merge conflict. Tests
   tagged `#[ignore = "slow; …"]` run (`-- --ignored`) only when your change touches
   what they cover. Don't dispatch the manual platform workflows unless asked.
-- Clippy: once a month on `main`, not per PR: `cargo clippy -p vera20k --lib` in the
+- Clippy: once a month on `main`, not per PR: `cargo clippy --workspace --lib` in the
   same environment, with its fixes in one PR.
 - Asset binding, loader or rules-closure changes: a release-build retail map load
   before merge; the lib suite never runs the app loader against retail assets.

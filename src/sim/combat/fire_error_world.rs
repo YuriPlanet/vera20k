@@ -386,7 +386,7 @@ impl<'a> FireSubject<'a> {
     }
 
     /// This subject's facts, both halves read now.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn whole_facts(&self) -> FireFacts {
         self.facts(&self.firer_part(), self.resolve_target())
     }

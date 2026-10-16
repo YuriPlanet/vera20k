@@ -128,11 +128,11 @@ pub(crate) struct PathBatch {
     #[serde(skip)]
     entry_facts: EntryFacts,
     /// Answers Find_Path used, by [`WaitingRequest`].
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     used: [usize; 2],
     /// The Foots the latest pass answered.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     answered: Vec<u64>,
 }
@@ -305,7 +305,7 @@ impl Simulation {
             return None;
         }
         let answer = slot.take()?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             batch.used[answer.request as usize] += 1;
         }
@@ -323,7 +323,7 @@ impl Simulation {
             return;
         };
         batch.ready.clear();
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         batch.answered.clear();
         let pending = std::mem::take(&mut batch.pending);
         if pending.is_empty() {
@@ -347,7 +347,7 @@ impl Simulation {
         };
         let mut answers = answers.into_iter();
         let batch = self.path_batch.as_mut().expect("batching is on");
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             batch.answered = pending.iter().map(|&(id, _)| id).collect();
         }
@@ -415,14 +415,14 @@ impl Simulation {
             .shared_cell_dummy();
         // Main is shared with retained playback, which may draw on another
         // thread, so only tests check that the searches draw nothing.
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         let rng = sim.rng_state();
         let answers = crate::sim::parallel::map(pending, |&(id, request)| {
             dummy.detached(|| {
                 sim.batched_search(id, request, rules, registry, grid, counts, Some(facts))
             })
         });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         assert_eq!(rng, sim.rng_state(), "batched searches draw no RNG");
         answers
     }

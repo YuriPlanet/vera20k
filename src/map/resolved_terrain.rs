@@ -40,10 +40,11 @@ use crate::rules::overlay_types::{
     OverlayTypeFlags, OverlayTypeRegistry, clears_tiberium_on_slope, retained_overlay_land,
     uses_early_recalc_land_branch,
 };
+use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass, TerrainRules};
 use crate::util::pixel_conversion::PixelConversionBounds;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{
     Arc,
     atomic::{AtomicI16, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering},
@@ -65,14 +66,13 @@ mod tubes;
 mod damaged_radar_tests;
 #[cfg(test)]
 mod pavement_catalog_tests;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 mod tests;
 
 pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
-pub(crate) use build::{
-    AuthoredTerrainFill, OverlayLoadSource, RadarColorMetadata, current_tile_permissions,
-};
+pub use build::OverlayLoadSource;
+pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
 pub(crate) use cell_recalc::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
@@ -85,9 +85,9 @@ pub(crate) use native_cell::{
 pub use native_cell::{NativeCellQuery, SharedCellDummy, SharedCellDummySnapshot};
 use recalc_catalog::BridgeRecalcCatalog;
 pub(crate) use recalc_catalog::BridgeRecalcCatalogError;
-pub(crate) use saved_terrain::{SavedTerrainError, SavedTerrainTemplate};
-#[cfg(test)]
-pub(crate) use tests::{
+pub use saved_terrain::{SavedTerrainError, SavedTerrainTemplate};
+#[cfg(any(test, feature = "test-support"))]
+pub use tests::{
     bridge_constructor_terrain, install_bridge_batch_test_catalog,
     install_bridge_query_test_catalog, install_no_registered_tiles_test_catalog,
     install_ordinary_repair_test_catalog, install_tunnel_repair_test_catalog,
@@ -362,6 +362,57 @@ pub struct TerrainTileAnimation {
     pub z_adjust: i32,
 }
 
+/// Scheduler asset roots required by this map's surviving runtime objects.
+///
+/// Damage-fire roots remain part of the established closure. Terrain animation
+/// names come exclusively from resolved theater `Tile##Anim` data, so custom
+/// names take the same path without a WA/TUNTOP name table in Rust.
+pub fn scheduler_anim_roots(
+    rules: &RuleSet,
+    overlay_registry: &OverlayTypeRegistry,
+    tile_animations: &[TerrainTileAnimation],
+) -> Vec<String> {
+    let mut roots = BTreeSet::new();
+    roots.extend(
+        rules
+            .general
+            .damage_fire_types
+            .iter()
+            .map(|anim| anim.name.trim().to_ascii_uppercase())
+            .filter(|name| !name.is_empty()),
+    );
+    roots.extend(
+        tile_animations
+            .iter()
+            .map(|anim| anim.anim_name.trim().to_ascii_uppercase())
+            .filter(|name| !name.is_empty()),
+    );
+    // [General] Wake= is constructed as an ordinary AnimClass by the drive
+    // locomotor's process (0x004B0823 region), so it needs the same loader
+    // bounds as every other scheduler-owned anim or its constructor refuses it.
+    {
+        let wake = rules.general.wake.name.trim().to_ascii_uppercase();
+        if !wake.is_empty() {
+            roots.insert(wake);
+        }
+    }
+    roots.extend(
+        [
+            rules.crate_rules.wood_crate_img.as_deref(),
+            rules.crate_rules.crate_img.as_deref(),
+            rules.crate_rules.water_crate_img.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(|name| overlay_registry.id_for_name(name))
+        .filter_map(|overlay_id| overlay_registry.flags(overlay_id))
+        .filter_map(|flags| flags.cell_anim.as_deref())
+        .map(|name| name.trim().to_ascii_uppercase())
+        .filter(|name| !name.is_empty()),
+    );
+    roots.into_iter().collect()
+}
+
 /// Leptons per cell along one map axis.
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 /// Cell-centre offset used by the tile-animation spawn coordinate.
@@ -372,7 +423,7 @@ const CELL_CENTRE_LEPTONS: i32 = LEPTONS_PER_CELL / 2;
 /// and skipped by Simulation snapshots, so collapse projects these exact
 /// fields into Simulation and reapplies them after map reconstruction.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct DynamicTerrainCellState {
+pub struct DynamicTerrainCellState {
     pub final_tile_index: i32,
     pub final_sub_tile: u8,
     pub is_wood_bridge_repair_tile: bool,
@@ -419,7 +470,7 @@ pub(crate) struct DynamicTerrainCellState {
 }
 
 impl DynamicTerrainCellState {
-    pub(crate) fn capture(cell: &ResolvedTerrainCell) -> Self {
+    pub fn capture(cell: &ResolvedTerrainCell) -> Self {
         Self {
             final_tile_index: cell.final_tile_index,
             final_sub_tile: cell.final_sub_tile,
@@ -540,9 +591,9 @@ pub struct ResolvedTerrainGrid {
     /// Derived asset data, keyed by tile identity rather than mutable cell:
     /// never serialized or included in simulation hashes.
     native_tmp_draw_heights: HashMap<u16, PristineTmpHeader>,
-    #[cfg(test)]
-    pub(crate) cells: Vec<ResolvedTerrainCell>,
-    #[cfg(not(test))]
+    #[cfg(any(test, feature = "test-support"))]
+    pub cells: Vec<ResolvedTerrainCell>,
+    #[cfg(not(any(test, feature = "test-support")))]
     cells: Vec<ResolvedTerrainCell>,
     /// One live identity handle, normally bound to the process owner before
     /// scenario construction. Synthetic constructors own a fresh detached
@@ -609,8 +660,8 @@ pub struct ResolvedTerrainGrid {
 
 /// A `size` x `size` flat level-0 grid whose land rows admit Foot, Track and
 /// Wheel at 100%: the inputs the native Foot `Can_Enter_Cell` reads.
-#[cfg(test)]
-pub(crate) fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
     let costs = SpeedCostProfile {
         foot: Some(100),
         track: Some(100),
@@ -625,8 +676,8 @@ pub(crate) fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
 }
 
 /// A `width` x `height` grid of `cell(rx, ry)`, in row-major order.
-#[cfg(test)]
-pub(crate) fn test_grid(
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_grid(
     width: u16,
     height: u16,
     mut cell: impl FnMut(u16, u16) -> ResolvedTerrainCell,
@@ -641,8 +692,8 @@ pub(crate) fn test_grid(
 }
 
 /// Every SpeedType at 100%.
-#[cfg(test)]
-pub(crate) const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
+#[cfg(any(test, feature = "test-support"))]
+pub const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
     foot: Some(100),
     track: Some(100),
     wheel: Some(100),
@@ -653,7 +704,7 @@ pub(crate) const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
 };
 
 /// [`test_flat_cell`] whose base terrain class is Clear.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         base_terrain_class: TerrainClass::Clear,
@@ -662,8 +713,8 @@ pub(crate) fn test_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 }
 
 /// [`test_clear_cell`] that accepts smudges.
-#[cfg(test)]
-pub(crate) fn test_smudge_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_smudge_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         accepts_smudge: true,
         ..test_clear_cell(rx, ry)
@@ -671,7 +722,7 @@ pub(crate) fn test_smudge_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 }
 
 /// [`test_smudge_cell`] that also allows tiberium.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_tiberium_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         allows_tiberium: true,
@@ -681,7 +732,7 @@ pub(crate) fn test_tiberium_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 
 /// [`test_flat_cell`] that is `filled_clear`, has an Unknown terrain class
 /// (`TerrainClass`'s default) and accepts smudges.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_unclassified_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         filled_clear: true,
@@ -693,8 +744,8 @@ pub(crate) fn test_unclassified_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 
 /// [`test_smudge_cell`] as the map loader fills a clear cell: `filled_clear`
 /// and no tileset.
-#[cfg(test)]
-pub(crate) fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         filled_clear: true,
         tileset_index: None,
@@ -704,8 +755,8 @@ pub(crate) fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 
 /// A fully-populated flat `ResolvedTerrainCell`, for tests in other modules that
 /// need a grid and should not carry a 47-field copy of this literal.
-#[cfg(test)]
-pub(crate) fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         rx,
         ry,
@@ -837,7 +888,7 @@ impl ResolvedTerrainGrid {
             .unwrap_or_default()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_land_speed_rules_for_test(&mut self, rules: &TerrainRules) {
         self.land_speed_costs = land_speed_cost_profiles(Some(rules));
     }
@@ -851,12 +902,12 @@ impl ResolvedTerrainGrid {
         self.width
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn projectile_water_set_base(&self) -> i32 {
         self.water_tiles.water_base
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_projectile_water_set_base(&mut self, base: i32) {
         self.water_tiles.water_base = base;
     }
@@ -896,11 +947,7 @@ impl ResolvedTerrainGrid {
         tile >= base && tile < base.wrapping_add(14)
     }
 
-    pub(crate) fn current_tile_radar_metadata(
-        &self,
-        rx: u16,
-        ry: u16,
-    ) -> Option<RadarColorMetadata> {
+    pub fn current_tile_radar_metadata(&self, rx: u16, ry: u16) -> Option<RadarColorMetadata> {
         let index = self.index(rx, ry)?;
         let cell = self.cells.get(index)?;
         if cell.bridge_facts.raw_flags & super::bridge_pavement::DAMAGED_PAVEMENT != 0
@@ -920,8 +967,8 @@ impl ResolvedTerrainGrid {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn test_set_damaged_radar_metadata(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_set_damaged_radar_metadata(
         &mut self,
         rx: u16,
         ry: u16,
@@ -937,7 +984,7 @@ impl ResolvedTerrainGrid {
 
     /// Native GetSubtileDimensions height, not the union image canvas height.
     /// 0x704350 uses the pristine TMP even when a damaged sibling is displayed.
-    pub(crate) fn native_tmp_draw_height(&self, tile: i32, sub_tile: u8) -> i32 {
+    pub fn native_tmp_draw_height(&self, tile: i32, sub_tile: u8) -> i32 {
         let key = if matches!(tile, -1 | 0xFF | 0xFFFF) {
             (self.clear_tile_id, 0)
         } else if let Ok(tile) = u16::try_from(tile) {
@@ -969,14 +1016,14 @@ impl ResolvedTerrainGrid {
 
     /// Tactical480350 pins the pristine file when the native file count is
     /// below two. Keep this distinct from the pristine damaged-data predicate.
-    pub(crate) fn native_tmp_file_count(&self, tile: i32) -> Option<usize> {
+    pub fn native_tmp_file_count(&self, tile: i32) -> Option<usize> {
         let tile = u16::try_from(tile).ok()?;
         self.native_tmp_draw_heights
             .get(&tile)
             .map(|head| head.total_file_count)
     }
 
-    pub(crate) fn concrete_bridge_set_base(&self) -> i32 {
+    pub fn concrete_bridge_set_base(&self) -> i32 {
         self.bridge_set_start.map_or(-1, i32::from)
     }
 
@@ -999,8 +1046,8 @@ impl ResolvedTerrainGrid {
         self.high_bridge_rim_tiles
     }
 
-    #[cfg(test)]
-    pub(crate) fn test_set_high_bridge_rim_tiles(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_set_high_bridge_rim_tiles(
         &mut self,
         tiles: super::bridge_rim_tiles::HighBridgeRimTiles,
     ) {
@@ -1048,8 +1095,8 @@ impl ResolvedTerrainGrid {
             .unwrap_or(false)
     }
 
-    #[cfg(test)]
-    pub(crate) fn test_set_radar_color_valid(&mut self, rx: u16, ry: u16, valid: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_set_radar_color_valid(&mut self, rx: u16, ry: u16, valid: bool) {
         if let Some(index) = self.index(rx, ry)
             && let Some(slot) = self.radar_color_valid.get_mut(index)
         {
@@ -1072,7 +1119,7 @@ impl ResolvedTerrainGrid {
     /// run in game builds as well as tests: a tree destroyed mid-match must
     /// invalidate the plane in the shipped binary. An earlier revision bumped
     /// only a `cfg(test)` body, which the suite could not detect.
-    pub(crate) fn cell_mut(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
+    pub fn cell_mut(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
         let idx = self.index(rx, ry)?;
         self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
         self.cells.get_mut(idx)
@@ -1146,8 +1193,8 @@ impl ResolvedTerrainGrid {
             })
     }
 
-    #[cfg(test)]
-    pub(crate) fn test_set_high_bridge_set_starts(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_set_high_bridge_set_starts(
         &mut self,
         bridge_set_start: Option<u16>,
         wood_bridge_set_start: Option<u16>,
@@ -1171,12 +1218,12 @@ impl crate::map::terrain::TacticalBridgeLookup for ResolvedTerrainGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl ResolvedTerrainCell {
     /// A clear, level, walkable cell for focused terrain fixtures. Mirrors the
     /// template the terrain-object tests build by hand; `zone_type` and the
     /// overlay fields are the knobs a test turns.
-    pub(crate) fn clear_for_test(rx: u16, ry: u16) -> Self {
+    pub fn clear_for_test(rx: u16, ry: u16) -> Self {
         let speed_costs = SpeedCostProfile {
             wheel: Some(100),
             ..Default::default()

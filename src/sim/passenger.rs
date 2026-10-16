@@ -19,9 +19,9 @@
 
 mod departure;
 pub(crate) mod garrison_eject;
-pub(crate) use departure::{
-    DepartureFailure, DepartureRoute, depart_cargo_head, exit_cell_position,
-    reveal_unloaded_passenger,
+pub(crate) use departure::DepartureFailure;
+pub use departure::{
+    DepartureRoute, depart_cargo_head, exit_cell_position, reveal_unloaded_passenger,
 };
 
 use std::collections::BTreeMap;
@@ -157,25 +157,25 @@ impl PassengerCargo {
     }
 
     /// Install a fixture's firing occupant.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_garrison_fire_index_for_test(&mut self, index: u8) {
         self.garrison_fire_index = index;
     }
 
     /// Install a fixture's passenger list, sizes untouched.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_passengers_for_test(&mut self, passengers: Vec<u64>) {
         self.passengers = passengers;
     }
 
     /// Install a fixture's admission-time sizes.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_passenger_sizes_for_test(&mut self, sizes: Vec<u32>) {
         self.passenger_sizes = sizes;
     }
 
     /// Install a fixture's total size, whatever the sizes say.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_total_size_for_test(&mut self, total_size: u32) {
         self.total_size = total_size;
     }
@@ -359,7 +359,7 @@ enum Role {
 impl PassengerRole {
     /// The role of a type that holds passengers (`Passengers=`, or a
     /// garrison's `MaxNumberOccupants=`), with its empty hold.
-    pub(crate) fn transport(cargo: PassengerCargo) -> Self {
+    pub fn transport(cargo: PassengerCargo) -> Self {
         Self {
             role: Role::Transport { cargo },
         }
@@ -498,7 +498,7 @@ impl PassengerRole {
     }
 
     /// The cargo hold, for its own boarding, unload and teardown methods.
-    pub(crate) fn cargo_mut(&mut self) -> Option<&mut PassengerCargo> {
+    pub fn cargo_mut(&mut self) -> Option<&mut PassengerCargo> {
         match &mut self.role {
             Role::Transport { cargo } => Some(cargo),
             _ => Option::None,
@@ -535,14 +535,14 @@ impl PassengerRole {
     }
 
     /// No hold and no carrier relation.
-    #[cfg(test)]
-    pub(crate) fn is_none(&self) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn is_none(&self) -> bool {
         matches!(self.role, Role::None)
     }
 
     /// A fixture's passenger inside `transport_id`, replacing any hold.
-    #[cfg(test)]
-    pub(crate) fn inside_for_test(transport_id: u64, open_topped: bool) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn inside_for_test(transport_id: u64, open_topped: bool) -> Self {
         Self {
             role: Role::Inside {
                 transport_id,
@@ -553,7 +553,7 @@ impl PassengerRole {
 
     /// A fixture's Foot walking to board `target_transport_id`, replacing
     /// any hold.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn boarding_for_test(target_transport_id: u64) -> Self {
         Self {
             role: Role::Boarding {
@@ -807,7 +807,7 @@ pub(crate) fn begin_boarding(foot: &mut GameEntity, target: u64) {
 /// remaining Boarding adapters still run here. RESIDUAL: a building Enter
 /// adapter reached before its receiver's native AI turn can take effect a
 /// frame late. Its separate arrival integration is excluded movement work.
-pub(crate) fn tick_passenger_system(
+pub fn tick_passenger_system(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -1226,7 +1226,7 @@ pub(crate) fn process_boarding_passenger(
 /// building's occupants are killed, and the assaulter drops its destination
 /// and scatters) is not represented; no retail infantry is an assaulter.
 /// VERA's passenger also drops its movement and order state.
-pub(crate) fn add_garrison_occupant(
+pub fn add_garrison_occupant(
     sim: &mut Simulation,
     rules: &RuleSet,
     pax_id: u64,
@@ -1530,7 +1530,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
 
 /// Test driver for one supplied cell arrival through the existing class owner,
 /// without running the separate Building AI ownership-reconciliation phase.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
     let boarding_ids: Vec<u64> = sim
         .substrate

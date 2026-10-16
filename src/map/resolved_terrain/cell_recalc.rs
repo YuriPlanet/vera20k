@@ -71,7 +71,7 @@ impl<'a> LoadCellRecalcState<'a> {
     /// Explicitly synthetic fallback for focused map-owner tests. Production
     /// authored loading must use `for_authored_load` so missing theater/TMP
     /// authority cannot silently become heuristic metadata.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn synthetic(overlay_types: &'a OverlayTypeRegistry, cell_count: usize) -> Self {
         Self {
             theater_data: None,
@@ -156,11 +156,11 @@ impl<'a> LoadCellRecalcState<'a> {
             )));
         }
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             Ok(Some(TileMetadata::from_resolved_cell(synthetic_cell)))
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "test-support")))]
         {
             let _ = synthetic_cell;
             unreachable!("production load Recalc requires theater/TMP authority")
@@ -251,7 +251,7 @@ pub(crate) struct AutomaticTubeRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AutomaticTubeAllocation {
     /// Native's failed allocation; only test hosts answer it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     AllocationNull,
     Allocated {
         native_unique_id: i32,
@@ -543,7 +543,7 @@ impl ResolvedTerrainGrid {
                         .allocate_automatic_tube(request)
                         .map_err(LoadCellRecalcError::Effect)?
                     {
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "test-support"))]
                         AutomaticTubeAllocation::AllocationNull => {}
                         AutomaticTubeAllocation::Allocated {
                             native_unique_id,

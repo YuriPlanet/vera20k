@@ -2,11 +2,11 @@
 //! byte. World scheduling/effects use these owner APIs without writable views.
 
 use super::GameEntity;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::building_construction::BuildingUp;
 use crate::sim::building_construction::{BuildingBodyMode, BuildingDown, PackUpFrame};
 use crate::sim::game_options::GameOptions;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::mission::MissionId;
 use crate::sim::mission::MissionType;
 
@@ -17,8 +17,8 @@ impl GameEntity {
             .expect("building body requires Structure")
             .bind_control(control);
     }
-    #[cfg(test)]
-    pub(crate) fn install_building_up(&mut self, entry: BuildingUp, now: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn install_building_up(&mut self, entry: BuildingUp, now: i32) {
         entry.install(self, now);
     }
     /// Construction is the effective native mission, including a queued entry.
@@ -98,18 +98,18 @@ impl GameEntity {
             body.apply_queued(&mut self.stage, now, options);
         }
     }
-    pub(crate) fn building_body_state(&self) -> Option<i32> {
+    pub fn building_body_state(&self) -> Option<i32> {
         self.building_body.as_ref().map(|body| body.state())
     }
-    pub(crate) fn queued_building_body_state(&self) -> Option<i32> {
+    pub fn queued_building_body_state(&self) -> Option<i32> {
         self.building_body.as_ref().map(|body| body.queued())
     }
-    pub(crate) fn building_ready_latch(&self) -> u8 {
+    pub fn building_ready_latch(&self) -> u8 {
         self.mission_leaf
             .as_building()
             .map_or(0, |leaf| leaf.ready_latch())
     }
-    pub(crate) fn building_construction_control(&self) -> [i32; 3] {
+    pub fn building_construction_control(&self) -> [i32; 3] {
         self.building_body
             .as_ref()
             .expect("building control requires Structure")
@@ -124,8 +124,8 @@ impl GameEntity {
         self.stage.value()
     }
 
-    #[cfg(test)]
-    pub(crate) fn finish_building_construction_for_test(&mut self) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn finish_building_construction_for_test(&mut self) {
         crate::sim::mission::authority::queue_entity_mission_deferred(
             self,
             MissionId::from_known(MissionType::Guard),
@@ -134,7 +134,7 @@ impl GameEntity {
         self.initialize_building_idle_body(0);
         self.mission_leaf.set_building_ready_latch(0);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn finish_pack_up_for_test(&mut self) {
         self.mission_leaf.set_building_ready_latch(1);
         self.mission.set_handler_state(2);

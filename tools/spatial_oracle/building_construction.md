@@ -81,9 +81,9 @@ requested SHP files; the generator records filenames and hashes.
 python -m tools.spatial_oracle.building_construction --check
 python -m tools.spatial_oracle.building_construction --joined --check
 VERA20K_REQUIRE_RETAIL_INI=1 VERA20K_REQUIRE_RETAIL_ASSETS=1 \
-  python -m tools.cargo_run -- test -p vera20k --lib sim::world::techno_ai::building_missions::construction_tests::
+  python -m tools.cargo_run -- test -p vera20k-core --lib sim::world::techno_ai::building_missions::construction_tests::
 VERA20K_REQUIRE_RETAIL_INI=1 VERA20K_REQUIRE_RETAIL_ASSETS=1 \
-  python -m tools.cargo_run -- test -p vera20k --lib sim::world::techno_ai::building_missions::opening_oracle_tests::
+  python -m tools.cargo_run -- test -p vera20k-core --lib sim::world::techno_ai::building_missions::opening_oracle_tests::
 ```
 
 The ordinary release-map production receipt (`tools/spatial_oracle/building_construction.production.json`, in git at 1b1a8b43e)

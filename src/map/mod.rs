@@ -18,14 +18,14 @@ pub mod actions;
 pub(crate) mod authored_overlay;
 pub mod basic;
 pub mod bridge_facts;
-pub(crate) mod bridge_pavement;
-pub(crate) mod bridge_rim_tiles;
+pub mod bridge_pavement;
+pub mod bridge_rim_tiles;
 pub mod cell_index;
 pub(crate) mod construction_trace;
 pub mod scenario_menu;
-pub(crate) mod scenario_sources;
+pub mod scenario_sources;
 pub mod skirmish_scenarios;
-pub(crate) mod source;
+pub mod source;
 pub mod cell_tags;
 pub mod entities;
 pub mod events;
@@ -55,4 +55,4 @@ pub(crate) mod voxel_slope;
 // Future modules — uncomment as implemented:
 // pub mod cell;
 
-pub(crate) mod voxel_pose;
+pub mod voxel_pose;

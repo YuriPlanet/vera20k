@@ -122,7 +122,7 @@ pub(crate) enum DamageGate {
 
 /// Health-state classification returned by the receiver pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DamageState {
+pub enum DamageState {
     Unaffected,
     Damaged,
     Yellow,

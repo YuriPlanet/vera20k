@@ -127,7 +127,7 @@ const DO_SHOVEL: i32 = 38;
 
 /// The manager's own state (`SlaveManagerClass+0x5C`, jump table `0x006B0238`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum ManagerState {
+pub enum ManagerState {
     /// 0: idle; a building owner moves on once it has built up.
     Ready = 0,
     /// 1: a Slave Miner looks for a field (chain 6).
@@ -165,7 +165,7 @@ pub(crate) enum SlaveState {
 
 /// A `SlaveControl` node (0x14 bytes): the slave, its state and its timer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SlaveNode {
+pub struct SlaveNode {
     slave: Option<u64>,
     state: SlaveState,
     timer: CdTimer,
@@ -173,7 +173,7 @@ pub(crate) struct SlaveNode {
 
 impl SlaveNode {
     /// A fixture's node.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn for_test(slave: Option<u64>, state: SlaveState, timer: CdTimer) -> Self {
         Self {
             slave,
@@ -183,31 +183,31 @@ impl SlaveNode {
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn slave(&self) -> Option<u64> {
         self.slave
     }
 
     /// A fixture's value.
-    #[cfg(test)]
-    pub(crate) fn set_slave_for_test(&mut self, slave: Option<u64>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_slave_for_test(&mut self, slave: Option<u64>) {
         self.slave = slave;
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn state(&self) -> SlaveState {
         self.state
     }
 
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_state_for_test(&mut self, state: SlaveState) {
         self.state = state;
     }
 
     /// See the field.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn timer(&self) -> &CdTimer {
         &self.timer
     }
@@ -217,7 +217,7 @@ impl SlaveNode {
 /// is the entity holding it; FreeSlaves takes it off the master, which stands
 /// for the owner's release (`0x006B0C67`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SlaveManager {
+pub struct SlaveManager {
     /// `+0x28`: the `Enslaves=` type.
     slave_type: InternedId,
     /// `+0x30`: `SlaveRegenRate`.
@@ -265,22 +265,22 @@ impl SlaveManager {
         }
     }
 
-    pub(crate) fn state(&self) -> ManagerState {
+    pub fn state(&self) -> ManagerState {
         self.state
     }
 
-    #[cfg(test)]
-    pub(crate) fn frame(&self) -> i32 {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn frame(&self) -> i32 {
         self.frame
     }
 
-    #[cfg(test)]
-    pub(crate) fn nodes(&self) -> &[SlaveNode] {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn nodes(&self) -> &[SlaveNode] {
         &self.nodes
     }
 
-    #[cfg(test)]
-    pub(crate) fn ai_timer(&self) -> CdTimer {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn ai_timer(&self) -> CdTimer {
         self.ai_timer
     }
 
@@ -297,8 +297,8 @@ impl SlaveManager {
             .any(|node| node.slave == Some(slave))
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(
         &mut self,
         state: ManagerState,
         frame: i32,
@@ -316,25 +316,25 @@ impl SlaveManager {
 /// the master whose manager holds it, and its Storage (`+0x33C`), one bale
 /// per level of ore or gems. Only this module writes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SlaveLink {
+pub struct SlaveLink {
     owner: Option<u64>,
     cargo: Vec<CargoBale>,
 }
 
 impl SlaveLink {
     /// SlaveOwner: the master whose manager holds this slave.
-    pub(crate) fn owner(&self) -> Option<u64> {
+    pub fn owner(&self) -> Option<u64> {
         self.owner
     }
 
     /// The Storage levels the slave carries, in the order it cut them.
-    pub(crate) fn cargo(&self) -> &[CargoBale] {
+    pub fn cargo(&self) -> &[CargoBale] {
         &self.cargo
     }
 
     /// A slave of `master` carrying `cargo`, for fixtures.
-    #[cfg(test)]
-    pub(crate) fn for_test(master: Option<u64>, cargo: Vec<CargoBale>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(master: Option<u64>, cargo: Vec<CargoBale>) -> Self {
         Self {
             owner: master,
             cargo,

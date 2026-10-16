@@ -60,7 +60,7 @@ Rust regression and real production shader readback checks:
 
 ```powershell
 python -m tools.cargo_run -- test -p vera20k --lib render::palette_light::
-python -m tools.cargo_run -- test -p vera20k --lib map::lighting::tests::native_
+python -m tools.cargo_run -- test -p vera20k-core --lib map::lighting::tests::native_
 python -m tools.cargo_run -- test -p vera20k --lib native_palette_tables_match_all_ordinary_shader_pixels -- --ignored --nocapture
 python -m tools.cargo_run -- test -p vera20k --lib native_shp_loader_atlas_palette_indices_reach_production_pixels -- --ignored --nocapture
 ```

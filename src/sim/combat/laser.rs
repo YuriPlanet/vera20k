@@ -10,7 +10,7 @@ use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
 use crate::sim::world::{LifecycleOutput, Simulation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LaserBirth {
+pub struct LaserBirth {
     pub frame: i32,
     pub from: ProjectileCoord,
     pub to: ProjectileCoord,
@@ -23,7 +23,7 @@ pub(crate) struct LaserBirth {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LaserColor {
+pub enum LaserColor {
     /// House+56FC is resolved once at construction by the existing client
     /// color owner. Capture the owner now, never look up the firer later.
     House(InternedId),

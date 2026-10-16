@@ -339,7 +339,7 @@ impl RawCellOccupationGrid {
         self.cells.get(&(rx, ry)).map_or(0, |cell| cell.ground)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn ground_infantry_owner(&self, rx: u16, ry: u16) -> Option<InternedId> {
         self.cells
             .get(&(rx, ry))
@@ -353,7 +353,7 @@ impl RawCellOccupationGrid {
     /// The interned house identity survives entity retirement and ownership
     /// changes, matching native's retained House index. Repair CanEnter uses
     /// this raw slot even when no infantry object remains in the selected list.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mark_ground_infantry(&mut self, rx: u16, ry: u16, mask: u8, owner: InternedId) {
         let key = RawCellKey::Real(rx, ry);
         self.write_occupant(key, MovementLayer::Ground, mask, Some(owner), true);
@@ -363,7 +363,7 @@ impl RawCellOccupationGrid {
     /// `+0xF4`, `0x007EB14C`) resets the selected owner to `0xFFFFFFFF` only
     /// once `byte & 0x1C == 0`, i.e. after functional sub-cells 2..4 are all
     /// clear. Bits 0/1 do not retain it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_ground_infantry(&mut self, rx: u16, ry: u16, mask: u8) {
         let key = RawCellKey::Real(rx, ry);
         self.write_occupant(key, MovementLayer::Ground, mask, None, false);
@@ -383,14 +383,14 @@ impl RawCellOccupationGrid {
         self.cells.get(&(rx, ry)).map_or(0, |cell| cell.deck)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn deck_infantry_owner(&self, rx: u16, ry: u16) -> Option<InternedId> {
         self.cells
             .get(&(rx, ry))
             .and_then(|cell| cell.deck_infantry_owner)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mark_deck_infantry(&mut self, rx: u16, ry: u16, mask: u8, owner: InternedId) {
         let key = RawCellKey::Real(rx, ry);
         self.write_occupant(key, MovementLayer::Bridge, mask, Some(owner), true);
@@ -544,13 +544,13 @@ impl HiddenOccupationGrid {
 /// slot, and when it was released, is not reconstructible from entity positions
 /// or locomotor phase.
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AirSlotGrid {
+pub struct AirSlotGrid {
     cells: CellMap<u64>,
 }
 
 impl AirSlotGrid {
     /// The object holding the cell's slot, if any.
-    pub(crate) fn holder(&self, rx: u16, ry: u16) -> Option<u64> {
+    pub fn holder(&self, rx: u16, ry: u16) -> Option<u64> {
         self.cells.get(&(rx, ry)).copied()
     }
 
@@ -636,7 +636,7 @@ impl VehicleOccupationPlane {
         self.owners.remove(&entity_id);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn bits(&self) -> u8 {
         self.owners
             .values()
@@ -644,7 +644,7 @@ impl VehicleOccupationPlane {
             .fold(0, |bits, mark| bits | mark)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn bits_ignoring(&self, entity_id: u64) -> u8 {
         self.owners
             .iter()
@@ -665,7 +665,7 @@ struct CellVehicleOccupation {
 }
 
 impl CellVehicleOccupation {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn plane(&self, layer: MovementLayer) -> Option<&VehicleOccupationPlane> {
         match layer {
             MovementLayer::Ground => Some(&self.ground),
@@ -741,7 +741,7 @@ impl OwnerOccupationFootprints {
         self.marks.is_empty()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn len(&self) -> usize {
         self.marks.len()
     }
@@ -954,7 +954,7 @@ impl CellOccupationGrid {
 
     /// Mark-layer selection: elevated objects use the deck only when the cell
     /// still carries the structural bridge fact.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mark_vehicle_by_height(
         &mut self,
         rx: u16,
@@ -974,7 +974,7 @@ impl CellOccupationGrid {
 
     /// Clear-layer selection: the height result alone selects the deck. This
     /// preserves cleanup after the structural bridge flag has disappeared.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_vehicle_by_height(
         &mut self,
         rx: u16,
@@ -991,7 +991,7 @@ impl CellOccupationGrid {
         layer
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn vehicle_bits(&self, rx: u16, ry: u16, layer: MovementLayer) -> u8 {
         self.cells
             .get(&(rx, ry))
@@ -999,7 +999,7 @@ impl CellOccupationGrid {
             .map_or(0, VehicleOccupationPlane::bits)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn vehicle_bits_ignoring(
         &self,
         rx: u16,
@@ -1013,7 +1013,7 @@ impl CellOccupationGrid {
             .map_or(0, |plane| plane.bits_ignoring(entity_id))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn occupied_by_other(
         &self,
         rx: u16,
@@ -1027,7 +1027,7 @@ impl CellOccupationGrid {
 
 /// A paid Drive point clears the owner's current-coordinate occupation before
 /// the coordinate commit. Object-list membership is intentionally untouched.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn clear_current_drive_occupation_for_paid_point(
     foot_occupation_enabled: &mut bool,
     occupation: &mut CellOccupationGrid,
@@ -1576,7 +1576,7 @@ impl OccupancyGrid {
     }
 
     /// Total number of occupied cells (for diagnostics).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn occupied_cell_count(&self) -> usize {
         self.cells.len()
     }

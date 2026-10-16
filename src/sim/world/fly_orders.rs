@@ -613,7 +613,7 @@ impl Simulation {
             });
         };
         let order = self.fly_stop_order(id, rules);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(order) = order {
             self.trace_lifecycle_for_test(super::LifecycleTestEvent::FlyStopOrdered { id, order });
         }
@@ -717,7 +717,7 @@ impl Simulation {
 /// What Fly's `Stop_Moving` does to a moving Aircraft
 /// ([`Simulation::fly_stop_order`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FlyStopOrder {
+pub enum FlyStopOrder {
     /// `ReceiveDamage` with `C4Warhead=` (`0x004CD0CD`).
     SelfDestruct,
     /// The owner's class setter (vt+0x480) with this target (`0x004CD0F7`,

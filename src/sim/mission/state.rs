@@ -55,7 +55,7 @@ impl MissionId {
     }
 
     /// Return the dispatch-table index only for known dispatched missions.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn dispatch_index(self) -> Option<usize> {
         let raw = self.0;
         (0..MISSION_COUNT as i32)
@@ -223,9 +223,9 @@ impl MissionCom {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct MissionTestFixture {
+pub struct MissionTestFixture {
     pub current: MissionId,
     pub suspended: MissionId,
     pub queued: MissionId,
@@ -236,7 +236,7 @@ pub(crate) struct MissionTestFixture {
     pub dispatch_timer: MissionDispatchTimer,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl MissionCom {
     /// A handler mid-mission: `current` holding Mission+0xBC `handler_state`,
     /// the other fields kept.

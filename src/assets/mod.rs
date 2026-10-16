@@ -50,5 +50,5 @@ pub mod tmp_file;
 pub mod vpl_file;
 pub mod vxl_decode;
 pub mod vxl_file;
-pub(crate) mod wav_file;
+pub mod wav_file;
 pub mod xcc_database;

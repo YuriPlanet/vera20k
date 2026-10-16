@@ -48,7 +48,7 @@ impl DoorClass {
         self.phase
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn timer_fields(self) -> (i32, i32, i32) {
         (
             self.timer.start_frame(),

@@ -108,7 +108,7 @@ fn fireat_arc_pitch(
 
 /// World receiver results are resolved by the firing owner, before this scalar
 /// kernel. `heading` is native DirStruct (north=0), not math BAM.
-pub(crate) struct FireAtLaunch {
+pub struct FireAtLaunch {
     pub delta: ProjectileCoord,
     pub speed: i32,
     pub vertical: bool,
@@ -126,10 +126,10 @@ pub(crate) struct FireAtLaunch {
     pub building_pitch_height: Option<i32>,
 }
 
-pub(crate) struct FireAtLaunchResult {
+pub struct FireAtLaunchResult {
     pub velocity: ProjectileVelocity,
     pub speed: i32,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub before_fire: ProjectileVelocity,
 }
 
@@ -138,7 +138,7 @@ const LEAD_SPEED_FACTOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fec_cccc_cc
 
 /// The projectile fields `WeaponTypeClass::GetSpeed` reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LaunchSpeedProjectile {
+pub struct LaunchSpeedProjectile {
     /// `BulletTypeClass+0x2DC` `ROT=`.
     pub rot: i32,
     /// `BulletTypeClass+0x295` `Floater=`.
@@ -155,7 +155,7 @@ pub(crate) struct LaunchSpeedProjectile {
 /// current firing distance instead of the Range used by its Rules postpass.
 ///
 /// Native execution: `tools/projectile_oracle/fireat_speed.py` (`speed` rows).
-pub(crate) fn weapon_launch_speed(
+pub fn weapon_launch_speed(
     weapon_speed: i32,
     projectile: Option<LaunchSpeedProjectile>,
     gravity: i32,
@@ -173,7 +173,7 @@ pub(crate) fn weapon_launch_speed(
 /// then FILD, `Sqrt_Approx` and ftol; Z takes no part.
 ///
 /// Native execution: `tools/projectile_oracle/fireat_speed.py` (`distance`).
-pub(crate) fn fireat_launch_distance(source: ProjectileCoord, target: ProjectileCoord) -> i32 {
+pub fn fireat_launch_distance(source: ProjectileCoord, target: ProjectileCoord) -> i32 {
     let dx = target.x.wrapping_sub(source.x);
     let dy = target.y.wrapping_sub(source.y);
     let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
@@ -253,7 +253,7 @@ fn offset_along(
 /// Native 70D590, after the firing owner resolves source raw Location and the
 /// current target's virtual+48 coordinate. Its second target read is equivalent
 /// for these stable Techno coordinates; cell dummy receivers remain upstream.
-pub(crate) fn high_arc_root(
+pub fn high_arc_root(
     lobber: bool,
     source: ProjectileCoord,
     target: Option<ProjectileCoord>,
@@ -602,7 +602,7 @@ fn aircraft_bullet_velocity_with_table(
 /// The fan reads the caller's old radial index; the firing owner advances it
 /// at 6FEBC5..6FEBDC, before a subsequent pitch/launch failure can occur.
 /// Native numeric controls: `tools/projectile_oracle/directed_launch.py --radial`.
-pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
+pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     let trig = TrigTable::embedded();
     let acos_table = AcosTable::retail();
     let x = X::load_i32(input.delta.x);
@@ -700,7 +700,7 @@ pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
         round(X::mul(cos(trig, pitch_radians), vy)),
         round(X::mul(sin(trig, pitch_radians), magnitude)),
     ];
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let before_fire = ProjectileVelocity::from_native(velocity.map(store));
     // Bullet::Fire 468AAC..468B57 renormalizes ROT>0 after the six DWORDs
     // have been copied, with (z*z + y*y) + x*x and another Sqrt_Approx.
@@ -712,7 +712,7 @@ pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     Some(FireAtLaunchResult {
         velocity: ProjectileVelocity::from_native(velocity.map(store)),
         speed,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         before_fire,
     })
 }

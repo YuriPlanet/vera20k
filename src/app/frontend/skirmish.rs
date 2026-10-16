@@ -12,7 +12,6 @@ use crate::map::map_file::MapFile;
 use crate::map::overlay::{OverlayEntry, TerrainObject};
 use crate::render::batch::BatchRenderer;
 use crate::render::bridge_atlas::{self, BridgeAtlas};
-use crate::render::bridge_railing_atlas::{self, BridgeRailingAtlas, BridgeRailingTileBases};
 use crate::render::gpu::GpuContext;
 use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_for_render};
 use crate::render::overlay_atlas::{self, OverlayAtlas};
@@ -81,7 +80,6 @@ pub fn deployable_building_types(rules: Option<&RuleSet>) -> Vec<&str> {
 pub(crate) struct OverlayPresentationAssets {
     pub(crate) overlay_atlas: Option<OverlayAtlas>,
     pub(crate) bridge_atlas: Option<BridgeAtlas>,
-    pub(crate) bridge_railing_atlas: Option<BridgeRailingAtlas>,
     pub(crate) overlay_names: BTreeMap<u8, String>,
     pub(crate) overlay_radar_colors: HashMap<(u8, u8), [u8; 3]>,
 }
@@ -104,7 +102,6 @@ pub(crate) fn build_overlay_presentation(
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
-    bridge_railing_tile_bases: Option<BridgeRailingTileBases>,
 ) -> OverlayPresentationAssets {
     let force_tib_remap_enabled: bool = std::env::var("RA2_FORCE_TIB3_TO_TIB01")
         .ok()
@@ -257,22 +254,9 @@ pub(crate) fn build_overlay_presentation(
         )
     });
 
-    let bridge_railing_atlas: Option<BridgeRailingAtlas> =
-        theater_palette.as_ref().and_then(|theater_pal| {
-            bridge_railing_atlas::build_bridge_railing_atlas(
-                gpu,
-                batch,
-                asset_manager,
-                theater_pal,
-                theater_ext,
-                bridge_railing_tile_bases,
-            )
-        });
-
     OverlayPresentationAssets {
         overlay_atlas: atlas,
         bridge_atlas,
-        bridge_railing_atlas,
         overlay_names,
         overlay_radar_colors,
     }

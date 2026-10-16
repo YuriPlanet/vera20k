@@ -166,8 +166,12 @@ fn retail_inactive_high_record_restamp_inventory() {
                     .map(|semantics| semantics.buildable)).collect::<Vec<_>>(),
         }));
     }
-    let output = std::env::var("VERA20K_RESTAMP_OUTPUT")
-        .unwrap_or_else(|_| "target/restamp-retail-inventory.json".into());
+    let output = std::env::var("VERA20K_RESTAMP_OUTPUT").unwrap_or_else(|_| {
+        crate::test_fixture::checkout_root()
+            .join("target/restamp-retail-inventory.json")
+            .display()
+            .to_string()
+    });
     if let Some(parent) = std::path::Path::new(&output).parent() {
         std::fs::create_dir_all(parent).expect("inventory output directory");
     }

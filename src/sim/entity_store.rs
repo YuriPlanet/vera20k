@@ -141,7 +141,7 @@ impl EntityStore {
     }
 
     /// How many mutable hand-outs the store has made (test builds only).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn hand_outs(&self) -> u64 {
         self.touched.hand_outs()
     }
@@ -554,7 +554,7 @@ impl EntityStore {
 
     /// The stored entities the AircraftTracker holds, by enter order and,
     /// for the ties only fixtures make, stable_id.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn airborne(&self) -> impl Iterator<Item = &GameEntity> {
         let mut entries: Vec<(u64, u64)> = self
             .airborne

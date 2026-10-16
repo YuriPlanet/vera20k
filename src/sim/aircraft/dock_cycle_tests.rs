@@ -257,6 +257,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
                     airfield_type,
                     site,
                     Some(owners[owner]),
+                    None,
                 )
             {
                 continue;

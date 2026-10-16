@@ -1250,6 +1250,10 @@ pub(crate) fn build_parachute_instances(
 }
 
 #[cfg(test)]
+#[path = "ore_gpu_tests.rs"]
+mod ore_gpu_tests;
+
+#[cfg(test)]
 #[path = "ordinary_bridge_gpu_tests.rs"]
 mod ordinary_bridge_gpu_tests;
 

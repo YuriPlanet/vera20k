@@ -19,8 +19,7 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 
 $cargoArgs = @(
     'clippy'
-    '-p'
-    'vera20k'
+    '--workspace'
     '--lib'
     '--no-deps'
     '--locked'

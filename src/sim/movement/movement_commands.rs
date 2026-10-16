@@ -34,7 +34,7 @@ pub(crate) fn can_accept_destination(entity: &GameEntity) -> bool {
 /// when it is a Cell (for a Jumpjet, the cell its `Move_To` placed it in),
 /// and nothing for an object. This projection is for presentation; it makes
 /// no simulation decision.
-pub(crate) fn movement_goal_cell(entity: &GameEntity) -> Option<(u16, u16)> {
+pub fn movement_goal_cell(entity: &GameEntity) -> Option<(u16, u16)> {
     if super::motion_query::is_moving(entity) != Some(true) {
         return None;
     }

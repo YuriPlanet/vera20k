@@ -5,7 +5,7 @@
 //! outside this module.
 
 use std::hash::Hash;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::hash::Hasher;
 
 /// One native 16-byte BasePlan node represented without pointer aliases.
@@ -45,7 +45,7 @@ impl BasePlanState {
     /// PercentBuilt, filled latches, and retry counters are intentionally not
     /// part of this native compatibility helper. Rust's authoritative world
     /// hash covers them separately.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn hash_native_checksum_fields(&self, hasher: &mut impl Hasher) {
         (self.nodes.len() as i32).hash(hasher);
         for node in &self.nodes {

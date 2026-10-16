@@ -221,7 +221,7 @@ fn with_house_key<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
 /// This remains as a compatibility helper for systems that only need color.
 /// `schemes` is the parsed `[Colors]` list used to resolve each house's
 /// `Color=<name>` to a `[Colors]` entry index.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn parse_house_colors(ini: &IniFile, schemes: &[ColorSchemeEntry]) -> HouseColorMap {
     parse_house_roster(ini, schemes, None).color_map()
 }

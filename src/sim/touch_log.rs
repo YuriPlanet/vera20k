@@ -83,7 +83,7 @@ impl TouchLog {
 pub(crate) struct TouchLogs<const N: usize> {
     logs: [TouchLog; N],
     /// Every hand-out so far, for test checks that a pass handed nothing out.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     hand_outs: u64,
 }
 
@@ -93,14 +93,14 @@ impl<const N: usize> TouchLogs<N> {
     pub(crate) fn everything() -> Self {
         Self {
             logs: std::array::from_fn(|_| TouchLog::everything()),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             hand_outs: 0,
         }
     }
 
     /// Note that `id` was handed out mutably; `stored` is the store's size.
     pub(crate) fn note(&mut self, id: u64, stored: usize) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             self.hand_outs += 1;
         }
@@ -111,7 +111,7 @@ impl<const N: usize> TouchLogs<N> {
 
     /// Note that every object may have changed.
     pub(crate) fn note_all(&mut self) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             self.hand_outs += 1;
         }
@@ -126,7 +126,7 @@ impl<const N: usize> TouchLogs<N> {
     }
 
     /// How many mutable hand-outs the store has made (test builds only).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn hand_outs(&self) -> u64 {
         self.hand_outs
     }

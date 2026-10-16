@@ -26,7 +26,7 @@ use crate::sim::world::Simulation;
 /// Cell+58 uses the existing read-only structural bridge coordinate owner.
 /// Its mapless/off-map fallback remains an existing coverage limit; retained
 /// shared-Dummy Cell identity belongs to the separate Cell Attack chain.
-pub(crate) fn led_target_coordinate(
+pub fn led_target_coordinate(
     world: &Simulation,
     rules: &RuleSet,
     firer_id: u64,

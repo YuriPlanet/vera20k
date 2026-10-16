@@ -62,7 +62,7 @@ impl AtCoordQuery {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn head_z(self) -> i32 {
         self.head.z
     }
@@ -123,7 +123,7 @@ impl AtCoordQuery {
     }
 
     /// The native signed cell words of the handoff and the head.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn cells(self) -> (Option<(i16, i16)>, (i16, i16)) {
         let cell = |point: DriveCoord| ((point.x / 256) as i16, (point.y / 256) as i16);
         (self.handoff.map(cell), cell(self.head))

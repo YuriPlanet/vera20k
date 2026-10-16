@@ -462,7 +462,7 @@ fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
         item.available = initial.contains(fixture.name(item.id));
     }
     let mut strips = CameoStrips::default();
-    assert!(strips.reconcile(&candidates, 3));
+    assert!(strips.reconcile(&candidates, 3).build_inserted());
     fixture.assert_order(&strips, &context["initial_order"], "initial reconciliation");
 
     let steps = context["steps"].as_array().unwrap();
@@ -470,12 +470,100 @@ fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
         item.available = fixture.name(item.id) != steps[0]["id"].as_str().unwrap();
     }
     assert!(
-        !strips.reconcile(&candidates, 3),
+        !strips.reconcile(&candidates, 3).build_inserted(),
         "full strip rejects the new item before removing the old one"
     );
     fixture.assert_order(&strips, &steps[2]["order"], "first reconciliation");
-    assert!(strips.reconcile(&candidates, 3));
+    assert!(strips.reconcile(&candidates, 3).build_inserted());
     fixture.assert_order(&strips, &steps[3]["order"], "second reconciliation");
+}
+
+/// Native flips the tab buttons and moves the active tab only on the two
+/// AddCameo/Recalculate transitions, never from a strip's current contents.
+///
+/// AddCameo 6A6472 enables the added strip's button and, when no strip held an
+/// entry before the insertion, hands ActiveTab to the first populated strip.
+/// Recalculate 6AAAE7 disables the button of the strip it just emptied and
+/// re-checks ActiveTab the same way. A strip that is empty without such a
+/// transition keeps its enabled button, so the executable controls
+/// (tools/sidebar_oracle/cameo_order.json) and the four command gates
+/// (`StripClass::HasEntries` 6ABAC0) agree.
+#[test]
+fn native_tab_transitions_follow_add_cameo_and_recalculate() {
+    let mut interner = StringInterner::new();
+    let unit = interner.intern("TABVEHICLE");
+    let building = interner.intern("TABSTRUCTURE");
+    let cameo = |id, tab| Cameo {
+        id: CameoId::Object(id),
+        tab,
+        available: true,
+        key: CameoKey::Techno {
+            own_side: true,
+            considered_aircraft: false,
+            naval: false,
+            tech_level: 1,
+            cost: 100,
+            name: "Test Type".to_string(),
+        },
+    };
+
+    // The first entry of an empty sidebar selects its own strip.
+    let mut strips = CameoStrips::default();
+    let first = strips.reconcile(&[cameo(unit, SidebarTab::Vehicle)], 3);
+    assert_eq!(
+        first.transitions().tab_button_disabled(SidebarTab::Vehicle),
+        Some(false)
+    );
+    assert_eq!(
+        first.transitions().active_tab_destination(),
+        Some(SidebarTab::Vehicle)
+    );
+
+    // A later addition into a populated sidebar moves nothing.
+    let populated = [
+        cameo(unit, SidebarTab::Vehicle),
+        cameo(building, SidebarTab::Building),
+    ];
+    let second = strips.reconcile(&populated, 3);
+    assert_eq!(
+        second
+            .transitions()
+            .tab_button_disabled(SidebarTab::Building),
+        Some(false)
+    );
+    assert_eq!(second.transitions().active_tab_destination(), None);
+
+    // Recalculate dropping the last vehicle entry disables that strip's own
+    // button and re-checks the active tab against the first populated strip.
+    let mut pruned = populated;
+    pruned[0].available = false;
+    let third = strips.reconcile(&pruned, 3);
+    assert_eq!(
+        third.transitions().tab_button_disabled(SidebarTab::Vehicle),
+        Some(true)
+    );
+    assert_eq!(
+        third
+            .transitions()
+            .tab_button_disabled(SidebarTab::Building),
+        None
+    );
+    assert_eq!(
+        third.transitions().active_tab_destination(),
+        Some(SidebarTab::Building)
+    );
+    assert_eq!(strips.first_populated_tab(), Some(SidebarTab::Building));
+
+    // Re-reconciling the now empty vehicle strip reports no transition: it was
+    // already empty, so native never disabled its button on this pass.
+    let fourth = strips.reconcile(&[cameo(building, SidebarTab::Building)], 3);
+    assert_eq!(
+        fourth
+            .transitions()
+            .tab_button_disabled(SidebarTab::Vehicle),
+        None
+    );
+    assert_eq!(fourth.transitions().active_tab_destination(), None);
 }
 
 #[test]

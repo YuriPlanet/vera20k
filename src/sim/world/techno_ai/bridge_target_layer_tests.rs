@@ -545,12 +545,7 @@ pub(super) fn retail_hills_collapsed_scene(
     use crate::sim::snapshot::GameSnapshot;
     let retail = std::env::var("RA2_DIR")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            crate::util::config::GameConfig::load()
-                .unwrap()
-                .paths
-                .ra2_dir
-        });
+        .unwrap_or_else(|_| crate::test_fixture::game_config().unwrap().paths.ra2_dir);
     let mut scenario = crate::headless_scenario::load(&retail, "Hills.mmx", 0x0B21_D6E5).unwrap();
     let pristine = scenario.sim().resolved_terrain.as_ref().unwrap().clone();
     observe(scenario.sim(), "initial_loaded");

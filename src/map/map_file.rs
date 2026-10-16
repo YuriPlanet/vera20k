@@ -184,7 +184,7 @@ pub struct MapCell {
 /// load-only trace preserves the raw request needed when the lookup resolves
 /// to MapClass's shared dummy instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct IsoMapPackLookup {
+pub struct IsoMapPackLookup {
     pub(crate) raw_x: i16,
     pub(crate) raw_y: u16,
     pub(crate) canonical: Option<(u16, u16)>,
@@ -209,7 +209,7 @@ impl AuthoredOverlayPackReceipt {
         (self.identity, self.data)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_parts_for_test(
         identity: OverlayIdentityPack,
         data: OverlayDataPack,
@@ -223,12 +223,12 @@ impl AuthoredOverlayPackReceipt {
 /// literals can represent a map with no bodies; it cannot mint or duplicate a
 /// parsed receipt.
 #[derive(Debug)]
-pub(crate) struct AuthoredOverlayPackSlot {
+pub struct AuthoredOverlayPackSlot {
     receipt: Option<AuthoredOverlayPackReceipt>,
 }
 
 impl AuthoredOverlayPackSlot {
-    pub(crate) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             receipt: Some(AuthoredOverlayPackReceipt {
                 identity: OverlayIdentityPack::default(),
@@ -269,14 +269,14 @@ pub struct MapFile {
     pub cells: Vec<MapCell>,
     /// Ordered native lookup evidence for production IsoMapPack materialization.
     /// Synthetic and RMG maps leave this empty and use their explicit cells.
-    pub(crate) iso_map_pack_lookups: Vec<IsoMapPackLookup>,
+    pub iso_map_pack_lookups: Vec<IsoMapPackLookup>,
     /// Entity placements from [Units], [Infantry], [Structures], [Aircraft] sections.
     pub entities: Vec<MapEntity>,
     /// Overlay objects from [OverlayPack] + [OverlayDataPack] (ore, walls, fences, etc.).
     pub overlays: Vec<OverlayEntry>,
     /// Single raw `[OverlayPack]` / `[OverlayDataPack]` authority. Deliberately
     /// non-Clone and moved exactly once into the authored finalizer.
-    pub(crate) authored_overlay_packs: AuthoredOverlayPackSlot,
+    pub authored_overlay_packs: AuthoredOverlayPackSlot,
     /// Pre-placed smudges from the map's `[Smudge]` section.
     /// `IsBaked != 0` entries are filtered at parse time.
     pub smudges: Vec<MapSmudgeEntry>,
@@ -375,9 +375,7 @@ impl MapFile {
         })
     }
 
-    pub(crate) fn overlay_data_pack(
-        &self,
-    ) -> Result<&OverlayDataPack, OverlayPacksAlreadyConsumed> {
+    pub fn overlay_data_pack(&self) -> Result<&OverlayDataPack, OverlayPacksAlreadyConsumed> {
         self.authored_overlay_packs
             .receipt()
             .map(|packs| &packs.data)
@@ -400,7 +398,7 @@ impl MapFile {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("authored OverlayPack/OverlayDataPack receipt was already consumed")]
-pub(crate) struct OverlayPacksAlreadyConsumed;
+pub struct OverlayPacksAlreadyConsumed;
 
 /// Load a map file from disk, auto-detecting MIX-wrapped vs raw INI.
 ///

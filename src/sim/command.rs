@@ -216,7 +216,7 @@ impl CommandRecord {
         &self.bytes
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn into_bytes(self) -> [u8; COMMAND_RECORD_LEN] {
         self.bytes

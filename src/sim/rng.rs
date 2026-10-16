@@ -21,7 +21,7 @@ pub(crate) const RANDOM_RANGED_UNIT_SCALE: crate::util::native_x87::NativeF64Bit
 
 const RNG_TABLE_LEN: usize = native_random::STATE_WORDS;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static DRAW_TRACE: std::cell::RefCell<Option<Vec<serde_json::Value>>> = const { std::cell::RefCell::new(None) };
     static DRAW_LOGIC_OBJECT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
@@ -30,25 +30,25 @@ thread_local! {
 /// Observation only: identify the live Logic caller even when several objects
 /// enter the same mission handler. The guard restores an enclosing callback's
 /// identity on normal return, early exit or panic; it never enters sim state.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) struct DrawLogicObject(Option<u64>);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for DrawLogicObject {
     fn drop(&mut self) {
         DRAW_LOGIC_OBJECT.set(self.0);
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn observe_logic_object(id: u64) -> DrawLogicObject {
     DrawLogicObject(DRAW_LOGIC_OBJECT.replace(Some(id)))
 }
 
 /// Test-only observation of real production calls. It neither supplies words
 /// nor changes stream cursors; callers keep traces outside serialized state.
-#[cfg(test)]
-pub(crate) fn trace_draws<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn trace_draws<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
     DRAW_TRACE.with_borrow_mut(|trace| {
         assert!(trace.is_none(), "nested RNG traces");
         *trace = Some(Vec::new());
@@ -68,10 +68,25 @@ pub(crate) fn trace_draws<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Val
 
 /// A draw's backtrace without this machine's checkout and home prefixes, so a
 /// saved trace names `src/...` and `~/...` and compares across checkouts.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn portable_callers(callers: String) -> String {
     let separator = std::path::MAIN_SEPARATOR;
-    let checkout = format!("{}{separator}", env!("CARGO_MANIFEST_DIR"));
+    let root = crate::test_fixture::checkout_root();
+    let mut callers = callers;
+    // Std prints a frame under the working directory as `./path`. Cargo runs
+    // this crate's tests from `src/`, so put back the `src/` that a run from
+    // the checkout root prints.
+    if let Ok(cwd) = std::env::current_dir()
+        && let (Ok(cwd), Ok(canonical_root)) = (cwd.canonicalize(), root.canonicalize())
+        && let Ok(below) = cwd.strip_prefix(&canonical_root)
+        && !below.as_os_str().is_empty()
+    {
+        callers = callers.replace(
+            &format!("at .{separator}"),
+            &format!("at .{separator}{}{separator}", below.display()),
+        );
+    }
+    let checkout = format!("{}{separator}", root.display());
     let mut callers = callers.replace(&checkout, "");
     for home in ["HOME", "USERPROFILE"]
         .into_iter()
@@ -98,17 +113,17 @@ pub struct SimRng {
 /// capabilities address the same cell; sharing never copies its cursor.
 /// Main remains outside Scenario saves and the deterministic world hash.
 #[derive(Debug)]
-pub(crate) struct MainRng {
+pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
 }
 
 impl MainRng {
-    pub(crate) fn new(seed: u64) -> Self {
+    pub fn new(seed: u64) -> Self {
         SimRng::new(seed).into()
     }
 
     /// Retain draw access without exposing seed, replacement or RNG storage.
-    pub(crate) fn draws(&self) -> MainRngDraws {
+    pub fn draws(&self) -> MainRngDraws {
         MainRngDraws {
             state: Arc::clone(&self.state),
         }
@@ -143,7 +158,7 @@ impl MainRng {
         *self.state.lock().expect("Main RNG poisoned") = state;
     }
 
-    pub(crate) fn next_u32(&self) -> u32 {
+    pub fn next_u32(&self) -> u32 {
         self.state.lock().expect("Main RNG poisoned").next_u32()
     }
 
@@ -155,29 +170,29 @@ impl MainRng {
     }
 
     /// Observe one coherent boundary while callback draws can run elsewhere.
-    pub(crate) fn logical_state(&self) -> SimRngLogicalState {
+    pub fn logical_state(&self) -> SimRngLogicalState {
         self.state
             .lock()
             .expect("Main RNG poisoned")
             .logical_state()
     }
 
-    pub(crate) fn state(&self) -> u64 {
+    pub fn state(&self) -> u64 {
         self.state.lock().expect("Main RNG poisoned").state()
     }
 
-    #[cfg(test)]
-    pub(crate) fn native_state_hex(&self) -> String {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn native_state_hex(&self) -> String {
         self.logical_state().native_state_hex()
     }
 
     /// An explicitly detached test reference, never a live draw capability.
-    #[cfg(test)]
-    pub(crate) fn snapshot_for_test(&self) -> SimRng {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn snapshot_for_test(&self) -> SimRng {
         self.state.lock().expect("Main RNG poisoned").clone()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn into_rng_for_test(self) -> SimRng {
         Arc::try_unwrap(self.state)
             .expect("test Main has no retained draw capabilities")
@@ -185,12 +200,12 @@ impl MainRng {
             .expect("Main RNG poisoned")
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn index_b(&self) -> i32 {
         self.logical_state().index_b
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn next_range_u32_inclusive(&self, low: u32, high: u32) -> u32 {
         self.state
             .lock()
@@ -209,7 +224,7 @@ impl From<SimRng> for MainRng {
 
 // Native fixture adapters only. The live Simulation field is serde-skipped:
 // saves never serialize or replace process Main886B88.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl serde::Serialize for MainRng {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -219,7 +234,7 @@ impl serde::Serialize for MainRng {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl<'de> serde::Deserialize<'de> for MainRng {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -232,17 +247,17 @@ impl<'de> serde::Deserialize<'de> for MainRng {
 /// Retained process Main draws. Clone shares the owner's cell; it cannot
 /// seed, replace, borrow simulation state or expose an independent cursor.
 #[derive(Clone)]
-pub(crate) struct MainRngDraws {
+pub struct MainRngDraws {
     state: Arc<Mutex<SimRng>>,
 }
 
 impl MainRngDraws {
-    pub(crate) fn next_u32(&self) -> u32 {
+    pub fn next_u32(&self) -> u32 {
         self.state.lock().expect("Main RNG poisoned").next_u32()
     }
 
     /// Keep the entire native rejection-sampling operation under one lock.
-    pub(crate) fn ranged(&self, low: i32, high: i32) -> i32 {
+    pub fn ranged(&self, low: i32, high: i32) -> i32 {
         self.state
             .lock()
             .expect("Main RNG poisoned")
@@ -271,10 +286,10 @@ pub struct SimRngLogicalState {
     pub words: [u32; RNG_TABLE_LEN],
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl SimRngLogicalState {
     /// Encode coherent boundary evidence in the original Random2Class form.
-    pub(crate) fn native_state_hex(&self) -> String {
+    pub fn native_state_hex(&self) -> String {
         let mut bytes = Vec::with_capacity(0x3f4);
         bytes.extend_from_slice(&u32::from(self.disabled).to_le_bytes());
         bytes.extend_from_slice(&self.index_a.to_le_bytes());
@@ -301,7 +316,7 @@ impl SimRng {
     ///
     /// The native disabled byte, 250-word state and lag cursors belong to the
     /// same logical object across preview, launch and fresh Scenario boundaries.
-    pub(crate) fn from_mapgen_continuation(continuation: MapGenRngContinuation) -> Self {
+    pub fn from_mapgen_continuation(continuation: MapGenRngContinuation) -> Self {
         let (disabled, words, index_a, index_b) = continuation.into_native_parts();
         Self {
             disabled,
@@ -355,15 +370,15 @@ impl SimRng {
     /// The native Random2Class object bytes (`+0x00` disabled dword, the two
     /// indices, then the table), as hex: the form the Unicorn oracles record
     /// Scenario RNG states in.
-    #[cfg(test)]
-    pub(crate) fn native_state_hex(&self) -> String {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn native_state_hex(&self) -> String {
         self.logical_state().native_state_hex()
     }
 
     /// Import a pinned original Random2Class comparison boundary. This reads
     /// logical fields only; it does not seed or execute a second RNG port.
-    #[cfg(test)]
-    pub(crate) fn from_native_state_hex_for_test(hex: &str) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_native_state_hex_for_test(hex: &str) -> Self {
         assert_eq!(hex.len(), 0x3f4 * 2, "native Random object byte count");
         let bytes: Vec<u8> = hex
             .as_bytes()
@@ -397,7 +412,7 @@ impl SimRng {
 
     /// The first seeded stream whose next `RandomRanged(low, high)` answers
     /// `value`: how oracle replays make the Rust draw the native answer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn answering(low: i32, high: i32, value: i32) -> Self {
         (0..)
             .map(Self::new)
@@ -408,7 +423,7 @@ impl SimRng {
     /// Test/debug accessor for the secondary lag index. Used by the two-stream
     /// routing tests to assert both streams seed to the gamemd `index_b = 0x67`
     /// start. Not part of the gameplay API.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn index_b(&self) -> i32 {
         self.index_b
     }
@@ -441,7 +456,7 @@ impl SimRng {
         self.index_a = lead as i32;
         self.index_b = lagged as i32;
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         DRAW_TRACE.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 let callers = std::backtrace::Backtrace::force_capture().to_string();
@@ -591,7 +606,12 @@ mod tests {
             callers.contains("next_u32"),
             "the trace keeps the call stack"
         );
-        assert!(!callers.contains(env!("CARGO_MANIFEST_DIR")));
+        assert!(!callers.contains(&*crate::test_fixture::checkout_root().to_string_lossy()));
+        // Saved traces feed tools that read `at ./src/...` frames.
+        assert!(
+            !cfg!(unix) || callers.contains("at ./src/sim/rng.rs:"),
+            "frames name their file from the checkout root: {callers}"
+        );
         for home in ["HOME", "USERPROFILE"]
             .into_iter()
             .filter_map(|key| std::env::var(key).ok())

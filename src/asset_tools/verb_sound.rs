@@ -777,4 +777,69 @@ mod tests {
         assert!(opts.prefix.is_none());
         assert!(!opts.wav);
     }
+
+    #[test]
+    fn audio_archive_fallback_is_whole_pair_and_diagnostics_can_override_it() {
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("audio-fallback");
+        let md = crate::assets::audio_bag::test_support::build_idx(&[("md_only", 0, 2, 22050, 4)]);
+        let base =
+            crate::assets::audio_bag::test_support::build_idx(&[("base_only", 0, 2, 22050, 4)]);
+        crate::assets::asset_manager::test_support::write_audio_archive(
+            &dir,
+            "audiomd.mix",
+            &md,
+            &[1, 2],
+        );
+        let base_archive = crate::map::source::test_support::make_new_format_mix_bytes(&[
+            ("audio.idx", &base),
+            ("audio.bag", &[3, 4]),
+        ]);
+        dir.write_mix("ra2.mix", "audio.mix", &base_archive);
+        std::fs::write(dir.path().join("custom.idx"), &base).unwrap();
+        std::fs::write(dir.path().join("custom.bag"), [3, 4]).unwrap();
+        let manager = AssetManager::new(
+            dir.path(),
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        let loaded = manager.load_audio_index().unwrap().unwrap();
+        assert!(loaded.index.get("md_only").is_some());
+        assert!(loaded.index.get("base_only").is_none());
+        let explicit = bag_ls(
+            &manager,
+            &SoundOptions {
+                bag: Some("audio".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(explicit.entry_count, 1);
+        assert!(explicit.entries[0].name.eq_ignore_ascii_case("base_only"));
+        assert_eq!(
+            explicit.sources.unwrap().idx.source_archive,
+            "ra2.mix -> audio.mix"
+        );
+        let custom = bag_ls(
+            &manager,
+            &SoundOptions {
+                bag: Some("custom".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(custom.entry_count, 1);
+        assert_eq!(
+            custom.sources.unwrap().bag.source_sha256,
+            crate::util::sha256::sha256_hex(&[3, 4])
+        );
+        std::fs::remove_file(dir.path().join("audiomd.mix")).unwrap();
+        let fallback = AssetManager::new(
+            dir.path(),
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        let loaded = fallback.load_audio_index().unwrap().unwrap();
+        assert!(loaded.index.get("base_only").is_some());
+        assert_eq!(loaded.sources.idx.source_archive, "ra2.mix -> audio.mix");
+    }
 }

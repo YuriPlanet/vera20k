@@ -20,7 +20,7 @@ const TILE_ANIM_DRAW_FLAGS: u32 = 0x1600;
 const CELL_CENTRE_LEPTONS: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32 / 2;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum SimulationAuthoredLoadError {
+pub enum SimulationAuthoredLoadError {
     #[error("fresh authored load has no native-ID cursor")]
     MissingNativeIdentity,
     #[error(transparent)]

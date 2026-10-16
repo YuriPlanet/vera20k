@@ -113,9 +113,9 @@ pub(crate) fn dispatch_foot_mission(
             // The destination slot alone, NOT the wider "is this object in
             // motion" test above: the idle-mode selector branches on exactly
             // that one field.
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             has_destination: entity.navigation.nav_com().is_some(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             effective_mission: entity.mission.effective().known(),
             // Infantry Mission_Attack51F4D3 and Guard shim521320 read
             // the native Doing27..30 family. Undeploy31 is outside it.
@@ -828,11 +828,11 @@ pub(super) struct MissionHandlerInput {
     pub(super) has_attack_target: bool,
     /// The destination slot on its own. The idle-mode selector reads this one
     /// field, not the broader in-motion test [`Self::moving_or_queued`] uses.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) has_destination: bool,
     /// Current when present, otherwise queued — the selector the idle-mode
     /// early returns and the control-entry lookups read.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) effective_mission: Option<MissionType>,
     /// This is an infantryman whose DoType sits in native's deployed set, so
     /// its Attack slot takes `InfantryClass::Mission_Attack`'s own override
@@ -969,7 +969,7 @@ fn infantry_automatic_guard_delay(
 /// receivers. Production enters through `Simulation::infantry_enter_idle_mode`
 /// or `Simulation::unit_enter_idle_mode`, including the shared Foot base and
 /// their destination, timer and radio effects.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn foot_enter_idle_mode_queue(
     rules: &RuleSet,
     input: MissionHandlerInput,
@@ -1323,15 +1323,7 @@ fn evaluate_foot_hunt(
     rules: &RuleSet,
     ctx: super::ObjectAiCtx<'_>,
 ) -> MissionHandlerEvaluation {
-    let type_ref = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| entity.type_ref());
-    let stupid_hunt = type_ref
-        .and_then(|type_ref| sim.interner.try_resolve(type_ref))
-        .and_then(|name| rules.object(name))
-        .is_some_and(|obj| obj.stupid_hunt);
+    let stupid_hunt = !hunt_scans(sim, id, rules);
     // 4D5367 and 4D539A: StupidHunt, or a scan that finds nothing, take the
     // no-target arm at 4D54EE; every other arm jumps to the tail at 4D5582.
     let mut no_target_arm = stupid_hunt;
@@ -1378,6 +1370,38 @@ fn evaluate_foot_hunt(
         let _ = sim.infantry_idle_action(id, rules, ctx.effects);
     }
     MissionHandlerEvaluation::cadence(sim.mission_rate_epilogue_for(rules, id, MissionType::Hunt))
+}
+
+/// Whether Mission_Hunt scans (`0x004D5367`): its type is not `StupidHunt=`.
+fn hunt_scans(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
+    !sim.substrate
+        .entities
+        .get(id)
+        .and_then(|entity| sim.interner.try_resolve(entity.type_ref()))
+        .and_then(|name| rules.object(name))
+        .is_some_and(|obj| obj.stupid_hunt)
+}
+
+/// Whether `id`'s Hunt handler ([`evaluate_foot_hunt`]) reaches
+/// Greatest_Threat this frame as the world stands, for the batched target
+/// scans (`techno_ai::scan_batch`): its handler is due, it holds no target
+/// (Retaliate_And_Scan scans only then), its type scans ([`hunt_scans`]),
+/// it does not take the Unit deploy arm (`mcv_deploy::hunt_deploys`), and it
+/// is not a deployed infantryman: a computer house's undeploys, and a human
+/// house's, which scans, is left out with it. A held target the drop step
+/// would drop, and the computer capture arm, are not foreseen; those objects
+/// scan live, if at all.
+pub(super) fn foot_hunt_scans_ahead(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    entity.mission.current().known() == Some(MissionType::Hunt)
+        && entity.attack_target.target().is_none()
+        && !entity.infantry_deploy_doing()
+        && foot_mission_handler_due(sim, id, sim.session.binary_frame)
+        && hunt_scans(sim, id, rules)
+        && !(entity.category() == EntityCategory::Unit
+            && crate::sim::mcv_deploy::hunt_deploys(sim, id, rules))
 }
 
 /// Mission_Hunt's infantry arms, for the target its scan installed. They draw

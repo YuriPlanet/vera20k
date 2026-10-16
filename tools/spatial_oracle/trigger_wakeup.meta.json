@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Actions81..83 constructor/read/dispatch, Tag identity membership, effective Mission and deferred Queue.",
+  "assumptions": [
+    "One existing ActionFixture VM executes unchanged original constructor, cached ReadString512, CRT strtok/atoi, full Read and full Execute. Actor memory, House pointers, active Techno/Foot order, Tags and live Trigger instances are supplied inputs. No actor/Tag/House constructor, map load or full campaign is claimed.",
+    "Original class vtables are used unchanged: Infantry7EB058, Unit7F5C70, Aircraft7E22A4 and Building7E3EBC. Their actual WhatAmI, GetMission and QueueMission slots execute; no virtual answer or mission mutation is substituted. Aircraft Queue41BA90 forwards these admitted Sleep/Harmless controls to5B35E0.",
+    "All supplied live Trigger pointers share one type, distinguishing pointer identity from type/name equality. Actual Tag6E5380 follows+28 links until NULL; Action81 uses the executing Trigger third argument and ignores incoming House/source/scalar. It requires alive+90 and cell-marked+74, excludes Building6, and does not inspect Health or Limbo.",
+    "Actions82/83 use Execute first House argument directly, not scalar or retained Trigger+2C. The original active caller Spring7265E7..726605 separately reads TriggerType+A4 HouseType+B4 country index, calls502D30 and pushes its result for EACH action. That caller identity is instruction-read evidence; these controls begin at Execute and do not certify country registration.",
+    "Action82 scans Foot forward, admits effective Sleep0 with House!=incoming; Action83 admits effective Harmless23 with House==incoming. Both require Health>0,alive,cell-marked,!limbo and do not inspect Tag. Action84 Group selection is outside this corpus.",
+    "Actual GetMission returns current+AC unless-1, then queued+B4. Every admitted outer Queue receives Guard5,0. Original Queue writes queued+B4 and clears bypass+B8 while preserving current/suspended, handler/cadence/dispatch timers, target, Team and all other supplied actor bytes. No Commence, EnterIdle, readiness, detach, Team removal or RNG draw is part of this leaf. Later normal AI/Guard/target acquisition are outside these bounded controls.",
+    "Three complete original-layout RNG streams are initialized by actual65C6D0(seed31) before the reader. Hashes of their complete bytes are identical after Read/Execute; entry observations record zero65C780/65C7E0 draws. Timers+BC..D3 and all nonqueue actor bytes are checked unchanged.",
+    "The action bodies reread the live list pointer/count and actor fields at each forward ordinal. Deferred Queue has no list-mutating callback in the ordinary native chain. The corpus supplies stable lists and makes no arbitrary callback-mutation or whole-world ordering claim.",
+    "Physical expandmd01.mix ALL02UMD.MAP and retained retail ini/rulesmd.ini plus optional LANGRULE have hashes. Init_Game52BB64 calls Init_Base_Mix_Files5301A0 before later Init_Mix_Files52C59C\u2192530460; original EXPANDMD99..00 format5301C4/constructor530217/loop530289 precede MAPSMD530A2E. This instruction-read source policy selects the official patch member, not the older mapsmd03 member. Rust production AssetManager owns priority and must match this fixed member digest; higher-priority overrides must fail the input binding. Native archive mounting/file IO is not executed here. Exact raw Germans_Attacked/Wakeup_Prisoners and sibling Prisoners_Panic Trigger/Tag/Events/Actions plus seven prisoners/eight guards bind the production Rust test. Existing Country/mission-name/flag/event readers and Tag constructors execute; the sibling Panic timer/Team effect, complete Event6\u219253\u219213\u219281 native scheduling, real reference registration, actor placement and whole campaign remain outside this row.",
+    "CampaignReader requires VERA20K_CAMPAIGN_START_ASSETS to name an existing empty directory; this bounded Country/name prefix requests no assets. Country/name reader streams are seed31 after setup and unchanged; constructor setup draws and the separate Tag fixture terminal next_random are outside the wakeup zero-draw claim. Action84 requires the separate Group ownership/lifecycle mechanism and remains a residual, not part of this corpus or implementation."
+  ],
+  "substitutions": [
+    "Inherited ActionFixture supplies existing CRT thread-data, heap and cached INI transports only. No native wakeup, Tag, Mission or class vtable bytes are patched and no gameplay leaf is substituted."
+  ],
+  "entry_points": {
+    "action_constructor": "0x006DD000",
+    "action_read": "0x006DD5B0",
+    "counted_read_string": "0x00528A10",
+    "action_execute": "0x006DD8B0",
+    "action81": "0x006DDB67",
+    "wakeup_attached": "0x006E01C0",
+    "action82": "0x006DDBF6",
+    "action83": "0x006DDC71",
+    "tag_contains": "0x006E5380",
+    "effective_mission": "0x005B3040",
+    "queue_mission": "0x005B35E0",
+    "aircraft_queue": "0x0041BA90",
+    "spring": "0x007265C0",
+    "spring_execute_call": "0x00726605",
+    "spring_house_lookup": "0x00502D30",
+    "rng_seed": "0x0065C6D0",
+    "country_registration": "0x00668C8B",
+    "read_country": "0x00475540",
+    "mission_from_name": "0x005B3910"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --wakeup",
+  "payload_sha256": "cc2533d5784fc3e0377344daf07641d2cf670f5cd50db83be58db0f96e04adee"
+}

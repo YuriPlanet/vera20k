@@ -35,20 +35,20 @@ impl FootAirState {
 
 impl GameEntity {
     /// Native Foot+560, written by the tracker callback41C160.
-    pub(crate) fn air_tracker_cell(&self) -> (i16, i16) {
+    pub fn air_tracker_cell(&self) -> (i16, i16) {
         self.foot_air.air_tracker_cell
     }
 
     /// Native Foot+564, retained by the concrete Cell-slot notification4E00B0.
-    pub(crate) fn air_slot_cell(&self) -> (i16, i16) {
+    pub fn air_slot_cell(&self) -> (i16, i16) {
         self.foot_air.air_slot_cell
     }
 
-    pub(crate) fn air_spatial_bucket(&self) -> Option<u16> {
+    pub fn air_spatial_bucket(&self) -> Option<u16> {
         self.foot_air.air_spatial_bucket
     }
 
-    pub(crate) fn air_spatial_enter_order(&self) -> u64 {
+    pub fn air_spatial_enter_order(&self) -> u64 {
         self.foot_air.air_spatial_enter_order
     }
 
@@ -70,7 +70,7 @@ impl GameEntity {
         self.foot_air.air_tracker_cell = cell;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_air_spatial_membership_for_test(
         mut self,
         bucket: Option<u16>,
@@ -81,13 +81,13 @@ impl GameEntity {
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_air_tracker_cell_for_test(mut self, cell: (i16, i16)) -> Self {
         self.foot_air.air_tracker_cell = cell;
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_air_slot_cell_for_test(mut self, cell: (i16, i16)) -> Self {
         self.foot_air.air_slot_cell = cell;
         self

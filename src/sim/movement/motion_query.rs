@@ -16,7 +16,7 @@ use crate::sim::game_entity::GameEntity;
 /// jumpjet_infantry_actions --default-motion native corpora; Teleport's
 /// ordinary move/stop controls (infantry_teleport_destination) establish the
 /// Cell setter/Stop boundaries; full Process/Chronosphere lifetime stays bounded.
-pub(crate) fn is_moving(entity: &GameEntity) -> Option<bool> {
+pub fn is_moving(entity: &GameEntity) -> Option<bool> {
     let locomotor = entity.locomotor.as_ref()?;
     match locomotor.active_kind() {
         LocomotorKind::Drive => Some(super::track_head::motion_state(entity, TrackFamily::Drive).0),
@@ -43,7 +43,7 @@ pub(crate) fn is_moving(entity: &GameEntity) -> Option<bool> {
 /// [`super::ready_producer::ready_state_for`] (Drive `0x004AFC20`, Ship,
 /// Walk, Hover `0x00514C80`, Teleport and Jumpjet `0x0054D0D0`). No locomotor
 /// answers false. `rules` gives Drive and Ship the owner's speed getter.
-pub(crate) fn is_moving_now(
+pub fn is_moving_now(
     entity: &GameEntity,
     rules: Option<super::SpeedRules<'_>>,
     binary_frame: u32,

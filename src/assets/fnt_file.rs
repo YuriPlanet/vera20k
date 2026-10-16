@@ -24,9 +24,9 @@ const HEADER_BYTES: usize = 4 + 6 * 4;
 /// Immutable identity of the exact bytes accepted by the FNT parser.
 /// Retained by the atlas owner so capture can prove which font it consumed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FntSourceIdentity {
-    pub(crate) byte_length: u64,
-    pub(crate) sha256: String,
+pub struct FntSourceIdentity {
+    pub byte_length: u64,
+    pub sha256: String,
 }
 
 /// Parsed bitmap font from a `.fnt` file.
@@ -160,7 +160,7 @@ impl FntFile {
         })
     }
 
-    pub(crate) fn source_identity(&self) -> Option<&FntSourceIdentity> {
+    pub fn source_identity(&self) -> Option<&FntSourceIdentity> {
         self.source_identity.as_ref()
     }
 
@@ -219,7 +219,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Requires RA2_DIR env var pointing to retail game files
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn parse_real_game_fnt() {
         use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
         use std::path::Path;

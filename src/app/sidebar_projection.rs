@@ -68,12 +68,17 @@ impl SidebarProjectionState {
     /// AddCameo 6A6406 speaks NewConstructionOptions for an accepted
     /// non-Super insertion outside initialization. The retained strip itself
     /// owns membership; there is no second set diff beside it.
+    ///
+    /// The same pass owns the two native tab transitions (an entry arriving
+    /// into an empty sidebar, and a strip that just emptied); the caller
+    /// applies them, so the tab buttons and the active tab are never
+    /// re-derived from the current strip contents.
     pub(crate) fn reconcile_cameos(
         &mut self,
         owner: InternedId,
         current: &[Cameo],
         visible_rows: usize,
-    ) -> bool {
+    ) -> crate::ui::sidebar::cameo_order::CameoReconcile {
         let initialized = self
             .cameos
             .as_ref()
@@ -84,13 +89,17 @@ impl SidebarProjectionState {
             }
             self.cameos = Some((owner, CameoStrips::default()));
         }
-        let inserted = self
+        let reconciled = self
             .cameos
             .as_mut()
             .expect("cameos initialized")
             .1
             .reconcile(current, visible_rows);
-        initialized && inserted
+        if initialized {
+            reconciled
+        } else {
+            reconciled.without_build_insertion()
+        }
     }
 
     /// Mouse Save 5BE6D0 writes the display object, including each strip's
@@ -739,23 +748,57 @@ mod tests {
         };
         let mut projection = SidebarProjectionState::default();
         // Sim A: the first projection seeds silently, growth speaks.
-        assert!(!projection.reconcile_cameos(owner, &[candidate(a)], 3));
-        assert!(!projection.reconcile_cameos(owner, &[candidate(a)], 3));
-        assert!(projection.reconcile_cameos(owner, &[candidate(a), candidate(b)], 3));
-        assert!(!projection.reconcile_cameos(owner, &[candidate(a)], 3));
-        assert!(projection.reconcile_cameos(owner, &[candidate(a), candidate(b)], 3));
+        assert!(
+            !projection
+                .reconcile_cameos(owner, &[candidate(a)], 3)
+                .build_inserted()
+        );
+        assert!(
+            !projection
+                .reconcile_cameos(owner, &[candidate(a)], 3)
+                .build_inserted()
+        );
+        assert!(
+            projection
+                .reconcile_cameos(owner, &[candidate(a), candidate(b)], 3)
+                .build_inserted()
+        );
+        assert!(
+            !projection
+                .reconcile_cameos(owner, &[candidate(a)], 3)
+                .build_inserted()
+        );
+        assert!(
+            projection
+                .reconcile_cameos(owner, &[candidate(a), candidate(b)], 3)
+                .build_inserted()
+        );
         // Sim B with a different pre-placed base: without the reset its
         // first refresh would read `b`-less/`a`-less strips as insertions.
         projection.reset_cameo_seed();
         assert!(
-            !projection.reconcile_cameos(owner, &[candidate(b)], 3),
+            !projection
+                .reconcile_cameos(owner, &[candidate(b)], 3)
+                .build_inserted(),
             "the first refresh after a sim install is the init window"
         );
-        assert!(projection.reconcile_cameos(owner, &[candidate(a), candidate(b)], 3));
-        assert!(!projection.reconcile_cameos(InternedId::from_index(4), &[candidate(a)], 3));
+        assert!(
+            projection
+                .reconcile_cameos(owner, &[candidate(a), candidate(b)], 3)
+                .build_inserted()
+        );
+        assert!(
+            !projection
+                .reconcile_cameos(InternedId::from_index(4), &[candidate(a)], 3)
+                .build_inserted()
+        );
         // Leaving the match still clears the seed.
         projection.replace_view(None);
-        assert!(!projection.reconcile_cameos(owner, &[candidate(a)], 3));
+        assert!(
+            !projection
+                .reconcile_cameos(owner, &[candidate(a)], 3)
+                .build_inserted()
+        );
     }
 
     #[test]

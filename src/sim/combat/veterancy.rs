@@ -51,7 +51,7 @@ pub const LEVEL_UNSAMPLED: i8 = -1;
 /// An object's veterancy, owned by this module: the running `VeterancyClass`
 /// float and the rank last sampled from it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct Veterancy {
+pub struct Veterancy {
     /// The `VeterancyClass` float on `TechnoClass` (`+0x150`), fed by
     /// `Record_The_Kill @ 0x00702D40` through `VeterancyClass::Add @
     /// 0x0074FF50`. Carried as its `f32` bit pattern so sim state holds no
@@ -81,24 +81,24 @@ impl Veterancy {
     }
 
     /// The accumulator.
-    pub(crate) fn raw(&self) -> NativeF32Bits {
+    pub fn raw(&self) -> NativeF32Bits {
         self.raw
     }
 
     /// `TechnoClass+0x13C`.
-    pub(crate) fn rank_cache(&self) -> i8 {
+    pub fn rank_cache(&self) -> i8 {
         self.rank_cache
     }
 
     /// Veterancy level sampled from the accumulator: 0 = rookie, 100 =
     /// veteran, 200 = elite. The damage multiplier, the armour divisor, elite
     /// weapon selection and the chevron read it.
-    pub(crate) fn rank(&self) -> u16 {
+    pub fn rank(&self) -> u16 {
         rank_u16(self.raw)
     }
 
     /// The rank sampled from the accumulator.
-    pub(crate) fn rank_kind(&self) -> VeterancyRank {
+    pub fn rank_kind(&self) -> VeterancyRank {
         rank_of(self.raw)
     }
 
@@ -121,12 +121,12 @@ impl Veterancy {
     /// cache is deliberately left alone — native does not touch `+0x13C`
     /// here, so the next `AI_Update` sample announces the crossing (or, for a
     /// never-sampled object, caches silently).
-    pub(crate) fn set_elite(&mut self) {
+    pub fn set_elite(&mut self) {
         self.raw = NativeF32Bits::from_bits(ELITE_THRESHOLD_BITS);
     }
 
     /// `VeterancyStruct::SetVeteran(1) @ 0x00750090`: store 1.0f.
-    pub(crate) fn set_veteran(&mut self) {
+    pub fn set_veteran(&mut self) {
         self.raw = NativeF32Bits::from_bits(VETERAN_THRESHOLD_BITS);
     }
 
@@ -203,7 +203,7 @@ impl Veterancy {
 }
 
 /// Fixture setup for tests outside this module.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Veterancy {
     /// Seed the accumulator at a rank's threshold, as `set_elite`,
     /// `set_veteran` and `set_rookie` do.
@@ -211,11 +211,11 @@ impl Veterancy {
         self.raw = raw_for_rank(rank_u16);
     }
 
-    pub(crate) fn set_raw_for_test(&mut self, raw: NativeF32Bits) {
+    pub fn set_raw_for_test(&mut self, raw: NativeF32Bits) {
         self.raw = raw;
     }
 
-    pub(crate) fn set_rank_cache_for_test(&mut self, rank_cache: i8) {
+    pub fn set_rank_cache_for_test(&mut self, rank_cache: i8) {
         self.rank_cache = rank_cache;
     }
 }

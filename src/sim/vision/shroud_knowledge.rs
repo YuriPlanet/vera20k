@@ -176,13 +176,13 @@ impl SightFacts {
     }
 
     /// Install a fixture's range.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_vision_range_for_test(&mut self, range: u16) {
         self.range = range;
     }
 
     /// Install a fixture's zero fact.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_sight_is_zero_for_test(&mut self, zero: bool) {
         self.zero = zero;
     }
@@ -214,7 +214,7 @@ impl SightRefreshTimers {
     }
 
     /// The viewer has its own countdown.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn has_timer_for_test(&self, viewer: InternedId) -> bool {
         self.by_viewer.contains_key(&viewer)
     }

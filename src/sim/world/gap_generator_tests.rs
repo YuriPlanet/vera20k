@@ -166,7 +166,7 @@ fn gap_operational_original_gate_and_native_order_corpus() {
 
 /// Shared simulation fixture for the rendering boundary's consumer check.
 /// All event-order and snapshot assertions remain owned by the simulation.
-pub(crate) fn gap_operational_power_loss_views() -> Vec<(
+pub fn gap_operational_power_loss_views() -> Vec<(
     crate::sim::vision::FogState,
     crate::sim::intern::InternedId,
     bool,

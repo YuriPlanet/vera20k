@@ -28,12 +28,12 @@ pub struct NavigationState {
     pub(crate) neighbor_state: crate::sim::cell_neighbors::FootNeighborState,
     /// Foot timers, retry count and blockage latch survive path retirement.
     #[serde(default)]
-    pub(crate) path_runtime: crate::sim::components::FootPathRuntime,
+    pub path_runtime: crate::sim::components::FootPathRuntime,
     /// Foot-owned direction replay and reference cell (+5E0/+558), shared by
     /// every locomotor instance. Retirement must not discard the owner queue.
     /// Native chain tails reload the owner at Drive4B1DF7 / Ship6A143A.
     #[serde(default)]
-    pub(crate) path_replay: crate::sim::components::FootPathQueue,
+    pub path_replay: crate::sim::components::FootPathQueue,
     /// `Foot+0x5A0`, NavCom's auxiliary slot, cleared whenever NavCom is
     /// published or stopped.
     #[serde(default)]
@@ -100,7 +100,7 @@ impl NavigationState {
     }
 
     /// `Foot+0x5A4`, NavCom.
-    pub(crate) fn nav_com(&self) -> Option<NavTargetRef> {
+    pub fn nav_com(&self) -> Option<NavTargetRef> {
         self.nav_com
     }
 
@@ -110,7 +110,7 @@ impl NavigationState {
     }
 
     /// `Foot+0x5A8`, SuspendedNavCom.
-    pub(crate) fn suspended_nav_com(&self) -> Option<NavTargetRef> {
+    pub fn suspended_nav_com(&self) -> Option<NavTargetRef> {
         self.suspended_nav_com
     }
 
@@ -167,33 +167,30 @@ impl NavigationState {
     }
 
     /// A fixture's NavCom.
-    #[cfg(test)]
-    pub(crate) fn set_nav_com_for_test(&mut self, nav_com: Option<NavTargetRef>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_nav_com_for_test(&mut self, nav_com: Option<NavTargetRef>) {
         self.nav_com = nav_com;
     }
 
     /// A fixture's NavComAux.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_nav_com_aux_for_test(&mut self, nav_com_aux: Option<NavTargetRef>) {
         self.nav_com_aux = nav_com_aux;
     }
 
     /// A fixture's SuspendedNavCom.
-    #[cfg(test)]
-    pub(crate) fn set_suspended_nav_com_for_test(
-        &mut self,
-        suspended_nav_com: Option<NavTargetRef>,
-    ) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_suspended_nav_com_for_test(&mut self, suspended_nav_com: Option<NavTargetRef>) {
         self.suspended_nav_com = suspended_nav_com;
     }
 
     /// `Foot+0x588`, the NavQueue, oldest first.
-    pub(crate) fn nav_queue(&self) -> &[NavTargetRef] {
+    pub fn nav_queue(&self) -> &[NavTargetRef] {
         &self.nav_queue
     }
 
     /// A fixture's NavQueue.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_nav_queue_for_test(&mut self, nav_queue: Vec<NavTargetRef>) {
         self.nav_queue = nav_queue;
     }
@@ -209,8 +206,8 @@ impl NavigationState {
     }
 
     /// Append to a fixture's NavQueue.
-    #[cfg(test)]
-    pub(crate) fn push_nav_queue_for_test(&mut self, target: NavTargetRef) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn push_nav_queue_for_test(&mut self, target: NavTargetRef) {
         self.nav_queue.push(target);
     }
 
@@ -269,7 +266,7 @@ impl NavigationState {
     }
 
     /// A fixture's navigation list and loop flag.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_nav_list_for_test(&mut self, nav_list: Vec<NavTargetRef>, loops: bool) {
         self.nav_list = nav_list;
         self.nav_list_loops = loops;
@@ -298,7 +295,7 @@ impl NavigationState {
     }
 
     /// A fixture's owed call.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_pending_destination_setter_for_test(&mut self, pending: bool) {
         self.pending_destination_setter = pending;
     }

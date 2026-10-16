@@ -3,7 +3,7 @@
 
 /// Real resident TMP input matching the original bridge-constructor fixture.
 /// Kept with the loader fixture so sim tests don't duplicate asset construction.
-pub(crate) fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
+pub fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
     let theater = synthetic_theater_from_ini(
         b"[TileSet0000]\nTilesInSet=1\nFileName=source\nSetName=Plain\n",
     );
@@ -43,18 +43,18 @@ pub(crate) fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
 /// Real resident inputs for bridge_hierarchy's original586990/Recalc corpus.
 /// Tile2 is invalid against the two-entry registry; tile0 has the supplied
 /// slope used by the second-pass admission discriminator. No Recalc substitute.
-pub(crate) fn install_bridge_batch_test_catalog(grid: &mut ResolvedTerrainGrid, slope: bool) {
+pub fn install_bridge_batch_test_catalog(grid: &mut ResolvedTerrainGrid, slope: bool) {
     install_repair_test_catalog(grid, slope, true, 11);
 }
 
-pub(crate) fn install_ordinary_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
+pub fn install_ordinary_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
     install_repair_test_catalog(grid, false, false, 11);
 }
 
 /// Bind the supplied empty IsoTileType array from the Jumpjet native fixture.
 /// Its Cell+38=0 is unregistered, so original Recalc47D2B0 reads Clear land
 /// through the supplied retail TerrainRules. No TMP metadata is substituted.
-pub(crate) fn install_no_registered_tiles_test_catalog(
+pub fn install_no_registered_tiles_test_catalog(
     grid: &mut ResolvedTerrainGrid,
     rules: &TerrainRules,
 ) {
@@ -73,11 +73,7 @@ pub(crate) fn install_no_registered_tiles_test_catalog(
 
 /// Sparse physical TMP headers for supplied-state native587410 comparisons.
 /// Use the production registered-file reader; no query-origin substitution.
-pub(crate) fn install_bridge_query_test_catalog(
-    grid: &mut ResolvedTerrainGrid,
-    width: u8,
-    tiles: &[u16],
-) {
+pub fn install_bridge_query_test_catalog(grid: &mut ResolvedTerrainGrid, width: u8, tiles: &[u16]) {
     let theater = synthetic_theater_from_ini(
         b"[TileSet0000]\nTilesInSet=1\nFileName=source\nSetName=Plain\n",
     );
@@ -97,7 +93,7 @@ pub(crate) fn install_bridge_query_test_catalog(
 
 /// The ordinary catalog with a Tunnel tile1 (TMP terrain type 5): a Cell on it
 /// keeps Cell+EC = Tunnel through the Recalc(-1) its Mark runs.
-pub(crate) fn install_tunnel_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
+pub fn install_tunnel_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
     install_repair_test_catalog(grid, false, false, 5);
 }
 

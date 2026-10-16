@@ -92,7 +92,7 @@ impl HouseFactoryAbandonment {
 /// appends it. Trigger: a second building PRODUCE before the first executes
 /// (the sidebar refuses a busy structure strip, and VERA's AI asks only while
 /// no building is queued). Effect: VERA builds both in turn. Rare.
-pub(crate) fn enqueue_by_type(
+pub fn enqueue_by_type(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: &str,
@@ -347,7 +347,7 @@ fn refund_abandoned(
 /// registry's `cancel_one`. An abandoned active object is refunded and
 /// destroyed ([`settle_abandoned`]), a finished building stops waiting for
 /// placement, and the next queued build starts (`0x004FAC96`).
-pub(crate) fn cancel_by_type_for_owner(
+pub fn cancel_by_type_for_owner(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: &str,
@@ -658,7 +658,7 @@ pub(super) fn ready_object(
 /// Read-only identity of a completed building held by the existing House
 /// factory owner. Input uses the same ready-object lookup as placement; no
 /// app-side ready flag or copy of the factory is retained.
-pub(crate) fn ready_building_entity_for_owner(
+pub fn ready_building_entity_for_owner(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
@@ -675,8 +675,8 @@ pub(crate) fn ready_building_entity_for_owner(
 /// Fixture: `owner`'s `type_id` completed in its House factory and held there
 /// with its completion published, as a finished building waits for placement.
 /// Returns the held object's identity.
-#[cfg(test)]
-pub(crate) fn complete_held_building_for_test(
+#[cfg(any(test, feature = "test-support"))]
+pub fn complete_held_building_for_test(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
@@ -716,7 +716,7 @@ pub(crate) fn complete_held_building_for_test(
 }
 
 /// Fixture-only bridge for tests that deliberately seed a registry kernel.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) fn construct_active_factory_fixture(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -864,7 +864,7 @@ pub(in crate::sim) fn refresh_factory_rates_for_house(
 /// A saved relationship that the live factory operations cannot publish.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("factory state for owner {owner}: {reason}")]
-pub(crate) struct FactoryRestoreError {
+pub struct FactoryRestoreError {
     pub(crate) owner: InternedId,
     pub(crate) reason: &'static str,
 }
@@ -878,7 +878,7 @@ pub(crate) struct FactoryRestoreError {
 /// limbo objects remain supported; manager pointers are not globally reciprocal.
 /// VERA-only: checks each held object's InLimbo, Marked and LogicVector facts and its
 /// spawn/slave links against the loaded store, their source of truth.
-pub(crate) fn validate_restored_factory_state(
+pub fn validate_restored_factory_state(
     sim: &Simulation,
     rules: &RuleSet,
 ) -> Result<(), FactoryRestoreError> {

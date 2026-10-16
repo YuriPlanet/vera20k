@@ -207,7 +207,7 @@ pub struct OwnerVisibility {
     edge_cells: EdgeCells,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Tests turn this on to run the frame passes over every cell and every
     /// footprint, the reference the tracked passes must match. It is
@@ -218,9 +218,9 @@ thread_local! {
 
 /// Whether the frame passes skip [`TrackedCells`] (tests only).
 pub(crate) fn visit_every_cell() -> bool {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     return VISIT_EVERY_CELL.get();
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-support")))]
     false
 }
 
@@ -303,7 +303,7 @@ impl OwnerVisibility {
     }
 
     /// Mark a cell as both visible and revealed.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn mark_visible(&mut self, rx: u16, ry: u16) {
         self.mark_sight(rx, ry);
         if let Some(index) = self.index(rx, ry) {
@@ -357,7 +357,7 @@ impl OwnerVisibility {
 
     /// Clear this frame's sight as the sight pass does, visiting every cell.
     /// The grid stays untracked, so the next pass marks every footprint again.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn clear_all_visible(&mut self) {
         self.clear_every_cell();
         self.tracked.complete = false;
@@ -449,7 +449,7 @@ impl OwnerVisibility {
     }
 
     /// Panics unless a tracked grid holds what [`TrackedCells`] promises.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn assert_tracked(&self) {
         if !self.tracked.complete {
             return;
@@ -505,12 +505,12 @@ impl OwnerVisibility {
     }
 
     /// The ground bits in the same row-major order as `cells`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn ground_flags_raw(&self) -> &[u8] {
         &self.ground_flags
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn shroud_knowledge_raw(&self) -> &[ShroudKnowledge] {
         &self.shroud_knowledge
     }
@@ -530,7 +530,7 @@ impl OwnerVisibility {
         self.hash_map_cell_edge_cache(hasher);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn resized_preserving_state(&self, width: u16, height: u16) -> Self {
         let mut expanded = Self::new(width, height);
         expanded.dummy_visibility = self.dummy_visibility;
@@ -561,7 +561,7 @@ impl OwnerVisibility {
 
     /// Merge revealed bits from a previous tick's grid into this one.
     /// Cells that were revealed before stay revealed even if no unit sees them now.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn merge_revealed_from(&mut self, other: &OwnerVisibility) {
         // A published bit written without its knowledge.
         self.tracked.complete = false;
@@ -945,7 +945,7 @@ impl FogState {
     /// Insert one shared frozen-building footprint record. Named location:
     /// `BuildingClass::FreezeInFog` installs the same FoggedObjectClass pointer
     /// into every occupy-list cell, not one allocation per cell.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn insert_fogged_object_footprint(
         &mut self,
         viewer: InternedId,
@@ -983,7 +983,7 @@ impl FogState {
     /// `ClearFoggedObjects` is not a symbol in this program. The address stays
     /// unbound rather than swapped for a positive match against an unrelated
     /// function.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn clear_fogged_objects_at(
         &mut self,
         viewer: InternedId,
@@ -1031,7 +1031,7 @@ impl FogState {
     }
 
     /// Native `FUN_00487110 (unlabelled; name not a symbol)`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_cloaked_by_house(&mut self, house_index: u8, rx: u16, ry: u16) -> bool {
         let Some(word) = self.cloak_word_mut(rx, ry) else {
             return false;
@@ -1043,7 +1043,7 @@ impl FogState {
     }
 
     /// Native `FUN_00487130 (unlabelled; name not a symbol)`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn clear_cloaked_by_house(&mut self, house_index: u8, rx: u16, ry: u16) -> bool {
         let Some(word) = self.cloak_word_mut(rx, ry) else {
             return false;
@@ -1092,7 +1092,7 @@ impl FogState {
         self.cloaked_by_houses.get(index).copied()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn cloak_word_mut(&mut self, rx: u16, ry: u16) -> Option<&mut u32> {
         if rx >= self.width || ry >= self.height {
             return None;
@@ -1129,7 +1129,7 @@ impl FogState {
     /// - Frequency: continuous around stock submarines and detector units.
     /// - Downstream risk: sensor-driven resident-object `+0x420` reevaluation
     ///   and cloak-generator ownership remain separate mechanisms.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn sensors_add_at(
         &mut self,
         house: InternedId,
@@ -1144,7 +1144,7 @@ impl FogState {
     }
 
     /// Paired `FootClass::RemoveSensorsAt` @ `0x004DE940` decrement walk.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn sensors_remove_at(
         &mut self,
         house: InternedId,
@@ -1203,7 +1203,7 @@ impl FogState {
         &mut counters[index]
     }
 
-    pub(crate) fn increment_sensor_at(&mut self, house: InternedId, rx: u16, ry: u16) {
+    pub fn increment_sensor_at(&mut self, house: InternedId, rx: u16, ry: u16) {
         let counter = self.sensor_counter_mut(house, rx, ry);
         *counter = counter.wrapping_add(1);
     }
@@ -1325,7 +1325,7 @@ impl FogState {
     }
 
     /// Native `CellClass::DrawObjectsCloaked`: no observer-mode bypass.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn draw_objects_cloaked(
         &self,
         current_player: Option<InternedId>,
@@ -1359,8 +1359,8 @@ impl FogState {
     /// Store a recorded native `Cell+0x12C` ground byte for `owner`: its
     /// `0x08`/`0x10` in [`GROUND_VISIBLE`]/[`GROUND_OPEN`], and its `0x08` as
     /// the mapped knowledge that [`cell_ground_mapped`] reads.
-    #[cfg(test)]
-    pub(crate) fn set_ground_bits_for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ground_bits_for_test(
         &mut self,
         owner: InternedId,
         rx: u16,
@@ -1382,7 +1382,7 @@ impl FogState {
 
     /// The ground-visible bit (`Cell+0x12C & 0x08`) as [`GROUND_VISIBLE`]
     /// holds it, for checking what the cell writers stored.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn is_ground_unshrouded(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
         self.by_owner.get(&owner).is_some_and(|view| {
             view.index(rx, ry)
@@ -1443,7 +1443,7 @@ impl FogState {
     /// only its own admitted sight: no live callbacks, gap pass or map-clear
     /// byte. The game resets a map through `Simulation::reset_shroud_for_owner`
     /// (`MapClass::Reset_Shroud @ 0x00577AB0`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reset_explored_for_owner(&mut self, owner: InternedId) {
         let cells = self.rectangular_cells();
         self.transition_whole_map_for_owner(owner, cells, true, false);
@@ -1459,8 +1459,8 @@ impl FogState {
     /// Fog-only test adapter for Logic55B29A's signed modulo120. Production
     /// uses Simulation's shared578100 traversal so occupied callbacks and
     /// the actual allocated cursor execute between individual cell writes.
-    #[cfg(test)]
-    pub(crate) fn flush_pending_gap_conceal(&mut self, native_frame: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn flush_pending_gap_conceal(&mut self, native_frame: i32) {
         if native_frame % 120 != 0 {
             return;
         }
@@ -1481,7 +1481,7 @@ impl FogState {
     /// `Simulation::reveal_map_for_owner` (`MapClass::Reveal @ 0x00577D90`) or
     /// `Simulation::reveal_entire_map` (`MapClass::RevealEntireMap @
     /// 0x00577F30`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reveal_all_for_owner(&mut self, owner: InternedId) {
         let cells = self.rectangular_cells();
         self.transition_whole_map_for_owner(owner, cells, false, false);
@@ -1489,7 +1489,7 @@ impl FogState {
 
     /// [`Self::reveal_all_for_owner`] over the given cells only. Repeated
     /// materialization is suppressed by the native House240 counterpart.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reveal_cells_for_owner<I>(&mut self, owner: InternedId, cells: I)
     where
         I: IntoIterator<Item = (u16, u16)>,
@@ -1515,7 +1515,7 @@ impl FogState {
     /// Bit 3 = NW (rx-1, ry).
     ///
     /// Out-of-bounds neighbors are treated as shrouded (bit set).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn shroud_edge_mask(&self, owner: InternedId, rx: u16, ry: u16) -> u8 {
         let mut mask: u8 = 0;
         if ry == 0 || !self.is_cell_revealed(owner, rx, ry - 1) {
@@ -1589,7 +1589,7 @@ impl FogState {
     /// Test helper: mark a cell visible for the given owner.
     /// Auto-expands the grid dimensions if needed so tests don't need to
     /// pre-set width/height.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn mark_visible_for_owner(&mut self, owner: InternedId, rx: u16, ry: u16) {
         let needed_w: u16 = rx.saturating_add(1);
         let needed_h: u16 = ry.saturating_add(1);
@@ -1643,7 +1643,7 @@ pub struct VisionConfig {
     passive_owners: Vec<InternedId>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Default for VisionConfig {
     fn default() -> Self {
         Self {
@@ -1734,7 +1734,7 @@ impl VisionConfig {
 ///
 /// Creates a fresh `FogState` and populates it. Used by tests; production code
 /// calls `recompute_owner_visibility_in_place` to avoid per-tick allocation.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn recompute_owner_visibility(
     entities: &EntityStore,
     path_grid: Option<&PathGrid>,
@@ -1973,9 +1973,9 @@ pub fn recompute_owner_visibility_in_place(
         }
     }
     fog.mark_cleared_cells();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     assert_retained_sight_marked(fog);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     for vis in fog.by_owner.values() {
         vis.assert_tracked();
     }
@@ -2005,7 +2005,7 @@ pub(crate) fn holds_sight(
 /// TechnoClass+0x3D5 transition in `MapClass::Set_Clipped_LocalSize`: action 40
 /// must not fall back to the raw `Sight=` radius and thereby lose elevation,
 /// veterancy, shifted-center, or height-LOS semantics.
-pub(crate) fn reveal_entity_vision(
+pub fn reveal_entity_vision(
     fog: &mut FogState,
     entity: &crate::sim::game_entity::GameEntity,
     config: &VisionConfig,
@@ -2333,7 +2333,7 @@ fn retained_sight_covers(
 
 /// Panics unless every retained footprint cell has its ground bits on its
 /// viewer's map, as marking every footprint would leave them.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn assert_retained_sight_marked(fog: &FogState) {
     for (&(id, viewer), admission) in &fog.sight_admissions {
         let vis = &fog.by_owner[&viewer];
@@ -2404,7 +2404,7 @@ fn resolve_bounds(entities: &EntityStore, path_grid: Option<&PathGrid>) -> (u16,
 
 // Geometry-only adapter for existing kernel fixtures; production owns mapping
 // events in the source/fire/Psychic writers above, never in this test adapter.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn reveal_radius_into(
     vis: &mut OwnerVisibility,
     rx: u16,
@@ -2706,7 +2706,7 @@ pub(crate) fn coordinate_is_shrouded(
 /// canonical Dummy knowledge after a mapping of an absent allocated slot.
 /// A query error counts as unshrouded. Callers that test a Cell's own
 /// coordinate (CellClass vt+0x48) against `MapClass::IsShrouded` ask the same.
-pub(crate) fn cell_is_shrouded(
+pub fn cell_is_shrouded(
     fog: &FogState,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
     viewer: InternedId,
@@ -2718,7 +2718,7 @@ pub(crate) fn cell_is_shrouded(
 
 /// `viewer`'s map shrouds `point`: [`coordinate_is_shrouded`] with
 /// [`cell_ground_mapped`] as its `open`. A query error counts as unshrouded.
-pub(crate) fn point_is_shrouded(
+pub fn point_is_shrouded(
     fog: &FogState,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
     viewer: InternedId,
@@ -2754,7 +2754,7 @@ pub(crate) fn cell_ground_mapped(
 
 /// A flat fire-leaf reveal of `range` cells around a cell, with no height
 /// shift, height line of sight or map diamond (fixtures).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn reveal_radius(
     fog: &mut FogState,
     owner: InternedId,
@@ -2935,7 +2935,7 @@ pub(crate) fn allied_viewers(
 /// active owners and never infers a transition from an absent list entry.
 ///
 /// Takes the owner names whose persisted SpySat latch is active.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn apply_spy_sat(
     fog: &mut FogState,
     spy_sat_owners: &[InternedId],
@@ -2956,7 +2956,7 @@ pub fn apply_spy_sat(
 /// Radius/power/owner admission is supplied by the existing production collector;
 /// this does not certify its entire Building4555D0 operational policy. Friendly
 /// gap fog remains the existing separate projection of native Cell+13C.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn apply_gap_generators(
     fog: &mut FogState,
     gap_generators: &[(InternedId, u16, u16, i32)],
@@ -2976,7 +2976,7 @@ pub fn apply_gap_generators(
     apply_gap_generator_sources(fog, &sources, interner);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_gap_generator_sources(
     fog: &mut FogState,
     gap_generators: &[GapGeneratorSource],
@@ -2990,7 +2990,7 @@ pub(crate) fn apply_gap_generator_sources(
     );
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_gap_generator_sources_with_spy_sat(
     fog: &mut FogState,
     gap_generators: &[GapGeneratorSource],

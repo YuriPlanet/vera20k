@@ -581,12 +581,12 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
     );
     use crate::sim::combat::fire_error::FireError;
     assert_eq!(
-        sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[2]), None),
+        sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[2]), true, None),
         FireError::Ok,
         "the same native Building vt+80 fact must reach UnitFireError"
     );
     assert_eq!(
-        sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), None),
+        sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), true, None),
         FireError::Illegal
     );
 }

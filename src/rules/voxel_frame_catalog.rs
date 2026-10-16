@@ -39,7 +39,7 @@ pub enum VxlLayer {
     Shadow,
 }
 
-pub(crate) const NO_SPAWN_ALT_SUFFIX: &str = "WO";
+pub const NO_SPAWN_ALT_SUFFIX: &str = "WO";
 
 /// Every voxel model an object of `type_id` can select at presentation time:
 /// its own, its `UnloadingClass=` and its `%sWO`.
@@ -47,7 +47,7 @@ pub(crate) const NO_SPAWN_ALT_SUFFIX: &str = "WO";
 /// Initial atlas construction and incremental coverage checks must enumerate
 /// the same set. Otherwise an already-valid base model can hide a missing
 /// UnloadingClass or `%sWO` auxiliary model until the draw lookup fails.
-pub(crate) fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String> {
+pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String> {
     let object = rules.and_then(|rules| rules.object(type_id));
     let mut variants = vec![type_id.to_string()];
 
@@ -75,7 +75,7 @@ pub(crate) fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec
 /// name from that field. An art `Image=` does not redirect it: gamemd reads
 /// that art key for buildings (`0x0045F93A`), not for vehicles or aircraft. A
 /// name that is not a rules type is its own image.
-pub(crate) fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
+pub fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
     rules
         .and_then(|rules| rules.object(type_id))
         .map_or(type_id, |object| object.image.as_str())
@@ -98,7 +98,7 @@ pub(crate) fn indexed_turret_count(type_id: &str, rules: Option<&RuleSet>) -> i3
 /// for indexed types; ordinary and Gattling models use their base gun pair.
 /// Native does not bounds-check an indexed access. The renderer deliberately
 /// omits an invalid part instead of reproducing an unchecked pointer alias.
-pub(crate) fn voxel_turret_index(type_id: &str, rules: Option<&RuleSet>, current: i32) -> i32 {
+pub fn voxel_turret_index(type_id: &str, rules: Option<&RuleSet>, current: i32) -> i32 {
     if indexed_turret_count(type_id, rules) > 0 {
         current
     } else {
@@ -110,7 +110,7 @@ pub(crate) fn voxel_turret_index(type_id: &str, rules: Option<&RuleSet>, current
 /// `Turret=` or on `TurretCount > 0` with a current index other than -1.
 /// The type may be UnloadingClass or a disguise. Aircraft draw only their
 /// main voxel (4144B0), and building voxel turrets have their own loader.
-pub(crate) fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current: i32) -> bool {
+pub fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current: i32) -> bool {
     rules
         .and_then(|rules| rules.object(type_id))
         .is_some_and(|object| {
@@ -121,7 +121,7 @@ pub(crate) fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current
 
 /// Shared native part naming (5F7A90 / 5F7DB0): index zero has no numeric
 /// suffix; positive indices append their decimal value after TUR or BARL.
-pub(crate) fn voxel_gun_basename(image: &str, layer: VxlLayer, index: i32) -> String {
+pub fn voxel_gun_basename(image: &str, layer: VxlLayer, index: i32) -> String {
     let part = match layer {
         VxlLayer::Turret => "TUR",
         VxlLayer::Barrel => "BARL",
@@ -141,7 +141,7 @@ pub(crate) fn voxel_gun_basename(image: &str, layer: VxlLayer, index: i32) -> St
 /// tools/voxel_oracle/building_barrel.json.
 /// The retail layers leave BarrelAnimIsVoxel/VoxelBarrelFile unset; that
 /// custom C0-only override is not part of this retained filename projection.
-pub(crate) fn building_voxel_names(
+pub fn building_voxel_names(
     type_id: &str,
     rules: Option<&RuleSet>,
 ) -> Option<(Option<String>, String)> {
@@ -165,7 +165,7 @@ pub(crate) fn building_voxel_names(
 /// Missing optional barrels never create atlas work. A missing indexed turret
 /// ends enumeration, matching the loader's bounded prefix walk; UnitModel
 /// rejects the entire invalid model, as native's failure cleanup does.
-pub(crate) fn seed_layers_for(
+pub fn seed_layers_for(
     asset_manager: &AssetManager,
     type_id: &str,
     rules: Option<&RuleSet>,
@@ -217,7 +217,7 @@ pub(crate) fn seed_layers_for(
 ///
 /// Loads the HVA file from the asset manager and returns `frame_count`.
 /// Returns 1 if no HVA is found or if parsing fails (single-frame default).
-pub(crate) fn detect_hva_frame_count(
+pub fn detect_hva_frame_count(
     asset_manager: &AssetManager,
     type_id: &str,
     layer: VxlLayer,

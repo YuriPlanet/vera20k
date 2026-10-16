@@ -123,7 +123,7 @@ const DEBRIS_COUNT: (i32, i32) = (2, 4);
 /// The storm's globals. Owned here; the world hash folds the fields in
 /// declaration order.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct LightningStorm {
+pub struct LightningStorm {
     /// `0x00A9FAB4` (`LightningStorm::IsActive @ 0x0053A100`): the storm
     /// rages.
     active: bool,
@@ -181,7 +181,7 @@ pub(crate) fn has_deferment(sim: &Simulation) -> bool {
 
 /// `LightningStorm::IsActive @ 0x0053A100`: a storm rages, through the
 /// clouds that outlive its duration.
-pub(crate) fn raging(sim: &Simulation) -> bool {
+pub fn raging(sim: &Simulation) -> bool {
     sim.lightning_storm.active
 }
 
@@ -763,10 +763,10 @@ pub(super) fn debris_due(before: &StrikeCell, after: &StrikeCell) -> bool {
             && DEBRIS_LANDS.contains(&before.land))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl LightningStorm {
     /// A storm raging over `cell` for `owner` with no end.
-    pub(crate) fn raging_for_test(owner: InternedId, cell: (i16, i16)) -> Self {
+    pub fn raging_for_test(owner: InternedId, cell: (i16, i16)) -> Self {
         Self {
             active: true,
             owner: Some(owner),

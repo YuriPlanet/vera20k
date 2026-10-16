@@ -751,7 +751,7 @@ fn common_raw_request(rx: u16, ry: u16, z: u8, sub_x: i32, sub_y: i32) -> Reveal
     }
 }
 
-pub(crate) fn common_raw_terrain_cell(
+pub fn common_raw_terrain_cell(
     rx: u16,
     ry: u16,
     level: u8,

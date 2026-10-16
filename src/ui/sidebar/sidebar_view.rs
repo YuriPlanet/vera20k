@@ -160,9 +160,10 @@ pub(crate) fn build_sidebar_view_with_spec(
     top_button_sizes: [Option<[f32; 2]>; 2],
     cameo_order: &CameoStrips,
 ) -> SidebarView {
-    // Native6A6300/6A6820 and6AA600 enable tabs from retained strip entries,
-    // including ready buildings and superweapons. Use the very same entries
-    // for availability and the selected strip, independent of enabled/cost.
+    // Native6A6300/6A6820 and6AA600 own the tab buttons from the retained
+    // strip entries, including ready buildings and superweapons. This builder
+    // consumes those retained entries for the selected strip only; the button
+    // bits and the active tab arrive as event-driven state.
     let mut strips = SidebarTab::all().map(|tab| {
         let entries = collect_build_entries(
             tab.category(),
@@ -188,15 +189,10 @@ pub(crate) fn build_sidebar_view_with_spec(
             })
             .collect::<Vec<_>>()
     });
-    let available = strips.each_ref().map(|entries| !entries.is_empty());
-    let active_tab = if available[active_tab.tab_index()] {
-        active_tab
-    } else {
-        SidebarTab::all()
-            .into_iter()
-            .find(|tab| available[tab.tab_index()])
-            .unwrap_or(active_tab)
-    };
+    // The active tab is owned by the switch itself: native switches on the
+    // four tab commands, on the tab buttons and on the two AddCameo/Recalculate
+    // transitions, and it never substitutes another strip because the selected
+    // one is empty (HasEntries refuses the switch instead).
     let scroll_rows = cameo_order.scroll_row(active_tab);
     let selected_category = active_tab.category();
     let mut all_entries = std::mem::take(&mut strips[active_tab.tab_index()]);
@@ -228,12 +224,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 h: tab_h,
             },
             active: tab == active_tab,
-            disabled: !available[idx],
-            frame_index: if available[idx] {
-                gadget_state.tab_frame_enabled(idx, tab == active_tab)
-            } else {
-                2
-            },
+            disabled: gadget_state.tab_disabled[idx],
+            frame_index: gadget_state.tab_frame(idx, tab == active_tab),
         })
         .collect();
 
@@ -693,6 +685,78 @@ mod tests {
         }
     }
 
+    /// The view keeps the retained active tab and reads the tab buttons from
+    /// the event-driven gadget state.
+    ///
+    /// Native refuses a switch to a strip without entries (`StripClass::
+    /// HasEntries` 6ABAC0) instead of substituting another strip, and it only
+    /// disables a button on the AddCameo/Recalculate transitions — so an empty
+    /// strip is not swapped away, and a never-populated strip keeps the enabled
+    /// frame the constructor gave it.
+    #[test]
+    fn empty_strip_keeps_its_tab_selected_and_buttons_are_event_driven() {
+        let mut gadgets = SidebarGadgetState::new();
+        let view = build_sidebar_view(
+            1280.0,
+            960.0,
+            SidebarTab::Infantry,
+            0,
+            0,
+            0,
+            Some([28.0, 27.0]),
+            &[],
+            &[],
+            &[],
+            None,
+            &[],
+            0,
+            None,
+            &gadgets,
+            None,
+            None,
+        );
+        let active: Vec<_> = view.tabs.iter().filter(|tab| tab.active).collect();
+        assert_eq!(active.len(), 1, "exactly one tab stays selected");
+        assert_eq!(
+            active[0].tab,
+            SidebarTab::Infantry,
+            "an empty strip keeps its tab selected instead of substituting another"
+        );
+        assert!(view.tabs.iter().all(|tab| !tab.disabled));
+        assert!(view.tabs.iter().all(|tab| tab.frame_index != 2));
+
+        gadgets.set_tab_disabled(SidebarTab::Infantry.tab_index(), true);
+        let view = build_sidebar_view(
+            1280.0,
+            960.0,
+            SidebarTab::Infantry,
+            0,
+            0,
+            0,
+            Some([28.0, 27.0]),
+            &[],
+            &[],
+            &[],
+            None,
+            &[],
+            0,
+            None,
+            &gadgets,
+            None,
+            None,
+        );
+        assert!(view.tabs[SidebarTab::Infantry.tab_index()].disabled);
+        assert_eq!(view.tabs[SidebarTab::Infantry.tab_index()].frame_index, 2);
+        assert_eq!(
+            view.tabs
+                .iter()
+                .filter(|tab| tab.active)
+                .map(|tab| tab.tab)
+                .collect::<Vec<_>>(),
+            vec![SidebarTab::Infantry]
+        );
+    }
+
     #[test]
     fn gadget_presentation_is_retained_in_sidebar_view() {
         let mut gadgets = SidebarGadgetState::new();
@@ -783,8 +847,16 @@ mod tests {
         }
     }
 
+    /// Retained entries fill the selected strip; the tab and its buttons stay
+    /// event-driven state.
+    ///
+    /// Native never substitutes another strip when the retained selection is
+    /// empty — a switch into an empty strip is refused by
+    /// `StripClass::HasEntries` 6ABAC0 instead — and each tab keeps its own
+    /// parked row (`CameoStrips::scroll_row`, native `StripClass.nTopRow`
+    /// +0x44).
     #[test]
-    fn retained_entries_drive_tabs_and_fallback_uses_the_strip_scroll() {
+    fn retained_entries_fill_the_selected_strip_without_reselecting_it() {
         use super::{SidebarChromeLayoutSpec, build_sidebar_view_with_spec};
         let mut interner = StringInterner::new();
         let options: Vec<_> = (0..30)
@@ -799,7 +871,7 @@ mod tests {
             .collect();
         let build = |options: &[BuildOption]| {
             let mut cameos = CameoStrips::layout_fixture(options, &[], &[]);
-            cameos.set_scroll_row(SidebarTab::Building, 3);
+            cameos.set_scroll_row(SidebarTab::Vehicle, 3);
             build_sidebar_view_with_spec(
                 SidebarChromeLayoutSpec::stock(),
                 800.,
@@ -826,16 +898,31 @@ mod tests {
                 &cameos,
             )
         };
+        let vehicle = SidebarTab::Vehicle.tab_index();
         let empty = build(&[]);
+        assert_eq!(empty.tabs.iter().filter(|tab| tab.active).count(), 1);
         assert!(
-            empty
-                .tabs
-                .iter()
-                .all(|tab| tab.disabled && tab.frame_index == 2)
+            empty.tabs[vehicle].active,
+            "an empty strip keeps its selected tab"
         );
-        let view = build(&options);
-        assert!(view.tabs[0].active && !view.tabs[0].disabled);
-        assert!(view.tabs[1..].iter().all(|tab| tab.disabled));
+        assert!(
+            empty.tabs.iter().all(|tab| !tab.disabled),
+            "the default event state leaves every tab button enabled"
+        );
+        assert_eq!(empty.scroll_rows, 0);
+
+        // The retained Vehicle entries drive the selected strip and its own
+        // parked row; the fixture's build-limit reason keeps every item grey.
+        let vehicles: Vec<_> = options
+            .iter()
+            .map(|item| BuildOption {
+                object_category: ObjectCategory::Vehicle,
+                queue_category: ProductionCategory::Vehicle,
+                ..item.clone()
+            })
+            .collect();
+        let view = build(&vehicles);
+        assert!(view.tabs[vehicle].active);
         assert_eq!(view.scroll_rows, 3);
         assert!(view.items.iter().all(|item| !item.enabled));
     }

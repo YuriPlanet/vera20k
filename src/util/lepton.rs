@@ -38,13 +38,13 @@ pub const CELL_CENTER_LEPTON_I32: i32 = 128;
 /// Tile width in pixels (60.0) divided by leptons per cell (256).
 /// Pre-computed for efficient lepton → screen pixel conversion.
 /// = 60.0 / 256.0 = 0.234375
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) const SCREEN_X_PER_LEPTON: f32 = 60.0 / 256.0;
 
 /// Tile half-height in pixels (15.0) divided by leptons per cell (256).
 /// Pre-computed for efficient lepton → screen pixel conversion.
 /// = 30.0 / 256.0 = 0.1171875
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) const SCREEN_Y_PER_LEPTON: f32 = 30.0 / 256.0;
 
 /// Screen-Y offset every VERA world layer carries relative to the original's
@@ -314,7 +314,7 @@ pub fn subcell_lepton_offset(sub_cell: Option<u8>) -> (SimFixed, SimFixed) {
 ///   dy_pixels = (sub_x + sub_y - 256) * (TILE_HEIGHT / 2) / 256
 ///
 /// This replaces hardcoded pixel offsets with lepton-derived values.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn lepton_sub_to_screen_offset(sub_x: SimFixed, sub_y: SimFixed) -> (f32, f32) {
     let dx_lep: f32 = sub_x.to_num::<f32>() - CELL_CENTER_LEPTON.to_num::<f32>();
     let dy_lep: f32 = sub_y.to_num::<f32>() - CELL_CENTER_LEPTON.to_num::<f32>();
@@ -330,7 +330,7 @@ pub fn lepton_sub_to_screen_offset(sub_x: SimFixed, sub_y: SimFixed) -> (f32, f3
 /// gamemd-derived: active YR `TacticalClass::CoordsToClient2` at `0x006D2140`
 /// forms each 60/30-pixel numerator in signed integer arithmetic and divides
 /// the complete result by 256, truncating toward zero.
-pub(crate) fn project_absolute_lepton_xy(world_x_leptons: i32, world_y_leptons: i32) -> (i32, i32) {
+pub fn project_absolute_lepton_xy(world_x_leptons: i32, world_y_leptons: i32) -> (i32, i32) {
     let world_x = i64::from(world_x_leptons);
     let world_y = i64::from(world_y_leptons);
     let screen_x_numerator = world_x * 60 / 2 + world_y * -60 / 2;
@@ -342,7 +342,7 @@ pub(crate) fn project_absolute_lepton_xy(world_x_leptons: i32, world_y_leptons: 
 }
 
 /// Project an exact signed XYZ world coordinate into VERA's world-pixel frame.
-pub(crate) fn absolute_leptons_to_screen(
+pub fn absolute_leptons_to_screen(
     world_x_leptons: i32,
     world_y_leptons: i32,
     world_z_leptons: i32,
@@ -387,7 +387,7 @@ pub(crate) fn absolute_lepton_axis(cell: u16, sub_cell: SimFixed) -> i32 {
 /// footprint cell. That shift is owned by
 /// `render::locomotor_visual::BUILDING_ART_LIFT_PX`, not by this function —
 /// every other consumer here wants the plain projection.
-pub(crate) fn lepton_to_screen_exact_z(
+pub fn lepton_to_screen_exact_z(
     rx: u16,
     ry: u16,
     sub_x: SimFixed,

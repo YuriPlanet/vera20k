@@ -63,11 +63,11 @@ const CHRONO_ANIM_Z_LIFT: i32 = 5;
 /// The `[SuperWeaponTypes]` index the Chronosphere's player click selects
 /// for the next click (the display's selected Super `0x008809A0` = 4 at
 /// `0x006CC46E`), a literal: retail ChronoWarpSpecial.
-pub(crate) const CHRONO_WARP_SELECTION_INDEX: usize = 4;
+pub const CHRONO_WARP_SELECTION_INDEX: usize = 4;
 
 impl Simulation {
     /// Every Super's held ChronoPlacement anim with its owner.
-    pub(crate) fn super_placement_anims(&self) -> Vec<(InternedId, AnimId)> {
+    pub fn super_placement_anims(&self) -> Vec<(InternedId, AnimId)> {
         self.super_weapons
             .iter()
             .flat_map(|(owner, weapons)| {

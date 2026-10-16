@@ -257,7 +257,7 @@ impl SequenceSet {
 
     /// The type's native record for an action id (Type `+0xE3C`), as the
     /// original ReadSequenceData stores it; `None` for a set without them.
-    pub(crate) fn infantry_action(
+    pub fn infantry_action(
         &self,
         action: i32,
     ) -> Option<&crate::rules::infantry_sequence::InfantrySequenceEntry> {
@@ -268,7 +268,7 @@ impl SequenceSet {
 
     /// Read the retained native bank for atlas preparation. Rules binding owns
     /// construction, rereads and invalidation; consumers cannot mutate it.
-    pub(crate) fn infantry_actions(
+    pub fn infantry_actions(
         &self,
     ) -> Option<&[crate::rules::infantry_sequence::InfantrySequenceEntry]> {
         self.infantry_actions.as_deref()

@@ -524,7 +524,7 @@ impl Simulation {
     /// Component-based movement fixtures enter the same Process corridor as
     /// live object turns, or the tube turn that replaces it. This exposes no
     /// alternate physics or callback loop.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn process_ground_locomotor_for_test(
         &mut self,
         id: u64,
@@ -540,7 +540,7 @@ impl Simulation {
     /// or the tube turn of an object holding a tube.
     /// Infantry Scatter51D478 calls the active locomotor synchronously; its
     /// PerCell and boundary receivers must finish before Scatter returns.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn process_ground_locomotor_stats_for_test(
         &mut self,
         stable_id: u64,

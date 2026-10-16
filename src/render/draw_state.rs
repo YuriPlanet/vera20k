@@ -138,9 +138,7 @@ pub struct DrawDecision {
 /// `remap_row` is the palette-ramp selection. `fx_params.x` is the final alpha
 /// multiplier selected by the native translucency bits; `fx_params.y` preserves
 /// those selector bits for diagnostics; `fx_params.z` is unused (1.0);
-/// `fx_params.w` optionally overrides the zdepth-atlas scale, with zero retaining
-/// the terrain default.
-/// For voxel unit bodies carrying the composite bridge-split flag instead,
+/// For voxel unit bodies carrying the composite bridge-split flag,
 /// `fx_params.w` carries the tactical scissor height in world pixels (zero
 /// means full viewport). This shader-specific transport does not alter effects.
 /// `sinking_row` is the retained world row a voxel draw with FX_SINKING_CLIP
@@ -527,19 +525,6 @@ mod tests {
         let state = DrawState::for_entity(&entity, 45, 3, ObserverDrawContext::default()).state;
         assert_eq!(state.fx_flags, FX_WARP);
         assert_eq!(state.fx_params[0], 0.5);
-    }
-
-    #[test]
-    fn gsi_13_09_zdepth_shader_reads_the_zdata_sign_from_fx_params_w() {
-        // fx_params.w carries the Z-data sign (+1 tiles, -1 bridges); the
-        // row adjustment remains in native units. Actual TMP/SHP/VXL GPU
-        // regressions cover the shared u16 storage and depth admission.
-        let shader = include_str!("zdepth_shader.wgsl");
-        assert!(shader.contains("@location(9) fx_params: vec4f"));
-        assert!(shader.contains("@location(11) z_adjust: f32"));
-        assert!(shader.contains("select(1.0, -1.0, instance.fx_params.w < 0.0)"));
-        assert!(shader.contains("input.canvas_top - (input.z_adjust + input.z_sign * z_byte)"));
-        assert!(!shader.contains("0.0002"));
     }
 
     #[test]

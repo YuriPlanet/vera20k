@@ -16,7 +16,7 @@ use crate::rules::retail_sources::{IniSourceIdentity, select_ini};
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
 #[derive(Debug)]
-pub(crate) struct AudioDefinitions {
+pub struct AudioDefinitions {
     sounds: Arc<SoundRegistry>,
     eva: EvaRegistry,
     sound_source: Option<IniSourceIdentity>,
@@ -24,7 +24,7 @@ pub(crate) struct AudioDefinitions {
 }
 
 impl AudioDefinitions {
-    pub(crate) fn select(assets: &AssetManager) -> Self {
+    pub fn select(assets: &AssetManager) -> Self {
         let sound = select_ini(assets, "soundmd.ini")
             .map_err(|error| log::warn!("Audio definitions: {error}"))
             .ok();
@@ -49,19 +49,19 @@ impl AudioDefinitions {
         }
     }
 
-    pub(crate) fn sounds(&self) -> &Arc<SoundRegistry> {
+    pub fn sounds(&self) -> &Arc<SoundRegistry> {
         &self.sounds
     }
 
-    pub(crate) fn eva(&self) -> &EvaRegistry {
+    pub fn eva(&self) -> &EvaRegistry {
         &self.eva
     }
 
-    pub(crate) fn sound_source(&self) -> Option<&IniSourceIdentity> {
+    pub fn sound_source(&self) -> Option<&IniSourceIdentity> {
         self.sound_source.as_ref()
     }
 
-    pub(crate) fn eva_source(&self) -> Option<&IniSourceIdentity> {
+    pub fn eva_source(&self) -> Option<&IniSourceIdentity> {
         self.eva_source.as_ref()
     }
 }

@@ -542,7 +542,7 @@ fn health_strictly_above_condition_red(
         == crate::util::native_x87::MaskedX87Ordering::Greater
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[test]
 fn original_health_ratio_corpus_populates_cloak_tick_facts() {
     use crate::rules::ini_parser::IniFile;

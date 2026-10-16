@@ -62,26 +62,26 @@ impl LowBridgeTubeMovementState {
     }
 
     /// Install a fixture's tube.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_tube_id_for_test(&mut self, tube_id: TubeId) {
         self.tube_id = tube_id;
     }
 
     /// Install a fixture's cursor.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_cursor_for_test(&mut self, cursor: u8) {
         self.cursor = cursor;
     }
 
     /// Install a fixture's transit target.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_target_for_test(&mut self, target: DriveCoord) {
         self.target = target;
     }
 
     /// A fixture's transit.
-    #[cfg(test)]
-    pub(crate) fn for_test(tube_id: TubeId, cursor: u8, target: DriveCoord) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(tube_id: TubeId, cursor: u8, target: DriveCoord) -> Self {
         Self {
             tube_id,
             cursor,

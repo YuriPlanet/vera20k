@@ -1842,15 +1842,6 @@ impl BatchRenderer {
     /// The color texture view and depth texture view must have identical UV layout
     /// (same atlas dimensions and tile placements) so the shader can sample both
     /// at the same UV coordinates.
-    pub fn create_zdepth_bind_group(
-        &self,
-        gpu: &GpuContext,
-        color_view: &wgpu::TextureView,
-        depth_view: &wgpu::TextureView,
-    ) -> wgpu::BindGroup {
-        self.create_zdepth_bind_group_on_device(&gpu.device, color_view, depth_view)
-    }
-
     pub(crate) fn create_zdepth_bind_group_on_device(
         &self,
         device: &wgpu::Device,
@@ -1883,10 +1874,10 @@ impl BatchRenderer {
         })
     }
 
-    /// Draw instances with the Z-depth pipeline (per-pixel frag_depth, Less compare).
+    /// Draw instances with the TMP Z-depth pipeline (per-pixel depth, LessEqual).
     ///
     /// Used for terrain tiles with TMP Z-data. The bind_group must be created via
-    /// `create_zdepth_bind_group()` with matching color + depth atlas textures.
+    /// `create_zdepth_bind_group_on_device()` with matching color + depth atlas textures.
     pub fn draw_with_buffer_zdepth<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,

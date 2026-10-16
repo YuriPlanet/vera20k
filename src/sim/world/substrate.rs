@@ -29,7 +29,7 @@ use crate::sim::voxel_anim::VoxelAnimStore;
 /// Tag/Trigger ordinals belong to their own registries; Object/Overlay stable
 /// IDs share the substrate allocator but retain distinct destructor owners.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub(crate) enum DeferredDeleteTicket {
+pub enum DeferredDeleteTicket {
     Object(u64),
     Overlay(u64),
     Tag(usize),
@@ -40,7 +40,7 @@ pub(crate) enum DeferredDeleteTicket {
 /// and readiness belong to the corresponding object owners; this queue owns
 /// admission order and duplicate removal, including destructor-added entries.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct DeferredDeleteQueue {
+pub struct DeferredDeleteQueue {
     entries: Vec<Option<DeferredDeleteTicket>>,
     /// Derived identity→storage positions; updated at every append/removal.
     positions: std::collections::BTreeMap<DeferredDeleteTicket, Vec<usize>>,
@@ -49,7 +49,7 @@ pub(crate) struct DeferredDeleteQueue {
     /// compaction/load; no family-specific queue or queue shadow exists.
     prefix_counts: Vec<usize>,
     live_count: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fail_next_overlay_queue: bool,
 }
 
@@ -64,7 +64,7 @@ impl DeferredDeleteQueue {
         self.append(DeferredDeleteTicket::Trigger(id));
     }
     pub(crate) fn queue_overlay(&mut self, id: u64) -> Result<(), ()> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if std::mem::take(&mut self.fail_next_overlay_queue) {
             return Err(());
         }
@@ -72,11 +72,11 @@ impl DeferredDeleteQueue {
         self.append(DeferredDeleteTicket::Overlay(id));
         Ok(())
     }
-    pub(crate) fn contains_object(&self, id: &u64) -> bool {
+    pub fn contains_object(&self, id: &u64) -> bool {
         self.positions
             .contains_key(&DeferredDeleteTicket::Object(*id))
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn contains_overlay(&self, id: u64) -> bool {
         self.positions
             .contains_key(&DeferredDeleteTicket::Overlay(id))
@@ -97,18 +97,18 @@ impl DeferredDeleteQueue {
         let position = self.storage_position(index)?;
         self.entries[position]
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn len(&self) -> usize {
         self.live_count
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn is_empty(&self) -> bool {
         self.live_count == 0
     }
     pub(crate) fn retained_tickets(&self) -> impl Iterator<Item = DeferredDeleteTicket> + '_ {
         self.entries.iter().flatten().copied()
     }
-    pub(crate) fn object_tickets(&self) -> impl Iterator<Item = u64> + '_ {
+    pub fn object_tickets(&self) -> impl Iterator<Item = u64> + '_ {
         self.retained_tickets().filter_map(|ticket| match ticket {
             DeferredDeleteTicket::Object(id) => Some(id),
             _ => None,
@@ -200,13 +200,13 @@ impl DeferredDeleteQueue {
         }
         self.rebuild_prefix();
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn tickets(&self) -> Vec<DeferredDeleteTicket> {
         self.entries.iter().flatten().copied().collect()
     }
     /// Check every derived index against the sole serialized order source.
     /// Native history tests call this before and after every saved boundary.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn assert_consistent_for_test(&self) {
         let mut rebuilt = Self {
             entries: self.entries.clone(),
@@ -225,11 +225,11 @@ impl DeferredDeleteQueue {
         }
         assert_eq!(self.ticket(self.live_count), None);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_ids(&self) -> Vec<u64> {
         self.object_tickets().collect()
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn overlay_count(&self) -> usize {
         self.entries
             .iter()
@@ -237,19 +237,19 @@ impl DeferredDeleteQueue {
             .filter(|ticket| matches!(ticket, DeferredDeleteTicket::Overlay(_)))
             .count()
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_for_test(&mut self) {
         *self = Self::default();
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn remove_ticket_for_test(&mut self, ticket: DeferredDeleteTicket) {
         self.remove(ticket);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn fail_next_overlay_queue_for_test(&mut self) {
         self.fail_next_overlay_queue = true;
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn swap_for_test(&mut self, a: usize, b: usize) {
         let a = self.storage_position(a).unwrap();
         let b = self.storage_position(b).unwrap();
@@ -315,7 +315,7 @@ impl EnterOrderCounter {
     }
 
     /// Next value that will be handed out.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn current(self) -> u64 {
         self.0
     }
@@ -343,11 +343,11 @@ pub(crate) enum ObjectKind {
 /// Owns the active-object order and the substrate's monotonic counters. Field
 /// paths are `Simulation.substrate.*`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ObjectSubstrate {
+pub struct ObjectSubstrate {
     /// Monotonic per-instance id source (never reused). Each spawned entity
     /// draws the next value; a stale reference degrades to `None` rather than
     /// aliasing a reused slot.
-    pub(crate) next_stable_object_id: u64,
+    pub next_stable_object_id: u64,
     /// Monotonic source for the independently ordered AirTracker. Cell lists
     /// keep their own insertion order. See `EnterOrderCounter`.
     pub(crate) next_air_tracker_order: EnterOrderCounter,
@@ -361,7 +361,7 @@ pub(crate) struct ObjectSubstrate {
     /// Actual CellClass-style memberships/order, preserved across save/restore.
     /// Cell483C10/4839F0 saves and swizzles its ground/deck heads; rebuilding
     /// from current locomotor phase or terrain cannot recover those histories.
-    pub(crate) occupancy: OccupancyGrid,
+    pub occupancy: OccupancyGrid,
     /// Independent ground/deck vehicle-occupation bit planes. Rebuilt from
     /// entity lifecycle and serialized Drive footprint state after load.
     #[serde(skip)]
@@ -380,18 +380,18 @@ pub(crate) struct ObjectSubstrate {
     /// object each cell holds. Serialized verbatim: a hovering Jumpjet's claim
     /// is not reconstructible from its position or locomotor phase.
     #[serde(default)]
-    pub(crate) air_slots: AirSlotGrid,
+    pub air_slots: AirSlotGrid,
     /// Authoritative CellClass `+0xDC` per-house Building base reservations,
     /// including the single shared dummy CellClass mask.
     #[serde(default)]
-    pub(crate) base_reservations: CellReservationGrid,
+    pub base_reservations: CellReservationGrid,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
-    pub(crate) entities: EntityStore,
+    pub entities: EntityStore,
     /// Separate AnimClass registry sharing the global object ID namespace and
     /// LogicVector with entities.
     #[serde(default)]
-    pub(crate) anims: AnimStore,
+    pub anims: AnimStore,
     /// `VoxelAnimClass` registry — the flying VXL debris a death throws. Shares
     /// the global object-ID namespace and the LogicVector with entities and
     /// anims, exactly as native's `VoxelAnimClass::Constructor` does through
@@ -408,7 +408,7 @@ pub(crate) struct ObjectSubstrate {
     /// lifecycle facts describe dead/limbo/cell/logic state. Serialized verbatim;
     /// the state hash folds queue identities in insertion order.
     #[serde(default)]
-    pub(crate) pending_delete: DeferredDeleteQueue,
+    pub pending_delete: DeferredDeleteQueue,
 }
 
 impl ObjectSubstrate {
@@ -418,7 +418,7 @@ impl ObjectSubstrate {
     pub(crate) fn allocate_stable_id(counter: &mut u64, entities: &EntityStore) -> u64 {
         let id = *counter;
         // Fixtures may insert entities directly without advancing the cursor.
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         let id = {
             let mut id = id;
             while entities.contains(id) {
@@ -426,7 +426,7 @@ impl ObjectSubstrate {
             }
             id
         };
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "test-support")))]
         debug_assert!(!entities.contains(id), "stable id {id} is already live");
         *counter = id.saturating_add(1);
         id

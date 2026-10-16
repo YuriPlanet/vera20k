@@ -436,12 +436,7 @@ fn retail_ifv_forcefire_guidance_survives_restore_and_collapses_live_bridge() {
 fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projectile_name: &str) {
     let retail = std::env::var("RA2_DIR")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            crate::util::config::GameConfig::load()
-                .unwrap()
-                .paths
-                .ra2_dir
-        });
+        .unwrap_or_else(|_| crate::test_fixture::game_config().unwrap().paths.ra2_dir);
     let mut scenario = crate::headless_scenario::load(&retail, "Hills.mmx", 0x0B21_D6E5)
         .expect("production retail Hills load");
     // The headless loader omits the app's retained restore template. Capture

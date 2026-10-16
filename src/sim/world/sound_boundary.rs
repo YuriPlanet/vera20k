@@ -12,21 +12,21 @@ use super::{SimSoundEvent, Simulation};
 /// Consume the newly reached prefix through the existing process sound owner.
 /// Facts remain available to the other frame consumers. Implementations retain
 /// only a delivered-prefix count, never the borrowed simulation or events.
-pub(crate) trait SoundBoundary {
+pub trait SoundBoundary {
     fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]);
     fn delivered(&self) -> usize;
 }
 
 /// Stack-scoped process effects accompanying this simulation visit.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct FrameEffects<'a> {
+pub struct FrameEffects<'a> {
     sound: Option<&'a dyn SoundBoundary>,
     rules: Option<&'a RuleSet>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
 }
 
 impl<'a> FrameEffects<'a> {
-    pub(crate) const fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             sound: None,
             rules: None,
@@ -34,7 +34,7 @@ impl<'a> FrameEffects<'a> {
         }
     }
 
-    pub(crate) fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
+    pub fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
             rules: None,
@@ -44,7 +44,7 @@ impl<'a> FrameEffects<'a> {
 
     /// Bind the frame's authoritative resources even when a nested native
     /// lifecycle call needs no rules of its own. No borrow survives the frame.
-    pub(crate) fn with_rules(self, rules: Option<&'a RuleSet>) -> Self {
+    pub fn with_rules(self, rules: Option<&'a RuleSet>) -> Self {
         Self {
             rules: rules.or(self.rules),
             ..self

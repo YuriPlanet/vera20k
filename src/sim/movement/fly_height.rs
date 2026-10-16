@@ -5,7 +5,7 @@
 //! landing-effect and Display transactions are separate callers, still being
 //! migrated. Native comparisons: tools/spatial_oracle/fly_height.{py,json}.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use super::locomotor::AirMovePhase;
 use crate::sim::components::DriveCoord;
 use crate::util::fixed_math::SimFixed;
@@ -366,7 +366,7 @@ impl FlyRuntime {
 
     /// A test projection of the flight phase. This is deliberately not the
     /// native+50/+51 flags or an independently saved FSM.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mission_phase(&self, height: i32) -> AirMovePhase {
         if height == 0 && self.target_height == 0 {
             AirMovePhase::Landed

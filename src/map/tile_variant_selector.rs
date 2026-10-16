@@ -43,7 +43,7 @@ pub struct TileVariantSelectorCache {
 /// Catalog clones retain this handle; the table is initialized only by the
 /// existing4814F0 selector, using the Main callback of its current caller.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct TileVariantSelector {
+pub struct TileVariantSelector {
     table8: Arc<OnceLock<[u8; TABLE_LEN]>>,
 }
 
@@ -56,12 +56,12 @@ impl TileVariantSelector {
         selector
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_initialized(table: [u8; TABLE_LEN]) -> Self {
         Self::from_table(Some(table))
     }
 
-    pub(crate) fn initialized_table(&self) -> Option<[u8; TABLE_LEN]> {
+    pub fn initialized_table(&self) -> Option<[u8; TABLE_LEN]> {
         self.table8.get().copied()
     }
 
@@ -89,7 +89,7 @@ impl TileVariantSelector {
 impl TileVariantSelectorCache {
     /// Prepare a saved-load candidate without changing the live process
     /// table. Its matching Main cursor is committed with this candidate.
-    pub(crate) fn detached(&self) -> Self {
+    pub fn detached(&self) -> Self {
         Self {
             selector: TileVariantSelector::from_table(self.selector.initialized_table()),
             cached_clear_tile_base: self.cached_clear_tile_base,
@@ -100,7 +100,7 @@ impl TileVariantSelectorCache {
     /// Adopt a successful candidate into the retained process identity.
     /// Divergence means another load initialized the table after preparation;
     /// its Main continuation cannot be silently paired with this candidate.
-    pub(crate) fn adopt_prepared(&mut self, prepared: Self) -> Result<(), &'static str> {
+    pub fn adopt_prepared(&mut self, prepared: Self) -> Result<(), &'static str> {
         match (
             self.selector.initialized_table(),
             prepared.selector.initialized_table(),
@@ -119,12 +119,12 @@ impl TileVariantSelectorCache {
         Ok(())
     }
 
-    pub(crate) fn selector(&self) -> TileVariantSelector {
+    pub fn selector(&self) -> TileVariantSelector {
         self.selector.clone()
     }
 
-    #[cfg(test)]
-    pub(crate) fn initialized_for_test(table: [u8; TABLE_LEN]) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn initialized_for_test(table: [u8; TABLE_LEN]) -> Self {
         Self {
             selector: TileVariantSelector::from_initialized(table),
             ..Self::default()
@@ -151,7 +151,7 @@ impl TileVariantSelectorCache {
 
     /// Publish the current theater registry after this map's Fill pass. `None`
     /// maps to the native unresolved/reset sentinel `-1`.
-    pub(crate) fn complete_theater_registry_load(
+    pub fn complete_theater_registry_load(
         &mut self,
         clear_tile: Option<u16>,
         water_set: Option<u16>,
@@ -160,13 +160,13 @@ impl TileVariantSelectorCache {
         self.cached_water_set_base = water_set.map_or(-1, i32::from);
     }
 
-    #[cfg(test)]
-    pub(crate) fn cached_clear_tile_base(&self) -> i32 {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn cached_clear_tile_base(&self) -> i32 {
         self.cached_clear_tile_base
     }
 
-    #[cfg(test)]
-    pub(crate) fn cached_water_set_base(&self) -> i32 {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn cached_water_set_base(&self) -> i32 {
         self.cached_water_set_base
     }
 
@@ -192,7 +192,7 @@ impl TileVariantSelectionContext<'_, '_> {
     /// Resolve one pre-IsoMapPack Fill cell. The callback owns Scenario RNG:
     /// Water calls `RandomRanged(0,3)` and advances once; every other value
     /// calls equal-bound `RandomRanged(0,0)` and leaves the cursor unchanged.
-    pub(crate) fn draw_fill_tile_index(
+    pub fn draw_fill_tile_index(
         &mut self,
         is_water: bool,
         scenario_ranged_draw: &mut dyn FnMut(u32, u32) -> u32,
@@ -236,7 +236,7 @@ impl TileVariantSelectionContext<'_, '_> {
     }
 
     /// Copy the existing process table without initializing it or drawing RNG.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn initialized_table(&self) -> Option<[u8; TABLE_LEN]> {
         self.cache.selector.initialized_table()
     }
@@ -504,5 +504,74 @@ mod tests {
             expected_scenario_rng.logical_state()
         );
         assert_eq!(water_main_rng.logical_state(), main_before);
+    }
+
+    #[test]
+    fn stock_clear_cold_selector_matches_original_main_and_process_table() {
+        let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/tmp_clear_render.json",
+        ))
+        .unwrap();
+        let native = &packet["inputs"]["selector_generation"];
+        let mut main = SimRng::new(native["seed"].as_u64().unwrap());
+        let state_hash = |rng: &SimRng| {
+            let bytes: Vec<u8> = rng
+                .native_state_hex()
+                .as_bytes()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect();
+            crate::util::sha256::sha256_hex(&bytes)
+        };
+        assert_eq!(
+            state_hash(&main),
+            native["main_before_sha256"].as_str().unwrap()
+        );
+        let mut cache = TileVariantSelectorCache::default();
+        let mut draw = || main.next_u32();
+        let mut selector = cache.begin_load(&mut draw);
+        let xy = &native["coords"];
+        let selected = selector.select_variant(
+            xy[0].as_i64().unwrap() as i32,
+            xy[1].as_i64().unwrap() as i32,
+            0,
+            1,
+            1,
+            native["file_count"].as_u64().unwrap() as u8,
+        );
+        assert_eq!(
+            u64::from(selected),
+            native["selected_file_index"].as_u64().unwrap()
+        );
+        assert_eq!(
+            selector.raw_draw_count() as u64,
+            native["raw_main_draw_count"].as_u64().unwrap()
+        );
+        let table: [u8; 64] =
+            std::array::from_fn(|i| packet["inputs"]["selector_table"][i].as_u64().unwrap() as u8);
+        assert_eq!(selector.initialized_table(), Some(table));
+        drop(selector);
+        drop(draw);
+        assert_eq!(
+            state_hash(&main),
+            native["main_after_sha256"].as_str().unwrap()
+        );
+        let retained = cache.selector();
+        let mut no_draw = || panic!("warm clear draw must retain Main state");
+        assert_eq!(
+            retained.select_variant(
+                (
+                    xy[0].as_i64().unwrap() as i32,
+                    xy[1].as_i64().unwrap() as i32
+                ),
+                0,
+                (1, 1),
+                8,
+                &mut no_draw
+            ),
+            selected
+        );
     }
 }

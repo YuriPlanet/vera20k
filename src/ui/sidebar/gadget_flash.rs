@@ -144,6 +144,8 @@ pub struct SidebarGadgetState {
     pub tab_flashes: [GadgetFlash; 4],
 
     /// Strip availability projected at sidebar refresh (native gadget+1E).
+    /// Native only flips these on the AddCameo/Recalculate transitions, so the
+    /// bit is event-driven state rather than a per-refresh projection.
     pub tab_disabled: [bool; 4],
 
     /// Mirrors Display +0x11B0 (set by 4AC8C0). Toggled by clicking the Repair button.
@@ -192,11 +194,17 @@ impl SidebarGadgetState {
         Self::default()
     }
 
+    /// Native6A6472 enables after Add and6A6820/Recalculate disables after the
+    /// last entry is removed; the retained bit is what the frame table reads.
+    pub(crate) fn set_tab_disabled(&mut self, tab_index: usize, disabled: bool) {
+        self.tab_disabled[tab_index] = disabled;
+        self.tab_flashes[tab_index].disabled = disabled;
+    }
+
     /// Frame index for a tab gadget. Caller passes whether this tab is the
     /// currently-active tab (the externally driven latch-ON mirror,
     /// study §2.5 / G22 Kind 2).
-    #[cfg(test)]
-    pub fn tab_frame(&self, tab_index: usize, is_active_tab: bool) -> u8 {
+    pub(crate) fn tab_frame(&self, tab_index: usize, is_active_tab: bool) -> u8 {
         if self.tab_disabled[tab_index] {
             return 2;
         }

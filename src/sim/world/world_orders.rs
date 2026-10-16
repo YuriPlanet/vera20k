@@ -55,7 +55,7 @@ enum InfantryPerCellBuildingAdmission {
 /// The native Engineer object-action arm. Input and cursor consumers share
 /// this result rather than independently guessing from relation or health.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EngineerBuildingAction {
+pub enum EngineerBuildingAction {
     Capture,
     Damage,
     Repair(bool),
@@ -67,7 +67,7 @@ pub(crate) enum EngineerBuildingAction {
 /// Move is native action2: the barred move cursor still reaches the ordinary
 /// object-coordinate Move receiver when the unit can move.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UnitRepairAction {
+pub enum UnitRepairAction {
     Repair,
     Select,
     Move,
@@ -77,7 +77,7 @@ pub(crate) enum UnitRepairAction {
 /// (`0x00740122..0x007401BC`) makes of a Select over a Building whose
 /// CAN_LOAD admits the Unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BuildingClickAction {
+pub enum BuildingClickAction {
     /// Action 3.
     Enter,
     /// Action 0xB, at a `Grinding=` building (`+0x16AD`).
@@ -126,7 +126,7 @@ impl Simulation {
     /// aircraft's What_Action answers 0 (`0x00417CC0` -> `0x006FFEC9`, cell
     /// `0x00417F80`). Producer-side, like `unit_repair_action`: an event sent
     /// before the object went berserk still executes.
-    pub(crate) fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
+    pub fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
         selection
             .iter()
             .copied()
@@ -145,7 +145,7 @@ impl Simulation {
     /// and ClickedAction witnesses: spatial_oracle/bunker_attack_action.json
     /// repair_rows (Steam gamemd 3e81a617). This is producer-side admission;
     /// a delivered Attack event must not repeat it after cargo/health changes.
-    pub(crate) fn unit_repair_action(
+    pub fn unit_repair_action(
         &self,
         actor_id: u64,
         target_id: u64,
@@ -240,7 +240,7 @@ impl Simulation {
     /// Producer-side, like [`Self::unit_repair_action`].
     ///
     /// [`can_load_query`]: crate::sim::radio::receive::can_load_query
-    pub(crate) fn unit_building_click_action(
+    pub fn unit_building_click_action(
         &self,
         actor_id: u64,
         target_id: u64,
@@ -275,7 +275,7 @@ impl Simulation {
         })
     }
 
-    pub(crate) fn house_is_human_player(&self, owner: InternedId) -> bool {
+    pub fn house_is_human_player(&self, owner: InternedId) -> bool {
         // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
         // mode zero uses the two native human/control flags.
         if self.session.game_mode_nonzero {
@@ -286,6 +286,21 @@ impl Simulation {
             self.houses
                 .get(&owner)
                 .is_some_and(|h| h.is_controlled_by_human(false))
+        }
+    }
+
+    /// Native TeamAssign731060 and TeamRecall7311C0 eligibility. The assignment
+    /// path reads House+0x1ED (`PlayerControl`) directly in mode zero, while a
+    /// nonzero mode calls House::IsHumanPlayer50B6F0 (current-house identity).
+    /// Keep this distinct from `house_is_human_player`: its mode-zero branch
+    /// also admits the separate `IsHuman` flag.
+    pub fn house_is_control_group_eligible(&self, owner: InternedId) -> bool {
+        if self.session.game_mode_nonzero {
+            self.house_is_human_player(owner)
+        } else {
+            self.houses
+                .get(&owner)
+                .is_some_and(|house| house.player_control)
         }
     }
 
@@ -301,7 +316,7 @@ impl Simulation {
     /// residuals; ordinary live Unit controls use their constructor -1/0.
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
-    pub(crate) fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
+    pub fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -356,7 +371,7 @@ impl Simulation {
     /// its current weapon (vt+0x3F4) typed and not vt+0x37C. `is_armed`
     /// stands in for the weapon test; vt+0x37C (a Unit's death frames or
     /// EMP) has no VERA producer, as in [`Self::techno_player_controllable`].
-    pub(crate) fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
+    pub fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -372,7 +387,7 @@ impl Simulation {
     /// vectors: engineer_bridge_cursor_caller; shared geometric query:
     /// bridge_repair_query. Repair(false) is terminal action32.
     /// Admission belongs to the input producer, before a delayed mission event.
-    pub(crate) fn engineer_building_action(
+    pub fn engineer_building_action(
         &self,
         actor_id: u64,
         target_id: u64,
@@ -472,7 +487,7 @@ impl Simulation {
     /// hover classification and modifiers. The
     /// foundation-zone search that follows (`0x0051EEFA..0x0051F04B`) only
     /// leaves its loop: the action stays 9.
-    pub(crate) fn infiltrator_building_action(
+    pub fn infiltrator_building_action(
         &self,
         actor_id: u64,
         target_id: u64,

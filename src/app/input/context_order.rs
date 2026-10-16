@@ -2596,10 +2596,9 @@ fn shot_is_illegal(
             }) || (infantry.c4 && building.can_c4)
         });
     !infiltrate_arm
-        && sim
-            .effective_shared_cell_dummy()
-            .detached(|| sim.selected_weapon_fire_error(rules, actor_id, *target, overlay_registry))
-            == crate::sim::combat::fire_error::FireError::Illegal
+        && sim.effective_shared_cell_dummy().detached(|| {
+            sim.selected_weapon_fire_error(rules, actor_id, *target, true, overlay_registry)
+        }) == crate::sim::combat::fire_error::FireError::Illegal
 }
 
 fn selected_rally_producer_ids(

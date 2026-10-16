@@ -82,7 +82,7 @@ impl AnimWorldCoord {
     /// and is for consumers that key on a level (depth rows, lighting); a
     /// screen position comes from the exact `z` field, which may sit between
     /// levels (a muzzle, an airburst).
-    pub(crate) fn to_cell_sub_z(
+    pub fn to_cell_sub_z(
         self,
     ) -> (
         u16,
@@ -138,7 +138,7 @@ pub const COMBAT_EXPLOSION_DRAW_FLAGS: u32 = 0x2600;
 /// value and ignores it, always yielding `-15`.
 pub const COMBAT_EXPLOSION_Z_ADJUST: i32 = -15;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 /// The native level height. `AnimClass` coordinates are ordinary world
 /// `CoordStruct` leptons, so a producer that places an anim by height level
@@ -157,19 +157,19 @@ const TRAILER_DRAW_FLAGS: u32 = 0x600;
 const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
 
 /// Pure YR `AnimClass_UpdateBouncePhysics` directional-frame projection.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn directional_tumble_frame(running_frames: i32, bucket8: i32, global_frame: i32) -> i32 {
     let running = running_frames.max(1);
     running * ((-1 - bucket8) & 7) + (global_frame / 3).rem_euclid(running)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn settled_bounce_frame(running_frames: i32) -> i32 {
     running_frames.wrapping_mul(8).wrapping_add(1)
 }
 
 /// `AnimClass_Update` @ 0x00423f37: landing consumes two inclusive rolls.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn bounce_spawn_count(has_spawns: bool, spawn_count: i32, roll_a: i32, roll_b: i32) -> i32 {
     if !has_spawns || spawn_count <= 0 {
         return 0;
@@ -420,11 +420,11 @@ impl AnimObject {
         self.remap
     }
 
-    pub(crate) fn no_effects(&self) -> bool {
+    pub fn no_effects(&self) -> bool {
         self.no_effects
     }
 
-    pub(crate) fn completed(&self) -> bool {
+    pub fn completed(&self) -> bool {
         self.completed
     }
 
@@ -441,7 +441,7 @@ impl AnimObject {
         self.display.y_sort_adjust = y_sort;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install_building_expiry_fixture(&mut self, marker: bool, completed: bool) {
         self.building_anim = marker;
         self.completed = completed;
@@ -449,7 +449,7 @@ impl AnimObject {
 
     /// Minimal unattached object for tests of storage, lifecycle and checksum
     /// consumers. Runtime producers use the animation constructor below.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn new_unattached_for_test(
         stable_id: AnimId,
         native_unique_id: i32,
@@ -493,7 +493,7 @@ impl AnimObject {
     }
 
     /// The bullet whose expiry ends this anim (`AnimClass+0x17C`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn attached_bullet(&self) -> Option<u64> {
         self.attached_bullet
     }
@@ -639,7 +639,7 @@ impl AnimStore {
         self.anims.get(&id)
     }
 
-    pub(crate) fn get_mut(&mut self, id: AnimId) -> Option<&mut AnimObject> {
+    pub fn get_mut(&mut self, id: AnimId) -> Option<&mut AnimObject> {
         let stored = self.anims.len();
         let anim = self.anims.get_mut(&id)?;
         self.touched.note(id, stored);
@@ -831,7 +831,7 @@ impl DamageFires {
     }
 
     /// Install a fixture's slot.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_slot_for_test(&mut self, slot: usize, id: Option<AnimId>) {
         self.anim_ids[slot] = id;
     }
@@ -931,8 +931,8 @@ impl Simulation {
 
     /// Construct the `AnimClass` a producer described by cell, sub-cell and
     /// height level.
-    #[cfg(test)]
-    pub(crate) fn spawn_anim_object(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spawn_anim_object(
         &mut self,
         rules: &RuleSet,
         descriptor: AnimClassSpawnDescriptor,
@@ -971,7 +971,7 @@ impl Simulation {
     ///
     /// The anim is constructed at the producer's exact impact Z (`world_z`);
     /// `z` is only the level byte of the descriptor.
-    pub(crate) fn spawn_combat_explosion_anim(
+    pub fn spawn_combat_explosion_anim(
         &mut self,
         rules: &RuleSet,
         type_name: InternedId,
@@ -1006,7 +1006,7 @@ impl Simulation {
         }
     }
 
-    pub(crate) fn spawn_anim_at_world(
+    pub fn spawn_anim_at_world(
         &mut self,
         rules: &RuleSet,
         descriptor: AnimClassSpawnDescriptor,
@@ -1292,7 +1292,7 @@ impl Simulation {
         )
     }
 
-    pub(crate) fn visit_anim(
+    pub fn visit_anim(
         &mut self,
         id: AnimId,
         rules: &RuleSet,
@@ -1975,7 +1975,7 @@ impl Simulation {
     /// Apply OverlayClass's post-constructor CellAnim writes: `+0xD4` selects
     /// the Tiberium ConvertClass when present and `+0xFC` receives CellClass's
     /// current ground Z-adjust (`+0x10A`).
-    pub(crate) fn set_cell_anim_draw_authority(
+    pub fn set_cell_anim_draw_authority(
         &mut self,
         id: AnimId,
         remap_color: Option<HouseColorIndex>,
@@ -1996,7 +1996,7 @@ impl Simulation {
     /// the house conversion); InfantryClass::ReceiveDamage's InfDeath 9 arm
     /// the house's colour scheme's (`0x00518AB5..0x00518AC9`,
     /// `0x00518AE4..0x00518AF9`).
-    pub(crate) fn set_anim_house_remap(&mut self, id: AnimId, house: InternedId) -> bool {
+    pub fn set_anim_house_remap(&mut self, id: AnimId, house: InternedId) -> bool {
         let Some(anim) = self.anim_mut_by_id(id) else {
             return false;
         };
@@ -2073,7 +2073,7 @@ impl Simulation {
     /// The answer depends on the local player, so the presentation asks it
     /// in place of the hidden flag. Evidence: instruction reading only; no
     /// native run compares the distance's rounding at the radius edge.
-    pub(crate) fn psi_warning_detected_by(
+    pub fn psi_warning_detected_by(
         &self,
         viewer: InternedId,
         anim: &AnimObject,

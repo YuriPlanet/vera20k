@@ -52,7 +52,7 @@ impl Simulation {
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
         let Some(sw) = rules.super_weapon(self.interner.resolve(sw_type_id)) else {
             return false;

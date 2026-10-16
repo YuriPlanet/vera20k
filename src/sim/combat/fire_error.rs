@@ -48,7 +48,7 @@ use crate::sim::combat::Health;
 /// The codes, as every producer returns them (`MOV EAX, imm32`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(i32)]
-pub(crate) enum FireError {
+pub enum FireError {
     Ok = 0,
     Ammo = 1,
     Facing = 2,

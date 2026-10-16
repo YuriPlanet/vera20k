@@ -11,7 +11,7 @@ use super::sound_ini::SoundRegistry;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub(crate) fn native() -> Value {
+pub fn native() -> Value {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/input_oracle/area_guard.json",
     ))
@@ -34,13 +34,13 @@ fn sections_ini(sections: &Value) -> IniFile {
     IniFile::from_str(&text)
 }
 
-pub(crate) fn catalog(corpus: &Value) -> SoundRegistry {
+pub fn catalog(corpus: &Value) -> SoundRegistry {
     SoundRegistry::from_ini(&sections_ini(
         &corpus["retail"]["sound_registry"]["selected"],
     ))
 }
 
-pub(crate) fn voice_overrides(case: &Value) -> IniFile {
+pub fn voice_overrides(case: &Value) -> IniFile {
     let mut text = String::new();
     if let Some(lists) = case["voice_lists"].as_object() {
         for (name, list) in lists {

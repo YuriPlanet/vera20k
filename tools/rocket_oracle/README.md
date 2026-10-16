@@ -24,7 +24,7 @@ parity test replays every row through the production kernel
 (`sim::movement::rocket_movement`) with a host that records the same seams:
 
 ```sh
-cargo test -p vera20k --lib sim::movement::rocket_movement::tests::
+cargo test -p vera20k-core --lib sim::movement::rocket_movement::tests::
 ```
 
 ## Coverage
@@ -56,7 +56,7 @@ and the target's GetCoords are recorded or supplied seams.
 
 ```sh
 python -m tools.rocket_oracle.kamikaze --check
-cargo test -p vera20k --lib sim::kamikaze::tests::
+cargo test -p vera20k-core --lib sim::kamikaze::tests::
 ```
 
 Seven rows: the launch cadence (2 frames, then 30) with two missiles and their

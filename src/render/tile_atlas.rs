@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use crate::map::theater::{TileImage, TileKey};
 use crate::render::batch::BatchRenderer;
 use crate::render::batch::BatchTexture;
-use crate::render::gpu::GpuContext;
 
 /// Padding between tiles in the atlas (pixels). Prevents texture bleeding
 /// from bilinear filtering at tile boundaries.
@@ -73,16 +72,18 @@ impl TileAtlas {
 /// left-to-right in rows. Each tile is stored at its actual dimensions — no
 /// clipping of oversized tiles with extra data (cliffs, shores).
 pub fn build_atlas(
-    gpu: &GpuContext,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     batch: &BatchRenderer,
     tiles: &HashMap<TileKey, TileImage>,
 ) -> TileAtlas {
     if tiles.is_empty() {
         let rgba: Vec<u8> = vec![0u8; 4];
-        let texture: BatchTexture = batch.create_texture(gpu, &rgba, 1, 1);
-        let depth_texture_view = create_r8_texture(gpu, &[0u8], 1, 1);
+        let texture: BatchTexture =
+            batch.create_texture_on_device(device, queue, &rgba, 1, 1, None);
+        let depth_texture_view = create_r8_texture(device, queue, &[0u8], 1, 1);
         let zdepth_bind_group =
-            batch.create_zdepth_bind_group(gpu, &texture.view, &depth_texture_view);
+            batch.create_zdepth_bind_group_on_device(device, &texture.view, &depth_texture_view);
         return TileAtlas {
             texture,
             depth_texture_view,
@@ -110,7 +111,7 @@ pub fn build_atlas(
         })
         .sum();
     let estimated_side: u32 = (total_area as f64).sqrt().ceil() as u32;
-    let max_texture_dim: u32 = gpu.device.limits().max_texture_dimension_2d;
+    let max_texture_dim: u32 = device.limits().max_texture_dimension_2d;
     let mut atlas_width: u32 = estimated_side.max(64).min(max_texture_dim);
 
     // Shelf-pack with retry: widen atlas if height exceeds GPU texture limit.
@@ -174,9 +175,12 @@ pub fn build_atlas(
         uv_map.len()
     );
 
-    let texture: BatchTexture = batch.create_texture(gpu, &rgba, atlas_width, atlas_height);
-    let depth_texture_view = create_r8_texture(gpu, &depth_buf, atlas_width, atlas_height);
-    let zdepth_bind_group = batch.create_zdepth_bind_group(gpu, &texture.view, &depth_texture_view);
+    let texture: BatchTexture =
+        batch.create_texture_on_device(device, queue, &rgba, atlas_width, atlas_height, None);
+    let depth_texture_view =
+        create_r8_texture(device, queue, &depth_buf, atlas_width, atlas_height);
+    let zdepth_bind_group =
+        batch.create_zdepth_bind_group_on_device(device, &texture.view, &depth_texture_view);
     log::info!(
         "Tile depth atlas: {}x{} R8 ({:.1} KB)",
         atlas_width,
@@ -222,10 +226,16 @@ fn shelf_pack(
 }
 
 /// Create an R8Unorm GPU texture from a single-channel byte buffer.
-fn create_r8_texture(gpu: &GpuContext, data: &[u8], width: u32, height: u32) -> wgpu::TextureView {
+fn create_r8_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &[u8],
+    width: u32,
+    height: u32,
+) -> wgpu::TextureView {
     use wgpu::util::DeviceExt;
-    let texture = gpu.device.create_texture_with_data(
-        &gpu.queue,
+    let texture = device.create_texture_with_data(
+        queue,
         &wgpu::TextureDescriptor {
             label: Some("Tile Depth Atlas R8"),
             size: wgpu::Extent3d {

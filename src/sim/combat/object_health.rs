@@ -50,8 +50,8 @@ impl Health {
     }
 
     /// Install a fixture's health.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, value: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, value: i32) {
         self.current = value;
     }
 

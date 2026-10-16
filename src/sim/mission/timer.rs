@@ -30,7 +30,7 @@ impl MissionTimer {
     }
 
     /// A fixture's value.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_start_frame_for_test(&mut self, start_frame: u32) {
         self.start_frame = start_frame;
     }
@@ -85,7 +85,7 @@ impl MissionDispatchTimer {
     }
 
     /// The signed wrapping remainder while dispatch is pending.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn remaining_if_pending(self, now: u32) -> Option<i32> {
         let remaining = self.0.remaining(now as i32);

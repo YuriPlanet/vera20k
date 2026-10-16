@@ -56,9 +56,9 @@ impl DestroyableCliffTile<'_> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct DestroyableCliffMutation {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub family: DestroyableCliffFamily,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub origin: (i16, i16),
     pub original_footprint: Vec<(u16, u16)>,
     pub animation_cells: Vec<(i16, i16)>,
@@ -108,7 +108,7 @@ impl ResolvedTerrainGrid {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_install_destroyable_cliff_catalog(&mut self, destroyable_start: u16) {
         fn prototype(template_height: u8, slope_type: u8) -> DynamicTilePrototype {
             DynamicTilePrototype {
@@ -301,9 +301,9 @@ impl ResolvedTerrainGrid {
             }
         }
         Some(DestroyableCliffMutation {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             family,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             origin,
             original_footprint,
             animation_cells,

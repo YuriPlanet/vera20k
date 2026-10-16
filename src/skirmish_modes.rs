@@ -157,7 +157,7 @@ pub fn skirmish_modes_from_assets(
 
 /// Consume the same selected roster in the app and provenance-bearing tools.
 /// Mode body interpretation stays here; callers supply source identity only.
-pub(crate) fn skirmish_modes_from_selected_ini(
+pub fn skirmish_modes_from_selected_ini(
     assets: &AssetManager,
     roster_ini: &IniFile,
     source: &str,
@@ -194,8 +194,8 @@ pub(crate) fn skirmish_modes_from_selected_ini(
     }
 }
 
-#[cfg(test)]
-pub(crate) fn stock_skirmish_modes() -> Vec<SkirmishGameMode> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn stock_skirmish_modes() -> Vec<SkirmishGameMode> {
     let roster = IniFile::from_str(crate::test_fixture::text(
         "tests/fixtures/ini/mpmodesmd_stock_contract.ini",
     ));

@@ -5,7 +5,7 @@
 /// signed overflow. Empty results are all zero, not a retained empty origin.
 /// Native execution: tools/spatial_oracle/map_queries.py and
 /// tools/procedural_drawing_oracle/action_lines.py.
-pub(crate) fn clip_rect(
+pub fn clip_rect(
     [mut left, mut top, mut width, mut height]: [i32; 4],
     [clip_left, clip_top, clip_width, clip_height]: [i32; 4],
 ) -> [i32; 4] {

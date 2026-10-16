@@ -302,7 +302,7 @@ pub type InfantrySequenceRegistry = HashMap<String, InfantrySequenceDef>;
 ///
 /// Returns `None` for an empty ReadString result. Partial conversions retain
 /// constructor values; malformed nonempty input still returns that record.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn parse_sequence_value(value: &str) -> Option<InfantrySequenceEntry> {
     let mut section = IniSection::new(String::new());
     section.set("K", value);

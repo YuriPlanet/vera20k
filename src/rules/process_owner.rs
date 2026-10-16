@@ -75,7 +75,7 @@ enum NativeRulesRegistryOwner {
 
 /// The one move-only native Rules authority for a process.
 #[derive(Debug)]
-pub(crate) struct NativeRulesProcessOwner {
+pub struct NativeRulesProcessOwner {
     sources: NativeRulesSourceSnapshot,
     /// `None` exists only while an in-place transition is executing. Every
     /// ordinary return, including a failed Process/RuleSet parse, restores it.
@@ -90,17 +90,17 @@ pub(crate) struct NativeRulesPhaseReceipt {
 }
 
 impl NativeRulesPhaseReceipt {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn events(&self) -> &[NativeTypeConstructionEvent] {
         &self.events
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn event_count(&self) -> usize {
         self.events.len()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn allocated_super_weapon_type_count(&self) -> usize {
         self.allocated_super_weapon_type_count
     }
@@ -113,18 +113,18 @@ impl NativeRulesPhaseReceipt {
 /// The exact constructor receipts on the two sides of Full_Init's destructive
 /// Rules reset.
 #[derive(Debug)]
-pub(crate) struct NativeScenarioRulesReceipt {
+pub struct NativeScenarioRulesReceipt {
     pre_reset: NativeRulesPhaseReceipt,
     post_reset: NativeRulesPhaseReceipt,
 }
 
 impl NativeScenarioRulesReceipt {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn pre_reset(&self) -> &NativeRulesPhaseReceipt {
         &self.pre_reset
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn post_reset(&self) -> &NativeRulesPhaseReceipt {
         &self.post_reset
     }
@@ -136,7 +136,7 @@ impl NativeScenarioRulesReceipt {
 
 /// Native Process output plus the compatibility products used by current Rust
 /// readers. Registry ownership has already returned to the process owner.
-pub(crate) struct NativeScenarioRulesLoad {
+pub struct NativeScenarioRulesLoad {
     rules: RuleSet,
     processed_ini: IniFile,
     fixed_art_ini: IniFile,
@@ -145,13 +145,13 @@ pub(crate) struct NativeScenarioRulesLoad {
 
 /// The mutually exclusive native pre-reset family and its optional source.
 /// Campaigns use a basename INI and never a multiplayer mode override.
-pub(crate) enum NativeScenarioRulesPrefix<'a> {
+pub enum NativeScenarioRulesPrefix<'a> {
     NonCampaign(Option<&'a IniFile>),
     Campaign(Option<&'a IniFile>),
 }
 
 impl NativeScenarioRulesLoad {
-    pub(crate) fn into_parts(self) -> (RuleSet, IniFile, IniFile, NativeScenarioRulesReceipt) {
+    pub fn into_parts(self) -> (RuleSet, IniFile, IniFile, NativeScenarioRulesReceipt) {
         (
             self.rules,
             self.processed_ini,
@@ -166,7 +166,7 @@ impl NativeRulesProcessOwner {
     ///
     /// gamemd provenance: `Load_Game_Rules @ 0x0052CD70` followed by
     /// `Init_Game @ 0x0052BA60`.
-    pub(crate) fn from_cold_start_sources(
+    pub fn from_cold_start_sources(
         selected_rules_root: IniFile,
         langrule: Option<IniFile>,
         fixed_art: IniFile,
@@ -193,8 +193,8 @@ impl NativeRulesProcessOwner {
 
     /// The same immutable catalog used by process playback; never replaced by
     /// Rules reconstruction or asset-manager recovery.
-    #[cfg(test)]
-    pub(crate) fn fixed_sounds(&self) -> &Arc<SoundRegistry> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixed_sounds(&self) -> &Arc<SoundRegistry> {
         &self.sources.fixed_sounds
     }
 
@@ -207,22 +207,22 @@ impl NativeRulesProcessOwner {
     }
 
     /// Immutable startup-selected root for consumers with a root-only native read.
-    pub(crate) fn selected_rules_root(&self) -> &IniFile {
+    pub fn selected_rules_root(&self) -> &IniFile {
         &self.sources.selected_rules_root
     }
 
     /// Fixed ART snapshot, unaffected by mode/map Rules passes.
-    pub(crate) fn fixed_art(&self) -> &IniFile {
+    pub fn fixed_art(&self) -> &IniFile {
         &self.sources.fixed_art
     }
 
-    pub(crate) fn movies(&self) -> &crate::rules::movies::MovieRegistry {
+    pub fn movies(&self) -> &crate::rules::movies::MovieRegistry {
         &self.sources.movies
     }
 
     /// Parsed-cache hashes of the actual frozen process sources. These are
     /// not byte SHA256 values and do not reopen files after source selection.
-    pub(crate) fn selected_source_ini_hashes(&self) -> [(&'static str, Option<u64>); 3] {
+    pub fn selected_source_ini_hashes(&self) -> [(&'static str, Option<u64>); 3] {
         [
             (
                 "RULESMD.INI",
@@ -239,7 +239,7 @@ impl NativeRulesProcessOwner {
     /// RulesLoad675210/type hierarchy581F50 restore the reached native fields.
     /// The VERA envelope stores the existing processed state, including fields
     /// that cannot be recovered by parsing a merged INI or replaying Full_Init.
-    pub(crate) fn saved_scenario_rules(&self) -> Option<&ProcessedRulesLayers> {
+    pub fn saved_scenario_rules(&self) -> Option<&ProcessedRulesLayers> {
         match self.registry.as_ref()? {
             NativeRulesRegistryOwner::Scenario(processed) => Some(processed.as_ref()),
             NativeRulesRegistryOwner::ColdStartup(_) | NativeRulesRegistryOwner::Live(_) => None,
@@ -248,7 +248,7 @@ impl NativeRulesProcessOwner {
 
     /// Prepare the compatibility projection without mutating process authority.
     /// The shared app loader subsequently binds current ART/theater assets.
-    pub(crate) fn project_saved_scenario_rules(
+    pub fn project_saved_scenario_rules(
         &self,
         processed: &ProcessedRulesLayers,
     ) -> Result<RuleSet, RulesError> {
@@ -260,15 +260,13 @@ impl NativeRulesProcessOwner {
 
     /// Commit the validated saved registry, replacing the outgoing authority.
     /// Deserialization excludes constructor receipts, so load cannot replay IDs.
-    pub(crate) fn install_saved_scenario_rules(&mut self, processed: ProcessedRulesLayers) {
+    pub fn install_saved_scenario_rules(&mut self, processed: ProcessedRulesLayers) {
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
     }
 
     /// Build the shell-facing compatibility projection without changing the
     /// one native registry owner.
-    pub(crate) fn startup_compatibility_projection(
-        &self,
-    ) -> Result<ProcessedRulesLayers, RulesError> {
+    pub fn startup_compatibility_projection(&self) -> Result<ProcessedRulesLayers, RulesError> {
         self.startup_layers()
             .process_with_fixed_art(&self.sources.fixed_art)
     }
@@ -281,7 +279,7 @@ impl NativeRulesProcessOwner {
     /// mode)/map P.
     /// Every error restores the actual partial post-reset registry; no path
     /// rolls back to cold/pre-reset state.
-    pub(crate) fn load_scenario(
+    pub fn load_scenario(
         &mut self,
         prefix: NativeScenarioRulesPrefix<'_>,
         map_rules_overrides: &IniFile,
@@ -397,7 +395,7 @@ impl NativeRulesProcessOwner {
         layers
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn live_registry(&self) -> &NativeRulesRegistryState {
         match self.registry.as_ref().expect("registry is resident") {
             NativeRulesRegistryOwner::ColdStartup(trace) => trace.registry_state(),

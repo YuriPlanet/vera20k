@@ -155,7 +155,7 @@ pub(crate) fn death_weapon_detonation(
 /// concrete fatal receiver. Passenger teardown precedes the nested death
 /// weapon; represented UnInit follows it before the next outer receiver.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum FatalLifecycleStage {
+pub enum FatalLifecycleStage {
     /// Surviving Techno ReceiveDamage postlude, before Infantry scatter and
     /// synchronous retaliation. The world owns ParticleSystem storage and the
     /// shared LogicVector, so maintenance crosses the existing inline hook.

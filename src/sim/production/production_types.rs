@@ -13,7 +13,7 @@ use crate::sim::ore_growth::{OreGrowthConfig, OreGrowthState};
 use crate::sim::production::factory::FactoryRegistry;
 
 /// A test house's opening balance.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub const STARTING_CREDITS: i32 = 5000;
 
 /// One queued item formatted for UI rendering.
@@ -54,11 +54,28 @@ pub struct BuildingPlacementPreview {
     pub width: u16,
     pub height: u16,
     pub valid: bool,
+    /// Independent native Display+1180 and +1181 gates. LeftUp checks these
+    /// before emitting PLACE; a red terrain cell is refused by queued Unlimbo.
+    pub in_build_area: bool,
+    pub foundation_visible: bool,
     pub reason: Option<BuildingPlacementError>,
-    /// Per-cell validity (row-major, width*height). True = cell is placeable.
-    pub cell_valid: Vec<bool>,
+    /// Current ground fields and admission in foundation row order. Rebuilt by
+    /// the production preview owner each frame; never an independent terrain or
+    /// placement authority. Empty when there is no installed terrain.
+    pub cells: Vec<BuildingPlacementCell>,
     /// Sim-owned regular-wall filler cells in native N/E/S/W, nearest-first order.
-    pub wall_autofill_cells: Vec<(u16, u16)>,
+    pub wall_autofill_cells: Vec<BuildingPlacementCell>,
+}
+
+/// One read-only current Cell snapshot used by the placement drawing consumer.
+/// Cell47EC90 reads signed +11B and unsigned slope +11C independently of its
+/// IsClearToBuild47C620 result. No renderer-local height/admission cache applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildingPlacementCell {
+    pub coord: (u16, u16),
+    pub valid: bool,
+    pub level: i8,
+    pub slope: u8,
 }
 
 /// Why the player cannot build an item now
@@ -273,7 +290,7 @@ impl ProductionState {
     ) -> impl Iterator<Item = (&InternedId, &BTreeMap<ProductionCategory, u64>)> {
         self.active_producer_by_owner.iter()
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_primary_factory_for_test(
         &mut self,
         owner: InternedId,

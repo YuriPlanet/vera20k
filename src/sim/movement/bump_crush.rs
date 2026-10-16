@@ -43,7 +43,7 @@ fn get_subcell_quadrant(sub_x: SimFixed, sub_y: SimFixed) -> u8 {
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn build_blocker_neighbor_counts(
     entities: &EntityStore,
     width: u16,
@@ -669,7 +669,7 @@ impl<'a> CrushAllyGate<'a> {
 /// path. The event is skipped when CrushSound is absent. Caller must invoke BEFORE
 /// removing the victim from the EntityStore so victim.position and
 /// victim.type_ref are still valid.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn emit_crush_kill_sounds(
     victim: &crate::sim::game_entity::GameEntity,
     rules: &crate::rules::ruleset::RuleSet,

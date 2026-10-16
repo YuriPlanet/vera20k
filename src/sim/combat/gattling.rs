@@ -84,7 +84,7 @@ pub struct GattlingState {
 
 /// What a charge did beyond the stage and value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct Increase {
+pub struct Increase {
     /// The stage rose: the loop is hard-stopped.
     pub stage_up: bool,
     /// The report branch ran: its draw picked `item` from the `Report=` list
@@ -94,7 +94,7 @@ pub(crate) struct Increase {
 
 /// One report pick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Report {
+pub struct Report {
     pub weapon_index: i32,
     pub item: u32,
 }
@@ -112,8 +112,8 @@ impl GattlingState {
 
     /// `+0x4B8`: set once a report loop started, until the next decay,
     /// stage-up or Limbo.
-    #[cfg(test)]
-    pub(crate) fn report_latch(&self) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn report_latch(&self) -> bool {
         self.report_latch
     }
 
@@ -162,7 +162,7 @@ impl GattlingState {
     /// `GetWeapon(2 * stage)` names no WeaponType (a stage past the authored
     /// weapons); VERA plays nothing and leaves the latch clear. Unreachable
     /// with retail data.
-    pub(crate) fn increase(
+    pub fn increase(
         &mut self,
         table: &GattlingStages,
         elite: bool,
@@ -238,8 +238,8 @@ impl GattlingState {
     }
 
     /// A state from its native fields, for fixtures and native payloads.
-    #[cfg(test)]
-    pub(crate) fn from_fields(stage: i32, value: i32, report_latch: bool) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_fields(stage: i32, value: i32, report_latch: bool) -> Self {
         Self {
             stage,
             value,
@@ -290,13 +290,13 @@ pub(crate) fn unit_fire_tail(outcome: UnitFireOutcome) -> StageCall {
 /// Not folded into `world_hash`: its one reader is presentation.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct TurretAnimCounter {
+pub struct TurretAnimCounter {
     frame: i32,
 }
 
 impl TurretAnimCounter {
     /// The counter.
-    pub(crate) const fn frame(self) -> i32 {
+    pub const fn frame(self) -> i32 {
         self.frame
     }
 
@@ -306,8 +306,8 @@ impl TurretAnimCounter {
     }
 
     /// Install a fixture's counter.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, frame: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, frame: i32) {
         self.frame = frame;
     }
 }
@@ -340,7 +340,7 @@ pub(crate) fn is_elite(entity: &crate::sim::game_entity::GameEntity) -> bool {
 /// other owner key.
 const GATTLING_SOUND_TAG: u64 = 1 << 61;
 
-pub(crate) const fn gattling_sound_owner(techno: u64) -> u64 {
+pub const fn gattling_sound_owner(techno: u64) -> u64 {
     techno | GATTLING_SOUND_TAG
 }
 
@@ -397,7 +397,7 @@ impl crate::sim::world::Simulation {
     }
 
     /// `IncreaseGattlingStage(ticks)` on one techno, with its report.
-    pub(crate) fn gattling_increase(
+    pub fn gattling_increase(
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
@@ -456,7 +456,7 @@ impl crate::sim::world::Simulation {
     }
 
     /// `UpdateGattlingStage(ticks)` on one techno.
-    pub(crate) fn gattling_update(
+    pub fn gattling_update(
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,

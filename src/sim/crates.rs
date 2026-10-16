@@ -40,7 +40,7 @@ use crate::map::bridge_facts::{
     high_bridge_stamp_for_overlay,
 };
 use crate::map::lighting::LightingProfileUnits;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::map::lighting::ParsedLightingProfiles;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
@@ -115,11 +115,11 @@ enum OneCrateResult {
 enum ForcedPostPrecheckFailure {
     #[default]
     None,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Allocation,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Unlimbo,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Mark,
 }
 
@@ -152,7 +152,7 @@ struct CrateRandomFrame {
 /// the same member `Gather_Start_Positions` binds and the one VERA models as
 /// `scenario_rng`. Failed attempts spend X then Y. A successful overlay spends
 /// one additional `RandomRanged(0, 0x7fff_fffe)` draw for its crate slot timer.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn place_scenario_start_crates(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -450,7 +450,7 @@ fn draw_crate_candidate(rng: &mut crate::sim::rng::SimRng, frame: CrateRandomFra
     (x as i16 as i32, y as i16 as i32)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn validate_and_stamp_candidate(
     sim: &mut Simulation,
     rules: &CrateRules,
@@ -469,7 +469,7 @@ fn validate_and_stamp_candidate(
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn validate_and_stamp_candidate_with_rules(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -639,6 +639,7 @@ fn validate_and_stamp_candidate_inner(
                         Some(overlay_registry),
                         terrain.native_cell_identity((cell.0 as i16, cell.1 as i16)),
                         Some(SpeedType::Track),
+                        None,
                         None,
                         None,
                     )
@@ -1211,7 +1212,7 @@ fn crate_surface_at_packed(sim: &Simulation, cell: (i32, i32)) -> CrateSurface {
 }
 
 /// Snap a drawn cell onto a nearby passable cell of the matching surface.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn snap_to_passable(
     sim: &Simulation,
     drawn: (i32, i32),

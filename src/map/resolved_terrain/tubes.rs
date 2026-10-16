@@ -4,7 +4,7 @@
 use super::*;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum NativeTubeRegistryBindError {
+pub enum NativeTubeRegistryBindError {
     #[error("pending authored terrain Tube registry is already populated")]
     RegistryAlreadyPopulated,
     #[error("pending authored terrain Tube registry could not reserve {entries} entries")]
@@ -18,7 +18,7 @@ impl ResolvedTerrainGrid {
 
     /// Consume the successful raw `[Tubes]` constructor receipt into the one
     /// live registry before authored OverlayClass Mark/Recalc begins.
-    pub(crate) fn bind_native_map_tubes(
+    pub fn bind_native_map_tubes(
         &mut self,
         receipt: NativeMapTubeReceipt,
     ) -> Result<usize, NativeTubeRegistryBindError> {
@@ -58,7 +58,7 @@ impl ResolvedTerrainGrid {
         Ok(entries)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn tube_native_id(&self, tube_id: TubeId) -> Option<i32> {
         self.tube_native_ids
             .get(tube_id.as_usize())
@@ -177,7 +177,7 @@ impl ResolvedTerrainGrid {
         Some((nx as u16, ny as u16))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn walk_directions_from(&self, start: (u16, u16), directions: &[u8]) -> Option<(u16, u16)> {
         let mut coord = start;
         for &direction in directions {

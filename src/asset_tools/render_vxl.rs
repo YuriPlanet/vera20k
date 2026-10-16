@@ -8,7 +8,7 @@
 //! the eight compass points rather than one pose.
 //!
 //! The rasteriser is [`crate::render::vxl_raster`], which is pure CPU and
-//! already runs headless in `tests/vxl_render.rs`. What it returns is a buffer
+//! runs headless. What it returns is a buffer
 //! of post-VPL, pre-house-remap palette indices in which byte 0 means "no voxel
 //! here". That byte must become fully transparent regardless of what the
 //! palette holds at index 0 — a `gamemd_ui` palette has an opaque entry there,

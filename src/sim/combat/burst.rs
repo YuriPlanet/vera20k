@@ -43,7 +43,7 @@ impl WeaponBurst {
         self.index.wrapping_add(1)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn radial_index(self) -> i32 {
         self.radial_index
     }

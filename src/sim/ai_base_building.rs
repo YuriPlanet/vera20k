@@ -100,7 +100,7 @@ impl Default for HouseAiProduction {
 }
 
 impl HouseAiProduction {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn mode(&self) -> i32 {
         self.mode
     }
@@ -126,7 +126,7 @@ impl HouseAiProduction {
         self.mode = mode;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, mode: i32, building_choice: i32, naval_allowed: bool) {
         self.mode = mode;
         self.building_choice = building_choice;
@@ -614,7 +614,7 @@ fn place_building(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> bool {
-    if !can_place_building_at(sim, rules, registry, ty, site, Some(owner)) {
+    if !can_place_building_at(sim, rules, registry, ty, site, Some(owner), None) {
         return false;
     }
     let (Ok(rx), Ok(ry)) = (u16::try_from(site.0), u16::try_from(site.1)) else {

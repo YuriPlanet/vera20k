@@ -106,27 +106,29 @@ impl BuildCategory {
     }
 }
 
-/// What pip display to show below a unit's health bar (PipScale= in rules.ini).
-///
-/// Controls the type of pip overlay rendered beneath selected units:
-/// - `Tiberium`: cargo fill pips for harvesters (green=ore, colored=gem)
-/// - `Passengers`: passenger count pips for transports
-/// - `Ammo`: ammunition count pips
+/// TechnoType PipScale+3D4: constructor710D1C defaults to0; ReadINI714111
+/// uses ReadPipScale474940 (ReadString capacity32, case-insensitive names).
+/// Native values follow table81B9B0, not the order in a C++ header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
 pub enum PipScale {
     #[default]
-    None,
-    Tiberium,
-    Passengers,
-    Ammo,
+    None = 0,
+    Ammo = 1,
+    Tiberium = 2,
+    Passengers = 3,
+    Power = 4,
+    MindControl = 5,
 }
 
 impl PipScale {
     fn from_ini(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
+        match value.to_ascii_lowercase().as_str() {
+            "ammo" => Self::Ammo,
             "tiberium" => Self::Tiberium,
             "passengers" => Self::Passengers,
-            "ammo" => Self::Ammo,
+            "power" => Self::Power,
+            "mindcontrol" => Self::MindControl,
             _ => Self::None,
         }
     }
@@ -3241,7 +3243,7 @@ impl AbilityFlags {
         self.0[ability as usize]
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_abilities(abilities: &[Ability]) -> Self {
         let mut flags = [false; 18];
         for ability in abilities {
@@ -3456,6 +3458,102 @@ mod tests {
                 row.raw
             );
         }
+    }
+
+    #[test]
+    fn pip_scale_native_names_default_capacity_and_layer_retention() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        // Reader474940's file-backed table81B9B0, through ReadString32.
+        for (raw, expected) in [
+            ("Ammo", PipScale::Ammo),
+            ("tIbErIuM", PipScale::Tiberium),
+            ("Passengers", PipScale::Passengers),
+            ("Power", PipScale::Power),
+            ("mInDcOnTrOl", PipScale::MindControl),
+            ("Unknown", PipScale::None),
+            ("5", PipScale::None),
+            ("MindControl,Ammo", PipScale::None),
+        ] {
+            let ini = IniFile::from_str(&format!("[MIND]\nPipScale={raw}\n"));
+            let object = ObjectType::from_ini_section(
+                "MIND",
+                ini.section("MIND").unwrap(),
+                ObjectCategory::Vehicle,
+            );
+            assert_eq!(object.pip_scale, expected, "{raw}");
+        }
+        let ini = IniFile::from_str(&format!(
+            "[MIND]\nPipScale=MindControl{}invalid\n",
+            " ".repeat(20)
+        ));
+        assert_eq!(
+            ObjectType::from_ini_section(
+                "MIND",
+                ini.section("MIND").unwrap(),
+                ObjectCategory::Vehicle
+            )
+            .pip_scale,
+            PipScale::MindControl,
+            "copy truncates to31 bytes BEFORE trim/name lookup"
+        );
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=MIND\n[MIND]\nPipScale=MindControl\n",
+        ));
+        for patch in ["Strength=500", "PipScale=", "PipScale=   ", "pipscale=Ammo"] {
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str(&format!("[MIND]\n{patch}\n")),
+            );
+            assert_eq!(
+                RuleSet::from_rules_layers(&layers)
+                    .unwrap()
+                    .object("MIND")
+                    .unwrap()
+                    .pip_scale,
+                PipScale::MindControl,
+                "absent/empty/exact-case key: {patch}"
+            );
+        }
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[MIND]\nPipScale=Unknown\n"),
+        );
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .object("MIND")
+                .unwrap()
+                .pip_scale,
+            PipScale::None
+        );
+        let default_ini = IniFile::from_str("[MIND]\nStrength=500\n");
+        assert_eq!(
+            ObjectType::from_ini_section(
+                "MIND",
+                default_ini.section("MIND").unwrap(),
+                ObjectCategory::Vehicle
+            )
+            .pip_scale,
+            PipScale::None
+        );
+    }
+
+    #[test]
+    fn retail_mastermind_uses_mind_control_pips_and_current_primary_capacity() {
+        let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let object = fixture.rules.object("MIND").unwrap();
+        assert_eq!(object.pip_scale, PipScale::MindControl);
+        assert_eq!(
+            fixture
+                .rules
+                .weapon(object.weapon_at(0).unwrap())
+                .unwrap()
+                .damage,
+            3
+        );
     }
 
     #[test]

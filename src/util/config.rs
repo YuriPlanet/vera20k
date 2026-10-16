@@ -150,7 +150,7 @@ impl GameConfig {
         Self::load_from(&working_dir, &executable)
     }
 
-    fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
+    pub(crate) fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
         let root = retail_asset_root_from_executable(executable)?;
         for directory in [working_dir, root.as_path()] {
             let path = directory.join(CONFIG_FILE_NAME);

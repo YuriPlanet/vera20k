@@ -28,11 +28,7 @@ pub(crate) const RETAINED_CELLCLASS_BRIDGE_FLAG_MASK: u32 =
 /// neighbour carries it with the span axis bit `0x800`, or an E/W one without.
 /// A missing neighbour answers nothing. The OnBridge (`+0x8C`) exemption
 /// before the test belongs to the caller.
-pub(crate) fn near_bridge(
-    own: u32,
-    [south, north, east, west]: [Option<u32>; 4],
-    mask: u32,
-) -> bool {
+pub fn near_bridge(own: u32, [south, north, east, west]: [Option<u32>; 4], mask: u32) -> bool {
     let span = |flags: Option<u32>, axis: bool| {
         flags.is_some_and(|flags| {
             flags & mask != 0 && (flags & BRIDGE_FLAG_DIRECTION_ZERO != 0) == axis
@@ -288,7 +284,7 @@ pub fn high_bridge_stamp_for_overlay(id: u8) -> Option<(BridgeStampFamily, u8)> 
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn stamp_set_bridge_direction(
     cells: &mut [BridgeCellFacts],
     width: u16,
@@ -443,7 +439,7 @@ fn set_direction_zero_flag(cell: &mut BridgeCellFacts, set: bool) {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn stamp_slots(anchor: (u16, u16), direction: u8) -> [(BridgeStampSlot, Option<(u16, u16)>); 6] {
     let f1 = step(anchor, direction);
     let f2 = f1.and_then(|cell| step(cell, direction));
@@ -465,7 +461,7 @@ fn stamp_slots(anchor: (u16, u16), direction: u8) -> [(BridgeStampSlot, Option<(
     ]
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn index(width: u16, height: u16, rx: u16, ry: u16) -> Option<usize> {
     if rx >= width || ry >= height {
         return None;
@@ -473,7 +469,7 @@ fn index(width: u16, height: u16, rx: u16, ry: u16) -> Option<usize> {
     Some(ry as usize * width as usize + rx as usize)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn step(cell: (u16, u16), direction: u8) -> Option<(u16, u16)> {
     let (dx, dy) = crate::util::direction::direction_delta(direction)?;
     let rx = cell.0 as i32 + dx;

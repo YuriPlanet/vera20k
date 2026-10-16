@@ -37,7 +37,7 @@ pub(crate) enum ConcreteSetterRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum AuthorityUnavailable {
+pub enum AuthorityUnavailable {
     #[error("exact concrete Target setter is unavailable for Mission receiver {0}")]
     TargetSetter(u64),
     #[error("exact destination setter is unavailable for Mission receiver {0}")]
@@ -78,14 +78,14 @@ pub(crate) trait ConcreteMissionEffects: private::Sealed {
 
 /// Honest production boundary until full concrete Target and destination
 /// setters are implemented.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Default)]
 pub(crate) struct UnavailableConcreteMissionEffects;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl private::Sealed for UnavailableConcreteMissionEffects {}
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl ConcreteMissionEffects for UnavailableConcreteMissionEffects {
     type Prepared = ();
 
@@ -654,14 +654,14 @@ pub(crate) fn represented_assign_destination(
     entity.navigation.publish_nav_com(requested);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RecordingPrepared {
     receiver: u64,
     request: ConcreteSetterRequest,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConcreteEffectEvent {
     Preflight {
@@ -684,7 +684,7 @@ pub(crate) enum ConcreteEffectEvent {
     },
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug)]
 pub(crate) struct RecordingConcreteMissionEffects {
     pub allow_target: bool,
@@ -692,7 +692,7 @@ pub(crate) struct RecordingConcreteMissionEffects {
     pub events: Vec<ConcreteEffectEvent>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl RecordingConcreteMissionEffects {
     pub(crate) fn available() -> Self {
         Self {
@@ -703,10 +703,10 @@ impl RecordingConcreteMissionEffects {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl private::Sealed for RecordingConcreteMissionEffects {}
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
     type Prepared = RecordingPrepared;
 

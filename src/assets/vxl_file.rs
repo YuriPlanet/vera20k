@@ -82,13 +82,13 @@ pub struct VxlLimb {
     /// and duplicate-count bytes; packed XY skip arithmetic also depends on
     /// the original run boundaries. A dense voxel list cannot preserve these.
     /// Manually constructed diagnostic models may omit the native encoding.
-    pub(crate) native_spans: Option<VxlNativeSpans>,
+    pub native_spans: Option<VxlNativeSpans>,
 }
 
 /// The body allocation is shared by every limb. Offsets retain the native
 /// file relationship without exposing relocated process pointers.
 #[derive(Debug, Clone)]
-pub(crate) struct VxlNativeSpans {
+pub struct VxlNativeSpans {
     pub body: std::sync::Arc<[u8]>,
     pub start_offset: usize,
     pub end_offset: usize,

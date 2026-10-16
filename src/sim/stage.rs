@@ -16,7 +16,7 @@ use crate::sim::timer::CdTimer;
 /// owns a distinct instance at+620 (constructor43B7F5, Repair44BBF2).
 /// Fields remain private; family receivers use the owner's operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct StageClass {
+pub struct StageClass {
     value: i32,
     changed: u8,
     timer: CdTimer,
@@ -61,11 +61,11 @@ impl StageClass {
         self.value = value;
     }
 
-    pub(crate) const fn value(&self) -> i32 {
+    pub const fn value(&self) -> i32 {
         self.value
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn timer(&self) -> CdTimer {
         self.timer
     }
@@ -75,12 +75,12 @@ impl StageClass {
         self.rate = rate;
     }
 
-    pub(crate) const fn rate(&self) -> i32 {
+    pub const fn rate(&self) -> i32 {
         self.rate
     }
 
     /// Raw prior state supplied by a native corpus, never a production writer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn from_native_fixture(
         value: i32,
         changed: u8,

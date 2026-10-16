@@ -14,7 +14,7 @@ pub trait RandomRanged {
     fn ranged(&mut self, min: i32, max: i32) -> i32;
 }
 
-// The SimRng binding lives with the ui adapter (random_map_setup, F05): map
+// The process Main binding lives with the ui adapter (random_map_setup, F05): map
 // stays sim-independent and callers supply any RandomRanged source.
 /// Map-type buckets: archipelago, continent, team continent, inland, mountainous.
 const MAP_TYPES: usize = 5;

@@ -193,20 +193,23 @@ fn entity_status_pips_drawable(
     entity: &crate::sim::game_entity::GameEntity,
     hovered_entity_id: Option<u64>,
     current_house_id: Option<crate::sim::intern::InternedId>,
+    rules: Option<&RuleSet>,
 ) -> bool {
-    let (_, draw_pips) = status_visibility(
-        entity.selection.is_selected(),
-        hovered_entity_id == Some(entity.stable_id()),
-    );
     let Some(current_house_id) = current_house_id else {
         return false;
     };
-    draw_pips
-        && crate::map::houses::is_allied_with(
-            &sim.house_alliances,
-            sim.interner.resolve(current_house_id),
-            sim.interner.resolve(entity.owner()),
-        )
+    // House4F9A50 reads the ASKING owner's ally bits (6F6A58..8C).
+    health_bar_drawable(
+        sim,
+        entity,
+        hovered_entity_id,
+        Some(sim.interner.resolve(current_house_id)),
+        rules,
+    ) && crate::map::houses::is_allied_with(
+        &sim.house_alliances,
+        sim.interner.resolve(entity.owner()),
+        sim.interner.resolve(current_house_id),
+    )
 }
 
 /// Project the input-owned control-group membership onto the live objects that
@@ -221,16 +224,16 @@ fn entity_status_pips_drawable(
 /// (`TeamCreate_1` stores slot 1 and `TeamCreate_10` stores slot 0), so the
 /// displayed digit is the Rust slot itself. The native caller's selected/hovered
 /// admission is shared with the health strip for units, infantry, and buildings.
-/// The extra allied gate is pip-only;
-/// the same plain visibility owner gates fog and Gap, with sandbox
-/// full-visibility passed through explicitly. Stale stable IDs naturally
-/// produce no label.
+/// The relationship gate is pip-only; mobile labels reuse retained body
+/// admission. Building labels retain their separate existing plain visibility
+/// policy. Stale stable IDs and concealed bodies naturally produce no label.
 pub(crate) fn control_group_status_labels(
     sim: &crate::sim::world::Simulation,
     control_groups: &[Vec<u64>],
     hovered_entity_id: Option<u64>,
     current_house_id: Option<crate::sim::intern::InternedId>,
     ignore_visibility: bool,
+    rules: Option<&RuleSet>,
 ) -> Vec<(u64, char)> {
     let mut slot_by_id = HashMap::new();
     for (slot, members) in control_groups.iter().take(10).enumerate() {
@@ -248,14 +251,21 @@ pub(crate) fn control_group_status_labels(
             let entity = sim.entities().get(stable_id)?;
             if entity.sinking.is_active()
                 || entity.passenger_role.is_inside_transport()
-                || !entity_status_pips_drawable(sim, entity, hovered_entity_id, current_house_id)
-                || !status_entity_visible_plain(
+                || !entity_status_pips_drawable(
+                    sim,
+                    entity,
+                    hovered_entity_id,
                     current_house_id,
-                    &sim.fog,
-                    &entity.position,
-                    entity.owner(),
-                    ignore_visibility,
+                    rules,
                 )
+                || (entity.category() == EntityCategory::Structure
+                    && !status_entity_visible_plain(
+                        current_house_id,
+                        &sim.fog,
+                        &entity.position,
+                        entity.owner(),
+                        ignore_visibility,
+                    ))
             {
                 return None;
             }
@@ -323,6 +333,7 @@ pub(crate) fn build_control_group_status_render_instances(
     sw: f32,
     sh: f32,
     tactical_clip: [i32; 4],
+    rules: Option<&RuleSet>,
 ) -> ControlGroupStatusOverlayInstances {
     let labels = control_group_status_labels(
         sim,
@@ -330,6 +341,7 @@ pub(crate) fn build_control_group_status_render_instances(
         hovered_entity_id,
         current_house_id,
         ignore_visibility,
+        rules,
     );
     let mut background = Vec::with_capacity(labels.len());
     let mut outline = Vec::with_capacity(labels.len() * 4);
@@ -485,6 +497,7 @@ pub(crate) fn build_control_group_status_instances(
         sw,
         sh,
         tactical_clip,
+        Some(rules),
     )
 }
 
@@ -550,13 +563,13 @@ pub(crate) fn self_heal_pip(
 // handle from `DAT_00AC147C` (PIPS.SHP) to `DAT_00AC1480` (PIPS2.SHP) at
 // 0x00709AEF for every non-building.
 //
-// * **`PipScale=Passengers` and `PipScale=Ammo`.** `build_cargo_pip_instances`
-//   accepts only `PipScale::Tiberium` and additionally requires a miner. 38
+// * **`PipScale=Passengers` and `PipScale=Ammo`.** `build_scale_pip_instances`
+//   handles Tiberium cargo and MindControl count/overload feedback; these
+//   separate Ammo/Passengers arms remain unported. 38
 //   stock rulesmd.ini sections set one of the two (34 Passengers, 4 Ammo).
-//   `DrawPipScalePips` branches on `TechnoTypeClass+0x3D4` (1 = ammo,
-//   2 = tiberium/storage, 5 = the `+0x2B8` branch); the passenger-list branch is
-//   the mutually exclusive `else` of that chain, gated on `+0x5E0 >= 1` alone,
-//   so `PipScale=Passengers` may gate nothing there — UNCHECKED. Trigger:
+//   Their separate ammo/passenger display branches remain required work;
+//   MindControl is native case5 (manager+2BC), handled by the shared strip.
+//   Trigger:
 //   selecting a loaded IFV, Flak Track, Battle Fortress, Nighthawk or any
 //   transport. Player effect: no passenger or ammo readout at all. Frequency:
 //   common — transports are ordinary play. Downstream risk: none.
@@ -1441,15 +1454,13 @@ pub(crate) fn build_self_heal_pip_instances(
         if e.passenger_role.is_inside_transport() {
             continue;
         }
-        // Existing residual: native6F6A58..6F6A8C guards the vt+450
-        // pip tail with alliance / Techno+210 current-viewer bits before
-        // self-heal709A90/70A50C. Health admission does not prove that policy;
-        // the represented relationship gate currently serves group labels.
-        if !health_bar_drawable(
+        if !entity_status_pips_drawable(
             sim,
             e,
             hovered_unit_id,
-            local_owner.as_deref(),
+            local_owner
+                .as_deref()
+                .and_then(|owner| sim.interner.get(owner)),
             state.rules(),
         ) {
             continue;
@@ -1492,173 +1503,133 @@ pub(crate) fn build_self_heal_pip_instances(
     instances
 }
 
-/// Horizontal pixel spacing between cargo pips (each pip drawn 4px apart).
-const CARGO_PIP_STEP_X: f32 = 4.0;
+/// Raw PIPS2 frames after selected/hovered body admission and the shared
+/// native pip-tail relationship gate. DrawHealthBar6F6A58 ->709A90.
+/// Rendering only reads retained state; it never advances timers or RNG.
+pub(crate) fn scale_pip_frames(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    hovered_id: Option<u64>,
+    local_owner: Option<&str>,
+    rules: &RuleSet,
+) -> Vec<usize> {
+    if entity.category() == EntityCategory::Structure
+        || entity.sinking.is_active()
+        || entity.passenger_role.is_inside_transport()
+        || !entity_status_pips_drawable(
+            sim,
+            entity,
+            hovered_id,
+            local_owner.and_then(|owner| sim.interner.get(owner)),
+            Some(rules),
+        )
+    {
+        return Vec::new();
+    }
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+        return Vec::new();
+    };
+    if object.pip_scale == crate::rules::object_type::PipScale::MindControl {
+        // GetPipMax716290 case5 -> current primary Weapon.Damage+A4,
+        // independent of the manager's retained admission capacity.
+        let maximum = object
+            .weapon_at(0)
+            .and_then(|weapon| rules.weapon(weapon))
+            .map_or(0, |weapon| weapon.damage);
+        let slots = usize::try_from(maximum).unwrap_or(0);
+        let manager = entity.capture_manager.as_ref();
+        let count = manager.map_or(0, |manager| manager.count());
+        // Fill708C7A..708D46 scales count/max by the SAME positive max:
+        // stock count0..4/weaponDamage3 rounds back to count. Draw70A0B5
+        // uses frame1 while index<fill and frame0 for the remaining slots.
+        let mut frames: Vec<_> = (0..slots)
+            .map(|index| usize::from((index as i64) < i64::from(count)))
+            .collect();
+        // IsOverloading4726C0 owns infinite/capacity/counter policy;
+        //70A17F..1C2 adds exactly one frame3 (positive) or4 (idle).
+        if let Some(active) = manager.and_then(|manager| manager.overload_pip_state()) {
+            frames.push(if active { 3 } else { 4 });
+        }
+        return frames;
+    }
+    if object.pip_scale != crate::rules::object_type::PipScale::Tiberium {
+        return Vec::new();
+    }
+    let Some(miner) = &entity.miner else {
+        return Vec::new();
+    };
+    let filled = usize::from(miner.cargo_pips());
+    let total = miner.cargo().len();
+    let gems = miner
+        .cargo()
+        .iter()
+        .filter(|bale| bale.resource_type == crate::sim::miner::ResourceType::Gem)
+        .count();
+    let gem_pips = if total > 0 {
+        (gems * filled).div_ceil(total).min(filled)
+    } else {
+        0
+    };
+    let mut frames = Vec::with_capacity(5);
+    frames.extend(std::iter::repeat_n(5, gem_pips));
+    frames.extend(std::iter::repeat_n(2, filled - gem_pips));
+    frames.resize(5, 0);
+    frames
+}
 
-/// Tiberium/cargo pips for harvesters (pips2.shp frames 0, 2, 5).
-///
-/// Drawn for selected vehicles with PipScale=Tiberium that have a miner component.
-/// Each bale in the cargo is one pip: ore=green (variant 1), gem=colored (variant 2).
-/// Empty slots shown as variant 0. Start at (sx - 15 + canvas_adj_x, sy + 10 + canvas_adj_y),
-/// step (+4, 0) per pip. Draw order: gem pips first, then ore pips, then empty slots.
-pub(crate) fn build_cargo_pip_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (
+/// Native nonbuilding scale strip709B0F: anchor(-15,+10), step(4,0).
+/// CenteredShapeStrip owns the physical SHP origin/canvas adjustment.
+pub(crate) fn build_scale_pip_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInstance> {
+    let (Some(sim), Some(overlay), Some(rules)) = (
         state
             .match_state
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation),
         &state.match_state.match_presentation.selection_overlay,
+        state.rules(),
     ) else {
         return Vec::new();
     };
-    let Some(_tib_tex) = overlay.tiberium_pip_texture() else {
-        log::debug!("cargo pips: tiberium pip texture not loaded (pips2.shp missing?)");
+    let Some(art) = overlay.scale_pips() else {
         return Vec::new();
     };
     let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner.as_deref().and_then(|n| sim.interner.get(n));
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
+    let hovered = unit_health_hover_target(state, local_owner.as_deref());
     let mut instances = Vec::new();
-    let (tib_adj_x, tib_adj_y) = overlay.tiberium_pip_canvas_adj();
-    let pip_size: [f32; 2] = overlay.tiberium_pip_frame_size();
-    let pip_uv_size: [f32; 2] = overlay.tiberium_pip_uv_size();
-
-    for e in sim.entities().values() {
-        if e.category() == EntityCategory::Structure || e.sinking.is_active() {
-            continue;
-        }
-        if e.passenger_role.is_inside_transport() {
-            continue;
-        }
-        if !e.selection.is_selected() {
-            continue;
-        }
-        let obj = state
-            .rules()
-            .and_then(|r| sim.interner.object_type(e.type_ref(), r));
-        let is_tiberium_scale = obj
-            .map(|o| o.pip_scale == crate::rules::object_type::PipScale::Tiberium)
-            .unwrap_or(false);
-        if !is_tiberium_scale {
-            continue;
-        }
-        let Some(ref miner) = e.miner else {
+    for stable_id in crate::app::presentation::instances::tactical_entity_encounter_order(sim) {
+        let Some(entity) = sim.entities().get(stable_id) else {
             continue;
         };
-        if !status_entity_visible_plain(
-            local_owner_id,
-            &sim.fog,
-            &e.position,
-            e.owner(),
-            ignore_visibility,
-        ) {
+        let frames = scale_pip_frames(sim, entity, hovered, local_owner.as_deref(), rules);
+        if frames.is_empty() {
             continue;
         }
-
-        let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(e);
-        let bracket_delta: f32 = obj
-            .map(|o| o.pixel_selection_bracket_delta as f32)
-            .unwrap_or(0.0);
-        // Pip scale offset for non-buildings: (pLoc.X - 15, pLoc.Y + 10).
-        let start_x: f32 = sx - 15.0 + tib_adj_x;
-        let start_y: f32 = sy + bracket_delta + 10.0 + tib_adj_y;
-        // 5-pip display: cargo_pips() returns 0-5 based on fill ratio.
-        const MAX_PIPS: u32 = 5;
-        let filled: u32 = miner.cargo_pips() as u32;
-        let empty_count: u32 = MAX_PIPS - filled;
-
-        // Bounding box culling.
-        let total_w: f32 = (MAX_PIPS - 1) as f32 * CARGO_PIP_STEP_X + pip_size[0];
-        if !in_view(
-            start_x,
-            start_y,
-            total_w,
-            pip_size[1],
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-            sw,
-            sh,
-            48.0,
-        ) {
-            continue;
+        let object = sim.interner.object_type(entity.type_ref(), rules).unwrap();
+        let (sx, sy) =
+            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        for (slot, frame) in frames.into_iter().enumerate() {
+            let point = (
+                sx - 15.0 + slot as f32 * 4.0,
+                sy + object.pixel_selection_bracket_delta as f32 + 10.0,
+            );
+            let Some(instance) = art.instance(frame, point, 0.0004) else {
+                continue;
+            };
+            if in_view(
+                instance.position[0],
+                instance.position[1],
+                instance.size[0],
+                instance.size[1],
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+                sw,
+                sh,
+                48.0,
+            ) {
+                instances.push(instance);
+            }
         }
-
-        // Proportion filled pips between gem and ore based on cargo contents.
-        let gem_bales: u32 = miner
-            .cargo()
-            .iter()
-            .filter(|b| b.resource_type == crate::sim::miner::ResourceType::Gem)
-            .count() as u32;
-        let total_bales: u32 = miner.cargo().len() as u32;
-        let gem_pips: u32 = if total_bales > 0 {
-            (gem_bales * filled).div_ceil(total_bales) // round up
-        } else {
-            0
-        };
-        let ore_pips: u32 = filled - gem_pips.min(filled);
-
-        let mut pip_idx: u32 = 0;
-        // Gem pips (variant 2).
-        let uv_gem: [f32; 2] = overlay.tiberium_pip_uv_origin(2);
-        for _ in 0..gem_pips {
-            let px: f32 = start_x + pip_idx as f32 * CARGO_PIP_STEP_X;
-            instances.push(SpriteInstance {
-                position: [px, start_y],
-                size: pip_size,
-                uv_origin: uv_gem,
-                uv_size: pip_uv_size,
-                depth: 0.0004,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-            pip_idx += 1;
-        }
-        // Ore pips (variant 1).
-        let uv_ore: [f32; 2] = overlay.tiberium_pip_uv_origin(1);
-        for _ in 0..ore_pips {
-            let px: f32 = start_x + pip_idx as f32 * CARGO_PIP_STEP_X;
-            instances.push(SpriteInstance {
-                position: [px, start_y],
-                size: pip_size,
-                uv_origin: uv_ore,
-                uv_size: pip_uv_size,
-                depth: 0.0004,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-            pip_idx += 1;
-        }
-        // Empty pips (variant 0).
-        let uv_empty: [f32; 2] = overlay.tiberium_pip_uv_origin(0);
-        for _ in 0..empty_count {
-            let px: f32 = start_x + pip_idx as f32 * CARGO_PIP_STEP_X;
-            instances.push(SpriteInstance {
-                position: [px, start_y],
-                size: pip_size,
-                uv_origin: uv_empty,
-                uv_size: pip_uv_size,
-                depth: 0.0004,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-            pip_idx += 1;
-        }
-    }
-    if !instances.is_empty() {
-        log::debug!(
-            "cargo pips: {} instances for {} entities (pip_size={:?}, uv_size={:?})",
-            instances.len(),
-            sim.entities()
-                .values()
-                .filter(|e| e.selection.is_selected() && e.miner.is_some())
-                .count(),
-            pip_size,
-            pip_uv_size,
-        );
     }
     instances
 }
@@ -1929,6 +1900,10 @@ pub(crate) fn health_fill_color(ratio: f32, condition_yellow: f32, condition_red
 }
 
 #[cfg(test)]
+#[path = "mind_control_pip_tests.rs"]
+mod mind_control_pip_tests;
+
+#[cfg(test)]
 mod tests {
     /// `tools/spatial_oracle/building_repair.json` `wrench` rows: the frame
     /// DrawExtras picks over every stored game speed.
@@ -1969,6 +1944,89 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn status_tail_asks_owner_alliance_and_shares_selected_hover_body_admission() {
+        use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Owner");
+        let viewer = sim.interner.intern("Viewer");
+        let type_ref = sim.interner.intern("MIND");
+        let mut actor = GameEntity::new_at_frame_zero_for_test(
+            1,
+            12,
+            12,
+            0,
+            0,
+            owner,
+            Health::new(500),
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            false,
+        );
+        actor.lifecycle.set_in_limbo_for_test(false);
+        actor.selection.set_selected_for_test(true);
+        sim.entities_mut().insert(actor);
+        sim.resubmit_entity_display_for_test(1);
+        let admitted = |sim: &Simulation, hover| {
+            entity_status_pips_drawable(
+                sim,
+                sim.entities().get(1).unwrap(),
+                hover,
+                Some(viewer),
+                None,
+            )
+        };
+        assert!(
+            health_bar_drawable(
+                &sim,
+                sim.entities().get(1).unwrap(),
+                None,
+                Some("Viewer"),
+                None
+            ),
+            "enemy health strip has independent admission"
+        );
+        assert!(!admitted(&sim, None));
+        sim.house_alliances
+            .entry("VIEWER".into())
+            .or_default()
+            .insert("OWNER".into());
+        assert!(
+            !admitted(&sim, None),
+            "viewer's one-way alliance does not admit owner status"
+        );
+        sim.house_alliances.clear();
+        sim.house_alliances
+            .entry("OWNER".into())
+            .or_default()
+            .insert("VIEWER".into());
+        assert!(
+            admitted(&sim, None),
+            "owner's one-way alliance admits shared pip tail"
+        );
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .selection
+            .set_selected_for_test(false);
+        assert!(!admitted(&sim, None));
+        assert!(
+            admitted(&sim, Some(1)),
+            "ordinary hover also admits count/self-heal/group tail"
+        );
+        sim.entities_mut()
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
+        assert!(
+            !admitted(&sim, Some(1)),
+            "retained Display cannot resurrect limbo feedback"
+        );
+    }
 
     /// Original Building DrawExtras selected/hover dispatch, with raw shroud
     /// and +41B contrasts. The same health admission owns mobile pips too.

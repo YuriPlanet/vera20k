@@ -1,0 +1,5385 @@
+{
+  "code_unchanged": true,
+  "controls": [
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_admitted",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_empty_registry",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [],
+      "trigger": 0,
+      "visited": []
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": false,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_alive_False",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": false,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_cell_marked_False",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 0,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_health_0",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": -1,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_health_-1",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": true,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_limbo_True",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "unit",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_unit",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "aircraft",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_aircraft",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "0041BA90"
+        },
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": -1,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 0,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": -1,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_current_none_queued_admitted",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": -1,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": -1,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": -1,
+          "queued": -1
+        }
+      ],
+      "effective_queries": [
+        0,
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_current_none_queued_none",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 6,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 6,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0,
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_sticky_unchanged",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_admitted",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_empty_registry",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [],
+      "trigger": 0,
+      "visited": []
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": false,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_alive_False",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": false,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_cell_marked_False",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 0,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_health_0",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": -1,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_health_-1",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": true,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_limbo_True",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "unit",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_unit",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "aircraft",
+          "cell_marked": true,
+          "current": 0,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_aircraft",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "0041BA90"
+        },
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": -1,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 0,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": -1,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_current_none_queued_admitted",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": -1,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": -1,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": -1,
+          "queued": -1
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_current_none_queued_none",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 6,
+          "group": -7,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 6,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_sticky_unchanged",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 23,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_admitted",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_empty_registry",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [],
+      "trigger": 0,
+      "visited": []
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": false,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_alive_False",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": false,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_cell_marked_False",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 0,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_health_0",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": -1,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_health_-1",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": true,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_limbo_True",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "unit",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 23,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_unit",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "aircraft",
+          "cell_marked": true,
+          "current": 23,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 23,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_aircraft",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "0041BA90"
+        },
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": -1,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 23,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": -1,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_current_none_queued_admitted",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": -1,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": -1,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": -1,
+          "queued": -1
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_current_none_queued_none",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 6,
+          "group": -7,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 6,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_sticky_unchanged",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 23,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0,
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_harmless",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "building",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_building_excluded",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": null
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_no_tag",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": []
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_empty_tag",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            1
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_different_instance_same_type",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            2,
+            1,
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_linked_instance",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 0,
+          "house": 0,
+          "limbo": true,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_zero_health_limbo",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_foreign_house_irrelevant",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 5,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_queued_guard_still_clears_bypass",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 1,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 0,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 1,
+          "queued": 0
+        }
+      ],
+      "effective_queries": [
+        0,
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_current_attack_queued_sleep",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_null_trigger",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": null
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": null,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": null,
+      "mission_timers_unchanged": true,
+      "name": "action81_null_incoming_ignored",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_same_house_excluded",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -1,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_harmless_excluded",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": null,
+      "mission_timers_unchanged": true,
+      "name": "action82_null_incoming_foreign",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,-7,0,0,0,0,A",
+        "read": "1,82,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "82,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 82,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action82_scalar_not_house_selector",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 82,
+        "raw": "82,0,1,0,0,0,0,A",
+        "read": "1,82,0,1,0,0,0,0,A",
+        "value": 1,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "82,0,1,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": 1,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -1,
+          "health": 100,
+          "house": 1,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_foreign_house_excluded",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 0,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_sleep_excluded",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 165,
+          "current": 23,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": null,
+      "mission_timers_unchanged": true,
+      "name": "action83_null_incoming_excluded",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,-7,0,0,0,0,A",
+        "read": "1,83,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [],
+      "queue_calls": [],
+      "raw_record": "83,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 83,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 23,
+          "queued": 5
+        }
+      ],
+      "effective_queries": [
+        0
+      ],
+      "foot_order": [
+        0
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action83_scalar_not_house_selector",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 83,
+        "raw": "83,0,1,0,0,0,0,A",
+        "read": "1,83,0,1,0,0,0,0,A",
+        "value": 1,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "83,0,1,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": 1,
+      "tag_queries": [],
+      "techno_order": [
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        0
+      ]
+    },
+    {
+      "action_kind": 81,
+      "actors": [
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 0,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        },
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 23,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        },
+        {
+          "alive": true,
+          "bypass": 165,
+          "category": "infantry",
+          "cell_marked": true,
+          "current": 6,
+          "group": -1,
+          "health": 100,
+          "house": 0,
+          "limbo": false,
+          "queued": 2,
+          "tag_chain": [
+            0
+          ]
+        }
+      ],
+      "after": [
+        {
+          "bypass": 0,
+          "current": 0,
+          "queued": 5
+        },
+        {
+          "bypass": 0,
+          "current": 23,
+          "queued": 5
+        },
+        {
+          "bypass": 165,
+          "current": 6,
+          "queued": 2
+        }
+      ],
+      "effective_queries": [
+        1,
+        1,
+        2,
+        2,
+        0
+      ],
+      "foot_order": [
+        0,
+        1,
+        2
+      ],
+      "incoming_house": 0,
+      "mission_timers_unchanged": true,
+      "name": "action81_global_order",
+      "native_read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 81,
+        "raw": "81,0,-7,0,0,0,0,A",
+        "read": "1,81,0,-7,0,0,0,0,A",
+        "value": -7,
+        "waypoint": 0
+      },
+      "other_actor_bytes_unchanged": true,
+      "queue_bodies": [
+        {
+          "actor": 1,
+          "entry": "005B35E0"
+        },
+        {
+          "actor": 0,
+          "entry": "005B35E0"
+        }
+      ],
+      "queue_calls": [
+        {
+          "actor": 1,
+          "arg": 0,
+          "mission": 5
+        },
+        {
+          "actor": 0,
+          "arg": 0,
+          "mission": 5
+        }
+      ],
+      "raw_record": "81,0,-7,0,0,0,0,A",
+      "ret": 1,
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_after_read": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "scalar": -7,
+      "tag_queries": [
+        {
+          "actor": 1,
+          "trigger": 0
+        },
+        {
+          "actor": 2,
+          "trigger": 0
+        },
+        {
+          "actor": 0,
+          "trigger": 0
+        }
+      ],
+      "techno_order": [
+        1,
+        2,
+        0
+      ],
+      "trigger": 0,
+      "visited": [
+        1,
+        2,
+        0
+      ]
+    }
+  ],
+  "mission_priors": {
+    "ai_counter": 19,
+    "dispatch_clock_pad": 7,
+    "dispatch_delay": 45,
+    "dispatch_start": 113,
+    "handler_state": 137,
+    "mission_start_frame": 31,
+    "suspended": 17
+  },
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "retail": {
+    "archive": "expandmd01.mix",
+    "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+    "basic": {
+      "Player": "Americans"
+    },
+    "country_mission_rng": {
+      "after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "unchanged": true
+    },
+    "country_registration": [
+      {
+        "entries": [
+          {
+            "index": 0,
+            "name": "Americans"
+          },
+          {
+            "index": 1,
+            "name": "Alliance"
+          },
+          {
+            "index": 2,
+            "name": "French"
+          },
+          {
+            "index": 3,
+            "name": "Germans"
+          },
+          {
+            "index": 4,
+            "name": "British"
+          },
+          {
+            "index": 5,
+            "name": "Africans"
+          },
+          {
+            "index": 6,
+            "name": "Arabs"
+          },
+          {
+            "index": 7,
+            "name": "Confederation"
+          },
+          {
+            "index": 8,
+            "name": "Russians"
+          },
+          {
+            "index": 9,
+            "name": "YuriCountry"
+          },
+          {
+            "index": 10,
+            "name": "GDI"
+          },
+          {
+            "index": 11,
+            "name": "Nod"
+          },
+          {
+            "index": 12,
+            "name": "Neutral"
+          },
+          {
+            "index": 13,
+            "name": "Special"
+          }
+        ],
+        "layer": "RULESMD.INI"
+      },
+      {
+        "entries": [
+          {
+            "index": 0,
+            "name": "Americans"
+          },
+          {
+            "index": 1,
+            "name": "Alliance"
+          },
+          {
+            "index": 2,
+            "name": "French"
+          },
+          {
+            "index": 3,
+            "name": "Germans"
+          },
+          {
+            "index": 4,
+            "name": "British"
+          },
+          {
+            "index": 5,
+            "name": "Africans"
+          },
+          {
+            "index": 6,
+            "name": "Arabs"
+          },
+          {
+            "index": 7,
+            "name": "Confederation"
+          },
+          {
+            "index": 8,
+            "name": "Russians"
+          },
+          {
+            "index": 9,
+            "name": "YuriCountry"
+          },
+          {
+            "index": 10,
+            "name": "GDI"
+          },
+          {
+            "index": 11,
+            "name": "Nod"
+          },
+          {
+            "index": 12,
+            "name": "Neutral"
+          },
+          {
+            "index": 13,
+            "name": "Special"
+          },
+          {
+            "index": 14,
+            "name": "Yuri2Country"
+          },
+          {
+            "index": 15,
+            "name": "Yuri3Country"
+          },
+          {
+            "index": 16,
+            "name": "Yuri4Country"
+          }
+        ],
+        "layer": "ALL02UMD.MAP"
+      }
+    ],
+    "houses": [
+      {
+        "name": "Americans",
+        "native_country": 0,
+        "raw": {
+          "Allies": "Americans,Alliance,Neutral",
+          "Color": "DarkBlue",
+          "Country": "Americans",
+          "Credits": "150",
+          "Edge": "South",
+          "IQ": "0",
+          "NodeCount": "0",
+          "PercentBuilt": "0",
+          "PlayerControl": "yes",
+          "TechLevel": "10"
+        }
+      },
+      {
+        "name": "Germans",
+        "native_country": 3,
+        "raw": {
+          "Allies": "French,Germans,Africans,Arabs,Confederation,Russians,YuriCountry,GDI,Nod,Neutral,Yuri2,Yuri3,Yuri4",
+          "Color": "Purple",
+          "Country": "Germans",
+          "Credits": "600",
+          "Edge": "North",
+          "IQ": "3",
+          "NodeCount": "0",
+          "PercentBuilt": "0",
+          "PlayerControl": "no",
+          "TechLevel": "10"
+        }
+      },
+      {
+        "name": "Neutral",
+        "native_country": 12,
+        "raw": {
+          "Allies": "Americans,Alliance,French,Germans,British,Africans,Arabs,Confederation,Russians,YuriCountry,GDI,Nod,Neutral,Yuri2,Yuri3,Yuri4",
+          "Color": "Grey",
+          "Country": "Neutral",
+          "Credits": "0",
+          "Edge": "North",
+          "IQ": "0",
+          "NodeCount": "0",
+          "PercentBuilt": "0",
+          "PlayerControl": "no",
+          "TechLevel": "1"
+        }
+      }
+    ],
+    "layers": [
+      {
+        "layer": "RULESMD.INI",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "layer": "ALL02UMD.MAP",
+        "sha256": "e761d28ce43401308ca4532d65479b1cf4a309d74fd4f996fafa92a0a06f8b65"
+      }
+    ],
+    "limits": "Seven real Neutral CIV Sleep records share the disabled Wakeup_Prisoners Tag. Eight Germans INIT Guard/AreaGuard records share the Event6 Germans_Attacked Tag, whose exact two Action53 references include the Wakeup and Prisoners_Panic triggers. The sibling Panic13/1 and its Team action remain raw; its later timer/Team effect is outside the selected Wakeup13/0 interval. Native Country/mission-name/flags/event readers and initial enabled constructors execute. Action references/Tag attachment/actor placement and whole Event6\u219253\u219213\u219281 schedule are not executed natively in this row; their original raw IDs bind the Rust production path. Authored health256 is an encoding, not native HP256. No full Type/Rules load or future Guard/Scatter/cadence/RNG claim.",
+    "map": "ALL02UMD.MAP",
+    "map_sha256": "e761d28ce43401308ca4532d65479b1cf4a309d74fd4f996fafa92a0a06f8b65",
+    "mission_from_name": [
+      {
+        "name": "Sleep",
+        "native_id": 0
+      },
+      {
+        "name": "Guard",
+        "native_id": 5
+      },
+      {
+        "name": "Area Guard",
+        "native_id": 11
+      },
+      {
+        "name": "Harmless",
+        "native_id": 23
+      }
+    ],
+    "native_action81_read": {
+      "args": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "kind": 81,
+      "raw": "81,0,0,0,0,0,0,A",
+      "read": "1,81,0,0,0,0,0,0,A",
+      "value": 0,
+      "waypoint": 0
+    },
+    "routes": {
+      "0958149C": {
+        "actions_raw": "1,81,0,0,0,0,0,0,A",
+        "attachments": [
+          {
+            "key": "65",
+            "raw": "Neutral,CIVBF,256,149,91,3,Sleep,64,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          },
+          {
+            "key": "66",
+            "raw": "Neutral,CIVBTM,256,146,91,4,Sleep,192,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          },
+          {
+            "key": "67",
+            "raw": "Neutral,CIVSTM,256,146,90,4,Sleep,192,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          },
+          {
+            "key": "68",
+            "raw": "Neutral,CIVSF,256,148,93,2,Sleep,128,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          },
+          {
+            "key": "69",
+            "raw": "Neutral,CIV2,256,148,90,3,Sleep,128,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          },
+          {
+            "key": "70",
+            "raw": "Neutral,CIV1,256,149,92,3,Sleep,96,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          },
+          {
+            "key": "71",
+            "raw": "Neutral,CIVSFM,256,147,92,3,Sleep,160,0958AF4C,0,-1,0,1,1",
+            "section": "Infantry"
+          }
+        ],
+        "events_raw": "1,13,0,0",
+        "initial_enabled": 0,
+        "native_events": [
+          {
+            "kind": 13,
+            "value": 0
+          }
+        ],
+        "native_flags": {
+          "applied": true,
+          "output": [
+            1,
+            1,
+            1,
+            0,
+            0
+          ],
+          "prior": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "raw": "Neutral,<none>,Wakeup_Prisoners,1,1,1,1,0",
+          "read": "Neutral,<none>,Wakeup_Prisoners,1,1,1,1,0"
+        },
+        "tags": {
+          "0958AF4C": "0,Wakeup_Prisoners,0958149C"
+        },
+        "trigger": "Neutral,<none>,Wakeup_Prisoners,1,1,1,1,0"
+      },
+      "095D033C": {
+        "actions_raw": "2,4,1,096CEA1C,0,0,0,0,A,54,2,095D033C,0,0,0,0,A",
+        "attachments": [],
+        "events_raw": "1,13,0,1",
+        "initial_enabled": 0,
+        "native_events": [
+          {
+            "kind": 13,
+            "value": 1
+          }
+        ],
+        "native_flags": {
+          "applied": true,
+          "output": [
+            1,
+            1,
+            1,
+            0,
+            0
+          ],
+          "prior": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "raw": "Neutral,<none>,Prisoners_Panic,1,1,1,1,0",
+          "read": "Neutral,<none>,Prisoners_Panic,1,1,1,1,0"
+        },
+        "tags": {
+          "095D1E7C": "0,Prisoners_Panic,095D033C"
+        },
+        "trigger": "Neutral,<none>,Prisoners_Panic,1,1,1,1,0"
+      },
+      "095D099C": {
+        "actions_raw": "2,53,2,0958149C,0,0,0,0,A,53,2,095D033C,0,0,0,0,A",
+        "attachments": [
+          {
+            "key": "72",
+            "raw": "Germans,INIT,256,148,94,3,Guard,0,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "73",
+            "raw": "Germans,INIT,256,146,93,4,Guard,32,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "74",
+            "raw": "Germans,INIT,256,145,92,2,Guard,64,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "75",
+            "raw": "Germans,INIT,256,145,90,3,Guard,96,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "76",
+            "raw": "Germans,INIT,256,149,94,2,Guard,224,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "77",
+            "raw": "Germans,INIT,256,150,92,2,Guard,192,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "78",
+            "raw": "Germans,INIT,256,150,93,2,Guard,224,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          },
+          {
+            "key": "79",
+            "raw": "Germans,INIT,256,150,90,3,Area Guard,160,095D042C,0,-1,0,1,0",
+            "section": "Infantry"
+          }
+        ],
+        "events_raw": "1,6,0,0",
+        "initial_enabled": 1,
+        "native_events": [
+          {
+            "kind": 6,
+            "value": 0
+          }
+        ],
+        "native_flags": {
+          "applied": true,
+          "output": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "prior": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "raw": "Americans,<none>,Germans_Attacked,0,1,1,1,0",
+          "read": "Americans,<none>,Germans_Attacked,0,1,1,1,0"
+        },
+        "tags": {
+          "095D042C": "0,Germans_Attacked,095D099C"
+        },
+        "trigger": "Americans,<none>,Germans_Attacked,0,1,1,1,0"
+      }
+    },
+    "rules_file": "ini/rulesmd.ini",
+    "rules_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+    "source_selection": {
+      "boundary": "Instruction-read archive-registration order, not native filesystem/mount execution. Existing Rust AssetManager owns lookup priority; map digest mismatch must fail for loose/language/later-expansion overrides.",
+      "native_expand_construct": 5440023,
+      "native_expand_descending_loop": 5440137,
+      "native_expand_format": 5439940,
+      "native_init_base_call": 5421924,
+      "native_init_base_mix": 5439904,
+      "native_init_mix": 5440608,
+      "native_init_mix_call": 5424540,
+      "native_numbered_map_format": 5442094,
+      "policy": "fixed official YR patch member; production identity must match"
+    }
+  },
+  "rng_seed": 31,
+  "schema": 1,
+  "scope": "Actions81..83 live Tag/Mission deferred Guard queue"
+}

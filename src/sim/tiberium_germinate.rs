@@ -15,18 +15,18 @@ use crate::sim::overlay_grid::OverlayGrid;
 
 /// Logging/test receipt of one generated final `InitCellAttributes(1)` pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct GeneratedCellAttributesReceipt {
+pub struct GeneratedCellAttributesReceipt {
     /// Real cells the native `CellIterator` visited.
-    pub(crate) real_cells: u32,
+    pub real_cells: u32,
     /// Iterator coordinates with no allocated cell (never expected on a
     /// generated map; logged so a shape mismatch cannot pass silently).
-    pub(crate) unallocated_cells: u32,
+    pub unallocated_cells: u32,
     /// Real cells whose overlay resolved to a TiberiumClass and whose density
     /// was rewritten.
-    pub(crate) germinated_cells: u32,
+    pub germinated_cells: u32,
     /// The native caller-local wrapping sum of every `SpreadCellGerminate`
     /// return; `RandomMapGenerator::Generate` discards it.
-    pub(crate) tiberium_value_total: i32,
+    pub tiberium_value_total: i32,
 }
 
 /// Resolve one native fixed-stride lookup to an allocated real cell of the
@@ -61,7 +61,7 @@ fn resolve_real_cell(terrain: &ResolvedTerrainGrid, x: i16, y: i16) -> Option<(u
 /// depend on the visiting order; the order still fixes which missing
 /// neighbour the shared dummy's coordinate retains last. The density lives in
 /// the overlay grid alone, as every runtime density write does.
-pub(crate) fn run_generated_final_cell_attributes(
+pub fn run_generated_final_cell_attributes(
     terrain: &ResolvedTerrainGrid,
     overlay_grid: &mut OverlayGrid,
     tiberium_types: &TiberiumTypeRegistry,

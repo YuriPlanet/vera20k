@@ -83,7 +83,7 @@ impl Economy {
         }
     }
 
-    pub(crate) const fn scenario_credits(&self) -> i32 {
+    pub const fn scenario_credits(&self) -> i32 {
         self.scenario_credits
     }
 
@@ -94,7 +94,7 @@ impl Economy {
     }
 
     /// `HouseClass::Add_Credits @ 0x004F9950`: `balance += amount`, wrapping.
-    pub(crate) fn add_credits(&mut self, amount: i32) {
+    pub fn add_credits(&mut self, amount: i32) {
         self.credits = self.credits.wrapping_add(amount);
     }
 
@@ -149,20 +149,20 @@ impl Economy {
     }
 
     /// A captured or authored balance for a test.
-    #[cfg(test)]
-    pub(crate) fn set_credits_for_test(&mut self, credits: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_credits_for_test(&mut self, credits: i32) {
         self.credits = credits;
     }
 
     /// A captured or authored spending statistic for a test.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_spent_for_test(&mut self, spent: i32) {
         self.spent_credits = spent;
     }
 
     /// A captured or authored score for a test.
-    #[cfg(test)]
-    pub(crate) fn set_score_for_test(&mut self, score: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_score_for_test(&mut self, score: i32) {
         self.score = score;
     }
 }

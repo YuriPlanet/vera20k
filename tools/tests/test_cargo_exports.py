@@ -158,6 +158,14 @@ class ExportRetirementTests(unittest.TestCase):
         self.plan['files'][0]['replacement']['manifest_sha256'] = self.sha(self.manifest)
         self.assertEqual(self.run_plan()['state'], 'blocked')
 
+    def test_engine_crate_replacement_is_a_libtest_build(self):
+        self.manifest.write_text(self.manifest.read_text().replace('"vera20k"', '"vera20k-core"'))
+        self.plan['files'][0]['replacement']['manifest_sha256'] = self.sha(self.manifest)
+        self.assertEqual(self.run_plan(True)['state'], 'planned')
+        self.manifest.write_text(self.manifest.read_text().replace('"vera20k-core"', '"vera20k-ui"'))
+        self.plan['files'][0]['replacement']['manifest_sha256'] = self.sha(self.manifest)
+        self.assertEqual(self.run_plan(True)['state'], 'blocked')
+
     def test_busy_files_block_all_selected(self):
         self._idle.side_effect = ValueError('open consumer')
         self.assertEqual(self.run_plan()['state'], 'blocked')

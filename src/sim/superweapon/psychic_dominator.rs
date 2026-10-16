@@ -99,7 +99,7 @@ enum Status {
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
-pub(crate) struct PsychicDominatorState {
+pub struct PsychicDominatorState {
     /// `0x00A9FAC0`.
     status: Status,
     /// `0x00A9FA48`: the target cell; the end of the strike writes the
@@ -361,10 +361,10 @@ fn mind_control_area(
     bridge_changed
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl PsychicDominatorState {
     /// A Dominator in `status` (0..5) at `cell` following `anim`.
-    pub(crate) fn for_test(
+    pub fn for_test(
         status: u8,
         cell: (i16, i16),
         owner: Option<InternedId>,
@@ -405,7 +405,7 @@ impl PsychicDominatorState {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn fires_for_test(stage: i32, frames: i32, percent: i32) -> bool {
     fires(stage, frames, percent)
 }

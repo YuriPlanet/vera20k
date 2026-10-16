@@ -93,7 +93,7 @@ impl HoverRuntime {
     }
 
     /// Test fixtures only: ProcessMovement (`hover_process`) is the writer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_head(&mut self, head: Option<DriveCoord>) {
         self.head = head;
     }
@@ -115,7 +115,7 @@ impl HoverRuntime {
     }
 
     /// A Foot with `destination` and `request`, as Move_To leaves it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn moving_for_test(destination: Option<DriveCoord>, request: NativeF64Bits) -> Self {
         Self {
             destination,

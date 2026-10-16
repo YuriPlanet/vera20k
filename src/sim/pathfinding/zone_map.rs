@@ -89,19 +89,19 @@ impl ZoneMap {
 
     /// Highest assigned zone ID. Native-derived maps reserve label 1, so this
     /// can be greater than the number of publicly passable components.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn zone_count(&self) -> u16 {
         self.zone_ids.iter().copied().max().unwrap_or(ZONE_INVALID)
     }
 
     /// The ground-layer zone ID array (test fixtures only).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn zone_ids_slice(&self) -> &[ZoneId] {
         &self.zone_ids
     }
 
     /// Mutable ground-layer zone IDs (test fixtures only).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn zone_ids_mut(&mut self) -> &mut Vec<ZoneId> {
         &mut self.zone_ids
     }
@@ -365,7 +365,7 @@ impl ZoneGrid {
 
     /// Build zone maps from resolved terrain with no playfield bounds and no
     /// native Map Size receipt.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn build_with_terrain(
         path_grid: &PathGrid,
         terrain: &ResolvedTerrainGrid,
@@ -383,7 +383,7 @@ impl ZoneGrid {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn build_with_native_bridge_geometry(
         path_grid: &PathGrid,
         terrain: &ResolvedTerrainGrid,
@@ -547,7 +547,7 @@ impl ZoneGrid {
     }
 
     /// Mutable access to one row's zone map (test fixtures only).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn map_mut(&mut self, mz: MovementZone) -> Option<&mut ZoneMap> {
         self.invalidate_navigation_history();
         self.maps.get_mut(&mz)
@@ -781,7 +781,7 @@ impl ZoneGrid {
     }
 
     /// Get the shared route-selection hierarchy when this movement row exists.
-    pub(crate) fn hierarchy_for(&self, mz: MovementZone) -> Option<&ZoneHierarchy> {
+    pub fn hierarchy_for(&self, mz: MovementZone) -> Option<&ZoneHierarchy> {
         self.maps.contains_key(&mz).then_some(&self.hierarchy)
     }
 
@@ -945,7 +945,7 @@ impl ZoneGrid {
         true
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn base_movement_class_at(&self, x: u16, y: u16) -> Option<u8> {
         if x >= self.width || y >= self.height {
             return None;
@@ -963,7 +963,7 @@ impl ZoneGrid {
 
     /// Supplied raw Map+18 row premise in native query fixtures. This does
     /// not claim to reproduce the topology producer or its cluster numbering.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_supply_uniform_raw_zone_rows(&mut self, zone: ZoneId) {
         self.invalidate_navigation_history();
         for row in &mut self.base_topology.raw_zone_ids_by_row {
@@ -1040,7 +1040,7 @@ impl ZoneGrid {
     }
 
     /// Replace the one shared route-selection hierarchy (test fixtures only).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_hierarchy(&mut self, hierarchy: ZoneHierarchy) {
         self.invalidate_navigation_history();
         self.hierarchy = hierarchy;

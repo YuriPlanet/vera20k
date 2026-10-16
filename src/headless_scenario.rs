@@ -159,7 +159,7 @@ pub fn load_session(
 /// Run the same construction and bound-resource handoff with an explicit
 /// resolved launch. The quickplay regression uses its real app descriptor here
 /// so house creation and starting forces cannot drift from the tested session.
-pub(crate) fn load_with_launch(
+pub fn load_with_launch(
     retail_dir: &Path,
     map_file_name: &str,
     seed: u32,
@@ -295,8 +295,8 @@ pub(crate) fn load_with_launch(
     // roots now and let the authored host bind each actually reached map Anim
     // synchronously before its native constructor spends an ID.
     let mut scheduler_roots =
-        crate::app::loading::init_helpers::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    scheduler_roots.extend(crate::app::loading::init_helpers::trigger_anim_class_roots(
+        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
+    scheduler_roots.extend(crate::map::actions::trigger_anim_class_roots(
         &rules,
         &map.actions,
     ));
@@ -310,7 +310,7 @@ pub(crate) fn load_with_launch(
         .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
-    let tolerant_roots = crate::app::loading::init_helpers::tolerant_anim_class_roots(&rules);
+    let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     let unbound_explosion_roots = rules.bind_anim_class_assets(
         &tolerant_roots,
         &assets,
@@ -330,7 +330,7 @@ pub(crate) fn load_with_launch(
     rules.bind_building_rubble_assets(&assets, theater.extension, &map.header.theater);
     rules.bind_terrain_spawner_assets(&rules_ini, &assets, theater.extension, &map.header.theater);
     rules.bind_animation_sequences(&infantry_sequences);
-    let overlay_shp_ids = crate::app::loading::init::resolved_overlay_shp_ids(
+    let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
         &overlay_registry,
         &rules_ini,
         rules.art(),
@@ -2099,6 +2099,7 @@ mod retail_construction_tests {
                             Some(&resources.overlay_registry),
                             yard,
                             (x, y),
+                            None,
                             None,
                         )
                     })

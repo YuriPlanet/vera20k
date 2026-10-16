@@ -29,7 +29,7 @@ use crate::sim::mission::authority::restore_entity_after_target_expiry;
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::overlay_grid::WallMutation;
 use crate::sim::overlay_grid::{
     OverlayGrid, WallDamageTransactionHost, WallDirtyStep, WallPointerTarget,
@@ -94,7 +94,7 @@ pub(crate) trait AoECellPrelude {
 
 struct AoEWallDamageHost<'borrow, 'prelude> {
     entities: &'borrow mut EntityStore,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     trace: &'borrow mut Vec<CellTargetDetach>,
     prelude: &'borrow mut Option<&'prelude mut dyn AoECellPrelude>,
 }
@@ -124,7 +124,7 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
                 self.entities,
                 rx,
                 ry,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 self.trace,
             );
         }
@@ -204,7 +204,7 @@ impl
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl From<&str> for AoEDamageOrigin {
     fn from(_legacy_owner_fixture: &str) -> Self {
         Self {
@@ -243,7 +243,7 @@ fn air_impact_from_layer_z(
     Some(impact)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CellTargetDetach {
     pub listener_id: u64,
@@ -259,11 +259,11 @@ pub(crate) struct AoEDamageResult {
     pub receivers: Vec<AreaDamageReceiver>,
     /// Compatibility-only projection for existing unit tests. Production
     /// callers consume `receivers`, which is the sole ordered authority.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub hits: Vec<EntityDamageEvent>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub wall_mutations: Vec<WallMutation>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub cell_target_detaches: Vec<CellTargetDetach>,
 }
 
@@ -281,7 +281,7 @@ pub(crate) struct TerrainCollectionView<'a> {
 
 impl AoEDamageResult {
     fn push_entity(&mut self, event: EntityDamageEvent) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.hits.push(event);
         self.receivers.push(AreaDamageReceiver::Entity(event));
     }
@@ -310,7 +310,7 @@ fn finalize_receiver_isolation_metadata(
                 }
             }
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         for event in &mut result.hits {
             event.near_center_ic_isolation_eligible = true;
         }
@@ -325,7 +325,7 @@ fn finalize_receiver_isolation_metadata(
 /// matching RA2 behavior (e.g., V3 rockets can damage your own units).
 ///
 /// `base_damage` is the weapon's raw damage value (before Verses scaling).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_aoe_damage<O: Into<AoEDamageOrigin>>(
     entities: &mut EntityStore,
     impact_rx: u16,
@@ -353,7 +353,7 @@ pub(crate) fn apply_aoe_damage<O: Into<AoEDamageOrigin>>(
 
 /// Test-only wrapper: resolves the rule handles itself (mirroring sim init)
 /// so fixture tests need no explicit `ResolvedRuleHandles` plumbing.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_aoe_damage_with_terrain<O: Into<AoEDamageOrigin>>(
     entities: &mut EntityStore,
     impact_rx: u16,
@@ -721,7 +721,7 @@ fn route_wall_before_cell_objects(
     let _wall_result = {
         let mut host = AoEWallDamageHost {
             entities,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             trace: &mut _result.cell_target_detaches,
             prelude: cell_prelude,
         };
@@ -735,7 +735,7 @@ fn route_wall_before_cell_objects(
             Some(&mut host),
         )
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     _result.wall_mutations.extend(_wall_result.mutations);
 }
 
@@ -746,7 +746,7 @@ pub(crate) fn expire_cell_target_references(
     entities: &mut EntityStore,
     rx: u16,
     ry: u16,
-    #[cfg(test)] trace: &mut Vec<CellTargetDetach>,
+    #[cfg(any(test, feature = "test-support"))] trace: &mut Vec<CellTargetDetach>,
 ) {
     let listener_ids = entities.keys_sorted();
     for listener_id in listener_ids {
@@ -771,7 +771,7 @@ pub(crate) fn expire_cell_target_references(
         represented_assign_target(entity, None);
         let _restored = mission_was_suspended
             && restore_entity_after_target_expiry(entity, saved_target_commits);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         trace.push(CellTargetDetach {
             listener_id,
             restored: _restored,

@@ -30,7 +30,7 @@ impl SightHeights {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
@@ -40,12 +40,12 @@ struct RevealCalls {
     edge_visits: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static REVEAL_CALLS: std::cell::RefCell<Option<RevealCalls>> = const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn trace_reveal_calls<T>(run: impl FnOnce() -> T) -> (T, RevealCalls) {
     REVEAL_CALLS.with_borrow_mut(|trace| {
         assert!(trace.is_none(), "nested RevealArea traces");
@@ -109,7 +109,7 @@ impl Simulation {
             ]
         };
         let cells = vision::conceal_area_cells(coord, rules.reveal_trigger_radius());
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 trace.walks.push(cells.clone());
@@ -218,7 +218,7 @@ impl Simulation {
                 }
             }
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some((order, _)) = &order
             && let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref())
         {
@@ -243,7 +243,7 @@ impl Simulation {
         refresh: bool,
         context: UninitContext<'_>,
     ) -> Option<vision::MapCellNotification> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 trace.edge_visits += 1;
@@ -361,11 +361,7 @@ impl Simulation {
     /// tools/spatial_oracle/trigger_action_values.{py,json,meta.json}.
     /// Ledger: no RNG draws, timer writes or detach calls. A negative radius
     /// natively indexes before the count table; VERA maps no cells (retail9).
-    pub(crate) fn trigger_reveal_at_waypoint(
-        &mut self,
-        index: i32,
-        context: UninitContext<'_>,
-    ) -> bool {
+    pub fn trigger_reveal_at_waypoint(&mut self, index: i32, context: UninitContext<'_>) -> bool {
         let Some(rules) = context.rules() else {
             return false;
         };
@@ -574,7 +570,7 @@ impl Simulation {
             line_of_sight,
             (self.fog.width, self.fog.height),
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 trace.walks.push(cells.clone());
@@ -609,7 +605,7 @@ impl Simulation {
         fresh: bool,
         context: UninitContext<'_>,
     ) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 trace.notifications.push((cell, fresh));
@@ -636,7 +632,7 @@ impl Simulation {
             if fresh {
                 self.mark_radar_terrain_dirty_cells([candidate]);
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             REVEAL_CALLS.with_borrow_mut(|trace| {
                 if let Some(trace) = trace {
                     trace.discovery_queries.insert(candidate);
@@ -672,7 +668,7 @@ impl Simulation {
     ///
     /// Unlike [`Self::reveal_map_for_owner`] it writes no shroud counter and
     /// releases no sight or gap. No RNG draw, timer write or detach.
-    pub(crate) fn reveal_entire_map(
+    pub fn reveal_entire_map(
         &mut self,
         house: Option<crate::sim::intern::InternedId>,
         context: UninitContext<'_>,

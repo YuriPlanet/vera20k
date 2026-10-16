@@ -79,7 +79,7 @@ impl<'de> serde::Deserialize<'de> for IniSection {
 }
 
 impl IniSection {
-    pub(crate) fn new(name: String) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             name,
             entries: HashMap::new(),
@@ -120,7 +120,7 @@ impl IniSection {
 
     /// Apply a later load/rules pass. Existing exact keys are replaced and new
     /// keys retain layer source order.
-    pub(crate) fn set(&mut self, key: &str, value: &str) {
+    pub fn set(&mut self, key: &str, value: &str) {
         if !self.entries.contains_key(key) {
             self.key_order.push(key.to_string());
         }
@@ -152,8 +152,8 @@ impl IniSection {
     }
 
     /// Test builds only: the raw stored text, for tests that inspect storage.
-    #[cfg(test)]
-    pub(crate) fn get_for_test(&self, key: &str) -> Option<&str> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn get_for_test(&self, key: &str) -> Option<&str> {
         self.get(key)
     }
 
@@ -225,7 +225,7 @@ impl<'de> serde::Deserialize<'de> for IniFile {
 }
 
 impl IniFile {
-    pub(crate) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             sections: Vec::new(),
             first_section: HashMap::new(),
@@ -236,7 +236,7 @@ impl IniFile {
     /// oracle controls contain stored-empty entries or sections, which the
     /// physical reader would discard. Storage and first-section indexing stay
     /// with this owner; production projection mutators remain private.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_sections_for_test(sections: impl IntoIterator<Item = IniSection>) -> Self {
         let mut ini = Self::empty();
         for section in sections {
@@ -360,7 +360,7 @@ impl IniFile {
 
     /// Clone a fixture with an exact key omitted from every matching section
     /// occurrence, including its retained typed-reader history.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn without_entry_for_test(&self, section: &str, key: &str) -> Self {
         let mut ini = self.clone();
         for body in &mut ini.sections {
@@ -418,7 +418,7 @@ impl IniFile {
 
     /// Obtain the first compatibility section, creating it at the current tail.
     /// Native processing owns which values enter it; INI owns storage/order.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn projection_section_mut(&mut self, name: &str) -> &mut IniSection {
         let index = if let Some(&index) = self.first_section.get(name) {
             index

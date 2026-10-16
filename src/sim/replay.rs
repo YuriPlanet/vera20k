@@ -16,12 +16,12 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{COMMAND_RECORD_LEN, CommandEnvelope, CommandRecord};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::PathGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::{Simulation, TickLane, TriggerInputs};
 
 /// Value written by the compiled legacy recorder at the start of a stream.
@@ -165,7 +165,7 @@ impl NativeReplayHeader {
         self.scenario_name[..len].copy_from_slice(&name.as_bytes()[..len]);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_options_bytes(&mut self, options: [u8; NATIVE_REPLAY_OPTIONS_LEN]) {
         self.options = options;
     }
@@ -276,7 +276,7 @@ impl NativeReplay {
     /// The native stream has no tag for an omitted command batch. Its presence
     /// is known from session mode, frame, and network cadence, so the scheduler
     /// supplies that decision after each presentation record is decoded.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn decode_with_command_schedule(
         bytes: &[u8],
         mut has_command_batch: impl FnMut(usize, &NativeReplayPresentation) -> bool,
@@ -317,7 +317,7 @@ impl NativeReplay {
     /// caller must rebuild the scenario from the header, after which frames are
     /// exposed in stream order for the scheduler's presentation and command
     /// rungs.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn initialize_playback<S, E>(
         &self,
         initialize_scenario: impl FnOnce(&NativeReplayHeader) -> std::result::Result<S, E>,
@@ -526,7 +526,7 @@ impl<'a, S> NativeReplayStream<'a, S> {
     }
 
     /// Finish through the verified native caller/session cadence.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn finish_scheduled_frame(
         &mut self,
         frame: i32,
@@ -562,7 +562,7 @@ pub fn selection_checksum(selected_objects: &[u32]) -> u32 {
 /// A zero kind is the native null sentinel. Other kinds occupy the high byte
 /// and the object's heap-pool identity (or the kind-specific raw value) is
 /// truncated to 24 bits.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn pack_selection_identity(kind: u8, raw_value: u32) -> u32 {
     if kind == 0 {
         u32::MAX
@@ -606,7 +606,7 @@ fn encode_frame(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn decode_presentation(
     bytes: &[u8],
     cursor: &mut usize,
@@ -638,7 +638,7 @@ fn decode_presentation(
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn decode_command_batch(
     bytes: &[u8],
     cursor: &mut usize,
@@ -654,7 +654,7 @@ fn decode_command_batch(
     Ok(commands)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn take<const N: usize>(
     bytes: &[u8],
     cursor: &mut usize,
@@ -772,7 +772,7 @@ impl ReplayRunner {
     /// resources and navigation re-snapshots per frame just as a recorded
     /// app session did - nothing is caller-substitutable and a mid-match
     /// path-grid change replays faithfully.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn run_runtime(
         runtime: &mut crate::sim::runtime::SimRuntime,
         replay: &ReplayLog,
@@ -813,7 +813,7 @@ impl ReplayRunner {
     /// Fixture-only replay runner (F09): re-run diagnostic-log ticks with
     /// explicitly supplied resources. Production replay execution goes
     /// through `run_runtime`, whose resources are bound in the `SimRuntime`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -827,7 +827,7 @@ impl ReplayRunner {
     /// Fixture-only variant with the static overlay type registry used by the
     /// recorded map. Overlay-backed simulation authority (including miner
     /// resource queries) must see the same registry on record and replay.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture_with_overlay_registry(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -851,7 +851,7 @@ impl ReplayRunner {
     /// uses, with caller-owned static map trigger definitions. Diagnostic
     /// logs own commands and hashes. Production replay execution is
     /// `run_runtime`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture_master_frame(
         sim: &mut Simulation,
         replay: &ReplayLog,

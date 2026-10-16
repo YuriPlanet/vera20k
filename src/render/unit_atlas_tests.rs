@@ -3,61 +3,6 @@ use crate::render::vxl_raster::VxlSprite;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::voxel_frame_catalog::draws_turret_parts;
 
-#[test]
-#[ignore = "manual timing of production atlas lookups for 20,000 cached units"]
-fn cached_native_sprite_lookup_timing() {
-    use std::hint::black_box;
-    use std::time::Instant;
-    let mut entries = HashMap::new();
-    let mut keys = Vec::new();
-    for type_id in ["MTNK", "HTNK", "LCRF", "ORCA", "ZEP", "TNKD"] {
-        for step in 0..32u8 {
-            for slope_type in 0..17u8 {
-                for layer in [VxlLayer::Body, VxlLayer::Turret, VxlLayer::Barrel] {
-                    let key = UnitSpriteKey {
-                        type_id: type_id.into(),
-                        turret_index: 0,
-                        facing: step * 8,
-                        layer,
-                        frame: 0,
-                        slope_type,
-                        barrel_pitch: 0,
-                    };
-                    entries.insert(
-                        key.clone(),
-                        UnitSpriteEntry {
-                            uv_origin: [0.0; 2],
-                            uv_size: [1.0; 2],
-                            pixel_size: [64.0, 48.0],
-                            offset_x: -32.0,
-                            offset_y: -24.0,
-                            native_draw_bounds: Some([-32, -24, 64, 48]),
-                            page: 0,
-                        },
-                    );
-                    keys.push(key);
-                }
-            }
-        }
-    }
-    let atlas = UnitAtlas::new(vec![], entries);
-    let started = Instant::now();
-    for unit in 0..20_000 {
-        for layer in 0..3 {
-            black_box(
-                atlas
-                    .get(black_box(&keys[(unit * 3 + layer) % keys.len()]))
-                    .unwrap(),
-            );
-        }
-    }
-    eprintln!(
-        "20,000 units, three cached layer lookups each ({} entries): {:?}",
-        atlas.sprite_count(),
-        started.elapsed()
-    );
-}
-
 fn gsi_13_07_variant_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "\

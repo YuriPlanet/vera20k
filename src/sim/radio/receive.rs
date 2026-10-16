@@ -32,7 +32,7 @@ use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ScatterFlags;
 use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::LifecycleTestEvent;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -1565,12 +1565,12 @@ fn techno_over_out(
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(from) = sender {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         super::record_test_event(super::RadioTestEvent::ReceiverClassEffect {
             receiver_sid: techno,
             sender_sid: from,
         });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         sim.trace_lifecycle_for_test(LifecycleTestEvent::BreakReceiverClassEffect {
             target: techno,
         });
@@ -1675,7 +1675,7 @@ fn radio_receive(
     match msg {
         RadioMessage::Hello => radio_hello(sim, receiver, sender),
         RadioMessage::AnimStop => {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             let sender_state = sender
                 .and_then(|id| sim.substrate.entities.get(id))
                 .map(|entity| {
@@ -1689,7 +1689,7 @@ fn radio_receive(
                     )
                 });
             let accepted = sim.mark_entity_refresh(receiver);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             super::record_test_event(super::RadioTestEvent::ObjectMarkRefresh {
                 receiver_sid: receiver,
                 sender_sid: sender,
@@ -1711,12 +1711,12 @@ fn radio_receive(
                 .get_mut(receiver)
                 .and_then(|entity| entity.radio_contacts.remove(from))
                 .is_some();
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             super::record_test_event(super::RadioTestEvent::ReceiverCommonCleared {
                 receiver_sid: receiver,
                 sender_sid: from,
             });
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             sim.trace_lifecycle_for_test(LifecycleTestEvent::BreakReceiverCleared {
                 target: receiver,
             });

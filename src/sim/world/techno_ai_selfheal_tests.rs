@@ -672,7 +672,7 @@ fn an_absent_self_heal_frame_key_cannot_divide_by_zero() {
 /// and watches the health move on the `SelfHealInfantryFrames` cadence.
 ///
 /// Ignored by default: it needs the retail install. Run it with
-/// `RA2_DIR=<install> cargo test -p vera20k --lib \
+/// `RA2_DIR=<install> cargo test -p vera20k-core --lib \
 ///  world::techno_ai::selfheal_tests::the_mechanism_runs_on_a_real_map -- --ignored`.
 #[test]
 #[ignore = "needs a retail install; set RA2_DIR and pass --ignored"]
@@ -682,7 +682,7 @@ fn the_mechanism_runs_on_a_real_map() {
         .filter(|value| !value.trim().is_empty())
         .map(std::path::PathBuf::from)
         .or_else(|| {
-            crate::util::config::GameConfig::load()
+            crate::test_fixture::game_config()
                 .ok()
                 .map(|config| config.paths.ra2_dir)
         })
@@ -733,6 +733,7 @@ fn the_mechanism_runs_on_a_real_map() {
                         hospital,
                         (rx, ry),
                         Some(owner),
+                        None,
                     )
             })
             .expect("a placeable hospital site on the retail map")

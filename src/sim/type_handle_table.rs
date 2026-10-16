@@ -75,13 +75,13 @@ impl TypeHandleTable {
     }
 
     /// The handle the table holds for `id`, if it covers it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn handle_for(&self, id: InternedId) -> Option<TypeHandle> {
         self.by_interned.get(id.index() as usize).copied().flatten()
     }
 
     /// Count of interned ids that did NOT resolve to an object (orphans).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn orphan_count(&self) -> usize {
         self.by_interned.iter().filter(|h| h.is_none()).count()
     }

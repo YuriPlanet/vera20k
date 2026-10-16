@@ -62,7 +62,7 @@ impl BunkerLink {
 ///
 /// This module's install, break and release helpers write both.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BunkerLinks {
+pub struct BunkerLinks {
     #[serde(default)]
     occupant: Option<u64>,
     #[serde(default)]
@@ -71,24 +71,24 @@ pub(crate) struct BunkerLinks {
 
 impl BunkerLinks {
     /// The unit installed in this bunker.
-    pub(crate) const fn occupant(self) -> Option<u64> {
+    pub const fn occupant(self) -> Option<u64> {
         self.occupant
     }
 
     /// This unit's link to a bunker.
-    pub(crate) const fn link(self) -> BunkerLink {
+    pub const fn link(self) -> BunkerLink {
         self.link
     }
 
     /// Install a fixture's occupant.
-    #[cfg(test)]
-    pub(crate) fn set_bunker_occupant_for_test(&mut self, occupant: Option<u64>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_bunker_occupant_for_test(&mut self, occupant: Option<u64>) {
         self.occupant = occupant;
     }
 
     /// Install a fixture's link.
-    #[cfg(test)]
-    pub(crate) fn set_bunker_link_for_test(&mut self, link: BunkerLink) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_bunker_link_for_test(&mut self, link: BunkerLink) {
         self.link = link;
     }
 }
@@ -228,7 +228,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
 
 /// Clear BOTH sides of the link and send the radio BREAK. Returns the unit id
 /// that was installed (for callers that re-place it). Does NOT reveal/place/anim.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn break_bunker_link(
     sim: &mut Simulation,
     building_id: u64,

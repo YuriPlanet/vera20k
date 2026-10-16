@@ -64,19 +64,19 @@ use super::ResourceType;
 /// it; the unit drawers read it in place of the object's own type.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct UnloadImage {
+pub struct UnloadImage {
     image: Option<crate::sim::intern::InternedId>,
 }
 
 impl UnloadImage {
     /// The unloading type, while the latch is set.
-    pub(crate) const fn image(self) -> Option<crate::sim::intern::InternedId> {
+    pub const fn image(self) -> Option<crate::sim::intern::InternedId> {
         self.image
     }
 
     /// Install a fixture's image.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, image: Option<crate::sim::intern::InternedId>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, image: Option<crate::sim::intern::InternedId>) {
         self.image = image;
     }
 }

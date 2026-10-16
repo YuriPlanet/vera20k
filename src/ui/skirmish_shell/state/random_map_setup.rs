@@ -15,12 +15,15 @@ use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
 use super::super::layout::RandomMapSetupControl;
 use super::choose_map::ChooseMapSelection;
 
-/// The app supplies a borrow of process Main (the installed simulation's
-/// continuation, or the frontend before the first scenario). Map remains
-/// sim-independent (F05), so this trait binding lives with the UI adapter.
-impl RandomRanged for crate::sim::rng::MainRngDraws {
+/// Process Main as the dialog's `RandomRanged` source. The app supplies process
+/// Main (the installed simulation's continuation, or the frontend before the
+/// first scenario). Map remains sim-independent (F05), so this trait binding
+/// lives with the UI adapter.
+pub struct MainRngRanged(pub crate::sim::rng::MainRngDraws);
+
+impl RandomRanged for MainRngRanged {
     fn ranged(&mut self, min: i32, max: i32) -> i32 {
-        crate::sim::rng::MainRngDraws::ranged(self, min, max)
+        self.0.ranged(min, max)
     }
 }
 
@@ -477,9 +480,12 @@ mod tests {
         derive_from_map_type(
             &mut expected_options,
             &RmgSettings::default(),
-            &mut reference_main.draws(),
+            &mut MainRngRanged(reference_main.draws()),
         );
-        modal.reroll_derived_for_generate(&RmgSettings::default(), &mut process_main.draws());
+        modal.reroll_derived_for_generate(
+            &RmgSettings::default(),
+            &mut MainRngRanged(process_main.draws()),
+        );
 
         assert_eq!(modal.options, expected_options);
         assert_eq!(process_main.logical_state(), reference_main.logical_state());

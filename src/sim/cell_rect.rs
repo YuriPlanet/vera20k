@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::playfield::{lepton_to_packed_cell_component, rect_playfield_corners};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::map::resolved_terrain::SharedCellDummySnapshot;
 use crate::map::resolved_terrain::{
     ResolvedTerrainCell, ResolvedTerrainGrid, SharedCellDummy, zone_class,
@@ -58,7 +58,7 @@ impl PartialEq for CellRef<'_> {
 impl Eq for CellRef<'_> {}
 
 impl CellRef<'_> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn dummy_snapshot(&self) -> Option<SharedCellDummySnapshot> {
         match self {
             CellRef::Real(_) => None,
@@ -649,7 +649,7 @@ impl CellReservationGrid {
         self.masks.iter().map(|(&(rx, ry), &mask)| (rx, ry, mask))
     }
 
-    pub(crate) fn dummy_mask(&self) -> u32 {
+    pub fn dummy_mask(&self) -> u32 {
         self.dummy_mask
     }
 
@@ -699,7 +699,7 @@ pub struct CellRectOccupancyContext<'a> {
     pub playfield_bounds: Option<PlayfieldBounds>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn check_passability_rect(ctx: CellRectPassabilityContext<'_>) -> bool {
     check_passability_rect_with_raw_occupation(ctx, None)
 }
@@ -1034,7 +1034,7 @@ fn ground_building_present(
 /// SW, then SE with native wrapping/truncation and short-circuit order.
 /// Missing configured bounds reject instead of substituting a rectangular or
 /// unbounded approximation that active MapClass does not have.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn rect_is_in_playfield_height_aware(
     rect: CellRect,
     bounds: Option<PlayfieldBounds>,
@@ -1050,7 +1050,7 @@ fn rect_is_in_playfield_height_aware(
 
 /// Explicit mode-zero `MapClass::IsCellInPlayfield @ 0x00578460` seam.
 /// No CellClass lookup or dummy state is touched.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn cell_is_in_playfield_geometry_only(cell: (i32, i32), bounds: PlayfieldBounds) -> bool {
     bounds.contains_geometry_packed(cell.0, cell.1)
 }
@@ -1058,7 +1058,7 @@ pub fn cell_is_in_playfield_geometry_only(cell: (i32, i32), bounds: PlayfieldBou
 /// Explicit mode-one `MapClass::IsCellInPlayfield @ 0x00578460` seam.
 /// Missing configured bounds reject; active native callers do not replace the
 /// playfield diamond with a terrain rectangle or unconditional success.
-pub(crate) fn cell_is_in_playfield_height_aware(
+pub fn cell_is_in_playfield_height_aware(
     cell: (i32, i32),
     bounds: Option<PlayfieldBounds>,
     terrain: Option<&ResolvedTerrainGrid>,
@@ -1071,10 +1071,9 @@ pub(crate) fn cell_is_in_playfield_height_aware(
 pub(crate) fn retained_cell_is_in_playfield(
     cell: crate::map::cell_index::NativeCellIdentity,
     bounds: Option<PlayfieldBounds>,
-    terrain: &ResolvedTerrainGrid,
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
 ) -> bool {
     let Some(bounds) = bounds else { return false };
-    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
     let coord = cells.coord(cell);
     let (level, slope) = cells.ground_fields(cell);
     bounds.contains_height_aware_packed(i32::from(coord.0), i32::from(coord.1), level as i8, slope)

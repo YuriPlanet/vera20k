@@ -48,14 +48,14 @@ use crate::sim::vision;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// What [`launch`] called, in the oracle's terms (observation only).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Observed {
     /// RevealArea's pair of calls: the coordinate and the radius.
     RevealArea([i32; 3], u16),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Observation only: what [`launch`] called on this thread while a test
     /// holds `Some`.
@@ -63,7 +63,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn observe(call: Observed) {
     OBSERVED.with(|log| {
         if let Some(log) = log.borrow_mut().as_mut() {
@@ -90,7 +90,7 @@ pub fn launch(
         .general
         .psychic_reveal_radius
         .clamp(0, i32::from(u16::MAX)) as u16;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::RevealArea(coord, radius));
     sim.fog.alliances = sim.house_alliances.clone();
     let config = sim.sight_reveal_config(Some(rules));

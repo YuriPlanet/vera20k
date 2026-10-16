@@ -434,6 +434,7 @@ impl SiteWorld for SimSiteWorld<'_> {
             self.ty,
             site,
             Some(self.owner),
+            None,
         )
     }
 }

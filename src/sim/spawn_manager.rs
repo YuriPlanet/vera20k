@@ -89,7 +89,7 @@ mod tests;
 /// [`Self::forget`]). Kill credit and the "do not self-RTB" gate read it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct SpawnOwner {
+pub struct SpawnOwner {
     owner: Option<u64>,
 }
 
@@ -105,8 +105,8 @@ impl SpawnOwner {
     }
 
     /// Install a fixture's owner.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, owner: Option<u64>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, owner: Option<u64>) {
         self.owner = owner;
     }
 }
@@ -192,8 +192,8 @@ impl SpawnSlot {
     }
 
     /// A fixture's slot.
-    #[cfg(test)]
-    pub(crate) fn for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(
         spawn: Option<u64>,
         state: SpawnSlotState,
         timer: CdTimer,
@@ -208,14 +208,14 @@ impl SpawnSlot {
     }
 
     /// Install a fixture's child.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_spawn_for_test(&mut self, spawn: Option<u64>) {
         self.spawn = spawn;
     }
 
     /// Install a fixture's state.
-    #[cfg(test)]
-    pub(crate) fn set_state_for_test(&mut self, state: SpawnSlotState) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_state_for_test(&mut self, state: SpawnSlotState) {
         self.state = state;
     }
 }
@@ -326,8 +326,8 @@ impl SpawnManagerState {
     }
 
     /// A fixture's idle pool of `slots` with zero rates and timers.
-    #[cfg(test)]
-    pub(crate) fn for_test(spawn_type: InternedId, slots: Vec<SpawnSlot>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(spawn_type: InternedId, slots: Vec<SpawnSlot>) -> Self {
         Self {
             spawn_type,
             missile_family: None,
@@ -344,39 +344,39 @@ impl SpawnManagerState {
     }
 
     /// Install a fixture's rates.
-    #[cfg(test)]
-    pub(crate) fn set_rates_for_test(&mut self, regen_rate: u32, reload_rate: u32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_rates_for_test(&mut self, regen_rate: u32, reload_rate: u32) {
         self.regen_rate = regen_rate;
         self.reload_rate = reload_rate;
     }
 
     /// Install a fixture's AI gate.
-    #[cfg(test)]
-    pub(crate) fn set_update_timer_for_test(&mut self, update_timer: CdTimer) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_update_timer_for_test(&mut self, update_timer: CdTimer) {
         self.update_timer = update_timer;
     }
 
     /// Install a fixture's current target.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_target_for_test(&mut self, current_target: Option<TargetKind>) {
         self.current_target = current_target;
     }
 
     /// Install a fixture's queued target.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_queued_target_for_test(&mut self, queued_target: Option<TargetKind>) {
         self.queued_target = queued_target;
     }
 
     /// Install a fixture's mode.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_mode_for_test(&mut self, mode: SpawnManagerMode) {
         self.mode = mode;
     }
 
     /// A fixture's slots.
-    #[cfg(test)]
-    pub(crate) fn slots_mut_for_test(&mut self) -> &mut Vec<SpawnSlot> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn slots_mut_for_test(&mut self) -> &mut Vec<SpawnSlot> {
         &mut self.slots
     }
 

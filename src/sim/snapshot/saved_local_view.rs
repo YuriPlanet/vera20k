@@ -14,10 +14,10 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 /// Ten native team-selection slots; an object belongs to at most one slot.
-pub(crate) const CONTROL_GROUP_SLOTS: usize = 10;
+pub const CONTROL_GROUP_SLOTS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SavedLocalView {
+pub struct SavedLocalView {
     /// Raw signed CellStruct words preserved in the app's u16 bit-pattern form.
     view_bookmarks: [[u16; 2]; 4],
     selection_order: Vec<u64>,
@@ -34,16 +34,16 @@ pub(crate) struct SavedLocalView {
 /// 5BE101/5BE112, so Repair +11B0, Sell +11B1, the selected Super +11B8 and
 /// the placement +11A4/+11A8/+11AC all survive a load.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SavedCursorModes {
-    pub(crate) repair: bool,
-    pub(crate) sell: bool,
+pub struct SavedCursorModes {
+    pub repair: bool,
+    pub sell: bool,
     /// Local PlanMgr input mode; physical-key ownership is never saved.
-    pub(crate) planning: bool,
-    pub(crate) targeting: Option<SavedTargeting>,
+    pub planning: bool,
+    pub targeting: Option<SavedTargeting>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) enum SavedTargeting {
+pub enum SavedTargeting {
     /// The type, the factory's held product (absent after its pointer
     /// expired) and that House, by name.
     BuildingPlacement {
@@ -56,7 +56,7 @@ pub(crate) enum SavedTargeting {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum SavedLocalViewError {
+pub enum SavedLocalViewError {
     #[error("saved selection repeats object {object_id}")]
     DuplicateSelectionReference { object_id: u64 },
     #[error("saved control groups repeat object {object_id}")]
@@ -70,7 +70,7 @@ pub(crate) enum SavedLocalViewError {
 }
 
 impl SavedLocalView {
-    pub(crate) fn new(
+    pub fn new(
         view_bookmarks: [[u16; 2]; 4],
         selection_order: Vec<u64>,
         selection_order_pending: bool,
@@ -93,7 +93,7 @@ impl SavedLocalView {
     /// Also called after deserialization, before any app state is mutated.
     /// Object references and queued selection are validated against the new
     /// world by the input owner, after that world's own restore validation.
-    pub(crate) fn validate_structure(&self) -> Result<(), SavedLocalViewError> {
+    pub fn validate_structure(&self) -> Result<(), SavedLocalViewError> {
         let mut selected = BTreeSet::new();
         for &object_id in &self.selection_order {
             if !selected.insert(object_id) {
@@ -109,31 +109,31 @@ impl SavedLocalView {
         Ok(())
     }
 
-    pub(crate) fn view_bookmarks(&self) -> [[u16; 2]; 4] {
+    pub fn view_bookmarks(&self) -> [[u16; 2]; 4] {
         self.view_bookmarks
     }
 
-    pub(crate) fn selection_order(&self) -> &[u64] {
+    pub fn selection_order(&self) -> &[u64] {
         &self.selection_order
     }
 
-    pub(crate) fn selection_order_pending(&self) -> bool {
+    pub fn selection_order_pending(&self) -> bool {
         self.selection_order_pending
     }
 
-    pub(crate) fn control_groups(&self) -> &[Vec<u64>; CONTROL_GROUP_SLOTS] {
+    pub fn control_groups(&self) -> &[Vec<u64>; CONTROL_GROUP_SLOTS] {
         &self.control_groups
     }
 
-    pub(crate) fn follow_target(&self) -> Option<u64> {
+    pub fn follow_target(&self) -> Option<u64> {
         self.follow_target
     }
 
-    pub(crate) fn modes(&self) -> &SavedCursorModes {
+    pub fn modes(&self) -> &SavedCursorModes {
         &self.modes
     }
 
-    pub(crate) fn into_local_input(
+    pub fn into_local_input(
         self,
     ) -> (Vec<u64>, bool, [Vec<u64>; CONTROL_GROUP_SLOTS], Option<u64>) {
         (

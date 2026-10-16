@@ -27,7 +27,7 @@ impl GameEntity {
         })
     }
 
-    pub(crate) fn deploy_anim(&self) -> Option<AnimId> {
+    pub fn deploy_anim(&self) -> Option<AnimId> {
         self.deploy_attachment.deploy_anim
     }
 
@@ -48,7 +48,7 @@ impl GameEntity {
         self.deploy_attachment.deploy_anim.take()
     }
 
-    pub(crate) fn landing_for_deploy(&self) -> bool {
+    pub fn landing_for_deploy(&self) -> bool {
         self.deploy_attachment.landing_for_deploy
     }
 
@@ -64,7 +64,7 @@ impl GameEntity {
     }
 
     /// A fixture's landing request.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_landing_for_deploy(&mut self, landing: bool) {
         self.deploy_attachment.landing_for_deploy = landing;
     }
@@ -74,13 +74,8 @@ impl GameEntity {
         self.deploy_attachment.landing_for_deploy.hash(hasher);
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_unit_simple_deploy_for_test(
-        &mut self,
-        deployed: bool,
-        begin: bool,
-        reverse: bool,
-    ) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_unit_simple_deploy_for_test(&mut self, deployed: bool, begin: bool, reverse: bool) {
         self.mission_leaf.set_unit_deployed(u8::from(deployed));
         self.mission_leaf
             .set_unit_deploy_begin_active(u8::from(begin));

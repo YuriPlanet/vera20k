@@ -47,6 +47,7 @@ fn scan_autofill_direction(
     owner: InternedId,
     overlay_id: u8,
     direction: (i32, i32),
+    native_cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Vec<(u16, u16)> {
     let limit = object_type
         .guard_range
@@ -60,6 +61,8 @@ fn scan_autofill_direction(
     else {
         return Vec::new();
     };
+    let canonical = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    let query = native_cells.unwrap_or(&canonical);
     let (width, height) = (i32::from(grid.width()), i32::from(grid.height()));
     let (mut cx, mut cy) = (
         i32::from(origin.0) + direction.0,
@@ -80,10 +83,11 @@ fn scan_autofill_direction(
             sim,
             rules,
             Some(registry),
-            terrain.native_cell_identity((cx as i16, cy as i16)),
+            query.lookup((cx as i16, cy as i16)),
             crate::sim::build_site::building_speed_type(object_type),
             Some(object_type),
             Some(owner),
+            Some(query),
         ) {
             return Vec::new();
         }
@@ -102,6 +106,7 @@ pub(super) fn autofill_cells(
     origin: (u16, u16),
     owner: InternedId,
     overlay_id: u8,
+    native_cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Vec<(u16, u16)> {
     let mut cells = Vec::new();
     for direction in CARDINAL_DIRECTIONS {
@@ -114,6 +119,7 @@ pub(super) fn autofill_cells(
             owner,
             overlay_id,
             direction,
+            native_cells,
         ));
     }
     cells
@@ -149,6 +155,7 @@ pub(crate) fn stamp_wall_with_autofill(
             owner,
             overlay_id,
             direction,
+            None,
         );
         for (rx, ry) in gap {
             let stamped = stamp_wall(sim, registry, rx, ry, overlay_id, owner);
@@ -174,11 +181,11 @@ pub(super) fn stamp_wall(
         return false;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let mut detach_trace = Vec::new();
     let mut host = SimulationWallRuntimeHost {
         entities: &mut sim.substrate.entities,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         detach_trace: &mut detach_trace,
         radar_dirty_cells: &mut sim.radar_terrain_dirty_cells,
         radar_dirty_generation: &mut sim.radar_terrain_dirty_generation,

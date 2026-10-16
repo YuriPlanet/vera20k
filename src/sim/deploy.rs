@@ -24,7 +24,7 @@ pub(crate) struct CrushImmunity(u8);
 
 impl CrushImmunity {
     /// A fixture's raw byte.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn from_raw(raw: u8) -> Self {
         Self(raw)
     }

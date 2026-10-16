@@ -11,7 +11,7 @@ use super::*;
 /// directly into live cells; serializing those cells through `MapFile` must not
 /// turn loading into a second Mark operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OverlayLoadSource {
+pub enum OverlayLoadSource {
     Authored,
     GeneratedMaterialized,
 }
@@ -36,18 +36,18 @@ impl TerrainBuildProjection {
 /// Type barrier for the pristine authored Fill product. It intentionally does
 /// not expose `ResolvedTerrainGrid`'s pathing/presentation surface: the inner
 /// grid must first be consumed by the native Tube/overlay/Recalc transaction.
-pub(crate) struct AuthoredTerrainFill(ResolvedTerrainGrid);
+pub struct AuthoredTerrainFill(ResolvedTerrainGrid);
 
 impl AuthoredTerrainFill {
     pub(crate) fn into_pending_grid(self) -> ResolvedTerrainGrid {
         self.0
     }
 
-    pub(crate) fn dimensions(&self) -> (u16, u16) {
+    pub fn dimensions(&self) -> (u16, u16) {
         (self.0.width(), self.0.height())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn pending_grid(&self) -> &ResolvedTerrainGrid {
         &self.0
     }
@@ -83,7 +83,7 @@ impl ResolvedTerrainGrid {
 
     /// Selector-free generated-map load seam for focused construction tests.
     /// Production generated maps use `build_with_variant_selector_and_shared_dummy`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn build_generated_materialized_for_test(map: &MapFile) -> Self {
         Self::build_inner(
             map,
@@ -138,7 +138,7 @@ impl ResolvedTerrainGrid {
     /// dummy already attached. This is required before the post-Resize
     /// OverlayPack `SetBridgeDirection_*` pass; binding afterward loses every
     /// missing-neighbor write to the shared fallback object.
-    pub(crate) fn build_with_variant_selector_and_shared_dummy(
+    pub fn build_with_variant_selector_and_shared_dummy(
         map: &MapFile,
         theater_data: Option<&TheaterData>,
         asset_manager: Option<&crate::assets::asset_manager::AssetManager>,
@@ -175,7 +175,7 @@ impl ResolvedTerrainGrid {
     /// diamond, pristine TMP metadata, and variant selection only. Executable
     /// map-load effects are deliberately deferred until the staged Simulation
     /// owns native identity and can run the consuming overlay transaction.
-    pub(crate) fn build_pending_authored_with_variant_selector_and_shared_dummy(
+    pub fn build_pending_authored_with_variant_selector_and_shared_dummy(
         map: &MapFile,
         theater_data: Option<&TheaterData>,
         asset_manager: Option<&crate::assets::asset_manager::AssetManager>,
@@ -1121,7 +1121,7 @@ impl Default for TileMetadata {
 }
 
 impl TileMetadata {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn from_resolved_cell(cell: &ResolvedTerrainCell) -> Self {
         Self {
             tileset_index: cell.tileset_index,
@@ -1272,7 +1272,7 @@ pub(super) fn restore_load_base_land(cell: &mut ResolvedTerrainCell) {
 /// CanPlaceTiberium4839C0..4839E9 admits that index at its final tile gate.
 /// Other placement gates are outside this projection. Original-block witnesses:
 /// tools/spatial_oracle/terrain_tile_permissions.
-pub(crate) fn current_tile_permissions(lookup: &TilesetLookup, tile: i32) -> (bool, bool) {
+pub fn current_tile_permissions(lookup: &TilesetLookup, tile: i32) -> (bool, bool) {
     if tile < 0 || tile as usize >= lookup.len() {
         (lookup.is_morphable(0), true)
     } else {
@@ -1419,7 +1419,7 @@ pub(super) fn apply_selected_presentation_metadata(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RadarColorMetadata {
+pub struct RadarColorMetadata {
     pub left: [u8; 3],
     pub right: [u8; 3],
     pub valid: bool,

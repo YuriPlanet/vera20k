@@ -998,7 +998,7 @@ fn simulation_ground_command(
 /// height-aware LocalSize gate. Original Foot4DE1D0/FNPC56DC20 chooses4,19
 /// before encoding ordinary Move; the Unit setter receives that chosen Cell.
 /// Replay the saved header/navigation inputs through the existing owners.
-pub(crate) fn check_initialized_unit_shift_resolver(produce: GroundCommandProducer) {
+pub fn check_initialized_unit_shift_resolver(produce: GroundCommandProducer) {
     let corpus = ground_command_corpus();
     let row = ground_command_history(&corpus, "unit_shift_outside_playfield_B");
     assert_eq!(row["inputs"][1]["queried_action"], 2);
@@ -1022,7 +1022,7 @@ pub(crate) fn check_initialized_unit_shift_resolver(produce: GroundCommandProduc
     check_initialized_ground_reissues(&["unit_shift_outside_playfield_B"], produce);
 }
 
-pub(crate) fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandProducer) {
+pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandProducer) {
     use crate::sim::mission::MissionId;
     use crate::sim::mission::authority::EntityReadyInputProvider;
 
@@ -1123,7 +1123,7 @@ pub(crate) fn check_initialized_ground_reissues(names: &[&str], produce: GroundC
 /// boundary, then compare the actual Event6 Stop and Move command returns.
 /// The next original AI is saved in the receipt; this test does not replay
 /// its map/background/facing inputs as a whole-world equivalence claim.
-pub(crate) fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
+pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
     let corpus = ground_command_corpus();
     for name in [
         "unit_paid_head_B",

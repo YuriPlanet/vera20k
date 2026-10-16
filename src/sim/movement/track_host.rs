@@ -267,7 +267,7 @@ impl Simulation {
 
     /// Geometry/receiver fixtures explicitly supply the paid budget; they do
     /// not certify the native entry or scalar prefix. Production enters above.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn run_track_points(
         &mut self,
         invocation: TrackInvocation,
@@ -303,7 +303,7 @@ impl Simulation {
 
     /// Shared paid-loop body. The observer tests synchronous receiver effects;
     /// the caller has already completed admission and the scalar prefix.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn run_track_points_observed(
         &mut self,
         invocation: TrackInvocation,

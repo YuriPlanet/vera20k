@@ -240,7 +240,7 @@ regression and baseline provenance checks, not a native skirmish comparison.
 The current baseline and strengthened mining checks are reproducible with:
 
 ```sh
-VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k --lib \
+VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k-core --lib \
   sim::world::global_parity_harness_tests::global_skirmish_replay_is_deterministic_and_baseline_stable
 ```
 

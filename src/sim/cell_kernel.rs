@@ -6,7 +6,7 @@
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::NativeCellQuery;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, ground_height_leptons};
 
@@ -198,7 +198,7 @@ pub(crate) fn native_cell_own_xy(
 
 /// Native invalid-cell coordinates are process-global sentinels. At the Rust map
 /// boundary, represent that unproven raw value as `None` rather than manufacture it.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn checked_cell_from_world(
     world_x: i32,
     world_y: i32,
@@ -214,7 +214,7 @@ pub fn checked_cell_from_world(
 }
 
 /// Apply the high-bridge deck only when a caller has already selected that layer.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn selected_cell_surface_height(floor_z: i32, deck_selected: bool) -> i32 {
     if deck_selected {
         floor_z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)

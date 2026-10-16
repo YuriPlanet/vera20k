@@ -15,7 +15,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::FrameEffects;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum InfantryDeathSequence {
+pub enum InfantryDeathSequence {
     Die1,
     Die2,
 }
@@ -50,7 +50,7 @@ impl InfantryDeathSequence {
 /// excluded from targeting, pathfinding and selection, and stay cell-marked
 /// until their terminal UnInit.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TerminalLifetime {
+pub struct TerminalLifetime {
     dying: bool,
     /// The Infantry policy for the remaining Logic visits.
     infantry: Option<InfantryTerminal>,
@@ -58,12 +58,12 @@ pub(crate) struct TerminalLifetime {
 
 impl TerminalLifetime {
     /// The object is dying or dead.
-    pub(crate) const fn is_dying(self) -> bool {
+    pub const fn is_dying(self) -> bool {
         self.dying
     }
 
     /// The Infantry terminal policy, while one is retained.
-    pub(crate) const fn infantry_terminal(self) -> Option<InfantryTerminal> {
+    pub const fn infantry_terminal(self) -> Option<InfantryTerminal> {
         self.infantry
     }
 
@@ -99,20 +99,20 @@ impl TerminalLifetime {
     }
 
     /// Install a fixture's dying mark.
-    #[cfg(test)]
-    pub(crate) fn set_dying_for_test(&mut self, dying: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_dying_for_test(&mut self, dying: bool) {
         self.dying = dying;
     }
 
     /// Install a fixture's Infantry policy.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_infantry_terminal_for_test(&mut self, terminal: Option<InfantryTerminal>) {
         self.infantry = terminal;
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum InfantryTerminal {
+pub enum InfantryTerminal {
     RetireNextVisit,
     Sequence(InfantryDeathSequence),
     /// From the arm's choice to its UnInit in
@@ -142,7 +142,7 @@ enum ReceiverDeathRecipe {
 /// consuming this postlude cannot forget the
 /// matching lifetime decision or split effect/smudge selection between callers.
 #[must_use]
-pub(crate) struct InfantryDeathPostlude {
+pub struct InfantryDeathPostlude {
     id: u64,
     /// The Location (`+0x9C`) every anim arm builds at.
     location: crate::sim::anim_class::AnimWorldCoord,
@@ -575,8 +575,8 @@ impl Simulation {
     /// supplies no class action. Bridge fallout uses ReceiveDamage.
     /// No ReceiveDamage effects are introduced on these compatibility paths.
     /// Returns false for other categories, whose existing lifetime stays local.
-    #[cfg(test)]
-    pub(crate) fn begin_raw_infantry_death(&mut self, id: u64) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn begin_raw_infantry_death(&mut self, id: u64) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
@@ -598,7 +598,7 @@ impl Simulation {
     /// Native Do_Action51D6F0 retains progress for an unchanged action. A
     /// captured receiver can write a different action after UnInit, without
     /// restoring Logic membership or canceling its pending deletion.
-    pub(crate) fn begin_infantry_death_sequence(
+    pub fn begin_infantry_death_sequence(
         &mut self,
         id: u64,
         sequence: InfantryDeathSequence,

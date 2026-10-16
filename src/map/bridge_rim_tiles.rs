@@ -1,7 +1,7 @@
 //! Theater identity used by native high-bridge edge cleanup, 576770/576200.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct HighBridgeRimTiles {
+pub struct HighBridgeRimTiles {
     pub base: i32,
     pub top_left: [i32; 2],
     pub bottom_right: [i32; 2],
@@ -21,7 +21,7 @@ impl HighBridgeRimTiles {
         Self::from_ini(base, &theater.ini_data)
     }
 
-    pub(crate) fn from_ini(base: i32, bytes: &[u8]) -> Self {
+    pub fn from_ini(base: i32, bytes: &[u8]) -> Self {
         let ini = crate::rules::ini_parser::IniFile::from_bytes(bytes).ok();
         let general = ini.as_ref().and_then(|ini| ini.section("General"));
         // These native globals are signed ReadInteger results. The older

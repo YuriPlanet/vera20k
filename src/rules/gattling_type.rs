@@ -86,8 +86,8 @@ impl GattlingStages {
     }
 
     /// The block from its field values, for fixtures and native payloads.
-    #[cfg(test)]
-    pub(crate) fn from_fields(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_fields(
         weapon_stages: i32,
         stage: [i32; 6],
         elite_stage: [i32; 6],

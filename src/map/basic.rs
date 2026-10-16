@@ -71,7 +71,7 @@ impl SpecialFlagsSection {
     /// SetDefaults683610 retains the special word. A cold Scenario ctor
     /// initializes0x8088: Inert/grows false, spreads/destroyable bridges true.
     /// The passed snapshot is a projection of the existing live authorities.
-    pub(crate) fn resolve_campaign_defaults(&mut self, prior: Option<&Self>) {
+    pub fn resolve_campaign_defaults(&mut self, prior: Option<&Self>) {
         self.inert
             .get_or_insert(prior.and_then(|flags| flags.inert).unwrap_or(false));
         self.tiberium_grows.get_or_insert(

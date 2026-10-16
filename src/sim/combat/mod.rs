@@ -24,28 +24,28 @@
 //! - Part of sim/ — depends on sim/components and rules/ (RuleSet).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-pub(crate) mod aim_coord;
+pub mod aim_coord;
 mod attack_target;
 pub(crate) mod base_defense_response;
 pub mod burst;
 pub(crate) mod cell_spread;
 pub(crate) mod combat_aoe;
 pub(crate) mod combat_targeting;
-pub(crate) mod combat_weapon;
+pub mod combat_weapon;
 pub(crate) mod damage;
 pub(crate) mod destruction_effects;
 pub(crate) mod detonation_anim;
 mod effects;
-pub(crate) mod electric_bolt;
-pub(crate) mod fire_coord;
-pub(crate) mod fire_error;
+pub mod electric_bolt;
+pub mod fire_coord;
+pub mod fire_error;
 pub(crate) mod fire_error_world;
-pub(crate) mod gattling;
+pub mod gattling;
 pub(crate) mod greatest_threat;
-pub(crate) mod in_range;
+pub mod in_range;
 pub(crate) mod inviso_scatter;
-pub(crate) mod laser;
-pub(crate) mod line_of_fire;
+pub mod laser;
+pub mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
 mod projectile_delivery;
@@ -60,8 +60,8 @@ mod threat_mask;
 mod threat_posed;
 pub(crate) mod threat_range;
 mod unit_damage_response;
-pub(crate) mod veterancy;
-pub(crate) mod world_fire;
+pub mod veterancy;
+pub mod world_fire;
 pub(crate) mod world_receiver;
 
 #[cfg(test)]
@@ -128,10 +128,8 @@ pub use effects::{
     CombatLightRequest, ExplosionEffect, SmudgeSpawnRequest, TiberiumReductionRequest,
     UnderAttackEvent, UnitLostEvent,
 };
-pub(crate) use in_range::{
-    can_fire_at_target, can_fire_at_target_in_query, is_within_range_leptons,
-    lepton_distance_sq_raw,
-};
+pub use in_range::can_fire_at_target;
+pub use in_range::{can_fire_at_target_in_query, is_within_range_leptons, lepton_distance_sq_raw};
 pub use object_health::{Health, health_category};
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet};
 pub use receiver_call::TerrainDamageEvent;
@@ -141,8 +139,9 @@ pub(crate) use receiver_call::{
 };
 pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
+pub use techno_death::FatalLifecycleStage;
 pub(crate) use techno_death::{
-    FatalLifecycleStage, death_announcement_event, death_arm_explodes, death_weapon_detonation,
+    death_announcement_event, death_arm_explodes, death_weapon_detonation,
 };
 pub(crate) use threat_posed::live_threat_posed;
 /// The threat mask an acquisition callsite pushes into
@@ -165,19 +164,19 @@ use receiver_call::{
 use shrapnel::emit_projectile_shrapnel;
 use techno_death::{ConcreteDeathSmudgePlan, append_selected_death_sounds, throw_debris_for_death};
 
-#[cfg(test)]
-pub(crate) use attack_target::{
+#[cfg(any(test, feature = "test-support"))]
+pub use attack_target::{
     install_cell_attack_target_for_test, install_entity_attack_target_for_test,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use destruction_effects::building_center_smudge_request;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use detonation_anim::impact_z_byte;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use effects::ReceiverStageTrace;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use effects::tiberium_reduction_amount;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use receiver_call::infantry_prone_raw_damage;
 #[cfg(test)]
 pub(crate) use receiver_fixture::{
@@ -185,7 +184,7 @@ pub(crate) use receiver_fixture::{
     commit_damage_events, emit_projectile_detonations, handle_entity_deaths, resolve_attacker_fire,
     tick_combat, tick_combat_with_fog, tick_combat_with_fog_and_main_rng,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use techno_death::fire_death_weapon_payload;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -203,7 +202,7 @@ use crate::rules::ruleset::{HouseCostFactors, RuleSet};
 use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::bridge_state::BridgeDamageEvent;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::house_state::HouseState;
@@ -214,11 +213,11 @@ use crate::sim::mission::authority::queue_entity_mission_deferred;
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose::object_world_z_leptons;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::overlay_grid::OverlayGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::overlay_grid::WallMutation;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::power_system::PowerState;
 use crate::sim::projectile::{
     ProjectileCollisionPolicy, ProjectileCoord, ProjectileDetonation, ProjectileGuidance,
@@ -230,9 +229,9 @@ use crate::sim::projectile::{
 };
 use crate::sim::rng::SimRng;
 use crate::sim::terrain_object::TerrainAreaReceiveResult;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::terrain_object::TerrainAreaState;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::vision::FogState;
 use crate::sim::world::{FireOriginSnapshot, SimFireEvent, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
@@ -240,7 +239,7 @@ use crate::util::lepton::LEPTONS_PER_LEVEL;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 use super::game_entity::GameEntity;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use super::occupancy::OccupancyGrid;
 
 /// One Unit's post-Foot Facing slot output for this tick — the write half of
@@ -322,7 +321,7 @@ pub(crate) struct FireRequests {
 /// Call-local arguments of Building Update's two native FireAt sites.
 /// This value is delivered immediately; no future-shot queue retains it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BuildingShot {
+pub enum BuildingShot {
     /// Mission_Attack44B6D0, before its Gattling charge44B6EF.
     Mission { weapon: i32, target: TargetKind },
     /// ProcessDelayedFire450492 uses the slot saved at admission. A
@@ -349,7 +348,7 @@ pub struct CombatTickResult {
     #[cfg(test)]
     pub(crate) fixture_anims: Vec<receiver_fixture::ConstructedAnimObservation>,
     /// Test observations of bullets already admitted through production owners.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub projectile_spawns: Vec<ProjectileSpawn>,
     /// Facing observations for component combat fixtures. Production Unit
     /// facing commits within that Unit's live Logic slot.

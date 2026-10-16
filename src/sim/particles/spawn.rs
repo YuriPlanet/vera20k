@@ -17,7 +17,7 @@ use crate::rules::particle_system_type::{ParticleSystemBehavesLike, ParticleSyst
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, sqrt_approx_f32,
@@ -32,7 +32,7 @@ use glam::IVec3;
 /// ([`Self::forget`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct DamageSmoke {
+pub struct DamageSmoke {
     system: Option<u64>,
 }
 
@@ -48,7 +48,7 @@ impl DamageSmoke {
     }
 
     /// Install a fixture's system.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
         self.system = system;
     }

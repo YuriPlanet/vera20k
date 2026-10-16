@@ -102,7 +102,7 @@ const WALL_CONNECTABLE_OVERLAY_IDS: [u8; 3] = [2, 26, 243];
 /// `alliances` is consulted only under `[WallModel] AlliedWallTransparency`,
 /// which stock rules set to `no`.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct LineOfFireInputs<'a> {
+pub struct LineOfFireInputs<'a> {
     pub overlay_grid: Option<&'a OverlayGrid>,
     pub overlay_registry: Option<&'a OverlayTypeRegistry>,
     pub alliances: Option<&'a HouseAllianceMap>,
@@ -110,8 +110,8 @@ pub(crate) struct LineOfFireInputs<'a> {
 
 impl<'a> LineOfFireInputs<'a> {
     /// Terrain-only inputs: cliffs are still evaluated, walls cannot be.
-    #[cfg(test)]
-    pub(crate) const fn terrain_only() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub const fn terrain_only() -> Self {
         Self {
             overlay_grid: None,
             overlay_registry: None,
@@ -120,13 +120,13 @@ impl<'a> LineOfFireInputs<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static LINE_SAMPLES: std::cell::RefCell<Option<Vec<DriveCoord>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Read-only production-entry observations for the original4CC100 corpus.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn trace_line_samples<T>(run: impl FnOnce() -> T) -> (T, Vec<DriveCoord>) {
     LINE_SAMPLES.with_borrow_mut(|trace| {
         assert!(trace.is_none(), "nested line sample trace");
@@ -177,7 +177,7 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
     los: &LineOfFireInputs<'_>,
     mut lookup: impl FnMut((i16, i16)) -> CellRef<'a>,
 ) -> Option<CellRef<'a>> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     LINE_SAMPLES.with_borrow_mut(|trace| {
         if let Some(samples) = trace {
             samples.push(probe.sample);

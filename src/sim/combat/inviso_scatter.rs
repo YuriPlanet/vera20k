@@ -7,14 +7,14 @@
 //! coordinate.
 
 use crate::sim::rng::SimRng;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, X87Chop53};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 const MAP_CELL_LIMIT: u32 = 512;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const INVISO_ANIM_RADIUS: i32 = 0x20;
 
 /// The final byte argument of the one shared Coord49F420 owner.
@@ -103,7 +103,7 @@ const COSINE_BITS: [u32; 256] = [
 
 /// Compatibility for cell-packet tests; production calls the raw Coord owner
 /// directly so packing never changes the input to native49F420.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn scatter_inviso_effect_coord(
     rng: &mut SimRng,
     rx: u16,
@@ -123,7 +123,7 @@ pub(crate) fn scatter_inviso_effect_coord(
     split_valid_coord(x, y)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn scatter_effect_coord_for_byte(
     byte: u8,
     rx: u16,
@@ -201,7 +201,7 @@ pub(crate) fn random_direction_coord_for_byte(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn split_valid_coord(x: i32, y: i32) -> (u16, u16, SimFixed, SimFixed) {
     let (rx, sub_x) = crate::util::lepton::split_lepton_axis(x);
     let (ry, sub_y) = crate::util::lepton::split_lepton_axis(y);

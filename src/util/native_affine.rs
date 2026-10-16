@@ -4,20 +4,20 @@
 use crate::util::native_x87::{NativeF32Bits, X87Chop53 as Fpu, X87Value};
 use glam::{Mat4, Vec3};
 
-pub(crate) fn load(value: f32) -> Option<X87Value> {
+pub fn load(value: f32) -> Option<X87Value> {
     Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits())).ok()
 }
 
-pub(crate) fn store(value: X87Value) -> Option<f32> {
+pub fn store(value: X87Value) -> Option<f32> {
     Some(f32::from_bits(Fpu::store_f32(value).ok()?.bits()))
 }
 
-pub(crate) fn ftol(value: X87Value) -> Option<i32> {
+pub fn ftol(value: X87Value) -> Option<i32> {
     i32::try_from(Fpu::ftol_i64(value).ok()?).ok()
 }
 
 /// Full affine 5AF980, including its translation-column float stores.
-pub(crate) fn matrix_product(left: Mat4, right: Mat4) -> Option<Mat4> {
+pub fn matrix_product(left: Mat4, right: Mat4) -> Option<Mat4> {
     let mut result = Mat4::IDENTITY;
     for col in 0..4 {
         for row in 0..3 {
@@ -35,7 +35,7 @@ pub(crate) fn matrix_product(left: Mat4, right: Mat4) -> Option<Mat4> {
 }
 
 /// 5AFB80 differs from matrix multiplication in the second/third dot order.
-pub(crate) fn transform_point(matrix: Mat4, point: Vec3) -> Option<Vec3> {
+pub fn transform_point(matrix: Mat4, point: Vec3) -> Option<Vec3> {
     let mut result = Vec3::ZERO;
     for row in 0..3 {
         let x = Fpu::mul(load(matrix.col(0)[row])?, load(point.x)?);
@@ -56,7 +56,7 @@ pub(crate) fn transform_point(matrix: Mat4, point: Vec3) -> Option<Vec3> {
 /// `x*cos - z*sin` and `z*cos + x*sin`, evaluated in x87 precision and
 /// stored as floats; Y and the translation column are untouched. The sine
 /// and cosine are the table's (`0x004CACB0`, `0x004CAD00`).
-pub(crate) fn rotate_y(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
+pub fn rotate_y(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     use crate::util::native_x87::{NativeF32Bits, X87Chop53 as Fpu};
     let load = |value: f32| {
         Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits())).expect("voxel basis is finite")
@@ -75,7 +75,7 @@ pub(crate) fn rotate_y(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
 
 /// Native in-place axis rotation (5AEF60/5AF080/5AF1A0): each row's two
 /// changed columns store separately as floats. Reuse the existing Y owner.
-pub(crate) fn rotate_x(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
+pub fn rotate_x(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     use crate::util::native_x87::X87Chop53 as Fpu;
     let mut result = matrix;
     for row in 0..3 {
@@ -89,7 +89,7 @@ pub(crate) fn rotate_x(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     result
 }
 
-pub(crate) fn rotate_z(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
+pub fn rotate_z(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     use crate::util::native_x87::X87Chop53 as Fpu;
     let mut result = matrix;
     for row in 0..3 {
@@ -106,7 +106,7 @@ pub(crate) fn rotate_z(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
 /// Original TranslateX5AE980 and Translate5AE8F0 update the translation
 /// column from the existing basis. A vector in this frame is not a screen
 /// displacement; keep the native float store before the next rotation.
-pub(crate) fn translate(matrix: Mat4, offset: &[f32]) -> Mat4 {
+pub fn translate(matrix: Mat4, offset: &[f32]) -> Mat4 {
     use crate::util::native_x87::X87Chop53 as Fpu;
     debug_assert!(offset.len() == 1 || offset.len() == 3);
     let mut result = matrix;

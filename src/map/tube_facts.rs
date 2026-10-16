@@ -115,7 +115,7 @@ impl TubeFact {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn auto_low_bridge(cell: (u16, u16), direction: u8) -> Self {
         Self::automatic_recalc_shell(cell, direction)
     }

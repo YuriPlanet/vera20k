@@ -1546,10 +1546,9 @@ fn scanner_mask<'r>(
 /// native has (`[0x00A8EC88]` is the global object count) and is bounded by the
 /// object count rather than by the map. The ring path borrows maintained Cell
 /// lists, while its airborne pre-pass uses the shared retained-bucket query. A hunting
-/// object scans only when it holds
-/// no target and its `NormalTargetingDelay` timer has expired, so at charter
-/// scale the cost is one N-pass per hunting object per cadence — not per tick,
-/// and not per ring.
+/// object scans at each run of its Hunt handler (`0x004D5350`) while it
+/// holds no target, so at charter scale the cost is one N-pass per targetless
+/// hunter per handler run — not per tick, and not per ring.
 fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Option<u64> {
     let mut best: Option<u64> = None;
     // `local_50 = -1` on the ring path; the same strictly-greater keep, so a
@@ -1599,7 +1598,7 @@ fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Opt
 /// The global list at which [`flat_scores`] scores side by side.
 const SIDE_BY_SIDE_CANDIDATES: usize = 256;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Tests set this to score every flat walk one by one, the reference
     /// side-by-side scoring must match; [`FLAT_WALKS_SIDE_BY_SIDE`] counts
@@ -1624,9 +1623,9 @@ fn flat_scores(
     walk: WalkArgs,
     candidates: &[&GameEntity],
 ) -> Vec<Option<i32>> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let serial = SERIAL_FLAT_SCORES.get();
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-support")))]
     let serial = false;
     if !serial
         && candidates.len() >= SIDE_BY_SIDE_CANDIDATES
@@ -1637,7 +1636,7 @@ fn flat_scores(
             dummy.detached_stamps(|| flat_score(ctx, walk, candidate))
         });
         if scored.iter().all(|&(_, stamped)| !stamped) {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             FLAT_WALKS_SIDE_BY_SIDE.set(FLAT_WALKS_SIDE_BY_SIDE.get() + 1);
             return scored.into_iter().map(|(score, _)| score).collect();
         }

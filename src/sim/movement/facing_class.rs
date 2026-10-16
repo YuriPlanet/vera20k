@@ -85,19 +85,19 @@ impl FacingClass {
         self.rot_per_frame
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn timer_start_frame(&self) -> Option<u32> {
         self.start_frame
     }
 
     /// The native start word (`+0x04`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn start_word(&self) -> u16 {
         self.prev
     }
 
     /// The native timer's time left (`+0x10`).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn timer_duration(&self) -> u16 {
         self.duration_frames
     }

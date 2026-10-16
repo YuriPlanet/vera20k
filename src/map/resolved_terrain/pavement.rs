@@ -5,12 +5,12 @@ use super::*;
 use crate::map::bridge_pavement::DAMAGED_PAVEMENT;
 
 impl ResolvedTerrainGrid {
-    pub(crate) fn pavement_damaged_at(&self, rx: u16, ry: u16) -> bool {
+    pub fn pavement_damaged_at(&self, rx: u16, ry: u16) -> bool {
         self.cell(rx, ry)
             .is_some_and(|cell| cell.bridge_facts.raw_flags & DAMAGED_PAVEMENT != 0)
     }
 
-    pub(crate) fn write_pavement_flags(&mut self, cell: NativeCellIdentity, flags: u32) {
+    pub fn write_pavement_flags(&mut self, cell: NativeCellIdentity, flags: u32) {
         // The core preserves every other flag. Do not route through the bridge
         // setter projection:56E990 writes only the word and marks display dirt.
         match cell {
@@ -41,7 +41,7 @@ impl ResolvedTerrainGrid {
 
     /// Native480350 checks file count before the pristine damaged-data gate.
     /// None leaves the ordinary coordinate-selected file choice to its caller.
-    pub(crate) fn pavement_draw_variant(&self, rx: u16, ry: u16) -> Option<u8> {
+    pub fn pavement_draw_variant(&self, rx: u16, ry: u16) -> Option<u8> {
         let cell = self.cell(rx, ry)?;
         if let Some(count) = self.native_tmp_file_count(cell.final_tile_index) {
             if count < 2 {

@@ -42,8 +42,8 @@ pub use player_name::{
     set_status_help_text, update_player_name_scroll_for_caret,
 };
 pub use random_map_setup::{
-    AcceptOutcome, PLAYERS_RANGE, RandomMapSetupModalState, SETUP_COMBO_ROWS, SetupCombo,
-    SetupComboItem, setup_combo_items,
+    AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapSetupModalState, SETUP_COMBO_ROWS,
+    SetupCombo, SetupComboItem, setup_combo_items,
 };
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedOutcome,

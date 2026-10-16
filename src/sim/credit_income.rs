@@ -19,7 +19,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::mission::MissionType;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
@@ -85,7 +85,7 @@ impl Drain {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drain {
     pub(crate) fn set_target_for_test(&mut self, target: Option<u64>) {
         self.target = target;
@@ -109,7 +109,7 @@ fn produce_cash_fires(timer: CdTimer, frame: u32) -> bool {
 
 /// [`Economy::add_credits`](crate::sim::economy::Economy::add_credits) on
 /// `owner`'s wallet (`HouseClass::Add_Credits @ 0x004F9950`).
-pub(crate) fn add_credits(sim: &mut Simulation, owner: InternedId, amount: i32) {
+pub fn add_credits(sim: &mut Simulation, owner: InternedId, amount: i32) {
     if let Some(house) = sim.houses.get_mut(&owner) {
         house.economy.add_credits(amount);
     }

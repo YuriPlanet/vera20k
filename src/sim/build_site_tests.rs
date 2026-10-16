@@ -73,6 +73,7 @@ impl Arena {
             building_speed_type(ty),
             Some(ty),
             house,
+            None,
         )
     }
 
@@ -84,6 +85,7 @@ impl Arena {
             self.ty(ty),
             origin,
             house,
+            None,
         )
     }
 

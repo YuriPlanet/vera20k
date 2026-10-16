@@ -973,24 +973,22 @@ pub fn build_unit_atlas(
 // parsed parts; it never infers loading from ART or maintains a second parser.
 use crate::rules::voxel_asset_catalog::VoxelPart;
 
-impl VoxelPart {
-    fn render(&self, params: &VxlRenderParams, vpl: Option<&VplFile>) -> VxlSprite {
-        vxl_raster::render_vxl(self.vxl(), self.hva(), params, vpl)
-    }
+fn render_part(part: &VoxelPart, params: &VxlRenderParams, vpl: Option<&VplFile>) -> VxlSprite {
+    vxl_raster::render_vxl(part.vxl(), part.hva(), params, vpl)
+}
 
-    /// `Ok(None)` for an omitted part; `Err` when a present part has no
-    /// native draw bounds.
-    fn native_draw_bounds(
-        part: Option<&Self>,
-        params: &VxlRenderParams,
-    ) -> Result<Option<[i32; 4]>, ()> {
-        let Some(part) = part else {
-            return Ok(None);
-        };
-        vxl_raster::native_vxl_draw_bounds(part.vxl(), part.hva(), params)
-            .map(Some)
-            .ok_or(())
-    }
+/// `Ok(None)` for an omitted part; `Err` when a present part has no
+/// native draw bounds.
+fn part_native_draw_bounds(
+    part: Option<&VoxelPart>,
+    params: &VxlRenderParams,
+) -> Result<Option<[i32; 4]>, ()> {
+    let Some(part) = part else {
+        return Ok(None);
+    };
+    vxl_raster::native_vxl_draw_bounds(part.vxl(), part.hva(), params)
+        .map(Some)
+        .ok_or(())
 }
 
 /// A voxel model's files, parsed once and shared by every sprite drawn from
@@ -1149,7 +1147,10 @@ impl UnitModel {
                 if pose.as_ref().is_none_or(|parts| parts.pose != key_pose) {
                     *pose = Some(PoseParts {
                         pose: key_pose,
-                        body: self.body.as_ref().map(|body| body.render(&params, vpl)),
+                        body: self
+                            .body
+                            .as_ref()
+                            .map(|body| render_part(body, &params, vpl)),
                         guns: BTreeMap::new(),
                     });
                 }
@@ -1158,12 +1159,12 @@ impl UnitModel {
                     .guns
                     .entry(key.turret_index)
                     .or_insert_with(|| RenderedGunParts {
-                        turret: turret.map(|part| part.render(&params, vpl)),
-                        barrel: barrel.map(|part| part.render(&params, vpl)),
+                        turret: turret.map(|part| render_part(part, &params, vpl)),
+                        barrel: barrel.map(|part| render_part(part, &params, vpl)),
                     });
                 let pitched_barrel = barrel
                     .filter(|_| key.barrel_pitch != 0)
-                    .map(|part| part.render(&part_params, vpl));
+                    .map(|part| render_part(part, &part_params, vpl));
                 let barrel = pitched_barrel.as_ref().or(guns.barrel.as_ref());
                 let all_layers: Vec<&VxlSprite> = [parts.body.as_ref()]
                     .into_iter()
@@ -1239,10 +1240,8 @@ impl UnitModel {
                 ..VxlRenderParams::default()
             };
             return Some((
-                part.render(&params, vpl),
-                VoxelPart::native_draw_bounds(Some(part), &params)
-                    .ok()
-                    .flatten(),
+                render_part(part, &params, vpl),
+                part_native_draw_bounds(Some(part), &params).ok().flatten(),
             ));
         }
         let body_tilt = match tilt {
@@ -1337,7 +1336,7 @@ impl UnitModel {
         turret_index: i32,
     ) -> Option<[i32; 4]> {
         let (turret, barrel) = self.gun_parts(turret_index);
-        let part = |part| VoxelPart::native_draw_bounds(part, params);
+        let part = |part| part_native_draw_bounds(part, params);
         match layer {
             VxlLayer::Shadow => None,
             VxlLayer::Body => part(self.body.as_ref()).ok().flatten(),
@@ -1397,8 +1396,8 @@ fn composite_parts(
         .map(|(body, hva)| vxl_raster::render_vxl(body, hva, params, vpl))
         .into_iter()
         .collect();
-    layers.extend(turret.map(|part| part.render(params, vpl)));
-    layers.extend(barrel.map(|part| part.render(params, vpl)));
+    layers.extend(turret.map(|part| render_part(part, params, vpl)));
+    layers.extend(barrel.map(|part| render_part(part, params, vpl)));
     composite_vxl_layers(&layers)
 }
 

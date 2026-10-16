@@ -1027,7 +1027,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires the configured stock retail RA2/YR install"]
     fn official_pkt_backed_skirmish_map_preview_decodes_from_mix_and_fits_right_panel() {
         let config = crate::util::config::GameConfig::load().expect("game config");
         let mut assets = crate::assets::asset_manager::AssetManager::new(

@@ -124,7 +124,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn tick_house_eva(sim: &mut Simulation, rules: &RuleSet) {
     for owner in sim.session.house_order.clone() {
         update_house_eva(sim, rules, owner);

@@ -20,7 +20,7 @@ impl Simulation {
     /// factory. AircraftType changes them to Winged/Fly; Naval overrides both.
     /// Source zone uses physical Location, and the clicked cell's bridge flag.
     /// Native FNPC selection reads binary frame; it makes no RNG draw.
-    pub(crate) fn factory_rally_cell_input(
+    pub fn factory_rally_cell_input(
         &self,
         id: u64,
         clicked: (u16, u16),

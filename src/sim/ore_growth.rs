@@ -258,7 +258,7 @@ impl NativeTiberiumQueue {
     }
 
     /// Entries referenced by the heap, in heap slot order (slot 1 first).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn iter_heap(&self) -> impl Iterator<Item = &NativeTiberiumQueueEntry> + '_ {
         self.heap
             .iter()
@@ -267,7 +267,7 @@ impl NativeTiberiumQueue {
     }
 
     /// The entry at heap slot `slot + 1` (slot 0 is the root).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn heap_entry(&self, slot: usize) -> Option<&NativeTiberiumQueueEntry> {
         self.heap
             .get(slot + 1)
@@ -539,7 +539,7 @@ impl OreGrowthState {
 
     /// Mimic a snapshot written before the rect was serialized, whose
     /// `native_rect` deserializes to the serde default.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_native_rect_for_tests(&mut self, native_rect: (u16, u16)) {
         self.native_rect = native_rect;
     }
@@ -567,7 +567,7 @@ impl OreGrowthState {
     }
 
     /// Set a cell's spread flag byte (`TiberiumClass+0xF8`) without queueing it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mark_native_spread_bitmap_for_tests(
         &mut self,
         type_index: usize,
@@ -767,7 +767,7 @@ impl OreGrowthState {
     }
 
     /// Native `GrowthProcessor` for one tiberium type.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn process_native_growth_for_type(
         &mut self,
         type_id: TiberiumTypeId,

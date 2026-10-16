@@ -9,7 +9,7 @@ pub(super) struct ReceiverHealthCommit {
     pub(super) building_entry_frame: Option<i32>,
     pub(super) state: damage::DamageState,
     pub(super) entered_techno_death: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) reached_exact_zero: bool,
     pub(super) postmortem_candidate: Option<i32>,
     pub(super) fatal_category: EntityCategory,
@@ -35,7 +35,7 @@ struct ReceiverHealthHost<'world, 'input, 'effects> {
     registry: Option<&'input OverlayTypeRegistry>,
     effects: FrameEffects<'effects>,
     execute_world_callbacks: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     reached_exact_zero: bool,
 }
 
@@ -81,7 +81,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                 }
             }
             HealthCallback::Kill => {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 {
                     self.reached_exact_zero = true;
                 }
@@ -173,7 +173,7 @@ pub(super) fn commit_receiver_health(
             building_entry_frame,
             state: damage::DamageState::Damaged,
             entered_techno_death: false,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             reached_exact_zero: false,
             postmortem_candidate: None,
             fatal_category,
@@ -217,7 +217,7 @@ pub(super) fn commit_receiver_health(
         registry,
         effects,
         execute_world_callbacks,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         reached_exact_zero: false,
     };
     let state = super::object_health::commit(
@@ -229,7 +229,7 @@ pub(super) fn commit_receiver_health(
         rules.general.condition_red,
         attacker_id != RAD_NO_ATTACKER,
     );
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let reached_exact_zero = host.reached_exact_zero;
     //End the adapter's exclusive borrow before the Techno continuation.
     let world = host.world;
@@ -343,7 +343,7 @@ pub(super) fn commit_receiver_health(
         building_entry_frame,
         state,
         entered_techno_death,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         reached_exact_zero,
         postmortem_candidate,
         fatal_category,
@@ -368,38 +368,38 @@ pub(super) fn commit_receiver_health(
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
-pub(crate) struct BerserkState {
+pub struct BerserkState {
     active: bool,
     timer: i32,
 }
 
 impl BerserkState {
     /// The object is berserk.
-    pub(crate) const fn is_active(self) -> bool {
+    pub const fn is_active(self) -> bool {
         self.active
     }
 
     /// The time left. The Psychedelic arm and the countdown use the field;
     /// tests read it through this.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn timer(self) -> i32 {
         self.timer
     }
 
     /// A fixture's state.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn for_test(active: bool, timer: i32) -> Self {
         Self { active, timer }
     }
 
     /// Install a fixture's byte.
-    #[cfg(test)]
-    pub(crate) fn set_active_for_test(&mut self, active: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_active_for_test(&mut self, active: bool) {
         self.active = active;
     }
 
     /// Install a fixture's time.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_timer_for_test(&mut self, timer: i32) {
         self.timer = timer;
     }

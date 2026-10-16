@@ -14,7 +14,7 @@ pub(crate) const MAPGEN_RNG_STATE_WORDS: usize = crate::util::native_random::STA
 /// object in `FUN_00598030`. The app may transport this value but cannot draw
 /// from it or inspect its native state.
 #[derive(Debug)]
-pub(crate) struct MapGenRngContinuation {
+pub struct MapGenRngContinuation {
     disabled: u8,
     words: [u32; MAPGEN_RNG_STATE_WORDS],
     index_a: usize,
@@ -25,7 +25,7 @@ impl MapGenRngContinuation {
     /// Draw-free copy for an inactive fresh-load attempt. The retention owner
     /// keeps the process receipt until a successful Simulation installation;
     /// cancelled/failed attempts may discard this snapshot without losing it.
-    pub(crate) fn snapshot_for_fresh_load(&self) -> Self {
+    pub fn snapshot_for_fresh_load(&self) -> Self {
         Self {
             disabled: self.disabled,
             words: self.words,

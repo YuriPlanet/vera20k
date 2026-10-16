@@ -114,7 +114,7 @@ impl RubbleAssetCatalog {
     }
 
     /// Install one type's art directly (test fixtures without assets).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn insert_for_test(&mut self, type_id: &str, art: RubbleArt) {
         self.art.insert(type_id.to_ascii_uppercase(), art);
     }

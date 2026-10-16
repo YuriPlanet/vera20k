@@ -799,7 +799,7 @@ pub const fn anim_translucency_source_alpha(draw_bits: u32) -> f32 {
 /// frame, then convert them to the source weight the native blend applies. An
 /// animation with neither `Translucent=` nor a recognised `Translucency=` returns
 /// `1.0`, so wiring this in cannot change an opaque animation.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn anim_frame_source_alpha(
     config: &AnimTypeRuntimeConfig,
     current_frame: i32,
@@ -1431,7 +1431,7 @@ impl ArtRegistry {
     /// Native Foundation474DA0 uses exact section/key identity. The cached
     /// present value came from that shared reader during construction; missing
     /// retains its supplied current index. No visual case folding participates.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn read_foundation(&self, section: &str, current: u8) -> u8 {
         self.entries
             .get(section)
@@ -1480,8 +1480,8 @@ impl ArtRegistry {
         &self.scheduler_anim_types
     }
 
-    #[cfg(test)]
-    pub(crate) fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
         let key = name.to_ascii_uppercase();
         let config = self
             .anim_runtime_configs
@@ -1502,7 +1502,7 @@ impl ArtRegistry {
     }
 
     /// The SHP header height `+4` asset binding would read for `name`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn bind_anim_shp_height_for_test(&mut self, name: &str, raw_height: i32) {
         self.anim_runtime_configs
             .get_mut(&name.to_ascii_uppercase())
@@ -2176,7 +2176,7 @@ pub fn overlay_shp_candidates(
 /// deliberately broader compatibility list, while the native object-type
 /// loader constructs exactly one name and only retries after forcing its
 /// second character to `G`.
-pub(crate) fn native_overlay_shp_names(
+pub fn native_overlay_shp_names(
     art: &ArtRegistry,
     image_id: &str,
     theater_ext: &str,
@@ -2362,7 +2362,7 @@ fn apply_theater_letter(name: &str, theater_name: &str) -> String {
 /// The two names gamemd's theater lookup tries for an SHP (uppercase, without
 /// extension): `FUN_005F96B0` puts the theater's letter second in a
 /// `[GNCY][AT]` name, then `FUN_005F9710` puts `G` second on the same buffer.
-pub(crate) fn theater_shp_names(upper_name: &str, theater_name: &str) -> [String; 2] {
+pub fn theater_shp_names(upper_name: &str, theater_name: &str) -> [String; 2] {
     let first = if takes_theater_letter(upper_name) {
         apply_theater_letter(upper_name, theater_name)
     } else {

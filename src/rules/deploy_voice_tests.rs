@@ -10,7 +10,7 @@ use super::sound_ini::SoundRegistry;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub(crate) fn native() -> Value {
+pub fn native() -> Value {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/input_oracle/slave_miner_pack_voice.json",
     ))
@@ -55,7 +55,7 @@ fn assert_binding(rules: &RuleSet, expected: &Value, context: &str) {
     }
 }
 
-pub(crate) fn control_rules(corpus: &Value, input: &Value) -> RuleSet {
+pub fn control_rules(corpus: &Value, input: &Value) -> RuleSet {
     let mut text = String::from("[BuildingTypes]\n0=YAREFN\n[YAREFN]\nStrength=2000\n");
     for (field, key) in [
         ("voice_deploy", "VoiceDeploy"),

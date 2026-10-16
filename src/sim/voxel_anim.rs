@@ -120,8 +120,8 @@ impl VoxelAnimStore {
     }
 
     /// Ids in store order, for a walk that mutates the store as it goes.
-    #[cfg(test)]
-    pub(crate) fn ids(&self) -> Vec<u64> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn ids(&self) -> Vec<u64> {
         self.0.keys().copied().collect()
     }
 }
@@ -364,7 +364,7 @@ pub struct VoxelDebrisSpawn {
 }
 
 /// One SHP debris selection retained by a numeric comparison fixture.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShpDebrisSpawn {
     /// Index into the source list the row names.
@@ -427,14 +427,14 @@ pub(crate) fn throw_shp_debris(
 
 /// Everything a numeric fixture selects. The live host admits pieces inline
 /// without retaining a second, unused collection.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DeathDebris {
     pub voxels: Vec<VoxelDebrisSpawn>,
     pub anims: Vec<ShpDebrisSpawn>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl DeathDebris {
     pub fn is_empty(&self) -> bool {
         self.voxels.is_empty() && self.anims.is_empty()

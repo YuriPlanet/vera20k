@@ -68,5 +68,5 @@ repository root:
 
 ```sh
 PYTHONPATH=. python -m tools.rules_oracle.ini_token_readers --check
-cargo test -p vera20k --lib -- rules::ini_token_readers_tests::
+cargo test -p vera20k-core --lib -- rules::ini_token_readers_tests::
 ```

@@ -20,7 +20,7 @@ use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Value}
 use std::sync::OnceLock;
 
 /// Virtual address of the sine table in the retail image.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const TABLE_VA: u32 = 0x0084_F084;
 /// Entries. The extra quarter period past a full turn is what lets the cosine
 /// offset run past the end of the sine range without wrapping; the final exact
@@ -48,7 +48,7 @@ pub const UNITS_PER_TURN: f64 = (2 * PERIOD) as f64;
 pub const RETAIL_FNV1A64: u64 = 0x74ac_b749_b33d_5aa7;
 
 /// Virtual address of `Acos_lookup @ 0x004CADB0`'s signed arcsine table.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const ACOS_TABLE_VA: u32 = 0x0085_9094;
 /// Entries. `WaveClass` indexes the inclusive endpoints, hence 4097 rather than
 /// 4096.
@@ -79,7 +79,7 @@ impl TrigTable {
     /// The retail table, from the repository's checked copy
     /// (`util::native_trig`, verified by `walk_direction_table.py --check`).
     /// It is the only sine source: no reader depends on an installed game.
-    pub(crate) fn embedded() -> &'static Self {
+    pub fn embedded() -> &'static Self {
         static TABLE: OnceLock<TrigTable> = OnceLock::new();
         TABLE.get_or_init(|| Self {
             entries: crate::util::native_trig::RETAIL_SINE_TABLE
@@ -201,7 +201,7 @@ impl AcosTable {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn fnv1a64(&self) -> u64 {
         let mut hash = crate::util::fnv::FNV1A64_OFFSET_BASIS;
         for entry in &self.entries {

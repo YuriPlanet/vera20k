@@ -37,12 +37,12 @@ use crate::util::fixed_math::SimFixed;
 /// supplies this table after replaying all successful and discarded native
 /// constructor events on the launch Scenario cursor.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct GeneratedTechnoInitTable {
+pub struct GeneratedTechnoInitTable {
     entries: BTreeMap<usize, GeneratedTechnoInit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum GeneratedTechnoInitError {
+pub enum GeneratedTechnoInitError {
     TraceOrdinalMismatch {
         expected: usize,
         found: usize,
@@ -127,8 +127,8 @@ impl GeneratedTechnoInitTable {
         Ok(Self { entries: by_index })
     }
 
-    #[cfg(test)]
-    pub(crate) fn entry(&self, entity_index: usize) -> Option<&GeneratedTechnoInit> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn entry(&self, entity_index: usize) -> Option<&GeneratedTechnoInit> {
         self.entries.get(&entity_index)
     }
 
@@ -263,7 +263,7 @@ impl Simulation {
 
 impl Simulation {
     /// Spawn entities from parsed map placements into EntityStore.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn spawn_from_map(&mut self, entities: &[MapEntity], rules: Option<&RuleSet>) -> u32 {
         self.spawn_from_map_with_resolved(entities, rules, None)
     }
@@ -808,7 +808,7 @@ impl Simulation {
     /// Immediate construction with the match's live OverlayTypeClass table.
     /// Production callers use this boundary whenever the constructed type may
     /// be a Unit, so its virtual Unlimbo sees the same overlay facts as native.
-    pub(crate) fn spawn_object_with_overlay_registry(
+    pub fn spawn_object_with_overlay_registry(
         &mut self,
         type_id: &str,
         owner: &str,
@@ -831,7 +831,7 @@ impl Simulation {
         )
     }
 
-    pub(crate) fn spawn_object_at_height(
+    pub fn spawn_object_at_height(
         &mut self,
         type_id: &str,
         owner: &str,
@@ -871,7 +871,7 @@ impl Simulation {
         .expect("fresh Techno constructor initialization cannot fail")
     }
 
-    pub(crate) fn spawn_object_at_height_with_overlay_registry(
+    pub fn spawn_object_at_height_with_overlay_registry(
         &mut self,
         type_id: &str,
         owner: &str,
@@ -936,8 +936,8 @@ impl Simulation {
     /// house (Add_Tracking), but not registered in map occupancy. Used by
     /// paradrop cargo loading, where gamemd creates passengers directly into
     /// CargoClass without Unlimbo.
-    #[cfg(test)]
-    pub(crate) fn spawn_object_limbo_at_height(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spawn_object_limbo_at_height(
         &mut self,
         type_id: &str,
         owner: &str,
@@ -989,7 +989,7 @@ impl Simulation {
     /// held from `FactoryClass::StartProduction @ 0x004C9C70` through delivery.
     /// Production and other limbo constructors share the same manager/child
     /// transaction; later delivery only Unlimbos this retained identity.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn create_production_object_limbo_at_height(
         &mut self,
         type_id: &str,
@@ -1015,7 +1015,7 @@ impl Simulation {
     /// Construct one fully initialized runtime Techno and retain it in limbo
     /// for one or more placement attempts. Starting-force creation and held
     /// production both use this identity-preserving boundary.
-    pub(crate) fn construct_object_limbo_at_height(
+    pub fn construct_object_limbo_at_height(
         &mut self,
         type_id: &str,
         owner: &str,
@@ -1570,7 +1570,7 @@ impl Simulation {
     /// playfield gate and Mark(PUT) own the result, and eligible logic
     /// registration happens last. A failed attempt keeps the constructed
     /// identity in limbo for its caller to retain or discard.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn unlimbo(&mut self, ge: GameEntity) -> (u64, RevealOutcome) {
         let position = ge.position;
         let stable_id = self.store_spawned_limbo(ge);
@@ -2014,7 +2014,9 @@ impl Simulation {
         self.locomotor_mark_all_occupation_bits(stable_id, false);
         let yard = rules.object(&yard_type);
         let placeable = yard.is_some_and(|yard| {
-            crate::sim::build_site::can_place_building_at(self, rules, registry, yard, origin, None)
+            crate::sim::build_site::can_place_building_at(
+                self, rules, registry, yard, origin, None, None,
+            )
         });
         // `0x0073950F..0x00739536`: refused for an owner no human controls,
         // the site is cleared for that house while the unit is still lifted
@@ -2558,11 +2560,7 @@ impl Simulation {
         );
     }
 
-    pub(crate) fn should_show_undeploy_building_command(
-        &self,
-        stable_id: u64,
-        rules: &RuleSet,
-    ) -> bool {
+    pub fn should_show_undeploy_building_command(&self, stable_id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };

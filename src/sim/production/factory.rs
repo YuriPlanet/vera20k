@@ -41,7 +41,7 @@ pub const STEP_RATE_MAX: u16 = 255;
 /// Replay the per-step charge ladder for `progress` steps to recover the exact
 /// running balance the stepper holds at that progress. At most 54 integer
 /// iterations; `cost` clamped non-negative; mirrors `advance_one_step`'s charge.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn remaining_balance_after(cost: i32, progress: u16) -> i32 {
     let mut balance = cost.max(0);
     let steps = progress.min(PRODUCTION_STEPS);
@@ -571,21 +571,21 @@ pub struct FactoryView<'a> {
 }
 
 impl<'a> FactoryView<'a> {
-    pub(crate) fn construction_order(&self) -> u64 {
+    pub fn construction_order(&self) -> u64 {
         self.construction_order
     }
 
     /// Select6AAE01/6AAE0D and6AB2A9/6AB2B5, plus Draw6A9E9C/6A9EB0,
     /// read rate and suspension
     /// independently of IsComplete. A cash stall retains a running rate.
-    pub(crate) fn is_running(&self) -> bool {
+    pub fn is_running(&self) -> bool {
         self.step_rate_frames != 0 && !self.suspended
     }
 
     /// Select6AAE01/6AB2A9 reads the linked Factory, independently of the
     /// currently held object's type. Stopped Left then calls IsComplete at
     ///6AB2BD; stopped Right abandons without that query.
-    pub(crate) fn cameo_state(&self) -> super::BuildQueueState {
+    pub fn cameo_state(&self) -> super::BuildQueueState {
         if self.is_running() {
             super::BuildQueueState::Building
         } else if self.complete_object().is_some() {
@@ -653,8 +653,8 @@ impl FactoryRegistry {
 
     /// Seed the queue kernel without constructing a world object. External
     /// fixtures explicitly finish construction when their scenario requires it.
-    #[cfg(test)]
-    pub(crate) fn test_enqueue_kernel(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_enqueue_kernel(
         &mut self,
         owner: InternedId,
         category: ProductionCategory,
@@ -800,7 +800,7 @@ impl FactoryRegistry {
     }
 
     /// The factory `BuildingClass+0x524` holds for building `building`.
-    pub(crate) fn building_factory(&self, building: u64) -> Option<&Factory> {
+    pub fn building_factory(&self, building: u64) -> Option<&Factory> {
         self.factories.get(&FactoryHolder::Building(building))
     }
 
@@ -888,16 +888,16 @@ impl FactoryRegistry {
     /// Test-only mutable access to the first factory in sweep order (the `factories`
     /// map is private). Used by the authoritative-hash + progress-persist tests, which
     /// live in the `world` module and so cannot reach the private map directly.
-    #[cfg(test)]
-    pub(crate) fn test_first_mut(&mut self) -> Option<&mut Factory> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_first_mut(&mut self) -> Option<&mut Factory> {
         self.factories.values_mut().min_by_key(|f| f.insertion_seq)
     }
 
     /// Test-only mutable access to a specific (owner, category) factory (the map is
     /// private). Lets the production-pipeline integration tests drive the registry
     /// (now the completion authority) without running the full charge sweep.
-    #[cfg(test)]
-    pub(crate) fn test_factory_mut(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_factory_mut(
         &mut self,
         owner: InternedId,
         category: ProductionCategory,
@@ -907,7 +907,7 @@ impl FactoryRegistry {
     }
 
     /// Test-only mutable access to building `building`'s factory.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_building_factory_mut(&mut self, building: u64) -> Option<&mut Factory> {
         self.factories.get_mut(&FactoryHolder::Building(building))
     }
@@ -917,12 +917,8 @@ impl FactoryRegistry {
     /// `step_all` leaves on completion, so changed-output publication
     /// fires. Returns `false` when no such (object-holding) factory exists. Reconcile
     /// the registry first so the factory exists.
-    #[cfg(test)]
-    pub(crate) fn test_arm_ready(
-        &mut self,
-        owner: InternedId,
-        category: ProductionCategory,
-    ) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_arm_ready(&mut self, owner: InternedId, category: ProductionCategory) -> bool {
         match self
             .factories
             .get_mut(&FactoryHolder::House(owner, category))
@@ -1443,7 +1439,7 @@ impl FactoryRegistry {
 
 /// A native oracle row's `Time_To_Build` inputs (the keys
 /// `tools/spatial_oracle/time_to_build.py` writes; the cadence oracle reuses them).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn native_time_to_build_inputs(row: &serde_json::Value) -> TimeToBuildInputs {
     let bits32 = |key: &str| NativeF32Bits::from_bits(row[key].as_u64().unwrap() as u32);
     let bits64 = |key: &str| NativeF64Bits::from_bits(row[key].as_u64().unwrap());
@@ -1468,7 +1464,7 @@ pub(super) fn native_time_to_build_inputs(row: &serde_json::Value) -> TimeToBuil
 
 /// The native `Time_To_Build` oracle rows: each row's inputs, the original's
 /// result, and the row itself.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn native_time_to_build_rows() -> Vec<(TimeToBuildInputs, i32, serde_json::Value)> {
     let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/time_to_build.json",
@@ -1485,7 +1481,7 @@ fn native_time_to_build_rows() -> Vec<(TimeToBuildInputs, i32, serde_json::Value
 /// The native build-start and step-cadence oracle
 /// (`tools/spatial_oracle/factory_cadence.py`): `starts` rows run the build
 /// start alone, `builds` rows then run `FactoryClass::AI` once per frame.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn native_factory_cadence() -> serde_json::Value {
     serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/factory_cadence.json",

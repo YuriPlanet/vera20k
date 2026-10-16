@@ -18,7 +18,7 @@ use crate::sim::superweapon::SuperWeaponInstance;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// The oracle's `infiltrate` rows.
-pub(crate) fn rows() -> Vec<Value> {
+pub fn rows() -> Vec<Value> {
     let data: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spy_infiltration_oracle.json",
     ))
@@ -28,13 +28,12 @@ pub(crate) fn rows() -> Vec<Value> {
 
 /// The houses a row names: the building's owner, the spy's, and a third
 /// that only watches.
-pub(crate) const HOUSES: [(&str, &str); 3] =
-    [("owner", "H0"), ("infiltrator", "H1"), ("bystander", "H2")];
+pub const HOUSES: [(&str, &str); 3] = [("owner", "H0"), ("infiltrator", "H1"), ("bystander", "H2")];
 
 /// A row after [`Simulation::infiltrate_building`].
-pub(crate) struct Replay {
-    pub(crate) sim: Simulation,
-    pub(crate) rules: RuleSet,
+pub struct Replay {
+    pub sim: Simulation,
+    pub rules: RuleSet,
     owner: InternedId,
     infiltrator: InternedId,
 }
@@ -97,7 +96,7 @@ fn rules_for(row: &Value) -> RuleSet {
 
 /// Builds the row's fixture as the oracle does (only the local house is
 /// human, GameMode 1) and runs the infiltration.
-pub(crate) fn replay(row: &Value) -> Replay {
+pub fn replay(row: &Value) -> Replay {
     let rules = rules_for(row);
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);

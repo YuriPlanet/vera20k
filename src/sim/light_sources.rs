@@ -12,7 +12,7 @@ use crate::sim::scenario_session::{ScenarioLightingProfile, ScenarioLightingStat
 use crate::sim::world::Simulation;
 
 #[derive(Debug, Clone)]
-pub(crate) enum LightingEvent {
+pub enum LightingEvent {
     Building {
         id: u64,
         source: Option<PointLight>,
@@ -41,9 +41,9 @@ pub(crate) enum LightingEvent {
 /// The existing eager restore path is a compatibility reconstruction, not a
 /// claim to native Cell34 lazy reinitialization.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LightingSources {
-    pub(crate) buildings: BTreeMap<u64, PointLight>,
-    pub(crate) pending: Vec<LightingEvent>,
+pub struct LightingSources {
+    pub buildings: BTreeMap<u64, PointLight>,
+    pub pending: Vec<LightingEvent>,
 }
 
 impl Simulation {
@@ -51,7 +51,7 @@ impl Simulation {
     /// outgoing timeline. Native lazy post-load reconstruction remains open.
     /// VERA-only: the light cache, rebuilt from each alive (`+0x90`), unlimboed
     /// (`+0x81`), Marked (`+0x74`), undying object with Health above 0.
-    pub(crate) fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
+    pub fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
         self.lighting_sources = LightingSources::default();
         let ids: Vec<_> = self
             .entities()
@@ -71,14 +71,14 @@ impl Simulation {
         self.lighting_sources.pending.clear();
     }
 
-    pub(crate) fn discard_lighting_events(&mut self) {
+    pub fn discard_lighting_events(&mut self) {
         self.lighting_sources.pending.clear();
     }
 
     /// Successful Unlimbo440DFD / construction446767 allocates only when614
     /// is null, then calls554A60(0). Parameter conversion is the same existing
     /// map-light conversion; its floating inputs have presentation-only use.
-    pub(crate) fn allocate_building_light(&mut self, id: u64, rules: &RuleSet) {
+    pub fn allocate_building_light(&mut self, id: u64, rules: &RuleSet) {
         if self.lighting_sources.buildings.contains_key(&id) {
             return;
         }
@@ -113,7 +113,7 @@ impl Simulation {
 
     /// Native554A60/A80 suppress repeated writes to an already matching48.
     /// Death44264C and sell449F1E/44A20B disable before destruction effects.
-    pub(crate) fn set_building_light_active(&mut self, id: u64, active: bool) {
+    pub fn set_building_light_active(&mut self, id: u64, active: bool) {
         let Some(source) = self.lighting_sources.buildings.get_mut(&id) else {
             return;
         };
@@ -130,7 +130,7 @@ impl Simulation {
 
     /// Building destructor43BD47 disables, destroys, and clears614. Generic
     /// Limbo is deliberately not used as an invented source-disable callback.
-    pub(crate) fn destroy_building_light(&mut self, id: u64) {
+    pub fn destroy_building_light(&mut self, id: u64) {
         if self.lighting_sources.buildings.remove(&id).is_some() {
             self.lighting_sources
                 .pending
@@ -140,7 +140,7 @@ impl Simulation {
 
     /// Logic55B4C6 and profile53C280->53AD00 must remain in order with source
     /// invalidations. A final-frame fingerprint cannot recover that history.
-    pub(crate) fn publish_global_lighting(&mut self) {
+    pub fn publish_global_lighting(&mut self) {
         let cell_profile = self.lighting_cell_profile();
         self.lighting_sources.pending.push(LightingEvent::Global {
             state: self.session.lighting,
@@ -150,7 +150,7 @@ impl Simulation {
 
     /// Publish [`LightingEvent::RelightProfile`] after a change of
     /// [`Self::lighting_cell_profile`] that refreshes no cell.
-    pub(crate) fn publish_relight_profile(&mut self) {
+    pub fn publish_relight_profile(&mut self) {
         let cell_profile = self.lighting_cell_profile();
         self.lighting_sources
             .pending
@@ -166,7 +166,7 @@ impl Simulation {
     /// [`ScenarioLightingState::relight_top_level`]), else the nuke's while
     /// its flash fades in (`NukeFlash::IsFadingIn @ 0x0053A110`, `0x0048450F`),
     /// else the ordinary one.
-    pub(crate) fn lighting_cell_profile(&self) -> ScenarioLightingProfile {
+    pub fn lighting_cell_profile(&self) -> ScenarioLightingProfile {
         if crate::sim::superweapon::lightning_storm::raging(self) {
             ScenarioLightingProfile::Ion
         } else if crate::sim::superweapon::psychic_dominator::active(self) {

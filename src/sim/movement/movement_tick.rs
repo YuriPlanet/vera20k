@@ -16,21 +16,21 @@
 use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::entity_store::{EntityStore, TouchReader};
 use crate::sim::infantry;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::zone_map::ZoneGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::rng::SimRng;
 use crate::sim::touch_log::Touched;
 
@@ -39,7 +39,7 @@ use super::locomotor::MovementLayer;
 use super::movement_path::supports_layered_bridge_pathing;
 use super::movement_step;
 use super::{MovementTickStats, MoverSnapshot, PathfindingContext};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
 
@@ -103,7 +103,7 @@ pub(crate) struct WalkAdmissionRequest {
 }
 
 impl WalkAdmissionRequest {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn for_response_test(
         entities: &EntityStore,
         entity_id: u64,
@@ -177,7 +177,7 @@ fn no_queue_path_request(
 impl FootPathRequest {
     /// Resume the retained recursive visit in the decoder corpus after its
     ///supplied Find_Path. Production resumes through PendingMovementPass.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn into_walk_admission_for_test(self) -> WalkAdmissionRequest {
         WalkAdmissionRequest {
             entity_id: self.entity_id,
@@ -575,7 +575,7 @@ pub(crate) struct MovementPassCache {
 struct BlockerPlaneCache {
     entry: Option<BlockerPlaneEntry>,
     /// How often the plane was rebuilt from the whole map and every entity.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     world_rebuilds: usize,
 }
 
@@ -618,7 +618,7 @@ impl MovementPassCache {
 
     /// How often the blocker plane was rebuilt from the whole map and every
     /// entity.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn blocker_plane_world_rebuilds(&self) -> usize {
         self.blocker.world_rebuilds
     }
@@ -737,7 +737,7 @@ impl MovementPassCache {
                     foot_revision: overlay_grid.map_or(0, |grid| grid.foot_neighbor_revision()),
                     wall_epoch: overlay_grid.map_or(0, |grid| grid.blocker_plane_epoch()),
                 });
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 {
                     blocker.world_rebuilds += 1;
                 }
@@ -805,7 +805,7 @@ fn prepare_movement_visit(
     !matches!(layer, MovementLayer::Air | MovementLayer::Underground)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn tick_movement_with_grids(
     entities: &mut EntityStore,
     live_order: Option<&[u64]>,

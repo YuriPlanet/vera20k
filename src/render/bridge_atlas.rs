@@ -10,7 +10,6 @@ use crate::render::overlay_atlas::{OverlaySpriteEntry, stored_frame_offset};
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::{OverlayTypeFlags, OverlayTypeRegistry, is_high_bridge_index};
-use wgpu::util::DeviceExt;
 
 const SPRITE_PADDING: u32 = 1;
 
@@ -29,8 +28,6 @@ pub struct BridgeAtlasKey {
 
 pub struct BridgeAtlas {
     pub texture: BatchTexture,
-    pub depth_texture_view: wgpu::TextureView,
-    pub zdepth_bind_group: wgpu::BindGroup,
     entries: HashMap<BridgeAtlasKey, OverlaySpriteEntry>,
 }
 
@@ -248,33 +245,13 @@ fn render_bridge_sprite(
         });
     }
 
-    // Bridge SHPs split frames into a body half (front) and shadow half (back).
-    // RE doc §3.3.2: shadow_frame_idx = (shp.frames.len() / 2) + state_byte.
-    let half: usize = if flags.bridge_deck {
-        shp.frames.len() / 2
-    } else {
-        shp.frames.len()
-    };
-    let (window_start, window_len) = (0, half);
-    let requested_idx: usize =
-        window_start + (key.frame as usize).min(window_len.saturating_sub(1));
-    let mut frame_idx = requested_idx;
-    if !shp
-        .frames
-        .get(frame_idx)
-        .is_some_and(|fr| fr.frame_width > 0 && fr.frame_height > 0)
-    {
-        frame_idx = shp
-            .frames
-            .iter()
-            .skip(window_start)
-            .take(window_len)
-            .enumerate()
-            .find(|(_, fr)| fr.frame_width > 0 && fr.frame_height > 0)
-            .map(|(idx, _)| window_start + idx)?;
+    // Cell47F6A0 forwards the selected raw frame unchanged. Empty frames
+    // draw nothing; never clamp or substitute another populated frame.
+    let frame_idx = usize::from(key.frame);
+    let frame = shp.frames.get(frame_idx)?;
+    if frame.frame_width == 0 || frame.frame_height == 0 {
+        return None;
     }
-
-    let frame = &shp.frames[frame_idx];
     let frame_rgba = shp.frame_to_rgba(frame_idx, palette).ok()?;
     let full_w: u32 = shp.width as u32;
     let full_h: u32 = shp.height as u32;
@@ -308,8 +285,8 @@ fn render_bridge_sprite(
         source_indices: full_indices,
         width: full_w,
         height: full_h,
-        offset_x: -(full_w as f32) / 2.0,
-        offset_y: -(full_h as f32) / 2.0 + flags.y_draw_offset(),
+        offset_x: -((full_w / 2) as f32),
+        offset_y: -((full_h / 2) as f32) + flags.y_draw_offset(),
     })
 }
 
@@ -371,7 +348,6 @@ fn pack_bridge_sprites(
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
-    let mut depth: Vec<u8> = vec![BRIDGE_DEPTH_NEUTRAL; (atlas_width * atlas_height) as usize];
     let mut entries: HashMap<BridgeAtlasKey, OverlaySpriteEntry> =
         HashMap::with_capacity(placements.len());
     let aw: f32 = atlas_width as f32;
@@ -392,7 +368,6 @@ fn pack_bridge_sprites(
                     .copy_from_slice(&spr.source_indices[src_start / 4..src_end / 4]);
             }
         }
-        write_bridge_depth_rows(&mut depth, atlas_width, atlas_height, spr, px, py);
         entries.insert(
             spr.key.clone(),
             OverlaySpriteEntry {
@@ -413,82 +388,7 @@ fn pack_bridge_sprites(
         atlas_height,
         Some(&source_indices),
     );
-    let depth_texture_view = create_r8_texture(device, queue, &depth, atlas_width, atlas_height);
-    let zdepth_bind_group =
-        batch.create_zdepth_bind_group_on_device(device, &texture.view, &depth_texture_view);
-
-    BridgeAtlas {
-        texture,
-        depth_texture_view,
-        zdepth_bind_group,
-        entries,
-    }
-}
-
-/// R8 texel meaning that this atlas pixel contributes no bridge-body row offset.
-///
-/// The zdepth fragment shader computes `base_depth - z_sample * scale`, so a
-/// zero texel leaves the instance's own sort depth untouched.
-const BRIDGE_DEPTH_NEUTRAL: u8 = 0;
-
-/// Copy one bridge entry's full-canvas native row gradient into the shared atlas.
-///
-/// `CellClass::DrawOverlay_Body @ 0x0047F6A0` selects the active extended SHP
-/// blitter for high-bridge format-3 bodies. Its `0x004990E0` leaf decrements the
-/// candidate by one native Z unit per full-canvas source/destination scanline.
-/// Body row `y` therefore stores `y`; shadow entries and atlas padding retain
-/// neutral zero. Retail BRIDGE/BRIDGB canvases top out at 242 rows and fit R8.
-fn write_bridge_depth_rows(
-    depth: &mut [u8],
-    atlas_width: u32,
-    atlas_height: u32,
-    sprite: &RenderedBridge,
-    px: u32,
-    py: u32,
-) {
-    if sprite.key.kind != BridgeFrameKind::Body {
-        return;
-    }
-
-    let copy_width = sprite.width.min(atlas_width.saturating_sub(px));
-    let copy_height = sprite.height.min(atlas_height.saturating_sub(py));
-    for y in 0..copy_height {
-        let row_depth = y.min(u32::from(u8::MAX)) as u8;
-        let dst_start = ((py + y) * atlas_width + px) as usize;
-        let dst_end = dst_start + copy_width as usize;
-        if let Some(row) = depth.get_mut(dst_start..dst_end) {
-            row.fill(row_depth);
-        }
-    }
-}
-
-fn create_r8_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    data: &[u8],
-    width: u32,
-    height: u32,
-) -> wgpu::TextureView {
-    let texture = device.create_texture_with_data(
-        queue,
-        &wgpu::TextureDescriptor {
-            label: Some("Bridge Depth Atlas R8"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        },
-        wgpu::util::TextureDataOrder::LayerMajor,
-        data,
-    );
-    texture.create_view(&Default::default())
+    BridgeAtlas { texture, entries }
 }
 
 fn decrement_numeric_suffix(name: &str) -> Option<String> {
@@ -562,47 +462,6 @@ mod tests {
                     }));
                 }
             }
-        }
-    }
-
-    #[test]
-    fn gsi_13_09_body_depth_plane_encodes_local_rows_and_keeps_shadow_padding_zero() {
-        fn rendered(kind: BridgeFrameKind, width: u32, height: u32) -> RenderedBridge {
-            RenderedBridge {
-                key: BridgeAtlasKey {
-                    name: "BRIDGE1".into(),
-                    frame: 0,
-                    kind,
-                },
-                // An all-transparent canvas still receives the full row plane;
-                // the shader's color discard decides which pixels participate.
-                rgba: vec![0; (width * height * 4) as usize],
-                source_indices: vec![0; (width * height) as usize],
-                width,
-                height,
-                offset_x: 0.0,
-                offset_y: 0.0,
-            }
-        }
-
-        let atlas_width = 9;
-        let atlas_height = 5;
-        let mut plane = vec![BRIDGE_DEPTH_NEUTRAL; (atlas_width * atlas_height) as usize];
-        let body = rendered(BridgeFrameKind::Body, 3, 3);
-        let shadow = rendered(BridgeFrameKind::Shadow, 2, 3);
-
-        write_bridge_depth_rows(&mut plane, atlas_width, atlas_height, &body, 1, 1);
-        write_bridge_depth_rows(&mut plane, atlas_width, atlas_height, &shadow, 6, 1);
-
-        for (atlas_y, expected) in [(1u32, 0u8), (2, 1), (3, 2)] {
-            let start = (atlas_y * atlas_width + 1) as usize;
-            assert_eq!(&plane[start..start + 3], &[expected; 3]);
-        }
-        for atlas_y in 1u32..=3 {
-            let shadow_start = (atlas_y * atlas_width + 6) as usize;
-            assert_eq!(&plane[shadow_start..shadow_start + 2], &[0; 2]);
-            assert_eq!(plane[(atlas_y * atlas_width) as usize], 0);
-            assert_eq!(plane[(atlas_y * atlas_width + 4) as usize], 0);
         }
     }
 

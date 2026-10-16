@@ -41,9 +41,9 @@ use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::NativeF32Bits;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[path = "spy_infiltration_tests.rs"]
-pub(crate) mod spy_infiltration_tests;
+pub mod spy_infiltration_tests;
 
 /// The arm `BuildingClass::Infiltrate` took, which picks its EVA lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -12,19 +12,19 @@
 
 pub(crate) mod ai_fire;
 pub mod cell_grid;
-pub(crate) mod chrono_screen;
+pub mod chrono_screen;
 mod chronosphere;
-pub(crate) use chronosphere::CHRONO_WARP_SELECTION_INDEX;
-#[cfg(test)]
+pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
+#[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
 mod charge_native_tests;
-#[cfg(test)]
-pub(crate) mod chronosphere_tests;
+#[cfg(any(test, feature = "test-support"))]
+pub mod chronosphere_tests;
 mod fire;
 pub mod force_shield;
 pub mod genetic_converter;
-pub(crate) mod airstrike_tint;
+pub mod airstrike_tint;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
@@ -34,7 +34,7 @@ pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;
 pub mod paradrop;
-pub(crate) mod psychic_dominator;
+pub mod psychic_dominator;
 #[cfg(test)]
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
@@ -257,7 +257,7 @@ impl SuperWeaponInstance {
     }
 
     /// The charge timer's remaining frames (`SuperClass+0x30`/`+0x38`).
-    pub(crate) fn charge_remaining(&self, current_frame: i32) -> i32 {
+    pub fn charge_remaining(&self, current_frame: i32) -> i32 {
         self.charge_timer().remaining(current_frame)
     }
 
@@ -329,7 +329,7 @@ impl SuperWeaponInstance {
     }
 
     /// `SuperClass+0x50` and `+0x54`, for the world hash and map observation.
-    pub(crate) fn fade(&self) -> (i32, [i32; 3]) {
+    pub fn fade(&self) -> (i32, [i32; 3]) {
         (self.fade_countdown, self.fade_coords)
     }
 
@@ -677,8 +677,8 @@ pub struct SuperTimerView {
 }
 
 impl SuperTimerView {
-    #[cfg(test)]
-    pub(crate) fn for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(
         owner: InternedId,
         sw_type: InternedId,
         frames_left: i32,
@@ -955,7 +955,7 @@ fn owned_live_buildings(
 /// none, or the house has a building of that type on the map
 /// (`HouseClass+0x5550`). The provider test (`0x00457630`) and the
 /// detection EVA (`0x004468FA..0x00446935`) read it. Retail names none.
-pub(crate) fn aux_building_present(
+pub fn aux_building_present(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,

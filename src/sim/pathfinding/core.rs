@@ -251,7 +251,7 @@ impl BlockerNeighborCounts {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_count(&mut self, x: u16, y: u16, count: u8) {
         if x < self.width && y < self.height {
             let idx = y as usize * self.width as usize + x as usize;
@@ -1380,7 +1380,7 @@ impl PathGrid {
     /// Terrain-object sub-cell occupation bits at a cell, in cell-plane form
     /// (`0x04|0x08|0x10`). Zero when the cell holds no terrain object or the
     /// grid carries no terrain-object overlay.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn terrain_object_cell_bits_at(&self, x: u16, y: u16) -> u8 {
         if x >= self.width || y >= self.height {
             return 0;
@@ -1441,7 +1441,7 @@ impl PathGrid {
     }
 
     /// Mark a cell as blocked (ground layer) or unblocked.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_blocked(&mut self, x: u16, y: u16, blocked: bool) {
         if x < self.width && y < self.height {
             let idx = y as usize * self.width as usize + x as usize;
@@ -1502,7 +1502,7 @@ impl PathGrid {
     }
 
     /// Find the nearest ground-walkable cell to `(x, y)`, searching in expanding rings.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn nearest_walkable(
         &self,
         x: u16,
@@ -1743,7 +1743,7 @@ impl PathGrid {
     }
 
     /// Construct from raw cell data (test helper).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_cells(cells: Vec<PathCell>, width: u16, height: u16) -> Self {
         let ground_levels = cells.iter().map(|cell| cell.ground_level).collect();
         Self {
@@ -1757,7 +1757,7 @@ impl PathGrid {
     }
 
     /// Test-only helper: directly write a cell's bridge fields.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_cell_for_test(
         &mut self,
         x: u16,
@@ -1800,7 +1800,7 @@ impl PathGrid {
     /// OnBridge byte (`ObjectClass::SetHeight` 0x005F5FA0) — so tests
     /// need to be able to build the decoupled state to prove the mover's height
     /// is immune to it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_bridge_cell_decoupled_for_test(
         &mut self,
         x: u16,
@@ -1886,13 +1886,13 @@ fn apply_search_marker_cost(
 /// Test receiver over a bare `PathGrid`: class 0 where the ground plane is
 /// walkable, 7 elsewhere, and no threat. A* behaviour tests ask it in place of
 /// a Foot; it ports no `Can_Enter_Cell`, which `world::object_entry` owns.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) struct WalkableEntry<'a> {
     grid: &'a PathGrid,
     cells: Option<&'a ResolvedTerrainGrid>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl<'a> WalkableEntry<'a> {
     pub(crate) fn new(grid: &'a PathGrid) -> Self {
         Self { grid, cells: None }
@@ -1908,7 +1908,7 @@ impl<'a> WalkableEntry<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl SearchFootEntry for WalkableEntry<'_> {
     fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
         let (x, y) = match query.candidate {
@@ -1938,7 +1938,7 @@ impl SearchFootEntry for WalkableEntry<'_> {
 
 /// A ground search over `grid` asking [`WalkableEntry`]: the cells from
 /// start to goal, both inclusive, or `None`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn find_path(grid: &PathGrid, start: (u16, u16), goal: (u16, u16)) -> Option<Vec<(u16, u16)>> {
     let steps = astar_search(
         grid,
@@ -1976,7 +1976,7 @@ pub(crate) fn find_path_marker(
 }
 
 /// Resolve a gamemd foundation name into pathfinding footprint dimensions.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn parse_foundation(foundation: &str) -> (u16, u16) {
     crate::rules::foundation::foundation_dimensions(foundation)
 }
@@ -1986,7 +1986,7 @@ fn parse_foundation(foundation: &str) -> (u16, u16) {
 /// The path includes the start cell at index 0, so a path with `max_steps`
 /// movement steps has `max_steps + 1` entries. If the path is already short
 /// enough, it is returned unchanged.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn truncate_path(path: Vec<(u16, u16)>, max_steps: usize) -> Vec<(u16, u16)> {
     let max_len: usize = max_steps + 1; // +1 for start cell at index 0
     if path.len() <= max_len {
@@ -2053,7 +2053,7 @@ pub(crate) fn find_layered_path_marker(
 #[path = "core_tests.rs"]
 mod core_tests;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl PathGrid {
     /// Test helper: build a grid with every cell ground-walkable.
     pub fn test_all_passable(width: u16, height: u16) -> Self {

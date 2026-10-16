@@ -15,7 +15,7 @@
 
 use crate::sim::components::Position;
 use crate::sim::movement::locomotor::LocomotorState;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::PathGrid;
 
@@ -102,7 +102,7 @@ impl RuntimeBridgeTransitionState {
 }
 
 /// Read-only runtime bridge row for oracle diagnostics.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 pub struct BridgeRuntimeOracleTick {
     pub tick: u64,
@@ -252,7 +252,7 @@ pub(crate) fn stored_level(level: u8, on_bridge: bool) -> u8 {
 /// Diagnostic wrapper for a single boundary crossing. It computes the same
 /// bridge update as `resolve_cell_transition_bridge_state` and returns an
 /// oracle row; callers opt in explicitly from tests/tools.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn resolve_cell_transition_bridge_state_oracle(
     position: &mut Position,
     path_grid: Option<&PathGrid>,

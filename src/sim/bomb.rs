@@ -148,18 +148,18 @@ impl Hash for Bomb {
 /// carried records are read independently; neither is reconstructed from the
 /// other. This value owns no gameplay state and does not sample visibility.
 #[derive(Debug, Serialize)]
-pub(crate) struct BombObservation {
-    pub(crate) carriers: Vec<u64>,
-    pub(crate) records: Vec<BombRecordObservation>,
+pub struct BombObservation {
+    pub carriers: Vec<u64>,
+    pub records: Vec<BombRecordObservation>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct BombRecordObservation {
-    pub(crate) carrier_id: u64,
-    pub(crate) planter_id: Option<u64>,
-    pub(crate) planter_house: String,
-    pub(crate) start_frame: i32,
-    pub(crate) end_frame: i32,
+pub struct BombRecordObservation {
+    pub carrier_id: u64,
+    pub planter_id: Option<u64>,
+    pub planter_house: String,
+    pub start_frame: i32,
+    pub end_frame: i32,
 }
 
 /// The loop-handle owner of a carrier's ticking sound: native gives each bomb
@@ -167,7 +167,7 @@ pub(crate) struct BombRecordObservation {
 /// so a tag bit keeps the key apart from every stable object id.
 const TICKING_SOUND_TAG: u64 = 1 << 62;
 
-pub(crate) const fn ticking_sound_owner(carrier: u64) -> u64 {
+pub const fn ticking_sound_owner(carrier: u64) -> u64 {
     carrier | TICKING_SOUND_TAG
 }
 
@@ -218,7 +218,7 @@ impl Bomb {
     /// `BombClass::GetClockFrame @ 0x00438A00`: the clock art's frame, the
     /// hand (`2 * elapsed / (IvanTimedDelay / 6)`) plus the blink in its global
     /// phase, at most 11. `None` where native divides by zero.
-    pub(crate) fn clock_frame(&self, frame: i32, delay: i32, flicker_rate: i32) -> Option<i32> {
+    pub fn clock_frame(&self, frame: i32, delay: i32, flicker_rate: i32) -> Option<i32> {
         let hand = frame
             .wrapping_sub(self.start_frame)
             .checked_div(delay / 6)?
@@ -243,7 +243,7 @@ impl Simulation {
     /// Attach, UpdateAll, a clock query, expiry or any other gameplay callback.
     /// Each independent collection stops at `limit`; callers request one more
     /// than their budget and reject excess instead of publishing truncation.
-    pub(crate) fn bomb_observation(&self, limit: usize) -> BombObservation {
+    pub fn bomb_observation(&self, limit: usize) -> BombObservation {
         BombObservation {
             carriers: self.bombs.carriers.iter().copied().take(limit).collect(),
             records: self
@@ -265,7 +265,7 @@ impl Simulation {
     }
 
     /// The live bombs' carriers (`BombListClass`'s list).
-    pub(crate) fn bomb_carriers(&self) -> &BTreeSet<u64> {
+    pub fn bomb_carriers(&self) -> &BTreeSet<u64> {
         &self.bombs.carriers
     }
 
@@ -285,7 +285,7 @@ impl Simulation {
 
     /// Whether the player owning `house` sees the carrier's bomb: its
     /// BombVisible (`+0x68`) as of the last refresh.
-    pub(crate) fn bomb_seen_by(&self, carrier: u64, house: InternedId) -> bool {
+    pub fn bomb_seen_by(&self, carrier: u64, house: InternedId) -> bool {
         self.substrate
             .entities
             .get(carrier)
@@ -295,7 +295,7 @@ impl Simulation {
 
     /// Where the carrier's ticking loop plays: its Location (`+0x9C`), while it
     /// carries a bomb out of limbo (`0x00438C84..0x00438CFE`); `None` stops it.
-    pub(crate) fn bomb_ticking_coord(&self, carrier: u64) -> Option<AnimWorldCoord> {
+    pub fn bomb_ticking_coord(&self, carrier: u64) -> Option<AnimWorldCoord> {
         let entity = self.substrate.entities.get(carrier)?;
         (entity.bomb.is_some() && !entity.lifecycle.in_limbo())
             .then(|| Self::movement_sound_world(entity))
@@ -307,7 +307,7 @@ impl Simulation {
     /// which VERA drops as they go off or are defused; its second drives the
     /// ticking loop, which the app derives from the carriers. What is left is
     /// the BombVisible refresh (`0x00438D04..0x00438E4C`).
-    pub(crate) fn bomb_list_update(&mut self, rules: &RuleSet) {
+    pub fn bomb_list_update(&mut self, rules: &RuleSet) {
         if self.bombs.visibility_countdown > 0 {
             self.bombs.visibility_countdown -= 1;
             return;
@@ -378,7 +378,7 @@ impl Simulation {
     /// The IvanBomb arm of `BulletClass::DetonateAtCoord` (`0x00469343`) and
     /// `BombListClass::Attach @ 0x00438E70`: the bullet's owner plants a bomb
     /// on its target when the owner is Infantry and the target carries none.
-    pub(crate) fn bomb_attach(&mut self, planter: u64, target: Option<u64>, rules: &RuleSet) {
+    pub fn bomb_attach(&mut self, planter: u64, target: Option<u64>, rules: &RuleSet) {
         // An object UnInit has passed reads as the null pointer its expiry
         // left natively.
         let live = |id| {
@@ -443,7 +443,7 @@ impl Simulation {
     }
 
     /// `BombClass::Defuse @ 0x004389B0`: the carrier's bomb is gone, silently.
-    pub(crate) fn bomb_defuse(&mut self, carrier: u64) {
+    pub fn bomb_defuse(&mut self, carrier: u64) {
         if self.bombs.carriers.remove(&carrier)
             && let Some(entity) = self.substrate.entities.get_mut(carrier)
         {

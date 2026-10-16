@@ -65,7 +65,7 @@ mod tests;
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::EntityDamageEvent;
 use crate::sim::intern::InternedId;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
@@ -75,7 +75,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// What [`launch`] called, in the oracle's terms (observation only).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Observed {
     /// An object's IronCurtain (vt+0x154), from the list of the cell the walk
@@ -87,7 +87,7 @@ enum Observed {
     ExitUnit(u64),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Observation only: what [`launch`] called on this thread while a test
     /// holds `Some`.
@@ -95,7 +95,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn observe(call: Observed) {
     OBSERVED.with(|log| {
         if let Some(log) = log.borrow_mut().as_mut() {
@@ -154,7 +154,7 @@ pub(crate) fn launch(
                 .filter(|entity| !entity.chrono_warp_latch())
                 .map(|entity| entity.category())
             {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 observe(Observed::Curtain((x, y), id));
                 let duration = rules.general.iron_curtain_duration;
                 match category {
@@ -238,7 +238,7 @@ fn foot_iron_curtain(
         .get(id)
         .and_then(|entity| entity.parasite.eater())
     {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         observe(Observed::ExitUnit(eater));
         sim.parasite_force_release(
             eater,
@@ -279,7 +279,7 @@ fn receive_strength_as_c4(
     ) else {
         return;
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     observe(Observed::ReceiveDamage(event));
     sim.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
 }

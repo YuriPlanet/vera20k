@@ -3629,6 +3629,11 @@ impl ProductionRules {
     }
 }
 
+fn next_rule_set_serial() -> u64 {
+    static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
 /// O(1) index into `RuleSet::object_list`. Resolved once from a name (or from an
 /// interned id via the sim `TypeHandleTable`), then dereferenced directly —
 /// avoiding the per-call string round-trip + hash lookup of name resolution.
@@ -3640,7 +3645,11 @@ pub struct TypeHandle(pub u32);
 /// Name lookups are case-insensitive (matching the engine's find-or-allocate),
 /// resolved via `type_handle`/`object_by_handle`. The sim/ module uses RuleSet
 /// to look up costs, speeds, weapons, and prerequisites for every game action.
+///
+/// Tests may clone a set to reuse one retail load; a clone keeps the serial
+/// until [`Self::with_fresh_serial`] gives it its own.
 #[derive(Debug)]
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub struct RuleSet {
     /// All game objects in registry insertion order, indexed by `TypeHandle`.
     object_list: Vec<ObjectType>,
@@ -3894,9 +3903,7 @@ impl RuleSet {
         Self::from_processed_rules(&layers.process()?)
     }
 
-    pub(crate) fn from_processed_rules(
-        processed: &ProcessedRulesLayers,
-    ) -> Result<Self, RulesError> {
+    pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         let mut rules =
             Self::from_projected_ini(processed.ini(), project_country_side_registry(processed))?;
         rules.crate_rules = processed.crate_rules().clone();
@@ -4060,7 +4067,7 @@ impl RuleSet {
     /// SOUNDMD registry. The processed projection retains only passes where
     /// each type existed, including the native current-ID retention order.
     /// Type defaults and Rules+208 start at -1; [AudioVisual] owns the latter.
-    pub(crate) fn bind_type_sound_references(
+    pub fn bind_type_sound_references(
         &mut self,
         ini: &IniFile,
         sounds: &crate::rules::sound_ini::SoundRegistry,
@@ -4197,8 +4204,8 @@ impl RuleSet {
         Self::from_rules_layers(&RulesLayerStack::new(ini.clone()))
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_ini_with_fixed_art_for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_ini_with_fixed_art_for_test(
         ini: &IniFile,
         art: &IniFile,
     ) -> Result<Self, RulesError> {
@@ -4719,11 +4726,10 @@ impl RuleSet {
             check_unique_ci("super_weapons", super_weapons.keys().collect());
         }
 
-        static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let mut rules = RuleSet {
             object_list,
             object_index,
-            serial: SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            serial: next_rule_set_serial(),
             object_category_index,
             type_array_indices,
             weapons,
@@ -4882,6 +4888,13 @@ impl RuleSet {
         self.serial
     }
 
+    /// This set as a distinct set: a test's copy of a shared retail load.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn with_fresh_serial(mut self) -> Self {
+        self.serial = next_rule_set_serial();
+        self
+    }
+
     /// Dereference a handle to its object. Handles only originate from this
     /// `RuleSet`, so the index is always in bounds.
     #[inline]
@@ -4970,7 +4983,7 @@ impl RuleSet {
     }
 
     /// The native array index (`+0xDF8`) of `id` in `category`'s array.
-    pub(crate) fn type_array_index(&self, category: ObjectCategory, id: &str) -> Option<i32> {
+    pub fn type_array_index(&self, category: ObjectCategory, id: &str) -> Option<i32> {
         self.type_array_indices
             .get(&(category, id.to_ascii_uppercase()))
             .copied()
@@ -5127,7 +5140,7 @@ impl RuleSet {
     }
 
     /// Registered projectile types, including their retained animation references.
-    pub(crate) fn projectiles_iter(&self) -> impl Iterator<Item = &ProjectileType> {
+    pub fn projectiles_iter(&self) -> impl Iterator<Item = &ProjectileType> {
         self.projectiles.values()
     }
 
@@ -5548,7 +5561,7 @@ impl RuleSet {
 
     /// A country's `Speed*Mult=` floats (`HouseType+0x128..+0x130`), the
     /// constructor's 1.0 for an unknown country.
-    pub(crate) fn country_speed_mults(&self, id: &str) -> [NativeF32Bits; 3] {
+    pub fn country_speed_mults(&self, id: &str) -> [NativeF32Bits; 3] {
         self.country_rules(id)
             .map_or([NativeF32Bits::ONE; 3], |country| country.speed_mults)
     }
@@ -5728,7 +5741,7 @@ impl RuleSet {
     }
 
     /// Resolve a particle type name to its ID (case-insensitive).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn p_type_id_by_name(&self, name: &str) -> Option<ParticleTypeId> {
         self.particle_types
             .iter()
@@ -5756,19 +5769,19 @@ impl RuleSet {
     }
 
     /// Number of `[VoxelAnims]` types loaded.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn voxel_anim_type_count(&self) -> usize {
         self.voxel_anim_types.len()
     }
 
     /// Number of particle types loaded from `[Particles]`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn particle_type_count(&self) -> usize {
         self.particle_types.len()
     }
 
     /// Number of particle system types loaded from `[ParticleSystems]`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn particle_system_type_count(&self) -> usize {
         self.particle_system_types.len()
     }
@@ -5942,12 +5955,12 @@ impl RuleSet {
             .map(|(name, _)| name.as_str())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn anim_type_art_read_states(&self) -> &[(String, bool)] {
         &self.anim_type_art_read_states
     }
 
-    pub(crate) fn bind_scheduler_anim_assets(
+    pub fn bind_scheduler_anim_assets(
         &mut self,
         roots: &[String],
         assets: &crate::assets::asset_manager::AssetManager,
@@ -5958,7 +5971,7 @@ impl RuleSet {
             .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)
     }
 
-    pub(crate) fn bind_anim_class_assets(
+    pub fn bind_anim_class_assets(
         &mut self,
         roots: &[String],
         assets: &crate::assets::asset_manager::AssetManager,
@@ -5969,7 +5982,7 @@ impl RuleSet {
             .bind_anim_class_assets(roots, assets, theater_ext, theater_name)
     }
 
-    pub(crate) fn populate_anim_frame_dims(
+    pub fn populate_anim_frame_dims(
         &mut self,
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
@@ -5982,7 +5995,7 @@ impl RuleSet {
     /// Extend the bound closure before an authored-load constructor spends its
     /// native ID. The constructor then borrows this same owner for Reveal/Start
     /// (AnimClass421EA0, Unlimbo5F4EC0, Start424CE0).
-    pub(crate) fn bind_authored_load_anim(
+    pub fn bind_authored_load_anim(
         &mut self,
         name: &str,
         assets: &crate::assets::asset_manager::AssetManager,
@@ -6008,30 +6021,27 @@ impl RuleSet {
     /// Synthetic fixtures that previously projected ART then restored the raw
     /// registry deliberately bypass native read admission. Move that fixture
     /// once while sharing the production projection, without clone publication.
-    #[cfg(test)]
-    pub(crate) fn install_art_fixture(&mut self, art: crate::rules::art_data::ArtRegistry) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn install_art_fixture(&mut self, art: crate::rules::art_data::ArtRegistry) {
         self.art_registry = art;
         self.project_art_data();
     }
 
     /// Raw synthetic fixture replacement: no native admission or field projection.
-    #[cfg(test)]
-    pub(crate) fn replace_art_registry_for_test(
-        &mut self,
-        art: crate::rules::art_data::ArtRegistry,
-    ) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn replace_art_registry_for_test(&mut self, art: crate::rules::art_data::ArtRegistry) {
         self.art_registry = art;
         self.voxel_assets = Default::default();
     }
 
-    #[cfg(test)]
-    pub(crate) fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
         self.art_registry
             .bind_anim_frame_count_for_test(name, raw_count);
     }
 
     /// The SHP header height `+4` asset binding would read for `name`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn bind_anim_shp_height_for_test(&mut self, name: &str, raw_height: i32) {
         self.art_registry
             .bind_anim_shp_height_for_test(name, raw_height);
@@ -6039,7 +6049,7 @@ impl RuleSet {
 
     /// A weapon's stored speed (after Process's postpass), as a native
     /// fixture writes it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_weapon_speed_for_test(&mut self, id: &str, speed: i32) {
         if let Some(weapon) = self
             .weapons
@@ -6054,8 +6064,8 @@ impl RuleSet {
     /// produce (notably a nonempty vector containing native sound ID -1,
     /// represented by an empty name). This is an explicit input boundary,
     /// not ReadSoundList or sound-catalog binding evidence.
-    #[cfg(test)]
-    pub(crate) fn supply_selection_voice_vectors_for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn supply_selection_voice_vectors_for_test(
         &mut self,
         type_id: &str,
         normal: Vec<String>,
@@ -6069,7 +6079,7 @@ impl RuleSet {
         object.voice_select_enslaved = enslaved;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn art_entry_mut_for_test(
         &mut self,
         name: &str,
@@ -6121,7 +6131,7 @@ impl RuleSet {
 
     /// Explicit loaded model prior for headless component fixtures. Production
     /// callers bind immutable admission from the active physical assets.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn supply_loaded_voxel_for_test(&mut self, type_id: &str) {
         let object = self
             .type_handle(type_id)
@@ -6195,8 +6205,8 @@ impl RuleSet {
     }
 
     /// Install one building type's rubble art (fixtures without assets).
-    #[cfg(test)]
-    pub(crate) fn set_building_rubble_art_for_test(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_building_rubble_art_for_test(
         &mut self,
         type_id: &str,
         art: crate::rules::building_rubble::RubbleArt,
@@ -6219,8 +6229,8 @@ impl RuleSet {
 
     /// Install one building type's construction control (fixtures without
     /// assets).
-    #[cfg(test)]
-    pub(crate) fn set_buildup_control_for_test(&mut self, type_id: &str, control: [i32; 3]) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_buildup_control_for_test(&mut self, type_id: &str, control: [i32; 3]) {
         self.buildup_assets.insert_for_test(type_id, control);
     }
 
@@ -6261,7 +6271,7 @@ impl RuleSet {
         &self.animation_sequences
     }
 
-    pub(crate) fn animation_sequence(
+    pub fn animation_sequence(
         &self,
         type_id: &str,
     ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
@@ -6277,7 +6287,7 @@ impl RuleSet {
         self.unit_shp_read_states.get(&object.id)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn replace_animation_sequences_for_test(
         &mut self,
         animation_sequences: BTreeMap<String, crate::rules::animation_sequence::SequenceSet>,
@@ -6286,12 +6296,12 @@ impl RuleSet {
         self.index_animation_sequences();
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_effect_frame_count_for_test(&mut self, name: &str, raw: u16, available: u16) {
         self.effect_assets.set_for_test(name, raw, available);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_terrain_spawner_frame_count_for_test(
         &mut self,
         name: &str,
@@ -6326,7 +6336,7 @@ impl RuleSet {
     }
 
     /// Total number of projectiles.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn projectile_count(&self) -> usize {
         self.projectiles.len()
     }

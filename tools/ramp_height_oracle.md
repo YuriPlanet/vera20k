@@ -30,9 +30,9 @@ scope, binary identity and canonical payload hash separately.
 [Validation](ramp_height.validation.json) records native replay and Rust coverage.
 
 ```sh
-python -m tools.cargo_run -- test -p vera20k --lib live_surface_and_coordinate_setter_match_all_native_ramp_vectors
-python -m tools.cargo_run -- test -p vera20k --lib live_raw_bridge_height_preserves_native_signed_deck_byte_and_dummy_identity
-python -m tools.cargo_run -- test -p vera20k --lib moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points
+python -m tools.cargo_run -- test -p vera20k-core --lib live_surface_and_coordinate_setter_match_all_native_ramp_vectors
+python -m tools.cargo_run -- test -p vera20k-core --lib live_raw_bridge_height_preserves_native_signed_deck_byte_and_dummy_identity
+python -m tools.cargo_run -- test -p vera20k-core --lib moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points
 ```
 
 The first Rust test directly compares all 158 ground lookups. Its coordinate-height

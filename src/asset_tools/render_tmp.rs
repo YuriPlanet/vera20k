@@ -13,10 +13,7 @@
 //!   or an odd `offset_x`/`offset_y` is obvious. Labels land in the empty corner
 //!   of each diamond and cover nothing.
 //! - **isometric** (`--isometric`): the half-cell stagger the game composes, so
-//!   the template reads as the shape a player sees. The stagger formula is the
-//!   one `src/bin/inspect-water-tiles.rs` uses; it is reused rather than
-//!   re-derived, because two independent isometric layout formulas in one tree
-//!   is exactly how a one-cell drift gets shipped.
+//!   the template reads as the shape a player sees.
 //!
 //! Per-tile `height` and `ramp_type` are burned into the image, not just the
 //! JSON: those two fields drive cliff/slope behaviour, and pairing them with the
@@ -536,9 +533,9 @@ fn tile_row(index: usize, tile: &TmpTile, png: String) -> TileRow {
 
 /// Top-left of tile `index`'s diamond, in unscaled composite pixels.
 ///
-/// The isometric arm is the half-cell stagger `inspect-water-tiles` uses: odd
-/// rows shift right by half a tile and every row advances by half a tile
-/// height, which is what makes the diamonds interlock.
+/// The isometric arm is the half-cell stagger: odd rows shift right by half a
+/// tile and every row advances by half a tile height, which is what makes the
+/// diamonds interlock.
 fn tile_origin(index: usize, cols: usize, tile_w: u32, tile_h: u32, isometric: bool) -> (i64, i64) {
     let cols = cols.max(1);
     let col = (index % cols) as i64;

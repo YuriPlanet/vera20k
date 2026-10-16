@@ -67,7 +67,7 @@ use crate::sim::components::DriveCoord;
 use crate::sim::occupancy::{CellListInsertion, OBJECT_OCCUPATION_BIT};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::FrameEffects;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::LifecycleTestEvent;
 use crate::sim::world::Simulation;
 
@@ -290,10 +290,10 @@ impl Simulation {
         self.substrate
             .occupancy
             .remove_on_layer(cell.0, cell.1, id, layer);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListUnlinked);
         if self.foot_mark_raw(id, false) {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
         }
         self.recalculate_track_cell(cell, rules, registry);
@@ -329,7 +329,7 @@ impl Simulation {
         entity.lifecycle.set_cell_marked(true);
         self.techno_mark_after_object(id, rules, frame_effects);
         self.foot_place_down(id, rules, registry, receive);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::CellMarked);
         true
     }
@@ -366,11 +366,11 @@ impl Simulation {
             cell,
             crate::sim::world::UninitContext::new(rules, registry),
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);
         receive(self, id);
         if self.foot_mark_raw(id, true) {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
         }
         self.recalculate_track_cell(cell, rules, registry);

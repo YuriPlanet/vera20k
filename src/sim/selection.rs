@@ -16,7 +16,7 @@
 //! - Part of sim/ — depends on sim/components (Position, Owner, Selected, Category).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::entity_store::EntityStore;
 
 /// `ObjectClass+0x83`, IsSelected: the object is in the player's current
@@ -30,13 +30,13 @@ use crate::sim::entity_store::EntityStore;
 /// Combat reads it for selected-unit effects.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct Selection {
+pub struct Selection {
     selected: bool,
 }
 
 impl Selection {
     /// The object is selected.
-    pub(crate) const fn is_selected(self) -> bool {
+    pub const fn is_selected(self) -> bool {
         self.selected
     }
 
@@ -51,8 +51,8 @@ impl Selection {
     }
 
     /// Install a fixture's byte.
-    #[cfg(test)]
-    pub(crate) fn set_selected_for_test(&mut self, selected: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_for_test(&mut self, selected: bool) {
         self.selected = selected;
     }
 }
@@ -159,7 +159,7 @@ impl SelectionState {
     }
 
     /// True if the player is currently in any drag state (pending or active).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_dragging(&self) -> bool {
         !matches!(self.phase, DragPhase::None)
     }
@@ -226,7 +226,7 @@ pub enum SelectAction {
 /// Kept as the sim-side primitive for a wholesale unselect. The band-box path no
 /// longer calls it: the native release replaces the selection through the
 /// selection command instead, and an empty box clears nothing at all.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn deselect_all(entities: &mut EntityStore) {
     let selected_ids: Vec<u64> = entities
         .values()

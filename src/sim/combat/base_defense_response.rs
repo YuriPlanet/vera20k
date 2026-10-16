@@ -153,7 +153,7 @@ impl ResponseSelection {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn remaining_budget(&self) -> i32 {
         self.remaining_budget
     }
@@ -383,7 +383,7 @@ impl BaseDefenseResponseState {
 
     /// The call-for-help cooldown; outside tests only
     /// `respond_to_base_attack` reads and starts it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn cooldown(&self) -> CdTimer {
         self.cooldown
     }
@@ -399,17 +399,17 @@ impl BaseDefenseResponseState {
         self.archive_target = target;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_recruitable_a_for_test(&mut self, recruitable: bool) {
         self.recruitable_a = recruitable;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_recruitable_b_for_test(&mut self, recruitable: bool) {
         self.recruitable_b = recruitable;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_cooldown_for_test(&mut self, cooldown: CdTimer) {
         self.cooldown = cooldown;
     }

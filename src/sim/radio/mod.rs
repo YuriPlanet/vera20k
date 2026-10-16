@@ -18,15 +18,15 @@ pub use tether::Tether;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::LifecycleTestEvent;
 use crate::sim::world::{FrameEffects, Simulation};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::cell::RefCell;
 
 /// Ordered radio boundaries exposed only to crate tests.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RadioTestEvent {
     BroadcastSlotRead {
@@ -55,22 +55,22 @@ pub(crate) enum RadioTestEvent {
     },
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static RADIO_TEST_TRACE: RefCell<Vec<RadioTestEvent>> = const { RefCell::new(Vec::new()) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn clear_test_trace() {
     RADIO_TEST_TRACE.with(|trace| trace.borrow_mut().clear());
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn take_test_trace() -> Vec<RadioTestEvent> {
     RADIO_TEST_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn record_test_event(event: RadioTestEvent) {
     RADIO_TEST_TRACE.with(|trace| trace.borrow_mut().push(event));
 }
@@ -78,22 +78,22 @@ fn record_test_event(event: RadioTestEvent) {
 /// One transmit as the native oracle records it: sender, message, receiver
 /// and the reply, logged in entry order (a nested transmit follows its outer
 /// one) with the reply filled in when the transmit returns.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TransmitRecord {
+pub struct TransmitRecord {
     pub(crate) sender_sid: u64,
     pub(crate) msg: u8,
     pub(crate) target_sid: u64,
     pub(crate) reply: Option<u8>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static TRANSMIT_LOG: RefCell<Vec<TransmitRecord>> = const { RefCell::new(Vec::new()) };
 }
 
-#[cfg(test)]
-pub(crate) fn take_transmit_log() -> Vec<TransmitRecord> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn take_transmit_log() -> Vec<TransmitRecord> {
     TRANSMIT_LOG.with(|log| std::mem::take(&mut *log.borrow_mut()))
 }
 
@@ -134,13 +134,13 @@ pub(crate) fn broadcast(
             .get(sender_sid)
             .and_then(|sender| sender.radio_contacts.slot(slot));
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         record_test_event(RadioTestEvent::BroadcastSlotRead {
             sender_sid,
             slot,
             target_sid,
         });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if message == RadioMessage::Break {
             sim.trace_lifecycle_for_test(LifecycleTestEvent::BreakSlot {
                 slot,
@@ -170,7 +170,7 @@ pub(crate) fn broadcast(
 /// caller without it gets their rules-free answers.
 /// The borrowed frame effects follow synchronous nested dispatch and are
 /// never retained in contacts or the wire payload.
-pub(crate) fn transmit(
+pub fn transmit(
     sim: &mut Simulation,
     sender_sid: u64,
     target_sid: u64,
@@ -179,7 +179,7 @@ pub(crate) fn transmit(
     rules: Option<&RuleSet>,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let log_index = TRANSMIT_LOG.with(|log| {
         let mut log = log.borrow_mut();
         log.push(TransmitRecord {
@@ -200,7 +200,7 @@ pub(crate) fn transmit(
         }
         _ => receive_radio(sim, target_sid, filtered, msg, payload, rules, effects),
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     TRANSMIT_LOG.with(|log| {
         if let Some(record) = log.borrow_mut().get_mut(log_index) {
             record.reply = Some(reply.code());
@@ -317,12 +317,12 @@ fn transmit_over_out(
         while sender.radio_contacts.remove(target_sid).is_some() {}
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     record_test_event(RadioTestEvent::SenderBreakCleared {
         sender_sid,
         target_sid,
     });
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     sim.trace_lifecycle_for_test(LifecycleTestEvent::BreakSenderCleared { target: target_sid });
 
     receive_radio(

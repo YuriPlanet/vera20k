@@ -43,7 +43,7 @@ macro_rules! require_ra2_dir {
     () => {{
         let dir: PathBuf = match std::env::var("RA2_DIR") {
             Ok(val) => PathBuf::from(val),
-            Err(_) => match crate::util::config::GameConfig::load() {
+            Err(_) => match crate::test_fixture::game_config() {
                 Ok(cfg) => cfg.paths.ra2_dir,
                 Err(_) => {
                     eprintln!("SKIPPED: RA2_DIR not set and config.toml not found");

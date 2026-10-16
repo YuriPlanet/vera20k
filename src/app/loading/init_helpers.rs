@@ -3,7 +3,7 @@
 //!
 //! Split from `loading::init` for file-size limits.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::assets::asset_manager::AssetManager;
@@ -11,7 +11,7 @@ use crate::assets::pal_file::Palette;
 use crate::map::basic::BridgeDestroyabilityMode;
 use crate::map::houses::HouseColorMap;
 use crate::map::map_file::MapFile;
-use crate::map::resolved_terrain::{ResolvedTerrainGrid, TerrainTileAnimation};
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::TerrainGrid;
 use crate::map::theater::{self, TileImage, TileKey};
 use crate::map::trigger_graph;
@@ -21,6 +21,7 @@ use crate::render::sidebar_cameo_atlas::{self, SidebarCameoAtlas};
 use crate::render::sprite_atlas::{self, SpriteAtlas};
 use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
+use crate::rules::effect_asset_catalog::tolerant_anim_class_roots;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::NativeRulesProcessOwner;
 #[cfg(test)]
@@ -216,7 +217,7 @@ pub(crate) fn build_tile_atlas(
         return None;
     }
 
-    let atlas: TileAtlas = tile_atlas::build_atlas(gpu, batch, &images);
+    let atlas: TileAtlas = tile_atlas::build_atlas(&gpu.device, &gpu.queue, batch, &images);
     log::info!("Atlas built: {} tiles", atlas.tile_count());
     Some(atlas)
 }
@@ -292,98 +293,6 @@ pub(crate) fn load_neutral_tech_types(
         types.len()
     );
     types
-}
-
-/// AnimClass asset roots bound tolerantly: a type whose SHP is missing draws
-/// nothing, as natively, instead of failing the load.
-///
-/// Building animations belong here, not in the strict scheduler closure. Art
-/// defines building sections no rules list names and whose sprites retail never
-/// shipped (`[CAARAY]` with `ActiveAnim=CAARAY_A`), and a few real buildings
-/// name animations no archive holds (`GAGAP_A`, `GAREFNL4`), so requiring every
-/// art building animation made every retail map fail to load. (Most of the
-/// names that first failed were a separate resolver fault, since fixed in
-/// `art_data::anim_shp_candidates`.)
-pub(crate) fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
-    let mut roots = crate::rules::effect_asset_catalog::anim_class_roots(rules);
-    roots.extend(
-        rules
-            .art()
-            .building_anim_roots()
-            .into_iter()
-            .filter(|name| rules.anim_type_names.contains(name)),
-    );
-    roots
-}
-
-/// TAction41's numeric AnimType operands resolve through the same retained
-/// native registry as runtime construction (6E2357), after all rules passes.
-/// Bind through the existing scheduler closure before live triggers run.
-pub(crate) fn trigger_anim_class_roots(
-    rules: &RuleSet,
-    actions: &crate::map::actions::ActionMap,
-) -> Vec<String> {
-    actions
-        .values()
-        .flat_map(|action| &action.entries)
-        .filter(|action| action.kind == 41)
-        .filter_map(|action| action.literal_value())
-        .filter_map(|index| rules.anim_type_name_by_index(index))
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-/// Scheduler asset roots required by this map's surviving runtime objects.
-///
-/// Damage-fire roots remain part of the established closure. Terrain animation
-/// names come exclusively from resolved theater `Tile##Anim` data, so custom
-/// names take the same path without a WA/TUNTOP name table in Rust.
-pub(crate) fn scheduler_anim_roots(
-    rules: &RuleSet,
-    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-    tile_animations: &[TerrainTileAnimation],
-) -> Vec<String> {
-    let mut roots = BTreeSet::new();
-    roots.extend(
-        rules
-            .general
-            .damage_fire_types
-            .iter()
-            .map(|anim| anim.name.trim().to_ascii_uppercase())
-            .filter(|name| !name.is_empty()),
-    );
-    roots.extend(
-        tile_animations
-            .iter()
-            .map(|anim| anim.anim_name.trim().to_ascii_uppercase())
-            .filter(|name| !name.is_empty()),
-    );
-    // [General] Wake= is constructed as an ordinary AnimClass by the drive
-    // locomotor's process (0x004B0823 region), so it needs the same loader
-    // bounds as every other scheduler-owned anim or its constructor refuses it.
-    {
-        let wake = rules.general.wake.name.trim().to_ascii_uppercase();
-        if !wake.is_empty() {
-            roots.insert(wake);
-        }
-    }
-    roots.extend(
-        [
-            rules.crate_rules.wood_crate_img.as_deref(),
-            rules.crate_rules.crate_img.as_deref(),
-            rules.crate_rules.water_crate_img.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .filter_map(|name| overlay_registry.id_for_name(name))
-        .filter_map(|overlay_id| overlay_registry.flags(overlay_id))
-        .filter_map(|flags| flags.cell_anim.as_deref())
-        .map(|name| name.trim().to_ascii_uppercase())
-        .filter(|name| !name.is_empty()),
-    );
-    roots.into_iter().collect()
 }
 
 /// Install the process-selected ART metadata before terrain construction or
@@ -686,7 +595,6 @@ pub(crate) fn finish_presentation_assets(
         sprite_atlas: manifest.sprite_atlas,
         overlay_atlas: overlays.overlay_atlas,
         bridge_atlas: overlays.bridge_atlas,
-        bridge_railing_atlas: overlays.bridge_railing_atlas,
         sidebar_cameo_atlas,
         sidebar_chrome,
         software_cursor,
@@ -760,7 +668,7 @@ mod tests {
             !roots.iter().any(|root| root == "GHOST_A"),
             "an unregistered art animation is no root at all: {roots:?}"
         );
-        let strict = super::scheduler_anim_roots(
+        let strict = crate::map::resolved_terrain::scheduler_anim_roots(
             &rules,
             &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
             &[],
@@ -774,10 +682,10 @@ mod tests {
     use std::collections::HashSet;
     use std::path::PathBuf;
 
-    use super::{load_rules_with_merged_ini, scheduler_anim_roots, startup_crate_anim_remap_keys};
+    use super::{load_rules_with_merged_ini, startup_crate_anim_remap_keys};
     use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
     use crate::map::entities::EntityCategory;
-    use crate::map::resolved_terrain::TerrainTileAnimation;
+    use crate::map::resolved_terrain::{TerrainTileAnimation, scheduler_anim_roots};
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::native_processing::RulesLayerStack;

@@ -8,7 +8,7 @@ use crate::map::authored_overlay::NativeOverlayMapShape;
 use crate::map::tiberium_cell::tiberium_value;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
@@ -47,7 +47,7 @@ impl Simulation {
     /// first time a post-load setup runs after `Clear_Scene` nulled
     /// `DAT_00A8ED78`. Returns whether this call spent it. The object itself
     /// (leptons `(0xA80, 0xA80, 0)`, no RNG in its constructor) is not modeled.
-    pub(crate) fn construct_post_load_particle_system_id(&mut self) -> bool {
+    pub fn construct_post_load_particle_system_id(&mut self) -> bool {
         if self.post_load_particle_system_constructed {
             return false;
         }

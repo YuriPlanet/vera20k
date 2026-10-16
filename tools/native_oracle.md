@@ -85,7 +85,7 @@ From the repository root, with Python 3.10+ and Unicorn **2.1.4** installed:
 python -m pip install unicorn==2.1.4
 $env:VERA20K_GAMEMD_EXE = 'C:/your-retail-install/gamemd.exe'
 python -m tools.color_oracle.hsv_to_rgb
-cargo test -p vera20k --lib rules::color_scheme::tests::hsv_to_rgb_matches_native_oracle_all_hues_at_sv_boundaries
+cargo test -p vera20k-core --lib rules::color_scheme::tests::hsv_to_rgb_matches_native_oracle_all_hues_at_sv_boundaries
 ```
 
 `RA2_DIR` is an alternative; an explicit executable path takes precedence and never

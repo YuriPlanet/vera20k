@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ordinary temperate flat ClearTile Cell480350 and TMP547CF0 raster on eight physical files; cold Cell light gathering, native Main selector and exact RGB565/Z output. No native whole map bootstrap claim.",
+  "assumptions": [
+    "Shared PaletteReader VM, physical archive extraction, palette expansion/Convert construction and RGB565/Z/A surface owner are reused. TMP constructors and full lazy CCFile reader/relocation/radar rebuild/destruction execute; linked variant filename/count metadata is supplied from the physical contiguous family.",
+    "Original Scenario defaults6838D3..6839BD, normal map Lighting reader68A817..68A979 and Level publication68A984..68A98A execute. Full cold483E30/484180/544E70 obtains the actual ISO-source Cell LightConvert. Detail2 is supplied; Cell normalized RGB and actual quantized Convert key are recorded separately. Empty local-light/effect registries and RGB565/MMX startup dispatch remain declared component inputs.",
+    "Original4814F0 initializes its64-entry persistent table from Main seeded0. Warm-table rotations are supplied inputs for physical-file coverage; warm calls must leave Main unchanged. Coordinates, signed levels, no-smudge state, screen point, viewport, clip and initial A/Z/color are supplied component state.",
+    "Original native raster creates every expected pixel/depth run. No Rust values, decoded host pixels or host lighting/projection/depth formula generate goldens. Original CPU probes7C5F3D/7C5FFF execute in the shared VM before TMP; MMX84E862 must be1 and independent TMP dispatchABC55C must remain0. WinMain6BDF5F\u21925355D0\u21924E6190 supplies the active startup caller chain; full WinMain and other TMP branches are not executed.",
+    "One full6D7560 row enrolls only64,31 from physical XMP03T4 packs atlevel6. Map568300/5657A0 transport admits exactly that cell; original inverse projection, traversal,47FF80, rectangle intersection, ground projection and480350/raster execute. Authored inputs are not native Recalc/map construction. Physical SHROUD.SHP frame15 executes47EFE0 in the same VM to produce one captured A input; reveal scheduling remains outside scope.",
+    "All256 raw level bytes execute full cold483E30 under the default no-source profile, recording normalized RGB, effective Convert key and top/common/bridge scalars. These are supplied signed-height numeric boundaries, not proof that retail map loading produces negative heights. Repeated rows retain actual A/Z/color across their second original call; no timer or detach body is passed by this selected draw chain."
+  ],
+  "substitutions": [
+    "Existing allocator/TLS and RawFile Windows byte transport; immutable physical archive winners. Original Cell/TMP/lighting/raster bodies are not substituted."
+  ],
+  "entry_points": {
+    "cell": "0x00480350",
+    "cell_cold_light": "0x00483E30",
+    "gather": "0x00484180",
+    "convert_select": "0x00544E70",
+    "tmp_get_image": "0x00544CB0",
+    "tmp_loader": "0x00547020",
+    "tmp": "0x00547CF0",
+    "scalar": "0x00548D90",
+    "selector": "0x004814F0",
+    "normal_lighting_begin": "0x0068A817",
+    "normal_lighting_end": "0x0068A98A",
+    "full_view": "0x006D7560",
+    "tile_bounds": "0x0047FF80",
+    "shroud_leaf": "0x0047EFE0",
+    "winmain_cpu_profile_call": "0x006BDF5F",
+    "cpu_profile": "0x005355D0",
+    "cpu_dispatch": "0x004E6190",
+    "cpu_mmx": "0x007C5F3D",
+    "cpu_cmov": "0x007C5FFF"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --tile",
+  "payload_sha256": "b9fa1b01a9037a348abd6607b63e2940bd684d6b2e9dea4715c486d1fe0acd69"
+}

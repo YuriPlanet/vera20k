@@ -107,25 +107,25 @@ impl InfantryRuntime {
     }
 
     /// Install a fixture's fear.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_fear_level_for_test(&mut self, fear: u16) {
         self.fear_level = fear;
     }
 
     /// Install a fixture's stance.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_is_prone_for_test(&mut self, prone: bool) {
         self.is_prone = prone;
     }
 
     /// Install a fixture's idle timer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_idle_action_timer_for_test(&mut self, timer: MissionTimer) {
         self.idle_action_timer = timer;
     }
 
     /// Install a fixture's failed-path answer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_cell_entry_blocked_for_test(&mut self, blocked: bool) {
         self.cell_entry_blocked = blocked;
     }
@@ -152,7 +152,7 @@ const FIRST_HIT_FEAR: u16 = 100;
 const FEAR_LATCH_CEILING: u16 = 99;
 const REPEATED_RED_ADD: u16 = 50;
 const REPEATED_YELLOW_ADD: u16 = 25;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const REPEATED_GREEN_ADD: u16 = 12;
 const PRONE_THRESHOLD: u16 = 50;
 
@@ -598,7 +598,7 @@ impl crate::sim::world::Simulation {
 /// callers use the synchronous object receiver above. This adapter keeps only
 /// outer AI/logic-vector gates and delegates every idle decision to its owner;
 /// returned fidgets require the real Do_Action receiver to enact them.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn tick_idle_actions(
     entities: &mut crate::sim::entity_store::EntityStore,
     order: &[u64],

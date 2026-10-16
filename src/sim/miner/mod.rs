@@ -296,20 +296,20 @@ impl Miner {
     }
 
     /// Install a fixture's hold.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_cargo_for_test(&mut self, cargo: Vec<CargoBale>) {
         self.cargo = cargo;
     }
 
     /// Install a fixture's unload latch.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_unload_active_for_test(&mut self, active: bool) {
         self.unload_active = active;
     }
 
     /// Install a fixture's harvest latch.
-    #[cfg(test)]
-    pub(crate) fn set_harvesting_for_test(&mut self, harvesting: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_harvesting_for_test(&mut self, harvesting: bool) {
         self.harvesting = harvesting;
     }
 
@@ -329,7 +329,7 @@ impl Miner {
     }
 
     /// Total credit value of all bales currently in the hold.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn cargo_value(&self) -> u32 {
         self.cargo.iter().map(|b| b.value as u32).sum()
     }

@@ -37,7 +37,7 @@ impl RmgRng {
     }
 
     /// Seal the exact current native cursor into the move-only handoff DTO.
-    pub(crate) fn into_continuation(self) -> MapGenRngContinuation {
+    pub fn into_continuation(self) -> MapGenRngContinuation {
         MapGenRngContinuation::from_native_parts(0, self.state, self.idx_a, self.idx_b)
     }
 
@@ -83,13 +83,13 @@ impl RmgRng {
     }
 
     /// Cursor positions, for tests that assert the seeded starting state.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn cursors(&self) -> (usize, usize) {
         (self.idx_a, self.idx_b)
     }
 
     /// State word, for tests that compare against the golden vectors.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn state_word(&self, index: usize) -> u32 {
         self.state[index]
     }

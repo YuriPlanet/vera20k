@@ -4,7 +4,7 @@
 use crate::sim::projectile::ProjectileCoord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ElectricBoltBirth {
+pub struct ElectricBoltBirth {
     pub frame: i32,
     pub from: ProjectileCoord,
     pub to: ProjectileCoord,

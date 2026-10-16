@@ -522,18 +522,18 @@ impl Simulation {
 }
 
 /// Sets `+0x68F` as a seek that found an absorber would.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_absorber_for_test(entity: &mut GameEntity, value: bool) {
     entity.building_entry.should_enter_absorber = value;
 }
 
 /// Sets `+0x690` as a seek that found an occupiable building would.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_occupiable_for_test(entity: &mut GameEntity, value: bool) {
     entity.building_entry.should_enter_occupiable = value;
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_nearest_occupiable_for_test(entity: &mut GameEntity, value: bool) {
     entity.building_entry.should_enter_nearest_occupiable = value;
 }

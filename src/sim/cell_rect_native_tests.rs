@@ -28,11 +28,12 @@ fn retained_playfield_query_does_not_relookup_a_dummy_alias() {
     // unit_entry_boundary's original578540 calls admit level0 and refuse4
     // here. Retaining the dummy must read its own level, even though a fresh
     // coordinate lookup would select the allocated real Cell instead.
-    assert!(retained_cell_is_in_playfield(real, bounds, &terrain));
+    let query = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
+    assert!(retained_cell_is_in_playfield(real, bounds, &query));
     assert!(!retained_cell_is_in_playfield(
         NativeCellIdentity::Dummy,
         bounds,
-        &terrain
+        &query
     ));
     assert_eq!(terrain.shared_cell_dummy().snapshot(), before);
 }

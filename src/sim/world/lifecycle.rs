@@ -32,7 +32,7 @@ use super::{FrameEffects, Simulation};
 /// base-node teardown; the light exists only for a placed `HasSpotlight=yes`
 /// building.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BuildingLight {
+pub struct BuildingLight {
     spotlight_capable: bool,
     light: Option<BuildingLightRuntime>,
 }
@@ -86,7 +86,7 @@ impl BuildingLight {
 ///   keep a capturing infantryman's NavCom on an expiring target.
 ///   Construction stamps it ([`Self::stamp_occupier`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct RemovalFacts {
+pub struct RemovalFacts {
     #[serde(default)]
     dirty_rect_eligible: bool,
     #[serde(default)]
@@ -110,13 +110,13 @@ impl RemovalFacts {
     }
 
     /// Install a fixture's dirty-rect fact.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_dirty_rect_eligible_for_test(&mut self, value: bool) {
         self.dirty_rect_eligible = value;
     }
 
     /// Install a fixture's `Occupier=`.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_occupier_for_test(&mut self, value: bool) {
         self.occupier = value;
     }
@@ -130,7 +130,7 @@ impl RemovalFacts {
 /// Native peer CRC64DAB0 omits them; this is also omitted from the shared
 /// Rust peer hash. The separate diagnostic CRC70C270 is not that checksum.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TechnoDiscoveryHistory {
+pub struct TechnoDiscoveryHistory {
     /// `+0x41A`: the current house owns the object.
     owned_by_current_house: bool,
     /// `+0x41B`: the current house has discovered it.
@@ -142,18 +142,18 @@ pub(crate) struct TechnoDiscoveryHistory {
 
 impl TechnoDiscoveryHistory {
     /// `+0x41A`.
-    pub(crate) const fn owned_by_current_house(self) -> bool {
+    pub const fn owned_by_current_house(self) -> bool {
         self.owned_by_current_house
     }
 
     /// `+0x41B`.
-    pub(crate) const fn discovered_by_current_house(self) -> bool {
+    pub const fn discovered_by_current_house(self) -> bool {
         self.discovered_by_current_house
     }
 
     /// `+0x41C`. Discovery and Conceal read the field here; tests read it
     /// through this.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn discovered_by_other_house(self) -> bool {
         self.discovered_by_other_house
     }
@@ -165,25 +165,25 @@ impl TechnoDiscoveryHistory {
     }
 
     /// Install a fixture's owner byte.
-    #[cfg(test)]
-    pub(crate) fn set_owned_by_current_house_for_test(&mut self, owned: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owned_by_current_house_for_test(&mut self, owned: bool) {
         self.owned_by_current_house = owned;
     }
 
     /// Install a fixture's current-house discovered byte.
-    #[cfg(test)]
-    pub(crate) fn set_discovered_by_current_house_for_test(&mut self, discovered: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_discovered_by_current_house_for_test(&mut self, discovered: bool) {
         self.discovered_by_current_house = discovered;
     }
 
     /// Install a fixture's other-house discovered byte.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_discovered_by_other_house_for_test(&mut self, discovered: bool) {
         self.discovered_by_other_house = discovered;
     }
 
     /// A fixture's three bytes.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn for_test(
         owned_by_current_house: bool,
         discovered_by_current_house: bool,
@@ -270,14 +270,14 @@ impl ObjectLifecycle {
     }
 
     /// Install a fixture's IsAlive.
-    #[cfg(test)]
-    pub(crate) fn set_object_alive_for_test(&mut self, alive: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_object_alive_for_test(&mut self, alive: bool) {
         self.object_alive = alive;
     }
 
     /// Install a fixture's InLimbo.
-    #[cfg(test)]
-    pub(crate) fn set_in_limbo_for_test(&mut self, in_limbo: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_limbo_for_test(&mut self, in_limbo: bool) {
         self.in_limbo = in_limbo;
     }
 }
@@ -319,7 +319,7 @@ pub(crate) enum PointerExpiryControl {
 /// and Bullet expiry `0x004684E0`. Source: active gamemd.exe bodies and vtables.
 /// An absent resident field during receiver execution is not an empty map.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct UninitContext<'a> {
+pub struct UninitContext<'a> {
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     rules: Option<&'a RuleSet>,
     registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -329,7 +329,7 @@ pub(crate) struct UninitContext<'a> {
 
 impl<'a> UninitContext<'a> {
     /// A caller's rules and overlay table, with no terrain override.
-    pub(crate) const fn new(
+    pub const fn new(
         rules: Option<&'a RuleSet>,
         registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Self {
@@ -342,7 +342,7 @@ impl<'a> UninitContext<'a> {
         }
     }
 
-    pub(crate) const fn with_rules(rules: &'a RuleSet) -> Self {
+    pub const fn with_rules(rules: &'a RuleSet) -> Self {
         Self::new(Some(rules), None)
     }
 
@@ -365,7 +365,7 @@ impl<'a> UninitContext<'a> {
     /// Preserve the current frame's synchronous sound boundary through nested
     /// lifecycle receivers. It borrows the caller; no callback survives the
     /// enclosing frame or becomes simulation state.
-    pub(crate) const fn with_effects(self, effects: FrameEffects<'a>) -> Self {
+    pub const fn with_effects(self, effects: FrameEffects<'a>) -> Self {
         Self { effects, ..self }
     }
 
@@ -406,13 +406,13 @@ impl<'a> UninitContext<'a> {
         self.terrain
     }
 
-    pub(crate) const fn rules(self) -> Option<&'a RuleSet> {
+    pub const fn rules(self) -> Option<&'a RuleSet> {
         self.rules
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PlacementEvidence {
+pub enum PlacementEvidence {
     RejectedEarly,
     MarkFailed,
     MarkSucceeded,
@@ -549,10 +549,10 @@ pub(super) fn building_base_reservation_repair_rect(
 
 /// A caller's placement coordinate. Reuse the Location representation so a
 /// native CoordStruct can retain its exact Z independently of height levels.
-pub(crate) type RevealPosition = crate::sim::components::Position;
+pub type RevealPosition = crate::sim::components::Position;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct RevealRequest {
+pub struct RevealRequest {
     pub position: RevealPosition,
     pub placement: PlacementEvidence,
     /// Caller-supplied result of the still-blocked native type/mode gate.
@@ -560,21 +560,21 @@ pub(crate) struct RevealRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RevealFailure {
+pub enum RevealFailure {
     MissingObject,
     RejectedEarly,
     MarkFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RevealOutcome {
+pub enum RevealOutcome {
     Revealed { logic_registered: bool },
     AlreadyRevealed,
     Failed(RevealFailure),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ConcealOutcome {
+pub enum ConcealOutcome {
     Concealed,
     AlreadyConcealed,
     MissingOrDead,
@@ -583,7 +583,7 @@ pub(crate) enum ConcealOutcome {
 /// Release-visible lifecycle handoffs.  Consumers may be temporarily no-op,
 /// but the stream preserves the verified native relative ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LifecycleOutput {
+pub enum LifecycleOutput {
     /// NodeDelete6380A6 captures its FIRST member successor before removal;
     ///6380EE updates only the local house retained presentation highlight.
     PlanningNodeDeleted {
@@ -673,9 +673,9 @@ pub(crate) enum LifecycleOutput {
     },
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LifecycleTestEvent {
+pub enum LifecycleTestEvent {
     RevealLimboCleared,
     RevealCoordinatesCommitted,
     MarkPut,
@@ -846,18 +846,18 @@ pub(crate) enum LifecycleTestEvent {
 }
 
 impl Simulation {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn trace_lifecycle_for_test(&mut self, event: LifecycleTestEvent) {
         self.lifecycle_test_events.push(event);
     }
 
-    #[cfg(test)]
-    pub(crate) fn lifecycle_test_events_for_test(&self) -> &[LifecycleTestEvent] {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn lifecycle_test_events_for_test(&self) -> &[LifecycleTestEvent] {
         &self.lifecycle_test_events
     }
 
-    #[cfg(test)]
-    pub(crate) fn clear_lifecycle_test_events_for_test(&mut self) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn clear_lifecycle_test_events_for_test(&mut self) {
         self.lifecycle_test_events.clear();
     }
 
@@ -977,8 +977,8 @@ impl Simulation {
 
     /// Compatibility convenience for already-admitted current-position callers.
     /// It still executes the complete result-bearing Reveal transaction.
-    #[cfg(test)]
-    pub(crate) fn reveal(&mut self, stable_id: u64) -> RevealOutcome {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn reveal(&mut self, stable_id: u64) -> RevealOutcome {
         if self.substrate.anims.contains_key(stable_id) {
             let registered = self.reveal_anim(stable_id, None, true);
             return RevealOutcome::Revealed {
@@ -1058,7 +1058,7 @@ impl Simulation {
 
     /// ObjectClass::Reveal: clear limbo for the attempt, commit coordinates,
     /// Mark(PUT), expose display, then append eligible LogicClass membership.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn try_reveal_entity(
         &mut self,
         stable_id: u64,
@@ -1101,7 +1101,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.in_limbo = false;
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RevealLimboCleared);
 
         // Foot4D9C60 adjusts query-local height/list pointers. OnBridge and
@@ -1131,10 +1131,10 @@ impl Simulation {
         if let Some(rules) = context.rules {
             self.reposition_building_anim_slots(stable_id, rules);
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RevealCoordinatesCommitted);
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::MarkPut);
         if request.placement == PlacementEvidence::MarkFailed {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
@@ -1184,7 +1184,7 @@ impl Simulation {
             entity
                 .body_facing
                 .snap(u16::from(facing) << 8, self.session.binary_frame);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::UnlimboBodyFacingSnapped);
         }
         // The barrel elevation writes follow the body snap (`0x006F6DC3`).
@@ -1206,7 +1206,7 @@ impl Simulation {
                 .get(stable_id)
                 .is_some_and(|entity| entity.lifecycle.object_alive)
         {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             if context.requested_facing.is_some() {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::UnlimboIdleMode);
             }
@@ -1416,7 +1416,7 @@ impl Simulation {
                     terrain,
                     self.path_grid.as_deref(),
                 );
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
             }
         }
@@ -1480,7 +1480,7 @@ impl Simulation {
         self.submit_entity_display(stable_id, context.rules, context.terrain());
         self.lifecycle_outputs
             .push(LifecycleOutput::RevealDisplay { stable_id });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
         let logic_registered = if request.logic_eligible {
@@ -1756,7 +1756,7 @@ impl Simulation {
             .base_plan
             .fill_successful_building(type_index, packed_cell, has_undeploy_target)
             .is_some();
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if _filled {
             self.trace_lifecycle_for_test(LifecycleTestEvent::BasePlanFilled { stable_id });
         }
@@ -1875,7 +1875,7 @@ impl Simulation {
                     .add(rx, ry, stable_id, layer, None, insertion);
                 self.discover_cell_put_object(stable_id, (rx, ry), context);
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);
             if layer == crate::sim::movement::locomotor::MovementLayer::Ground
                 && hidden_profile.is_some_and(|profile| {
@@ -1887,7 +1887,7 @@ impl Simulation {
                     )
                 })
             {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::HiddenOccupationEntered);
             }
             for &(rx, ry) in &cells {
@@ -1895,12 +1895,12 @@ impl Simulation {
                     .raw_cell_occupation
                     .mark_ground(rx, ry, BUILDING_OCCUPATION_BIT);
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             if !cells.is_empty() {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
             }
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::CellMarked);
         // Building Mark43F180 -> PlaceDown5683C0 publishes AddContent and
         // Cell Recalc47D2B0 before returning. Keep the derived path view at
@@ -1980,7 +1980,7 @@ impl Simulation {
         if !repair_only {
             self.update_base_reservation_perimeter_after_mark(owner, house_index, rect, context);
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::BaseReservationMarked);
         true
     }
@@ -2137,7 +2137,7 @@ impl Simulation {
             rect,
             house_index,
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::BaseReservationCleared);
 
         // The native repair scan happens while this building is still linked in
@@ -2204,7 +2204,7 @@ impl Simulation {
                     .occupancy
                     .remove_on_layer(rx, ry, stable_id, layer);
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListUnlinked);
             if layer == crate::sim::movement::locomotor::MovementLayer::Ground
                 && hidden_profile.is_some_and(|profile| {
@@ -2216,7 +2216,7 @@ impl Simulation {
                     )
                 })
             {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::HiddenOccupationExited);
             }
             for &(rx, ry) in &cells {
@@ -2224,7 +2224,7 @@ impl Simulation {
                     .raw_cell_occupation
                     .clear_ground(rx, ry, BUILDING_OCCUPATION_BIT);
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             if !cells.is_empty() {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
             }
@@ -2346,8 +2346,8 @@ impl Simulation {
     /// Fixture boundary: puts a fixture object on the map and marks it
     /// (idempotent). Fixtures are constructed in Limbo, which Mark refuses
     /// (`0x005F5854`), so this clears InLimbo first.
-    #[cfg(test)]
-    pub(crate) fn add_entity_occupancy(&mut self, stable_id: u64) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn add_entity_occupancy(&mut self, stable_id: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.in_limbo = false;
         }
@@ -2356,7 +2356,7 @@ impl Simulation {
 
     /// Fixture boundary; common lifecycle code calls the private unmark
     /// transaction instead.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn remove_entity_occupancy(&mut self, stable_id: u64) {
         self.unmark_entity_remove(stable_id, UninitContext::default());
     }
@@ -2759,10 +2759,10 @@ impl Simulation {
         if self.substrate.logic.try_push(stable_id).is_err() {
             return false;
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::LogicAppended);
         self.set_logic_membership_flag(stable_id, kind, true);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::LogicMembershipSet);
         true
     }
@@ -2784,14 +2784,14 @@ impl Simulation {
 
     /// Test-only access to the exact LogicVector helper ordering. Returns the
     /// dispatch outcome so order/gate tests can assert it directly.
-    #[cfg(test)]
-    pub(crate) fn register_live_object(&mut self, stable_id: u64) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn register_live_object(&mut self, stable_id: u64) -> bool {
         self.register_logic_object(stable_id)
     }
 
     /// Test-only access to the exact LogicVector helper ordering. Returns the
     /// dispatch outcome so order/gate tests can assert it directly.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn unregister_live_object(&mut self, stable_id: u64) -> bool {
         self.unregister_logic_object(stable_id)
     }
@@ -2892,7 +2892,7 @@ impl Simulation {
         self.register_logic_object(stable_id)
     }
 
-    pub(crate) fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {
+    pub fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {
         if self.projectiles.get(stable_id).is_none() {
             return false;
         }
@@ -2925,11 +2925,7 @@ impl Simulation {
     ///
     /// gamemd-derived: active YR `DrainDeferredFinalizationQueue @ 0x00725C70`
     /// performs scalar destruction/freeing only after the frame commit.
-    pub(crate) fn retire_non_entity_object(
-        &mut self,
-        stable_id: u64,
-        context: UninitContext<'_>,
-    ) -> bool {
+    pub fn retire_non_entity_object(&mut self, stable_id: u64, context: UninitContext<'_>) -> bool {
         let represented = matches!(
             self.classify_object(stable_id),
             Some(ObjectKind::Terrain | ObjectKind::Projectile | ObjectKind::Wave)
@@ -2951,7 +2947,7 @@ impl Simulation {
         self.detach_custom_sound(stable_id);
         let _ = self.unregister_non_entity_object(stable_id);
         self.substrate.pending_delete.queue_object(stable_id);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
         true
     }
@@ -3027,8 +3023,8 @@ impl Simulation {
 
     /// Compatibility dispatch which keeps AnimClass logic-only and routes every
     /// GameEntity through the complete common Object Conceal transaction.
-    #[cfg(test)]
-    pub(crate) fn conceal(&mut self, stable_id: u64) -> ConcealOutcome {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn conceal(&mut self, stable_id: u64) -> ConcealOutcome {
         if self.substrate.anims.contains_key(stable_id) {
             return if self.conceal_anim(stable_id) {
                 ConcealOutcome::Concealed
@@ -3047,8 +3043,8 @@ impl Simulation {
     }
 
     /// ObjectClass::Conceal represented order. Conceal does not mutate Alive.
-    #[cfg(test)]
-    pub(crate) fn object_conceal(&mut self, stable_id: u64) -> ConcealOutcome {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn object_conceal(&mut self, stable_id: u64) -> ConcealOutcome {
         self.object_conceal_with_context(stable_id, UninitContext::default())
     }
 
@@ -3065,12 +3061,12 @@ impl Simulation {
         else {
             return ConcealOutcome::MissingOrDead;
         };
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "test-support")))]
         let _ = object_alive;
         // gamemd-derived: `ObjectClass::Conceal @ 0x005F4D30` tests InLimbo
         // at `0x005F4D45` and returns before Destroy on the already-limbo path.
         if in_limbo {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealAlreadyLimboReturn {
                 stable_id,
                 object_alive,
@@ -3082,14 +3078,14 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.selection.deselect();
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDeselected);
 
         // gamemd-derived: active YR `ObjectClass::Conceal @ 0x005F4D30`
         // enters `ObjectClass::Detach_All(1) @ 0x005F5280` after deselection and
         // before `Mark(REMOVE)`, so the expiry broadcast observes the target
         // alive, resolvable, and still cell-marked.
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             let (object_alive, cell_marked) = self
                 .substrate
@@ -3129,29 +3125,29 @@ impl Simulation {
         self.notify_pointer_expired(stable_id, context);
 
         if self.unmark_entity_remove(stable_id, context) {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealUnmarked);
         }
 
         self.substrate.display.remove(stable_id);
         self.lifecycle_outputs
             .push(LifecycleOutput::DisplayRemove { stable_id });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDisplayBoundary);
         self.lifecycle_outputs
             .push(LifecycleOutput::DetachAttachedAnims { stable_id });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealAnimBoundary);
         // ObjectConceal5F4D81 hard-stops the AmbientSound handle (+3C) and
         //5F4D89 detaches the custom-sound handle (+50): `object_sound`.
         // They are separate from Foot+544/Anim+1A0/Building+6A0.
         self.object_sound_conceal(stable_id, context.rules());
         context.effects().flush_sound(self, context.rules());
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealVocBoundary);
 
         if self.unregister_logic_object(stable_id) {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealLogicRemoved);
         }
 
@@ -3163,12 +3159,12 @@ impl Simulation {
         if dirty_rect_eligible {
             self.lifecycle_outputs
                 .push(LifecycleOutput::DirtyTacticalRect { stable_id });
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDirtyTacticalRectBoundary);
         }
         self.lifecycle_outputs
             .push(LifecycleOutput::ClearDrawnState { stable_id });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearDrawnStateBoundary);
 
         // ObjectConceal5F4E98 invokes vt+0x11C here, before +81 Limbo is set
@@ -3180,11 +3176,11 @@ impl Simulation {
             // the remaining building-count/base-node teardown.
             entity.building_light.destroy_light();
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealLimboSet);
         self.lifecycle_outputs
             .push(LifecycleOutput::ClearRedraw { stable_id });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearRedrawBoundary);
         ConcealOutcome::Concealed
     }
@@ -3214,12 +3210,12 @@ impl Simulation {
 
     /// TechnoClass Limbo sends synchronous BREAK to every contact before the
     /// common Object Conceal transaction.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn techno_limbo(&mut self, stable_id: u64) -> ConcealOutcome {
         self.techno_limbo_with_context(stable_id, UninitContext::default())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn techno_limbo_with_rules(
         &mut self,
         stable_id: u64,
@@ -3229,7 +3225,7 @@ impl Simulation {
         self.techno_limbo_with_context(stable_id, UninitContext::new(Some(rules), registry))
     }
 
-    pub(crate) fn techno_limbo_with_context(
+    pub fn techno_limbo_with_context(
         &mut self,
         stable_id: u64,
         context: UninitContext<'_>,
@@ -3575,16 +3571,16 @@ impl Simulation {
                 }
             }
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyRadioBreakCompleted { stable_id });
 
         if let Some(target) = self.substrate.entities.get_mut(stable_id) {
             target.selection.deselect();
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyDeselected { stable_id });
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyNotifyBoundary { stable_id });
         self.notify_pointer_expired(stable_id, context);
     }
@@ -3644,7 +3640,7 @@ impl Simulation {
             // `0x00442586`: the truncated length against 0x100.
             let far = d.iter().map(|v| v * v).sum::<i64>() >= 0x100 * 0x100;
             if far && !helipad {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::BuildingNowDeadRunAway {
                     building_id,
                     contact_id: contact,
@@ -3846,7 +3842,7 @@ impl Simulation {
         // Building43BDC5 clears them only at deferred scalar destruction.
         self.record_destruction_once(stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(self, stable_id);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });
     }
 
@@ -3959,7 +3955,7 @@ impl Simulation {
     }
 
     /// Each RNG stream's cursor, which every draw moves.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn rng_cursors(&self) -> [(u8, i32, i32); 3] {
         [
             self.scenario_rng.logical_state(),
@@ -3980,7 +3976,7 @@ impl Simulation {
     /// construction order. Of the entities, it lists `entities` (ascending).
     /// Test builds visit this roster; production builds visit the listeners
     /// the expiry index finds, in the same order.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn removal_listener_order(&self, entities: Vec<u64>) -> Vec<(u64, ObjectKind)> {
         let mut listeners = Vec::with_capacity(
             self.substrate.entities.len()
@@ -4133,7 +4129,7 @@ impl Simulation {
             }
 
             let _ = restored;
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             if let TargetKind::Entity(detach_id) = target {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::DetachTargetingSweepVisited {
                     detach_id,
@@ -4567,7 +4563,7 @@ impl Simulation {
             return;
         }
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(tree) = self.production.terrain_objects.get(&expired_id) {
             self.trace_lifecycle_for_test(LifecycleTestEvent::TerrainExpiryBoundary {
                 stable_id: expired_id,
@@ -4625,7 +4621,7 @@ impl Simulation {
     ///
     /// The victim's FootClass parasite forward is control-insensitive too, so a
     /// cloaking host releases its parasite; the rules place the released owner.
-    pub(crate) fn detach_all_pointer_expired(
+    pub fn detach_all_pointer_expired(
         &mut self,
         expired_id: u64,
         rules: &RuleSet,
@@ -4873,7 +4869,7 @@ impl Simulation {
             return;
         };
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self
             .smudge_grid
             .as_ref()
@@ -4943,7 +4939,7 @@ impl Simulation {
                 .and_then(|type_id| context.rules()?.projectile(self.interner.resolve(type_id)))
                 .is_some_and(|kind| kind.scalable)
             && self.projectiles.scalable_enrolled(expired_id);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         let listeners: Vec<(u64, ObjectKind, bool)> = {
             let found: std::collections::BTreeSet<u64> = acting.iter().map(|&(id, _)| id).collect();
             self.removal_listener_order(self.substrate.entities.keys_sorted())
@@ -4951,7 +4947,7 @@ impl Simulation {
                 .map(|(id, kind)| (id, kind, found.contains(&id)))
                 .collect()
         };
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "test-support")))]
         let listeners: Vec<(u64, ObjectKind, bool)> = {
             let mut listeners: Vec<(u64, ObjectKind, bool)> = acting
                 .into_iter()
@@ -5005,14 +5001,14 @@ impl Simulation {
             if !present {
                 continue;
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             assert!(
                 !entity_acts || found,
                 "listener {listener_id} came to hold {expired_id} during its expiry broadcast; \
                  production builds leave it out"
             );
 
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             if control == PointerExpiryControl::Uninit {
                 let (target_alive, target_in_limbo) = self
                     .substrate
@@ -5056,10 +5052,10 @@ impl Simulation {
                 // the game passes over them. Test builds visit them as well,
                 // and check below that their forwards handed out no entity and
                 // drew no random number.
-                if !entity_acts && !cfg!(test) {
+                if !entity_acts && !cfg!(any(test, feature = "test-support")) {
                     continue;
                 }
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 let passed_over = (!entity_acts)
                     .then(|| (self.substrate.entities.hand_outs(), self.rng_cursors()));
                 self.notify_entity_pointer_expired(
@@ -5150,7 +5146,7 @@ impl Simulation {
                     context.rules(),
                     context.effects(),
                 );
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 if let Some(before) = passed_over {
                     assert_eq!(
                         before,
@@ -5201,7 +5197,7 @@ impl Simulation {
                     "the expiry of {expired_id} changed bullet {listener_id}, which the expiry \
                      index passes over"
                 );
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 if let Some((source_id, target)) = self
                     .projectiles
                     .get(listener_id)
@@ -5259,12 +5255,12 @@ impl Simulation {
         self.uninit_with_context(stable_id, UninitContext::default());
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn uninit_with_rules(&mut self, stable_id: u64, rules: &RuleSet) {
         self.uninit_with_context(stable_id, UninitContext::with_rules(rules));
     }
 
-    pub(crate) fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
+    pub fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
         self.planning_detach_actor(stable_id);
         if self
             .smudge_grid
@@ -5280,7 +5276,7 @@ impl Simulation {
             self.notify_pointer_expired(stable_id, context);
             self.smudge_grid.as_mut().unwrap().finish_uninit(stable_id);
             self.substrate.pending_delete.queue_object(stable_id);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
             return;
         }
@@ -5328,7 +5324,7 @@ impl Simulation {
         // (`0x005F660D`).
         self.kill_passengers(stable_id, None, context);
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             let (object_alive, cell_marked) = self
                 .substrate
@@ -5353,17 +5349,17 @@ impl Simulation {
             entity.lifecycle.object_alive = false;
             entity.death.begin();
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitAliveCleared { stable_id });
 
         // Native append has no duplicate suppression.  The drain collapses all
         // occurrences when this dead object becomes the selected ready entry.
         self.substrate.pending_delete.queue_object(stable_id);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn despawn_entity(&mut self, stable_id: u64) {
         self.uninit(stable_id);
     }
@@ -5397,7 +5393,7 @@ impl Simulation {
         }
         self.substrate.particle_systems.enter_limbo(stable_id);
         self.substrate.pending_delete.queue_object(stable_id);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
     }
 
@@ -5737,13 +5733,13 @@ impl Simulation {
                 <= 1,
             "object id {stable_id} was removed from multiple stores"
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::FinalizedCommon { stable_id });
     }
 
     /// The rules-less drain of test fixtures (see
     /// [`Self::process_pending_delete_with`]).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn process_pending_delete(&mut self) {
         self.process_pending_delete_with(
             None,
@@ -5762,7 +5758,7 @@ impl Simulation {
     /// is reached from `Main_Tick` at `0x0055DE9F` after the frame commit; it
     /// preserves non-ready entries, collapses selected duplicates, and finalizes
     /// each selected ready object once.
-    pub(crate) fn process_pending_delete_with(
+    pub fn process_pending_delete_with(
         &mut self,
         rules: Option<&RuleSet>,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -5770,7 +5766,7 @@ impl Simulation {
         game_state: i32,
         started: bool,
     ) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteDrainStarted);
         let mut index = 0;
         while let Some(ticket) = self.substrate.pending_delete.ticket(index) {
@@ -5787,7 +5783,7 @@ impl Simulation {
             //725C9A..725CE1 removes every selected duplicate BEFORE virtual
             // destruction, then reexamines the same live logical index.
             self.substrate.pending_delete.remove(ticket);
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::DeferredDeleteSelected { ticket });
             match ticket {
                 DeferredDeleteTicket::Object(id) => {
@@ -5809,8 +5805,8 @@ impl Simulation {
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.
-    #[cfg(test)]
-    pub(crate) fn flush_pending_delete(&mut self) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn flush_pending_delete(&mut self) {
         self.process_pending_delete();
     }
 }

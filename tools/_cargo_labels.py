@@ -281,7 +281,9 @@ def _libtest(binary: Path) -> set[Path]:
         for line in lines:
             name = line.strip()
             harness |= ('4test' in name and 'test_main_static' in name)
-            tests |= ('7vera20k' in name and '5tests' in name)
+            # Legacy mangling prefixes each path segment with its length:
+            # the client crate `vera20k` or the engine crate `vera20k_core`.
+            tests |= (('7vera20k' in name or '12vera20k_core' in name) and '5tests' in name)
         if not harness or not tests:
             raise ValueError(f'Cannot identify VERA Rust libtest symbols: {binary}')
     _stream(command, symbols)
@@ -317,7 +319,8 @@ def _replacement(store: Path, root: Path, value: dict):
             or not re.fullmatch(r'[0-9a-f]{64}', source['source_sha256'])
             or not isinstance(command, list) or command[:2] != ['cargo', 'test']
             or '--lib' not in command or '--no-run' not in command
-            or '-p' not in command or command[command.index('-p') + 1:command.index('-p') + 2] != ['vera20k']):
+            or '-p' not in command
+            or command[command.index('-p') + 1:command.index('-p') + 2] not in (['vera20k'], ['vera20k-core'])):
         raise ValueError('Replacement is not a recorded same-checkout VERA libtest build')
     directory, target, artifacts = preserved_manifest(store, value['label'])
     matches = [entry for entry in artifacts if entry['file'] == value['file']]

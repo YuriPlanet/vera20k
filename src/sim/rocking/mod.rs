@@ -86,7 +86,7 @@ impl RockingState {
 
     /// Parasite629A46 writes sideways angle; ExitUnit62A869 clears it.
     /// Neither writer changes either angular rate.
-    pub(crate) fn set_angle_sideways(&mut self, angle: SimFixed) {
+    pub fn set_angle_sideways(&mut self, angle: SimFixed) {
         self.angle_sideways = fixed_word(angle);
     }
 
@@ -97,15 +97,15 @@ impl RockingState {
         self.vel_sideways = velocity;
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {
         self.angle_forwards = fixed_word(angle);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_vel_sideways_for_test(&mut self, value: SimFixed) {
         self.vel_sideways = fixed_word(value);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_neutral(&self) -> bool {
         self.angles_native()
             .iter()

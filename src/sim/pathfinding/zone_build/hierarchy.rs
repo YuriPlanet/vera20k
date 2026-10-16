@@ -163,7 +163,7 @@ pub(crate) enum LocalHierarchyPatchResult {
 
 /// Existing callers without live bounds retain cached-class admission here.
 /// Their live mode1 wiring is a separate required delivery step.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn incremental_rebuild_zone_hierarchy_around_cell(
     hierarchy: &mut ZoneHierarchy,
     base: &BaseZoneTopology,
@@ -409,7 +409,7 @@ pub(crate) const HIGH_BRIDGE_HIERARCHY_DIRECTIONS: [i8; 16] =
 // Original gamemd582D70, full581F90 / local584550 callers, path walk429780.
 // Evidence: PHASE3_TUBE_HIERARCHY_20260910.md and spatial_oracle/tube_hierarchy.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn register_high_bridge_hierarchy_edges(
     edge_buckets: &mut HierarchyEdgeBuckets,
     zone_ids: &[ZoneId],
@@ -434,7 +434,7 @@ pub(super) fn register_high_bridge_hierarchy_edges(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn register_bridge_hierarchy_edges_for_record(
     edge_buckets: &mut HierarchyEdgeBuckets,
     zone_ids: &[ZoneId],

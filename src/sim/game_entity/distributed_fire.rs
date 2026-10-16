@@ -74,7 +74,7 @@ impl GameEntity {
         &self.distributed_fire.candidates
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn distributed_fire_history(&self) -> &[Option<TargetKind>] {
         &self.distributed_fire.history
     }

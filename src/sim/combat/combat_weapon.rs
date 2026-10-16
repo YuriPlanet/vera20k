@@ -56,7 +56,7 @@ pub enum WeaponSlot {
 }
 
 /// Result of weapon selection: the chosen weapon and its warhead.
-pub(crate) struct SelectedWeapon<'a> {
+pub struct SelectedWeapon<'a> {
     /// Section id of the selected weapon.
     pub weapon_id: &'a str,
     pub weapon: &'a WeaponType,
@@ -69,7 +69,7 @@ pub(crate) struct SelectedWeapon<'a> {
 
 /// Native `AbstractClass::WhatAmI` families the ladder distinguishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TechnoKind {
+pub enum TechnoKind {
     Infantry,
     Unit,
     Aircraft,
@@ -90,7 +90,7 @@ impl TechnoKind {
 /// Attacker-side instance state read by the selection ladder. Type data is
 /// read from the attacker's `ObjectType` separately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AttackerFacts {
+pub struct AttackerFacts {
     pub kind: TechnoKind,
     pub veterancy: u16,
     /// `TechnoClass+0x138 CurrentWeaponNumber` — the gunner slot. Constructor
@@ -137,7 +137,7 @@ pub(crate) enum TargetFlight<'a> {
         rules: &'a RuleSet,
         interner: &'a StringInterner,
     },
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Supplied { high: bool },
 }
 
@@ -164,7 +164,7 @@ impl TargetFlight<'_> {
                 cells,
                 Some((rules, interner)),
             ),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Self::Supplied { high } => high,
         }
     }
@@ -283,7 +283,7 @@ impl TargetFacts<'_> {
 /// vt+0x3F8) as native reads it, so an occupied building answers with its
 /// occupant's weapon. GetFireError asks it through
 /// `FireSubject::weapon_damage_value`.
-pub(crate) fn weapon_damage_value(
+pub fn weapon_damage_value(
     entity: &GameEntity,
     obj: &ObjectType,
     entities: &EntityStore,
@@ -412,7 +412,7 @@ pub(crate) fn secondary_for_tier(obj: &ObjectType, veterancy: u16) -> Option<&st
 /// tests the resolved `WeaponType` pointer where VERA tests whether the slot
 /// names an id, so a type naming a weapon absent from `[WeaponTypes]` is armed
 /// here and unarmed in gamemd — a data-error-only divergence.
-pub(crate) fn is_armed(entity: &GameEntity, obj: &ObjectType) -> bool {
+pub fn is_armed(entity: &GameEntity, obj: &ObjectType) -> bool {
     is_armed_from_facts(obj, attacker_facts(entity, obj))
 }
 
@@ -495,7 +495,7 @@ fn current_weapon_index(obj: &ObjectType, facts: AttackerFacts) -> i32 {
 /// (vt+0x3F8, [`get_weapon`]) of the gunner slot of a `TurretCount>0` type,
 /// slot 0 otherwise, so an occupied building answers its firing occupant's
 /// weapon.
-pub(crate) fn current_weapon<'r>(
+pub fn current_weapon<'r>(
     entity: &GameEntity,
     obj: &'r ObjectType,
     entities: &EntityStore,
@@ -937,7 +937,7 @@ fn open_transport_weapon(in_open_transport: bool, obj: &ObjectType) -> Option<i3
 ///   `MissileSpawn=` child (`0x0054E47D`; any other child crashes). Dormant:
 ///   arms C/D return 0 first for a type without both weapons, as every retail
 ///   `MissileSpawn=` type is.
-pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
+pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
     let kind = TechnoKind::from_category(entity.category());
     let deploy_fire_active = match kind {
         // Infantry5218F3..52190B reads Doing27..30, as predicate522510. The
@@ -1052,7 +1052,7 @@ pub(crate) fn select_weapon_against<'a>(
 
 /// The SelectWeapon owner with a caller-owned native query identity. Input
 /// probes pass an isolated identity; simulation retains the canonical Dummy.
-pub(crate) fn select_weapon_against_in_query<'a>(
+pub fn select_weapon_against_in_query<'a>(
     rules: &'a RuleSet,
     attacker_entity: &GameEntity,
     attacker_obj: &'a ObjectType,
@@ -1194,7 +1194,7 @@ fn occupied_weapon<'r>(
 /// (`TechnoClass::GetWeapon @ 0x0070E140`, [`weapon_for_index`]). Only
 /// `BuildingClass` overrides the slot. The upgrade loop that precedes the
 /// occupied arm is not modelled; see [`is_armed`].
-pub(crate) fn get_weapon<'r>(
+pub fn get_weapon<'r>(
     entity: &GameEntity,
     obj: &'r ObjectType,
     index: i32,

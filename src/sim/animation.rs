@@ -147,25 +147,25 @@ impl Animation {
     }
 
     /// Install a fixture's sequence.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_sequence_for_test(&mut self, sequence: SequenceKind) {
         self.sequence = sequence;
     }
 
     /// Install a fixture's frame.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_frame_index_for_test(&mut self, frame_index: u16) {
         self.frame_index = frame_index;
     }
 
     /// Install a fixture's elapsed frames.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_elapsed_frames_for_test(&mut self, elapsed_frames: u16) {
         self.elapsed_frames = elapsed_frames;
     }
 
     /// Install a fixture's HoldLast end.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_finished_for_test(&mut self, finished: bool) {
         self.finished = finished;
     }
@@ -174,7 +174,7 @@ impl Animation {
 /// Whether a sequence represents the infantry being in a prone stance.
 ///
 /// This is a temporary stance proxy until the sim carries an explicit prone bit.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn sequence_is_prone(sequence: SequenceKind) -> bool {
     matches!(
         sequence,
@@ -300,13 +300,13 @@ fn resolve_shp_frame_parts(
 /// increment wraps.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct BodyFrameCounter {
+pub struct BodyFrameCounter {
     value: u32,
 }
 
 impl BodyFrameCounter {
     /// The counter.
-    pub(crate) const fn get(self) -> u32 {
+    pub const fn get(self) -> u32 {
         self.value
     }
 
@@ -316,8 +316,8 @@ impl BodyFrameCounter {
     }
 
     /// Install a fixture's counter.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, value: u32) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, value: u32) {
         self.value = value;
     }
 }
@@ -573,7 +573,7 @@ fn tick_animations_impl(
     dying_finished
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn tick_animations(
     entities: &mut crate::sim::entity_store::EntityStore,
     sequences: &BTreeMap<String, SequenceSet>,

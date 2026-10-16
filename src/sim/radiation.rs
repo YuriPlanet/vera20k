@@ -179,7 +179,7 @@ fn for_each_square_cell(
 impl RadiationState {
     /// A native component fixture supplies retained site words without
     /// claiming to have executed a detonation or field activation.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_retained_site_for_test(site: RadSite) -> Self {
         Self {
             creation_order: vec![site.center],
@@ -384,7 +384,7 @@ impl RadiationState {
     /// - Frequency: every structure and bridge death.
     /// - Downstream risk: it spawns damage events from the animation pass, so it
     ///   needs the same ordering care as any other non-combat damage commit.
-    pub(crate) fn apply_detonation(
+    pub fn apply_detonation(
         &mut self,
         det: RadDetonation,
         frame: u32,

@@ -124,5 +124,5 @@ repository root:
 
 ```sh
 PYTHONPATH=. python -m tools.rules_oracle.read_double_percent --check
-VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k --lib -- rules::read_double_percent_tests:: sim::combat::prone_damage_tests::
+VERA20K_REQUIRE_RETAIL_INI=1 cargo test -p vera20k-core --lib -- rules::read_double_percent_tests:: sim::combat::prone_damage_tests::
 ```

@@ -271,8 +271,8 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 ];
 
 impl AssetManager {
-    #[cfg(test)]
-    pub(crate) fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
         let mut manager = Self {
             archives: Vec::new(),
             archive_catalog: Vec::new(),
@@ -547,7 +547,7 @@ impl AssetManager {
     ///
     /// Retail constructs the MD archive first and returns immediately when
     /// either archive is unavailable.
-    pub(crate) fn register_loading_archives(&mut self) -> Result<bool, AssetError> {
+    pub fn register_loading_archives(&mut self) -> Result<bool, AssetError> {
         if !self.mount_named_archive("loadmd.mix", false)? {
             return Ok(false);
         }
@@ -563,7 +563,7 @@ impl AssetManager {
     /// first and returns immediately when it is unavailable, then constructs
     /// `NEUTRAL.MIX`. Their registration order makes MD duplicates win retail's
     /// first-match archive scan.
-    pub(crate) fn register_neutral_archives(&mut self) -> Result<bool, AssetError> {
+    pub fn register_neutral_archives(&mut self) -> Result<bool, AssetError> {
         if !self.mount_named_archive("ntrlmd.mix", false)? {
             return Ok(false);
         }
@@ -635,7 +635,7 @@ impl AssetManager {
     /// Native Load67E440 is not globally atomic; this is VERA's candidate
     /// admission policy. Resident archive bytes and the explicitly process-
     /// sticky LoadFileFromMIX cache survive both outcomes.
-    pub(crate) fn prepare_saved_load<T, E>(
+    pub fn prepare_saved_load<T, E>(
         &mut self,
         prepare: impl FnOnce(&mut Self) -> Result<T, E>,
     ) -> Result<T, E> {
@@ -1221,17 +1221,20 @@ fn archive_lookup_keys(name: &str) -> Vec<String> {
     keys
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Install-directory fixtures, shared with client tests through `test-support`.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    use crate::assets::mix_hash::mix_hash;
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
-    struct TestDirectory(PathBuf);
+    pub struct TestDirectory(PathBuf);
 
     impl TestDirectory {
-        fn new(label: &str) -> Self {
+        pub fn new(label: &str) -> Self {
             let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
                 "vera20k-asset-manager-{label}-{}-{sequence}",
@@ -1241,11 +1244,11 @@ mod tests {
             Self(path)
         }
 
-        fn path(&self) -> &Path {
+        pub fn path(&self) -> &Path {
             &self.0
         }
 
-        fn write_mix(&self, archive_name: &str, entry_name: &str, body: &[u8]) {
+        pub fn write_mix(&self, archive_name: &str, entry_name: &str, body: &[u8]) {
             let path = self.0.join(archive_name);
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent).expect("create archive parent");
@@ -1261,21 +1264,7 @@ mod tests {
         }
     }
 
-    fn empty_manager(ra2_dir: &Path) -> AssetManager {
-        AssetManager {
-            archives: Vec::new(),
-            archive_catalog: Vec::new(),
-            lookup_index: HashMap::new(),
-            mix_file_cache: Mutex::new(HashMap::new()),
-            loose_files: AssetManager::open_loose_root(ra2_dir).expect("open loose test root"),
-            audio_pair: SelectedAudioPair::default(),
-            active_theater: None,
-            active_theater_archives: Vec::new(),
-            ra2_dir: ra2_dir.to_path_buf(),
-        }
-    }
-
-    fn make_new_format_mix_bytes(name: &str, body: &[u8]) -> Vec<u8> {
+    pub fn make_new_format_mix_bytes(name: &str, body: &[u8]) -> Vec<u8> {
         let mut data = Vec::new();
         let entry_id = mix_hash(name);
 
@@ -1290,12 +1279,7 @@ mod tests {
         data
     }
 
-    fn make_new_format_mix(name: &str, body: &[u8]) -> MixArchive {
-        MixArchive::from_bytes(make_new_format_mix_bytes(name, body))
-            .expect("new-format test mix should parse")
-    }
-
-    fn audio_test_install(label: &str) -> TestDirectory {
+    pub fn audio_test_install(label: &str) -> TestDirectory {
         let dir = TestDirectory::new(label);
         for name in [
             "ra2md.mix",
@@ -1317,7 +1301,7 @@ mod tests {
         dir
     }
 
-    fn write_audio_archive(dir: &TestDirectory, name: &str, idx: &[u8], bag: &[u8]) {
+    pub fn write_audio_archive(dir: &TestDirectory, name: &str, idx: &[u8], bag: &[u8]) {
         std::fs::write(
             dir.path().join(name),
             crate::map::source::test_support::make_new_format_mix_bytes(&[
@@ -1327,11 +1311,38 @@ mod tests {
         )
         .expect("write audio archive");
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::{
+        TestDirectory, audio_test_install, make_new_format_mix_bytes, write_audio_archive,
+    };
+    use super::*;
+
+    fn empty_manager(ra2_dir: &Path) -> AssetManager {
+        AssetManager {
+            archives: Vec::new(),
+            archive_catalog: Vec::new(),
+            lookup_index: HashMap::new(),
+            mix_file_cache: Mutex::new(HashMap::new()),
+            loose_files: AssetManager::open_loose_root(ra2_dir).expect("open loose test root"),
+            audio_pair: SelectedAudioPair::default(),
+            active_theater: None,
+            active_theater_archives: Vec::new(),
+            ra2_dir: ra2_dir.to_path_buf(),
+        }
+    }
+
+    fn make_new_format_mix(name: &str, body: &[u8]) -> MixArchive {
+        MixArchive::from_bytes(make_new_format_mix_bytes(name, body))
+            .expect("new-format test mix should parse")
+    }
 
     #[test]
     fn audio_pair_cannot_appear_from_a_later_bulk_mount() {
         let dir = audio_test_install("late-audio");
-        let idx = crate::assets::audio_bag::tests::build_idx(&[("late", 0, 2, 22050, 4)]);
+        let idx = crate::assets::audio_bag::test_support::build_idx(&[("late", 0, 2, 22050, 4)]);
         write_audio_archive(&dir, "conqmd.mix", &idx, &[1, 2]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
         assert!(
@@ -1383,7 +1394,8 @@ mod tests {
     fn audio_pair_members_select_independently_and_keep_consumed_loose_bytes() {
         for loose_idx in [false, true] {
             let dir = audio_test_install("split-audio");
-            let idx = crate::assets::audio_bag::tests::build_idx(&[("sample", 0, 2, 22050, 4)]);
+            let idx =
+                crate::assets::audio_bag::test_support::build_idx(&[("sample", 0, 2, 22050, 4)]);
             let bag = [1, 2];
             let (loose_name, loose_bytes, mixed_name, mixed_bytes): (&str, &[u8], &str, &[u8]) =
                 if loose_idx {
@@ -1425,60 +1437,10 @@ mod tests {
     }
 
     #[test]
-    fn audio_archive_fallback_is_whole_pair_and_diagnostics_can_override_it() {
-        let dir = audio_test_install("audio-fallback");
-        let md = crate::assets::audio_bag::tests::build_idx(&[("md_only", 0, 2, 22050, 4)]);
-        let base = crate::assets::audio_bag::tests::build_idx(&[("base_only", 0, 2, 22050, 4)]);
-        write_audio_archive(&dir, "audiomd.mix", &md, &[1, 2]);
-        let base_archive = crate::map::source::test_support::make_new_format_mix_bytes(&[
-            ("audio.idx", &base),
-            ("audio.bag", &[3, 4]),
-        ]);
-        dir.write_mix("ra2.mix", "audio.mix", &base_archive);
-        std::fs::write(dir.path().join("custom.idx"), &base).unwrap();
-        std::fs::write(dir.path().join("custom.bag"), [3, 4]).unwrap();
-        let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        let loaded = manager.load_audio_index().unwrap().unwrap();
-        assert!(loaded.index.get("md_only").is_some());
-        assert!(loaded.index.get("base_only").is_none());
-        let explicit = crate::asset_tools::verb_sound::bag_ls(
-            &manager,
-            &crate::asset_tools::verb_sound::SoundOptions {
-                bag: Some("audio".to_owned()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        assert_eq!(explicit.entry_count, 1);
-        assert!(explicit.entries[0].name.eq_ignore_ascii_case("base_only"));
-        assert_eq!(
-            explicit.sources.unwrap().idx.source_archive,
-            "ra2.mix -> audio.mix"
-        );
-        let custom = crate::asset_tools::verb_sound::bag_ls(
-            &manager,
-            &crate::asset_tools::verb_sound::SoundOptions {
-                bag: Some("custom".to_owned()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        assert_eq!(custom.entry_count, 1);
-        assert_eq!(
-            custom.sources.unwrap().bag.source_sha256,
-            crate::util::sha256::sha256_hex(&[3, 4])
-        );
-        std::fs::remove_file(dir.path().join("audiomd.mix")).unwrap();
-        let fallback = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        let loaded = fallback.load_audio_index().unwrap().unwrap();
-        assert!(loaded.index.get("base_only").is_some());
-        assert_eq!(loaded.sources.idx.source_archive, "ra2.mix -> audio.mix");
-    }
-
-    #[test]
     fn malformed_selected_audio_index_does_not_retry_base_archive() {
         let dir = audio_test_install("invalid-audio");
-        let base = crate::assets::audio_bag::tests::build_idx(&[("base_only", 0, 2, 22050, 4)]);
+        let base =
+            crate::assets::audio_bag::test_support::build_idx(&[("base_only", 0, 2, 22050, 4)]);
         write_audio_archive(&dir, "audiomd.mix", b"truncated", &[1, 2]);
         write_audio_archive(&dir, "audio.mix", &base, &[3, 4]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();

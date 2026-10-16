@@ -197,7 +197,7 @@ pub fn test_intern(s: &str) -> InternedId {
 
 /// Get a copy of the thread-local test interner for use in test assertions
 /// that need to resolve IDs back to strings.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn test_interner() -> StringInterner {
     TEST_INTERNER.with(|cell| cell.borrow().clone())

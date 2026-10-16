@@ -69,8 +69,15 @@ mod tests {
                     width: 1,
                     height: 1,
                     valid: true,
+                    in_build_area: true,
+                    foundation_visible: true,
                     reason: None,
-                    cell_valid: vec![true],
+                    cells: vec![crate::sim::production::BuildingPlacementCell {
+                        coord: (10, 11),
+                        valid: true,
+                        level: 0,
+                        slope: 0,
+                    }],
                     wall_autofill_cells: vec![],
                 });
             input.minimap_dragging = true;
@@ -134,8 +141,15 @@ mod tests {
                     width: 1,
                     height: 1,
                     valid: true,
+                    in_build_area: true,
+                    foundation_visible: true,
                     reason: None,
-                    cell_valid: vec![true],
+                    cells: vec![crate::sim::production::BuildingPlacementCell {
+                        coord: (10, 11),
+                        valid: true,
+                        level: 0,
+                        slope: 0,
+                    }],
                     wall_autofill_cells: vec![],
                 });
             // All three latches the swallowed release used to strand.

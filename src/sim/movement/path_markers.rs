@@ -19,12 +19,12 @@
 //! Executed native inputs/costs: `tools/spatial_oracle/astar_hills_markers.json`.
 
 use std::borrow::Cow;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware};
 use crate::sim::components::FootPathQueue;
@@ -52,7 +52,7 @@ pub(super) struct BridgeMarkerPeer {
 
 /// Synthetic peer facts for focused marker tests. Production reads only the
 /// live object-list peers; this ID lookup does not change list order.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Default)]
 pub(super) struct BridgeMarkerPeerSnapshot {
     peers: BTreeMap<u64, BridgeMarkerPeer>,
@@ -63,7 +63,7 @@ pub(super) trait BridgeMarkerPeerLookup {
     fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>>;
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl BridgeMarkerPeerLookup for BridgeMarkerPeerSnapshot {
     fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>> {
         self.peers.get(&entity_id).map(Cow::Borrowed)
@@ -123,7 +123,7 @@ pub(super) struct BridgeMarkerSearch {
     /// Urgency actually supplied to A*.  Retail downgrades urgency 1 to zero
     /// when no eligible peer path was replayed, before the raw-byte phase.
     pub effective_urgency: u8,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     processed_peer_path: bool,
 }
 
@@ -309,7 +309,7 @@ pub(super) fn install_path_replay(
 
 /// Fixture queue for a found route, written by the production install from
 /// `path[0]`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn fixture_path_replay(path: &[(u16, u16)]) -> FootPathQueue {
     let mut queue = FootPathQueue::default();
     if let Some(&start) = path.first() {
@@ -399,7 +399,7 @@ pub(super) fn bridge_marker_peer(
 }
 
 /// O(entities), used only by focused tests.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn snapshot_bridge_marker_peers(
     entities: &EntityStore,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -624,7 +624,7 @@ pub(super) fn build_bridge_passability_search(
         return BridgeMarkerSearch {
             overlay: SearchMarkerOverlay::new(),
             effective_urgency: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             processed_peer_path,
         };
     }
@@ -646,7 +646,7 @@ pub(super) fn build_bridge_passability_search(
     BridgeMarkerSearch {
         overlay,
         effective_urgency: requested_urgency,
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         processed_peer_path,
     }
 }

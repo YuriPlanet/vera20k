@@ -43,12 +43,12 @@ Reproduce from the checkout with retail INIs/assets configured. All Cargo comman
 use `python -m tools.cargo_run --`; all tests use `--lib`:
 
 ```sh
-VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k --lib
-VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- clippy -p vera20k --lib
+VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test --workspace --lib
+VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- clippy --workspace --lib
 python -m tools.spatial_oracle.engineer_bridge_cursor_caller --check
 python -m tools.spatial_oracle.bridge_repair_query --check
 python -m tools.cargo_run -- test -p vera20k --lib hut_input_reaches_engineer_entry_and_publication -- --ignored
-python -m tools.cargo_run -- test -p vera20k --lib damage_repair_and_restore_publish_navigation -- --ignored
+python -m tools.cargo_run -- test -p vera20k-core --lib damage_repair_and_restore_publish_navigation -- --ignored
 python -m tools.cargo_run -- test -p vera20k --lib ordinary_bridge_gpu_tests:: -- --ignored
 ```
 

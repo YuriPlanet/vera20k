@@ -77,7 +77,7 @@ jobs:
       - name: Build the game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml).
-        run: cargo build --profile shipping --locked --no-default-features --bin vera20k
+        run: cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
       - name: Package
         shell: bash
         run: |

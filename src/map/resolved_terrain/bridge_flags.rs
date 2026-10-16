@@ -17,7 +17,7 @@ const UNALLOCATED_REAL_CELL_BRIDGE_FLAGS: u16 = u16::MAX;
 /// value is exactly one masked `0x1D80` subset. The historical type/field name
 /// remains1180 for schema continuity; snapshot141 rejects pre-restamp saves.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct RealCellBridgeFlags0x1180 {
+pub struct RealCellBridgeFlags0x1180 {
     width: u16,
     height: u16,
     flags_or_unallocated: Vec<u16>,
@@ -160,8 +160,8 @@ pub(super) fn refresh_runtime_bridge_projection(
 
 impl ResolvedTerrainGrid {
     /// Give every fixture deck the CellClass bit0x100 a loaded deck carries.
-    #[cfg(test)]
-    pub(crate) fn test_mark_decks_structural(mut self) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_mark_decks_structural(mut self) -> Self {
         for cell in &mut self.cells {
             if cell.has_bridge_deck {
                 cell.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
@@ -172,7 +172,7 @@ impl ResolvedTerrainGrid {
 
     /// Apply one represented runtime `SetBridgeDirection_*` flag transaction
     /// through the same real-or-dummy seam used by map load.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn apply_runtime_bridge_flag_stamp(
         &mut self,
         stamp: BridgeFlagStamp,
@@ -236,7 +236,7 @@ impl ResolvedTerrainGrid {
     /// Rust-native bridge projection carried beside the literal CellClass
     /// flag word. Unlike damage/repair runtime setters, a newly constructed
     /// anchor establishes its family/anchor relations at this call site.
-    pub(crate) fn apply_runtime_bridge_mark_stamp(
+    pub fn apply_runtime_bridge_mark_stamp(
         &mut self,
         stamp: BridgeFlagStamp,
         family: BridgeStampFamily,
@@ -335,7 +335,7 @@ impl ResolvedTerrainGrid {
         true
     }
 
-    pub(crate) fn capture_real_cell_bridge_flags_0x1180(&self) -> RealCellBridgeFlags0x1180 {
+    pub fn capture_real_cell_bridge_flags_0x1180(&self) -> RealCellBridgeFlags0x1180 {
         RealCellBridgeFlags0x1180::from_grid(self)
     }
 

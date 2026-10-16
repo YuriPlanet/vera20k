@@ -291,7 +291,7 @@ impl crate::sim::world::Simulation {
             callback,
             rules,
         );
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(
             crate::sim::world::LifecycleTestEvent::RecordKillBookkeeping {
                 stable_id: victim_id,
@@ -401,13 +401,13 @@ impl KillRecord {
     }
 
     /// Install a fixture's killer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_killed_by_for_test(&mut self, killer: Option<InternedId>) {
         self.killed_by = killer;
     }
 
     /// Install a fixture's guard.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_destruction_recorded_for_test(&mut self, recorded: bool) {
         self.destruction_recorded = recorded;
     }

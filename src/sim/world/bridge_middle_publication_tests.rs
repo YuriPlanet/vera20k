@@ -9,12 +9,7 @@ use super::*;
 fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
     let retail = std::env::var("RA2_DIR")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            crate::util::config::GameConfig::load()
-                .unwrap()
-                .paths
-                .ra2_dir
-        });
+        .unwrap_or_else(|_| crate::test_fixture::game_config().unwrap().paths.ra2_dir);
     let map = std::env::var("VERA20K_C3Y03MD_MAP").unwrap_or_else(|_| "c3y03md.map".into());
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/bridge_middle_tiles.json",

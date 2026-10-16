@@ -90,7 +90,7 @@ impl TerrainSpawnerAssetCatalog {
         canonical_type_id(name).and_then(|name| self.frame_counts.get(&name).copied())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, name: &str, frame_count: u16) {
         if let Some(name) = canonical_type_id(name) {
             self.frame_counts.insert(name, frame_count);

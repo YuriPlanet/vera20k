@@ -89,7 +89,7 @@ pub(super) fn navigation_coordinate(
 }
 
 impl Simulation {
-    pub(crate) fn foot_navigation_coordinate(&self, id: u64) -> Result<DriveCoord, String> {
+    pub fn foot_navigation_coordinate(&self, id: u64) -> Result<DriveCoord, String> {
         let entity = self
             .substrate
             .entities

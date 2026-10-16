@@ -1,7 +1,7 @@
 //! Fixture files for library tests, read from the checkout at run time.
 //!
-//! Tests name native goldens and other fixtures by their path from the crate
-//! root (`tools/...`, `tests/fixtures/...`) instead of embedding them with
+//! Tests name native goldens and other fixtures by their path from the
+//! checkout root (`tools/...`, `tests/fixtures/...`) instead of embedding them with
 //! `include_str!`/`include_bytes!`. Embedded fixtures made up most of the test
 //! executable, and every fixture edit recompiled the crate. Each file is read
 //! and checked once per test process, by the first test that asks for it, and
@@ -16,18 +16,34 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-/// UTF-8 text of the fixture at `path`, relative to the crate root.
-pub(crate) fn text(path: &'static str) -> &'static str {
+/// The checkout root that fixture paths start from. This crate's manifest
+/// sits in `src/`, and Cargo runs its tests from there, so tests name checkout
+/// files from this root, never from the working directory.
+pub fn checkout_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the core manifest sits in the checkout's src/")
+}
+
+/// `GameConfig::load` as a process started in the checkout root sees it: the
+/// checkout's `config.toml`, else the retail directory beside the executable.
+pub fn game_config() -> anyhow::Result<crate::util::config::GameConfig> {
+    let executable = std::env::current_exe()?;
+    crate::util::config::GameConfig::load_from(checkout_root(), &executable)
+}
+
+/// UTF-8 text of the fixture at `path`, relative to the checkout root.
+pub fn text(path: &'static str) -> &'static str {
     fixture(path).text.get_or_init(|| {
         std::str::from_utf8(bytes(path))
             .unwrap_or_else(|error| panic!("test fixture {path} is not UTF-8: {error}"))
     })
 }
 
-/// Contents of the fixture at `path`, relative to the crate root.
-pub(crate) fn bytes(path: &'static str) -> &'static [u8] {
+/// Contents of the fixture at `path`, relative to the checkout root.
+pub fn bytes(path: &'static str) -> &'static [u8] {
     fixture(path).bytes.get_or_init(|| {
-        let full = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+        let full = checkout_root().join(path);
         std::fs::read(&full)
             .unwrap_or_else(|error| panic!("cannot read test fixture {}: {error}", full.display()))
             .leak()

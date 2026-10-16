@@ -468,7 +468,7 @@ impl TeamAiInstallDiagnostic {
 }
 
 /// A candidate member passed to a test seam's TaskForce admission.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamScriptMember {
     pub entity_id: u64,
@@ -656,12 +656,12 @@ impl TeamScriptState {
 
     /// Read-only observation of the existing TaskForce counting owner for
     /// cross-module native destructor comparisons. It never mutates the Team.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn taskforce_counts_for_test(&self) -> [i32; 6] {
         self.slot_counts
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn response_suspension_state(&self) -> (bool, bool, bool, i32, i32) {
         (
             self.altered,
@@ -862,7 +862,7 @@ impl TeamScriptVm {
     }
 
     /// Live teams in TeamClass::Array order (their construction order).
-    pub(crate) fn teams_in_order(&self) -> impl Iterator<Item = &TeamScriptState> {
+    pub fn teams_in_order(&self) -> impl Iterator<Item = &TeamScriptState> {
         self.teams.values()
     }
 
@@ -980,7 +980,7 @@ impl TeamScriptVm {
 
     /// Puts team `id` on script line `line` (0-based) as action 6 does
     /// (`0x006E98AE`): its next step runs that line with `first` set.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn seek_line_for_test(&mut self, id: u64, line: i32) {
         if let Some(team) = self.teams.get_mut(&id) {
             team.cursor = line.wrapping_sub(1);
@@ -1331,7 +1331,7 @@ impl TeamScriptVm {
     /// A formed team without a TeamType, running `script_id` from its first
     /// action (cursor 0, already stepped), whose members are `members` in
     /// list order, all joined up.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn create_team(
         &mut self,
         owner: InternedId,
@@ -1367,7 +1367,7 @@ impl TeamScriptVm {
     /// `candidates` admitted in TaskForce-entry order, preserving input order
     /// within each type, listed in admission order and all initiated: the
     /// state after it formed and ran into its first action (cursor 0).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn create_team_from_type(
         &mut self,
         owner: InternedId,
@@ -1463,7 +1463,7 @@ fn script_action_at(
 
 /// Puts `members`, all of the first one's type, in a team of that many whose
 /// TeamType has `Suicide=suicide` and `Aggressive=aggressive`, and returns it.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn join_team_for_test(
     sim: &mut crate::sim::world::Simulation,
     members: &[u64],

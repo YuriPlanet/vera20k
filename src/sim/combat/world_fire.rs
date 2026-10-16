@@ -1903,7 +1903,7 @@ impl FireCommitBoundary {
 /// divergence surfaces one tick later through `barrel_facing` or `gattling`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct LastFireFrame {
+pub struct LastFireFrame {
     frame: i64,
 }
 
@@ -1916,7 +1916,7 @@ impl Default for LastFireFrame {
 
 impl LastFireFrame {
     /// The frame of the last shot.
-    pub(crate) const fn frame(self) -> i64 {
+    pub const fn frame(self) -> i64 {
         self.frame
     }
 
@@ -1926,14 +1926,14 @@ impl LastFireFrame {
     }
 
     /// Install a fixture's frame.
-    #[cfg(test)]
-    pub(crate) fn set_for_test(&mut self, frame: i64) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, frame: i64) {
         self.frame = frame;
     }
 }
 
 /// Call-local native trigger; no variant stores a future shot.
-pub(crate) enum FireVisit {
+pub enum FireVisit {
     /// Building44B6D0/450492 already admitted the exact target and slot.
     Building { id: u64, shot: super::BuildingShot },
     /// Unit7365E1 Fire_At_Target then7365E8 Facing_Update.
@@ -2230,7 +2230,7 @@ pub(crate) fn tick_combat(
         return CombatTickResult {
             #[cfg(test)]
             fixture_anims: Vec::new(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             projectile_spawns: Vec::new(),
             unit_facing: Vec::new(),
             consequences: crate::sim::world::damage_consequences::DamageConsequences::ordinary(
@@ -2320,7 +2320,7 @@ pub(crate) fn tick_combat(
         .collect();
     enum Visit {
         Attacker(AttackerSnapshot),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         Foot(u64),
     }
     let mut visits: Vec<_> = snapshots.into_iter().map(Visit::Attacker).collect();
@@ -2341,17 +2341,20 @@ pub(crate) fn tick_combat(
     visits.sort_by_key(|visit| {
         let id = match visit {
             Visit::Attacker(snap) => snap.stable_id,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Visit::Foot(id) => *id,
         };
         (live_index.get(&id).copied().unwrap_or(usize::MAX), id)
     });
     for visit in visits {
         // `Visit::Foot` exists only in test builds.
-        #[cfg_attr(not(test), expect(clippy::infallible_destructuring_match))]
+        #[cfg_attr(
+            not(any(test, feature = "test-support")),
+            expect(clippy::infallible_destructuring_match)
+        )]
         let snap = match visit {
             Visit::Attacker(snap) => snap,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Visit::Foot(id) => {
                 let actor = world.substrate.entities.get_mut(id).unwrap();
                 let visit = if actor.category() == EntityCategory::Unit {
@@ -2492,7 +2495,7 @@ pub(crate) fn tick_combat(
     CombatTickResult {
         #[cfg(test)]
         fixture_anims: Vec::new(),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         projectile_spawns: Vec::new(),
         unit_facing,
         consequences: crate::sim::world::damage_consequences::DamageConsequences::ordinary(

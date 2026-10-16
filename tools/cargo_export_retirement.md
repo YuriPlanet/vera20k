@@ -53,7 +53,8 @@ cryptographic authentication of the original compiler or reviewer.
 
 The replacement uses the canonical preserved-manifest/artifact validator. Its
 manifest must record this checkout, source SHA, `cargo test -p vera20k --lib
---no-run`, and the selected Cargo host `debug/deps` or `release/deps` artifact.
+--no-run` (or `-p vera20k-core`), and the selected Cargo host `debug/deps` or
+`release/deps` artifact.
 Replacement manifest/artifact hashes and purpose must match the plan. Both
 original and replacement must expose defined Rust `test_main_static` and VERA
 test symbols; native `nm` inspection never executes them. The existing Mach-O

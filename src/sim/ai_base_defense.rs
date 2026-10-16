@@ -127,12 +127,12 @@ impl CoverageGrid {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn cells(&self) -> &[i32] {
         &self.cells
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn cells_mut(&mut self) -> &mut [i32] {
         &mut self.cells
     }

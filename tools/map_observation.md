@@ -858,6 +858,22 @@ target count toward the retained-sample budget. Before/after literal quickload
 receipts can observe a submitted backup and another current target immediately
 across the production prepared-load commit, without waiting for a Place receiver.
 The projection adds no placement writer, queue drain or save schema.
+When the active owner retains a preview, `building_placement` can also contain
+`current_preview`: `{origin, foundation, valid, in_build_area,
+foundation_visible, reason, cells, wall_autofill_cells}`. Origin and foundation
+are unsigned16 coordinate pairs; each cell is `{coord, valid, level, slope}`
+with an unsigned16 coordinate pair, boolean admission, signed8 level and
+unsigned8 slope. The three preview admission/gate fields are booleans. Reason
+is `null` or the production label `Not ready for placement`, `Not a building`,
+`Blocked terrain`, `Overlaps structure`, or `Outside build radius`.
+`wall_autofill_cells` contains unsigned16 coordinate pairs. These are copied
+owner fields: diagnostics neither recompute placement nor derive cell geometry.
+Empty cell lists remain valid when no terrain is installed.
+An included preview must be an object and requires
+`current_preview_present=true`; `null` is not a serialized preview. Historical
+omission remains valid even with that flag true. Each included preview charges
+one sample plus every cell and wall coordinate toward the same retained-sample
+budget, including copies in immediate gesture receipts and per-frame input.
 The optional `selection_scope` projection reads the shared TypeSelect scope
 owner: `mode` (`ordinary`, `combatant`, `type`, `health`, or `veterancy`),
 `across_map`, and `last_outcome_key` (the retained HUD outcome's CSF key or
