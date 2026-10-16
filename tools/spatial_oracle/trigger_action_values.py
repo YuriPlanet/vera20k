@@ -65,6 +65,9 @@ separate from whole-campaign or general Hunt parity.
 
 ``--music-theme`` executes Action20 Read/Execute and the shared Theme queue,
 with declared catalog/stream priors and recorded device transports.
+
+``--wakeup`` executes Actions81..83 and their real effective-Mission/Tag/
+deferred-Queue receivers on declared ordered object lists.
 """
 from pathlib import Path
 import hashlib
@@ -4912,6 +4915,339 @@ def all_to_hunt_source_paths():
     return paths
 
 
+class WakeupFixture(ActionFixture):
+    """One existing action VM; real class slots and deferred Mission writes."""
+
+    TABLES = {'infantry': 0x7EB058, 'unit': 0x7F5C70,
+              'aircraft': 0x7E22A4, 'building': 0x7E3EBC}
+    # Checked original loop-body boundaries, after each pointer load.
+    VISITS = {0x6E01DA: UC_X86_REG_ESI, 0x6DDC15: UC_X86_REG_ESI,
+              0x6DDC8F: UC_X86_REG_ESI}
+
+    def __init__(self):
+        super().__init__()
+        self.actor_ptrs = [self.allocate(0x800) for _ in range(12)]
+        self.actor_ids = {p: i for i, p in enumerate(self.actor_ptrs)}
+        self.house_ptrs = [self.allocate(0x100) for _ in range(3)]
+        self.trigger_ptrs = [self.allocate(0x80) for _ in range(8)]
+        self.tag_ptrs = [self.allocate(0x80) for _ in range(12)]
+        self.lists = [self.allocate(0x100) for _ in range(2)]
+        self.capturing_wakeup = False
+        for table in self.TABLES.values():
+            assert self.read32(table + 0x184) == 0x5B3040
+            assert self.read32(table + 0x1E8) == (
+                0x41BA90 if table == self.TABLES['aircraft'] else 0x5B35E0)
+        extra = [(0x5B3040, 0x5B3052), (0x5B35E0, 0x5B3645),
+                 (0x41BA90, 0x41BAF0), (0x6E5380, 0x6E539F),
+                 (0x65C6D0, 0x65C77D)]
+        extra += [(table, table + 0x500) for table in self.TABLES.values()]
+        extra += [(self.read32(table + 0x2C), self.read32(table + 0x2C) + 6)
+                  for table in self.TABLES.values()]
+        for a, b in extra:
+            self.ranges.append((a, b))
+            self.original.append(bytes(self.u.mem_read(a, b - a)))
+        self.u.hook_add(UC_HOOK_CODE, self.observe_wakeup)
+
+    def publish_wakeup(self, techno, foot):
+        for base, order, slot in ((0xA8EC78, techno, 0), (0x8B3DC0, foot, 1)):
+            pointer = self.lists[slot]
+            self.u.mem_write(pointer, dwords(*(self.actor_ptrs[i] for i in order)))
+            self.u.mem_write(base + 4, dwords(pointer, 12, 0, len(order), 12))
+
+    def observe_wakeup(self, u, pc, _size, _data):
+        if not self.capturing_wakeup:
+            return
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in self.VISITS:
+            self.visited.append(self.actor_ids[u.reg_read(self.VISITS[pc])])
+        if pc == 0x5B3040:
+            self.effective_queries.append(self.actor_ids[u.reg_read(UC_X86_REG_ECX)])
+        elif pc in (0x5B35E0, 0x41BA90):
+            actor = self.actor_ids[u.reg_read(UC_X86_REG_ECX)]
+            self.queue_bodies.append(dict(actor=actor, entry=f'{pc:08X}'))
+            if pc == 0x41BA90 or self.actors[actor]['category'] != 'aircraft':
+                self.queue_calls.append(dict(actor=actor, mission=self.integer(sp + 4),
+                                             arg=self.integer(sp + 8)))
+        elif pc == 0x6E5380:
+            self.tag_queries.append(dict(actor=self.tag_ptrs.index(u.reg_read(UC_X86_REG_ECX)),
+                trigger=None if self.read32(sp + 4) == 0 else
+                    self.trigger_ptrs.index(self.read32(sp + 4))))
+        if pc in (0x65C780, 0x65C7E0):
+            self.rng_calls.append(f'{pc:08X}')
+        if pc in (0x5B3570, 0x4D7390, 0x70D4A0, 0x6EA870):
+            self.unexpected_effects.append(f'{pc:08X}')
+
+    def actor_state(self, pointer):
+        return dict(current=self.integer(pointer + 0xAC), queued=self.integer(pointer + 0xB4),
+                    bypass=self.u.mem_read(pointer + 0xB8, 1)[0])
+
+    def wakeup_case(self, case):
+        self.capturing_wakeup = False
+        u = self.u
+        defaults = dict(category='infantry', current=0, queued=2, health=100,
+            alive=True, cell_marked=True, limbo=False, house=0, group=-1,
+            tag_chain=[0], bypass=165)
+        self.actors = [dict(defaults, **actor) for actor in case.get('actors', [{}])]
+        assert len(self.actors) <= len(self.actor_ptrs)
+        links = {}
+        for p in self.trigger_ptrs:
+            u.mem_write(p, bytes(0x80))
+            # All are distinct live instances with the SAME supplied type.
+            u.mem_write(p + 0x24, dwords(TYPE))
+        for i, actor in enumerate(self.actors):
+            p = self.actor_ptrs[i]
+            u.mem_write(p, bytes(0x800))
+            u.mem_write(p, dwords(self.TABLES[actor['category']]))
+            u.mem_write(p + 0x6C, dwords(actor['health']))
+            for offset, name in ((0x90, 'alive'), (0x74, 'cell_marked'), (0x81, 'limbo')):
+                u.mem_write(p + offset, bytes((actor[name],)))
+            u.mem_write(p + 0x21C, dwords(0 if actor['house'] is None else self.house_ptrs[actor['house']]))
+            u.mem_write(p + 0x214, dwords(actor['group']))
+            u.mem_write(p + 0xAC, dwords(actor['current'], 17, actor['queued']))
+            u.mem_write(p + 0xB8, bytes((actor['bypass'],)))
+            # Nonzero mission/timer/target/Team priors must survive deferred Queue.
+            u.mem_write(p + 0xBC, dwords(137, 31, 19, 113, 7, 45))
+            u.mem_write(p + 0x2B4, dwords(0x12345678))
+            u.mem_write(p + 0x5D4, dwords(0x23456789))
+            chain = actor['tag_chain']
+            if chain is None:
+                u.mem_write(p + 0x34, dwords(0))
+            else:
+                tag = self.tag_ptrs[i]
+                u.mem_write(tag, bytes(0x80))
+                u.mem_write(tag + 0x28, dwords(self.trigger_ptrs[chain[0]] if chain else 0))
+                u.mem_write(p + 0x34, dwords(tag))
+                for n, item in enumerate(chain):
+                    next_item = chain[n + 1] if n + 1 < len(chain) else None
+                    assert item not in links or links[item] == next_item
+                    links[item] = next_item
+        for i, following in links.items():
+            u.mem_write(self.trigger_ptrs[i] + 0x28,
+                dwords(0 if following is None else self.trigger_ptrs[following]))
+        order = list(range(len(self.actors)))
+        self.techno_order = case.get('techno_order', order)
+        self.foot_order = case.get('foot_order',
+            [i for i in order if self.actors[i]['category'] != 'building'])
+        self.publish_wakeup(self.techno_order, self.foot_order)
+        for stream in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            self.call(0x65C6D0, [31], ecx=stream)
+        kind, scalar = case['action_kind'], case.get('scalar', -7)
+        raw = f'{kind},0,{scalar},0,0,0,0,A'
+        self.visited, self.effective_queries, self.tag_queries = [], [], []
+        self.queue_calls, self.queue_bodies, self.rng_calls, self.unexpected_effects = [], [], [], []
+        rng_before = self.rng_hashes()
+        self.capturing_wakeup = True
+        read = self.read_action(raw, ini_capacity=512)
+        rng_after_read = self.rng_hashes()
+        assert rng_after_read == rng_before and not self.rng_calls
+        incoming, trigger = case.get('incoming_house', 0), case.get('trigger', 0)
+        before = [bytes(u.mem_read(p, 0x800)) for p in self.actor_ptrs[:len(self.actors)]]
+        result = self.call(0x6DD8B0,
+            [0 if incoming is None else self.house_ptrs[incoming], 0,
+             0 if trigger is None else self.trigger_ptrs[trigger], 0], ecx=ACTION) & 255
+        self.capturing_wakeup = False
+        after = [bytes(u.mem_read(p, 0x800)) for p in self.actor_ptrs[:len(self.actors)]]
+        timers_unchanged = all(a[0xBC:0xD4] == b[0xBC:0xD4] for a, b in zip(before, after))
+        changed = [(i, offset) for i, (a, b) in enumerate(zip(before, after))
+                   for offset, (left, right) in enumerate(zip(a, b)) if left != right]
+        permitted = set(range(0xB4, 0xB9))
+        other_unchanged = all(offset in permitted for _, offset in changed)
+        assert self.rng_hashes() == rng_before and not self.rng_calls
+        assert not self.unexpected_effects and timers_unchanged and other_unchanged
+        self.check_code()
+        return dict(name=case['name'], action_kind=kind, raw_record=raw,
+            incoming_house=incoming, trigger=trigger, scalar=scalar,
+            actors=self.actors, techno_order=self.techno_order, foot_order=self.foot_order,
+            native_read=read, ret=result, visited=self.visited,
+            effective_queries=self.effective_queries, tag_queries=self.tag_queries,
+            queue_calls=self.queue_calls, queue_bodies=self.queue_bodies,
+            after=[self.actor_state(p) for p in self.actor_ptrs[:len(self.actors)]],
+            rng_before=rng_before, rng_after_read=rng_after_read,
+            rng_after=self.rng_hashes(), rng_calls=self.rng_calls,
+            mission_timers_unchanged=timers_unchanged, other_actor_bytes_unchanged=other_unchanged)
+
+
+def wakeup_retail_inputs():
+    """Retain the actual ALL02 attacked-guards → disabled prisoners binding.
+
+    Existing native reader owners establish Countries, mission-name ids and
+    initial enablement. References/actions remain exact retail strings here;
+    their production binding is separate from these native scalar controls.
+    """
+    from tools.input_oracle.campaign_start import prepare_house_rules
+    from tools.spatial_oracle.tag_lifecycle import execute as tag_lifecycle
+    from tools.spatial_oracle.trigger_event_records import execute as event_reader
+
+    # Init_Game52BB64 calls Init_Base_Mix_Files5301A0 before its later
+    # Init_Mix_Files530460 call52C59C. The original EXPANDMD99..00 loop
+    # formats5301C4/constructs530217 before numbered MAPSMD530A2E.
+    # Pin the official patch member here rather than inventing another MIX
+    # priority resolver. The Rust test compares its production-resolved map
+    # bytes with this identity, rejecting any higher-priority override.
+    archive = (configured_gamemd().parent / 'expandmd01.mix').read_bytes()
+    raw_map = mix(archive)[mix_hash('ALL02UMD.MAP')]
+    rules_path = Path(__file__).parents[2] / 'ini' / 'rulesmd.ini'
+    raw_rules = rules_path.read_bytes()
+    langrule_path = rules_path.with_name('langrule.ini')
+    layers = [('RULESMD.INI', raw_rules)]
+    if langrule_path.is_file():
+        layers.append(('LANGRULE.INI', langrule_path.read_bytes()))
+    layers.append(('ALL02UMD.MAP', raw_map))
+    values, rule_values = sections(raw_map), sections(raw_rules)
+    m = CampaignReader()
+    m.invoke(0x6832C0, m.scenario)
+    rules_pointer = prepare_house_rules(m, rule_values)
+    m.seed_streams(31)
+    rng_before = m.rng_state()
+    registrations = []
+    for label, raw in layers:
+        entries = sections(raw)
+        m.ordered_ini({'Countries': entries.get('Countries', {})})
+        m.u.reg_write(UC_X86_REG_ESI, INI)
+        m.u.reg_write(UC_X86_REG_EDI, rules_pointer)
+        m.region(0x668C8B, 0x668CDB)
+        registrations.append(dict(layer=label, entries=[dict(index=i,
+            name=m.string(m.read32(m.read32(0xA83C9C) + i * 4) + 0x24))
+            for i in range(m.read32(0xA83CA8))]))
+    houses = []
+    for name in ('Americans', 'Germans', 'Neutral'):
+        m.ordered_ini({name: values[name]})
+        country = m.invoke(0x475540, INI,
+            (m.cstring(name), m.cstring('Country'), 0xFFFFFFFF))
+        houses.append(dict(name=name, raw=values[name], native_country=country))
+    missions = [dict(name=name, native_id=struct.unpack('<i', dwords(
+        m.invoke(0x5B3910, m.cstring(name))))[0])
+        for name in ('Sleep', 'Guard', 'Area Guard', 'Harmless')]
+    rng_after = m.rng_state()
+    assert rng_before == rng_after
+    m.check_code()
+    flags, routes = FlagsFixture(), {}
+    for identity in ('095D099C', '0958149C', '095D033C'):
+        trigger = values['Triggers'][identity]
+        tag_records = {key: raw for key, raw in values['Tags'].items()
+                       if raw.endswith(',' + identity)}
+        attachments = [dict(section=section, key=key, raw=raw)
+            for section in ('Infantry', 'Units', 'Aircraft', 'Structures')
+            for key, raw in values.get(section, {}).items()
+            if any(tag in raw.split(',') for tag in tag_records)]
+        native_flags = flags.execute(trigger, [1, 1, 1, 1, 0])
+        native_events = event_reader(values['Events'][identity])
+        definition = dict(flags=native_flags['output'][:4], actions=[],
+            events=[[row['kind'], row['value']] for row in native_events['conditions']])
+        ctor = tag_lifecycle(dict(name='ALL02_' + identity + '_flags_ctor_only',
+            triggers=[definition], operations=[['shared']]))
+        routes[identity] = dict(trigger=trigger, tags=tag_records,
+            attachments=attachments, events_raw=values['Events'][identity],
+            actions_raw=values['Actions'][identity], native_flags=native_flags,
+            native_events=[dict(kind=row['kind'], value=row['value'])
+                for row in native_events['conditions']],
+            initial_enabled=ctor['history'][0]['tags'][0]['triggers'][0]['enabled'])
+    action = ActionFixture()
+    native_action = action.read_action('81,0,0,0,0,0,0,A', ini_capacity=512)
+    action.check_code()
+    return dict(map='ALL02UMD.MAP', archive='expandmd01.mix',
+        archive_sha256=hashlib.sha256(archive).hexdigest(),
+        map_sha256=hashlib.sha256(raw_map).hexdigest(),
+        rules_file='ini/rulesmd.ini', rules_sha256=hashlib.sha256(raw_rules).hexdigest(),
+        source_selection=dict(policy='fixed official YR patch member; production identity must match',
+            native_init_base_mix=0x5301A0, native_init_base_call=0x52BB64,
+            native_expand_format=0x5301C4, native_expand_construct=0x530217,
+            native_expand_descending_loop=0x530289, native_init_mix=0x530460,
+            native_init_mix_call=0x52C59C, native_numbered_map_format=0x530A2E,
+            boundary='Instruction-read archive-registration order, not native filesystem/mount execution. Existing Rust AssetManager owns lookup priority; map digest mismatch must fail for loose/language/later-expansion overrides.'),
+        layers=[dict(layer=label, sha256=hashlib.sha256(raw).hexdigest()) for label, raw in layers],
+        basic=dict(Player=values['Basic']['Player']), houses=houses,
+        country_registration=registrations, mission_from_name=missions,
+        routes=routes, native_action81_read=native_action,
+        country_mission_rng=dict(unchanged=True,
+            before={k: hashlib.sha256(bytes.fromhex(v)).hexdigest() for k, v in rng_before.items()},
+            after={k: hashlib.sha256(bytes.fromhex(v)).hexdigest() for k, v in rng_after.items()}),
+        limits='Seven real Neutral CIV Sleep records share the disabled Wakeup_Prisoners Tag. Eight Germans INIT Guard/AreaGuard records share the Event6 Germans_Attacked Tag, whose exact two Action53 references include the Wakeup and Prisoners_Panic triggers. The sibling Panic13/1 and its Team action remain raw; its later timer/Team effect is outside the selected Wakeup13/0 interval. Native Country/mission-name/flags/event readers and initial enabled constructors execute. Action references/Tag attachment/actor placement and whole Event6→53→13→81 schedule are not executed natively in this row; their original raw IDs bind the Rust production path. Authored health256 is an encoding, not native HP256. No full Type/Rules load or future Guard/Scatter/cadence/RNG claim.')
+
+
+def wakeup_generate():
+    from tools.native_oracle import image_sha256
+
+    f = WakeupFixture()
+    cases = []
+    def add(name, kind, actor=None, **kwargs):
+        cases.append(dict(name=name, action_kind=kind,
+            actors=[{} if actor is None else actor], **kwargs))
+    for kind, mission, house in ((81, 0, 0), (82, 0, 1), (83, 23, 0)):
+        base = dict(current=mission, house=house, group=-7)
+        add(f'action{kind}_admitted', kind, base)
+        add(f'action{kind}_empty_registry', kind, base, techno_order=[], foot_order=[])
+        for field, value in (('alive', False), ('cell_marked', False),
+                             ('health', 0), ('health', -1), ('limbo', True)):
+            add(f'action{kind}_{field}_{value}', kind, dict(base, **{field: value}))
+        for category in ('unit', 'aircraft'):
+            add(f'action{kind}_{category}', kind, dict(base, category=category))
+        add(f'action{kind}_current_none_queued_admitted', kind,
+            dict(base, current=-1, queued=mission))
+        add(f'action{kind}_current_none_queued_none', kind, dict(base, current=-1, queued=-1))
+        add(f'action{kind}_sticky_unchanged', kind, dict(base, current=6))
+    for name, actor in (
+        ('harmless', dict(current=23)), ('building_excluded', dict(category='building')),
+        ('no_tag', dict(tag_chain=None)), ('empty_tag', dict(tag_chain=[])),
+        ('different_instance_same_type', dict(tag_chain=[1])),
+        ('linked_instance', dict(tag_chain=[2, 1, 0])),
+        ('zero_health_limbo', dict(health=0, limbo=True)),
+        ('foreign_house_irrelevant', dict(house=1)),
+        ('queued_guard_still_clears_bypass', dict(queued=5)),
+        ('current_attack_queued_sleep', dict(current=1, queued=0))):
+        add('action81_' + name, 81, actor)
+    add('action81_null_trigger', 81, trigger=None)
+    add('action81_null_incoming_ignored', 81, incoming_house=None)
+    add('action82_same_house_excluded', 82)
+    add('action82_harmless_excluded', 82, dict(current=23, house=1))
+    add('action82_null_incoming_foreign', 82, dict(house=1), incoming_house=None)
+    add('action82_scalar_not_house_selector', 82, dict(house=1), scalar=1)
+    add('action83_foreign_house_excluded', 83, dict(current=23, house=1))
+    add('action83_sleep_excluded', 83)
+    add('action83_null_incoming_excluded', 83, dict(current=23), incoming_house=None)
+    add('action83_scalar_not_house_selector', 83, dict(current=23), scalar=1)
+    actors = [{}, dict(current=23), dict(current=6)]
+    cases.append(dict(name='action81_global_order', action_kind=81,
+        actors=actors, techno_order=[1, 2, 0]))
+    return dict(schema=1, native_sha256=image_sha256(),
+        scope='Actions81..83 live Tag/Mission deferred Guard queue',
+        rng_seed=31, mission_priors=dict(suspended=17, handler_state=137,
+            mission_start_frame=31, ai_counter=19, dispatch_start=113,
+            dispatch_clock_pad=7, dispatch_delay=45),
+        controls=[f.wakeup_case(case) for case in cases],
+        retail=wakeup_retail_inputs(), code_unchanged=True)
+
+
+def wakeup_metadata():
+    return provenance(
+        scope='Original Actions81..83 constructor/read/dispatch, Tag identity membership, effective Mission and deferred Queue.',
+        entry_points=dict(action_constructor=0x6DD000, action_read=0x6DD5B0,
+            counted_read_string=0x528A10, action_execute=0x6DD8B0,
+            action81=0x6DDB67, wakeup_attached=0x6E01C0,
+            action82=0x6DDBF6, action83=0x6DDC71,
+            tag_contains=0x6E5380, effective_mission=0x5B3040,
+            queue_mission=0x5B35E0, aircraft_queue=0x41BA90,
+            spring=0x7265C0, spring_execute_call=0x726605,
+            spring_house_lookup=0x502D30, rng_seed=0x65C6D0,
+            country_registration=0x668C8B, read_country=0x475540,
+            mission_from_name=0x5B3910),
+        assumptions=[
+            'One existing ActionFixture VM executes unchanged original constructor, cached ReadString512, CRT strtok/atoi, full Read and full Execute. Actor memory, House pointers, active Techno/Foot order, Tags and live Trigger instances are supplied inputs. No actor/Tag/House constructor, map load or full campaign is claimed.',
+            'Original class vtables are used unchanged: Infantry7EB058, Unit7F5C70, Aircraft7E22A4 and Building7E3EBC. Their actual WhatAmI, GetMission and QueueMission slots execute; no virtual answer or mission mutation is substituted. Aircraft Queue41BA90 forwards these admitted Sleep/Harmless controls to5B35E0.',
+            'All supplied live Trigger pointers share one type, distinguishing pointer identity from type/name equality. Actual Tag6E5380 follows+28 links until NULL; Action81 uses the executing Trigger third argument and ignores incoming House/source/scalar. It requires alive+90 and cell-marked+74, excludes Building6, and does not inspect Health or Limbo.',
+            'Actions82/83 use Execute first House argument directly, not scalar or retained Trigger+2C. The original active caller Spring7265E7..726605 separately reads TriggerType+A4 HouseType+B4 country index, calls502D30 and pushes its result for EACH action. That caller identity is instruction-read evidence; these controls begin at Execute and do not certify country registration.',
+            'Action82 scans Foot forward, admits effective Sleep0 with House!=incoming; Action83 admits effective Harmless23 with House==incoming. Both require Health>0,alive,cell-marked,!limbo and do not inspect Tag. Action84 Group selection is outside this corpus.',
+            'Actual GetMission returns current+AC unless-1, then queued+B4. Every admitted outer Queue receives Guard5,0. Original Queue writes queued+B4 and clears bypass+B8 while preserving current/suspended, handler/cadence/dispatch timers, target, Team and all other supplied actor bytes. No Commence, EnterIdle, readiness, detach, Team removal or RNG draw is part of this leaf. Later normal AI/Guard/target acquisition are outside these bounded controls.',
+            'Three complete original-layout RNG streams are initialized by actual65C6D0(seed31) before the reader. Hashes of their complete bytes are identical after Read/Execute; entry observations record zero65C780/65C7E0 draws. Timers+BC..D3 and all nonqueue actor bytes are checked unchanged.',
+            'The action bodies reread the live list pointer/count and actor fields at each forward ordinal. Deferred Queue has no list-mutating callback in the ordinary native chain. The corpus supplies stable lists and makes no arbitrary callback-mutation or whole-world ordering claim.',
+            'Physical expandmd01.mix ALL02UMD.MAP and retained retail ini/rulesmd.ini plus optional LANGRULE have hashes. Init_Game52BB64 calls Init_Base_Mix_Files5301A0 before later Init_Mix_Files52C59C→530460; original EXPANDMD99..00 format5301C4/constructor530217/loop530289 precede MAPSMD530A2E. This instruction-read source policy selects the official patch member, not the older mapsmd03 member. Rust production AssetManager owns priority and must match this fixed member digest; higher-priority overrides must fail the input binding. Native archive mounting/file IO is not executed here. Exact raw Germans_Attacked/Wakeup_Prisoners and sibling Prisoners_Panic Trigger/Tag/Events/Actions plus seven prisoners/eight guards bind the production Rust test. Existing Country/mission-name/flag/event readers and Tag constructors execute; the sibling Panic timer/Team effect, complete Event6→53→13→81 native scheduling, real reference registration, actor placement and whole campaign remain outside this row.',
+            'CampaignReader requires VERA20K_CAMPAIGN_START_ASSETS to name an existing empty directory; this bounded Country/name prefix requests no assets. Country/name reader streams are seed31 after setup and unchanged; constructor setup draws and the separate Tag fixture terminal next_random are outside the wakeup zero-draw claim. Action84 requires the separate Group ownership/lifecycle mechanism and remains a residual, not part of this corpus or implementation.',
+        ],
+        substitutions=[
+            'Inherited ActionFixture supplies existing CRT thread-data, heap and cached INI transports only. No native wakeup, Tag, Mission or class vtable bytes are patched and no gameplay leaf is substituted.'
+        ])
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -4931,9 +5267,18 @@ if __name__=='__main__':
     selected_modes.add_argument('--conceal-area', action='store_true')
     selected_modes.add_argument('--music-theme', action='store_true')
     selected_modes.add_argument('--all-to-hunt', action='store_true')
+    selected_modes.add_argument('--wakeup', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.all_to_hunt:
+    if selected.wakeup:
+        if selected.inputs is not None:
+            selector.error('--wakeup uses declared object/Tag/Mission priors, not --inputs')
+        finish_vectors(wakeup_generate,
+            Path(__file__).with_name('trigger_wakeup.json'),
+            provenance=wakeup_metadata, argv=remaining,
+            source_paths=dict(SOURCE_PATHS,
+                wakeup_event_reader=Path(__file__).with_name('trigger_event_records.py')))
+    elif selected.all_to_hunt:
         if selected.inputs is not None:
             selector.error('--all-to-hunt reads configured retail ALL06, not --inputs')
         finish_vectors(all_to_hunt_generate,

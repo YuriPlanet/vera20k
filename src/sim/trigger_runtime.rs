@@ -2965,6 +2965,64 @@ impl Simulation {
                 }
                 return matched;
             }
+            81..=83 => {
+                use crate::map::entities::EntityCategory;
+                use crate::sim::mission::{MissionId, MissionType};
+
+                // Steam3e81a617..08600: Execute6DDB67 ->6E01C0 (81),
+                //6DDBF6 (82),6DDC71 (83). Original execution, including
+                //Tag6E5380/GetMission5B3040/Queue5B35E0/41BA90:
+                //tools/spatial_oracle/trigger_action_values.py --wakeup.
+                //81 walks Techno by live Trigger identity and deliberately
+                //does NOT test Health or Limbo. 82/83 walk Foot and compare
+                //the incoming House, not the scalar or retained House.
+                let mut ordinal = 0;
+                while let Some(id) = if action.kind == 81 {
+                    self.substrate.entities.techno_registry_at(ordinal)
+                } else {
+                    self.substrate.entities.foot_registry_at(ordinal)
+                } {
+                    let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
+                        let mission = entity.mission.effective().known();
+                        entity.lifecycle.object_alive()
+                            && entity.lifecycle.cell_marked()
+                            && if action.kind == 81 {
+                                entity.category() != EntityCategory::Structure
+                                    && matches!(
+                                        mission,
+                                        Some(MissionType::Sleep | MissionType::Harmless)
+                                    )
+                                    && context.live_index.is_some_and(|live| {
+                                        self.tag_contains_live_trigger(
+                                            TagAttachment::Object(id),
+                                            live,
+                                        )
+                                    })
+                            } else {
+                                entity.health.current() > 0
+                                    && !entity.lifecycle.in_limbo()
+                                    && if action.kind == 82 {
+                                        mission == Some(MissionType::Sleep)
+                                            && Some(entity.owner()) != context.incoming_house
+                                    } else {
+                                        mission == Some(MissionType::Harmless)
+                                            && Some(entity.owner()) == context.incoming_house
+                                    }
+                            }
+                    });
+                    if eligible && let Some(entity) = self.substrate.entities.get_mut(id) {
+                        //Every admitted call is Queue(Guard,0): no readiness,
+                        //Commence, timer write, RNG draw or detach. The normal
+                        //AI promotion remains with Mission's existing owner.
+                        crate::sim::mission::authority::queue_entity_mission_deferred(
+                            entity,
+                            MissionId::from_known(MissionType::Guard),
+                        );
+                    }
+                    ordinal += 1;
+                }
+                //Original AL=1 even for an empty registry or no matches.
+            }
             32 => {
                 //6DEC3B ->6E2050 uses live Tag membership, not owner/name.
                 //Repeated forward scans re-read the dynamic registry after
@@ -3753,3 +3811,7 @@ mod reveal_zone_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_build_type_tests.rs"]
 mod build_type_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_wakeup_tests.rs"]
+mod wakeup_tests;
