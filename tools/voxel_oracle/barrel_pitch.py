@@ -86,15 +86,18 @@ def native_pitch(scale, camera, raw, matrix):
     return bytes(uc.mem_read(sp + 0x104, 48))
 
 
-def native_arm(scale, camera, leptons, body, turret, barrel):
+def native_arm(scale, camera, leptons, body, turret, barrel, *, locomotor_matrix=None):
     uc, sp = draw_frame(scale, camera)
     uc.mem_write(TYPE + 0x720, struct.pack("<i", leptons))
     for offset, raw in ((0x370, barrel), (0x388, body << 11), (0x3A0, turret << 11)):
         uc.mem_write(TECHNO + offset, facing_class(raw))
     uc.reg_write(UC_X86_REG_EBX, TYPE)
     uc.reg_write(UC_X86_REG_EBP, TECHNO)
-    # A flat Drive locomotor's matrix is the facing rotation alone.
-    uc.mem_write(sp + 0x94, native_facing(body))
+    # Default preserves the original flat Drive controls. Other callers may
+    # transport an actual original locomotor-produced matrix (e.g. Ship69F670).
+    matrix = native_facing(body) if locomotor_matrix is None else locomotor_matrix
+    assert len(matrix) == 48
+    uc.mem_write(sp + 0x94, matrix)
     run_checked(uc, 0x73BA4C, 0x73BC26,
                 required_addresses=[0x5AE980, 0x4C93D0, 0x5AF1A0, 0x5AE8F0,
                                     0x5AF080, 0x754BE0, 0x5AF980])

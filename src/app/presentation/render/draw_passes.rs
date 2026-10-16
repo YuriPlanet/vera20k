@@ -111,7 +111,6 @@ pub(super) fn dispatch_draw_passes(
     data: &DrawPassData<'_>,
 ) {
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
-    let transition_cache = state.renderer.vxl_slope_transition_cache.borrow();
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
@@ -318,8 +317,7 @@ pub(super) fn dispatch_draw_passes(
             &data.object_layers[layer],
             state.match_state.match_presentation.overlay_atlas.as_ref(),
             state.match_state.match_presentation.unit_atlas.as_ref(),
-            pose_cache.texture(),
-            &transition_cache,
+            Some(&pose_cache),
             state.match_state.match_presentation.sprite_atlas.as_ref(),
             state.match_state.match_presentation.palette_set.as_ref(),
             state
@@ -386,8 +384,7 @@ pub(super) fn dispatch_draw_passes(
         &data.object_layers[layer],
         state.match_state.match_presentation.overlay_atlas.as_ref(),
         state.match_state.match_presentation.unit_atlas.as_ref(),
-        pose_cache.texture(),
-        &transition_cache,
+        Some(&pose_cache),
         state.match_state.match_presentation.sprite_atlas.as_ref(),
         state.match_state.match_presentation.palette_set.as_ref(),
         state

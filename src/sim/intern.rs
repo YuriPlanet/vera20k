@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::rules::object_type::ObjectType;
-use crate::rules::ruleset::RuleSet;
+use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::sim::type_handle_table::TypeHandleTable;
 
 /// Interned string handle — `Copy`, `Eq`, `Ord`, `Hash`. Zero-cost clones.
@@ -86,6 +86,13 @@ impl StringInterner {
     #[inline]
     pub fn object_type<'r>(&self, id: InternedId, rules: &'r RuleSet) -> Option<&'r ObjectType> {
         self.types.object(self, id, rules)
+    }
+
+    /// The handle of the object type `id` names in `rules`, as
+    /// `rules.type_handle(self.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
+        self.types.handle(self, id, rules)
     }
 
     /// Intern a string, returning its ID. If already interned (case-insensitive),

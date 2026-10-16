@@ -289,7 +289,7 @@ impl Simulation {
         }
         let captured = entity.has_been_captured.is_set();
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
-        let yard = object.factory == Some(FactoryType::BuildingType);
+        let yard = object.factory_type() == Some(FactoryType::BuildingType);
         let side = self.houses.get(&entity.owner())?.side_index;
         if !captured && self.scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
             return rules.general.engineer_infantry.clone();

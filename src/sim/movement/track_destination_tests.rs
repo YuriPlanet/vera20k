@@ -667,9 +667,9 @@ fn track_move_to_and_accepted_foot_calls_match_original_warp_and_zero_semantics(
         if input["entry"] == "move" {
             counts[0] += 1;
             if input["family"] == "drive" {
-                drive_set_destination(&mut e, coord(&input["request"]), Some(&terrain));
+                drive_set_destination(&mut e, coord(&input["request"]), Some(&terrain), 0);
             } else {
-                ship_set_destination(&mut e, coord(&input["request"]), Some(&terrain));
+                ship_set_destination(&mut e, coord(&input["request"]), Some(&terrain), 0);
             }
         } else {
             counts[1] += 1;
@@ -738,9 +738,9 @@ fn refused_track_request_does_not_allocate_payload_or_stamp_dummy() {
             z: 17,
         };
         if family == "drive" {
-            assert!(!drive_set_destination(&mut e, coord, Some(&terrain)));
+            assert!(!drive_set_destination(&mut e, coord, Some(&terrain), 0));
         } else {
-            ship_set_destination(&mut e, coord, Some(&terrain));
+            ship_set_destination(&mut e, coord, Some(&terrain), 0);
         }
         assert!(
             e.locomotor
@@ -776,7 +776,8 @@ fn live_drive_target_refresh_resumes_after_owner_warp_ends() {
     assert!(!refresh_drive_destination_coord(
         &mut e,
         destination,
-        Some(&terrain)
+        Some(&terrain),
+        0
     ));
     assert_eq!(
         e.locomotor
@@ -793,7 +794,8 @@ fn live_drive_target_refresh_resumes_after_owner_warp_ends() {
     assert!(refresh_drive_destination_coord(
         &mut e,
         destination,
-        Some(&terrain)
+        Some(&terrain),
+        0
     ));
     assert_eq!(
         e.locomotor
@@ -1232,4 +1234,142 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
             );
         }
     }
+}
+
+/// Component priors enter at Foot's locomotor dispatch: the canonical
+/// ParalysisTimer is already armed by its owner. Original Drive4AFD5E and
+/// Ship69F46E refuse before destination/map reads, even for XYZ zero;
+/// Foot4D9510 has already published NavCom. This does not fabricate a grab.
+#[test]
+fn paralyzed_track_move_to_retains_destination_but_foot_publishes_navcom() {
+    for (name, family) in [("drive", TrackFamily::Drive), ("ship", TrackFamily::Ship)] {
+        let mut e = actor(&json!({"family":name}));
+        let paralysis = CdTimer::started(100, 30);
+        e.parasite.set_paralysis_for_test(paralysis);
+        let loco = e.locomotor.as_ref().unwrap();
+        let original_destination = loco.track_destination(family);
+        let original_head = loco.track_head(family);
+        let requested = DriveCoord {
+            x: 2944,
+            y: 2688,
+            z: -123,
+        };
+        let target = NavTargetRef::cell(11, 10);
+        let terrain = ResolvedTerrainGrid::from_cells(1, 1, Vec::new());
+        terrain.stamp_dummy_cell_requested_coord(7, 8);
+        let dummy = terrain.shared_cell_dummy().snapshot();
+
+        set_destination_internal_coord(&mut e, target, requested, Some(&terrain), 129);
+        assert_eq!(e.navigation.nav_com(), Some(target), "{name}");
+        assert_eq!(e.navigation.nav_com_aux(), None, "{name}");
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_destination(family),
+            original_destination,
+            "{name}"
+        );
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_head(family),
+            original_head,
+            "{name}"
+        );
+        assert_eq!(
+            terrain.shared_cell_dummy().snapshot(),
+            dummy,
+            "no map lookup: {name}"
+        );
+
+        // A zero Move_To is not Stop_Moving. Paralysis precedes its write too.
+        track_move_to(&mut e, ZERO, None, 129);
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_destination(family),
+            original_destination,
+            "{name}"
+        );
+        assert!(track_stop_moving(&mut e));
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_destination(family),
+            None,
+            "Stop: {name}"
+        );
+        assert_eq!(
+            e.navigation.nav_com(),
+            Some(target),
+            "Stop retains NavCom: {name}"
+        );
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_head(family),
+            original_head,
+            "Stop retains committed head: {name}"
+        );
+
+        // Move_To reads the current frame, not timer duration or a cached flag.
+        track_move_to(&mut e, requested, None, 130);
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_destination(family),
+            Some(requested),
+            "expired: {name}"
+        );
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().track_head(family),
+            original_head,
+            "{name}"
+        );
+        assert_eq!(
+            e.parasite.paralysis(),
+            paralysis,
+            "admission must not rewrite timer: {name}"
+        );
+    }
+}
+
+/// Native4B05D0's live Infantry coordinate refresh and the outer Process
+/// reissue both enter the same Move_To gate, without another Foot publication.
+#[test]
+fn paralyzed_live_drive_refresh_and_process_reissue_resume_at_timer_expiry() {
+    let mut e = actor(&json!({"family":"drive", "same_nav":true}));
+    let paralysis = CdTimer::started(100, 30);
+    e.parasite.set_paralysis_for_test(paralysis);
+    let before = e
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .selected_drive_runtime()
+        .unwrap()
+        .retained()
+        .cloned();
+    let requested = DriveCoord {
+        x: 2944,
+        y: 2688,
+        z: -123,
+    };
+    assert!(!refresh_drive_destination_coord(
+        &mut e, requested, None, 129
+    ));
+    track_move_to(&mut e, requested, None, 129);
+    assert_eq!(
+        e.locomotor
+            .as_ref()
+            .unwrap()
+            .selected_drive_runtime()
+            .unwrap()
+            .retained()
+            .cloned(),
+        before
+    );
+    assert!(refresh_drive_destination_coord(
+        &mut e, requested, None, 130
+    ));
+    assert_eq!(
+        e.locomotor
+            .as_ref()
+            .unwrap()
+            .track_destination(TrackFamily::Drive),
+        Some(requested)
+    );
+    assert_eq!(
+        e.locomotor.as_ref().unwrap().track_head(TrackFamily::Drive),
+        before.unwrap().head_to()
+    );
+    assert_eq!(e.navigation.nav_com(), Some(NavTargetRef::cell(11, 10)));
+    assert_eq!(e.parasite.paralysis(), paralysis);
 }

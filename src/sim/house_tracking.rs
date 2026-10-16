@@ -209,7 +209,10 @@ impl TrackingFacts {
             war_factory: category == EntityCategory::Structure && ty.weapons_factory && !ty.naval,
             force_value: ForceValueFacts::of(category, ty),
             factory: (category == EntityCategory::Structure)
-                .then(|| ty.factory.map(|factory| FactorySlot::of(factory, ty.naval)))
+                .then(|| {
+                    FactoryType::for_production_rtti(ty.factory_rtti())
+                        .map(|factory| FactorySlot::of(factory, ty.naval))
+                })
                 .flatten(),
         }
     }
@@ -310,7 +313,7 @@ pub enum FactorySlot {
 
 impl FactorySlot {
     /// The counter of a building with `Factory=factory`: the switch on Type
-    /// `+0xEB8` in IncrementFactoryCount and Recount, where a `UnitType`
+    /// `+0xEB8` in IncrementFactoryCount and Recount, where a Unit/UnitType
     /// factory whose type is `Naval=` (`+0xCCE`) is a shipyard.
     pub(crate) const fn of(factory: FactoryType, naval: bool) -> Self {
         match factory {

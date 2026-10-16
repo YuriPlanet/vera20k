@@ -92,6 +92,11 @@ def launch_shot(m,source,st,w,cells,initial,origin,frame=0,bridge=False):
  result=dict(native_sha256=NATIVE_SHA256,initial=initial,supplied=dict(origin=list(origin),source_heading=0x3fff,source_flags=0,weapon_slot=0,target_cell=[16,20],live_bridge_cell=[10,20] if bridge else None,binary_frame=frame),launch=dict(position=xyz(u,b+0x9c),target=target_xyz,velocity=vec(u,b+0xe8),**scalars,maximum_speed=i32(u,b+0x110),pitch=m.read32(SP+0x80)&0xffff,unique_id=i32(u,b+0x10),scenario_id_before=id_before,scenario_id_after=i32(u,scenario+0x214),course_locked=bool(u.mem_read(b+0x105,1)[0]),course_frames=i32(u,b+0x108),detector=dict(first_timer_start=i32(u,b+0xb8),first_timer_duration=i32(u,b+0xc0),arm_start=i32(u,b+0xc4),arm_duration=i32(u,b+0xcc),reference=xyz(u,b+0xd0),distance_watermark=i32(u,b+0xdc)),warhead=m.string(m.read32(b+0x128)+0x24),calls=sorted(visited),supplied_calls=events))
  result['launch']['next_burst']=i32(u,source+0x3b8);result['launch']['rearm']=[i32(u,source+0x2ec),i32(u,source+0x2f4)];return m,b,cells,result
 
+def native_get_flh(m,source,output,slot=0):
+ """Shared full original GetFLH call on a caller-owned native Unit/runtime."""
+ return m.invoke(0x6F3AD0,source,(output,slot,0,0,0))
+
+
 def generate():
  m,source,typ,w,cells,initial=prepare();u=m.u
  u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_EBP,typ);run_checked(u,0x715b10,0x715f9e)
@@ -105,7 +110,7 @@ def generate():
    if a in (0x6f3ad0,0x70e140,0x7177c0,0x4aff60,0x55a730):flh_calls.append(hex(a))
    if a in (0x68bcb0,0x65c7e0,0x65c780):raise AssertionError(('unexpected FLH effect',hex(a)))
   h=u.hook_add(UC_HOOK_CODE,observe_flh)
-  try:m.invoke(0x6f3ad0,source,(out,0,0,0,0))
+  try:native_get_flh(m,source,out)
   finally:u.hook_del(h)
   origin=xyz(u,out);rng_before=bytes(u.mem_read(scenario+0x218,0x3f4)).hex()
   _,b,_,row=launch_shot(m,source,typ,w,cells,initial,origin,frame)

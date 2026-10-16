@@ -8850,8 +8850,8 @@ fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
 }
 
 /// The Giant Squid's `[SquidGrab]` is an Inviso Parasite shot. Its arm
-/// (`0x004693D3`) claims the impact; the grapple itself is `parasite`'s
-/// recorded residual, so the attach is refused and the ship takes nothing.
+/// (`0x004693D3`) claims the impact, so no ordinary area damage runs.
+/// Whole stock attachment/grapple coverage lives in world::squid_grapple_tests.
 #[test]
 fn inviso_parasite_grapple_claims_the_impact() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

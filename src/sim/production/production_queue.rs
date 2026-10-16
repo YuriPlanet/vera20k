@@ -647,7 +647,8 @@ fn exit_cloning_vat_copies(
     let clones = sim
         .object_type(producer.type_ref(), rules)
         .is_some_and(|producer_type| {
-            producer_type.factory == Some(crate::rules::object_type::FactoryType::InfantryType)
+            producer_type.factory_type()
+                == Some(crate::rules::object_type::FactoryType::InfantryType)
                 && !producer_type.cloning
         });
     if !clones {
@@ -810,7 +811,7 @@ impl ExitProducer {
                 .get(&house)
                 .is_some_and(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero)),
             hospital: object.is_some_and(|object| object.hospital),
-            factory: object.is_some_and(|object| object.factory.is_some()),
+            factory: object.is_some_and(|object| object.has_factory()),
         })
     }
 }

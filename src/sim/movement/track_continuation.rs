@@ -124,7 +124,12 @@ impl Simulation {
         )?;
         let terrain = self.resolved_terrain.as_ref();
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            super::navcom::refresh_drive_destination_coord(entity, coord, terrain);
+            super::navcom::refresh_drive_destination_coord(
+                entity,
+                coord,
+                terrain,
+                self.session.binary_frame,
+            );
         }
         Ok(())
     }

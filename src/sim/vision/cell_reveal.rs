@@ -303,7 +303,7 @@ impl FogState {
         *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         vis.note_edge_inputs(key, before);
         if let VisibilityCell::Real(index) = key {
-            vis.tracked.complete = false;
+            vis.tracked.cleared.push(index as u32);
             vis.publish_knowledge(index);
         }
     }
@@ -331,7 +331,7 @@ impl FogState {
         let notify = cache.frames[0] == -2;
         vis.note_edge_inputs(key, before);
         if let VisibilityCell::Real(index) = key {
-            vis.tracked.complete = false;
+            vis.tracked.cleared.push(index as u32);
             vis.publish_knowledge(index);
         }
         notify.then_some(MapCellNotification { cell, fresh: true })
@@ -465,9 +465,7 @@ impl FogState {
         if let VisibilityCell::Real(index) = key {
             vis.tracked.transient.push(index as u32);
             if !open {
-                // The next pass's sight puts back cleared ground bits under
-                // its footprints (`SightApply::Mark`), so it visits them all.
-                vis.tracked.complete = false;
+                vis.tracked.cleared.push(index as u32);
             }
             vis.publish_knowledge(index);
         }

@@ -1901,6 +1901,7 @@ fn an_ejected_human_occupant_drops_its_seek() {
             &rules,
             None,
             bunker,
+            crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
             FrameEffects::default(),
         );
 

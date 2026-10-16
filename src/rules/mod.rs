@@ -157,6 +157,8 @@ pub mod terrain_object_type;
 pub mod terrain_rules;
 pub mod tiberium_type;
 pub mod voxel_anim_type;
+pub(crate) mod voxel_asset_catalog;
+pub mod voxel_frame_catalog;
 pub mod warhead_type;
 pub mod weapon_type;
 

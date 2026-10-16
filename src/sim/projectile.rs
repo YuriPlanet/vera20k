@@ -51,7 +51,7 @@
 
 mod homing;
 pub(crate) mod launch;
-mod native_math;
+pub(crate) mod native_math;
 
 use std::collections::BTreeMap;
 
@@ -603,7 +603,7 @@ pub(crate) fn projectile_slope_reflect_double(
     elasticity_bits: u64,
 ) -> Option<[crate::util::native_x87::NativeF64Bits; 3]> {
     use crate::util::native_x87::{NativeF64Bits, X87Chop53};
-    let matrix = crate::sim::particles::spark_world::slope_matrix(slope_type).ok()?;
+    let matrix = crate::map::voxel_slope::slope_matrix(slope_type)?;
     let mut vector = [crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO; 3];
     for (out, input) in vector.iter_mut().zip(velocity) {
         *out = X87Chop53::store_f32(X87Chop53::load_f64(input).ok()?).ok()?;
@@ -724,9 +724,8 @@ pub fn projectile_shrapnel_count(
 ///
 /// Both deliveries dispatch the chain through one owner,
 /// `combat::world_receiver::run_special_detonation_arm`: a visible bullet at
-/// its detonation, and an `Inviso=` bullet's first AI visit (every stock
-/// special weapon but the dog's and the
-/// Terror Drone's jump is Inviso).
+/// its detonation, and an `Inviso=` bullet once its AI admits detonation.
+/// Inviso placement does not bypass the common Arm-gated proximity fuse.
 ///
 /// Special effects dispatch through their shared state owners, including
 /// Airstrike (`airstrike`): a flare starts or retargets its firer's aircraft.
@@ -755,7 +754,7 @@ pub enum SpecialDetonationAction {
     ElectricAssault,
     /// `Parasite=` (`+0x159`), test `0x004693d3` ->
     /// `ParasiteClass::AttachTo @ 0x0062a980`, ported in `combat/parasite.rs`
-    /// (the Giant Squid's grapple is that module's residual).
+    /// (including the Naval+Organic grapple in its child module).
     Parasite,
     /// `Temporal=` (`+0x15a`), test `0x00469423` ->
     /// `TemporalClass::InitiateWarp @ 0x0071af20`, ported in `temporal` (the
@@ -3727,7 +3726,7 @@ mod tests {
             .iter()
             .enumerate()
         {
-            let actual = crate::sim::particles::spark_world::slope_matrix(slope as u8).unwrap();
+            let actual = crate::map::voxel_slope::slope_matrix(slope as u8).unwrap();
             for (actual, expected) in actual.into_iter().zip(row.as_array().unwrap()) {
                 assert_eq!(
                     u64::from(actual.bits()),
@@ -3744,10 +3743,9 @@ mod tests {
                 .map(|value| value.as_i64().unwrap() as i32)
                 .collect();
             use crate::util::native_x87::{NativeF64Bits, X87Chop53};
-            let matrix = crate::sim::particles::spark_world::slope_matrix(
-                row["slope"].as_u64().unwrap() as u8,
-            )
-            .unwrap();
+            let matrix =
+                crate::map::voxel_slope::slope_matrix(row["slope"].as_u64().unwrap() as u8)
+                    .unwrap();
             let vector = std::array::from_fn(|i| {
                 X87Chop53::store_f32(X87Chop53::load_i32(components[i])).unwrap()
             });

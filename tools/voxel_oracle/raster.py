@@ -7,7 +7,7 @@ from pathlib import Path
 import struct
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_FPCW
+from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_EBP, UC_X86_REG_FPCW
 
 from tools import native_oracle as oracle
 
@@ -22,7 +22,8 @@ def pack(*values):
 
 
 def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=False,
-                  *, bullet_velocity_bits=None, bullet_surface=None, palette=None):
+                  *, bullet_velocity_bits=None, bullet_surface=None, palette=None, ship_pose=None,
+                  drive_pose=None):
     """Unmirrored native Render core, preserving all submitted sections.
 
     `diffuse` lights the draw as VoxelAnimClass::DrawIt does, through 753C80
@@ -31,6 +32,8 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
     Bullet mode normally stops before490B90. Optional bullet_surface completes
     the same draw using the shared native ColorScheme/surface transports.
     """
+    if sum(v is not None for v in (ship_pose, drive_pose, bullet_velocity_bits)) > 1:
+        raise ValueError('Select one native draw caller')
     if bullet_surface is not None and bullet_velocity_bits is None:
         raise ValueError('Completed Bullet surface requires velocity inputs')
     u = Uc(UC_ARCH_X86, UC_MODE_32)
@@ -205,6 +208,85 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
     u.reg_write(UC_X86_REG_EBX, 0)
     u.reg_write(UC_X86_REG_ESP, oracle.STACK_BASE + oracle.STACK_SIZE - 0x1000)
     oracle.run_checked(u, 0x52bddd, 0x52be0a, required_addresses=(0x5ae860, 0x754c00))
+    ship_observation = None
+    ground_pose = ship_pose if ship_pose is not None else drive_pose
+    if ground_pose is not None:
+        from tools.voxel_oracle.lighting import native_camera
+        actor, typ, loco, matrix, key, camcopy = [BASE + n for n in (0x1000,0x3000,0x5000,0x6000,0x6100,0x6200)]
+        write(actor, pack(0x7F5C70));write(actor+0x6C4,pack(typ))
+        write(typ+0xB0,pack(VXL,HVA_OBJECT))
+        # Original loaded VXL validity and first-section post-read. These are
+        # native loader bytes, never a host model parser or fitted half-size.
+        write(0xA8ED84,pack(ground_pose.get("frame",0)))
+        if ship_pose is not None:
+            invoke(0x69EBF0)  # Original Ship translation-unit empty Coord startup.
+        else:
+            invoke(0x4AF4E0)  # Original Drive empty Coord startup8A0790.
+        invoke(0x69EC50 if ship_pose is not None else 0x4AF540,ecx=loco)
+        write(loco+0xC,pack(actor));write(actor+0x674,pack(loco+4))
+        sp=oracle.STACK_BASE+oracle.STACK_SIZE-0x1000
+        u.reg_write(UC_X86_REG_ESP,sp);u.reg_write(UC_X86_REG_EBP,typ)
+        oracle.run_checked(u,0x7160B4,0x716123,required_addresses=(0x717AE0,0x7564B0))
+        valid=invoke(0x6F9E10,ecx=actor)&255
+        descriptor=invoke(0x7564B0,ecx=VXL,args=(0,0))
+        half_bits=[struct.unpack('<Q',u.mem_read(typ+offset,8))[0] for offset in (0x360,0x368)]
+        invoke(0x49F2F0)
+        from tools.native_slope import initialize_slope_tables
+        # PE .data virtual tail is zero-filled by the loader. This CRT
+        # math-error-handler slot has no installed handler in this fixture;
+        # 7C8F9A..A4 is its setter, not a gameplay result boundary.
+        assert any(oracle.IMAGE_BASE+rva+size<=0xB7819C and
+                   0xB7819C+4<=oracle.IMAGE_BASE+rva+virtual
+                   for rva,_raw,size,virtual,_flags in oracle._sections(oracle.image_bytes()))
+        write(0xB7819C,pack(0))
+        initialize_slope_tables(u,sp,RET)
+        facing=ground_pose.get('facing',0)
+        write(actor+0x388,pack(facing,facing));write(actor+0x398,pack(0))
+        write(actor+0x328,pack(*ground_pose.get('angle_bits',[0,0])))
+        for offset,values in ground_pose.get('loco_words',[]):write(loco+offset,pack(*values))
+        write(key,pack(ground_pose.get('key',0)))
+        impulse_rows=[]
+        if ground_pose.get('impulses'):
+            write(actor+0x9C,pack(*ground_pose['position']))
+            write(actor+0x14,pack(4));write(actor+0x90,b'\1')
+            write(typ+0x370,struct.pack('<Q',int(ground_pose['weight_bits'],16)))
+            write(typ+0xA0,pack(ground_pose.get('strength',300)))
+            write(actor+0x330,pack(*ground_pose.get('velocity_bits',[0,0])))
+            origin=BASE+0x6400
+            fields=lambda:list(struct.unpack('<4I',u.mem_read(actor+0x328,16)))
+            for impulse in ground_pose['impulses']:
+                write(origin,pack(*impulse['origin']))
+                before=fields();entries=[];stores=[]
+                def impulse_code(_u,pc,_size,_data):
+                    if pc in (0x65C780,0x65C7E0):raise AssertionError('Unexpected rocker RNG')
+                    if 0x70B280<=pc<0x70B56E:entries.append(pc)
+                def impulse_write(_u,_access,address,size,value,_data):
+                    if actor+0x328<=address<actor+0x338:
+                        stores.append(dict(offset=address-actor,instruction=f'{u.reg_read(UC_X86_REG_EIP):08X}',bits=value&0xFFFFFFFF))
+                h=u.hook_add(UC_HOOK_CODE,impulse_code)
+                w=u.hook_add(UC_HOOK_MEM_WRITE,impulse_write)
+                try:invoke(0x70B280,ecx=actor,args=(origin,impulse['force_bits'],impulse.get('no_dampen',0)),required=(0x70B280,))
+                finally:u.hook_del(h);u.hook_del(w)
+                impulse_rows.append(dict(input=impulse,before_bits=before,after_bits=fields(),stores=stores,
+                    reached=[f'{pc:08X}' for pc in sorted(set(entries)) if pc in
+                        (0x70B29E,0x70B2B7,0x70B3D3,0x70B3E8,0x70B3FF,0x70B555,0x70B561)]))
+            updates=[]
+            for visit in range(1,ground_pose.get('update_steps',0)+1):
+                write(0xA8ED84,pack(ground_pose.get('frame',0)+visit))
+                before=fields();invoke(0x70B570,ecx=actor,required=(0x70B570,))
+                if visit in ground_pose.get('update_samples',range(1,ground_pose.get('update_steps',0)+1)):
+                    updates.append(dict(visit=visit,before_bits=before,after_bits=fields()))
+        invoke(0x69F670 if ship_pose is not None else 0x4AFF60,
+            args=(loco+4,matrix,key),required=(0x4C93D0,))
+        write(0xB44318,native_camera());invoke(0x754BE0,ecx=camcopy)
+        invoke(0x5AF980,ecx=INPUT,edx=camcopy,args=(matrix,))
+        draw_matrix=bytes(u.mem_read(INPUT,48))
+        ship_observation=dict(model_header_hex=bytes(u.mem_read(VXL,0x20)).hex(),
+            is_voxel=bool(valid),first_section_size=list(u.mem_read(descriptor+0xA0,3)),
+            half_size_bits=[f'{n:016x}' for n in half_bits],
+            matrix_bits=list(struct.unpack('<12I',u.mem_read(matrix,48))),key_out=read32(key))
+        if ground_pose.get('impulses'):
+            ship_observation.update(impulses=impulse_rows,updates=updates)
     if bullet_velocity_bits is not None:
         if hva_bytes is None:
             raise ValueError('Bullet controls require its loaded HVA')
@@ -327,6 +409,8 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
         'normal_pages': bytes(u.mem_read(0xb45990, 256)).hex(),
         'read_before_initialized': [], 'substitutions': substitutions,
     }
+    if ship_observation is not None:
+        result['ship' if ship_pose is not None else 'drive'] = ship_observation
     if bullet_velocity_bits is not None:
         result['bullet'] = bullet_observation
     if bullet_surface is not None:

@@ -1516,7 +1516,8 @@ pub(super) fn emit_admitted_fire(
     // rearm below (`GetROF` at `0x006FF289` takes the building's weapon
     // through `BuildingClass::GetWeapon @ 0x004526F0`, i.e. the NEXT
     // occupant's ROF and Burst) and the shot's own kill credit, since its
-    // Inviso bullet detonates later, in its own AI in this frame's Logic tail.
+    // Inviso bullet detonates later in its own AI (possibly this frame's
+    // Logic tail, once its impact/fuse admits it).
     if is_garrison
         && let Some(cargo) = world
             .substrate

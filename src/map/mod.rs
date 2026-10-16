@@ -51,5 +51,8 @@ pub mod tube_facts;
 pub mod tubes;
 pub mod variable_names;
 pub mod waypoints;
+pub(crate) mod voxel_slope;
 // Future modules — uncomment as implemented:
 // pub mod cell;
+
+pub(crate) mod voxel_pose;

@@ -5,10 +5,11 @@
 //! `superweapon/ai_fire_tests.rs`). The oracle stubs Check_Build_Need with
 //! each row's answer and Manage_Build_Queue; the replay gives the house the
 //! economy that answers the same (`sim::ai_build_need`, whose bodies have
-//! their own tests) and compares the Manage_Build_Queue calls. Not compared,
-//! as residuals (module doc): All_To_Hunt's team removal and its garrison
-//! release. The money queries read the credits; every cell the search looks
-//! up is compared as the house's base origin.
+//! their own tests) and compares the Manage_Build_Queue calls. These legacy
+//! rows record All_To_Hunt's team/garrison calls as leaves. Additional
+//! Action6 and garrison controls live in trigger_runtime_all_to_hunt_tests
+//! and passenger::garrison_eject::tests. The money queries read the credits;
+//! every cell the search looks up is compared as the house's base origin.
 
 use super::*;
 use std::collections::BTreeSet;

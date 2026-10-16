@@ -827,7 +827,12 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        self.begin_warp_sinking(id, rules, effects);
+        self.begin_living_ship_sinking(
+            id,
+            crate::sim::world::LivingSinkTrigger::PostWarpValidation,
+            rules,
+            effects,
+        );
         let Some((killer, house)) = self.substrate.entities.get(id).map(|entity| {
             (
                 entity.drop_credit.manipulated_by(),

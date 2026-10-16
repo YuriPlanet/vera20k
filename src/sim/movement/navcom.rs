@@ -466,6 +466,7 @@ pub(super) fn refresh_drive_destination_coord(
     entity: &mut GameEntity,
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
+    binary_frame: u32,
 ) -> bool {
     let Some(loco) = entity
         .locomotor
@@ -478,7 +479,7 @@ pub(super) fn refresh_drive_destination_coord(
     if loco.track_destination(TrackFamily::Drive) == requested {
         return false;
     }
-    drive_set_destination(entity, coord, terrain)
+    drive_set_destination(entity, coord, terrain, binary_frame)
 }
 
 /// The cell of `BuildingClass::GetDockCoord @ 0x00447B20` for `building`, as
@@ -637,7 +638,7 @@ pub(crate) fn set_destination_internal_cell(
 
 /// Foot4D9510/4D9628 publishes the reference and dispatches its captured +4C
 /// coordinate. Cell and object orders reach the same active locomotor owner;
-/// `binary_frame` is Hover Move_To's paralysis clock.
+/// `binary_frame` is the locomotor Move_To paralysis clock.
 pub(crate) fn set_destination_internal_coord(
     entity: &mut GameEntity,
     target: NavTargetRef,
@@ -648,9 +649,9 @@ pub(crate) fn set_destination_internal_coord(
     publish_nav_com(entity, target);
 
     if is_drive_locomotor(entity) {
-        drive_set_destination(entity, coord, resolved_terrain);
+        drive_set_destination(entity, coord, resolved_terrain, binary_frame);
     } else if is_ship_locomotor(entity) {
-        ship_set_destination(entity, coord, resolved_terrain);
+        ship_set_destination(entity, coord, resolved_terrain, binary_frame);
     } else if super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
     } else {
         set_walk_destination_coord(entity, coord, resolved_terrain);
@@ -679,13 +680,15 @@ fn drive_set_destination(
     entity: &mut GameEntity,
     destination: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
+    binary_frame: u32,
 ) -> bool {
-    // Drive4AFD40 checks owner+270/+271 before any destination or map read.
-    // Track MoveTo refusal leaves Foot's accepted NavCom/timer writes intact.
-    // EMP/Unit+6D8 remains a separate unported gate; Foot+6A0 paralysis
-    // (FootParasite::is_paralyzed) is not read here yet.
+    // Drive4AFD5E calls FootIsParalyzed4DE770 before destination/map access,
+    // including a zero Move_To. Refusal retains Foot's NavCom/timer writes.
+    // Owner warp bytes follow at4AFD71/80; EMP/Unit+6D8 is still unported.
     // Original whole-call comparisons: tools/spatial_oracle/track_destination.
-    if super::locomotor_owner::owner_is_warping(entity) {
+    if entity.parasite.is_paralyzed(binary_frame)
+        || super::locomotor_owner::owner_is_warping(entity)
+    {
         return false;
     }
     let destination = adjusted_destination(destination, terrain);
@@ -699,17 +702,18 @@ fn drive_set_destination(
 
 /// ILocomotion +0x44 Move_To of the active Drive/Ship instance without the
 /// Foot setter (Drive 0x4AFD40 / Ship 0x69F450): the outer Process's NavCom
-/// reissue (0x4B09A3 / 0x6A006C) calls it directly. A warping instance
-/// refuses; another locomotor has no such Move_To here.
+/// reissue (0x4B09A3 / 0x6A006C) calls it directly. Paralysis and warp
+/// admission belong to the shared destination setters below.
 pub(super) fn track_move_to(
     entity: &mut GameEntity,
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
+    binary_frame: u32,
 ) {
     if is_drive_locomotor(entity) {
-        drive_set_destination(entity, coord, terrain);
-    } else if is_ship_locomotor(entity) && !super::locomotor_owner::owner_is_warping(entity) {
-        ship_set_destination(entity, coord, terrain);
+        drive_set_destination(entity, coord, terrain, binary_frame);
+    } else if is_ship_locomotor(entity) {
+        ship_set_destination(entity, coord, terrain, binary_frame);
     }
 }
 
@@ -759,10 +763,13 @@ fn ship_set_destination(
     entity: &mut GameEntity,
     destination: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
+    binary_frame: u32,
 ) {
-    // Ship69F450 has the same owner warp refusal before its map lookup.
-    // Use the existing warp owner, independent of power and locomotor stash.
-    if super::locomotor_owner::owner_is_warping(entity) {
+    // Ship69F46E calls FootIsParalyzed4DE770 before even a zero destination
+    // write. Warp gates69F481/90 follow; Stop69F510 is a separate entry.
+    if entity.parasite.is_paralyzed(binary_frame)
+        || super::locomotor_owner::owner_is_warping(entity)
+    {
         return;
     }
     let destination = adjusted_destination(destination, terrain);

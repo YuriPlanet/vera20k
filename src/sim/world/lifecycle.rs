@@ -3950,6 +3950,12 @@ impl Simulation {
         .into_iter()
         .flatten()
         .for_each(&mut name);
+        listener
+            .parasite
+            .class()
+            .and_then(|class| class.grapple_anim())
+            .into_iter()
+            .for_each(&mut name);
         listener.mega_mission.referenced_ids().for_each(&mut name);
         listener.distributed_fire_references().for_each(&mut name);
         // The SpawnManager, CaptureManager and TemporalClass forwards act on
@@ -4755,11 +4761,17 @@ impl Simulation {
     /// Anim4's dedicated holder announcement725A16..725A4C, before Anim
     /// conceal/removal (UnInit42561F, destructor422906). It does not enter
     /// the generic Object/bomb/factory/team broadcast. This dispatches the
-    /// Bullet subset; Building receivers stay at their existing boundaries,
+    /// Bullet and Parasite-holder subsets; Building receivers stay at their existing boundaries,
     /// including their distinct ordinary-UnInit versus scalar slot handling.
     pub(crate) fn notify_anim_pointer_expired(&mut self, expired_id: u64) {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
+        }
+        let holders = self
+            .expiry_listeners
+            .entities_reached_by(&mut self.substrate.entities, expired_id);
+        for owner in holders {
+            self.parasite_anim_pointer_expired(owner, expired_id);
         }
         let acting = self
             .expiry_listeners
@@ -5658,6 +5670,9 @@ impl Simulation {
             self.sound_events
                 .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
         }
+        // Foot's Parasite destructor6293E0 destroys its held Anim and clears
+        // progress; it neither invents a release nor rewrites the host's HP.
+        self.reset_parasite_grapple(stable_id, context.rules());
         // The Building destructor's Release406060 on its +0x6B4 working-sound
         // handle (43BD1A), the same most-derived destructor slot.
         self.release_building_working_sound(stable_id, context.rules());

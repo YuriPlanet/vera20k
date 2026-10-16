@@ -35,7 +35,7 @@ mod trigger_chrono;
 pub(crate) use sound_boundary::{FrameEffects, SoundBoundary};
 #[cfg(test)]
 mod unit_unlimbo_tests;
-pub(crate) use sinking::SinkingState;
+pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
 mod gap_generator;
 pub(crate) use gap_generator::GapGeneratorRuntime;
@@ -162,6 +162,10 @@ mod projectile_trailer_tests;
 mod aegis_distributed_fire_tests;
 #[cfg(test)]
 mod brute_smash_debris_tests;
+#[cfg(test)]
+mod squid_grapple_tests;
+#[cfg(test)]
+mod drone_rocking_tests;
 #[cfg(test)]
 pub(crate) use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
@@ -1924,7 +1928,6 @@ impl Simulation {
                     Some(
                         crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                             building_id: stable_id,
-                            owner: entity.owner(),
                             rx: entity.position.rx(),
                             ry: entity.position.ry(),
                             z: entity.position.z(),
@@ -2963,8 +2966,8 @@ impl Simulation {
         }
     }
 
-    /// `TechnoClass::Death_Announcement @ 0x004D98C0` for this tick's damage
-    /// kills: owner passes `HouseClass::IsHumanPlayer @ 0x0050B6F0`
+    /// `TechnoClass::Death_Announcement @ 0x004D98C0` for damage kills
+    /// and the living-hull Squid cull: owner passes `HouseClass::IsHumanPlayer @ 0x0050B6F0`
     /// (`0x004D98CA`; the local player natively, every human house here with
     /// the app filtering), then `CreateRadarEvent(7, cell)` (`0x004D98FE`,
     /// 8-cell dedupe, admitted client-side) gates `EVA_UnitLost`
@@ -7041,21 +7044,6 @@ impl Simulation {
         // separate from the weapon-damage wall path. No-op when no crusher sits
         // on a wall, so it is hash-neutral for every non-crush scenario.
         self.apply_wall_crush_on_driveover(rules, overlay_registry);
-        // --- Phase 2.5: body rocking ---
-        // Drive/Ship slope sampling now belongs to locomotor Process entry,
-        // before movement. Body rocking keeps its established post-movement
-        // order, rules/terrain gate, and fallback-coefficient input
-        // independently.
-        if let (Some(rules), Some(_terrain)) = (rules, self.resolved_terrain.as_ref()) {
-            let mut hook = crate::sim::rocking::self_destruct::NoopSelfDestruct;
-            crate::sim::rocking::tick(
-                &mut self.substrate.entities,
-                rules,
-                &self.interner,
-                &mut hook,
-            );
-        }
-
         // Aircraft missions retain their existing deferred receiver. Building
         // shots already finished in their own dynamic Logic slots.
         let fire_requests = std::mem::take(&mut self.fire_requests);

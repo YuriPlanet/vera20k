@@ -10,6 +10,7 @@ from tools.spatial_oracle.shrapnel_repair import retail_inputs as ri
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.rules_oracle.bridge_landing_inputs import Landing
 from tools.native_oracle import finish_vectors,provenance,run_checked
+from tools.spatial_oracle.building_body_rules import dwords
 from unicorn.x86_const import *
 sha=lambda raw:hashlib.sha256(raw).hexdigest()
 MAPFILE=ASSETS/'XMP03T4.MAP'
@@ -64,6 +65,56 @@ def extract_tiles(t, *, theater_archive='isotemp.mix', theater_override='isotemm
   raw=(root/name).read_bytes();hits=sorted(set(mix(raw))&wanted);assert not hits,(name,hits);checks.append(dict(archive=name,sha256=sha(raw),**{f'primary_{tile_suffix}_name_hits':hits}))
  loose={p.name.upper() for p in root.iterdir() if p.is_file()}&{n.upper() for n in t['tiles'].values()};assert not loose,loose
  return data,dict(archive='ra2.mix/'+theater_archive,outer_sha256=sha(archive),inner_sha256=sha(iso),members=rows,registered_theater_checks=theater_checks,selected_override_checks=checks,**{f'loose_primary_{tile_suffix}_hits':sorted(loose)})
+
+
+def bind_primary_tiles(m, theater, selected_tiles, *, preserve_abstract_registry=False):
+    """Shared physical TMP cache transport with original IsoTileType constructors.
+
+    The caller supplies an initialized primary array/header and sparse loop
+    indexes. Original TMP readers/Recalc remain native; archive enumeration and
+    in-memory TMP offset relocation are the existing fixture boundary.
+    """
+    u = m.u
+    physical, receipt = extract_tiles(theater)
+    table, count = m.read32(0xA8ED2C), m.read32(0xA8ED38)
+    retained_header = bytes(u.mem_read(0xA8ED28, 24))
+    u.mem_write(0xA8ED28, dwords(0x7EB6D4, table, count, 1, count, 10))
+    # Original constructor also retains every primary/secondary tile type.
+    # The existing Reader remains the sole allocator in this composed VM.
+    if not preserve_abstract_registry:
+        u.mem_write(0xB0F670, dwords(0x7EB6D4, m.alloc(4096 * 4), 4096, 1, 0, 10))
+    rows = []
+    for tile in sorted(set(selected_tiles)):
+        if tile >= count or m.read32(table + tile * 4):
+            continue
+        raw = physical.get(tile)
+        assert raw is not None, (tile, theater['tiles'][tile])
+        head, data = m.alloc(0x400), m.alloc(len(raw))
+        name = theater['tiles'][tile]
+        # Supply the sparse original primary-array loop index as caller state;
+        # the constructor itself installs its vtable/defaults and this entry.
+        u.mem_write(0xA8ED38, dwords(tile))
+        args = (tile, -65, 0, m.cstring(name[:-4]), 0)
+        returned = m.invoke(0x5447C0, head, args)
+        assert returned == head and m.read32(table + tile * 4) == head
+        tmp = bytearray(raw)
+        width, height = struct.unpack_from('<II', tmp)
+        for sub in range(width * height):
+            offset = struct.unpack_from('<I', tmp, 16 + sub * 4)[0]
+            if offset:
+                struct.pack_into('<I', tmp, 16 + sub * 4, data + offset)
+        u.mem_write(data, bytes(tmp))
+        u.mem_write(head + 0xA4, dwords(data))
+        u.mem_write(head + 0x2E4, dwords(width & 255, height & 255))
+        rows.append(dict(tile=tile, file=name, raw_sha256=hashlib.sha256(raw).hexdigest(),
+                         raw_bytes=len(raw), original_ctor='0x005447C0', ctor_args=list(args),
+                         head=hex(head), vtable=hex(m.read32(head)), data=hex(data),
+                         original_defaults_hex=bytes(u.mem_read(head + 0x2C0, 0x3C)).hex(),
+                         relocated_sha256=hashlib.sha256(bytes(tmp)).hexdigest()))
+    u.mem_write(0xA8ED28, retained_header)
+    assert m.read32(0xA8ED38) == count
+    return dict(archive_inputs=receipt, added_rows=rows,
+        boundary='Physical primary TMP cache supplied with original constructor heads and native default animation/shadow fields. The original archive loader, all tile INI properties and rendering variants are excluded. Existing crop Cell inputs are unchanged; later original Recalc owns land/slope/zone updates.')
 
 class Inputs(ri.Rules):
  def __init__(self,t,*,map_file=None,theater_file='TEMPERATMD.INI',damage_overlays=range(205,233)):

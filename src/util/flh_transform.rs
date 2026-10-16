@@ -6,7 +6,7 @@
 //! muzzle flashes.
 //!
 //! ## Dependency rules
-//! - Part of util/; no dependencies on other game modules.
+//! - Part of util/; no simulation or presentation dependency.
 
 /// Convert world Z leptons into gamemd-style screen-Y lift.
 pub fn adjust_for_z_leptons(z: i32) -> i32 {
@@ -54,12 +54,10 @@ pub struct FlhFacings {
 ///
 /// with the Y component negated at `0x006F3D0A` before the truncation, and the
 /// three `Math__ftol` calls chopping toward zero.
-/// The retained implementation evaluates points with separate IEEE f32
-/// operations, rather than emulating native matrix stores/chop rounding.
-/// In aircraft_approach.json three supplied poses differ by one lepton on X
-/// (one also on Y); their final steering histories still match the executable.
-/// Those exact differences are pinned in aircraft_approach_tests. This is a
-/// bounded precision comparison, not exact coordinate parity for arbitrary FLH.
+/// The optional locomotor basis is the same GPU-independent Draw_Matrix
+/// consumed by rendering. With no supplied basis, the existing flat heading
+/// remains the input. All callers use the original affine rotation and scalar
+/// translation stores, including GetFLH's distinct Translate5AE890 kernel.
 ///
 /// Two things here are easy to get wrong and are pinned by tests:
 ///
@@ -79,11 +77,9 @@ pub struct FlhFacings {
 ///    that `render/vxl_raster.rs` divides the same field by 8 for its own
 ///    purposes, and that scaling must not leak in here.
 ///
-/// RESIDUAL (GSI-08.04) — sloped ground is not modelled. Native's `B` picks up
-/// a tilt when the locomotor's ramp terms exceed 0.005; this reproduces only the
-/// flat-ground reduction. Trigger: firing from a slope. Player effect: the
-/// muzzle sits at the unpitched offset, at most a lepton or two off. Frequency:
-/// common terrain, small magnitude.
+/// The caller supplies Drive/Ship slopes and rocking through their shared
+/// matrix owner. Other locomotor tilt arms retain their existing flat basis
+/// limitation; this does not certify arbitrary Fly/Jumpjet firing poses.
 pub fn native_flh_world_delta(
     forward: i32,
     lateral: i32,
@@ -91,32 +87,40 @@ pub fn native_flh_world_delta(
     turret_offset: i32,
     facings: FlhFacings,
     burst_index: u8,
+    locomotor_basis: Option<glam::Mat4>,
 ) -> Option<(i32, i32, i32)> {
     use crate::util::direction_tables::step32_from_facing16;
-    use crate::util::native_trig::rotate_z_by_step;
+    use crate::util::native_affine::{rotate_z, translate_xyz};
+    use crate::util::native_trig::native_sin_cos_by_step;
 
     let aim_step = i32::from(step32_from_facing16(facings.aim));
     let body_step = i32::from(step32_from_facing16(facings.body));
     let matrix_step = i32::from(step32_from_facing16(facings.matrix));
 
-    // `T(forward, sign * lateral, height)`, the innermost translate.
-    let lateral = flh_lateral_for_burst(lateral, burst_index);
-    let point = (forward as f32, lateral as f32, height as f32);
-
-    // `Rz(theta)`, theta = d32(aim) - d32(body) on the locomotor branch.
-    let rotated = rotate_z_by_step(point, aim_step - body_step)?;
-
-    // `T(TurretOffset, 0, 0)`, in the body frame.
-    let offset = (rotated.0 + turret_offset as f32, rotated.1, rotated.2);
-
-    // B's heading is a locomotor virtual, independent of the relative turn.
-    let world = rotate_z_by_step(offset, matrix_step - 8)?;
+    let basis = if let Some(basis) = locomotor_basis {
+        basis
+    } else {
+        let (sin, cos) = native_sin_cos_by_step(matrix_step - 8)?;
+        rotate_z(glam::Mat4::IDENTITY, sin, cos)
+    };
+    let matrix = translate_xyz(basis, [turret_offset as f32, 0., 0.]);
+    let (sin, cos) = native_sin_cos_by_step(aim_step - body_step)?;
+    let matrix = rotate_z(matrix, sin, cos);
+    let matrix = translate_xyz(
+        matrix,
+        [
+            forward as f32,
+            flh_lateral_for_burst(lateral, burst_index) as f32,
+            height as f32,
+        ],
+    );
+    let world = matrix.w_axis;
 
     // Y is negated before the three truncations.
     Some((
-        native_ftol(world.0)?,
-        native_ftol(-world.1)?,
-        native_ftol(world.2)?,
+        native_ftol(world.x)?,
+        native_ftol(-world.y)?,
+        native_ftol(world.z)?,
     ))
 }
 
@@ -156,6 +160,7 @@ mod tests {
                 matrix: 0,
             },
             0,
+            None,
         )
         .expect("in range");
         assert_eq!(delta, (189, -25, 120));
@@ -175,6 +180,7 @@ mod tests {
                 matrix: 0,
             },
             0,
+            None,
         )
         .expect("in range");
         let odd = native_flh_world_delta(
@@ -188,6 +194,7 @@ mod tests {
                 matrix: 0,
             },
             1,
+            None,
         )
         .expect("in range");
         assert_eq!(odd, (190, 24, 120));
@@ -212,7 +219,8 @@ mod tests {
                     body: 0,
                     matrix: 0
                 },
-                0
+                0,
+                None
             )
             .is_some()
         );

@@ -740,6 +740,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         &rules,
         Some(&registry),
         building,
+        crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(

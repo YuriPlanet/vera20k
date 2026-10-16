@@ -1962,8 +1962,8 @@ enum SpecialArmTarget {
 
 /// The special arm of `BulletClass::DetonateAtCoord @ 0x004690B0`
 /// (`0x0046920B..0x00469A3D`) the warhead's flags selected, for both
-/// deliveries: a visible bullet's detonation, and an `Inviso=` bullet's first
-/// AI visit, which detonates through the same chain.
+/// deliveries: visible and `Inviso=` bullets both enter when their AI
+/// admits detonation; Inviso placement does not bypass the Arm-gated fuse.
 ///
 /// Whatever the arm does, it claims the impact: every arm, its internal
 /// refusals included, leaves by `JMP 0x00469AA4`, and `Apply_area_damage`

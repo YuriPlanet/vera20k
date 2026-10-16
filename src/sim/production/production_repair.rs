@@ -409,7 +409,7 @@ fn low_credit_sale(
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
         return;
     };
-    let yard = object.factory == Some(FactoryType::BuildingType);
+    let yard = object.factory_type() == Some(FactoryType::BuildingType);
     // 4507F7..450805 tests x87 C0: less and unordered both sell.
     let below_red = matches!(
         entity

@@ -72,4 +72,83 @@ def generate():
 
 def metadata():
  return provenance(scope=__doc__,assumptions=['Original UnitType7470D0 constructor; supplied lexical INI indexes over physical RULESMD, MPBattleMD, map; original Image ReadString528A10 caller arguments (ObjectType5F933B) and original ART Voxel block5F961C..5F963A. Missing LANGRULE has no layer. Active MPBattleMD is byte-identical to original packet MPBattle.INI.', 'Original selected-type dispatch73D30E..73D359 reaches actual Unit+55473B470 when native Voxel and supplied resident VXL pointer presence are true; a missing-pointer control bypasses. Preceding disguise/type selection and actual asset pointer installation into this UnitType are excluded.', 'Actual original Cell487A10→Unit damage produces sinking on retained ordinary AEGIS; full ShipDrawMatrix69F670 runs for explicit stable facing0/8/16/24, constructor flat slope, no rocking and completed timer. Native startup camera and native matrix multiply compose output.', 'Existing repository render_native executes full original VXL/HVA/VPL loads, HVA scaling, box transformation, native rectangle production, sorting and raster. Original code consumes all physical file bytes. Source crop offsets and destination-relative bounds stay separate. FPCW0E7F supplied; ambient original process setting not inferred from this fixture.', 'Native cold and cached dirty-rectangle blocks7068EE..7069F6 and70755D..707678 execute with empty accumulator and original raster-derived destination bounds placed at128,128 cached-surface anchor. These outputs feed the unchanged original Unit clip slice twice. No full composited Unit draw dispatch, RGB palette, surface blit or GPU claim.'],substitutions=['Inherited object setup and original receiver boundaries from naval_occupants; INI lexical cache boundaries.', 'File vtable open/read/seek/close expose immutable retail VXL/HVA/VPL bytes; operator new returns distinct mapped storage in repository raster helper. No raster gameplay/math result substituted.', 'Selected-type frame, VXL-pointer presence and retained renderer locals are supplied interior composition inputs.'],entry_points={'art_voxel_reader':0x5F961C,'selected_draw_route':0x73D30E,'unit_body':0x73B470,'ship_matrix':0x69F670,'vxl_load':0x755DB0,'hva_load':0x5BD5C0,'raster':0x754510,'cold_dirty':0x7068EE,'cached_dirty':0x70755D,'unit_clip':0x73BEA4})
-if __name__=='__main__':finish_vectors(generate,HERE/'naval_draw_bounds.json',provenance=metadata)
+def ground_generate(*,drone=False):
+ from tools.voxel_oracle.barrel_pitch import native_arm,native_offset_scale,STARTUP_FPCW
+ from tools.native_oracle import NATIVE_SHA256
+ root=Path(os.environ.get('VERA20K_SHRAPNEL_INPUTS',str(ASSETS)))
+ model='GTNK' if drone else 'DEST'
+ names=(model+'.VXL',model+'.HVA','VOXELS.VPL')
+ if drone:names+=('GTNKTUR.VXL','GTNKTUR.HVA','GTNKBARL.VXL','GTNKBARL.HVA')
+ files={name:(root/name).read_bytes() for name in names}
+ cases=[dict(name='flat',angle_bits=[0,0],facing=0),
+  dict(name='below_double_tilt_gate',angle_bits=[0x3ba3d70a,0],facing=0),
+  dict(name='above_double_tilt_gate',angle_bits=[0x3ba3d70b,0],facing=0),
+  dict(name='positive_roll',angle_bits=[0x3f490fdb,0],facing=0,raster=True),
+  dict(name='negative_roll',angle_bits=[0xbf490fdb,0],facing=0,raster=True),
+  dict(name='both_angles_facing5',angle_bits=[0x3e800000,0xbe000000],facing=5<<11),
+  dict(name='retained_slope',angle_bits=[0x3f490fdb,0],facing=13<<11,slope=2),
+  dict(name='slope_transition',angle_bits=[0xbf490fdb,0],facing=24<<11,slope=2,previous_slope=1,
+       frame=6,slope_timer=dict(start=0,duration=12,total=12))]
+ if drone:
+  for case in cases:
+   if case['name']=='positive_roll':case['angle_bits']=[0x3E800000,0]
+   if case['name']=='negative_roll':case['angle_bits']=[0xBE800000,0]
+   if case['name']=='both_angles_facing5':case['gun']=dict(turret_step=6,barrel_raw=0x3800,turret_offset=50)
+ camera=native_camera();scale=native_offset_scale(STARTUP_FPCW);rows=[]
+ for case in cases:
+  case=dict(dict(frame=0,slope=0,previous_slope=0,slope_timer=dict(start=0,duration=0,total=0)),**case)
+  pose=dict(case);timer=case['slope_timer'];pose['loco_words']=[(0x1c,[case['slope'],case['previous_slope'],timer['start'],0,timer['duration'],timer['total']])]
+  r=render_native(files[model+'.VXL'],files[model+'.HVA'],files['VOXELS.VPL'],**{'drive_pose' if drone else 'ship_pose':pose})
+  kind='drive' if drone else 'ship'
+  row=dict(input=case,**{kind:r[kind]},body_draw_bits=r['input_matrix_bits'])
+  if case.get('raster'):row['rasters']=dict(body=dict(rect=r['rect'],pixels=r['pixels']))
+  # This is an explicit shared gun-component control; retail DEST has no
+  # turret/barrel assets. No physical DEST gun raster is claimed or invented.
+  if drone or case['name'] in ('positive_roll','negative_roll'):
+   gun=case.get('gun',dict(turret_step=4,barrel_raw=0,turret_offset=0)) if drone else dict(turret_step=6,barrel_raw=0x3800,turret_offset=50)
+   turret,barrel=native_arm(scale,camera,gun['turret_offset'],case['facing']>>11,
+      gun['turret_step'],gun['barrel_raw'],locomotor_matrix=struct.pack('<12I',*r[kind]['matrix_bits']))
+   row['gun_component']=dict(input=gun,turret_draw_bits=list(struct.unpack('<12I',turret)),barrel_draw_bits=list(struct.unpack('<12I',barrel)))
+   if drone and case.get('raster'):
+    for part,base,matrix in [('turret','GTNKTUR',turret),('barrel','GTNKBARL',barrel)]:
+     child=render_native(files[base+'.VXL'],files[base+'.HVA'],files['VOXELS.VPL'],matrix)
+     row['rasters'][part]=dict(rect=child['rect'],pixels=child['pixels'])
+  rows.append(row)
+ return dict(schema=1,native_sha256=NATIVE_SHA256,files={name:dict(bytes=len(raw),sha256=sha(raw)) for name,raw in files.items()},
+  camera_bits=list(struct.unpack('<12I',camera)),offset_scale_bits=struct.unpack('<Q',scale)[0],cases=rows)
+
+
+def squid_generate():
+ return ground_generate()
+
+
+def drive_generate():
+ return ground_generate(drone=True)
+
+
+def drive_metadata():
+ return provenance(scope='Eight physical GTNK fullDrive4AFF60 matrix controls, full gun-component matrices and two all-part indexed rasters',assumptions=[
+  'Existing physical raster VM/loader/postpass owns GTNK/GTNKTUR/GTNKBARL VXL/HVA and VOXELS.VPL. Original4AF4E0 initializes Drive empty Coord; full4AF540 and4AFF60 execute. Actual loaded model header validity and native first-section half-sizes are retained. No supplied model-validity or draw-matrix return.',
+  'Frame, raw body facing, two binary32 angles and retained slope/timer words are explicit numeric component inputs. Adjacent f32 values bracket the original double0.005 gate. Opposite0.25 rolls, two axes, stable slope2 and active1-to2 half transition are covered. These are not captured gameplay poses or a whole locomotor history.',
+  'Every row calls existing barrel_pitch.native_arm full73BA4C..73BC26 with the original Drive matrix and supplied turret step/pitch/offset. Default stockGTNK offset0 and explicit nonzero50/pitch3800 control remain distinct. Two rows retain native body/turret/barrel indexed rasters from actual physical parts; no RGB/composited-scene or shadow-pixel claim.',
+  'Existing native_slope startup, camera, multiply, loader-zero CRT handler and strict uninitialized-read guard are shared unchanged. All historical Squid/Ship controls retain their original bytes.',
+ ],substitutions=['Inherited immutable requested-file vtable I/O and successful allocations. No Drive/FLH/tilt/trig/ftol/matrix/raster instruction or result is replaced.'],entry_points=dict(drive_ctor=0x4AF540,drive_empty=0x4AF4E0,drive_matrix=0x4AFF60,half_sizes=0x7160B4,gun_arm=0x73BA4C,raster=0x754510))
+
+
+def squid_metadata():
+ return provenance(scope='Eight physical DEST original69F670 matrices, original loaded-VXL half-size postpass, two physical hull rasters and two explicit shared gun-component controls',assumptions=[
+  'Existing raster VM loads actual DEST VXL/HVA/VPL via original755DB0/5BD5C0/753B70. Original7160B4..716123 derives type half-sizes from first native-loaded section. Original6F9E10 tests actual model header byte0 through Unit type+B0; physical model validity and first section dimensions are recorded.',
+  'Actual Ship69EC50 constructor and original69EBF0 empty-Coord startup run. Frame0 or6, facing/angles/slope/timer are explicit component inputs. Full69F670 preserves native cached versus dynamic gate, table trig/ftol, retained slope interpolation and native multiply grouping. No full native scenario/unit asset-binding/locomotor process claim.',
+  'Only positive/negative roll controls retain physical hull packed rasters. Existing original loader/raster, camera and matrix owners are reused. Retail DEST Turret=no and derived DESTTUR/BARL assets absent; two gun_component rows explicitly supply offset50/turretstep6/pitch3800 to the existing full73BA4C..73BC26 owner using the original Ship matrix. Those are shared numerical controls, not physical DEST gun rendering.',
+  'Original69EBF0 initializes cold Ship empty Coord globals. Frame and actor/type/facing links are supplied component inputs, not fabricated gameplay callable results. Sideways angle input is exact binary32; conversion to simulation fixed point is an explicitly separate consumer boundary.',
+  'Shared native_slope startup runs original754980 yaw and all original slope/quaternion initializers on this same VM. The21 historical slope matrices remain unchanged. CRT math-error-handler slotB7819C is supplied as its PE loader-zero virtual-tail prior (original setter7C8F96); the strict uninitialized-read guard remains active. No new native shadow execution or shadow-pixel claim.',
+ ],substitutions=['Inherited immutable requested-file vtable IO, successful bump allocation and original startup camera transport. No Ship DrawMatrix/IsVoxel/postpass/trig/ftol/multiply/gun-arm/raster return or instruction is replaced.'],entry_points=dict(ship_ctor=0x69ec50,ship_empty_startup=0x69ebf0,half_sizes=0x7160b4,is_voxel=0x6f9e10,ship_matrix=0x69f670,gun_arm=0x73ba4c,raster=0x754510))
+
+
+if __name__=='__main__':
+ import sys
+ if '--drone-tilt' in sys.argv:
+  finish_vectors(drive_generate,HERE/'drive_draw_drone_tilt.json',provenance=drive_metadata,argv=[a for a in sys.argv[1:] if a!='--drone-tilt'])
+ elif '--squid-tilt' in sys.argv:
+  finish_vectors(squid_generate,HERE/'naval_draw_squid_tilt.json',provenance=squid_metadata,argv=[a for a in sys.argv[1:] if a!='--squid-tilt'])
+ else:finish_vectors(generate,HERE/'naval_draw_bounds.json',provenance=metadata)

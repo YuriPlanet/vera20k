@@ -30,14 +30,6 @@ impl ShelfCursor {
         }
     }
 
-    pub(crate) fn width(&self) -> u32 {
-        self.width
-    }
-
-    pub(crate) fn height(&self) -> u32 {
-        self.height
-    }
-
     /// Close the current shelf, so the next placement starts on rows no
     /// earlier sprite occupies.
     pub(crate) fn start_new_shelf(&mut self) {

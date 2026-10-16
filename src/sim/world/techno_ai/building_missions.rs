@@ -434,6 +434,7 @@ fn mission_unload(
         rules,
         ctx.overlay_registry,
         id,
+        crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
         ctx.effects,
     );
     let entity = sim.substrate.entities.get(id)?;

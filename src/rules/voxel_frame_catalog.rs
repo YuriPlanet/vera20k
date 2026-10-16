@@ -7,14 +7,37 @@
 //! modulo that count (`UnitClass::DrawVoxelBody @ 0x0073B470`,
 //! `AircraftClass::Draw_It @ 0x004144B0`); the simulation keeps no HVA clock.
 //!
-//! Depends on `assets/`, `rules/`, and sim component types only.
+//! Owns model-part identity and selection from assets/rules. No simulation or
+//! presentation dependency is required to resolve physical model inputs.
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
 use crate::rules::art_data;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::VxlLayer;
+
+/// Which part of a multi-part voxel model an entity/atlas entry represents.
+///
+/// Non-turret units use `Composite` (body+turret+barrel baked together).
+/// Turret units store Body/Turret/Barrel separately so the turret can
+/// be drawn at a different facing than the body at render time.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum VxlLayer {
+    /// All parts composited into one sprite (for units without independent turret).
+    Composite,
+    /// Body only (hull/chassis).
+    Body,
+    /// Turret only ({IMAGE}TUR.VXL).
+    Turret,
+    /// Barrel only ({IMAGE}BARL.VXL).
+    Barrel,
+    /// Ground shadow of the main voxel: each section's occupied (x, y) columns
+    /// flattened onto z = 0 and shifted by the shadow light vector, always at
+    /// motion frame 0. See `render::vxl_raster::render_vxl_shadow`.
+    Shadow,
+}
 
 pub(crate) const NO_SPAWN_ALT_SUFFIX: &str = "WO";
 

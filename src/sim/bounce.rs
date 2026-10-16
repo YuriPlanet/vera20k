@@ -31,6 +31,7 @@ use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
 use crate::sim::rng::SimRng;
+use crate::util::native_quaternion::quaternion_to_matrix;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
 };
@@ -333,41 +334,6 @@ fn quaternion_multiply(
         *component = X87Chop53::store_f32(X87Chop53::div(X87Chop53::load_f32(*component)?, norm)?)?;
     }
     Ok(out)
-}
-
-/// `Quaternion_ToMatrix @ 0x00646980`, rows `[m0, m1, m2, 0]`. Some products
-/// are stored as floats before their sums and some stay on the stack, which
-/// is why the rows are not written symmetrically.
-fn quaternion_to_matrix(q: [NativeF32Bits; 4]) -> Result<[NativeF32Bits; 12], NativeX87Error> {
-    let [x, y, z, w] = load_all(q)?;
-    let mul = X87Chop53::mul;
-    let one = X87Chop53::load_f32(NativeF32Bits::ONE)?;
-    let double = |value: X87Value| X87Chop53::add(value, value);
-    let zz = mul(z, z);
-    let yy = stored(mul(y, y))?;
-    let xx = stored(mul(x, x))?;
-    let yx = mul(y, x);
-    let wz = mul(w, z);
-    let wy = stored(mul(w, y))?;
-    let xz = mul(x, z);
-    let yz = mul(y, z);
-    let wx = mul(w, x);
-    let zero = NativeF32Bits::POSITIVE_ZERO;
-    let entry = X87Chop53::store_f32;
-    Ok([
-        entry(X87Chop53::sub(one, double(X87Chop53::add(yy, zz))))?,
-        entry(double(X87Chop53::sub(yx, wz)))?,
-        entry(double(X87Chop53::add(xz, wy)))?,
-        zero,
-        entry(double(X87Chop53::add(wz, yx)))?,
-        entry(X87Chop53::sub(one, double(X87Chop53::add(xx, zz))))?,
-        entry(double(X87Chop53::sub(yz, wx)))?,
-        zero,
-        entry(double(X87Chop53::sub(stored(xz)?, wy)))?,
-        entry(double(X87Chop53::add(wx, yz)))?,
-        entry(X87Chop53::sub(one, double(X87Chop53::add(xx, yy))))?,
-        zero,
-    ])
 }
 
 /// The verified `BounceClass::Update @ 0x00439B00` contract, recorded ahead of

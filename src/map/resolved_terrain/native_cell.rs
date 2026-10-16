@@ -503,6 +503,16 @@ impl SharedCellDummy {
         work()
     }
 
+    /// [`Self::detached`], also answering whether `work` changed the private
+    /// copy: a lookup it made stamped the Dummy.
+    pub(crate) fn detached_stamps<R>(&self, work: impl FnOnce() -> R) -> (R, bool) {
+        self.detached(|| {
+            let before = self.cell_word();
+            let result = work();
+            (result, self.cell_word() != before)
+        })
+    }
+
     fn address(&self) -> usize {
         Arc::as_ptr(&self.state) as usize
     }

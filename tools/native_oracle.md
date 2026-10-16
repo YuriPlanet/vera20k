@@ -1,5 +1,63 @@
 # Native comparison workflow
 
+### Terror Drone impulse and Drive controls
+
+`tools.spatial_oracle.unit_rocking_update --impulse` adds eight whole original
+`70B280` controls through the existing physical GTNK loader VM. Supplied inputs
+cover opposite sides, 3D distance, actual stock default Weight 1, explicit
+3.5/zero/negative weights, weak/zero-distance gates and replacing two impulses.
+Ordered native field stores and follow-up `70B570` states are retained. One
+60-visit history keeps eight checkpoints, including amplification of a tiny
+nonzero rate and eventual settlement. Native f32 state remains unmodified
+between visits; these are component inputs rather than a whole native scenario.
+
+`tools.spatial_oracle.naval_draw_bounds --drone-tilt` adds eight full original
+Drive `4AFF60` controls using actual GTNK body/turret/barrel files. It reuses
+the loader/postpass, startup slope tables, camera, gun-arm and raster owners.
+Two rows retain all three physical indexed rasters. Set
+`VERA20K_SHRAPNEL_INPUTS` to their extracted physical directory and use
+`PYTHONPATH=.:tools/spatial_oracle`. Both opt-ins use `--check` by default and
+`--write` only for deliberate new-corpus regeneration. Historical update,
+Ship, slope and voxel corpora remain separate.
+
+The related two-bite original RNG/coordinate comparison is
+`parasite_water_gate --drone`; its supplied model-binding and direct-Limbo
+boundaries are recorded with the
+[shared runtime](spatial_oracle/building_death_anims_joined.md#terror-drone-numeric-component).
+
+### Squid-grapple Ship presentation controls
+
+`tools.spatial_oracle.naval_draw_bounds --squid-tilt` adds eight original
+`69F670` matrix controls without changing the historical default corpus. Set
+`VERA20K_SHRAPNEL_INPUTS` to the physical input directory containing
+`DEST.VXL`, `DEST.HVA` and `VOXELS.VPL`, and run with
+`PYTHONPATH=.:tools/spatial_oracle`. Use `--check` to compare or `--write` to
+deliberately regenerate `spatial_oracle/naval_draw_squid_tilt.json`.
+
+The existing raster VM loads the physical model, executes original loaded-model
+validity and half-size postpass, constructs Ship locomotion, initializes native
+slope/quaternion tables and runs the original draw matrix. Inputs cover the
+double 0.005 tilt gate, opposite rolls, two angles/facing, retained slope and a
+slope transition. Two rows retain physical hull raster pixels; their explicit
+gun-component matrices reuse `barrel_pitch.native_arm`. Retail DEST has
+`Turret=no` and no turret/barrel models, so those component matrices do not
+claim physical DEST gun rendering. Frame, pose and timer are supplied numerical
+inputs; native scenario motion, shadow pixels and whole-scene RGB are excluded.
+
+`python -m tools.native_slope --blend --check` compares the same startup's
+21 matrices and quaternions plus seven full `755A40` interpolation controls.
+The existing VM/startup owner supplies both tables; original `646590` and
+`646980` compute each blend. Differing indices still interpolate at phase 0
+and 1, so those endpoints can differ from the stable matrix table. Equal
+indices copy the stable matrix directly. The small `native_slope_blend.json`
+corpus records actual live and cached CRT controls and finite supplied phases;
+it does not establish a locomotor timer or cell-transition history.
+
+`tools.spatial_oracle.parasite_water_gate --grapple` adds the related bounded
+RNG/angle comparison through full original `6297F0`. Its fresh physical host
+and explicit direct-Limbo/Attach boundary are documented with the
+[shared runtime](spatial_oracle/building_death_anims_joined.md#squid-grapple-numeric-component).
+
 For original byte reads, disassembly and whole-code scans, use the indexed
 [native inspection tool](native_inspect.md). It shares this runner's executable
 identity and PE owner; static inspection is separate from checked execution.

@@ -12,7 +12,7 @@ use crate::map::source::test_support::TestDirectory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::voxel_frame_catalog::{
+use crate::rules::voxel_frame_catalog::{
     detect_hva_frame_count, seed_layers_for, unit_atlas_variants, voxel_image_id,
 };
 use crate::sim::world::Simulation;

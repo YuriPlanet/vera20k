@@ -6,9 +6,10 @@ use super::*;
 
 /// The `Death_Announcement` (`+0x3B8`) input for one death site.
 ///
-/// Every native caller sits in a non-building `ReceiveDamage` override
-/// (`BuildingClass` has none), and `0x004D98DD` skips `Spawned=` types.
-/// Called by the damage kill loop only. The non-damage death sites that
+/// Native non-building receivers and Squid culling629C76 call this slot;
+/// BuildingClass has none. `0x004D98DD` skips `Spawned=` types. Culling
+/// announces the living hull before Stun without recording a kill. The other
+/// non-damage death sites that
 /// natively route through `+0x16C` (`ReceiveDamage`) with `C4Warhead=`,
 /// `InfantryClass::IronCurtain 0x00522632` and `CellClass::BlowUpBridge
 /// 0x0047DDAE`, reach it the same way: VERA kills through that loop too.

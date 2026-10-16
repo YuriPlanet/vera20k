@@ -42,7 +42,7 @@ pub(super) fn less(a: X87Value, b: X87Value) -> bool {
     X::compare(a, b) == X87Ordering::Less
 }
 
-pub(super) fn radians(word: u16) -> NativeF64Bits {
+pub(crate) fn radians(word: u16) -> NativeF64Bits {
     store(X::mul(
         X::load_i32(i32::from(word as i16) - 0x3fff),
         d(RADIAN_SCALE),

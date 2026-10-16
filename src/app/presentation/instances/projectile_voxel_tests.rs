@@ -194,6 +194,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
     let matrix = crate::render::vxl_raster::projectile_voxel_matrix(bullet.velocity)
         .expect("actual launched velocity provides the native voxel pose");
     cache.begin_frame();
+    assert_eq!(cache.fill_test_page().page, 0);
     let body = cache
         .render_matrix(
             &assets,
@@ -205,6 +206,10 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         )
         .expect("physical SUBT VXL/HVA/VPL must rasterize before the draw assertion");
     assert!(body.pixel_size.iter().all(|&size| size > 0.0));
+    assert!(
+        body.page > 0,
+        "actual torpedo survives a full preceding pose page"
+    );
     let (x, y) =
         absolute_leptons_to_screen(bullet.position.x, bullet.position.y, bullet.position.z);
     let object = projectile_draw_instance(
@@ -234,7 +239,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
     assert_eq!(object.parent.policy.render_z, RenderZPolicy::ReadOnly);
     assert_eq!(object.pieces.len(), 1, "voxel body has no SHP shadow");
     let piece = &object.pieces[0];
-    assert_eq!(piece.target, ObjectTexture::UnitPose);
+    assert_eq!(piece.target, ObjectTexture::UnitPosePage(body.page));
     assert_eq!(piece.render_z, RenderZPolicy::ReadOnly);
     assert_eq!(piece.instance.size, body.pixel_size);
     assert_eq!(piece.instance.draw_state.remap_row, 1);
@@ -341,7 +346,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
         assert_eq!(object.pieces.len(), 1, "the voxel branch has no SHP shadow");
         assert_eq!(object.parent.policy.render_z, RenderZPolicy::None);
         assert_eq!(object.pieces[0].render_z, RenderZPolicy::None);
-        assert_eq!(object.pieces[0].target, ObjectTexture::UnitPose);
+        assert_eq!(object.pieces[0].target, ObjectTexture::UnitPosePage(0));
         assert_eq!(
             object.pieces[0].instance.draw_state.remap_row, 1,
             "native scheme1 is Colors entry0, not entry1"

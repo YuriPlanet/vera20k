@@ -43,7 +43,7 @@ pub(super) fn exit_arm(producer: &ObjectType) -> ExitArm {
         } else {
             ExitArm::Land
         }
-    } else if producer.factory == Some(FactoryType::InfantryType)
+    } else if producer.factory_type() == Some(FactoryType::InfantryType)
         || producer.hospital
         || producer.armory()
         || producer.cloning
@@ -777,7 +777,7 @@ mod tests {
         let mut arms = Vec::new();
         for object in retail.rules.all_objects() {
             if !matches!(
-                object.factory,
+                object.factory_type(),
                 Some(FactoryType::UnitType | FactoryType::InfantryType)
             ) {
                 continue;

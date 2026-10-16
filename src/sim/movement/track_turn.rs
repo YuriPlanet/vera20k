@@ -170,7 +170,7 @@ impl Simulation {
             {
                 let terrain = self.resolved_terrain.as_ref();
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    super::navcom::track_move_to(entity, coord, terrain);
+                    super::navcom::track_move_to(entity, coord, terrain, self.session.binary_frame);
                 }
             }
             return false;

@@ -310,6 +310,57 @@ def particle_type_state(m, system, particle):
         behavior=signed(m.read32(particle + 0x314)), logic=bool(u.mem_read(particle + 0x234, 1)[0])))
 
 
+def prepare_spark_capacity(m, addresses=(0xA83D68, 0xA83D98, 0xA80208, 0xA83DC8, 0xB0F720, 0xAC1678)):
+    """Shared existing empty registry-capacity input; native constructors insert."""
+    for address in addresses:
+        m.u.mem_write(address, words(0x7EB6D4, m.alloc(4096), 1024, 1, 0, 10))
+
+
+def read_spark_types(m, layers, *, cache=None, ini_pointer=RULES, overrides=None):
+    """Existing original SparkSys/Spark input owner on a caller-owned reader VM."""
+    u, rules = m.u, m.rules
+    cache = m.rules_cache if cache is None else cache
+    if not hasattr(m, 'reads'):
+        m.reads = []
+    m.system_type, m.particle_type = m.alloc(0x310), m.alloc(0x318)
+    m.invoke(0x6440A0, m.system_type, (m.cstring('SparkSys'),))
+    m.invoke(0x644BE0, m.particle_type, (m.cstring('Spark'),))
+    m.type_constructor = particle_type_state(m, m.system_type, m.particle_type)
+    m.type_layers = []
+    system_keys = {}
+    for name, archive, raw in layers:
+        if raw is None:
+            m.type_layers.append(dict(file=name, absent=True))
+            continue
+        sections, _ = lexical(raw, {'SparkSys', 'Spark', 'CombatDamage', 'AudioVisual'})
+        # Existing original readers own scalar/reference/default semantics.
+        selected = {k: v for k, v in sections.items() if k in ('SparkSys', 'Spark')}
+        if 'SparkSys' in selected:
+            system_keys.update(selected['SparkSys'])
+        selected.update({k: {key: value for key, value in sections.get(k, {}).items() if key in wanted}
+                         for k, wanted in [('CombatDamage', {'DefaultSparkSystem'}), ('AudioVisual', {'Gravity'})]
+                         if k in sections})
+        cache(selected)
+        m.reads.clear()
+        m.invoke(0x6442D0, m.system_type, (ini_pointer,))
+        m.invoke(0x644F50, m.particle_type, (ini_pointer,))
+        m.invoke(0x66BBB0, rules, (ini_pointer,))
+        u.reg_write(UC_X86_REG_ESP, READER_SP)
+        u.reg_write(UC_X86_REG_ESI, rules)
+        u.reg_write(UC_X86_REG_EDI, ini_pointer)
+        native.run_checked(u, 0x66B3C4, 0x66B3E4)
+        m.type_layers.append(dict(file=name, archive=archive, bytes=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(), sections=selected, reads=list(m.reads),
+            state=particle_type_state(m, m.system_type, m.particle_type),
+            default_spark_is_selected=m.read32(rules + 0x1020) == m.system_type,
+            gravity=signed(m.read32(rules + 0x16B8))))
+    assert m.read32(rules + 0x1020) == m.system_type
+    if overrides:
+        cache({'SparkSys': dict(system_keys, **overrides)})
+        m.invoke(0x6442D0, m.system_type, (ini_pointer,))
+    m.effective_types = particle_type_state(m, m.system_type, m.particle_type)
+
+
 class SparkBirth(BulletReader):
     """Cached retail readers and actual original Init/Spark world continuation."""
     def __init__(self, case, endpoint):
@@ -323,45 +374,8 @@ class SparkBirth(BulletReader):
         # Actual static Logic/Display constructors and supplied empty pool capacity.
         self.invoke(0x40CB80, 0)
         self.invoke(0x4A8630, 0)
-        for p in (0xA83D68, 0xA83D98, 0xA80208, 0xA83DC8, 0xB0F720, 0xAC1678):
-            u.mem_write(p, words(0x7EB6D4, self.alloc(4096), 1024, 1, 0, 10))
-        self.system_type, self.particle_type = self.alloc(0x310), self.alloc(0x318)
-        self.invoke(0x6440A0, self.system_type, (self.cstring('SparkSys'),))
-        self.invoke(0x644BE0, self.particle_type, (self.cstring('Spark'),))
-        self.type_constructor = particle_type_state(self, self.system_type, self.particle_type)
-        self.type_layers = []
-        system_keys = {}
-        for name, archive, raw in physical_layers():
-            if raw is None:
-                self.type_layers.append(dict(file=name, absent=True))
-                continue
-            sections, _ = lexical(raw, {'SparkSys', 'Spark', 'CombatDamage', 'AudioVisual'})
-            # Existing original readers own scalar/reference/default semantics.
-            selected = {k: v for k, v in sections.items() if k in ('SparkSys', 'Spark')}
-            if 'SparkSys' in selected:
-                system_keys.update(selected['SparkSys'])
-            selected.update({k: {key: value for key, value in sections.get(k, {}).items() if key in wanted}
-                             for k, wanted in [('CombatDamage', {'DefaultSparkSystem'}), ('AudioVisual', {'Gravity'})]
-                             if k in sections})
-            self.rules_cache(selected)
-            self.reads.clear()
-            self.invoke(0x6442D0, self.system_type, (RULES,))
-            self.invoke(0x644F50, self.particle_type, (RULES,))
-            self.invoke(0x66BBB0, rules, (RULES,))
-            u.reg_write(UC_X86_REG_ESP, READER_SP)
-            u.reg_write(UC_X86_REG_ESI, rules)
-            u.reg_write(UC_X86_REG_EDI, RULES)
-            native.run_checked(u, 0x66B3C4, 0x66B3E4)
-            self.type_layers.append(dict(file=name, archive=archive, bytes=len(raw),
-                sha256=hashlib.sha256(raw).hexdigest(), sections=selected, reads=list(self.reads),
-                state=particle_type_state(self, self.system_type, self.particle_type),
-                default_spark_is_selected=self.read32(rules + 0x1020) == self.system_type,
-                gravity=signed(self.read32(rules + 0x16B8))))
-        assert self.read32(rules + 0x1020) == self.system_type
-        if case.get('system_type_overrides'):
-            self.rules_cache({'SparkSys': dict(system_keys, **case['system_type_overrides'])})
-            self.invoke(0x6442D0, self.system_type, (RULES,))
-        self.effective_types = particle_type_state(self, self.system_type, self.particle_type)
+        prepare_spark_capacity(self)
+        read_spark_types(self, physical_layers(), overrides=case.get('system_type_overrides'))
         initialize_effect_registries(self)
         table = self.alloc(0x100000)
         u.mem_write(0x87F924, words(table, 262144))

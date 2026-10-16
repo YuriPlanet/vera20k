@@ -1966,6 +1966,18 @@ impl Simulation {
         changed
     }
 
+    /// Manual frame writer62979A..6297D7: restart the owned stage timer,
+    /// write its reload rate (+C0 at6297B7), then set the requested frame.
+    /// The animation remains in Logic and must retain this rate on expiry.
+    pub(crate) fn set_anim_manual_frame(&mut self, id: AnimId, frame: i32, duration: u16) {
+        let current = self.session.binary_frame as i32;
+        if let Some(anim) = self.anim_mut_by_id(id) {
+            anim.runtime.frame_timer = CdTimer::started(current, i32::from(duration));
+            anim.runtime.rate_reload = duration;
+            anim.runtime.current_frame = frame;
+        }
+    }
+
     pub(crate) fn set_anim_frame_and_z_adjust(&mut self, id: AnimId, frame: i32, z_adjust: i32) {
         if let Some(anim) = self.anim_mut_by_id(id) {
             anim.runtime.current_frame = frame;

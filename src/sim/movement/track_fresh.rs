@@ -199,7 +199,9 @@ impl Simulation {
         //4B2741..4B2761: vt+37C (Unit 0x746C90: the EMP lock +504 or the
         //death-frame counter +6D8, neither represented; see the residual) and
         //vt+380, FootClass::IsParalyzed 0x4DE770 (the Foot+6A0 timer a
-        //parasite arms), return with the out byte clear.
+        //parasite arms), return with the out byte clear. Ship's vt+380 gate
+        //is6A1DA9. The consumed track_fresh_response controls cover both
+        //families with active and expired timers through this shared owner.
         if actor.parasite.is_paralyzed(self.session.binary_frame) {
             return Ok(false);
         }

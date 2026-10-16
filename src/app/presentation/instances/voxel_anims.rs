@@ -280,7 +280,7 @@ fn pose_piece(
     source_palette: u32,
 ) -> ObjectPieceInstance {
     ObjectPieceInstance {
-        target: ObjectTexture::UnitPose,
+        target: ObjectTexture::UnitPosePage(entry.page),
         render_z: RenderZPolicy::ReadOnly,
         instance: SpriteInstance {
             position: [at.point[0] + entry.offset_x, at.point[1] + entry.offset_y],

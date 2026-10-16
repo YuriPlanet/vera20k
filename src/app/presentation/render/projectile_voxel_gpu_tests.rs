@@ -236,7 +236,13 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                 }
                 assert_eq!(
                     gpu.read_uint_texels(
-                        &cache.texture().unwrap().view,
+                        &cache
+                            .page_texture(match layers[1].runs[0].target {
+                                ObjectTexture::UnitPosePage(page) => page,
+                                _ => unreachable!(),
+                            })
+                            .unwrap()
+                            .view,
                         body.uv_origin.map(|v| (v * 1024.0) as u32),
                         body.pixel_size.map(|v| v as u32)
                     ),
@@ -266,8 +272,7 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                     &layers[1],
                     None,
                     None,
-                    cache.texture(),
-                    &crate::render::unit_slope_transition_cache::VxlSlopeTransitionCache::default(),
+                    Some(&cache),
                     None,
                     Some(&palettes),
                     batch.default_zshape_bind_group(),
@@ -444,7 +449,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
             // One upload after all requests, as the production frame builder.
             cache.upload(&gpu.device, &gpu.queue, &batch);
             let texels = gpu.read_uint_texels(
-                &cache.texture().unwrap().view,
+                &cache.page_texture(reused.page).unwrap().view,
                 instance.uv_origin.map(|v| (v * 1024.0) as u32),
                 [expected.width, expected.height],
             );
@@ -482,8 +487,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                     layer,
                     None,
                     None,
-                    cache.texture(),
-                    &crate::render::unit_slope_transition_cache::VxlSlopeTransitionCache::default(),
+                    Some(&cache),
                     None,
                     Some(&palettes),
                     batch.default_zshape_bind_group(),
@@ -613,13 +617,15 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
             &vec![127; indices.len()],
         );
         batch.bind_shroud(&gpu.device, Some(&fog));
-        let pose = batch.create_unit_atlas_texture_on_device(
-            &gpu.device,
-            &gpu.queue,
-            size[0],
-            size[1],
-            &indices,
-        );
+        let pose = crate::render::unit_pose_cache::VxlPoseFrameCache::from_test_textures(vec![
+            batch.create_unit_atlas_texture_on_device(
+                &gpu.device,
+                &gpu.queue,
+                size[0],
+                size[1],
+                &indices,
+            ),
+        ]);
         let palettes = PaletteSet::new_on_device(
             &gpu.device,
             &gpu.queue,
@@ -651,7 +657,7 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
                         policy: BlitPolicy::z_read(SpriteEncoding::Voxel),
                     },
                     vec![ObjectPieceInstance {
-                        target: ObjectTexture::UnitPose,
+                        target: ObjectTexture::UnitPosePage(0),
                         render_z: RenderZPolicy::ReadOnly,
                         instance,
                     }],
@@ -685,7 +691,6 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
                     None,
                     None,
                     Some(&pose),
-                    &crate::render::unit_slope_transition_cache::VxlSlopeTransitionCache::default(),
                     None,
                     Some(&palettes),
                     batch.default_zshape_bind_group(),

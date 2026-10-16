@@ -59,7 +59,7 @@ impl Simulation {
             &RallyCellClick {
                 clicked: (clicked.0 as i16, clicked.1 as i16),
                 location: crate::sim::movement::ground_pose::position_world_coord(&entity.position),
-                factory: object.factory,
+                factory: object.factory_type(),
                 naval: object.naval,
             },
         )
