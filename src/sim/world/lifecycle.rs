@@ -3905,7 +3905,7 @@ impl Simulation {
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
             listener.damage_smoke_system_id.system(),
-            listener.aircraft_ammo.as_ref().and_then(|ammo| ammo.dock()),
+            listener.ammo().and_then(|ammo| ammo.dock()),
             listener
                 .pending_c4_detonation
                 .pending()
@@ -4437,8 +4437,7 @@ impl Simulation {
         // Aircraft PointerExpired clears its dock (`+0x6CC`) for either
         // control (`0x0041B673..0x0041B67F`).
         let clear_airfield = listener
-            .aircraft_ammo
-            .as_ref()
+            .ammo()
             .is_some_and(|ammo| ammo.dock() == Some(expired_id));
 
         // Steam gamemd3e81a617, TechnoPointerExpired7078B2..7078DB:
@@ -4515,7 +4514,7 @@ impl Simulation {
             // `0x00707AF5`.
             listener.pending_entry.expire(expired_id);
         }
-        if clear_airfield && let Some(ammo) = listener.aircraft_ammo.as_mut() {
+        if clear_airfield && let Some(ammo) = listener.ammo_mut() {
             ammo.set_dock(None);
         }
         if clear_passenger_role {

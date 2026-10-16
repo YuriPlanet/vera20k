@@ -15,9 +15,11 @@ use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
+use crate::sim::movement::teleport_movement::ChronoWarp;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
 impl Simulation {
@@ -169,6 +171,234 @@ impl Simulation {
         //refusals use scalar cleanup; a failed Droppod carrier retains the
         //already constructed Team/member chain, as65DBF0/65DD08 do.
         (true, review_cell)
+    }
+
+    /// Chrono reinforcement65EC30, called by Action107. Original active-YR
+    /// Steam3e81a617..08600; executable controls are maintained by
+    /// tools.spatial_oracle.trigger_action_values --chrono-reinforcement.
+    /// This shares65DD30's
+    /// member constructor and the existing placement, ammo, COM/piggyback and
+    /// Teleport Process owners. The temporary native +30 lists are local Vecs;
+    /// the Team's authoritative membership remains unchanged throughout.
+    /// RNG: the shared concrete constructors consume Scenario in construction
+    /// order. Infantry's Cell481180 subcell selection retains its conditional
+    /// Scenario draw; Unit/Aircraft placement and arming add none. Later Process
+    /// TimerCheck retains its passive-scan draw. Timers: fresh Teleport(frame,0),
+    /// Techno+284=ChronoReinfDelay, then Process state3's ChronoDelay and
+    /// state5's countdown. No success-path detach; a refused Unlimbo uses the
+    /// existing scalar-cleanup owner after the placement scope ends.
+    pub(crate) fn spawn_chrono_team_reinforcements(
+        &mut self,
+        team_type: InternedId,
+        waypoint_override: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> (bool, Option<(i16, i16)>) {
+        let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
+            return (false, None);
+        };
+        if self
+            .team_script_vm
+            .task_forces
+            .get(&definition.task_force_id)
+            .is_none_or(|task_force| task_force.entries.is_empty())
+        {
+            return (false, None);
+        }
+        let metadata = self
+            .team_script_vm
+            .team_type_ini
+            .get(&team_type)
+            .cloned()
+            .unwrap_or_default();
+        let Some(script) = self.team_script_vm.scripts.get_mut(&definition.script_id) else {
+            // A missing ScriptType allocation is outside the installed VM's
+            // definition closure. Do not manufacture a second script owner.
+            log::warn!("Chrono reinforcement requires a resolved ScriptType");
+            return (false, None);
+        };
+        if script.actions.is_empty() {
+            script.actions.push(TeamScriptAction {
+                action_id: 5,
+                argument: 0,
+            });
+        }
+        let Some(members) = self.create_reinforcement_members(team_type, rules, registry, effects)
+        else {
+            //65ECD2 dereferences an empty returned chain before its null test.
+            // This explicit diagnostic is a bounded safe refusal, not AL parity.
+            log::warn!("Chrono reinforcement has no constructed members (native invalid state)");
+            return (false, None);
+        };
+        //65ECD2 clears Team.OwnsType. Rust's registry already owns definitions;
+        //destroy_team never deletes the borrowed TeamType or ScriptType.
+        let waypoint = if waypoint_override == -1 {
+            metadata.waypoint
+        } else {
+            waypoint_override
+        };
+        let origin = self.session.waypoint_cell(waypoint).unwrap_or((0, 0));
+        let frame = self.session.binary_frame;
+        let mut successes = Vec::with_capacity(members.len());
+        for member in members {
+            let actor = self
+                .substrate
+                .entities
+                .get(member)
+                .expect("constructed member");
+            let category = actor.category();
+            // Original WhatAmI slots: Unit746E20=1, Aircraft41C180=2,
+            // Infantry523340=15. The two65ED39/65ED4C flags are Unit/Aircraft.
+            let unit = category == EntityCategory::Unit;
+            let aircraft = category == EntityCategory::Aircraft;
+            let object = self
+                .object_type(actor.type_ref(), rules)
+                .expect("resolved member type");
+            let speed = if aircraft {
+                crate::rules::locomotor_type::SpeedType::Track
+            } else {
+                object.speed_type
+            };
+            let harvester = object.harvester;
+            let ammo = actor
+                .ammo()
+                .expect("concrete Foot constructor retains Ammo")
+                .current();
+            let target = self.canonical_team_cell(origin);
+            let mut initial = self
+                .team_target_coord(target)
+                .expect("native requested Cell coordinates");
+            if !unit && !aircraft {
+                initial.x = initial
+                    .x
+                    .wrapping_add((ammo & 3).wrapping_sub(2).wrapping_mul(256));
+                initial.y = initial
+                    .y
+                    .wrapping_add((ammo & 12).wrapping_sub(4).wrapping_mul(64));
+            }
+            if !aircraft {
+                self.substrate
+                    .entities
+                    .get_mut(member)
+                    .unwrap()
+                    .ammo_mut()
+                    .unwrap()
+                    .add(-1);
+            }
+            let mut cell = (initial.x / 256, initial.y / 256);
+            let mut landing = None;
+            //65EDF6..65EFF1: retry at most255 times. Each returned FNPC Cell
+            //becomes the next attempt's seed, even after a refused subcell.
+            for _ in 0..255 {
+                let nearby = self
+                    .find_plain_passable_cell(cell, speed, None, MovementZone::Normal, (1, 1))
+                    .unwrap_or((0, 0));
+                let identity = self
+                    .resolved_terrain
+                    .as_ref()
+                    .expect("chrono reinforcement requires map cells")
+                    .native_cell_identity((nearby.0 as i16, nearby.1 as i16));
+                let center = self
+                    .team_target_coord(self.canonical_team_cell((nearby.0 as i16, nearby.1 as i16)))
+                    .expect("native FNPC Cell coordinates");
+                cell = (center.x / 256, center.y / 256);
+                landing = if !unit && !aircraft {
+                    self.place_infantry_spot_in_cell(rules, identity, center)
+                        .unwrap_or_else(|error| {
+                            log::warn!("Chrono reinforcement subcell: {error}");
+                            None
+                        })
+                } else {
+                    Some(center)
+                };
+                if landing.is_some_and(|coord| coord != (DriveCoord { x: 0, y: 0, z: 0 })) {
+                    break;
+                }
+                landing = None;
+            }
+            let coord = landing.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+            let placed = self.with_object_placement_scope(|sim| {
+                sim.reveal_constructed_object_at_coord_with_overlay_context(
+                    member,
+                    coord,
+                    0,
+                    PlacementEvidence::UnitEntryAdmitted,
+                    rules,
+                    registry,
+                    effects,
+                )
+                .is_some()
+            });
+            if !placed {
+                //65F016 decrements A8E7AC before the scalar deleting destructor.
+                self.discard_constructed_limbo(member, Some(rules), effects);
+                continue;
+            }
+            let locomotor = self
+                .substrate
+                .entities
+                .get_mut(member)
+                .unwrap()
+                .locomotor
+                .as_mut()
+                .expect("a placed Foot has its constructed locomotor");
+            locomotor.begin_piggyback(crate::rules::locomotor_type::LocomotorKind::Teleport, frame);
+            //65EC30 calls the same Move_To718100 owner before raising271.
+            if let Err(error) =
+                self.teleport_move_to(member, coord, rules, harvester, registry, effects)
+            {
+                log::warn!("Chrono reinforcement Move_To: {error}");
+            }
+            let entity = self.substrate.entities.get_mut(member).unwrap();
+            entity
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .teleport_runtime_mut()
+                .unwrap()
+                .arm_chrono(ChronoWarp::reinforcement(coord, frame));
+            entity
+                .chrono_warp_delay
+                .store(rules.general.chrono_reinf_delay);
+            successes.push(member);
+        }
+        if successes.is_empty() {
+            //65F281 similarly dereferences a null success head before its test.
+            log::warn!("Chrono reinforcement placed no members (native invalid state)");
+            return (false, None);
+        }
+        for member in successes.into_iter().rev() {
+            self.foot_mark_remove(member, Some(rules), registry, effects);
+            //65F29F publishes pending3 after Mark0 and before Commence5B3570.
+            //The same warp payload carries that pending value until state7.
+            self.substrate
+                .entities
+                .get_mut(member)
+                .unwrap()
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .teleport_runtime_mut()
+                .unwrap()
+                .chrono_mut()
+                .unwrap()
+                .set_pending_state(3);
+            let _ = self.mission_commence_exact(member, frame);
+        }
+        let review = self.team_type_house(team_type, rules).and_then(|owner| {
+            self.session
+                .current_house()
+                .filter(|&current| {
+                    crate::map::houses::is_allied_with(
+                        &self.house_alliances,
+                        self.interner.resolve(owner),
+                        self.interner.resolve(current),
+                    )
+                })
+                .map(|_| origin)
+        });
+        (true, review)
     }
 
     /// SpawnReinforcements65DBA6..65DD08: Droppod is an ordinary PDPLANE

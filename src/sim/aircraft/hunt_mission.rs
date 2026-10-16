@@ -121,10 +121,7 @@ impl Simulation {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         debug_assert_eq!(entity.category(), EntityCategory::Aircraft);
         let facts = HuntFacts {
-            ammo: entity
-                .aircraft_ammo
-                .as_ref()
-                .map_or(-1, |ammo| ammo.current()),
+            ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
             team: self.team_script_vm.team_for_member(id).is_some(),
             game_mode: self.session.game_mode_nonzero,
         };

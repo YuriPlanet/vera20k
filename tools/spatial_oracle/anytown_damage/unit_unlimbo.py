@@ -27,6 +27,39 @@ from .mission import HERE, Mission, base
 
 REPO = Path(__file__).resolve().parents[3]
 GEOMETRY_CALLS = (0x735180, 0x735210, 0x735230, 0x735250, 0x7352F0)
+
+
+def initialize_unit_geometry(q, *, foot=False):
+    """Original Unit geometry; selected Foot callers also need their own CRT copies."""
+    m,u=q.m,q.u
+    fields=(0xB1CFD0,0xB1CFD8,0xB1CFA0,0xB1D0B8,0xB1D0AC)
+    entries=list(GEOMETRY_CALLS);tables=[]
+    if foot:
+        from tools.spatial_oracle.infantry_entry_raw import STARTUP
+        additional=[]
+        for address,count in ((0x813490,10),(0x8150B8,14)):
+            calls=list(struct.unpack(f'<{count}I',u.mem_read(address,count*4)))
+            if address==0x813490:assert calls==STARTUP
+            tables.append(dict(address=hex(address),entries=[hex(pc) for pc in calls]))
+            additional.extend(calls)
+        entries=additional+entries
+        fields+=(0xA8F240,0xA8F234,0xB0EBC0,0xB0EBE8,0xB0EBE0,0xB0EC38)
+    def rng():return {k:bytes(u.mem_read(p,1012)) for k,p in q.resident.rngs.items()}
+    before_rng=rng()
+    result=dict(before={hex(p):bytes(u.mem_read(p,8)).hex() for p in fields},original_calls=[])
+    for pc in entries:
+        m.invoke(pc,0);result['original_calls'].append(hex(pc))
+    assert m.read32(0xB1D0B8)==m.read32(0x89E7C0)
+    assert m.read32(0xB1D0AC)>0
+    if foot:
+        assert m.read32(0xA8F240)==m.read32(0xB1D0B8)==m.read32(0xB0EC38)
+        assert m.read32(0xA8F234)==m.read32(0xB1D0AC)
+        result['tables']=tables
+    assert rng()==before_rng
+    result.update(after={hex(p):bytes(u.mem_read(p,8)).hex() for p in fields},rng_unchanged=True)
+    return result
+
+
 DIRECT_PCS = (
     0x737BA0, 0x4D7170, 0x6F6CA0, 0x5F4EC0, 0x73F0A0, 0x4D9C10,
     0x55ABF0, 0x4D9C60, 0x4DB810, 0x4D3780, 0x747EB0, 0x5F4F42, 0x5F4FB4,
@@ -86,24 +119,7 @@ class UnitUnlimboControls(Mission):
             small_visceroid=self.u.mem_read(self.typ + 0xE18, 1)[0],
             large_visceroid=self.u.mem_read(self.typ + 0xE19, 1)[0],
         )
-        # These are the original geometry static initializers, in the dependency
-        # order already used by astar_hills_route, rather than fitted scalars.
-        fields = (0xB1CFD0, 0xB1CFD8, 0xB1CFA0, 0xB1D0B8, 0xB1D0AC)
-        before_rng = self.rng_bytes()
-        self.unit_geometry_startup = dict(
-            before={hex(p): bytes(self.u.mem_read(p, 8)).hex() for p in fields},
-            original_calls=[],
-        )
-        for pc in GEOMETRY_CALLS:
-            self.m.invoke(pc, 0)
-            self.unit_geometry_startup['original_calls'].append(hex(pc))
-        assert self.m.read32(0xB1D0B8) == self.m.read32(0x89E7C0)
-        assert self.m.read32(0xB1D0AC) > 0
-        assert self.rng_bytes() == before_rng
-        self.unit_geometry_startup.update(
-            after={hex(p): bytes(self.u.mem_read(p, 8)).hex() for p in fields},
-            rng_unchanged=True,
-        )
+        self.unit_geometry_startup = initialize_unit_geometry(self)
 
     def rng_bytes(self):
         return {k: bytes(self.u.mem_read(p, 1012)) for k, p in self.resident.rngs.items()}

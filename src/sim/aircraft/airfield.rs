@@ -151,7 +151,7 @@ impl Simulation {
             .interner
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.airport_bound);
-        let cached = entity.aircraft_ammo.as_ref().and_then(|ammo| ammo.dock());
+        let cached = entity.ammo().and_then(|ammo| ammo.dock());
         if airport_bound && let Some(cached) = cached {
             if crate::sim::radio::transmit(
                 self,
@@ -174,17 +174,17 @@ impl Simulation {
         dock
     }
 
-    /// Aircraft `+0x6CC`'s writers ([`AircraftAmmo::set_dock`]): Mission_Enter
+    /// Aircraft `+0x6CC`'s writers ([`TechnoAmmo::set_dock`]): Mission_Enter
     /// (`0x00419CE5`, `0x00419D57`), Find_Docking_Bay (`0x0041BBFF`,
     /// `0x0041BC1C`) and the factory exit (`0x0044404D`).
     ///
-    /// [`AircraftAmmo::set_dock`]: crate::sim::docking::aircraft_dock::AircraftAmmo::set_dock
+    /// [`TechnoAmmo::set_dock`]: crate::sim::ammo::TechnoAmmo::set_dock
     pub(crate) fn set_aircraft_dock(&mut self, id: u64, dock: Option<u64>) {
         if let Some(ammo) = self
             .substrate
             .entities
             .get_mut(id)
-            .and_then(|entity| entity.aircraft_ammo.as_mut())
+            .and_then(|entity| entity.ammo_mut())
         {
             ammo.set_dock(dock);
         }

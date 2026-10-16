@@ -145,8 +145,7 @@ fn unequal_ammo_retarget_cancels_and_empties_entire_sortie() {
         .entities
         .get_mut(aircraft[0])
         .unwrap()
-        .aircraft_ammo
-        .as_mut()
+        .ammo_mut()
         .unwrap()
         .empty();
     let next = f
@@ -160,7 +159,7 @@ fn unequal_ammo_retarget_cancels_and_empties_entire_sortie() {
     assert_eq!(m.target, None);
     for id in aircraft {
         let e = f.sim.substrate.entities.get(id).unwrap();
-        assert_eq!(e.aircraft_ammo.as_ref().unwrap().current(), 0);
+        assert_eq!(e.ammo().unwrap().current(), 0);
         assert_eq!(e.attack_target.target(), None);
     }
     assert_eq!(

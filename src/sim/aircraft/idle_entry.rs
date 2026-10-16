@@ -383,10 +383,7 @@ pub(crate) fn enter_idle_mode_for(
             entity.veterancy.rank(),
         )
         .is_some(),
-        ammo: entity
-            .aircraft_ammo
-            .as_ref()
-            .map_or(-1, |ammo| ammo.current()),
+        ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
         type_ammo: object.ammo,
         docks: !object.dock.is_empty(),
         airport_bound: object.airport_bound,

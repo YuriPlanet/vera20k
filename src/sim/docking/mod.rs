@@ -1,6 +1,5 @@
 //! Docking systems — repair depot docks and airfield landing pads.
 
-pub mod aircraft_dock;
 pub(crate) mod airfield_reload;
 pub mod building_dock;
 pub mod bunker_install;

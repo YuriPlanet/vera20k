@@ -47,10 +47,7 @@ fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool 
     if entity.category() == EntityCategory::Structure {
         true
     } else if entity.category() == EntityCategory::Aircraft {
-        entity
-            .aircraft_ammo
-            .as_ref()
-            .is_none_or(|ammo| (ammo.current() as i8) < 0)
+        entity.ammo().is_none_or(|ammo| (ammo.current() as i8) < 0)
     } else {
         entity.low_bridge_tube_state.is_none()
     }
@@ -414,8 +411,8 @@ mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::map::tube_facts::TubeId;
+    use crate::sim::ammo::TechnoAmmo;
     use crate::sim::components::DriveCoord;
-    use crate::sim::docking::aircraft_dock::AircraftAmmo;
     use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
 
     fn mobile() -> RadarMobileVisibilityFacts {
@@ -464,16 +461,16 @@ mod tests {
 
         entity.set_category_for_test(EntityCategory::Aircraft);
         entity.low_bridge_tube_state = None;
-        entity.aircraft_ammo = Some(AircraftAmmo::new(3));
+        entity.install_ammo_for_test(Some(TechnoAmmo::new(3)));
         assert!(!enemy_sensed_prefilter(&entity));
-        entity.aircraft_ammo = None;
+        entity.install_ammo_for_test(None);
         assert!(
             enemy_sensed_prefilter(&entity),
             "Ammo=-1 keeps the signed byte negative"
         );
 
         entity.set_category_for_test(EntityCategory::Structure);
-        entity.aircraft_ammo = Some(AircraftAmmo::new(3));
+        entity.install_ammo_for_test(Some(TechnoAmmo::new(3)));
         assert!(
             enemy_sensed_prefilter(&entity),
             "Building lacks AbstractFlags IsFoot"

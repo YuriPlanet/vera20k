@@ -621,7 +621,7 @@ pub(crate) fn represented_assign_target_admitted(
     //SpawnOwner. A NULL request reaches this gate too (6FCDEB..6FCE46).
     let requested = if entity.type_facts.spawned_non_missile_aircraft()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
-        && let Some(ammo) = entity.aircraft_ammo.as_mut()
+        && let Some(ammo) = entity.ammo_mut()
         && ammo.current() != 0
     {
         ammo.empty();

@@ -405,7 +405,11 @@ fn script50_uses_the_existing_signed_flash_owner_and_original_countdown() {
     }
 }
 
-fn reinforcement_world(rules: &RuleSet, terrain_rules: &TerrainRules, input: &Value) -> Simulation {
+pub(crate) fn reinforcement_world(
+    rules: &RuleSet,
+    terrain_rules: &TerrainRules,
+    input: &Value,
+) -> Simulation {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
@@ -449,6 +453,7 @@ fn reinforcement_world(rules: &RuleSet, terrain_rules: &TerrainRules, input: &Va
     sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         80, 5, 5, 70, 73,
     ));
+    sim.playfield_size_height = Some(85);
     let country = sim.interner.intern("Americans");
     let owner = sim.interner.intern("Americans");
     let enemy = sim.interner.intern("ENEMY");
@@ -474,42 +479,90 @@ fn reinforcement_world(rules: &RuleSet, terrain_rules: &TerrainRules, input: &Va
     } else {
         enemy
     });
-    let mut definitions = format!(
-        "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nWaypoint=E\nVeteranLevel={}\nMax={}\n",
-        input["veteran"].as_i64().unwrap_or(1),
-        input["max"].as_i64().unwrap_or(-1)
-    );
-    for (field, key) in [
-        ("full", "Full"),
-        ("transports_return_on_unload", "TransportsReturnOnUnload"),
-        ("droppod", "Droppod"),
-        ("use_transport_origin", "UseTransportOrigin"),
-    ] {
-        if let Some(value) = input[field].as_bool() {
-            definitions.push_str(&format!("{key}={}\n", if value { "yes" } else { "no" }));
-        }
-    }
-    if let Some(letters) = input["transport_waypoint_letters"].as_str() {
-        definitions.push_str(&format!("TransportWaypoint={letters}\n"));
-    }
-    definitions.push_str("[ScriptTypes]\n0=S\n[S]\n");
-    if let Some(steps) = input["script_steps"].as_array() {
-        for (index, step) in steps.iter().enumerate() {
-            definitions.push_str(&format!("{index}={},{}\n", int(&step[0]), int(&step[1])));
-        }
-    } else {
+    let definitions_inputs = input["definitions"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_else(|| std::slice::from_ref(input));
+    let mut definitions = "[TeamTypes]\n".to_string();
+    for (index, definition) in definitions_inputs.iter().enumerate() {
         definitions.push_str(&format!(
-            "0={}\n",
-            input["script"].as_str().unwrap_or("3,4")
+            "{index}={}\n",
+            definition["team_name"].as_str().unwrap_or("TT")
         ));
     }
-    definitions.push_str("[TaskForces]\n0=F\n[F]\n");
-    for (index, entry) in input["entries"].as_array().unwrap().iter().enumerate() {
+    // Native INI keeps physical duplicate sections, rather than merging
+    // their bodies. Emit each registry once before its definition sections.
+    definitions.push_str("[ScriptTypes]\n");
+    for index in 0..definitions_inputs.len() {
         definitions.push_str(&format!(
-            "{index}={},{}\n",
-            int(&entry[1]),
-            entry[0].as_str().unwrap()
+            "{index}={}\n",
+            if definitions_inputs.len() == 1 {
+                "S".to_string()
+            } else {
+                format!("S{index}")
+            }
         ));
+    }
+    definitions.push_str("[TaskForces]\n");
+    for index in 0..definitions_inputs.len() {
+        definitions.push_str(&format!(
+            "{index}={}\n",
+            if definitions_inputs.len() == 1 {
+                "F".to_string()
+            } else {
+                format!("F{index}")
+            }
+        ));
+    }
+    for (index, definition) in definitions_inputs.iter().enumerate() {
+        let team_name = definition["team_name"].as_str().unwrap_or("TT");
+        let script = if definitions_inputs.len() == 1 {
+            "S".to_string()
+        } else {
+            format!("S{index}")
+        };
+        let task_force = if definitions_inputs.len() == 1 {
+            "F".to_string()
+        } else {
+            format!("F{index}")
+        };
+        definitions.push_str(&format!(
+            "[{team_name}]\nHouse=Americans\nScript={script}\nTaskForce={task_force}\nWaypoint=E\nVeteranLevel={}\nMax={}\n",
+            definition["veteran"].as_i64().unwrap_or(1),
+            definition["max"].as_i64().unwrap_or(-1)
+        ));
+        for (field, key) in [
+            ("full", "Full"),
+            ("transports_return_on_unload", "TransportsReturnOnUnload"),
+            ("droppod", "Droppod"),
+            ("use_transport_origin", "UseTransportOrigin"),
+        ] {
+            if let Some(value) = definition[field].as_bool() {
+                definitions.push_str(&format!("{key}={}\n", if value { "yes" } else { "no" }));
+            }
+        }
+        if let Some(letters) = definition["transport_waypoint_letters"].as_str() {
+            definitions.push_str(&format!("TransportWaypoint={letters}\n"));
+        }
+        definitions.push_str(&format!("[{script}]\n"));
+        if let Some(steps) = definition["script_steps"].as_array() {
+            for (index, step) in steps.iter().enumerate() {
+                definitions.push_str(&format!("{index}={},{}\n", int(&step[0]), int(&step[1])));
+            }
+        } else {
+            definitions.push_str(&format!(
+                "0={}\n",
+                definition["script"].as_str().unwrap_or("3,4")
+            ));
+        }
+        definitions.push_str(&format!("[{task_force}]\n"));
+        for (index, entry) in definition["entries"].as_array().unwrap().iter().enumerate() {
+            definitions.push_str(&format!(
+                "{index}={},{}\n",
+                int(&entry[1]),
+                entry[0].as_str().unwrap()
+            ));
+        }
     }
     let registry = TeamAiIniRegistry::from_sources(
         &IniFile::from_str(&definitions),
@@ -531,6 +584,16 @@ fn reinforcement_world(rules: &RuleSet, terrain_rules: &TerrainRules, input: &Va
             5,
             Waypoint {
                 index: 5,
+                rx: int(&origin[0]) as u16,
+                ry: int(&origin[1]) as u16,
+            },
+        );
+    }
+    if let Some(origin) = input["override_cell"].as_array() {
+        waypoints.insert(
+            6,
+            Waypoint {
+                index: 6,
                 rx: int(&origin[0]) as u16,
                 ry: int(&origin[1]) as u16,
             },

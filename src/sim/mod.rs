@@ -24,6 +24,7 @@
 pub(crate) mod ai_base_building;
 pub(crate) mod ai_base_defense;
 pub(crate) mod ai_base_site;
+pub mod ammo;
 pub mod anim_class;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;

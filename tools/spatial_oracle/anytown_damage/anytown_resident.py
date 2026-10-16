@@ -21,19 +21,11 @@ def rules():
 
 class Resident(Geometry):
  def __init__(self,case,rules,theater):
-  super().__init__(case);self.phase='setup';u=self.uc;u.mem_map(0x44000000,0x800000);self.assets=[]
+  super().__init__(case);self.phase='setup';u=self.uc;u.mem_map(0x44000000,0x800000);self.assets=[];self.theater=theater
   u.mem_write(0xA8ED2C,sr.dwords(0x44000000));u.mem_write(0xA8ED38,sr.dwords(theater['count']))
   selection={(x,y) for y in range(51,58) for x in range(86,89)}|{(85,54),(89,54)}
   needed=sorted({r['tile'] for r in case['supplied_cells'] if tuple(r['coord']) in selection})
-  for index,tile in enumerate(needed):
-   name=theater['tiles'][tile];path=identity.ASSETS/name
-   raw=path.read_bytes();tmp=bytearray(raw);data=0x44020000+index*0x10000;head=0x44010000+index*0x400;width,height=struct.unpack_from('<II',tmp)
-   for sub in range(width*height):
-    offset=struct.unpack_from('<I',tmp,16+sub*4)[0]
-    if offset:struct.pack_into('<I',tmp,16+sub*4,data+offset)
-   u.mem_write(0x44000000+tile*4,sr.dwords(head));u.mem_write(head,sr.dwords(0x7ECC48));u.mem_write(head+0xA4,sr.dwords(data))
-   u.mem_write(head+0x2C8,sr.dwords(-1));u.mem_write(head+0x2D4,sr.dwords(-1));u.mem_write(head+0x2F0,sr.dwords(1));u.mem_write(data,bytes(tmp))
-   self.assets.append(dict(tile=tile,file=name,sha256=sr.sha(raw),bytes=len(raw),source='ra2.mix/isotemp.mix',boundary='Physical TMP body with runtime pointer relocation; native pristine-type heads supplied, terrain anim=-1 and unused permissions zero.'))
+  self.ensure_tiles(theater,needed)
   for a,v in theater['globals'].items():u.mem_write(a,sr.dwords(v))
   u.mem_write(0x8871E0,sr.dwords(0x44400000));u.mem_write(0x44400664,bytes(rules.u.mem_read(rules.rules+0x664,1)))
   u.mem_write(0x89EA40,bytes(rules.u.mem_read(0x89EA40,12*36)));u.mem_write(0xA83D84,sr.dwords(0x44410000))
@@ -51,6 +43,26 @@ class Resident(Geometry):
   assert all(self.snapshot(self.ptrs[x,y])['land']==1 for y in range(51,58) for x in range(86,89))
   assert all(self.snapshot(self.ptrs[x,54])['land']==2 for x in (85,89))
   self.trace.clear();self.reached={}
+ def ensure_tiles(self,theater,needed,*,uc=None):
+  """Extend the same physical TMP transport in a composed execution image."""
+  u=self.uc if uc is None else uc
+  for tile in sorted(needed):
+   if sr.u32(u,0x44000000+tile*4):continue
+   index=len(self.assets);assert index<64,'physical TMP crop arena exhausted'
+   name=theater['tiles'][tile];path=identity.ASSETS/name
+   raw=path.read_bytes();tmp=bytearray(raw);data=0x44020000+index*0x10000;head=0x44010000+index*0x400;width,height=struct.unpack_from('<II',tmp)
+   # Preserve historical slots; later bodies must not overlap the existing
+   # raw zone planes at44200000/44300000 in this composed image.
+   if index>=30:
+    if not any(start<=0x48000000<=end for start,end,_ in u.mem_regions()):u.mem_map(0x48000000,0x400000)
+    data=0x48000000+index*0x10000
+   assert len(tmp)<=0x10000,'physical TMP exceeds its existing crop slot'
+   for sub in range(width*height):
+    offset=struct.unpack_from('<I',tmp,16+sub*4)[0]
+    if offset:struct.pack_into('<I',tmp,16+sub*4,data+offset)
+   u.mem_write(0x44000000+tile*4,sr.dwords(head));u.mem_write(head,sr.dwords(0x7ECC48));u.mem_write(head+0xA4,sr.dwords(data))
+   u.mem_write(head+0x2C8,sr.dwords(-1));u.mem_write(head+0x2D4,sr.dwords(-1));u.mem_write(head+0x2F0,sr.dwords(1));u.mem_write(data,bytes(tmp))
+   self.assets.append(dict(tile=tile,file=name,sha256=sr.sha(raw),bytes=len(raw),source='ra2.mix/isotemp.mix',boundary='Physical TMP body with runtime pointer relocation; native pristine-type heads supplied, terrain anim=-1 and unused permissions zero.'))
  def observe(self,u,address,size,data):
   if self.phase=='measure':
    if address==0x47D2B0:

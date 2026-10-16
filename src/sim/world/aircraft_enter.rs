@@ -110,10 +110,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn dock(&mut self) -> Option<u64> {
-        self.entity()
-            .aircraft_ammo
-            .as_ref()
-            .and_then(|ammo| ammo.dock())
+        self.entity().ammo().and_then(|ammo| ammo.dock())
     }
 
     fn set_dock(&mut self, dock: Option<u64>) {

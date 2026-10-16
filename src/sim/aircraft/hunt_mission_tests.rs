@@ -172,10 +172,7 @@ fn a_hunting_computer_aircraft_strikes_storage_in_multiplayer_only() {
             {
                 targets.push(attack);
             }
-            fired |= entity
-                .aircraft_ammo
-                .as_ref()
-                .is_some_and(|ammo| ammo.current() == 0);
+            fired |= entity.ammo().is_some_and(|ammo| ammo.current() == 0);
             if fired {
                 break;
             }

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original107 reader/full Execute->65EC30->65DD30, physical Unit/Infantry/Aircraft construction and placement, original Teleport factory/piggyback/MoveTo/finalize and two bounded Process histories on the existing FootMissions crop.",
+  "assumptions": [
+    "ActionFixture reader methods attach to the existing FootMissions allocator/image. No constructor or dispatch result crosses VMs. Resolved TeamType/ScriptType/TaskForce priors use the existing prepare_reinforcement_case owner; their full definition readers are excluded. The original TAction constructor, tokenizer, reference lookup and Read execute on those registered native Team identities.",
+    "Physical ALL07SMD.MAP in mapsmd03.mix binds ChronoMCV Trigger0964B13C ->Team0964C97C/AMCV and ChronoSupport098DB96C ->Team04E3AA8C/MTNK. The gameplay controls transplant their destination to waypointG=(88,49) on the existing Anytown crop. Actual authored AA/AB geometry, full campaign startup and outcomes are excluded; actual authored records and map hash remain in the corpus.",
+    "AMCV uses original7470D0/747620 on physical RULESMD, optional LANGRULE and ALL07 map in that order, with physical ARTMD. Existing physical MTNK/E1/ORCA readers, ordinary constructors, spare registries and partial Houses/crop come from team_creation/FootMissions. Each case retains genuine object IDs, constructor Ammo, native member and temporary chain order, FNPC arguments/results, actual Unlimbo, pending/timer/coordinate writes and three complete RNG streams interned by hash.",
+    "NULL_TEAM, NO_WAYPOINT and EMPTY_TASK_FORCE are genuine original early returns. Native65EC30 dereferences a null created head before its late check and dereferences the null success head when every placement fails. Those undefined/fault paths are not converted into invented safe return values. Full transport/cargo paths and arbitrary all-blocked maps are excluded.",
+    "Cases retain their genuinely constructed live actors and native registry/RNG history. Each preparation resets creation depth, recent-cell ring, player and Team definition/waypoint priors as declared by the existing reinforcement fixture. No post-case scalar deletion is inserted into107. Finalization clears temporary Object+30 links in reverse success order, Mark0 then pending3 then Commence. Two Process histories record all supplied frames, states, timers and RNG calls: the ordinary initially NULL target acquires existing hostile195 at timer expiry; a second control calls original6FCDB0 to set the genuine existing victim as target before Process (input.process_target_id). Other actors/TeamAI/global phases, device audio and rendering are excluded.",
+    "The existing Resident.ensure_tiles owner supplies actual relocated TMP bytes for all55 non-sentinel tile types referenced by the180-cell crop, including newly reached tile140/clat09.tem. Historical default slots/payload remain unchanged. Extra bodies avoid the existing raw-zone planes; the supplied raw land/slope/zone priors still exclude whole native map initialization. No terrain/FNPC return is supplied.",
+    "Existing unit_unlimbo.initialize_unit_geometry executes the original Infantry table813490 (the existing infantry_entry_raw.STARTUP), full Teleport table8150B8 and five Unit GEOMETRY_CALLS before the four baseline actors are constructed/placed. Native Unit B1D0AC and Infantry A8F234 become416; their level copies and Teleport B0EC38 become104. Full before/after field bytes and unchanged three-stream RNG are recorded. Aircraft inherits Object raw receivers5F60A0/5F6120: the existing FootMissions Object table8141D8 establishes AC13C8/AC13BC104/416 before the typed Aircraft case, and geometry_prior records them. Historical fixture payloads retain their omitted startup boundaries and are not silently regenerated. Earlier new107 zero-Unit and zero-Infantry diagnostics remain external and are superseded by this corpus.",
+    "Six Ammo overflow controls execute only original65EDC8..65EDCE with EDI and the signed field prior supplied on a genuine actor. Original field bytes and CPU state are restored afterward. This proves the DEC fragment, including wrap, not every full107 arithmetic input."
+  ],
+  "substitutions": [
+    "Inherited FootMissions physical lexical INI caches, successful heap, asset/file, partial House and cropped-world transports remain explicit. Existing Mission.locomotor_com_transport now routes the actual Teleport CLSID at7E9A90 to original CreateInstance6C4C10, established by factory vtable7F3D38+0C and its718000 constructor call. Existing OleRun/Interlocked OS boundaries remain. No gameplay factory, FNPC, subcell, Unlimbo, COM QueryInterface/AddRef/BeginPiggyback, MoveTo, RNG, Mark, Commence or class cleanup return is supplied."
+  ],
+  "entry_points": {
+    "action_read": "0x006DD5B0",
+    "execute": "0x006DD8B0",
+    "chrono_dispatch": "0x006DF672",
+    "chrono_reinforce": "0x0065EC30",
+    "create_members": "0x0065DD30",
+    "fnpc": "0x0056DC20",
+    "subcell": "0x00481180",
+    "teleport_factory": "0x006C4C10",
+    "teleport_ctor": "0x00718000",
+    "teleport_move": "0x00718100",
+    "process": "0x007192F0",
+    "mark": "0x004D3780",
+    "commence": "0x005B3570",
+    "unit_ammo_init": "0x007355A8",
+    "infantry_ammo_init": "0x00517D7A",
+    "ammo_decrement": "0x0065EDC8"
+  },
+  "command": "python -m tools.spatial_oracle.trigger_action_values --chrono-reinforcement --check",
+  "required_inputs": {
+    "VERA20K_SHRAPNEL_INPUTS": "existing physical RULESMD/ARTMD/SOUNDMD/theater owner",
+    "VERA20K_ANYTOWN_INPUTS": "existing physical Anytown map/shot assets plus all55 crop TMPs from retail ra2.mix/isotemp.mix"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --chrono-reinforcement",
+  "payload_sha256": "8b312bf8d7c97c59cf6d56fe488aa0e0daacefd5892a1c3241c956370740749b"
+}

@@ -766,9 +766,9 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
                 .entities
                 .get_mut(member)
                 .unwrap()
-                .aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::new(
-                input["ammo"].as_i64().unwrap() as i32,
-            ));
+                .install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(
+                    input["ammo"].as_i64().unwrap() as i32,
+                )));
         }
         if input["count"] == 0 {
             for &member in &members {

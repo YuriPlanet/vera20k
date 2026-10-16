@@ -196,7 +196,7 @@ fn add_ammo(sim: &mut Simulation, id: u64, delta: i32) -> i32 {
     sim.substrate
         .entities
         .get_mut(id)
-        .and_then(|plane| plane.aircraft_ammo.as_mut())
+        .and_then(|plane| plane.ammo_mut())
         .map_or(0, |ammo| ammo.add(delta))
 }
 
@@ -520,7 +520,7 @@ mod tests {
     use super::*;
     use crate::map::playfield::PlayfieldBounds;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::docking::aircraft_dock::AircraftAmmo;
+    use crate::sim::ammo::TechnoAmmo;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::passenger::PassengerCargo;
     use crate::sim::world::RevealOutcome;
@@ -576,7 +576,7 @@ mod tests {
         aircraft.set_owner_for_test(sim.interner.intern("Americans"));
         aircraft.set_type_ref_for_test(sim.interner.intern("PDPLANE"));
         aircraft.body_facing.snap(0x8000, 0);
-        aircraft.aircraft_ammo = Some(AircraftAmmo::new(4));
+        aircraft.install_ammo_for_test(Some(TechnoAmmo::new(4)));
         let mut cargo = PassengerCargo::new(8, 0);
         cargo.board_forced(passenger_id, 1);
         aircraft.passenger_role = PassengerRole::transport(cargo);
@@ -607,8 +607,7 @@ mod tests {
             .entities
             .get_mut(id)
             .unwrap()
-            .aircraft_ammo
-            .as_mut()
+            .ammo_mut()
             .unwrap()
             .set_current_for_test(ammo);
     }
@@ -618,8 +617,7 @@ mod tests {
             .entities
             .get(id)
             .unwrap()
-            .aircraft_ammo
-            .as_ref()
+            .ammo()
             .unwrap()
             .current()
     }

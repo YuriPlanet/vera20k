@@ -52,8 +52,7 @@ fn run_cycle(sim: &mut Simulation, rules: &RuleSet, orca: u64, airfield: u64) ->
         seen.linked |= linked;
         seen.landed_linked |= linked && height == 0;
         let full = entity
-            .aircraft_ammo
-            .as_ref()
+            .ammo()
             .is_some_and(|ammo| ammo.current() == ammo.max());
         seen.reloaded |= seen.landed_linked && full;
         if seen.reloaded
@@ -94,11 +93,7 @@ fn spent_orca(rules: &RuleSet, human: bool) -> (Simulation, u64, u64) {
     };
     assert_eq!(mission(&sim, orca), Some(pick));
     let entity = sim.substrate.entities.get_mut(orca).unwrap();
-    entity
-        .aircraft_ammo
-        .as_mut()
-        .unwrap()
-        .set_current_for_test(0);
+    entity.ammo_mut().unwrap().set_current_for_test(0);
     (sim, orca, airfield)
 }
 
@@ -301,7 +296,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
                 .entities
                 .get(harrier)
                 .expect("Harrier survives");
-            let ammo = entity.aircraft_ammo.as_ref().expect("Harrier ammo");
+            let ammo = entity.ammo().expect("Harrier ammo");
             fired[n] |= ammo.current() < ammo.max();
             let linked = entity.radio_contacts.contains(airfield)
                 && sim

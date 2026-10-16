@@ -205,12 +205,14 @@ impl Simulation {
                     .ensure_installed_track_state();
             }
         }
-        // Retain the signed native count even for Ammo=-1. Mission_Attack's
-        // pending-release consumer can decrement a negative count as well.
-        if category == EntityCategory::Aircraft {
-            ge.aircraft_ammo = Some(crate::sim::docking::aircraft_dock::AircraftAmmo::from_type(
-                obj,
-            ));
+        // The concrete Foot constructors all select InitialAmmo unless it is
+        // exactly -1; otherwise Ammo. Chrono reinforcement65EC30 also reads
+        // and decrements this count for ground Units (ammo module evidence).
+        if matches!(
+            category,
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        ) {
+            ge.initialize_ammo_from_type(obj);
         }
         // InitManagers6F40FC..6F414E: a weapon-0 Parasite warhead owns its
         // ParasiteClass (Foot+69C) from construction, not from the first shot.

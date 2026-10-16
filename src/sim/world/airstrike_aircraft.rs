@@ -235,11 +235,7 @@ mod tests {
                 plane
                     .mission
                     .set_current_for_test(MissionId::from_known(MissionType::Attack), 5);
-                plane
-                    .aircraft_ammo
-                    .as_mut()
-                    .unwrap()
-                    .set_current_for_test(2);
+                plane.ammo_mut().unwrap().set_current_for_test(2);
                 sim.assign_target_represented(
                     id,
                     target,
@@ -251,7 +247,7 @@ mod tests {
                 let plane = sim.substrate.entities.get(id).unwrap();
                 let should_clear = matches!(name, "BPLN" | "HORNET");
                 assert_eq!(
-                    plane.aircraft_ammo.as_ref().unwrap().current(),
+                    plane.ammo().unwrap().current(),
                     if should_clear { 0 } else { 2 },
                     "{name}, {target:?}"
                 );

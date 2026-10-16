@@ -281,11 +281,11 @@ impl crate::sim::world::Simulation {
             }
             // REQUIRED SEPARATE MECHANISM:5200E1..520105 reads live
             // Techno+2FC after fear reaches0, calls the shared IsArmed701120
-            // if Ammo0, and refills from Type+684. Shared ground TechnoAmmo
-            // lifecycle is absent; immutable TypeAmmo cannot stand in for
-            // the live count. Stock E1's unlimited native Ammo-1 bypasses
-            // this arm. Saved zero-ammo controls retain the exact native
-            // prerequisite for migration of the existing AircraftAmmo owner.
+            // if Ammo0, and refills from Type+684. The shared Ammo owner now
+            // retains the constructor/chrono count, but this fear refill and
+            // ordinary ground fire debit cycle remain separate. Stock E1's
+            // negative count bypasses this arm. Saved zero-ammo controls
+            // retain its native producer for that lifecycle migration.
             let actor = self
                 .substrate
                 .entities

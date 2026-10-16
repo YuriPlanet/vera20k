@@ -3326,7 +3326,7 @@ impl Simulation {
                     self.flash_teams_of_type(team_id, value.unwrap_or(0));
                 }
             }
-            4 | 7 | 80 => {
+            4 | 7 | 80 | 107 => {
                 let Some(DefinitionReference::Team(team)) = reference else {
                     return false;
                 };
@@ -3344,7 +3344,7 @@ impl Simulation {
                 // Reinforcement6E2DC0 uses the TeamType waypoint. Action80
                 //6DEBD0 passes its+44 override to the same65D8E0 owner;
                 //null Team or waypoint-1 is rejected before that call.
-                let waypoint = if action.kind == 80 {
+                let waypoint = if matches!(action.kind, 80 | 107) {
                     let Some(waypoint) = action.waypoint_index else {
                         return false;
                     };
@@ -3352,16 +3352,29 @@ impl Simulation {
                 } else {
                     -1
                 };
-                if action.kind == 80 && waypoint == -1 {
+                if matches!(action.kind, 80 | 107) && waypoint == -1 {
                     return false;
                 }
-                let (result, recent_event) = self.spawn_team_reinforcements(
-                    team_id,
-                    waypoint,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                );
+                //1076DF672..6DF698 shares the same resolved Team/+44 gate,
+                //then calls chrono65EC30 instead of ordinary65D8E0. Only -1
+                //is rejected, not every signed negative (original execution).
+                let (result, recent_event) = if action.kind == 107 {
+                    self.spawn_chrono_team_reinforcements(
+                        team_id,
+                        waypoint,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    )
+                } else {
+                    self.spawn_team_reinforcements(
+                        team_id,
+                        waypoint,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    )
+                };
                 if let Some(cell) = recent_event {
                     effects.push(TriggerEffect::RecentEventCell { cell });
                 }
@@ -3884,3 +3897,7 @@ mod build_type_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_wakeup_tests.rs"]
 mod wakeup_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_chrono_reinforcement_tests.rs"]
+mod chrono_reinforcement_tests;

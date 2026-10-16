@@ -1520,7 +1520,7 @@ mod path_threat_input_tests;
 #[cfg(test)]
 mod recruit_oracle_tests;
 #[cfg(test)]
-mod reinforcements_tests;
+pub(crate) mod reinforcements_tests;
 
 #[cfg(test)]
 mod tests {

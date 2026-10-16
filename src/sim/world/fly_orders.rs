@@ -417,10 +417,7 @@ impl Simulation {
         let flight_level =
             air_movement::type_flight_level(entity, rules.map(|rules| (rules, &self.interner)));
         let armed_flight_level = (entity.attack_target.target().is_some()
-            && entity
-                .aircraft_ammo
-                .as_ref()
-                .is_some_and(|a| a.current() != 0))
+            && entity.ammo().is_some_and(|a| a.current() != 0))
         .then_some(flight_level);
         //4CCE1C..4CCE6E stores destination before landing-base/height reads.
         if let Some(state) = self

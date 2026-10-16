@@ -163,7 +163,7 @@ impl ScannerKey {
             body_facing: entity.body_facing,
             barrel_facing: entity.barrel_facing,
             mission: entity.mission.current(),
-            ammo: entity.aircraft_ammo.as_ref().map(|ammo| ammo.current()),
+            ammo: entity.ammo().map(|ammo| ammo.current()),
             retarget_after_stop: entity.foot_retarget_after_stop,
             berserk: entity.berserk.is_active(),
             facts: attacker_facts(entity, obj),

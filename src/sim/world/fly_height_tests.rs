@@ -506,8 +506,8 @@ fn destination_vectors() -> Vec<serde_json::Value> {
 }
 
 fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
+    use crate::sim::ammo::TechnoAmmo;
     use crate::sim::combat::TargetKind;
-    use crate::sim::docking::aircraft_dock::AircraftAmmo;
     let input = &row["input"];
     let height_row = serde_json::json!({"input": {
         "z": input["z"].as_i64().unwrap_or(500),
@@ -529,7 +529,9 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.set_rx_for_test(40);
     entity.position.set_ry_for_test(64);
-    entity.aircraft_ammo = Some(AircraftAmmo::new(input["ammo"].as_i64().unwrap_or(2) as i32));
+    entity.install_ammo_for_test(Some(TechnoAmmo::new(
+        input["ammo"].as_i64().unwrap_or(2) as i32
+    )));
     entity.attack_target.set_for_test(
         input["target"]
             .as_bool()

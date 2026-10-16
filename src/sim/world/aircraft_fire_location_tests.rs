@@ -291,7 +291,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
 }
 
 pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
-    use crate::sim::docking::aircraft_dock::AircraftAmmo;
+    use crate::sim::ammo::TechnoAmmo;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionLeafState};
     use crate::sim::movement::locomotor::LocomotorState;
     let mut case = input.clone();
@@ -337,12 +337,12 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
         (!input["null_target"].as_bool().unwrap_or(false))
             .then(|| crate::sim::combat::TargetKind::Entity(2)),
     );
-    let mut ammo = AircraftAmmo::new(2);
+    let mut ammo = TechnoAmmo::new(2);
     ammo.set_current_for_test(input["ammo"].as_i64().unwrap_or(2) as i32);
     if input["pending"].as_bool().unwrap_or(false) {
         ammo.begin_release();
     }
-    entity.aircraft_ammo = Some(ammo);
+    entity.install_ammo_for_test(Some(ammo));
     entity
         .navigation
         .set_nav_com_aux_for_test(Some(NavTargetRef::Entity { id: 2 }));
@@ -403,8 +403,8 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
         "state": sub_state,
         "delay": entity.mission.dispatch_timer().delay(),
         "nav": nav, "aux": entity.navigation.nav_com_aux().is_some(),
-        "ammo": entity.aircraft_ammo.as_ref().unwrap().current(),
-        "pending": entity.aircraft_ammo.as_ref().unwrap().release_pending(),
+        "ammo": entity.ammo().unwrap().current(),
+        "pending": entity.ammo().unwrap().release_pending(),
         "latch": entity.mission_leaf.as_aircraft().unwrap().action_latch() != 0,
         "destination": [point.x, point.y, point.z], "moving": fly.moving(),
         "height": fly.target_height(),

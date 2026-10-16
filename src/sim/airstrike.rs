@@ -266,7 +266,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(id)
-                .and_then(|e| e.aircraft_ammo.as_ref())
+                .and_then(|e| e.ammo())
                 .map_or(0, |a| a.current())
         };
         if aircraft
@@ -291,7 +291,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(aircraft)
-                .and_then(|e| e.aircraft_ammo.as_ref())
+                .and_then(|e| e.ammo())
                 .is_some_and(|a| a.current() > 0)
             {
                 let _ = self.assign_target_represented(
@@ -329,7 +329,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(id)
-                .and_then(|e| e.aircraft_ammo.as_ref())
+                .and_then(|e| e.ammo())
                 .is_some_and(|a| a.current() == 0)
         });
         if empty {
@@ -338,7 +338,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get_mut(id)
-                    .and_then(|e| e.aircraft_ammo.as_mut())
+                    .and_then(|e| e.ammo_mut())
                 {
                     ammo.empty();
                 }

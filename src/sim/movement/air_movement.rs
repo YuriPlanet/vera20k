@@ -221,7 +221,7 @@ pub(crate) fn fly_speed_facts(
                 .is_some_and(|leaf| leaf.action_latch() != 0),
             fly_by: aircraft && object.is_some_and(|o| o.fly_by),
             strafe_or_fighter,
-            ammo: entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current()),
+            ammo: entity.ammo().map_or(-1, |a| a.current()),
         },
         hunter_seeker: object.is_some_and(|o| o.hunter_seeker),
         target: entity.attack_target.target().is_some(),

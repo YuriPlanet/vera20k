@@ -238,7 +238,7 @@ impl Simulation {
         };
         if entity.category() == EntityCategory::Aircraft
             && entity.mission.current().raw() != 1
-            && let Some(ammo) = entity.aircraft_ammo.as_mut()
+            && let Some(ammo) = entity.ammo_mut()
         {
             ammo.consume_release(false);
         }

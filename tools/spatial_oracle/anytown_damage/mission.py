@@ -25,7 +25,7 @@ def locomotor_com_transport(u,pc,m,events,*,detailed=False):
   clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20));assert (outer,context)==(0,7)
   guid=bytes(u.mem_read(clsid,16))
   factories={bytes(u.mem_read(address,16)):(factory,name) for address,factory,name in
-    ((0x7E9A30,0x6C4010,'Drive'),(0x7E9AB0,0x6C4F10,'Ship'),(0x7E9A80,0x6C4A90,'Fly'))}
+    ((0x7E9A30,0x6C4010,'Drive'),(0x7E9AB0,0x6C4F10,'Ship'),(0x7E9A80,0x6C4A90,'Fly'),(0x7E9A90,0x6C4C10,'Teleport'))}
   factory,name=factories[guid]
   assert pc!=0x413DE2 or name=='Fly'
   u.mem_write(sp,dwords(pc+6,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,factory)

@@ -821,8 +821,7 @@ fn drop_payload_matches_native() {
             .body_facing
             .snap(u16::try_from(int(&row["facing"])).unwrap(), 0);
         entity
-            .aircraft_ammo
-            .as_mut()
+            .ammo_mut()
             .unwrap()
             .set_current_for_test(int(&row["ammo"]));
         let passes = i8::try_from(int(&row["passes"])).unwrap();
@@ -942,7 +941,7 @@ fn drop_payload_matches_native() {
 
         let entity = sim.substrate.entities.get(plane).unwrap();
         assert_eq!(
-            entity.aircraft_ammo.as_ref().unwrap().current(),
+            entity.ammo().unwrap().current(),
             int(&row["ammo_after"]),
             "{row}"
         );

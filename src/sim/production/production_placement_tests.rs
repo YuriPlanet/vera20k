@@ -4829,7 +4829,7 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
         assert_eq!(plane.radio_contacts.slot(0), Some(airfield));
         assert_eq!(plane.tether.partner(), None, "TETHER");
         assert_eq!(
-            plane.aircraft_ammo.as_ref().and_then(|ammo| ammo.dock()),
+            plane.ammo().and_then(|ammo| ammo.dock()),
             Some(airfield),
             "+0x6CC"
         );

@@ -683,17 +683,16 @@ fn native_deployed_guard_unsupported_controls_remain_declared() {
         .find(|row| row["input"]["name"] == "fire_error_ammo_zero")
         .unwrap();
     let (sim, _rules, id) = supplied_fixture(ammo);
-    // Original6FCA0D reads Techno+2FC; current FireSubject reads only the
-    // AircraftAmmo owner and maps Infantry's absent component to−1. Generic
-    // finite Techno ammo lifecycle is required separately; never fake it here.
+    // Original6FCA0D reads live Techno+2FC. This supplied rules fixture has
+    // unlimited Ammo and does not reproduce the separate zero-ammo producer.
     assert_eq!(ammo["guard_before"]["ammo"], 0);
     assert!(
         sim.substrate
             .entities
             .get(id)
             .unwrap()
-            .aircraft_ammo
-            .is_none()
+            .ammo()
+            .is_some_and(|ammo| ammo.current() == -1)
     );
     let speed = rows
         .iter()

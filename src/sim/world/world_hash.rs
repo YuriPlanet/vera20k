@@ -1628,9 +1628,16 @@ impl Simulation {
 /// `frame` is the binary frame the pending timers measure against.
 fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.stable_id().hash(hasher);
-    if let Some(ammo) = entity.aircraft_ammo.as_ref() {
-        b"aircraft-ammo-v170".hash(hasher);
-        ammo.hash(hasher);
+    if let Some(ammo) = entity.ammo() {
+        if entity.category() == crate::map::entities::EntityCategory::Aircraft {
+            b"aircraft-ammo-v170".hash(hasher);
+            ammo.hash(hasher);
+        } else if ammo.current() != -1 {
+            // -1 is the historical absent Foot count. The newly retained
+            // counter matters after65EDC8, including -2 for unlimited ammo.
+            b"techno-ammo-v376".hash(hasher);
+            ammo.current().hash(hasher);
+        }
     }
     // GSI-09.01: the `BuildingClass+0x6D0/+0x6D8` ProduceCash
     // timer and the `TechnoClass+0x1CC/+0x1D0` drain link pair.

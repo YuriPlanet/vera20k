@@ -1297,7 +1297,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get(child)
-            .and_then(|c| c.aircraft_ammo.as_ref())
+            .and_then(|c| c.ammo())
             .map(|a| a.current())
             // Real Aircraft retain their signed count, including -1. This
             // fallback applies only to incomplete/non-Aircraft data.
@@ -1479,7 +1479,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         if let Some(child) = self.sim.substrate.entities.get_mut(child) {
             child.health.set(strength);
             child.estimated_health.reset(strength);
-            if let Some(ammo) = child.aircraft_ammo.as_mut() {
+            if let Some(ammo) = child.ammo_mut() {
                 ammo.refill();
             }
         }

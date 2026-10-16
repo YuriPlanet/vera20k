@@ -35,6 +35,12 @@
 //! while the object is warping in, or warped out with the latch
 //! (`Simulation::temporal_ai_prologue`): state 1 freezes the object, and the
 //! warp itself (states 2 to 4) takes both calls of one frame.
+//! Reinforcement65EC30 instead starts with WarpingIn and pending state3
+//! (+0x280): one Process transfers it, state3 rewrites the delay, pending
+//! skips state5's PostWarpValidation, and state7 clears it. Executed controls:
+//! tools/spatial_oracle/trigger_chrono_reinforcement.json, two supplied-visit
+//! histories including TimerCheck's NULL-target draw. These controls do not
+//! certify complete class-AI cadence or caller-side End_Piggyback.
 //!
 //! Techno `+0x284` is written on a blocked landing (state 3), so an
 //! unblocked landing warps in after the object's previous blocked landing's
@@ -49,16 +55,6 @@
 //! Evidence: instruction reading of the addresses cited here.
 //!
 //! RESIDUALS:
-//! - The chrono reinforcement (`0x0065EC30`, reached from a trigger action
-//!   and the ChronoInTeam team script per their Ghidra labels) is not
-//!   ported. It raises WarpingIn, sets Techno `+0x284` to
-//!   `[General] ChronoReinfDelay=` (`0x0065F212`) and Techno `+0x280` to 3
-//!   (`0x0065F29F`), which state 0 jumps to (`0x00719338..0x00719342`) and
-//!   state 5 tests (`0x00719AA3`); state 7 clears it (`0x00719BD9`). VERA
-//!   has no other writer, so those branches and the WarpingIn-at-state-0 arm
-//!   (`0x00719304..0x00719325`) stay dormant. Trigger: a map's chrono
-//!   reinforcements. Effect: they don't arrive (VERA has no reinforcement
-//!   action); porting them needs these branches.
 //! - A destination given while warping in (states 2 to 7, the latch down)
 //!   runs the Unit setter's Teleporter arm, whose Drive suspends the warp's
 //!   Teleport (`locomotor_owner::begin_drive_for_teleporter`), refuses the
@@ -273,6 +269,19 @@ impl Simulation {
             return Ok(bridge_state_changed);
         };
         let frame = self.session.binary_frame;
+        // Original719304..719342 precedes both the ordinary movement and
+        // Chronosphere arms. Reinforcement's pending3 transfers on one visit;
+        // the next visit runs state3. WarpingIn alone instead runs TimerCheck.
+        if warp.state() == 0 && warp.warping_in() && warp.pending_state() == 0 {
+            self.teleport_timer_check(id, Some(rules), ctx);
+            return Ok(false);
+        }
+        if warp.state() == 0 && warp.pending_state() != 0 {
+            if let Some(active) = self.chrono_warp_mut(id) {
+                active.set_state(warp.pending_state());
+            }
+            return Ok(false);
+        }
         match warp.state() {
             0 => {
                 if let Some(warp) = self.chrono_warp_mut(id) {
@@ -323,9 +332,7 @@ impl Simulation {
                     warp.set_state(4);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    entity
-                        .chrono_warp_delay
-                        .store_chrono_delay(rules.general.chrono_delay);
+                    entity.chrono_warp_delay.store(rules.general.chrono_delay);
                 }
             }
             4 => {
@@ -346,7 +353,11 @@ impl Simulation {
                 let marked = self.chrono_settle(id, rules, registry, ctx.effects);
                 self.teleport_warp_sound(id, WarpSound::In, rules);
                 self.chrono_playfield_check(id);
-                self.chrono_post_warp_validation(id, marked, rules, registry, ctx.effects);
+                //719AA3..719AC9: a newly reinforced member skips the
+                //Chronosphere's terrain kill/sink/transform validation.
+                if warp.pending_state() == 0 {
+                    self.chrono_post_warp_validation(id, marked, rules, registry, ctx.effects);
+                }
                 if !self.chrono_owner_alive(id) {
                     return Ok(bridge_state_changed);
                 }

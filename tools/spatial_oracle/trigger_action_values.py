@@ -77,6 +77,10 @@ deferred-Queue receivers on declared ordered object lists.
 block with the real selector, eligibility and seeded RNG in the same image.
 Actual ALL05 records bind the stop route; Team creation remains an observed
 boundary, and the positive path has explicit minimal skirmish priors.
+
+``--chrono-reinforcement`` executes107 through the existing physical Foot
+constructor/placement owner and original Teleport COM factory. ALL07 records
+bind the selected Unit/MCV definitions; waypoint geometry is a declared crop.
 """
 from pathlib import Path
 import hashlib
@@ -238,25 +242,25 @@ class ActionFixture(FlagsFixture):
         elif pc == 0x7C8B3D:
             return_from_sink(u,0,0)
 
-    def read_action(self, raw, *, ini_capacity=None):
+    def read_action(self, raw, *, ini_capacity=None, address=ACTION, buffer=BUFFER):
         u = self.u
-        u.mem_write(ACTION,b'\xA5'*0x94)
-        self.call(0x6DD000,[],ecx=ACTION)
+        u.mem_write(address,b'\xA5'*0x94)
+        self.call(0x6DD000,[],ecx=address)
         counted = '1,'+raw
         if ini_capacity is None:
-            u.mem_write(BUFFER,counted.encode('ascii')+b'\0')
+            u.mem_write(buffer,counted.encode('ascii')+b'\0')
         else:
             # Same native ReadString512 contract as the TriggerType action
             # caller727516..72752E, with supplied cache rather than file IO.
             self.ini(HEAP+0x7000,counted)
-            self.call(0x528A10,[TYPE+0x1F8,HEAP+0x7000,0x889F64,BUFFER,ini_capacity],ecx=INI)
-        read = self.string(BUFFER)
-        self.call(0x7C9CC2,[BUFFER,0x817F70],cdecl=True)
-        self.call(0x6DD5B0,[],ecx=ACTION)
-        return dict(raw=raw,kind=self.integer(ACTION+0x2C),
-                    value=self.integer(ACTION+0x90),
-                    args=[self.integer(ACTION+n) for n in (0x34,0x38,0x3C,0x40)],
-                    waypoint=self.integer(ACTION+0x44),read=read)
+            self.call(0x528A10,[TYPE+0x1F8,HEAP+0x7000,0x889F64,buffer,ini_capacity],ecx=INI)
+        read = self.string(buffer)
+        self.call(0x7C9CC2,[buffer,0x817F70],cdecl=True)
+        self.call(0x6DD5B0,[],ecx=address)
+        return dict(raw=raw,kind=self.integer(address+0x2C),
+                    value=self.integer(address+0x90),
+                    args=[self.integer(address+n) for n in (0x34,0x38,0x3C,0x40)],
+                    waypoint=self.integer(address+0x44),read=read)
 
     def check_code(self):
         assert self.original == [bytes(self.u.mem_read(a,b-a)) for a,b in self.ranges]
@@ -5896,6 +5900,120 @@ def ai_activation_metadata():
             random_ranged=0x65C7E0, country_registration=0x668C8B))
 
 
+def chrono_reinforcement_retail():
+    archive=(configured_gamemd().parent/'mapsmd03.mix').read_bytes()
+    raw=mix(archive)[mix_hash('ALL07SMD.MAP')]
+    values=sections(raw)
+    definitions={}
+    for identity in ('0964C97C','04E3AA8C'):
+        team=values[identity]
+        definitions[identity]=dict(team=team,task_force_id=team['TaskForce'],
+            task_force=values[team['TaskForce']],script_id=team['Script'],script=values[team['Script']])
+    routes={identity:dict(trigger=values['Triggers'][identity],events=values['Events'][identity],
+        actions=values['Actions'][identity]) for identity in ('0964B13C','098DB96C')}
+    return raw,dict(map='ALL07SMD.MAP',archive='mapsmd03.mix',
+        archive_sha256=hashlib.sha256(archive).hexdigest(),map_sha256=hashlib.sha256(raw).hexdigest(),
+        definitions=definitions,routes=routes,
+        waypoints={key:values['Waypoints'][key] for key in ('26','27')},
+        general=values.get('General',{}))
+
+
+def chrono_reinforcement_generate(fixture=None):
+    from tools.native_oracle import image_sha256
+    from tools.spatial_oracle.team_creation import (reinforcement_fixture,execute_reinforcement_rows,
+        initialize_chrono_unit,execute_chrono_reinforcement_rows)
+    from tools.spatial_oracle.anytown_damage import anytown_resident
+    raw,retail=chrono_reinforcement_retail()
+    q=fixture or reinforcement_fixture(unit_geometry=True)
+    assert 'tables' in getattr(q,'unit_geometry_startup',{}),'Chrono fixture requires original Foot startup before baseline placement'
+    if not hasattr(q,'orca_type'):execute_reinforcement_rows(q,[])
+    theater=q.resident.theater
+    anytown_resident.Resident.ensure_tiles(q.resident,theater,
+        {row['tile'] for row in q.resident.case['supplied_cells'] if row['tile']!=0xFFFF},uc=q.u)
+    initialize_chrono_unit(q,'AMCV',raw)
+    geometry_prior={f'{address:08X}':q.m.read32(address) for address in
+        (0xA8F240,0xA8F234,0xAC13C8,0xAC13BC,0xB0EC38,0xB1D0B8,0xB1D0AC)}
+    cases=[dict(name='NULL_TEAM',entries=[],origin=[87,50],action='107,1,-1,0,0,0,0,G'),
+        dict(name='NO_WAYPOINT',entries=[['MTNK',1]],origin=[87,50],waypoint_override=-1),
+        dict(name='EMPTY_TASK_FORCE',entries=[],origin=[87,50]),
+        dict(name='NEGATIVE_WAYPOINT',entries=[],origin=[87,50],waypoint_override=-2),
+        dict(name='MINIMUM_WAYPOINT',entries=[],origin=[87,50],waypoint_override=-2147483648),
+        dict(name='04E3AA8C',entries=[['MTNK',1]],origin=[87,50],script_steps=[(11,0)],
+            retail_team='04E3AA8C',retail_action='107,1,04E3AA8C,0,0,0,0,AB'),
+        dict(name='0964C97C',entries=[['AMCV',1]],origin=[87,50],script_steps=[(11,0)],
+            retail_team='0964C97C',retail_action='107,1,0964C97C,0,0,0,0,AA'),
+        dict(name='ORDER_TWO_UNITS',entries=[['MTNK',2]],origin=[87,50]),
+        dict(name='TYPED_INFANTRY',entries=[['E1',1]],origin=[87,50]),
+        dict(name='TYPED_AIRCRAFT',entries=[['ORCA',1]],origin=[87,50]),
+        dict(name='PROCESS_UNIT',entries=[['MTNK',1]],origin=[87,50],first_process=True,
+            process_frames=[1,2,3,4,63,64,65]),
+        dict(name='PROCESS_UNIT_WITH_TARGET',entries=[['MTNK',1]],origin=[87,50],first_process=True,
+            process_target=True,process_frames=[1,2,3,4,63,64,65])]
+    rows=execute_chrono_reinforcement_rows(q,cases)
+    m,u=q.m,q.u
+    p=m.read32(m.read32(0xA8EC7C)+(m.read32(0xA8EC88)-1)*4)
+    original_ammo=bytes(u.mem_read(p+0x2FC,4));cpu=u.context_save();ammo=[]
+    try:
+        for value in (-2147483648,-2,-1,0,1,2147483647):
+            u.mem_write(p+0x2FC,dwords(value));u.reg_write(UC_X86_REG_EDI,p)
+            run_checked(u,0x65EDC8,0x65EDCE,required_addresses=[0x65EDC8])
+            ammo.append(dict(before=value,after=struct.unpack('<i',u.mem_read(p+0x2FC,4))[0]))
+    finally:u.mem_write(p+0x2FC,original_ammo);u.context_restore(cpu)
+    # Complete states are interned by content, keeping repeated unchanged
+    # Main/MapGen streams compact without discarding their actual bytes.
+    states={}
+    def intern(streams):
+        result={}
+        for key,raw_state in streams.items():
+            digest=hashlib.sha256(bytes.fromhex(raw_state)).hexdigest()
+            states[digest]=raw_state;result[key]=digest
+        return result
+    for row in rows:
+        for key in ('rng_before','rng_after'):row[key]=intern(row[key])
+        if row['creation']:row['creation']['rng']=intern(row['creation']['rng'])
+        for step in row.get('process',[]):step['rng']=intern(step['rng'])
+    return dict(schema_version=1,native_sha256=image_sha256(),retail=retail,
+        unit_geometry_startup=q.unit_geometry_startup,
+        geometry_prior=geometry_prior,
+        type_reads=q.chrono_unit_reads,rng_states=states,cases=rows,
+        ammo_decrement=dict(entry='0065EDC8',end='0065EDCE',
+            scope='Original DEC fragment with supplied prior values; field and CPU restored. Numeric overflow only, not whole107 boundary coverage.',rows=ammo),
+        inherited_crop=dict(map_sha256=q.world['physical_map_sha256'],
+            size=q.resident.case['size'],local_size=q.resident.case['local_size'],
+            waypoint_cell=[88,49],waypoint_level=q.u.mem_read(q.resident.ptrs[88,49]+0x11B,1)[0],
+            frame=1,game_active=1,scenario_started=0,
+            rules_reader='0066D530',rules_layers=q.inputs['ai_rules_layers'],
+            chrono_delay=struct.unpack('<i',q.u.mem_read(q.rules+0xBEC,4))[0],
+            chrono_reinf_delay=struct.unpack('<i',q.u.mem_read(q.rules+0xBF0,4))[0],
+            supplied_cells=q.resident.case['supplied_cells'],physical_tmp=q.resident.assets,
+            game_mode=struct.unpack('<i',q.u.mem_read(0xA8B238,4))[0],
+            unmodified_native_code_sha256=q.resident.code_hash))
+
+
+def chrono_reinforcement_metadata():
+    record=provenance(scope='Original107 reader/full Execute->65EC30->65DD30, physical Unit/Infantry/Aircraft construction and placement, original Teleport factory/piggyback/MoveTo/finalize and two bounded Process histories on the existing FootMissions crop.',
+        assumptions=[
+            'ActionFixture reader methods attach to the existing FootMissions allocator/image. No constructor or dispatch result crosses VMs. Resolved TeamType/ScriptType/TaskForce priors use the existing prepare_reinforcement_case owner; their full definition readers are excluded. The original TAction constructor, tokenizer, reference lookup and Read execute on those registered native Team identities.',
+            'Physical ALL07SMD.MAP in mapsmd03.mix binds ChronoMCV Trigger0964B13C ->Team0964C97C/AMCV and ChronoSupport098DB96C ->Team04E3AA8C/MTNK. The gameplay controls transplant their destination to waypointG=(88,49) on the existing Anytown crop. Actual authored AA/AB geometry, full campaign startup and outcomes are excluded; actual authored records and map hash remain in the corpus.',
+            'AMCV uses original7470D0/747620 on physical RULESMD, optional LANGRULE and ALL07 map in that order, with physical ARTMD. Existing physical MTNK/E1/ORCA readers, ordinary constructors, spare registries and partial Houses/crop come from team_creation/FootMissions. Each case retains genuine object IDs, constructor Ammo, native member and temporary chain order, FNPC arguments/results, actual Unlimbo, pending/timer/coordinate writes and three complete RNG streams interned by hash.',
+            'NULL_TEAM, NO_WAYPOINT and EMPTY_TASK_FORCE are genuine original early returns. Native65EC30 dereferences a null created head before its late check and dereferences the null success head when every placement fails. Those undefined/fault paths are not converted into invented safe return values. Full transport/cargo paths and arbitrary all-blocked maps are excluded.',
+            'Cases retain their genuinely constructed live actors and native registry/RNG history. Each preparation resets creation depth, recent-cell ring, player and Team definition/waypoint priors as declared by the existing reinforcement fixture. No post-case scalar deletion is inserted into107. Finalization clears temporary Object+30 links in reverse success order, Mark0 then pending3 then Commence. Two Process histories record all supplied frames, states, timers and RNG calls: the ordinary initially NULL target acquires existing hostile195 at timer expiry; a second control calls original6FCDB0 to set the genuine existing victim as target before Process (input.process_target_id). Other actors/TeamAI/global phases, device audio and rendering are excluded.',
+            'The existing Resident.ensure_tiles owner supplies actual relocated TMP bytes for all55 non-sentinel tile types referenced by the180-cell crop, including newly reached tile140/clat09.tem. Historical default slots/payload remain unchanged. Extra bodies avoid the existing raw-zone planes; the supplied raw land/slope/zone priors still exclude whole native map initialization. No terrain/FNPC return is supplied.',
+            'Existing unit_unlimbo.initialize_unit_geometry executes the original Infantry table813490 (the existing infantry_entry_raw.STARTUP), full Teleport table8150B8 and five Unit GEOMETRY_CALLS before the four baseline actors are constructed/placed. Native Unit B1D0AC and Infantry A8F234 become416; their level copies and Teleport B0EC38 become104. Full before/after field bytes and unchanged three-stream RNG are recorded. Aircraft inherits Object raw receivers5F60A0/5F6120: the existing FootMissions Object table8141D8 establishes AC13C8/AC13BC104/416 before the typed Aircraft case, and geometry_prior records them. Historical fixture payloads retain their omitted startup boundaries and are not silently regenerated. Earlier new107 zero-Unit and zero-Infantry diagnostics remain external and are superseded by this corpus.',
+            'Six Ammo overflow controls execute only original65EDC8..65EDCE with EDI and the signed field prior supplied on a genuine actor. Original field bytes and CPU state are restored afterward. This proves the DEC fragment, including wrap, not every full107 arithmetic input.'],
+        substitutions=[
+            'Inherited FootMissions physical lexical INI caches, successful heap, asset/file, partial House and cropped-world transports remain explicit. Existing Mission.locomotor_com_transport now routes the actual Teleport CLSID at7E9A90 to original CreateInstance6C4C10, established by factory vtable7F3D38+0C and its718000 constructor call. Existing OleRun/Interlocked OS boundaries remain. No gameplay factory, FNPC, subcell, Unlimbo, COM QueryInterface/AddRef/BeginPiggyback, MoveTo, RNG, Mark, Commence or class cleanup return is supplied.'],
+        entry_points=dict(action_read=0x6DD5B0,execute=0x6DD8B0,chrono_dispatch=0x6DF672,
+            chrono_reinforce=0x65EC30,create_members=0x65DD30,fnpc=0x56DC20,subcell=0x481180,
+            teleport_factory=0x6C4C10,teleport_ctor=0x718000,teleport_move=0x718100,
+            process=0x7192F0,mark=0x4D3780,commence=0x5B3570,unit_ammo_init=0x7355A8,
+            infantry_ammo_init=0x517D7A,ammo_decrement=0x65EDC8))
+    record['command']='python -m tools.spatial_oracle.trigger_action_values --chrono-reinforcement --check'
+    record['required_inputs']={'VERA20K_SHRAPNEL_INPUTS':'existing physical RULESMD/ARTMD/SOUNDMD/theater owner',
+        'VERA20K_ANYTOWN_INPUTS':'existing physical Anytown map/shot assets plus all55 crop TMPs from retail ra2.mix/isotemp.mix'}
+    return record
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -5918,9 +6036,18 @@ if __name__=='__main__':
     selected_modes.add_argument('--crate', action='store_true')
     selected_modes.add_argument('--wakeup', action='store_true')
     selected_modes.add_argument('--ai-activation', action='store_true')
+    selected_modes.add_argument('--chrono-reinforcement', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.ai_activation:
+    if selected.chrono_reinforcement:
+        if selected.inputs is not None:
+            selector.error('--chrono-reinforcement reuses the configured retail FootMissions inputs, not --inputs')
+        from tools.spatial_oracle.team_creation import source_paths as team_source_paths
+        finish_vectors(chrono_reinforcement_generate,
+            Path(__file__).with_name('trigger_chrono_reinforcement.json'),
+            provenance=chrono_reinforcement_metadata,argv=remaining,
+            source_paths=dict(SOURCE_PATHS,**team_source_paths()))
+    elif selected.ai_activation:
         if selected.inputs is not None:
             selector.error('--ai-activation reads configured retail ALL05, not --inputs')
         finish_vectors(ai_activation_generate,

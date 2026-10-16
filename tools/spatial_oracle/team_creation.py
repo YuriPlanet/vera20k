@@ -19,7 +19,7 @@ import hashlib
 import json
 import struct
 
-from unicorn import UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX,
     UC_X86_REG_EDX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_EIP, UC_X86_REG_ESP)
 from tools.native_oracle import SCRATCH, RET_MAGIC, run_checked, finish_vectors, provenance
@@ -385,11 +385,14 @@ def initialize_subcell_startup(q):
         rng_before=before_rng,rng_after=after_rng,native_code_sha256=code_hash)
 
 
-def reinforcement_fixture():
+def reinforcement_fixture(*, unit_geometry=False):
     """Keep original process geometry initialization before real placement."""
     from tools.spatial_oracle.anytown_damage.foot_missions import FootMissions
     q=FootMissions()
     initialize_subcell_startup(q)
+    if unit_geometry:
+        from tools.spatial_oracle.anytown_damage.unit_unlimbo import initialize_unit_geometry
+        q.unit_geometry_startup=initialize_unit_geometry(q,foot=True)
     q.initialize_companion()
     return q
 
@@ -404,8 +407,10 @@ def prepare_reinforcement_case(q, case):
     u.mem_write(script+0xA0,dwords(len(steps),*(value for step in steps for value in step)))
     task_force=m.alloc(0x100);u.mem_write(task_force,bytes(0x100))
     u.mem_write(task_force+0x9C,dwords(len(case['entries'])))
+    types={'MTNK':q.typ,'E1':q.e1_type,'ORCA':q.orca_type,
+           **getattr(q,'reinforcement_types',{})}
     for index,(name,amount) in enumerate(case['entries']):
-        u.mem_write(task_force+0xA4+index*8,dwords(amount,{'MTNK':q.typ,'E1':q.e1_type,'ORCA':q.orca_type}[name]))
+        u.mem_write(task_force+0xA4+index*8,dwords(amount,types[name]))
     u.mem_write(typ+0xA0,dwords(case.get('veteran',1)))
     u.mem_write(typ+0xA5,bytes([case.get('full',False)]))
     u.mem_write(typ+0xB0,bytes([case.get('droppod',False)]))
@@ -547,16 +552,176 @@ def initialize_aircraft(q, name='ORCA'):
     # Keep legacy ORCA receipt keys byte-for-byte compatible.
     if field=='orca_type':
         q.orca_art_inputs=getattr(q,field+'_art_inputs');q.orca_reads=reads
-    if not hasattr(q,'native_fly_types'):q.native_fly_types=[]
-    q.native_fly_types.append(type_pointer)
-    # 6C4ACC directly calls original Fly ctor4CC9A0; COM class registration
-    # binds its parsed CLSID. No Fly ctor or gameplay result is supplied.
-    def transport(_u,pc,_size,_data):
-        if pc in (0x413DE2,0x413DF1):
-            native_owner.locomotor_com_transport(u,pc,m,q.events,detailed=True)
-    if not hasattr(q,'orca_transport_hook'):
-        q.orca_transport_hook=u.hook_add(UC_HOOK_CODE,transport)
+    # Mission.observe owns Fly activation/OleRun as well as Drive/Ship.
+    # Installing another413DE2 hook would interpret its already rewritten
+    # COM stack a second time. Original6C4ACC ->4CC9A0 still executes once.
     q.phase='logic'
+
+
+def initialize_chrono_unit(q, name, map_raw):
+    """Add a physical UnitType to the same constructor/placement fixture."""
+    import os
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.spatial_oracle.building_body_rules import RULES
+    m,u=q.m,q.u
+    if not hasattr(q,'reinforcement_types'):q.reinforcement_types={}
+    if name in q.reinforcement_types:return q.reinforcement_types[name]
+    q.phase='setup'
+    typ=m.alloc(0x1900);m.invoke(0x7470D0,typ,(m.cstring(name),))
+    root=Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])
+    art_raw=(root/'ARTMD.INI').read_bytes()
+    art,art_lines=lexical(art_raw,{name,'MCV','MTNK','GTNK'})
+    m.make_ini(art);layers=[]
+    sources=[('RULESMD.INI',(root/'RULESMD.INI').read_bytes())]
+    if (root/'LANGRULE.INI').exists():sources.append(('LANGRULE.INI',(root/'LANGRULE.INI').read_bytes()))
+    sources.append(('ALL07SMD.MAP',map_raw))
+    for label,raw in sources:
+        selected,lines=lexical(raw,{name});m.rules_cache(selected)
+        returned=m.invoke(0x747620,typ,(RULES,))&255
+        layers.append(dict(file=label,sha256=hashlib.sha256(raw).hexdigest(),inputs=selected,
+            lines=lines,returned_al=returned,initial_ammo=i32(u,typ+0x680),ammo=i32(u,typ+0x684),
+            speed_type=i32(u,typ+0x67C),
+            locomotor=bytes(u.mem_read(typ+0x34C,16)).hex()))
+    q.reinforcement_types[name]=typ
+    if not hasattr(q,'chrono_unit_reads'):q.chrono_unit_reads={}
+    q.chrono_unit_reads[name]=dict(art_sha256=hashlib.sha256(art_raw).hexdigest(),
+        art_inputs=art,art_lines=art_lines,layers=layers)
+    q.phase='logic'
+    return typ
+
+
+def execute_chrono_reinforcement_rows(q, cases):
+    """Connected original107/65EC30, using ActionFixture on this same image.
+
+    The existing FootMissions owner keeps all constructor, type, geometry,
+    allocator and platform transports. Resolved Team/Script/TaskForce records
+    and a transplanted waypoint in its small physical crop are explicit priors.
+    """
+    from tools.spatial_oracle.trigger_action_values import ActionFixture
+    m,u=q.m,q.u
+    action=ActionFixture.__new__(ActionFixture);action.__dict__=m.__dict__
+    action_ptr=m.alloc(0x94);buffer=m.alloc(512)
+    scenario=m.read32(0xA8B230)
+    rows=[]
+    q.chrono_rows=rows
+    def rng():return {key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()}
+    def chain(p,offset):
+        result=[]
+        while p:
+            result.append(i32(u,p+0x10));p=m.read32(p+offset);assert len(result)<64
+        return result
+    def member(p):
+        interface=m.read32(p+0x674)
+        return dict(native_id=i32(u,p+0x10),type=m.string(m.read32(p+(0x6C0 if m.read32(p)==0x7EB058 else 0x6C4))+0x24),
+            kind=m.invoke(m.read32(m.read32(p)+0x2C),p),ammo=i32(u,p+0x2FC),
+            xyz=list(struct.unpack('<3i',u.mem_read(p+0x9C,12))),
+            warp_destination=list(struct.unpack('<3i',u.mem_read(p+0x288,12))),
+            being_warped=bool(u.mem_read(p+0x271,1)[0]),pending=i32(u,p+0x280),delay=i32(u,p+0x284),
+            mission=i32(u,p+0xAC),queued=i32(u,p+0xB4),limbo=bool(u.mem_read(p+0x81,1)[0]),
+            target_id=i32(u,m.read32(p+0x2B4)+0x10) if m.read32(p+0x2B4) else None,
+            object_next=bool(m.read32(p+0x30)),team_member=bool(m.read32(p+0x5D4)),
+            locomotor_vtable=f'{m.read32(interface):08X}',
+            locomotor_state=i32(u,interface+0x34),locomotor_piggyback=bool(m.read32(interface+0x44)),
+            locomotor_destination=list(struct.unpack('<3i',u.mem_read(interface+0x18,12))),
+            locomotor_marked=list(struct.unpack('<3i',u.mem_read(interface+0x24,12))),
+            locomotor_moving=bool(u.mem_read(interface+0x30,1)[0]),
+            locomotor_timer=[i32(u,interface+n) for n in (0x38,0x40)])
+    for case in cases:
+        case={'frame':i32(u,0xA8ED84),'override_cell':[88,49],**case}
+        q.chrono_case=case
+        prior=[]
+        for index in range(i32(u,0xA8EC88)):
+            p=m.read32(m.read32(0xA8EC7C)+index*4)
+            prior.append(dict(native_id=i32(u,p+0x10),
+                type=m.string(m.read32(p+(0x6C0 if m.read32(p)==0x7EB058 else 0x6C4))+0x24),
+                xyz=list(struct.unpack('<3i',u.mem_read(p+0x9C,12))),
+                owner_house_index=i32(u,m.read32(p+0x21C)+0x30),
+                in_playfield=bool(u.mem_read(p+0x3D5,1)[0]),
+                limbo=bool(u.mem_read(p+0x81,1)[0]),alive=bool(u.mem_read(p+0x90,1)[0]),
+                being_warped=bool(u.mem_read(p+0x271,1)[0]),object_74=u.mem_read(p+0x74,1)[0]))
+        typ=prepare_reinforcement_case(q,case)
+        u.mem_write(scenario+0x632+6*4,packed(*case.get('override_cell',[88,49])))
+        raw=case.get('action',f"107,1,{case['name']},0,0,0,0,G")
+        read=action.read_action(raw,address=action_ptr,buffer=buffer)
+        if 'waypoint_override' in case:u.mem_write(action_ptr+0x44,dwords(case['waypoint_override']))
+        before=rng();ids_before=i32(u,scenario+0x214)
+        created=[];teams=[];calls=[];placements=[];fnpc=[];writes=[];creation=None;returns={}
+        entries={0x65EC30:'chrono_reinforce',0x65DD30:'create_members',0x6E8A90:'team_ctor',
+            0x6EA500:'add_member',0x6EA870:'remove_member',0x7258D0:'detach_all',
+            0x6C4C10:'teleport_factory',0x718000:'teleport_ctor',
+            0x56DC20:'fnpc',0x481180:'subcell',0x4D3780:'mark',0x5B3570:'commence',0x660B80:'recent_cell'}
+        def observe(vm,pc,_size,_data):
+            nonlocal creation
+            sp=vm.reg_read(UC_X86_REG_ESP);receiver=vm.reg_read(UC_X86_REG_ECX)
+            if pc in returns:
+                for record in returns.pop(pc):
+                    record['returned_al']=vm.reg_read(UC_X86_REG_EAX)&255
+                    if record.get('kind')=='fnpc':
+                        record['result']=list(struct.unpack('<hh',u.mem_read(vm.reg_read(UC_X86_REG_EAX),4)))
+            if pc in entries:calls.append(dict(kind=entries[pc],id=i32(u,receiver+0x10) if pc in (0x4D3780,0x5B3570) else None))
+            if pc==0x6E8A90:teams.append(receiver)
+            if pc==0x65DE3C and vm.reg_read(UC_X86_REG_EAX):
+                pointer=vm.reg_read(UC_X86_REG_EAX);created.append(pointer)
+            if pc==0x65ECCC:
+                creation=dict(head=chain(vm.reg_read(UC_X86_REG_EAX),0x30),
+                    team_members=chain(m.read32(teams[0]+0x54),0x5D8),
+                    ammo=[i32(u,p+0x2FC) for p in created],rng=rng())
+            if pc==0x56DC20:
+                record=dict(kind='fnpc',origin=list(struct.unpack('<hh',u.mem_read(m.read32(sp+8),4))),
+                    caller=f'{m.read32(sp):08X}',
+                    args=[i32(u,sp+12+n*4) for n in range(10)]+[i32(u,sp+56),i32(u,sp+60)])
+                fnpc.append(record);returns.setdefault(m.read32(sp),[]).append(record)
+            if pc in (0x737BA0,0x51DFF0,0x414310):
+                record=dict(id=i32(u,receiver+0x10),xyz=list(struct.unpack('<3i',u.mem_read(m.read32(sp+4),12))),
+                    facing=i32(u,sp+8),creation_depth=i32(u,0xA8E7AC))
+                placements.append(record);returns.setdefault(m.read32(sp),[]).append(record)
+        def written(vm,_access,address,size,value,_data):
+            for p in created:
+                if address-p in (0x30,0x271,0x280,0x284,0x288,0x28C,0x290,0x2FC):
+                    writes.append(dict(id=i32(u,p+0x10),pc=f'{vm.reg_read(UC_X86_REG_EIP):08X}',
+                        offset=f'{address-p:X}',size=size,value=value))
+        h=u.hook_add(UC_HOOK_CODE,observe);w=u.hook_add(UC_HOOK_MEM_WRITE,written)
+        q.phase='placement';q.events.clear();q.pending.clear()
+        try:
+            returned=m.invoke(0x6DD8B0,action_ptr,(q.enemy,0,0,0),timeout_us=30_000_000,
+                context={'case':case,'fixture':'existing FootMissions physical crop'})&255
+        finally:u.hook_del(h);u.hook_del(w)
+        after=rng();team=teams[0] if teams else 0
+        result=dict(input=case,prior=prior,read=read,returned=returned,id_before=ids_before,id_after=i32(u,scenario+0x214),
+            created_ids=[i32(u,p+0x10) for p in created],creation=creation,
+            members=[member(p) for p in created],team_members=chain(m.read32(team+0x54),0x5D8) if team else [],
+            team_flags=list(u.mem_read(team+0x74,17)) if team else None,
+            placements=placements,fnpc=fnpc,writes=writes,calls=calls,rng_before=before,rng_after=after,
+            rng_events=[event for event in q.events if event['kind'] in ('rng','raw')],
+            recent_counter=i32(u,0xB04D88),recent_cell=list(struct.unpack('<hh',u.mem_read(0xB04D48+4,4))),
+            creation_depth=i32(u,0xA8E7AC))
+        if case.get('first_process') and created:
+            result['process']=[]
+            p=created[0];interface=m.read32(p+0x674)
+            q.phase='logic'
+            if case.get('process_target'):
+                case['process_target_id']=i32(u,q.victim+0x10)
+                m.invoke(0x6FCDB0,p,(q.victim,))
+            for frame in case.get('process_frames',[i32(u,0xA8ED84)]):
+                q.frame=frame
+                u.mem_write(0xA8ED84,dwords(frame));before_process=member(p)
+                process_calls=[];event_start=len(q.events)
+                def process_observe(vm,pc,_size,_data):
+                    if pc in (0x421EA0,0x7509E0,0x6EA870,0x7258D0):
+                        process_calls.append(dict(pc=f'{pc:08X}',id=i32(u,scenario+0x214)))
+                h=u.hook_add(UC_HOOK_CODE,process_observe)
+                try:m.invoke(0x7192F0,0,(interface,))
+                finally:u.hook_del(h)
+                result['process'].append(dict(frame=frame,before=before_process,after=member(p),rng=rng(),calls=process_calls,
+                    rng_events=[event for event in q.events[event_start:] if event['kind'] in ('rng','raw')]))
+            u.mem_write(0xA8ED84,dwords(case['frame']))
+            q.frame=case['frame']
+        # Subsequent cases retain genuine live objects and native registry/RNG
+        # history. Killing an already placed actor is a separate mechanism.
+        q.phase='logic'
+        assert hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()==q.resident.code_hash
+        rows.append(result)
+    return rows
 
 
 def script_move_inputs():
@@ -939,7 +1104,7 @@ def source_paths():
     """Reuse the composed owner's dependency closure, including legacy leaves."""
     from tools.spatial_oracle.anytown_damage.foot_missions import source_paths as foot_sources
     paths=foot_sources();repo=Path(__file__).resolve().parents[2]
-    for relative in ('tools/spatial_oracle/team_creation.py','tools/spatial_oracle/aircraft_fire_location.py',
+    for relative in ('tools/spatial_oracle/team_creation.py','tools/spatial_oracle/anytown_damage/unit_unlimbo.py','tools/spatial_oracle/infantry_entry_raw.py','tools/spatial_oracle/aircraft_fire_location.py',
                      'tools/spatial_oracle/map_queries.py','tools/rules_oracle/bridge_anim_inputs.py'):
         paths[relative]=repo/relative
     from tools.spatial_oracle.tag_lifecycle import source_paths as tag_sources

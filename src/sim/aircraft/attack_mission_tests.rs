@@ -5,7 +5,7 @@ use super::*;
 use crate::map::playfield::PlayfieldBounds;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::docking::aircraft_dock::AircraftAmmo;
+use crate::sim::ammo::TechnoAmmo;
 use crate::sim::mission::MissionType;
 use crate::sim::rng::SimRng;
 use crate::sim::world::edge_cell;
@@ -338,7 +338,7 @@ fn original_state10_rows() {
             let get = |key| field(&input, defaults, key);
             let name = &input["name"];
             // The prefix: the latch clears, pending ammo is consumed.
-            let mut ammo = AircraftAmmo::new(10);
+            let mut ammo = TechnoAmmo::new(10);
             ammo.set_current_for_test(get("ammo").as_i64().unwrap() as i32);
             if get("pending").as_i64().unwrap() != 0 {
                 ammo.begin_release();
@@ -511,12 +511,8 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
                 ai_counter: 0,
                 dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
             });
-        plane.aircraft_ammo = Some(AircraftAmmo::new(1));
-        plane
-            .aircraft_ammo
-            .as_mut()
-            .unwrap()
-            .set_current_for_test(0);
+        plane.install_ammo_for_test(Some(TechnoAmmo::new(1)));
+        plane.ammo_mut().unwrap().set_current_for_test(0);
         plane
             .attack_target
             .set_for_test(Some(TargetKind::Cell(45, 40)));

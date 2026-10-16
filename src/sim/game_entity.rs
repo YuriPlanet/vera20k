@@ -16,13 +16,13 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use crate::map::entities::EntityCategory;
+use crate::sim::ammo::TechnoAmmo;
 use crate::sim::animation::Animation;
 use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
 use crate::sim::combat::base_defense_response::BaseDefenseResponseState;
 use crate::sim::combat::{Health, TarCom};
 use crate::sim::components::{NavigationState, Position};
 use crate::sim::debug_event_log::{DebugEventKind, DebugEventLog};
-use crate::sim::docking::aircraft_dock::AircraftAmmo;
 use crate::sim::intern::InternedId;
 use crate::sim::miner::Miner;
 use crate::sim::mission::{MissionCom, MissionLeafState, MissionType};
@@ -629,10 +629,9 @@ pub struct GameEntity {
     /// (`0x004D33D2..0x004D33DE`) and written only by `sim::building_entry`.
     #[serde(default)]
     pub(crate) building_entry: crate::sim::building_entry::BuildingEntryLatches,
-    /// An aircraft's Ammo (`TechnoClass+0x2FC`), pending release and dock,
-    /// an [`AircraftAmmo`] that `docking::aircraft_dock` owns. Present on all
-    /// Aircraft, including signed negative native Ammo counts.
-    pub aircraft_ammo: Option<AircraftAmmo>,
+    /// Shared signed Techno+0x2FC, with aircraft release/dock state where
+    /// applicable. The `ammo` owner exposes the count's native mutations.
+    ammo: Option<TechnoAmmo>,
     /// The spot an infantryman holds in its cell, an [`InfantrySpot`] cache
     /// that `movement::foot_mark` owns.
     ///
@@ -836,6 +835,29 @@ impl GameEntity {
         &mut self.house_tracking_latches
     }
 
+    /// The shared signed Techno ammo, including negative/unlimited counts.
+    pub fn ammo(&self) -> Option<&TechnoAmmo> {
+        self.ammo.as_ref()
+    }
+
+    /// Mutations remain on the shared ammo owner, rather than a caller's copy.
+    pub(crate) fn ammo_mut(&mut self) -> Option<&mut TechnoAmmo> {
+        self.ammo.as_mut()
+    }
+
+    /// Unit735592, Infantry517D69 and Aircraft414033 constructor writes.
+    pub(crate) fn initialize_ammo_from_type(
+        &mut self,
+        object: &crate::rules::object_type::ObjectType,
+    ) {
+        self.ammo = Some(TechnoAmmo::from_type(object));
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn install_ammo_for_test(&mut self, ammo: Option<TechnoAmmo>) {
+        self.ammo = ammo;
+    }
+
     /// Techno+0x284, the Chronosphere warp-in's frames.
     pub(crate) fn chrono_warp_delay(&self) -> i32 {
         self.chrono_warp_delay.get()
@@ -844,7 +866,7 @@ impl GameEntity {
     /// A fixture's delay.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_chrono_warp_delay(&mut self, frames: i32) {
-        self.chrono_warp_delay.store_chrono_delay(frames);
+        self.chrono_warp_delay.store(frames);
     }
 }
 
@@ -1474,7 +1496,7 @@ impl GameEntity {
             berserk: Default::default(),
             pending_entry: Default::default(),
             building_entry: Default::default(),
-            aircraft_ammo: None,
+            ammo: None,
             // Infantry get sub-cell 2 (first distinct position) at spawn so
             // they don't all pile up at cell center when multiple are created.
             sub_cell: crate::sim::movement::foot_mark::InfantrySpot::new(

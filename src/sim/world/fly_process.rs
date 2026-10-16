@@ -554,11 +554,7 @@ impl Simulation {
             && coord_cell(state.destination()) == coord_cell(location)
             && state.target_speed() == SIM_ZERO
             && (entity.attack_target.target().is_none()
-                || entity
-                    .aircraft_ammo
-                    .as_ref()
-                    .map_or(-1, |ammo| ammo.current())
-                    == 0)
+                || entity.ammo().map_or(-1, |ammo| ammo.current()) == 0)
     }
 
     /// `FlyLocomotionClass::Horizontal_Step @ 0x004CEFB0` toward `coord` (the
@@ -622,10 +618,7 @@ impl Simulation {
                 .as_aircraft()
                 .is_some_and(|leaf| leaf.action_latch() != 0);
         let target = entity.attack_target.target();
-        let ammo = entity
-            .aircraft_ammo
-            .as_ref()
-            .map_or(-1, |ammo| ammo.current());
+        let ammo = entity.ammo().map_or(-1, |ammo| ammo.current());
         let hunter_seeker = object.is_some_and(|object| object.hunter_seeker);
         let armed = target.is_some() && ammo != 0;
         let may_slow = may_slow

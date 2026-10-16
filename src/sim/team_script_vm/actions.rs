@@ -57,8 +57,9 @@
 //!   natively, as in VERA, those actions take them off Unload in the air.
 //!   Trigger: a member of a modded type deploying when its team attacks.
 //!   Effect: it stops deploying and attacks.
-//! - A non-aircraft member's ammunition (`+0x2FC`) is not tracked and reads
-//!   as its `Ammo=`: actions 0 and 46 never find such a team spent
+//! - Non-aircraft ammunition (`+0x2FC`) retains its constructor and chrono
+//!   reinforcement writes; ordinary weapon-fire debits remain unported.
+//!   Actions 0 and 46 therefore do not find an ordinary finite-ammo team spent
 //!   (`team_out_of_ammo`). Trigger: a team of units with `Ammo=` above 0.
 //!   Effect: the team keeps attacking where native would move on once all
 //!   are empty.
@@ -2600,13 +2601,10 @@ pub(super) const fn quarry_mask(quarry: i32) -> u32 {
     }
 }
 
-/// A member's ammunition (`+0x2FC`): an aircraft's count; other classes'
-/// is not tracked and reads as full (`Ammo=`, module residual).
+/// A member's shared live ammunition (`+0x2FC`). A component-only fixture
+/// without a concrete constructor retains its explicitly declared type prior.
 fn member_ammo(entity: &GameEntity, object: &crate::rules::object_type::ObjectType) -> i32 {
-    entity
-        .aircraft_ammo
-        .as_ref()
-        .map_or(object.ammo, |ammo| ammo.current())
+    entity.ammo().map_or(object.ammo, |ammo| ammo.current())
 }
 
 /// An object's Location (`+0x9C`) as the building finders read it.

@@ -2581,8 +2581,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         7,
     );
     child
-        .aircraft_ammo
-        .as_mut()
+        .ammo_mut()
         .expect("Hornet ammo")
         .set_current_for_test(1);
 
@@ -2601,7 +2600,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
 
     pass(&mut sim, Some(other));
     let child = sim.substrate.entities.get(hornet).unwrap();
-    assert_eq!(child.aircraft_ammo.as_ref().unwrap().current(), 0);
+    assert_eq!(child.ammo().unwrap().current(), 0);
     assert!(
         child.attack_target.target().is_none(),
         "the aircraft arm drops it"
@@ -2799,7 +2798,7 @@ fn every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass() {
                     .substrate
                     .entities
                     .get(*hornet)
-                    .and_then(|h| h.aircraft_ammo.as_ref())
+                    .and_then(|h| h.ammo())
                     .map(|a| a.current()),
                 Some(0),
                 "{shape} Hornet {hornet}: the pass paid its one ammo"

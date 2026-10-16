@@ -881,7 +881,7 @@ use crate::sim::world::Simulation;
 // held the same values. Prior records cannot resume.
 // 301 -> 302: FogState drops the version-81 wire shadow of the view-cache
 // generation, which nothing read. Prior records cannot resume.
-// 302 -> 303: LocomotorState drops its unread HoverAttack copy, AircraftAmmo
+// 302 -> 303: LocomotorState drops its unread HoverAttack copy, TechnoAmmo
 // its target_pad and AircraftMission's Docking/DockedIdle their pad_index:
 // write-only copies of the AirfieldDocks reservation. Prior records cannot
 // resume.
@@ -913,7 +913,7 @@ use crate::sim::world::Simulation;
 // 314 -> 315: ProductionState drops ready_by_owner; a completed building
 // waiting for placement is its factory's held object. Prior records carry it.
 // 315 -> 316: the native airfield loop replaces the legacy dock state:
-// AircraftAmmo keeps the aircraft's dock (+0x6CC) in place of its dock phase,
+// TechnoAmmo keeps the aircraft's dock (+0x6CC) in place of its dock phase,
 // airfield, reload timer and rescan cooldown, GameEntity drops AircraftMission
 // (Mission+0xBC holds Mission_Move's and Mission_Attack's states), and
 // ProductionState drops the AirfieldDocks pad reservations. Prior records
@@ -1055,7 +1055,9 @@ use crate::sim::world::Simulation;
 // 372 -> 373: House retains four class-local last-built type indices.
 // 373 -> 374: the Simulation retains whether it batches target scans.
 // 374 -> 375: CaptureManager retains its overload pip countdown.
-const SNAPSHOT_VERSION: u32 = 375;
+// 375 -> 376: Foots retain their shared signed Ammo and chrono reinforcements
+// retain the pending Teleport state (Techno+280).
+const SNAPSHOT_VERSION: u32 = 376;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2263,14 +2265,14 @@ fn restore_object_references(
                 pending,
             )?;
         }
-        if let Some(ammo) = entity.aircraft_ammo.as_ref()
+        if let Some(ammo) = entity.ammo()
             && let Some(target_id) = ammo.dock()
         {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
                 entity_id,
-                "aircraft_ammo.dock",
+                "ammo.dock",
                 "EntityStore",
                 target_id,
             )?;
@@ -4577,7 +4579,8 @@ mod tests {
         // 372 -> 373: retained House last-built type indices.
         // 373 -> 374: the batched target scan setting.
         // 374 -> 375: retained CaptureManager overload pip countdown.
-        assert_eq!(super::SNAPSHOT_VERSION, 375);
+        // 375 -> 376: retained Foot Ammo and chrono reinforcement pending state.
+        assert_eq!(super::SNAPSHOT_VERSION, 376);
     }
 
     #[test]
