@@ -591,6 +591,9 @@ struct LiveTag {
     type_index: usize,
     ///6E4F44 prepends instances, reversing definition-construction order.
     triggers: Vec<usize>,
+    /// Native+2C is written by attachment operations, not reconstructed from
+    /// live Object/Cell indexes. Object5F3B80 frees an attached Object without
+    /// decrementing this counter; damage-events' destruction controls pin it.
     refs: i32,
     attached_cell: (i16, i16),
     pending: bool,
@@ -967,16 +970,12 @@ impl Simulation {
                 }
             }
         }
-        let mut references = vec![0i32; runtime.tags.len()];
         for (&attachment, &index) in &runtime.attachments {
             if runtime.tag(index).is_none() {
                 return Err(format!("{attachment:?} references unresolved Tag {index}"));
             }
             let resolves = match attachment {
-                TagAttachment::Object(id) => {
-                    references[index] = references[index].wrapping_add(1);
-                    self.classify_object(id).is_some()
-                }
+                TagAttachment::Object(id) => self.classify_object(id).is_some(),
                 TagAttachment::Team(id) => self.team_script_vm.team(id).is_some(),
             };
             if !resolves {
@@ -1004,20 +1003,12 @@ impl Simulation {
             if !resolves {
                 return Err(format!("Tag {index} has an unresolved {cell:?} attachment"));
             }
-            references[index] = references[index].wrapping_add(1);
         }
-        for (index, tag) in runtime
-            .tags
-            .iter()
-            .enumerate()
-            .filter_map(|(index, tag)| tag.as_ref().map(|tag| (index, tag)))
-        {
-            if tag.refs != references[index] {
-                return Err(format!(
-                    "Tag {index} reference count disagrees with its Object/Cell attachments"
-                ));
-            }
-        }
+        // Original Object5F3B80/Techno6F4500 destructors do not call
+        // SetTag5F5B50(nullptr). A native Tag can therefore retain a counter
+        // after its last attached object is gone. Keep the saved authority;
+        // requiring equality with live indexes rejects valid death snapshots.
+        // Executed: tag_lifecycle --damage-events object_destruction_controls.
         Ok(())
     }
 
@@ -1413,6 +1404,17 @@ impl Simulation {
             }
         }
         tag.is_some()
+    }
+
+    /// Physical Object storage disappears without a SetTag5F5B50 call.
+    /// Steam3e81a617 Object5F3B80, including actual scalar/drain controls in
+    /// tag_lifecycle --damage-events, leaves Tag+2C and the Tag itself intact.
+    /// Remove only the Rust index whose source object no longer exists; no
+    /// counter write, pending ticket, RNG draw or timer change belongs here.
+    pub(crate) fn finalize_object_trigger_tag_attachment(&mut self, object: u64) {
+        self.trigger_runtime
+            .attachments
+            .remove(&TagAttachment::Object(object));
     }
 
     /// Object5F5B50 attachment funnel. An absent/null authored reference clears
@@ -1843,7 +1845,11 @@ impl Simulation {
             //All secondary switch entries are the generic true tail; no
             //House-retention or persistence write. Original Steam identity:
             //3e81a617..08600; RecordKill702D40 publishes4/6/7/48/29 here.
-            2 | 4 | 6 | 7 | 29 | 33 | 48 => {
+            //Object5F55EA..5F573F raises38..43 through this same gate. The
+            //original bodies ignore value/incoming House/actor/source here;
+            //tag_lifecycle.py --damage-events / trigger_damage_events.json
+            //execute30 controls, including prior persistence and NULL House.
+            2 | 4 | 6 | 7 | 29 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 => {
                 input.kind == condition.kind && !self.buildup_bypass_active()
             }
             //71F28B selects the generic true tail71F1B4, no persistence write.
@@ -3643,6 +3649,10 @@ mod tests;
 #[cfg(test)]
 #[path = "trigger_runtime_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_damage_event_tests.rs"]
+mod damage_event_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]

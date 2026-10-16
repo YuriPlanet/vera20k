@@ -2990,7 +2990,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     sim.trigger_runtime.logic_tags.push(tag);
     sim.validate_restored_trigger_runtime().unwrap();
     let owner = sim.trigger_runtime.clone();
-    let corruptions: [(&str, fn(&mut Simulation)); 10] = [
+    let corruptions: [(&str, fn(&mut Simulation)); 9] = [
         ("definition link", |sim| {
             sim.trigger_runtime.definitions.trigger_types[0].linked = Some(usize::MAX)
         }),
@@ -3024,9 +3024,6 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
             sim.trigger_runtime
                 .cell_tags
                 .insert(NativeCellIdentity::Real(usize::MAX), 0);
-        }),
-        ("reference count", |sim| {
-            sim.trigger_runtime.tags[0].as_mut().unwrap().refs = 999
         }),
     ];
     for (name, corrupt) in corruptions {
@@ -3873,7 +3870,27 @@ fn history_state(
     if input["lifecycle"].as_bool().unwrap_or(false) {
         let tags = runtime.tag_order.len();
         let triggers = runtime.trigger_order.len();
-        state["frees"] = if mixed {
+        state["frees"] = if input["operations"].as_array().is_some_and(|operations| {
+            operations
+                .iter()
+                .any(|operation| operation[0] == "dispose_object")
+        }) {
+            // The direct-scalar control has no pending-selection visit.
+            // Observe the same physical finalizer rather than fabricating
+            // a DeferredDeleteSelected ticket for that entry route.
+            assert!(runtime.freed_trace.is_empty());
+            json!(
+                sim.lifecycle_test_events_for_test()
+                    .iter()
+                    .filter_map(|event| match event {
+                        crate::sim::world::LifecycleTestEvent::FinalizedCommon { stable_id }
+                            if objects.contains(stable_id) =>
+                            Some("object"),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            )
+        } else if mixed {
             json!(
                 destructs
                     .iter()
@@ -3975,13 +3992,27 @@ fn history_state(
 
 #[test]
 fn live_instances_match_all_native_supplied_histories_and_serialization() {
+    let damage: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_damage_events.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        damage["native_sha256"],
+        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+    );
+    let destruction = damage["object_destruction_controls"].as_array().unwrap();
+    assert_eq!(destruction.len(), 3);
     let mut compared = 0;
-    for row in rows().into_iter().filter(|row| {
-        !row["input"]["stock_prefix"].as_bool().unwrap_or(false)
-            && !row["input"]["reference_controls"]
-                .as_bool()
-                .unwrap_or(false)
-    }) {
+    for row in rows()
+        .into_iter()
+        .chain(destruction.iter().cloned())
+        .filter(|row| {
+            !row["input"]["stock_prefix"].as_bool().unwrap_or(false)
+                && !row["input"]["reference_controls"]
+                    .as_bool()
+                    .unwrap_or(false)
+        })
+    {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
@@ -4078,6 +4109,17 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
                             .unwrap()
                             .lifecycle
                             .set_object_alive_for_test(integer(&args[2]) != 0);
+                    }
+                    "dispose_object" => {
+                        // The existing constructor-complete scalar owner
+                        // shares physical finalization with deferred drain.
+                        // This supplied Object control does not certify the
+                        // stand-in Unit's concrete destructor or tracking.
+                        assert!(sim.discard_constructed_limbo(
+                            objects[integer(&args[1]) as usize],
+                            Some(&rules),
+                            FrameEffects::default(),
+                        ));
                     }
                     "supply_pending" => {
                         sim.substrate.pending_delete.clear_for_test();
@@ -4248,6 +4290,12 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
             restored.freed_trace = std::mem::take(&mut sim.trigger_runtime.freed_trace);
             sim.trigger_runtime = restored;
             sim.substrate.pending_delete = restored_queue;
+            if row.get("object_tag_raw_history").is_some() {
+                // Original destruction keeps Tag+2C after the last object
+                // is gone. Preserve it across restore without retaining a
+                // Rust attachment to vanished object storage.
+                sim.validate_restored_trigger_runtime().unwrap();
+            }
         }
         assert_eq!(
             sim.scenario_rng.next_u32(),
@@ -4256,7 +4304,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
         );
         compared += 1;
     }
-    assert_eq!(compared, 62);
+    assert_eq!(compared, 65);
 }
 
 #[test]

@@ -4961,7 +4961,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .iter()
         .position(|event| {
             *event
-                == (LifecycleTestEvent::PostMortemKillBookkeeping {
+                == (LifecycleTestEvent::RecordKillBookkeeping {
                     stable_id: target_id,
                 })
         })
@@ -5044,7 +5044,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
     assert_eq!(sim.houses[&source_owner].economy.score(), 1_400);
     assert!(sim.lifecycle_test_events_for_test().iter().any(|event| {
         *event
-            == (LifecycleTestEvent::PostMortemKillBookkeeping {
+            == (LifecycleTestEvent::RecordKillBookkeeping {
                 stable_id: target_id,
             })
     }));

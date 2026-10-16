@@ -291,6 +291,12 @@ impl crate::sim::world::Simulation {
             callback,
             rules,
         );
+        #[cfg(test)]
+        self.trace_lifecycle_for_test(
+            crate::sim::world::LifecycleTestEvent::RecordKillBookkeeping {
+                stable_id: victim_id,
+            },
+        );
     }
 
     /// The common Tag responsibility in E0 and E4. Incoming source pointer

@@ -802,7 +802,7 @@ pub(crate) enum LifecycleTestEvent {
     UninitAliveCleared {
         stable_id: u64,
     },
-    PostMortemKillBookkeeping {
+    RecordKillBookkeeping {
         stable_id: u64,
     },
     DestroyRadioBreakCompleted {
@@ -3495,35 +3495,6 @@ impl Simulation {
         }
     }
 
-    /// ObjectClass's exact-zero callback transaction for an eligible
-    /// `CausesDelayKill` building. Active gamemd runs the routed kill callback
-    /// and virtual Destroy/reference notification before TechnoClass arms the
-    /// timer and restores Alive/Health=1. This deliberately does not call
-    /// UnInit, Limbo, record the destruction, or enqueue physical deletion.
-    /// The kill callback ([`crate::sim::combat::record_kill::record_the_kill`])
-    /// has already booked its House statistics before these Destroy callbacks.
-    /// `ObjectClass::ReceiveDamage @ 0x005F5390`'s arm for Health (`+0x6C`) exactly 0
-    /// (`0x005F5765..0x005F57AF`).
-    pub(crate) fn postmortem_exact_zero_callbacks(
-        &mut self,
-        stable_id: u64,
-        _killer_owner: Option<InternedId>,
-        context: UninitContext<'_>,
-    ) {
-        let Some(target) = self.substrate.entities.get(stable_id) else {
-            return;
-        };
-
-        debug_assert_eq!(
-            target.health.current(),
-            0,
-            "PostMortem Object callbacks run at exact zero"
-        );
-        #[cfg(test)]
-        self.trace_lifecycle_for_test(LifecycleTestEvent::PostMortemKillBookkeeping { stable_id });
-        self.object_destroy_callback(stable_id, context);
-    }
-
     /// `ObjectClass::Detach_All(true)` (vtable `+0xDC`) as the exact-zero
     /// Destroy callback of `ObjectClass::ReceiveDamage` (`0x005F5765..0x005F57AF`):
     /// every killing hit runs it after the kill callback, before TechnoClass's
@@ -5685,6 +5656,9 @@ impl Simulation {
             self.release_anim_owner_reference(stable_id);
             self.clear_building_anim_reference(stable_id);
         }
+        // The native Object field+34 disappears with storage. This is not
+        // SetTag(nullptr): the shared Tag owner preserves its native counter.
+        self.finalize_object_trigger_tag_attachment(stable_id);
         // Display registration never outlives the object. Fly's phase tail
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);

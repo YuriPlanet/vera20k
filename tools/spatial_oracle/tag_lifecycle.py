@@ -471,6 +471,7 @@ def execute(case):
     u.mem_write(HOUSE+0x34, dwords(HOUSE_TYPE))
     u.mem_write(HOUSE_TYPE+0xB4, dwords(0,0))
     house_funds = case.get('house_funds')
+    observe_object_cleanup = case.get('observe_object_cleanup',False)
     if house_funds is not None:
         # Supplied empty-storage House priors, not a House constructor or a
         # silo-initialization result. The actual IHouse money getter executes.
@@ -483,6 +484,9 @@ def execute(case):
         u.mem_write(HOUSE_TYPE+0x148,struct.pack('<f',1.0))
         from tools.spatial_oracle.house_tag_raise import RAISE_CELL
         u.mem_write(RAISE_CELL,dwords(0))
+        for pointer in (0x886B88,0xABE890):
+            f.call(0x65C6D0,pointer,[case.get('seed',31)])
+    if observe_object_cleanup and house_funds is None:
         for pointer in (0x886B88,0xABE890):
             f.call(0x65C6D0,pointer,[case.get('seed',31)])
     if case.get('active_cleanup',False):
@@ -514,6 +518,7 @@ def execute(case):
     allocations, actions_run, draws, calls, tags, objects = [], [], [], [], [], []
     dispatches, trigger_handles, destruct_order = [], [], []
     allocated, freed, allocation_types, frees = set(), set(), {}, []
+    object_frees, cleanup_calls, cleanup_observations = [], [], []
     pointer_probe=RET_MAGIC+0x100
     u.mem_write(0x7E115C,dwords(pointer_probe))
     def ticket(pointer):
@@ -523,6 +528,11 @@ def execute(case):
         raise AssertionError(('unknown pending identity',hex(pointer)))
     def observe(_u, pc, _size, _data):
         nonlocal cursor
+        if observe_object_cleanup and pc in (0x5F3B80,0x5F6DC0,0x5F5B50,0x725C70,
+                                             0x6E5230,0x6E4F60,0x726950,0x65C780,0x65C7E0):
+            receiver=u.reg_read(UC_X86_REG_ECX)
+            cleanup_calls.append(dict(pc=f'0x{pc:08X}',
+                object=objects.index(receiver) if receiver in objects else None))
         if pc==pointer_probe:
             # Original CRT typeid probes its real TypeDescriptor through this
             # Windows import. Validate memory before supplying OS success.
@@ -552,6 +562,10 @@ def execute(case):
             sp=u.reg_read(UC_X86_REG_ESP)
             pointer=u32(u,sp+4)
             assert pointer in allocated and pointer not in freed, (hex(pointer),hex(u32(u,sp)),allocated,freed)
+            if observe_object_cleanup and pointer in objects:
+                attachment=u32(u,pointer+0x34)
+                object_frees.append(dict(object=objects.index(pointer),
+                    tag_at_free=tags.index(attachment) if attachment else None))
             freed.add(pointer)
             frees.append(allocation_types[pointer])
             u.reg_write(UC_X86_REG_ESP,sp+4)
@@ -593,6 +607,11 @@ def execute(case):
         rng_before={pointer:bytes(u.mem_read(pointer,0x3F4))
                     for pointer in (SCENARIO+0x218,0x886B88,0xABE890)}
     history = []
+    if observe_object_cleanup:
+        from types import SimpleNamespace
+        from tools.input_oracle.campaign_start import CampaignReader
+        cleanup_rng_view=SimpleNamespace(u=u,scenario=SCENARIO)
+        cleanup_rng_before=CampaignReader.rng_state(cleanup_rng_view)
     def snapshot(returned):
         tag_states = []
         for tag in tags:
@@ -621,6 +640,16 @@ def execute(case):
             state.update(pending_tickets=[ticket(pointer) for pointer in pending],
                          destruct_order=list(destruct_order),
                          object_alive=[None if obj in freed else u.mem_read(obj+0x90,1)[0] for obj in objects])
+        if observe_object_cleanup:
+            # The free recorder retains the allocation bytes. Unlike the
+            # historical object_tags view, this observes +34 even after free;
+            # a host-filtered None must not be mistaken for a native clear.
+            observed=dict(object_tag_words=[tags.index(u32(u,obj+0x34))
+                if u32(u,obj+0x34) else None for obj in objects],
+                object_frees=list(object_frees),native_cleanup_calls=list(cleanup_calls))
+            assert CampaignReader.rng_state(cleanup_rng_view)==cleanup_rng_before
+            observed['three_full_rng_states_compared_equal']=True
+            cleanup_observations.append(observed)
         if case.get('polling',False):
             base=REGISTRIES['logic_tags']
             state.update(dispatches=list(dispatches),
@@ -719,6 +748,11 @@ def execute(case):
             f.call(0x726720,trigger,[])
         elif kind=='drain':
             f.call(0x725C70,0,[])
+        elif kind=='dispose_object':
+            # Constructor-complete base Object scalar disposal, not a live
+            # Techno death or an invented Tag release before the destructor.
+            assert observe_object_cleanup and case.get('mixed_deferred_queue',False)
+            f.call(0x5F6DC0,objects[args[0]],[1])
         elif kind=='register_logic':
             base=REGISTRIES['logic_tags']
             assert len(args)<=128
@@ -746,6 +780,10 @@ def execute(case):
     u.hook_del(hook)
     assert code == [bytes(u.mem_read(a,b-a)) for a,b in ranges]
     result=dict(input=case,history=history,allocations=allocations,calls=calls)
+    if observe_object_cleanup:
+        result.update(full_rng_before=cleanup_rng_before,
+            full_rng_after_history=CampaignReader.rng_state(cleanup_rng_view),
+            object_tag_raw_history=cleanup_observations,object_frees=list(object_frees))
     if house_funds is not None:
         rng_after={pointer:bytes(u.mem_read(pointer,0x3F4)) for pointer in rng_before}
         assert rng_after==rng_before
@@ -1856,10 +1894,217 @@ def naval_land_event_source_paths():
     return paths
 
 
+def damage_event_bytes():
+    """Pinned original bodies/calls, not a whole-world reachability claim."""
+    from tools.native_oracle import image_bytes,file_span
+    from tools.native_inspect import selected_ranges,decode_ranges,instruction_row
+    image=image_bytes();blocks={}
+    for start,end in ((0x5F5390,0x5F584D),(0x71E940,0x71F216),(0x71F950,0x71FA40),
+                      (0x701DF8,0x701F94),(0x711EB0,0x711EB7),(0x45ED50,0x45EDCF)):
+        raw=file_span(image,start,end-start)[1]
+        blocks[f'{start:08X}..{end:08X}']=dict(hex=raw.hex(),sha256=hashlib.sha256(raw).hexdigest())
+    callers=[]
+    for name,site,target in (
+        ('building_to_techno',0x442425,0x701900),('unit_to_foot',0x737D52,0x4D7330),
+        ('infantry_to_foot',0x518042,0x4D7330),('aircraft_to_foot',0x4165EC,0x4D7330),
+        ('foot_to_techno',0x4D742C,0x701900),('techno_to_object',0x701DF8,0x5F5390)):
+        instruction=decode_ranges(selected_ranges(image,site,5,code_only=False),
+                                  lambda ins:[instruction_row(ins)])['matches']
+        assert len(instruction)==1 and instruction[0]['mnemonic']=='call'
+        assert int(instruction[0]['operands'],16)==target
+        callers.append(dict(name=name,site=f'0x{site:08X}',target=f'0x{target:08X}',
+                            instruction=instruction[0]))
+    vtables={}
+    for category,vt in (('building',0x7E3EBC),('unit',0x7F5C70),
+                        ('infantry',0x7EB058),('aircraft',0x7E22A4)):
+        raw=file_span(image,vt+0x16C,4)[1]
+        vtables[category]=dict(vtable=f'0x{vt:08X}',slot='0x16C',hex=raw.hex(),
+                               entry=f'0x{int.from_bytes(raw,"little"):08X}')
+    # Post-Object701E12 obtains the live Type for virtual GetCost(+AC),
+    # while701E32/38 independently obtain its current Strength. These are
+    # static bytes/dispatch evidence, not a new anger-arithmetic execution.
+    type_cost_getters={}
+    for category,vt in (('building',0x7E4570),('unit',0x7F6218),
+                        ('infantry',0x7EB610),('aircraft',0x7E2868)):
+        raw=file_span(image,vt+0xAC,4)[1]
+        type_cost_getters[category]=dict(vtable=f'0x{vt:08X}',slot='0xAC',hex=raw.hex(),
+            entry=f'0x{int.from_bytes(raw,"little"):08X}')
+    return dict(blocks=blocks,callers=callers,concrete_receivers=vtables,
+                type_cost_getters=type_cost_getters)
+
+
+def damage_event_retail_routes():
+    """Actual selected map bindings through existing MIX/cache/counted reader."""
+    from tools.sidebar_oracle.stock import mix,mix_hash
+    from tools.rules_oracle.bridge_child_sound import sections
+    from tools.spatial_oracle.trigger_event_records import execute as read_events
+    archive=(Path(os.environ['RA2_DIR'])/'mapsmd03.mix').read_bytes();members=mix(archive)
+    routes=[]
+    for name,identity in (('ALL05UMD.MAP','077835AC'),('ALL06UMD.MAP','077B8E1C')):
+        raw=members[mix_hash(name)];values=sections(raw)
+        # Include both directions of the authored linked-list references.
+        # Tag48BC38C reaches43 through08F91C4C, not a direct Event43 Tag.
+        linked={identity};previous=set()
+        while linked!=previous:
+            previous=set(linked)
+            for key,definition in values['Triggers'].items():
+                successor=definition.split(',')[1]
+                if key in linked and successor in values['Triggers']:linked.add(successor)
+                if successor in linked:linked.add(key)
+        triggers={key:dict(trigger=values['Triggers'][key],raw_event=values['Events'][key],
+            native_event=read_events(values['Events'][key]),actions=values['Actions'][key])
+            for key in sorted(linked)}
+        tags={key:definition for key,definition in values['Tags'].items()
+              if any(trigger in definition.split(',') for trigger in linked)}
+        structures={key:definition for key,definition in values['Structures'].items()
+                    if any(tag in definition.split(',') for tag in tags)}
+        row=dict(map=name,map_sha256=hashlib.sha256(raw).hexdigest(),
+            archive='mapsmd03.mix',archive_sha256=hashlib.sha256(archive).hexdigest(),
+            trigger_id=identity,trigger=values['Triggers'][identity],
+            raw_event=values['Events'][identity],native_event=read_events(values['Events'][identity]),
+            actions=values['Actions'][identity],linked_triggers=triggers,tags=tags,structures=structures)
+        if name=='ALL05UMD.MAP':
+            team_id='0771D13C';team=values[team_id]
+            row.update(team_id=team_id,team=team,task_force_id=team['TaskForce'],
+                task_force=values[team['TaskForce']],script_id=team['Script'],script=values[team['Script']])
+        routes.append(row)
+    return routes
+
+
+def damage_event_object_destruction_controls():
+    """Base Object disposal boundary; original bytes decide Tag retention."""
+    setup=[['shared'],['object'],['attach_object',0,0]]
+    cases=[dict(name='base_object_last_tag_reference',operations=setup+
+        [['object_alive',0,0],['supply_pending',[['object',0]]],['drain'],['drain']]),
+        dict(name='base_objects_share_tag',operations=[['shared'],['object'],['object'],
+            ['attach_object',0,0],['attach_object',1,0],['object_alive',0,0],
+            ['supply_pending',[['object',0]]],['drain'],['object_alive',1,0],
+            ['supply_pending',[['object',1]]],['drain'],['drain']]),
+        dict(name='constructor_complete_tagged_scalar_disposal',operations=setup+
+            [['dispose_object',0],['drain'],['drain']])]
+    rows=[];rng=None
+    for case in cases:
+        row=execute(dict(case,mixed_deferred_queue=True,lifecycle=True,repeat=2,
+            observe_object_cleanup=True))
+        before=row.pop('full_rng_before');after=row.pop('full_rng_after_history')
+        assert before==after
+        if rng is None:rng=before
+        assert before==rng
+        row.update(rng_before_ref='object_destruction_rng.full_seed31',
+            rng_after_ref='object_destruction_rng.full_seed31')
+        rows.append(row)
+    return rows,dict(full_seed31=rng,full_after=rng,unchanged=True)
+
+
+def generate_damage_events():
+    """Combined38..43 evidence; reuse receiver, reader and Register owners."""
+    from types import SimpleNamespace
+    from tools.native_oracle import image_sha256,NATIVE_FPCW
+    from tools.input_oracle.campaign_start import CampaignReader
+    from tools.spatial_oracle.object_health import (damage_event_receiver_controls,
+                                                  damage_event_techno_anger_controls)
+    receiver,mutations,receiver_rng=damage_event_receiver_controls()
+    anger,anger_rng=damage_event_techno_anger_controls()
+    assert anger_rng==receiver_rng
+    destruction,destruction_rng=damage_event_object_destruction_controls()
+    m=PowerEventControls(reader_inputs=(),extra_calls=(0x7258D0,0x6E4F60))
+    m.SPANS=[*m.SPANS,(0x71F950,0x71FA40),(0x65C6D0,0x65C88D)]
+    m.original.extend(bytes(m.u.mem_read(start,end-start)) for start,end in m.SPANS[-2:])
+    scenario=m.arena+0xC0000;m.u.mem_write(0xA8B230,dwords(scenario))
+    for ptr in (scenario+0x218,0x886B88,0xABE890):m.fixture.call(0x65C6D0,[31],ecx=ptr)
+    rng_view=SimpleNamespace(u=m.u,scenario=scenario);before=CampaignReader.rng_state(rng_view)
+    controls=[];classification=[]
+    for kind in range(38,44):
+        raw=f'1,{kind},0,2147483647'
+        for name,raised,flag,persistence,house,actor,source in (
+            ('matching',kind,False,0,0,None,None),('wrong_raise',8,False,0,0,1,1),
+            ('bypass',kind,True,0,0,1,1),('null_house',kind,False,0,None,None,None),
+            ('initial1_wrong_raise',8,False,1,None,None,None)):
+            timer_before=list(struct.unpack('<3i',m.u.mem_read(m.timer,12)))
+            # The shared predicate supplies this same sentinel at entry;
+            # retain its actual prior field value alongside the output.
+            m.u.mem_write(m.event+0x54,dwords(0xABCD1234));event54_before=m.integer(m.event+0x54)
+            m.predicate(f'{kind}_{name}',raw,house_index=house,raised=raised,
+                actor_index=actor,source_index=source,scenario_init=flag,initial_persistence=persistence)
+            native=m.predicates[-1];timer_after=list(struct.unpack('<3i',m.u.mem_read(m.timer,12)))
+            assert timer_before==timer_after and native['persistence']==persistence
+            assert native['event54']==struct.unpack('<i',dwords(0xABCD1234))[0]
+            assert CampaignReader.rng_state(rng_view)==before
+            assert not any(row['pc'] in ('0x007258D0','0x006E4F60') for row in native['calls'])
+            controls.append(dict(name=native['name'],kind=kind,value=native['read']['value'],
+                raw=raw,read=native['read'],incoming_house=house,actor_owner=actor,source_owner=source,
+                raised=raised,scenario_init=flag,initial_persistence=persistence,
+                result=native['result'],persistence=native['persistence'],
+                event54_before=event54_before,event54=native['event54'],
+                timer_before=timer_before,timer_after=timer_after,calls=native['calls']))
+        m.u.mem_write(m.event+0x2C,dwords(kind))
+        classification.append(dict(kind=kind,state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+                                   state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255))
+    m.u.hook_add(UC_HOOK_CODE,m.observe_admission)
+    raw='1,38,0,0';m.readers[raw]=m.read_event(raw)
+    m.setup_admission([raw],timer_start=90,timer_duration=75)
+    for name,raised in (('first',38),('later_wrong',8),('same_again',38)):
+        m.register_admission(name,raised)
+        assert CampaignReader.rng_state(rng_view)==before
+    m.assert_unchanged()
+    assert not any(call['pc'] in ('0x007258D0','0x006E4F60')
+                   for row in m.registers for call in row['calls'])
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        receiver_controls=receiver,mutation_controls=mutations,receiver_rng=receiver_rng,
+        techno_anger_controls=anger,
+        object_destruction_controls=destruction,object_destruction_rng=destruction_rng,
+        controls=controls,classification=classification,register_history=m.registers,
+        predicate_rng=dict(full_seed31=before,full_after=CampaignReader.rng_state(rng_view),unchanged=True),
+        retail_routes=damage_event_retail_routes(),bytes=damage_event_bytes(),code_unchanged=True)
+
+
+def damage_event_metadata():
+    from tools.spatial_oracle.object_health import OBJ,TYPE,SOURCE,TAG,DamageEventsObservation
+    result=provenance(
+        scope='Original Object damage Tag38..43:18 ordinary and23 declared callee-mutation receiver controls;eight post-Object Techno anger arithmetic fragments;three base Object destruction/Tag-retention histories;30 HasOccurred,12 StateA/B calls,three single-event Register steps and actual ALL05/ALL06 bindings. No real damage Tag/action chain, full Techno/concrete receiver, production Team or whole-campaign parity.',
+        assumptions=[
+            'The existing object_health.Fixture owns whole unchanged Object5F5390, signed HP/packet and masked PC53/chop arithmetic, copied Unit/Building RTTI/type getters, Changed/Kill/Destroy and Tag6E53A0 recording sinks. Receiver controls supply Strength/HP, ConditionRed=.25, Alive, source/tag storage, ignoreDefenses1/preventEscape1, distance0 and null warhead/sourceHouse. The packet is separate, not aliased Health. No armor/kernel, concrete receiver or supplied callee body is certified.',
+            'All23 mutation rows preserve their names, explicit return-PC/write inputs, original ordered callee returns and live/saved HP observations. Host writes after actual Tag/Kill return and before resumed original instructions provide HP/Alive/attachment/Strength priors. They do not execute a real Tag action, RecordKill, Destroy or detach algorithm; existing kill_clear_alive/destroy_clear_alive sinks retain their prior definitions. Original WhatAmI/type getters and receiver instructions are not supplied.',
+            'Three original65C6D0 seed31 states are saved in receiver_rng.full_seed31 and full_after; each of41 receiver rows compares all full states before/after to the shared reference, without repeating6KiB per row. Receiver source pointer0 meansNULL and the published SOURCE address means the supplied source object; it is not a House projection. Observed65C780/65C7E0/7258D0/6E4F60 entries are absent in these Object bodies; inherited callback sinks have no such work. This is not a zero-RNG/timer/detach claim for real actions or complete death.',
+            'PowerEventControls/FlagsFixture and the original counted reader execute six kinds with matching/wrong raises, A8ED6B true, null incoming House/actor/source, arbitrary valueINT_MAX and initial persistence0/1. The historical scenario_init key denotes A8ED6B, not placement A8E7AC. Each timer12bytes, Event54 sentinel and persistence stay unchanged, and each full3-stream state is checked. GetStateA/GetStateB execute six rows/twelve calls; both return1. The separate three Register single-event controls do not demonstrate partial multi-event latching; completed stays0 and timer[90,0,75] stays unchanged.',
+            'Static original bytes pin whole Object/HasOccurred/classifiers, four real receiver vtable entries and six direct class/base callers. They establish shared instruction routes and boundaries, not exhaustive reachability or execution of all four concrete receivers. Body arithmetic/ordering claims rely on the saved native outputs, not Ghidra annotations or handwritten expected values.',
+            'Additional static bytes701DF8..701F94 pin the post-Object consumer:701E12 obtains current Type for GetCost,701E23 reads source Owner,701E32/38 re-read Type/Strength,701E4A calls Type vtable+AC,701E61 reads victim Owner and701E68 immediately calls existing UpdateAngerNodes504790. This precedes result4 CausesDelayKill/PostMortem and result5 early return; sourceHouse alone does not replace the Attacker pointer gate. Type vtable+AC data and complete getter bytes pin ordinary TechnoType711EB0 and BuildingType45ED50 (existing type_cost/building_actual_cost authority). Those byte rows are static control-flow evidence; the separate techno_anger_controls below execute the ordinary cost arithmetic. No real House update, PostMortem timer, audio/Uncloak or whole-Techno execution is claimed, and all earlier receiver/predicate numeric controls remain unchanged.',
+            'Separately,eight techno_anger_controls execute actual701DFD..701E68 through existing Object Fixture: EAX Object result, ESI receiver, EBX independent packet, stack+D4 source pointer, source/victim Owner pointers and UnitType fields are supplied fragment priors. Actual Unit vt+84 getters, Type vt+AC GetCost711EB0 and originalMath::ftol7C5F00 execute; Python supplies no arithmetic output. Stop at real504790 entry before its House body, recording actual ECX, stackdelta/sourceHouse, returnPC and packet. Rows cover ordinary51/100/700, liveStrength110, negativeheal, zero packet/Strength, nonintegral and wide signed dwords under0E7F. Full three-stream states compare to shared receiver_rng before/after each row. Supplied radar/reveal timers atObject+174/+1E0 remain unchanged; sticky x87 status is observed, not claimed unchanged. These fragments establish the arithmetic/call arguments only, not actual Tag mutation->wholeTechno->House execution, alternate Building GetCost calculation, all numeric inputs, PostMortem/audio or full world. Existing ai_strategy_oracle owns separate504790 node-update execution.',
+            'Three object_destruction_controls reuse the single execute lifecycle owner: original Object5F3900 constructor and Attach5F5B50, supplied Object+90/pending queue for two full725C70 histories and actual5F6DC0 scalar disposal for a constructor-complete object. Actual full Object5F3B80 destructor does not clearObject+34 or decrementTag+2C. Tag refs remain1 for one attachment and2 after two shared objects are freed; no Tag/Trigger ticket or release is invented. Original allocator/free imports retain bytes for observation: object_tag_words and tag_at_free report actual+34 including after release, while legacy object_tags filters freed objects toNone. These rows are a base-Object boundary, not full Techno/Building destruction, native death or a mandate to retain dead Rust index entries. Repeat2 Tag definitions and original Trigger timers are observed; no damage action or Tag event is executed. Full three-stream seed31 states compare at every saved step through shared CampaignReader.rng_state, and the terminal next_random probe remains outside history/RNG-after. No general zero-timer/detach claim extends past these executed bodies.',
+            'Retail mapsmd03.mix bytes and member hashes identify ALL05UMD and ALL06UMD. Existing MIX/lexical cache owners supply actual Trigger/Tag/Structures/actions and ALL05 Team/TaskForce/Script; original counted Event reader executes every retained linked Trigger event. Raw reference extraction is not full native Trigger/Team/Structure construction, scenario admission, Rules/ART layers or physical loader execution. ALL05 first-damage41 creates the existing defensive Team, it does not necessarily create fresh soldiers. ALL06 repeating Parliament Tag enters43 through its linked chain and invokes54/32/53/112, a real nested-damage risk whose world execution is outside this corpus.'],
+        substitutions=['Inherited Object Fixture Tag/Changed/Kill/Destroy callout sinks; named controlled field mutations at genuine call-return seams. Existing FlagsFixture CRT/TLS/allocation and supplied House/actor/trigger priors. No selected original predicate, classification, Register, receiver, type getter or RNG return is replaced.'],
+        entry_points=dict(object_receive=0x5F5390,tag_callout=0x6E53A0,has_occurred=0x71E940,
+            state_a=0x71F950,state_b=0x71F9C0,register=0x7264C0,random_seed=0x65C6D0,
+            tag_before_kill_guard=0x5F5752,exact_zero=0x5F5765,
+            post_object_anger=0x701E68,update_anger_nodes=0x504790,
+            techno_type_get_cost=0x711EB0,building_type_get_cost=0x45ED50))
+    result['receiver_supplied_addresses']=dict(object=f'0x{OBJ:08X}',type=f'0x{TYPE:08X}',
+        source=f'0x{SOURCE:08X}',tag=f'0x{TAG:08X}',source_null=0)
+    result['tag_return_pcs']={f'0x{pc:08X}':kind for pc,kind in DamageEventsObservation.TAG_RETURNS.items()}
+    result['environment']=dict(RA2_DIR='retail installation containing gamemd.exe and mapsmd03.mix',
+        interpreter='Python compatible with installed Unicorn; local replay uses Python3.13',
+        asset_directory='No CampaignReader VM is constructed or eager asset directory loaded by this mode')
+    return result
+
+
+def damage_event_source_paths():
+    paths=power_event_source_paths()
+    paths.update(object_health=Path(__file__).with_name('object_health.py'),
+        rng_state_reader=Path(__file__).parents[1]/'input_oracle'/'campaign_start.py',
+        native_inspection=Path(__file__).parents[1]/'native_inspect.py',
+        retail_mix=Path(__file__).parents[1]/'sidebar_oracle'/'stock.py',
+        retail_lexical=Path(__file__).parents[1]/'rules_oracle'/'bridge_child_sound.py')
+    return paths
+
+
 if __name__=='__main__':
     import sys
     args=sys.argv[1:]
-    if '--naval-land-events' in args:
+    if '--damage-events' in args:
+        args.remove('--damage-events')
+        finish_vectors(generate_damage_events,Path(__file__).with_name('trigger_damage_events.json'),
+                       provenance=damage_event_metadata,source_paths=damage_event_source_paths(),argv=args)
+    elif '--naval-land-events' in args:
         args.remove('--naval-land-events')
         finish_vectors(generate_naval_land_events,Path(__file__).with_name('trigger_naval_land_events.json'),
                        provenance=naval_land_event_metadata,source_paths=naval_land_event_source_paths(),argv=args)

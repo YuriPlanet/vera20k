@@ -1,11 +1,91 @@
 use super::*;
 use serde_json::{Value, json};
+use std::cell::Cell;
 
 fn corpus() -> Value {
     serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/object_health.json",
     ))
     .unwrap()
+}
+
+/// The scalar and callback-mutation comparisons call the same Object body as
+/// production. This adapter supplies only storage and explicitly observed sinks.
+struct LocalHealthHost<'a, F> {
+    entity: &'a mut GameEntity,
+    strength: &'a Cell<i32>,
+    callback: F,
+}
+
+impl<F: FnMut(&mut GameEntity, HealthCallback)> ObjectHealthHost for LocalHealthHost<'_, F> {
+    fn object(&self) -> Option<&GameEntity> {
+        Some(self.entity)
+    }
+
+    fn object_mut(&mut self) -> Option<&mut GameEntity> {
+        Some(self.entity)
+    }
+
+    fn current_strength(&self) -> Option<i32> {
+        Some(self.strength.get())
+    }
+
+    fn invoke(&mut self, callback: HealthCallback) {
+        (self.callback)(self.entity, callback);
+    }
+}
+
+fn observe_virtual(
+    entity: &mut GameEntity,
+    callback: HealthCallback,
+    mode: &str,
+    kill_argument: i64,
+    callbacks: &mut Vec<Value>,
+) {
+    // Tag visits have a separate observer. The original718 corpus
+    // supplies an empty Tag attachment and records only these virtuals.
+    if matches!(callback, HealthCallback::Tag { .. }) {
+        return;
+    }
+    let slot = match callback {
+        HealthCallback::Changed => "148",
+        HealthCallback::Kill => "0E0",
+        HealthCallback::Destroy => "0DC",
+        HealthCallback::Tag { .. } => unreachable!(),
+    };
+    let argument = match callback {
+        HealthCallback::Changed => 7,
+        HealthCallback::Kill => kill_argument,
+        HealthCallback::Destroy => 1,
+        HealthCallback::Tag { .. } => unreachable!(),
+    };
+    let before = entity.health.current();
+    let alive_before = u8::from(entity.lifecycle.object_alive());
+    let mutation = match (callback, mode) {
+        (HealthCallback::Changed, "heal_zero") => Some(0),
+        (HealthCallback::Changed, "heal_negative") => Some(-17),
+        (HealthCallback::Changed, "heal_above") | (HealthCallback::Destroy, "destroy_revive") => {
+            Some(70001)
+        }
+        _ => None,
+    };
+    let mut writes = Vec::new();
+    if let Some(health) = mutation {
+        entity.health.set_for_test(health);
+        writes.push(json!({"field":"actual", "value":health}));
+    }
+    if matches!(
+        (callback, mode),
+        (HealthCallback::Changed, "heal_clear_alive")
+            | (HealthCallback::Destroy, "destroy_clear_alive")
+            | (HealthCallback::Kill, "kill_clear_alive")
+    ) {
+        entity.lifecycle.set_object_alive_for_test(false);
+        writes.push(json!({"field":"alive", "value":0}));
+    }
+    callbacks.push(json!({"slot":slot,"argument":argument,"health_before":before,
+                    "alive_before":alive_before,"supplied_writes":writes,"health_after":entity.health.current(),
+                    "alive_after":u8::from(entity.lifecycle.object_alive())}));
 }
 
 #[test]
@@ -28,53 +108,31 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
         let mut packet = input["damage"].as_i64().unwrap() as i32;
         let admitted = packet != 0;
         let mut callbacks = Vec::new();
+        let strength = Cell::new(input["strength"].as_i64().unwrap() as i32);
+        let callback = |entity: &mut GameEntity, callback: HealthCallback| {
+            observe_virtual(
+                entity,
+                callback,
+                input["callback"].as_str().unwrap(),
+                0,
+                &mut callbacks,
+            );
+        };
+        let mut host = LocalHealthHost {
+            entity: &mut entity,
+            strength: &strength,
+            callback,
+        };
         let result = commit(
-            &mut entity,
+            &mut host,
             &mut packet,
-            input["strength"].as_i64().unwrap() as i32,
+            strength.get(),
             admitted,
             input["kind"] == "building" && input["can_c4"] == false,
             0.25,
-            |entity, callback| {
-                let slot = match callback {
-                    HealthCallback::Changed => "148",
-                    HealthCallback::Kill => "0E0",
-                    HealthCallback::Destroy => "0DC",
-                };
-                let argument = match callback {
-                    HealthCallback::Changed => 7,
-                    HealthCallback::Kill => 0,
-                    HealthCallback::Destroy => 1,
-                };
-                let before = entity.health.current();
-                let alive_before = u8::from(entity.lifecycle.object_alive());
-                let mode = input["callback"].as_str().unwrap();
-                let mutation = match (callback, mode) {
-                    (HealthCallback::Changed, "heal_zero") => Some(0),
-                    (HealthCallback::Changed, "heal_negative") => Some(-17),
-                    (HealthCallback::Changed, "heal_above")
-                    | (HealthCallback::Destroy, "destroy_revive") => Some(70001),
-                    _ => None,
-                };
-                let mut writes = Vec::new();
-                if let Some(health) = mutation {
-                    entity.health.set_for_test(health);
-                    writes.push(json!({"field":"actual", "value":health}));
-                }
-                if matches!(
-                    (callback, mode),
-                    (HealthCallback::Changed, "heal_clear_alive")
-                        | (HealthCallback::Destroy, "destroy_clear_alive")
-                        | (HealthCallback::Kill, "kill_clear_alive")
-                ) {
-                    entity.lifecycle.set_object_alive_for_test(false);
-                    writes.push(json!({"field":"alive", "value":0}));
-                }
-                callbacks.push(json!({"slot":slot,"argument":argument,"health_before":before,
-                    "alive_before":alive_before,"supplied_writes":writes,"health_after":entity.health.current(),
-                    "alive_after":u8::from(entity.lifecycle.object_alive())}));
-            },
+            false,
         );
+        drop(host);
         assert_eq!(
             entity.health.current(),
             output["actual"].as_i64().unwrap() as i32,
@@ -208,3 +266,6 @@ fn is_full_matches_the_masked_ratio_compare() {
         }
     }
 }
+
+#[path = "object_health_trigger_tests.rs"]
+mod trigger_tests;

@@ -749,12 +749,12 @@ pub(crate) fn commit_entities(
         if starts_berserk {
             world.leave_team(target_id, false, Some(rules), run.effects());
         }
-        let receiver_callbacks = callbacks_enabled(world);
         let Some(receiver_health::ReceiverHealthCommit {
             building_entry_frame,
             state: receive_state,
             entered_techno_death,
-            reached_exact_zero,
+            #[cfg(test)]
+                reached_exact_zero: _,
             postmortem_candidate,
             fatal_category,
             positive_postlude,
@@ -763,7 +763,7 @@ pub(crate) fn commit_entities(
             healing_only,
             latch_hostile_hit,
             uncloak_after_damage,
-            threat_feedback,
+            house_threat_delta,
             psychedelic,
         }) = receiver_health::commit_receiver_health(
             event,
@@ -772,25 +772,45 @@ pub(crate) fn commit_entities(
             overlay_registry,
             receiver_outcome,
             run.effects(),
-            receiver_callbacks,
+            true,
         )
         else {
             continue;
         };
-        // Generic Object damage Tags have already returned. This later
-        //kill continuation reads the source's current Owner; the separately
-        //supplied source-House ABI pointer stays fixed for the receive call.
-        let attacker_owner: Option<InternedId> = event.source_house.or_else(|| {
-            (attacker_id != RAD_NO_ATTACKER)
-                .then(|| {
-                    world
-                        .substrate
-                        .entities
-                        .get(attacker_id)
-                        .map(|attacker| attacker.owner())
-                })
-                .flatten()
-        });
+        // Object Tags, Kill and Destroy have already returned, followed by
+        // the immediate live-owner House anger update at Techno701E68.
+        let _ = house_threat_delta;
+        #[cfg(test)]
+        if let Some(delta) = house_threat_delta {
+            death
+                .receiver_stage_trace
+                .push(ReceiverStageTrace::HouseThreat { target_id, delta });
+        }
+        if let Some(duration_frames) = postmortem_candidate {
+            let current_frame = current_tick as u32 as i32;
+            let target = world
+                .substrate
+                .entities
+                .get_mut(target_id)
+                .expect("PostMortem exact-zero callbacks retain the represented target");
+            // RecordKill already consumed this exact-zero attribution in the
+            // shared RecordTheKill receiver before the PostMortem Destroy hook. Native retains no killer on the
+            // restored object: a fresh null-source timer expiry must stay
+            // uncredited, while a later sourced lethal hit captures anew.
+            target.kill_record.clear();
+            target
+                .pending_c4_detonation
+                .arm_post_mortem(current_frame, duration_frames);
+            // PostMortem's restore (`0x00701F60`, `0x00701F67`).
+            target.lifecycle.restore_alive();
+            target.health.set(1);
+            target.death.restore();
+            #[cfg(test)]
+            death
+                .receiver_stage_trace
+                .push(ReceiverStageTrace::PostMortem { target_id });
+            continue;
+        }
         if starts_berserk {
             // The class setter: Infantry's (`0x0051B1F0`) also resets its
             // action and path head.
@@ -905,7 +925,7 @@ pub(crate) fn commit_entities(
         }
 
         // `0x0070281D`, in its native slot: after the `ToProtect` response
-        // (`0x007027E9`) and before the death branch's kill callbacks. The
+        // (`0x007027E9`); Object's Kill/Destroy have already returned. The
         // `StartUncloaking(0)` argument is zero, so it owns one positional
         // `[AudioVisual] CloakSound`.
         if uncloak_after_damage {
@@ -943,115 +963,6 @@ pub(crate) fn commit_entities(
             }
         }
 
-        if reached_exact_zero && postmortem_candidate.is_none() {
-            world.begin_receiver_kill_record(target_id);
-        }
-        // ObjectClass routes its kill callback while Health is exactly zero,
-        // before Destroy's reference notification and before TechnoClass's
-        // victim-house anger callback. `Record_The_Kill` awards the killer's
-        // experience in the same call, so it is a same-tick write the victim's
-        // own death effects can already observe. Deferring it to the lifecycle
-        // release point would change that visibility.
-        if reached_exact_zero {
-            //Object5F5772..579A chooses E4 only for a supplied sourceHouse
-            //that differs from the source Techno's CURRENT Owner (or NULL
-            //Techno). Do not turn that House pointer into an E0 attacker.
-            let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
-                .then(|| {
-                    world
-                        .substrate
-                        .entities
-                        .get(attacker_id)
-                        .map(GameEntity::owner)
-                })
-                .flatten();
-            let source = if let Some(house) = event.source_house
-                && (attacker_id == RAD_NO_ATTACKER || live_source_owner != Some(house))
-            {
-                super::KillSource::House(Some(house))
-            } else {
-                super::KillSource::Techno((attacker_id != RAD_NO_ATTACKER).then_some(attacker_id))
-            };
-            world.record_the_kill(
-                target_id,
-                source,
-                super::KillCallback::Terminal,
-                crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
-                    .with_effects(run.effects()),
-            );
-        }
-        if reached_exact_zero && postmortem_candidate.is_none() {
-            // Techno702FF0 awards experience before the score/loss writes
-            // (703003..7031DC); Object5F57AF's Destroy observes all of them.
-            // Keep the separately owned PostMortem bookkeeping below intact.
-            world.record_destruction_once(target_id);
-        }
-        // ObjectClass::ReceiveDamage 0x005F5765..0x005F57AF: after the kill
-        // callback the exact-zero arm runs Destroy = Detach_All(1), so every
-        // listener drops the dying object at the killing hit, before the
-        // anger callback and TechnoClass's death arm. The CausesDelayKill
-        // PostMortem stage below runs the same callback after its bookkeeping.
-        if reached_exact_zero && postmortem_candidate.is_none() && callbacks_enabled(world) {
-            world.object_destroy_callback(
-                target_id,
-                crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
-                    .with_effects(run.effects()),
-            );
-        }
-        if postmortem_candidate.is_some() && callbacks_enabled(world) {
-            world.apply_fatal_lifecycle_stage(
-                rules,
-                FatalLifecycleStage::PostMortemExactZero {
-                    killer_owner: attacker_owner,
-                },
-                target_id,
-                fatal_category,
-                crate::sim::world::UninitContext::with_rules(rules)
-                    .with_registry(overlay_registry)
-                    .with_effects(run.effects()),
-            );
-        };
-        if let Some((victim_owner, source_owner, final_damage, strength, cost)) = threat_feedback {
-            let delta = receiver_anger_delta(final_damage, strength, cost);
-            update_anger_nodes(
-                &mut world.houses,
-                &world.session.house_order,
-                &world.house_alliances,
-                &world.interner,
-                victim_owner,
-                source_owner,
-                delta,
-            );
-            #[cfg(test)]
-            death
-                .receiver_stage_trace
-                .push(ReceiverStageTrace::HouseThreat { target_id, delta });
-        }
-        if let Some(duration_frames) = postmortem_candidate {
-            let current_frame = current_tick as u32 as i32;
-            let target = world
-                .substrate
-                .entities
-                .get_mut(target_id)
-                .expect("PostMortem exact-zero callbacks retain the represented target");
-            // RecordKill already consumed this exact-zero attribution in the
-            // shared RecordTheKill receiver before the PostMortem Destroy hook. Native retains no killer on the
-            // restored object: a fresh null-source timer expiry must stay
-            // uncredited, while a later sourced lethal hit captures anew.
-            target.kill_record.clear();
-            target
-                .pending_c4_detonation
-                .arm_post_mortem(current_frame, duration_frames);
-            // PostMortem's restore (`0x00701F60`, `0x00701F67`).
-            target.lifecycle.restore_alive();
-            target.health.set(1);
-            target.death.restore();
-            #[cfg(test)]
-            death
-                .receiver_stage_trace
-                .push(ReceiverStageTrace::PostMortem { target_id });
-            continue;
-        }
         if latch_hostile_hit && let Some(target) = world.substrate.entities.get_mut(target_id) {
             target.ai_sell_repair.hit_by_enemy();
         }

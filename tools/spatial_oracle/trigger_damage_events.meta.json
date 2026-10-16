@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Object damage Tag38..43:18 ordinary and23 declared callee-mutation receiver controls;eight post-Object Techno anger arithmetic fragments;three base Object destruction/Tag-retention histories;30 HasOccurred,12 StateA/B calls,three single-event Register steps and actual ALL05/ALL06 bindings. No real damage Tag/action chain, full Techno/concrete receiver, production Team or whole-campaign parity.",
+  "assumptions": [
+    "The existing object_health.Fixture owns whole unchanged Object5F5390, signed HP/packet and masked PC53/chop arithmetic, copied Unit/Building RTTI/type getters, Changed/Kill/Destroy and Tag6E53A0 recording sinks. Receiver controls supply Strength/HP, ConditionRed=.25, Alive, source/tag storage, ignoreDefenses1/preventEscape1, distance0 and null warhead/sourceHouse. The packet is separate, not aliased Health. No armor/kernel, concrete receiver or supplied callee body is certified.",
+    "All23 mutation rows preserve their names, explicit return-PC/write inputs, original ordered callee returns and live/saved HP observations. Host writes after actual Tag/Kill return and before resumed original instructions provide HP/Alive/attachment/Strength priors. They do not execute a real Tag action, RecordKill, Destroy or detach algorithm; existing kill_clear_alive/destroy_clear_alive sinks retain their prior definitions. Original WhatAmI/type getters and receiver instructions are not supplied.",
+    "Three original65C6D0 seed31 states are saved in receiver_rng.full_seed31 and full_after; each of41 receiver rows compares all full states before/after to the shared reference, without repeating6KiB per row. Receiver source pointer0 meansNULL and the published SOURCE address means the supplied source object; it is not a House projection. Observed65C780/65C7E0/7258D0/6E4F60 entries are absent in these Object bodies; inherited callback sinks have no such work. This is not a zero-RNG/timer/detach claim for real actions or complete death.",
+    "PowerEventControls/FlagsFixture and the original counted reader execute six kinds with matching/wrong raises, A8ED6B true, null incoming House/actor/source, arbitrary valueINT_MAX and initial persistence0/1. The historical scenario_init key denotes A8ED6B, not placement A8E7AC. Each timer12bytes, Event54 sentinel and persistence stay unchanged, and each full3-stream state is checked. GetStateA/GetStateB execute six rows/twelve calls; both return1. The separate three Register single-event controls do not demonstrate partial multi-event latching; completed stays0 and timer[90,0,75] stays unchanged.",
+    "Static original bytes pin whole Object/HasOccurred/classifiers, four real receiver vtable entries and six direct class/base callers. They establish shared instruction routes and boundaries, not exhaustive reachability or execution of all four concrete receivers. Body arithmetic/ordering claims rely on the saved native outputs, not Ghidra annotations or handwritten expected values.",
+    "Additional static bytes701DF8..701F94 pin the post-Object consumer:701E12 obtains current Type for GetCost,701E23 reads source Owner,701E32/38 re-read Type/Strength,701E4A calls Type vtable+AC,701E61 reads victim Owner and701E68 immediately calls existing UpdateAngerNodes504790. This precedes result4 CausesDelayKill/PostMortem and result5 early return; sourceHouse alone does not replace the Attacker pointer gate. Type vtable+AC data and complete getter bytes pin ordinary TechnoType711EB0 and BuildingType45ED50 (existing type_cost/building_actual_cost authority). Those byte rows are static control-flow evidence; the separate techno_anger_controls below execute the ordinary cost arithmetic. No real House update, PostMortem timer, audio/Uncloak or whole-Techno execution is claimed, and all earlier receiver/predicate numeric controls remain unchanged.",
+    "Separately,eight techno_anger_controls execute actual701DFD..701E68 through existing Object Fixture: EAX Object result, ESI receiver, EBX independent packet, stack+D4 source pointer, source/victim Owner pointers and UnitType fields are supplied fragment priors. Actual Unit vt+84 getters, Type vt+AC GetCost711EB0 and originalMath::ftol7C5F00 execute; Python supplies no arithmetic output. Stop at real504790 entry before its House body, recording actual ECX, stackdelta/sourceHouse, returnPC and packet. Rows cover ordinary51/100/700, liveStrength110, negativeheal, zero packet/Strength, nonintegral and wide signed dwords under0E7F. Full three-stream states compare to shared receiver_rng before/after each row. Supplied radar/reveal timers atObject+174/+1E0 remain unchanged; sticky x87 status is observed, not claimed unchanged. These fragments establish the arithmetic/call arguments only, not actual Tag mutation->wholeTechno->House execution, alternate Building GetCost calculation, all numeric inputs, PostMortem/audio or full world. Existing ai_strategy_oracle owns separate504790 node-update execution.",
+    "Three object_destruction_controls reuse the single execute lifecycle owner: original Object5F3900 constructor and Attach5F5B50, supplied Object+90/pending queue for two full725C70 histories and actual5F6DC0 scalar disposal for a constructor-complete object. Actual full Object5F3B80 destructor does not clearObject+34 or decrementTag+2C. Tag refs remain1 for one attachment and2 after two shared objects are freed; no Tag/Trigger ticket or release is invented. Original allocator/free imports retain bytes for observation: object_tag_words and tag_at_free report actual+34 including after release, while legacy object_tags filters freed objects toNone. These rows are a base-Object boundary, not full Techno/Building destruction, native death or a mandate to retain dead Rust index entries. Repeat2 Tag definitions and original Trigger timers are observed; no damage action or Tag event is executed. Full three-stream seed31 states compare at every saved step through shared CampaignReader.rng_state, and the terminal next_random probe remains outside history/RNG-after. No general zero-timer/detach claim extends past these executed bodies.",
+    "Retail mapsmd03.mix bytes and member hashes identify ALL05UMD and ALL06UMD. Existing MIX/lexical cache owners supply actual Trigger/Tag/Structures/actions and ALL05 Team/TaskForce/Script; original counted Event reader executes every retained linked Trigger event. Raw reference extraction is not full native Trigger/Team/Structure construction, scenario admission, Rules/ART layers or physical loader execution. ALL05 first-damage41 creates the existing defensive Team, it does not necessarily create fresh soldiers. ALL06 repeating Parliament Tag enters43 through its linked chain and invokes54/32/53/112, a real nested-damage risk whose world execution is outside this corpus."
+  ],
+  "substitutions": [
+    "Inherited Object Fixture Tag/Changed/Kill/Destroy callout sinks; named controlled field mutations at genuine call-return seams. Existing FlagsFixture CRT/TLS/allocation and supplied House/actor/trigger priors. No selected original predicate, classification, Register, receiver, type getter or RNG return is replaced."
+  ],
+  "entry_points": {
+    "object_receive": "0x005F5390",
+    "tag_callout": "0x006E53A0",
+    "has_occurred": "0x0071E940",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0",
+    "register": "0x007264C0",
+    "random_seed": "0x0065C6D0",
+    "tag_before_kill_guard": "0x005F5752",
+    "exact_zero": "0x005F5765",
+    "post_object_anger": "0x00701E68",
+    "update_anger_nodes": "0x00504790",
+    "techno_type_get_cost": "0x00711EB0",
+    "building_type_get_cost": "0x0045ED50"
+  },
+  "receiver_supplied_addresses": {
+    "object": "0x20000000",
+    "type": "0x20002000",
+    "source": "0x2000A000",
+    "tag": "0x2000B000",
+    "source_null": 0
+  },
+  "tag_return_pcs": {
+    "0x005F561C": 39,
+    "0x005F5643": 42,
+    "0x005F5674": 40,
+    "0x005F569B": 43,
+    "0x005F56F6": 38,
+    "0x005F5719": 41,
+    "0x005F5744": 41,
+    "0x005F57E0": 6,
+    "0x005F580C": 44
+  },
+  "environment": {
+    "RA2_DIR": "retail installation containing gamemd.exe and mapsmd03.mix",
+    "interpreter": "Python compatible with installed Unicorn; local replay uses Python3.13",
+    "asset_directory": "No CampaignReader VM is constructed or eager asset directory loaded by this mode"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --damage-events",
+  "payload_sha256": "8fb8be582d0a604344b5772c90257131daddcd90d26e7fe3702842b96cec096e"
+}

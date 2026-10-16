@@ -162,13 +162,6 @@ pub(crate) enum FatalLifecycleStage {
     MaintainDamageSmoke {
         state: damage::DamageState,
     },
-    /// ObjectClass's exact-zero callback transaction for an eligible delayed
-    /// death. It runs while the target is still represented and Health is
-    /// exactly zero, before TechnoClass arms/shortens the shared C4 timer and
-    /// restores Alive/Health=1.
-    PostMortemExactZero {
-        killer_owner: Option<InternedId>,
-    },
     /// Before the death arm. `attacker` is the killing call's attacker, whom
     /// a building's KillPassengers credits (`0x00441F27`).
     BeforeDeathEffects {

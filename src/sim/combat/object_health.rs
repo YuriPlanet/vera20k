@@ -114,23 +114,36 @@ pub fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HealthCallback {
     Changed,
+    Tag { kind: i32, with_source: bool },
     Kill,
     Destroy,
 }
 
-/// The callback boundary is synchronous. The world adapter stages existing kill/
-/// destruction transactions after releasing its entity borrow; that adapter does
-/// not claim complete native trigger/callback-body parity.
+/// Short object borrows let the same Object5F5390 body invoke synchronous world
+/// callbacks. The host owns access, not a second health or event algorithm.
+pub(super) trait ObjectHealthHost {
+    fn object(&self) -> Option<&GameEntity>;
+    fn object_mut(&mut self) -> Option<&mut GameEntity>;
+    fn current_strength(&self) -> Option<i32>;
+    fn invoke(&mut self, callback: HealthCallback);
+}
+
+/// Object5F5390, Steam3e81a617: the threshold/first-damage Tags precede Kill
+/// and Destroy; every synchronous return can change HP, Type, Alive or Tag.
+/// Executed bodies and callback mutations: tag_lifecycle --damage-events.
+/// No own RNG, timers or detach; the invoked owners retain those effects.
 pub(super) fn commit(
-    target: &mut GameEntity,
+    host: &mut impl ObjectHealthHost,
     packet: &mut i32,
     strength: i32,
     admitted: bool,
     building_no_c4: bool,
     condition_red: f64,
-    mut callback: impl FnMut(&mut GameEntity, HealthCallback),
+    source_present: bool,
 ) -> DamageState {
-    let previous = target.health.current;
+    let Some(previous) = host.object().map(|target| target.health.current) else {
+        return DamageState::Unaffected;
+    };
     if previous <= 0 || !admitted {
         return DamageState::Unaffected;
     }
@@ -143,12 +156,16 @@ pub(super) fn commit(
     if *packet < 0 {
         // 5F546A..5495: the intermediate write precedes the signed cap;
         // changed callback receives the capped value, and cannot change return0.
-        target.health.current = previous.wrapping_sub(*packet);
-        if target.health.current > strength {
-            target.health.current = strength;
-        }
-        if target.health.current != previous {
-            callback(target, HealthCallback::Changed);
+        let changed = {
+            let target = host.object_mut().expect("represented receive target");
+            target.health.current = previous.wrapping_sub(*packet);
+            if target.health.current > strength {
+                target.health.current = strength;
+            }
+            target.health.current != previous
+        };
+        if changed {
+            host.invoke(HealthCallback::Changed);
         }
         return DamageState::Unaffected;
     }
@@ -168,15 +185,142 @@ pub(super) fn commit(
     {
         result = DamageState::Red;
     }
-    target.health.current = post;
-    // Alive0 is result5, independent of the newly written health (including0).
-    if !target.lifecycle.object_alive() {
+    host.object_mut()
+        .expect("represented receive target")
+        .health
+        .current = post;
+    //5F55F5..5643: Yellow's combat visit comes before its first Alive gate.
+    if result == DamageState::Yellow {
+        if source_present {
+            host.invoke(HealthCallback::Tag {
+                kind: 39,
+                with_source: false,
+            });
+        }
+        if !host
+            .object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+        {
+            return DamageState::AlreadyDead;
+        }
+        host.invoke(HealthCallback::Tag {
+            kind: 42,
+            with_source: false,
+        });
+    }
+    if !host
+        .object()
+        .is_some_and(|target| target.lifecycle.object_alive())
+    {
         return DamageState::AlreadyDead;
     }
-    if target.health.current == 0 {
-        callback(target, HealthCallback::Kill);
-        callback(target, HealthCallback::Destroy);
+    if result == DamageState::Red {
+        if source_present {
+            host.invoke(HealthCallback::Tag {
+                kind: 40,
+                with_source: false,
+            });
+        }
+        if !host
+            .object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+        {
+            return DamageState::AlreadyDead;
+        }
+        host.invoke(HealthCallback::Tag {
+            kind: 43,
+            with_source: false,
+        });
+    }
+    if !host
+        .object()
+        .is_some_and(|target| target.lifecycle.object_alive())
+    {
+        return DamageState::AlreadyDead;
+    }
+    //5F56AD..573F reads live HP/Type once before the first-damage group.
+    //41(NULL) and41(attacker) are distinct original calls, not duplicates
+    //to collapse. A source pointer, rather than hostility, gates combat kinds.
+    if host
+        .object()
+        .is_some_and(|target| target.health.current != previous)
+        && host.current_strength() == Some(previous)
+    {
+        if source_present {
+            host.invoke(HealthCallback::Tag {
+                kind: 38,
+                with_source: false,
+            });
+        }
+        if !host
+            .object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+        {
+            return DamageState::AlreadyDead;
+        }
+        host.invoke(HealthCallback::Tag {
+            kind: 41,
+            with_source: false,
+        });
+        if !host
+            .object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+        {
+            return DamageState::AlreadyDead;
+        }
+        if source_present {
+            host.invoke(HealthCallback::Tag {
+                kind: 41,
+                with_source: true,
+            });
+        }
+    }
+    if !host
+        .object()
+        .is_some_and(|target| target.lifecycle.object_alive())
+    {
+        return DamageState::AlreadyDead;
+    }
+    //5F5752 retains the pre-Tag HP snapshot, then575A re-reads live HP.
+    //A positive snapshot killed by a Tag returns5 without another Kill.
+    if post > 0
+        && host
+            .object()
+            .is_none_or(|target| target.health.current <= 0)
+    {
+        return DamageState::AlreadyDead;
+    }
+    if host
+        .object()
+        .is_some_and(|target| target.health.current == 0)
+    {
+        host.invoke(HealthCallback::Kill);
         result = DamageState::Dead;
+        //5F579F..57AF always invokes Destroy after Kill, even if that
+        //callback changed HP or Alive. Later Alive gates return local result.
+        host.invoke(HealthCallback::Destroy);
+    }
+    if !host
+        .object()
+        .is_some_and(|target| target.lifecycle.object_alive())
+    {
+        return result;
+    }
+    if result != DamageState::Dead && source_present {
+        host.invoke(HealthCallback::Tag {
+            kind: 6,
+            with_source: true,
+        });
+        if !host
+            .object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+        {
+            return result;
+        }
+        host.invoke(HealthCallback::Tag {
+            kind: 44,
+            with_source: true,
+        });
     }
     result
 }
