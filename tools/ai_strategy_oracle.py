@@ -13,8 +13,9 @@ is tools.ai_base_building_oracle's):
   ftol 0x7C5F00. The cell lookup 0x5657A0 and the cell's coordinate (vt+0x48),
   AI_TryFireSW 0x5098F0, the IHouse money query (vt+0x18), Fire_Sale
   (vt+0x34), All_To_Hunt (vt+0x38), Check_Build_Need 0x4FD9A0,
-  Manage_Build_Queue 0x4FDD10 and RandomRanged 0x65C7E0 are answered and
-  recorded in call order.
+  Manage_Build_Queue 0x4FDD10 and, by default, RandomRanged 0x65C7E0 are
+  answered and recorded in call order. The optional native_rng_seed control
+  runs the original RNG and retains its complete three-stream states.
 - fire_sale: IHouse Fire_Sale 0x5013A0 over a building list; Sell_Back
   (vt+0x1A0) is recorded.
 - all_to_hunt: IHouse All_To_Hunt 0x501400 over TechnoClass::Array; the
@@ -27,7 +28,7 @@ import random
 import struct
 
 from unicorn import UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP
+from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_ESP
 
 from tools.ai_base_building_oracle import (FAKE, HOUSE, RULES, STUBS, Emu, i16s)
 from tools.native_oracle import (STACK_BASE, STACK_SIZE, OracleError, finish_vectors,
@@ -243,7 +244,8 @@ PLAIN = building(factory=False)
 
 def strategy_row(label, *, game_mode=1, frame=1000, peers=(), self_index=0, self_passive=False,
                  enemy=-1, centre=(40, 40), alternate=(0, 0), mode=0, attack_frame=-5000,
-                 iq=0, iq_superweapons=3, money=5000, buildings=(FACTORY,), need=0, draw=4):
+                 iq=0, iq_superweapons=3, money=5000, buildings=(FACTORY,), need=0, draw=4,
+                 native_rng_seed=None):
     peers = list(peers)
     emu = Emu()
     emu.write32(GAME_MODE, game_mode)
@@ -308,10 +310,49 @@ def strategy_row(label, *, game_mode=1, frame=1000, peers=(), self_index=0, self
             raise OracleError('UpdateAngerNodes reached with a foreign house')
         emu.events.append(['anger', delta, index_of[house]])
     emu.uc.hook_add(UC_HOOK_CODE, anger, begin=ANGER, end=ANGER)
-    emu.draws([draw])
+    if native_rng_seed is None:
+        emu.draws([draw])
+    else:
+        from tools.ai_base_building_oracle import SCENARIO
+        from tools.rmg_oracle.gen_rng_vectors import SEED_FN, NEXT_FN, RANGED_FN, STRUCT_LEN
+        streams = {'scenario':SCENARIO+0x218, 'main':0x886B88, 'mapgen':0xABE890}
+        for pointer in streams.values():
+            emu.invoke(SEED_FN, ecx=pointer, args=(native_rng_seed,))
+        rng_before = {name:bytes(emu.uc.mem_read(pointer, STRUCT_LEN)).hex()
+                      for name,pointer in streams.items()}
+        rng_calls, pending, raw_draws = [], [], []
+        guarded = [(start,bytes(emu.uc.mem_read(start, end-start))) for start,end in
+                   ((STRATEGY,0x4FD92E),(SEED_FN,0x65C88D))]
+
+        def native_rng(uc, pc, _size, _data):
+            if pending and pc == pending[-1]['return_pc']:
+                call = pending.pop()
+                value = uc.reg_read(UC_X86_REG_EAX)&0xFFFFFFFF
+                call['result'] = i32(value) if call['kind'] == 'ranged' else value
+                if call['kind'] == 'ranged':
+                    emu.events[call['event_index']][-1] = call['result']
+            if pc in (NEXT_FN,RANGED_FN):
+                pointer = uc.reg_read(UC_X86_REG_ECX)
+                stream = next((name for name,address in streams.items() if address == pointer),None)
+                if stream is None:
+                    raise OracleError('strategy drew from an undeclared RNG stream')
+                call = dict(kind='raw' if pc == NEXT_FN else 'ranged',stream=stream,
+                            return_pc=emu.read32(uc.reg_read(UC_X86_REG_ESP)))
+                if pc == RANGED_FN:
+                    call.update(low=i32(emu.arg(0)),high=i32(emu.arg(1)),
+                                event_index=len(emu.events))
+                    emu.events.append(['draw',pointer-SCENARIO,call['low'],call['high'],None])
+                rng_calls.append(call)
+                pending.append(call)
+            if pc in (0x65C79D,0x65C84B):
+                # The shared RNG oracle observes these actual XOR-word stores;
+                # RandomRanged inlines them and can reject more than one word.
+                raw_draws.append(uc.reg_read(UC_X86_REG_ESI)&0xFFFFFFFF)
+
+        emu.uc.hook_add(UC_HOOK_CODE,native_rng)
 
     delay = i32(emu.invoke(STRATEGY, ecx=HOUSE))
-    return dict(label=label, game_mode=game_mode, frame=frame, peers=peers,
+    row = dict(label=label, game_mode=game_mode, frame=frame, peers=peers,
                 self_index=self_index, self_passive=self_passive, enemy=enemy,
                 centre=list(centre), alternate=list(alternate), mode=mode,
                 attack_frame=attack_frame, iq=iq, iq_superweapons=iq_superweapons,
@@ -320,6 +361,16 @@ def strategy_row(label, *, game_mode=1, frame=1000, peers=(), self_index=0, self
                 enemy_after=emu.read_i32(HOUSE + 0x5600),
                 anger_after=[emu.read_i32(ANGER_ITEMS + 8 * slot + 4)
                              for slot in range(len(peers))])
+    if native_rng_seed is not None:
+        assert not pending
+        assert all(bytes(emu.uc.mem_read(pointer,len(code))) == code for pointer,code in guarded)
+        row['native_rng'] = dict(seed=native_rng_seed,before=rng_before,
+            after={name:bytes(emu.uc.mem_read(pointer,STRUCT_LEN)).hex()
+                   for name,pointer in streams.items()},
+            calls=[{key:value for key,value in call.items() if key != 'event_index'}
+                   for call in rng_calls],raw_draw_count=len(raw_draws),raw_draws=raw_draws,
+            code_unchanged=True)
+    return row
 
 
 def strategy():

@@ -242,8 +242,8 @@ impl HouseStrategyEmergencyState {
         self.last_attacker_house_index
     }
 
-    /// Trigger action 9 and Team script opcode 30 write state four directly.
-    #[cfg(test)]
+    /// Trigger action9 writes only House+250=4 at6DEAFF; the existing
+    /// strategy timer and its eventual FireSale/Hunt remain untouched.
     pub(crate) fn set_state_four(&mut self) {
         self.mode = 4;
     }

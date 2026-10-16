@@ -337,7 +337,7 @@ fn rally_value(
         }
         EntityCategory::Unit if ty.passengers > 0 => value(&values.apc),
         EntityCategory::Unit => 2,
-        EntityCategory::Structure => match ty.factory {
+        EntityCategory::Structure => match ty.factory_type() {
             Some(FactoryType::BuildingType) => value(&values.con_yard),
             Some(FactoryType::UnitType) if !ty.naval => value(&values.war_factory),
             // `Power=` as the reader stores it (`0x00461080..0x0046109A`):

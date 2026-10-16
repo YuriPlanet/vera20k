@@ -46,12 +46,14 @@
 //! RESIDUALS:
 //! - All_To_Hunt's release of an occupied building with Hunt
 //!   (`0x00457DE0(1, 0)`, whose occupants also leave their teams at
-//!   `0x0045812B`) is not ported: no VERA computer house garrisons a
-//!   building, as no garrison script action is ported.
-//! - State four's writers (TriggerAction::Execute `0x006DEAFF`, a team
-//!   script at `0x006E99E5`) have no VERA producer, and the All-To-Hunt
-//!   latch's reader (`TechnoClass::Evaluate_Candidate @ 0x006F8765`, the
-//!   test-only `all_to_hunt_score_override`) is not ported.
+//!   `0x0045812B`) is not ported. Script63/64 can populate computer
+//!   garrisons; those occupants currently remain inside instead of leaving
+//!   their teams and taking Hunt. The ordinary nongarrison Action9 route
+//!   tested here does not enter that branch.
+//! - Team script30 (`0x006E99E5`) does not yet write state four. Trigger
+//!   Action9 (`0x006DEAFF`) uses the existing state owner. The All-To-Hunt
+//!   latch is consumed by the shared greatest_threat candidate scoring
+//!   (`TechnoClass::Evaluate_Candidate @ 0x006F8765`).
 //! - The own-coordinate test against the empty coordinate
 //!   (`0x004FD5B9..0x004FD5E5`) is dormant: no cell's coordinate is zero.
 
@@ -261,7 +263,7 @@ fn has_live_factory(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> boo
                     && !building.lifecycle.in_limbo()
                     && sim
                         .object_type(building.type_ref(), rules)
-                        .is_some_and(|ty| ty.factory.is_some())
+                        .is_some_and(|ty| ty.has_factory())
             })
         })
     })

@@ -86,6 +86,58 @@ const ART: &str = "[BLDG]\nFoundation=2x2\n[BLDGI]\nFoundation=2x2\n\
     [BLDGD]\nFoundation=2x2\n[B1X1]\nFoundation=1x1\n\
     [BGAT]\nFoundation=2x2\n[BOTHER]\nFoundation=2x2\n[PAD]\nFoundation=2x2\n";
 
+#[test]
+fn factory_counts_match_original_raw_class_dispatch() {
+    use super::{FactorySlot, TrackingFacts};
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_no_factories_events.json",
+    ))
+    .unwrap();
+    let tables = corpus["factory"]["counter_dispatch"].as_array().unwrap();
+    assert_eq!(tables.len(), 3);
+    // The three original selector/jump tables and LEA bytes establish
+    // class-to-counter dispatch. This does not claim to execute native
+    // increment/decrement or primary-factory lifecycle behavior.
+    for row in corpus["factory"]["rtti_name_table"].as_array().unwrap() {
+        for naval in [false, true] {
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[BuildingTypes]\n0=FACTORY\n[FACTORY]\nFactory={}\nNaval={}\n",
+                row["name"].as_str().unwrap(),
+                if naval { "yes" } else { "no" },
+            )))
+            .unwrap();
+            let ty = rules.object("FACTORY").unwrap();
+            assert_eq!(i64::from(ty.factory_rtti()), row["value"].as_i64().unwrap());
+            for table in tables {
+                let offset = table["aliases"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|alias| alias["rtti"] == row["value"])
+                    .map(|alias| {
+                        alias["slot_offsets_by_naval"][usize::from(naval)]
+                            .as_u64()
+                            .unwrap()
+                    });
+                let expected = offset.map(|offset| match offset {
+                    0x5378 => FactorySlot::Aircraft,
+                    0x537c => FactorySlot::Infantry,
+                    0x5380 => FactorySlot::Vehicle,
+                    0x5384 => FactorySlot::Building,
+                    0x5388 => FactorySlot::Naval,
+                    _ => panic!("unreviewed original counter offset {offset:x}"),
+                });
+                assert_eq!(
+                    TrackingFacts::of(EntityCategory::Structure, Some(ty), Some(&rules)).factory,
+                    expected,
+                    "{} {row} Naval={naval}",
+                    table["name"],
+                );
+            }
+        }
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct NativeTrackingCase {
     input: serde_json::Value,

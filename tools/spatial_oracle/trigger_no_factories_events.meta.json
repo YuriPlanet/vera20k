@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "19 original Event17 predicate controls, 12 complete Action9 dispatch controls, 74 native Factory RTTI names, 17 original Factory field reads, three original Factory accounting dispatch tables and selected SOV02 Country/Trigger/action bindings; existing Strategy/Update/Sale/Hunt payload replays plus one genuine-RNG mode4 control. Independent bounded owners, not a complete native SOV02 or House lifecycle execution.",
+  "assumptions": [
+    "PowerEventControls/FlagsFixture owns Event17 execution. Supplied House Country0/7/0, signed tracked+2F0 and Building vector+68 priors are independent. Original17 scans the incoming House, succeeds for NULL or signed tracked<=0, skips null/limbo list entries and rejects any nonzero Factory raw RTTI. Health and AI-alive priors do not gate it. Negative vector count is an abnormal supplied boundary, not a normal Rust Vec state.",
+    "HasOccurred71E940/StateA71F950/StateB71F9C0 execute unchanged. Event+54 sentinel0xABCD1234, persistence initially0/1 and supplied timer remain unchanged; wrong raised kind and A8ED6B true are included. Three full original seed31 RNG states are compared unchanged. The selected predicate contains no timer or detach producer; no tracking writer, House/Building constructor, Unlimbo/UnInit or list teardown is newly certified.",
+    "AllChangeHouseFixture reuses ActionFixture and the original6E45E0 House selector. Twelve controls run real TAction constructor/record read/dispatch with Country19/7/19 order, retained Trigger House8997, Player@4475 slots, missing/NULL targets and an already-mode4 target. Full supplied House byte comparisons and actual write observations permit only mode+250=4; strategy timers remain unchanged and all three full RNG states are identical. No Tag firing or immediate sale/Hunt occurs in this Action9 boundary.",
+    "Factory table816EE0..817130 is actual executable data, not a host enum algorithm. Whole original BuildingType45DD90 constructors produce default0; selected46051A..46054B passes exact section/key Factory and current raw RTTI through ReadFactory474FF0, ReadString32 and40DCE0. Enum names are case-insensitive; raw Unit1/Infantry15 must stay distinct from UnitType40/InfantryType16. Suggest_New_Object4FBD80 two-level selector4FBE0C/jump4FBDF8 bytes preserve the eight native object/type aliases as static data, not an executed producer chain. Cached empty values are not a physical empty-line admission claim. Only the retained RULESMD and selected map field passes execute, not whole ReadINI, supplemental language/mode/campaign layer closure or asset loading.",
+    "Factory accounting dispatch data is read from this same original-image owner: Increment4FFA50 selector4FFAF0/jump4FFADC, Recount4FF980 selector4FFA20/jump4FFA0C and GetFactoryCount500910 selector50097C/jump500968. Their eight raw class aliases1/40,2/3,6/7,15/16 and default target are preserved with actual LEA instruction bytes and House field offsets for Naval=false/true. The shared table extractor also owns the retained Suggest table; there is no second VM, RTTI parser or counter algorithm. These are original byte/control-flow goldens for class-to-slot dispatch only; no new execution of count increments/decrements, wrapping, destruction timing or primary grouping is claimed.",
+    "Existing MIX/lexical transports supply actual SOV02SMD.MAP and retained retail ini/rulesmd.ini. CampaignReader executes Countries668C8B..668CDB in Rules/map order, House Country475540 and Trigger727240..7272D1 binding. Germany1 becomes Country19; German1 House is its actual House label. Original counted Event and Action record readers bind17/0 -> Action53 target043A9BBC ->13/45 ->Action9 Country19. Tags and authored Structures/Infantry remain raw retail data; authored health256 is not actual HP. No live native Tag enable/House poll or whole map load is executed here.",
+    "Existing Strategy owner is reused, not copied. Four selected old Strategy/Update/Sale/Hunt payloads and one uncharged-Superweapon payload are compared field-for-field; their historical sidecars are retained, not reidentified or called a successful old CLI check. Existing recorded SellBack, Team removal, QueueMission, release/virtual and Superweapon boundaries remain intact.",
+    "The new strategy_row native_rng_seed=31 control executes unchanged Strategy4FD500 and genuine original RandomRanged/Seed; three full states, actual raw-word stores and ranged result are retained. Campaign mode4 uses supplied plain-building/peer/money priors, IQ5 and IQ-SuperWeapons4; TryFireSW/FireSale/Hunt remain recorded dependency boundaries. The three Update controls each start a fresh VM with start1000 and the native-returned delay; they are independent boundary probes, not a sequential timer history. Ordinary Foot Hunt is bounded to supplied nongarrison objects. No actual sale destruction, garrison release, full AI/world schedule or total-frame RNG equivalence is certified."
+  ],
+  "substitutions": [
+    "Existing VM/image/heap/CRT/TLS/cached-INI transports only for Event/Action/Factory/Country readers; no selected predicate or Action9 return is supplied. Strategy dependency callbacks and the existing Update Strategy return remain recorded supplied seams; genuine-RNG mode replaces only the old answer-injection interface, never original RNG instructions or returns."
+  ],
+  "entry_points": {
+    "has_occurred": "0x0071E940",
+    "no_factories": "0x0071EF3F",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0",
+    "action_dispatch": "0x006DD8B0",
+    "action9": "0x006DEAD6",
+    "action9_mode_write": "0x006DEAFF",
+    "find_house": "0x006E45E0",
+    "building_type_constructor": "0x0045DD90",
+    "factory_field": "0x0046051A",
+    "read_factory": "0x00474FF0",
+    "abstract_type_from_name": "0x0040DCE0",
+    "increment_factory_count": "0x004FFA50",
+    "recount_factory": "0x004FF980",
+    "get_factory_count": "0x00500910",
+    "country_registration": "0x00668C8B",
+    "house_country": "0x00475540",
+    "trigger_country": "0x00727240",
+    "strategy": "0x004FD500",
+    "strategy_update": "0x004F8FBE",
+    "fire_sale": "0x005013A0",
+    "all_to_hunt": "0x00501400",
+    "random_seed": "0x0065C6D0",
+    "random_ranged": "0x0065C7E0"
+  },
+  "environment": {
+    "RA2_DIR": "retail installation containing mapsmd03.mix and a supported original gamemd.exe",
+    "VERA20K_CAMPAIGN_START_ASSETS": "an existing EMPTY directory for CampaignReader transport; do not point it at the game installation",
+    "checkout_prerequisite": "ini/rulesmd.ini is the retained retail RULESMD winner",
+    "python": "Python with the repository native-oracle dependencies; local execution used Python3.13"
+  },
+  "reused_evidence": {
+    "house_tracking": "tools/spatial_oracle/house_tracking.json and its recorded fixture/coverage; not replayed or extended by this mode",
+    "building_lists": "existing House/base ownership and native Unlimbo/PointerExpired/ChangeOwner instruction evidence; not a new lifecycle execution",
+    "strategy": "tools/ai_strategy_oracle.json; selected payloads replayed, original sidecar retained",
+    "rng": "tools/rmg_oracle/gen_rng_vectors.py original Seed/Ranged constants and raw-store observation boundary"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --no-factories-events",
+  "payload_sha256": "8b72aeffc7457a2a4388e5f8ea06b725c009cb91f0e0794ac37b96b0a0e2e982"
+}

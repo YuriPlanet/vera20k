@@ -88,7 +88,7 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
                 rules.building_ids.iter().position(|id| id == name).unwrap() as i32,
             ))
         );
-        assert!(rules.object("GATECH").unwrap().factory.is_none());
+        assert!(rules.object("GATECH").unwrap().factory_type().is_none());
         let mut sim = Simulation::with_seed(0xfac7_1307);
         sim.install_resolved_terrain_for_new_map(
             crate::map::resolved_terrain::test_flat_ground_grid(64),

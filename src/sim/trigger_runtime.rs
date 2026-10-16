@@ -1653,6 +1653,35 @@ impl Simulation {
             .clone();
         match condition.kind {
             14 => self.session.scenario_timer_elapsed(),
+            17 => {
+                // Steam3e81a617..08600:71EE82 takes the incoming House;
+                // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
+                // Only null/limbo entries are skipped: neither Health nor
+                // Alive gates this leaf. Factory is the raw nonzero RTTI,
+                // independent of Event.value, actor, raised kind and init.
+                // No persistence, Event+54, timer, RNG or detach write.
+                // Executed controls: tag_lifecycle --no-factories-events.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                let Some(house) = self.houses.get(&owner) else {
+                    return false;
+                };
+                if house.tracking.buildings() <= 0 {
+                    return true;
+                }
+                let Some(rules) = rules else {
+                    return false;
+                };
+                !house.base_projection.buildings().iter().any(|&id| {
+                    self.substrate.entities.get(id).is_some_and(|building| {
+                        !building.lifecycle.in_limbo()
+                            && self
+                                .object_type(building.type_ref(), rules)
+                                .is_some_and(|ty| ty.has_factory())
+                    })
+                })
+            }
             12 | 52 => {
                 // Steam3e81a617..08600: HasOccurred71EF01/71EF20 calls
                 // IHouse::AvailableMoney4F6990 on Register7264C0's incoming
@@ -2675,6 +2704,24 @@ impl Simulation {
         let sound = action.sound.as_deref();
         let action = &action.entry;
         match action.kind {
+            9 => {
+                // Execute6DEAD6 -> shared House selector6E45E0;6DEAFF
+                // writes only House+250=4. No immediate FireSale/Hunt and
+                // no strategy timer reset. Those remain with house_strategy.
+                // The shared6E45E0 selector rejects a null Trigger.
+                // Steam3e81a617..08600, --no-factories-events Action9 controls.
+                let (Some(live), Some(value), Some(rules)) = (context.live_index, value, rules)
+                else {
+                    return false;
+                };
+                let Some(house) = self
+                    .live_action_house(live, value, rules)
+                    .and_then(|owner| self.houses.get_mut(&owner))
+                else {
+                    return false;
+                };
+                house.strategy_emergency.set_state_four();
+            }
             12 => {
                 // Steam3e81a617..08600, Execute6DF051..6DF08F: reverse
                 // live Trigger array, then726720's deferred marker. No
@@ -3627,6 +3674,10 @@ mod tests;
 #[cfg(test)]
 #[path = "trigger_runtime_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_no_factories_tests.rs"]
+mod no_factories_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]

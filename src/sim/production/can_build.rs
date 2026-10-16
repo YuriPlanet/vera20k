@@ -371,7 +371,7 @@ pub(crate) fn find_factory(
             continue;
         };
         if !building.lifecycle.in_limbo()
-            && building_type.factory == Some(factory_type)
+            && building_type.factory_type() == Some(factory_type)
             && (!require_online || building.building_online())
             && building.mission.effective() != selling
             && building.mission.queued() != selling
@@ -405,6 +405,12 @@ pub(crate) fn find_factory(
 /// preserve an existing live non-limbo primary of matching Factory/Naval;
 /// otherwise make this building primary. This is the lifecycle producer, not
 /// the fallback choice returned by FindFactory.
+///
+/// Residual #1709: 44807C/4480D5 and 4481C5 compare every nonzero raw
+/// RTTI and Naval, including distinct Unit1/UnitType40 groups. The existing
+/// serialized ProductionCategory index represents ordinary retail queues
+/// only; custom raw/Naval groups need a separate lifecycle/state migration.
+/// See https://github.com/YuriPlanet/vera20k/issues/1709.
 pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(building) = sim.substrate.entities.get(id) else {
         return;
@@ -415,7 +421,7 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
     let Some(ty) = sim.object_type(building.type_ref(), rules) else {
         return;
     };
-    let Some(factory) = ty.factory else {
+    let Some(factory) = ty.factory_type() else {
         return;
     };
     let category = match factory {
@@ -435,7 +441,8 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
                 && sim
                     .object_type(candidate.type_ref(), rules)
                     .is_some_and(|candidate_type| {
-                        candidate_type.factory == Some(factory) && candidate_type.naval == ty.naval
+                        candidate_type.factory_type() == Some(factory)
+                            && candidate_type.naval == ty.naval
                     })
         });
     if !keep {

@@ -4569,7 +4569,10 @@ impl RuleSet {
         // Step 6: Build factory lookup map from Factory= keys on all objects.
         let factory_map: HashMap<String, FactoryType> = object_list
             .iter()
-            .filter_map(|obj| obj.factory.map(|ft| (obj.id.to_ascii_uppercase(), ft)))
+            .filter_map(|obj| {
+                obj.factory_type()
+                    .map(|ft| (obj.id.to_ascii_uppercase(), ft))
+            })
             .collect();
         log::info!("Factory map: {} entries", factory_map.len());
 

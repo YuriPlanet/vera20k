@@ -929,18 +929,17 @@ fn techno_ai_shell(
                     ctx.effects,
                 );
                 // A `Factory=` type's own production (`0x004401BB..0x004401CD`).
-                let factory_type = sim
+                let has_factory = sim
                     .substrate
                     .entities
                     .get(id)
                     .and_then(|entity| sim.object_type(entity.type_ref(), rules))
-                    .and_then(|ty| ty.factory);
-                if let Some(factory_type) = factory_type {
+                    .is_some_and(|ty| ty.has_factory());
+                if has_factory {
                     crate::sim::production::factory_ai(
                         sim,
                         rules,
                         id,
-                        factory_type,
                         ctx.overlay_registry,
                         ctx.effects,
                     );

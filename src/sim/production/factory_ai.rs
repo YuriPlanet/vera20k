@@ -48,7 +48,7 @@
 //!   `Exit_Object` arms a human's placement takes. Its residuals: the
 //!   refinery arm and the Infantry arm's Cloning Vat copies.
 
-use crate::rules::object_type::{FactoryType, ObjectCategory};
+use crate::rules::object_type::ObjectCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_base_building::{self, BuildingExit};
@@ -62,13 +62,11 @@ use super::factory_lifecycle::{abandon_production, record_last_built, start_acti
 use super::production_queue::exit_produced_object;
 use super::production_tech::production_category_for_object;
 
-/// `BuildingClass::Factory_AI @ 0x004500F0` for building `building`, whose
-/// type makes `factory_type`.
+/// `BuildingClass::Factory_AI @ 0x004500F0` for building `building`.
 pub(crate) fn factory_ai(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,
-    factory_type: FactoryType,
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
@@ -88,6 +86,18 @@ pub(crate) fn factory_ai(
     if !production || entity.constructing_or_selling() {
         return;
     }
+    // The second raw gate (450286) precedes the existing-factory abandon
+    // branch (450292); finished-object exit above remains unconditional.
+    let Some(factory_rtti) = sim
+        .substrate
+        .entities
+        .get(building)
+        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .map(|ty| ty.factory_rtti())
+        .filter(|&factory| factory != 0)
+    else {
+        return;
+    };
     if sim
         .production
         .factories
@@ -97,7 +107,7 @@ pub(crate) fn factory_ai(
         abandon_stopped_factory(sim, rules, building, owner, effects);
         return;
     }
-    start_factory(sim, rules, building, owner, factory_type, effects);
+    start_factory(sim, rules, building, owner, factory_rtti, effects);
 }
 
 /// `0x004500FA..0x00450242`: the finished object's exit once the wait is
@@ -204,13 +214,13 @@ fn start_factory(
     rules: &RuleSet,
     building: u64,
     owner: InternedId,
-    factory_type: FactoryType,
+    factory_rtti: i32,
     effects: FrameEffects<'_>,
 ) {
     if crate::sim::credit_income::available_money(sim, owner) <= 10 {
         return;
     }
-    let Some(object) = ai_base_building::suggest_new_object(sim, rules, owner, factory_type) else {
+    let Some(object) = ai_base_building::suggest_new_object(sim, rules, owner, factory_rtti) else {
         return;
     };
     let factory_naval = sim

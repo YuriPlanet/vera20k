@@ -735,20 +735,23 @@ fn carry_wall_tower_site(
 }
 
 /// `HouseClass::Suggest_New_Object @ 0x004FBD80` for a factory that makes
-/// `factory_type`: the house's choice of that kind, unchecked: the building
+/// `factory_rtti`: the house's choice of that kind, unchecked: the building
 /// choice (`+0x564C`, `0x004FBDDC`) or a choice of `sim::ai_unit_choice`
 /// (`+0x5650`, `+0x5654`, `+0x5658`).
 pub(crate) fn suggest_new_object<'r>(
     sim: &Simulation,
     rules: &'r RuleSet,
     owner: InternedId,
-    factory_type: FactoryType,
+    factory_rtti: i32,
 ) -> Option<&'r ObjectType> {
     let house = sim.houses.get(&owner)?;
     let unit_choice = |kind: UnitChoiceKind| {
         rules.type_array_at(kind.category(), house.ai_unit_choices.get(kind))
     };
-    match factory_type {
+    // Steam3e81a617..08600, two-level tables4FBE0C/4FBDF8. This one
+    // consumer and factory accounting accept object/type aliases, unlike
+    // FindFactory's exact class comparison. Other RTTIs return null.
+    match FactoryType::for_production_rtti(factory_rtti)? {
         FactoryType::BuildingType => rules.building_type_at(house.ai_production.building_choice),
         FactoryType::UnitType => unit_choice(UnitChoiceKind::Unit),
         FactoryType::InfantryType => unit_choice(UnitChoiceKind::Infantry),

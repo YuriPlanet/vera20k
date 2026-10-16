@@ -151,22 +151,27 @@ pub enum FactoryType {
 }
 
 impl FactoryType {
-    /// Parse the Factory= INI value (case-insensitive).
-    ///
-    /// RESIDUAL: native reads `Factory=` through `INIClass::ReadFactory @
-    /// 0x00474FF0`, the case-insensitive class-name table of
-    /// `AbstractType_From_Name @ 0x0040DCE0`, so the object class names
-    /// (`Unit`, `Infantry`, ...) and every other class parse too; VERA keeps
-    /// the four type names and reads anything else as no factory. Trigger: a
-    /// rules or map INI naming another class. Effect: each reader compares
-    /// that class its own way natively. Frequency: none in retail (all 14
-    /// `rulesmd.ini` `Factory=` values are type names).
-    pub fn from_ini(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "buildingtype" => Some(Self::BuildingType),
-            "infantrytype" => Some(Self::InfantryType),
-            "unittype" => Some(Self::UnitType),
-            "aircrafttype" => Some(Self::AircraftType),
+    /// Shared object/type aliases in Suggest_New_Object (4FBD80),
+    /// IncrementFactoryCount (4FFA50), Recount (4FF980) and
+    /// GetFactoryCount (500910), Steam3e81a617..08600. Exact RTTI
+    /// comparisons, including primary-factory grouping, must retain the raw value.
+    pub(crate) const fn for_production_rtti(value: i32) -> Option<Self> {
+        match value {
+            6 | 7 => Some(Self::BuildingType),
+            15 | 16 => Some(Self::InfantryType),
+            1 | 40 => Some(Self::UnitType),
+            2 | 3 => Some(Self::AircraftType),
+            _ => None,
+        }
+    }
+
+    /// Exact production Type RTTI projection, not ReadFactory's full enum.
+    const fn from_rtti(value: i32) -> Option<Self> {
+        match value {
+            7 => Some(Self::BuildingType),
+            16 => Some(Self::InfantryType),
+            40 => Some(Self::UnitType),
+            3 => Some(Self::AircraftType),
             _ => None,
         }
     }
@@ -1180,10 +1185,12 @@ pub struct ObjectType {
     /// Poison-warhead immunity.
     pub immune_to_poison: bool,
 
-    /// What type of objects this building can produce (Factory= in rules.ini).
-    /// None for non-factory buildings/units. Data-driven replacement for
-    /// hardcoded building-name checks in production queue logic.
-    pub factory: Option<FactoryType>,
+    /// BuildingType+EB8. Constructor45DD90 leaves0; ReadFactory474FF0 at
+    /// 460529 stores any recognized raw RTTI, including object classes.
+    /// Rules own this value; production categories are derived, never stored
+    /// as a second, lossy authority. Steam3e81a617..08600; native controls in
+    /// trigger_no_factories_events.json.
+    factory_rtti: i32,
     /// Native BuildingType `WeaponsFactory=` classification used by Unit
     /// ReadyToCommence. Independent from `Factory=` and `Naval=`.
     pub weapons_factory: bool,
@@ -1922,6 +1929,23 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    /// The authoritative BuildingType+EB8 class, including non-production
+    /// RTTI names. Consumers must keep their own native comparisons.
+    pub const fn factory_rtti(&self) -> i32 {
+        self.factory_rtti
+    }
+
+    /// Native nonzero-Factory gates (HasOccurred17, AI, quarry and exit).
+    pub const fn has_factory(&self) -> bool {
+        self.factory_rtti != 0
+    }
+
+    /// Exact Type comparisons used by FindFactory, exit arms and rally.
+    /// Object RTTIs (Unit1/Infantry15/...) are deliberately not type RTTIs.
+    pub const fn factory_type(&self) -> Option<FactoryType> {
+        FactoryType::from_rtti(self.factory_rtti)
+    }
+
     pub(crate) fn target_coord_offset(&self) -> [i32; 3] {
         self.target_coord_offset
     }
@@ -2143,7 +2167,7 @@ impl ObjectType {
     /// rally click archives only on these, and their rally lines draw.
     pub fn has_rally_line(&self) -> bool {
         matches!(
-            self.factory,
+            self.factory_type(),
             Some(FactoryType::InfantryType | FactoryType::UnitType)
         ) || self.unit_repair
             || self.cloning
@@ -2799,9 +2823,11 @@ impl ObjectType {
             anti_air_value: building_int(section, category, "AntiAirValue"),
             anti_armor_value: building_int(section, category, "AntiArmorValue"),
             anti_infantry_value: building_int(section, category, "AntiInfantryValue"),
-            factory: section
-                .read_name("Factory", 0x20)
-                .and_then(FactoryType::from_ini),
+            factory_rtti: if category == ObjectCategory::Building {
+                section.read_factory("Factory", 0)
+            } else {
+                0
+            },
             weapons_factory: section.read_bool("WeaponsFactory", false),
             armory,
             gdi_barracks,
@@ -4161,9 +4187,12 @@ mod tests {
         assert!(!parse("MISSING").weapons_factory);
         assert!(!parse("EXPLICIT_NO").weapons_factory);
         assert!(parse("EXPLICIT_YES").weapons_factory);
-        assert_eq!(parse("FACTORY_ONLY").factory, Some(FactoryType::UnitType));
+        assert_eq!(
+            parse("FACTORY_ONLY").factory_type(),
+            Some(FactoryType::UnitType)
+        );
         assert!(!parse("FACTORY_ONLY").weapons_factory);
-        assert_eq!(parse("WEAPONS_FACTORY_ONLY").factory, None);
+        assert_eq!(parse("WEAPONS_FACTORY_ONLY").factory_type(), None);
         assert!(parse("WEAPONS_FACTORY_ONLY").weapons_factory);
     }
 

@@ -135,14 +135,7 @@ fn yard_builds(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, yard: u
         .unwrap()
         .ai_production
         .set_for_test(0, choice, true);
-    crate::sim::production::factory_ai(
-        sim,
-        rules,
-        yard,
-        crate::rules::object_type::FactoryType::BuildingType,
-        None,
-        FrameEffects::default(),
-    );
+    crate::sim::production::factory_ai(sim, rules, yard, None, FrameEffects::default());
     assert!(sim.production.factories.building_factory(yard).is_some());
 }
 
@@ -241,14 +234,7 @@ fn the_need_waits_for_the_harvester_the_war_factory_is_building() {
         .ai_unit_choices
         .set(UnitChoiceKind::Unit, harvester);
     assert!(check_build_need(&sim, &rules, owner), "no factory holds it");
-    crate::sim::production::factory_ai(
-        &mut sim,
-        &rules,
-        factory,
-        crate::rules::object_type::FactoryType::UnitType,
-        None,
-        FrameEffects::default(),
-    );
+    crate::sim::production::factory_ai(&mut sim, &rules, factory, None, FrameEffects::default());
     for (owed, need) in [(1000, false), (1001, true)] {
         sim.production
             .factories
@@ -490,14 +476,7 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
         .unwrap()
         .ai_unit_choices
         .set(UnitChoiceKind::Unit, harvester);
-    crate::sim::production::factory_ai(
-        &mut sim,
-        &rules,
-        factory,
-        crate::rules::object_type::FactoryType::UnitType,
-        None,
-        FrameEffects::default(),
-    );
+    crate::sim::production::factory_ai(&mut sim, &rules, factory, None, FrameEffects::default());
     assert!(sim.production.factories.building_factory(factory).is_some());
     assert!(check_build_need(&sim, &rules, owner));
 

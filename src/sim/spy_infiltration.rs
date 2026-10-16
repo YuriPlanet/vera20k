@@ -135,7 +135,7 @@ impl Simulation {
             credit_income::add_credits(self, infiltrator, amount);
             InfiltrationEffect::Cash
         } else if let Some(factory @ (FactoryType::UnitType | FactoryType::InfantryType)) =
-            object.factory
+            object.factory_type()
         {
             if let Some(house) = self.houses.get_mut(&infiltrator) {
                 if factory == FactoryType::UnitType {
