@@ -1924,7 +1924,6 @@ impl Simulation {
                     Some(
                         crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                             building_id: stable_id,
-                            owner: entity.owner(),
                             rx: entity.position.rx(),
                             ry: entity.position.ry(),
                             z: entity.position.z(),

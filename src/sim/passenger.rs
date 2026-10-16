@@ -1428,7 +1428,14 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
         object.strength,
         rules.general.condition_red,
     ) {
-        garrison_eject::sell_building_occupants(sim, rules, registry, building_id, effects);
+        garrison_eject::sell_building_occupants(
+            sim,
+            rules,
+            registry,
+            building_id,
+            garrison_eject::GarrisonEjectMode::Release,
+            effects,
+        );
     }
     //458265/4582F2 re-read the live vector after ejection.
     let Some(building) = sim.substrate.entities.get(building_id) else {
@@ -3360,7 +3367,6 @@ ConditionYellow=50%
                 crate::rules::foundation::foundation_dimensions(&obj.foundation);
             crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                 building_id,
-                owner: bldg.owner(),
                 rx: bldg.position.rx(),
                 ry: bldg.position.ry(),
                 z: bldg.position.z(),

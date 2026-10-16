@@ -6,6 +6,9 @@
 //! garrison (`Simulation`'s fatal lifecycle), the red-health ejection
 //! (`reconcile_civilian_garrison_owner_for_building`) and a building's Unload
 //! mission (`techno_ai::building_missions`).
+//! AllToHunt501400 uses the same owner with SellBuilding(1,0).
+//! Steam3e81a617..08600 controls: trigger_action_values --all-to-hunt;
+//! Unlimbo/Team/UnInit remain declared dependencies in that corpus.
 
 #[cfg(test)]
 use super::PassengerRole;
@@ -13,7 +16,6 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::foundation::foundation_dimensions;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::intern::InternedId;
 use crate::sim::movement::infantry_entry::{InfantryEntryArgs, InfantryEntryClass};
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
@@ -22,9 +24,13 @@ use crate::sim::world::{
 use crate::util::lepton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GarrisonEjectMode {
+pub(crate) enum GarrisonEjectMode {
+    /// SellBuilding(0,1): an interior fallback is allowed.
     PlayerSell,
-    DestructionNoExitRemove,
+    /// SellBuilding(0,0): remove occupants when no exit is available.
+    Release,
+    /// SellBuilding(1,0): Scatter, leave the team and queue Hunt.
+    Hunt,
 }
 
 fn push_nonnegative_cell(cells: &mut Vec<(u16, u16)>, x: i32, y: i32) {
@@ -49,7 +55,9 @@ fn garrison_sellbuilding_exit_cells(rx: u16, ry: u16, width: u16, height: u16) -
     for y in (north..=south).rev() {
         push_nonnegative_cell(&mut cells, east, y);
     }
-    for x in (west..=east).rev() {
+    // Steam3e81a617..08600, SellBuilding457DE0: second edge starts at east-1.
+    // The first edge already tested the southeast corner.
+    for x in (west..east).rev() {
         push_nonnegative_cell(&mut cells, x, south);
     }
     for x in ox..=east {
@@ -165,7 +173,6 @@ fn place_garrison_passenger_at_cell(
     sim: &mut Simulation,
     rules: &RuleSet,
     passenger_id: u64,
-    owner_override: Option<InternedId>,
     rx: u16,
     ry: u16,
     z: u8,
@@ -173,20 +180,9 @@ fn place_garrison_passenger_at_cell(
     building_ry: u16,
     building_width: u16,
     building_height: u16,
+    mode: GarrisonEjectMode,
     context: UninitContext<'_>,
 ) -> bool {
-    // Owner transfer (if any) goes through the substrate chokepoint first;
-    // then take the mutable borrow for the remaining field writes. change_owner is a no-op if the id is absent —
-    // the get_mut below still guards absence.
-    if let Some(owner) = owner_override {
-        sim.change_owner_with_rules(
-            passenger_id,
-            owner,
-            rules,
-            context.registry(),
-            context.effects(),
-        );
-    }
     let Some(pax_sub_cell) = sim
         .substrate
         .entities
@@ -202,7 +198,8 @@ fn place_garrison_passenger_at_cell(
     // SellBuilding4580xx's virtual FootUnlimbo reaches the full Techno6F6CA0
     // publication and Foot4D72F4 coefficient copy. Keep the enclosing borrowed
     // MapClass/overlay context and supply the RuleSet this receiver already has.
-    let context = context.requiring_rules(rules);
+    // 4580AF..4580BD passes direction0; successful alive Techno6F6DAA snaps it.
+    let context = context.requiring_rules(rules).with_unlimbo_facing(Some(0));
     let reveal = sim.try_reveal_entity_with_context(
         passenger_id,
         RevealRequest {
@@ -227,6 +224,18 @@ fn place_garrison_passenger_at_cell(
     {
         pax.building_entry.clear_occupy_seeks();
     }
+    // 4580EF is Infantry51B1F0(NULL), not a carrier-pointer clear.
+    // Use its existing target/path owner. Native51B25D..51B26D also clears a
+    // reciprocal +2A8 pair; Rust has no corresponding state. That native-only
+    // observation does not establish the pair's identity or retail use here.
+    sim.assign_target_represented(
+        passenger_id,
+        None,
+        Some(rules),
+        context.registry(),
+        context.effects(),
+    )
+    .expect("a revealed garrison occupant has a represented target setter");
     sellbuilding_direct_scatter_handoff(
         sim,
         rules,
@@ -238,6 +247,20 @@ fn place_garrison_passenger_at_cell(
         building_height,
         context.effects(),
     );
+
+    if mode == GarrisonEjectMode::Hunt {
+        // 45811B..45813E: Scatter completes first, then Remove(-1,0)
+        // and QueueMission(Hunt,0). Do not replace Scatter with Hunt.
+        sim.leave_team(passenger_id, false, Some(rules), context.effects());
+        sim.mission_queue_exact(
+            passenger_id,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Hunt),
+            0,
+            sim.session.binary_frame,
+            &crate::sim::mission::authority::EntityReadyInputProvider,
+        )
+        .expect("a revealed garrison occupant can queue Hunt");
+    }
 
     true
 }
@@ -251,7 +274,6 @@ fn eject_garrison_passengers_at_edges(
     width: u16,
     height: u16,
     passenger_ids: &[u64],
-    owner_override: Option<InternedId>,
     mode: GarrisonEjectMode,
     uninit_context: UninitContext<'_>,
 ) -> usize {
@@ -273,7 +295,7 @@ fn eject_garrison_passengers_at_edges(
         GarrisonEjectMode::PlayerSell => {
             Some(garrison_inside_foundation_fallback(rx, ry, width, height))
         }
-        GarrisonEjectMode::DestructionNoExitRemove => None,
+        GarrisonEjectMode::Release | GarrisonEjectMode::Hunt => None,
     });
     let mut ejected: usize = 0;
 
@@ -284,93 +306,31 @@ fn eject_garrison_passengers_at_edges(
         return 0;
     };
 
-    // Iterate in reverse (LIFO); gamemd walks occupants high index to low.
-    for &pax_id in passenger_ids.iter().rev() {
-        if place_garrison_passenger_at_cell(
-            sim,
-            rules,
-            pax_id,
-            owner_override,
-            exit_rx,
-            exit_ry,
-            z,
-            rx,
-            ry,
-            width,
-            height,
-            uninit_context,
-        ) {
-            ejected += 1;
+    // 458092..4581B2 brackets the entire LIFO loop, including Scatter and
+    // its live cell callbacks; no-exit removal above does not enter it.
+    sim.with_object_placement_scope(|sim| {
+        for &pax_id in passenger_ids.iter().rev() {
+            if place_garrison_passenger_at_cell(
+                sim,
+                rules,
+                pax_id,
+                exit_rx,
+                exit_ry,
+                z,
+                rx,
+                ry,
+                width,
+                height,
+                mode,
+                uninit_context,
+            ) {
+                ejected += 1;
+            } else {
+                //458193..458197: failed Unlimbo is followed by UnInit.
+                uninit_garrison_passenger_without_exit(sim, pax_id, uninit_context);
+            }
         }
-    }
-
-    ejected
-}
-
-/// Eject garrison occupants from a building being sold.
-///
-/// Matches gamemd `SellBuilding @ 0x00457DE0`: choose one exit coordinate
-/// before the occupant loop, then Unlimbo occupants in LIFO order at that same
-/// coordinate. If no edge exit is accepted, normal player sell falls back to the
-/// southeast inside-foundation cell.
-///
-/// Returns the number of occupants successfully ejected.
-pub(crate) fn eject_garrison_occupants(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    building_id: u64,
-    frame_effects: FrameEffects<'_>,
-) -> usize {
-    // Snapshot building data before mutation.
-    let (rx, ry, z, width, height, passenger_ids) = {
-        let entity = match sim.substrate.entities.get(building_id) {
-            Some(e) => e,
-            None => return 0,
-        };
-        let cargo = match entity.passenger_role.cargo() {
-            Some(c) if !c.is_empty() => c,
-            _ => return 0,
-        };
-        let obj = match sim.object_type(entity.type_ref(), rules) {
-            Some(o) => o,
-            None => return 0,
-        };
-        let (fw, fh) = foundation_dimensions(&obj.foundation);
-        (
-            entity.position.rx(),
-            entity.position.ry(),
-            entity.position.z(),
-            fw,
-            fh,
-            cargo.passengers.clone(),
-        )
-    };
-
-    let ejected = eject_garrison_passengers_at_edges(
-        sim,
-        rules,
-        rx,
-        ry,
-        z,
-        width,
-        height,
-        &passenger_ids,
-        None,
-        GarrisonEjectMode::PlayerSell,
-        UninitContext::new(Some(rules), registry).with_effects(frame_effects),
-    );
-
-    // Clear player-sell cargo only. Native SellBuilding is an ejection helper;
-    // empty-garrison ownership reversion belongs to reconciliation/unload.
-    if let Some(building) = sim.substrate.entities.get_mut(building_id)
-        && let Some(cargo) = building.passenger_role.cargo_mut()
-    {
-        cargo.clear_contents();
-    }
-
-    //SellBuilding4581D6 refreshes after its complete occupant ejection.
-    sim.refresh_spatial_threat(building_id, rules, None);
+    });
 
     ejected
 }
@@ -381,8 +341,6 @@ pub(crate) fn eject_garrison_occupants(
 /// this plan synchronously, before the nested death weapon and carrier UnInit.
 pub struct DestroyedGarrisonBuilding {
     pub building_id: u64,
-    /// Building's owner at time of death — ejected infantry inherit this.
-    pub owner: InternedId,
     pub rx: u16,
     pub ry: u16,
     pub z: u8,
@@ -395,8 +353,9 @@ pub struct DestroyedGarrisonBuilding {
 
 /// Eject garrison occupants from a building destroyed in combat.
 ///
-/// Verified gamemd evidence routes destroyed `CanBeOccupied` garrisons through
-/// the same SellBuilding helper used by sell/abandon. Destruction callers use
+/// Native Building ReceiveDamage442625..44263B calls SellBuilding(0,0).
+/// As in its living callers, that body never transfers passenger ownership.
+/// Destruction callers use
 /// the null no-exit branch: if no edge coordinate is accepted, occupants are
 /// removed rather than parachuted or placed inside the foundation. The caller
 /// invokes this while the building is still resolvable, before building UnInit,
@@ -440,27 +399,27 @@ pub(crate) fn eject_destruction_garrison_with_context(
         event.foundation_w,
         event.foundation_h,
         &passenger_ids,
-        Some(event.owner),
-        GarrisonEjectMode::DestructionNoExitRemove,
+        GarrisonEjectMode::Release,
         uninit_context,
     );
-    //SpawnUnitsWithParachute458732 refreshes after its occupant loop.
+    // SellBuilding4581D6 refreshes after its occupant loop. Native458732
+    // is instead the refresh in KillOccupants4585C0's closing tail.
     sim.refresh_spatial_threat(event.building_id, rules, uninit_context.terrain());
     ejected
 }
 
-/// `SellBuilding(0, 0)` on a living `CanBeOccupied` building: the red-health
-/// ejection in `CheckAutoSellOrCivilian` (`0x00458229`) and a building's
-/// Unload mission (`0x0044D89C`). The building stays alive; ownership
-/// reconciliation continues afterward.
+/// The one SellBuilding457DE0 owner for living garrisons: sale (0,1),
+/// red-health/Unload/Action111 (0,0), and AllToHunt (1,0).
+/// Empty-garrison ownership reconciliation stays with its callers.
 pub(crate) fn sell_building_occupants(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     building_id: u64,
+    mode: GarrisonEjectMode,
     frame_effects: FrameEffects<'_>,
 ) -> usize {
-    let (rx, ry, z, width, height, owner, passenger_ids) = {
+    let (rx, ry, z, width, height, passenger_ids) = {
         let Some(entity) = sim.substrate.entities.get(building_id) else {
             return 0;
         };
@@ -480,7 +439,6 @@ pub(crate) fn sell_building_occupants(
             entity.position.z(),
             fw,
             fh,
-            entity.owner(),
             cargo.passengers.clone(),
         )
     };
@@ -508,8 +466,7 @@ pub(crate) fn sell_building_occupants(
         width,
         height,
         &passenger_ids,
-        Some(owner),
-        GarrisonEjectMode::DestructionNoExitRemove,
+        mode,
         UninitContext::new(Some(rules), registry).with_effects(frame_effects),
     );
 
@@ -717,33 +674,378 @@ pub(crate) mod tests {
 
     #[test]
     fn garrison_sellbuilding_scan_order_matches_gamemd_edges_2x2() {
-        assert_eq!(
-            garrison_sellbuilding_exit_cells(10, 10, 2, 2),
-            vec![
-                (12, 12),
-                (12, 11),
-                (12, 10),
-                (12, 9),
-                (12, 12),
-                (11, 12),
-                (10, 12),
-                (9, 12),
-                (10, 9),
-                (11, 9),
-                (12, 9),
-                (9, 10),
-                (9, 11),
-                (9, 12),
-            ]
-        );
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/trigger_all_to_hunt.json",
+        ))
+        .unwrap();
+        let row = corpus["garrison"]["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "actual_blocked_terrain_entry")
+            .unwrap();
+        let expected: Vec<_> = row["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|call| call["call"] == "can_enter_native")
+            .map(|call| {
+                (
+                    call["cell"][0].as_u64().unwrap() as u16,
+                    call["cell"][1].as_u64().unwrap() as u16,
+                )
+            })
+            .collect();
+        assert_eq!(garrison_sellbuilding_exit_cells(10, 10, 2, 2), expected);
+        assert_eq!(expected.len(), 13);
     }
 
     #[test]
     fn garrison_sellbuilding_scan_order_handles_map_edge_without_u16_wrap() {
+        // A Rust boundary-safety check; the native corpus uses origin10,10.
+        let cells = garrison_sellbuilding_exit_cells(0, 0, 2, 2);
+        assert!(!cells.is_empty());
+        assert!(cells.iter().all(|&(x, y)| x <= 2 && y <= 2));
+    }
+
+    #[test]
+    fn garrison_scatter_handoff_matches_original_destinations_and_three_rng_states() {
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::rng::SimRng;
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/trigger_all_to_hunt.json",
+        ))
+        .unwrap();
+        let row = corpus["garrison"]["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "actual_scatter_move_then_hunt")
+            .unwrap();
+        let rules = garrison_edge_rules();
+        let mut sim = garrison_map(&rules);
+        let ids = [11, 12];
+        // Import exactly the oracle's supplied successful-Unlimbo boundary.
+        // This checks Scatter, not constructors, Unlimbo or full Team removal.
+        for id in ids {
+            let mut pax = GameEntity::test_default_of_category(
+                id,
+                "E1",
+                "Neutral",
+                12,
+                12,
+                EntityCategory::Infantry,
+            );
+            pax.set_type_ref_for_test(sim.interner.intern("E1"));
+            pax.set_owner_for_test(sim.interner.intern("Neutral"));
+            pax.set_sub_cell(Some(0));
+            pax.position = crate::sim::components::Position::new(
+                12,
+                12,
+                0,
+                None,
+                lepton::CELL_CENTER_LEPTON,
+                lepton::CELL_CENTER_LEPTON,
+            );
+            pax.lifecycle.set_in_limbo_for_test(false);
+            pax.lifecycle.set_cell_marked(true);
+            sim.substrate.entities.insert(pax);
+            give_walk_locomotor(&mut sim, id);
+        }
+        let before = &row["rng_full_before"];
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
+        let (_, draws) = crate::sim::rng::trace_draws(|| {
+            sim.with_object_placement_scope(|sim| {
+                for &id in ids.iter().rev() {
+                    sellbuilding_direct_scatter_handoff(
+                        sim,
+                        &rules,
+                        None,
+                        id,
+                        10,
+                        10,
+                        2,
+                        2,
+                        FrameEffects::default(),
+                    );
+                }
+            });
+        });
+        assert_eq!(draws.len(), row["raw_draws"].as_array().unwrap().len());
+        for call in row["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|call| call["call"] == "destination_recorded")
+        {
+            let id = ids[call["actor"].as_u64().unwrap() as usize];
+            assert_eq!(
+                sim.substrate.entities.get(id).unwrap().navigation.nav_com(),
+                Some(NavTargetRef::cell(
+                    call["cell"][0].as_u64().unwrap() as u16,
+                    call["cell"][1].as_u64().unwrap() as u16
+                ))
+            );
+        }
+        let after = &row["rng_full_after"];
         assert_eq!(
-            garrison_sellbuilding_exit_cells(0, 0, 2, 2),
-            vec![(2, 2), (2, 1), (2, 0), (2, 2), (1, 2), (0, 2)]
+            sim.scenario_rng.native_state_hex(),
+            after["scenario"].as_str().unwrap()
         );
+        assert_eq!(
+            sim.main_rng.native_state_hex(),
+            after["main"].as_str().unwrap()
+        );
+        assert_eq!(
+            sim.mapgen_rng.native_state_hex(),
+            after["mapgen"].as_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn garrison_release_supplies_native_zero_facing_to_shared_unlimbo() {
+        use crate::sim::movement::FacingClass;
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/trigger_all_to_hunt.json",
+        ))
+        .unwrap();
+        let expected = (corpus["garrison"]["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "outside_first_hunt")
+            .unwrap()["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|call| call["call"] == "unlimbo_supplied")
+            .unwrap()["facing"]
+            .as_u64()
+            .unwrap() as u16)
+            << 8;
+        for mode in [
+            GarrisonEjectMode::PlayerSell,
+            GarrisonEjectMode::Release,
+            GarrisonEjectMode::Hunt,
+        ] {
+            let rules = garrison_edge_rules();
+            let mut sim = garrison_map(&rules);
+            insert_captured_player_owned_garrison(&mut sim, &rules, 20, 21);
+            // No Walk locomotor: isolate successful Unlimbo from Scatter's
+            // later movement, using the existing placement/facing owner.
+            sim.substrate.entities.get_mut(21).unwrap().body_facing = FacingClass::new(0x4000, 0);
+            assert_eq!(
+                sell_building_occupants(&mut sim, &rules, None, 20, mode, FrameEffects::default()),
+                1
+            );
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(21)
+                    .unwrap()
+                    .body_facing_current(0),
+                expected,
+                "{mode:?}: successful Unlimbo must use the caller's direction"
+            );
+        }
+    }
+
+    #[test]
+    fn all_to_hunt_releases_garrison_through_target_scatter_team_and_mission_owners() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::house_state::HouseState;
+        use crate::sim::mission::MissionType;
+        use crate::sim::team_script_vm::TeamScriptDefinition;
+        for mode in [GarrisonEjectMode::Hunt, GarrisonEjectMode::Release] {
+            let rules = garrison_edge_rules();
+            let mut sim = garrison_map(&rules);
+            insert_captured_player_owned_garrison(&mut sim, &rules, 20, 21);
+            let owner = sim.interner.get("Americans").unwrap();
+            let other = sim.interner.intern("Neutral");
+            sim.houses
+                .insert(other, HouseState::new(other, 1, None, false, 0, 10));
+            insert_hidden_passenger(&mut sim, 22, 20, "Neutral");
+            {
+                let cargo = sim
+                    .substrate
+                    .entities
+                    .get_mut(20)
+                    .unwrap()
+                    .passenger_role
+                    .cargo_mut()
+                    .unwrap();
+                assert!(cargo.board(22, 1));
+                cargo.garrison_fire_index = 4;
+            }
+            for id in [21, 22] {
+                give_walk_locomotor(&mut sim, id);
+                let pax = sim.substrate.entities.get_mut(id).unwrap();
+                pax.attack_target.set_for_test(Some(TargetKind::Entity(20)));
+                pax.navigation
+                    .path_replay
+                    .set_directions_for_test(vec![9, 2, 3]);
+                crate::sim::building_entry::set_should_enter_occupiable_for_test(pax, true);
+                crate::sim::building_entry::set_should_enter_nearest_occupiable_for_test(pax, true);
+            }
+            let script = sim.interner.intern("Supplied team prior");
+            sim.team_script_vm.register_script(TeamScriptDefinition {
+                id: script,
+                source: crate::rules::team_ai_ini::TeamAiDefinitionSource::FixedAimd,
+                actions: vec![],
+            });
+            sim.team_script_vm.create_team(other, script, vec![22], 0);
+            if mode == GarrisonEjectMode::Hunt {
+                // Exercise the House owner as well as the shared release.
+                crate::sim::house_strategy::all_to_hunt(
+                    &mut sim,
+                    &rules,
+                    owner,
+                    None,
+                    FrameEffects::default(),
+                );
+            } else {
+                assert_eq!(
+                    sell_building_occupants(
+                        &mut sim,
+                        &rules,
+                        None,
+                        20,
+                        mode,
+                        FrameEffects::default()
+                    ),
+                    2
+                );
+            }
+            for (id, expected_owner, human) in [(21, owner, true), (22, other, false)] {
+                let pax = sim.substrate.entities.get(id).unwrap();
+                assert_eq!(
+                    pax.owner(),
+                    expected_owner,
+                    "{mode:?}: SellBuilding never transfers House"
+                );
+                assert!(!pax.lifecycle.in_limbo());
+                assert!(pax.lifecycle.cell_marked());
+                assert!(pax.passenger_role.is_none());
+                assert!(pax.attack_target.target().is_none());
+                assert!(pax.navigation.path_replay.remaining_directions().is_empty());
+                assert_eq!(pax.building_entry.should_enter_occupiable(), !human);
+                assert_eq!(pax.building_entry.should_enter_nearest_occupiable(), !human);
+                assert_eq!(
+                    pax.mission.queued().known() == Some(MissionType::Hunt),
+                    mode == GarrisonEjectMode::Hunt
+                );
+            }
+            assert_eq!(
+                sim.team_script_vm.team_for_member(22).is_none(),
+                mode == GarrisonEjectMode::Hunt
+            );
+            let cargo = sim
+                .substrate
+                .entities
+                .get(20)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap();
+            assert!(cargo.is_empty());
+            assert_eq!(cargo.garrison_fire_index, 0);
+            assert!(!sim.object_placement_scope_active());
+        }
+    }
+
+    #[test]
+    fn all_to_hunt_garrison_without_exit_uninits_instead_of_using_sale_fallback() {
+        let rules = garrison_edge_rules();
+        let mut sim = garrison_map(&rules);
+        insert_captured_player_owned_garrison(&mut sim, &rules, 20, 21);
+        block_all_garrison_exit_cells(&mut sim, &rules, 10, 10, 2, 2);
+        let owner = sim.interner.get("Americans").unwrap();
+        crate::sim::house_strategy::all_to_hunt(
+            &mut sim,
+            &rules,
+            owner,
+            None,
+            FrameEffects::default(),
+        );
+        let pax = sim.substrate.entities.get(21).unwrap();
+        assert!(!pax.lifecycle.object_alive());
+        assert!(pax.passenger_role.is_none());
+        assert!(sim.substrate.pending_delete.contains_object(&21));
+        assert!(
+            sim.substrate
+                .entities
+                .get(20)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .is_empty()
+        );
+        sim.flush_pending_delete();
+        assert!(sim.substrate.entities.get(21).is_none());
+    }
+
+    #[test]
+    fn garrison_failed_reveal_uninits_that_occupant_and_continues_the_loop() {
+        let rules = garrison_edge_rules();
+        let mut sim = garrison_map(&rules);
+        insert_captured_player_owned_garrison(&mut sim, &rules, 20, 21);
+        insert_hidden_passenger(&mut sim, 22, 20, "Neutral");
+        assert!(
+            sim.substrate
+                .entities
+                .get_mut(20)
+                .unwrap()
+                .passenger_role
+                .cargo_mut()
+                .unwrap()
+                .board(22, 1)
+        );
+        // A supplied rejection of Rust's Reveal dependency, corresponding to
+        // the original procedure's failed-last-Unlimbo control. This does not
+        // claim native placement would produce the same rejection condition.
+        sim.substrate
+            .entities
+            .get_mut(22)
+            .unwrap()
+            .lifecycle
+            .set_cell_marked(true);
+        assert_eq!(
+            sell_building_occupants(
+                &mut sim,
+                &rules,
+                None,
+                20,
+                GarrisonEjectMode::Hunt,
+                FrameEffects::default()
+            ),
+            1
+        );
+        assert!(!sim.substrate.entities.get(21).unwrap().lifecycle.in_limbo());
+        assert!(
+            !sim.substrate
+                .entities
+                .get(22)
+                .unwrap()
+                .lifecycle
+                .object_alive()
+        );
+        assert!(sim.substrate.pending_delete.contains_object(&22));
+        assert!(
+            sim.substrate
+                .entities
+                .get(20)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!sim.object_placement_scope_active());
     }
 
     #[test]
@@ -799,11 +1101,12 @@ pub(crate) mod tests {
         let americans = sim.interner.intern("Americans");
 
         assert_eq!(
-            eject_garrison_occupants(
+            sell_building_occupants(
                 &mut sim,
                 &rules,
                 None,
                 building_id,
+                GarrisonEjectMode::PlayerSell,
                 crate::sim::world::FrameEffects::default()
             ),
             1
@@ -847,12 +1150,10 @@ pub(crate) mod tests {
             insert_hidden_passenger_with_subcell(&mut sim, 12, building_id, "Neutral", Some(3));
         let pax3 =
             insert_hidden_passenger_with_subcell(&mut sim, 13, building_id, "Neutral", Some(2));
-        let owner = sim.interner.intern("Americans");
         let rng_before = sim.scenario_rng.state();
 
         let event = DestroyedGarrisonBuilding {
             building_id,
-            owner,
             rx: 10,
             ry: 10,
             z: 0,
@@ -890,8 +1191,8 @@ pub(crate) mod tests {
             );
             assert_eq!(
                 pax.owner(),
-                owner,
-                "destruction keeps death-time building owner"
+                sim.interner.get("Neutral").unwrap(),
+                "destruction preserves the passenger House"
             );
             assert!(pax.passenger_role.is_none());
             assert!(!pax.death.is_dying());
@@ -922,10 +1223,8 @@ pub(crate) mod tests {
         let building_id = 60;
         let passenger_id = 61;
         insert_captured_player_owned_garrison(&mut sim, &rules, building_id, passenger_id);
-        let owner = sim.interner.intern("Americans");
         let event = DestroyedGarrisonBuilding {
             building_id,
-            owner,
             rx: 10,
             ry: 10,
             z: 0,
@@ -974,11 +1273,12 @@ pub(crate) mod tests {
         let rng_before = sim.scenario_rng.state();
 
         assert_eq!(
-            eject_garrison_occupants(
+            sell_building_occupants(
                 &mut sim,
                 &rules,
                 None,
                 building_id,
+                GarrisonEjectMode::PlayerSell,
                 crate::sim::world::FrameEffects::default()
             ),
             1
@@ -1011,13 +1311,11 @@ pub(crate) mod tests {
         let building_id = 50;
         let passenger_id = insert_hidden_passenger(&mut sim, 51, building_id, "Neutral");
         give_walk_locomotor(&mut sim, passenger_id);
-        let owner = sim.interner.intern("Americans");
         let mut expected_rng = sim.scenario_rng.clone();
         let _ = expected_rng.next_range_u32_inclusive(0, 4);
 
         let event = DestroyedGarrisonBuilding {
             building_id,
-            owner,
             rx: 10,
             ry: 10,
             z: 0,
@@ -1052,13 +1350,11 @@ pub(crate) mod tests {
         let mut sim = garrison_map(&rules);
         let building_id = 40;
         let passenger_id = insert_hidden_passenger(&mut sim, 41, building_id, "Neutral");
-        let owner = sim.interner.intern("Americans");
         block_all_garrison_exit_cells(&mut sim, &rules, 10, 10, 2, 2);
         let rng_before = sim.scenario_rng.state();
 
         let event = DestroyedGarrisonBuilding {
             building_id,
-            owner,
             rx: 10,
             ry: 10,
             z: 0,

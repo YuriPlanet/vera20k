@@ -2691,6 +2691,26 @@ impl Simulation {
         let sound = action.sound.as_deref();
         let action = &action.entry;
         match action.kind {
+            6 => {
+                // Steam3e81a617..08600, Execute6DEBF9..6DEC3B:
+                // shared6E45E0 selects the House, then IHouse vt+38 is
+                // AllToHunt501400. A NULL Trigger/House is rejected.
+                // Native evidence: trigger_action_values --all-to-hunt.
+                let (Some(live), Some(value), Some(rules)) = (context.live_index, value, rules)
+                else {
+                    return false;
+                };
+                let Some(owner) = self.live_action_house(live, value, rules) else {
+                    return false;
+                };
+                crate::sim::house_strategy::all_to_hunt(
+                    self,
+                    rules,
+                    owner,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
             12 => {
                 // Steam3e81a617..08600, Execute6DF051..6DF08F: reverse
                 // live Trigger array, then726720's deferred marker. No
@@ -3010,6 +3030,7 @@ impl Simulation {
                             rules,
                             overlay_registry,
                             id,
+                            crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
                             frame_effects,
                         );
                         return true;
@@ -3643,6 +3664,10 @@ mod tests;
 #[cfg(test)]
 #[path = "trigger_runtime_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_all_to_hunt_tests.rs"]
+mod all_to_hunt_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]
