@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Selected ALL03 NPC NukeSpecial Action129->135->132->38 state, effective recharge and shared preferred-cell consumers.",
+  "assumptions": [
+    "Physical patched RULESMD from expandmd01, optional LANGRULE/ALL03 campaign INI, and ALL03 map use existing source-order caches and original native readers. Fixed ARTMD comes from ra2md/localmd and is not layered. Native Rules6725F0 registers the twelve actual SuperWeaponTypes; NukeSpecial6CEA20 and NAMISL45DD90/45FE50 execute. Physical file/member/archive SHA256 identities are retained below and in retail_inputs. Full AssetManager/Rules Process, archive IO and the whole campaign are outside this bounded corpus.",
+    "Original Action ctor/read, counted TriggerType action loop727558..7275A5 and Execute6DD8B0 own materialization and order. The unique dispatch table base is6DFDEC;132/135/136 reach6E4320/6E43E0/6E4440 and real6CC280/50DA00/50DA10. Action135 uses+44 and ignores scalar+90; empty(0,0) refuses while one zero component and signed cells remain valid. Action136 clears only its House target.132 writes signed custom+24 independently of grant/readiness/hold/current timer. Equal-count/null Super and a declared mapped one-past-waypoint spare are isolated native memory edges, not safe Rust collection semantics.",
+    "The original44F820..44FAF8 Structures reader prefix consumes the actual NAMISL record through ReadString128, real House/type-name lookups, strtok and atoi, stopping before allocation/placement. Native68A13D..68A15B reads Basic.NewINIFormat. Two declared plain-name House identities provide its lookup prior; separately executed Country/IQ/PlayerControl readers establish the selected physical House values. Provider cell, strength and Tag, raw Trigger/Event/Tag binding and native counted actions are recorded. Whole Building/House construction and admission are excluded.",
+    "The ALL03 sequence declares a previously admitted NPC Yuri House, Americans enemy, one available native-read NAMISL and one concrete Super/Grant at frame0. It executes real129(70),135(wp364),132(4500),38 in file order at frame15, then explicit Super AI visits2715/2716, NPC AI/Fire_SW/ClickFire/Launch and Reset3000. MakeEnemy executes its real threat-map rebuild and invalidates EnemyHouseIndex; enemy_selection_prior explicitly supplies enemy0 for the next ready NPC visit. The current percentage timer and future effective charge both come from original execution; no hand remaining-time golden is used. Whole House power/AI cadence, target acquisition, Building admission and the eventual missile mission/Bullet/damage are excluded; actual Silo QueueMission/Commence, House NukeTarget, ClickFire recharge and far-away defense-alert calls are reached.",
+    "Five set/consumer/clear/consumer histories execute real MultiMissile5098F0, Storm509E00, Ground509CD0, Genetic509F60 and Dominator50A150. Preferred nonzero bypasses rally/nearby selection for the first three and suppresses the last two. Clearing restores each actual path; two equally valued native-vtable enemy buildings witness the original rally tie and Scenario RandomRanged in separate rally worlds. Genetic/Dominator instead have one native-vtable infantry consistently registered in Techno, Infantry and Foot, with no overlapping Building. Its immunity/balloon/iron fields are declared false. All consumer Supers are supplied ungranted but ready: original AI checks ready alone; their Fire_SW observation seam therefore can be compared to an ordinary Rust ClickFire refusal without unrelated launches. No WhatAmI, Layer, GetCoords, GetCell, picker, eligibility or RNG answer is replaced.",
+    "The sparse map has actual Cell constructors and explicit flat coordinates; missing cells use the original constructed Dummy. Ground fallback supplies empty enemy Base/ComputedBase centers, zero Map+F8 and zero rectangle+124..130, original playfield fields40/2/4/36/36, and the explicitly zero-initialized global Ground speed table. The real56DC20 input/scalars/return and Land0 Foot bits are recorded; its empty-cell return then the caller signed-short+2 execute, rather than an assumed passable flat terrain answer. This is an empty-center boundary control, not ordinary nonempty-base navigation parity. The sequence has zero Rules scalar priors and far-away bases, so reached defense alerts draw no RNG; retail defense-distance scheduling is outside scope.",
+    "Reset6CE0B0 controls execute actual animation-loop clearing, notification vector removal, ready/cameo reset and running/paused timer calculation while retaining custom/hold/ready-tick/drain/preferred values. The opaque animation supplies only the written loops byte; full Anim creation/expiration is excluded. No native detach call is reached. Arithmetic runs with native0E7F; Object header constants execute their original ordered8141D8 startup table with CRT027F before gameplay. Three RNG streams are initialized by original65C6D0, with raw incoming layouts, before/after hashes and actual Random/RandomRanged entries/bounds."
+  ],
+  "substitutions": [
+    "Reuse ActionFixture/SuperChargeFixture, CampaignReader optional explicit asset root, existing ordered INI, heap, CRT TLS and sparse map transports. No original gameplay instruction or retail vtable is modified. Only audio/EVA device calls are recorded sinks in the real Nuke route. Consumer-only controls stop at recorded Fire_SW arguments, separately from the real Nuke firing route.",
+    "Native-read type scalar layouts are copied into each isolated admitted world; unrelated heap pointers in those layouts are never consumed. Registry/list capacities and already admitted House/Super/Building/Infantry state are declared fixture priors, not constructor or full-world admission parity. Raw optional ABI receipts stay external; code hashes and local validation results are not repository provenance."
+  ],
+  "entry_points": {
+    "action_ctor": "0x006DD000",
+    "action_read": "0x006DD5B0",
+    "counted_actions": "0x00727558",
+    "execute": "0x006DD8B0",
+    "action132": "0x006E4320",
+    "action135": "0x006E43E0",
+    "action136": "0x006E4440",
+    "set_custom": "0x006CC280",
+    "get_recharge": "0x006CC260",
+    "set_preferred": "0x0050DA00",
+    "clear_preferred": "0x0050DA10",
+    "super_type_read": "0x006CEA20",
+    "provider_type_read": "0x0045FE50",
+    "grant": "0x006CB560",
+    "set_percentage": "0x006CC1E0",
+    "super_ai": "0x006CBCA0",
+    "npc_ai": "0x005098F0",
+    "fire": "0x004FAE50",
+    "click_fire": "0x006CB920",
+    "launch": "0x006CC390",
+    "reset": "0x006CE0B0",
+    "best_rally": "0x0050CBF0",
+    "storm": "0x00509E00",
+    "ground": "0x00509CD0",
+    "genetic": "0x00509F60",
+    "dominator": "0x0050A150",
+    "provider_record": "0x0044F820",
+    "new_ini_format": "0x0068A13D",
+    "rng_seed": "0x0065C6D0"
+  },
+  "retail_sources": [
+    {
+      "file": "RULESMD.INI",
+      "source": "expandmd01.mix",
+      "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "file": "ALL03UMD.MAP",
+      "source": "mapsmd03.mix",
+      "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+      "sha256": "b84a2e689cc00f0be064ecbfcd385635ac037f28bf8f72c02b426a0e52ff1547"
+    },
+    {
+      "file": "ARTMD.INI",
+      "source": "ra2md.mix -> localmd.mix",
+      "archive_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+      "member_archive_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    }
+  ],
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --superweapon-state",
+  "payload_sha256": "fb1d28dc7f8e04eaa0bca2d01281fa2622e394325dd6367836af83df2322c76f"
+}

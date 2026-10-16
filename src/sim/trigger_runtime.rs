@@ -3713,12 +3713,14 @@ impl Simulation {
                     frame_effects,
                 );
             }
-            ACTION_SET_SUPER_CHARGE_PERCENTAGE => {
-                // Execute129 -> 6E42D0 selects the owning House's stock
-                // Super-array ordinal (+90), then SetPercentage6CC1E0 uses
-                // +48. Its granted/range gates belong to the Super owner.
+            ACTION_SET_SUPER_CHARGE_PERCENTAGE | 132 => {
+                // Execute1296E42D0 and1326E4320 select the incoming House's
+                // stock Super-array ordinal (+90), using +48 as the value.
+                // Only129 has the Super owner's grant/percentage gates;
+                //132 writes its signed recharge override without a timer reset.
                 // Original Steam identity and executed admissions/numerics:
-                // tools/spatial_oracle/trigger_super_charge_percent.meta.json.
+                // tools/spatial_oracle/trigger_super_charge_percent.meta.json
+                // and trigger_superweapon_state.meta.json.
                 let Some(rules) = rules else {
                     return false;
                 };
@@ -3733,8 +3735,7 @@ impl Simulation {
                 let Some(name) = rules.super_weapon_order.get(index) else {
                     return false;
                 };
-                let Some((type_id, sw)) = self.interner.get(name).zip(rules.super_weapon(name))
-                else {
+                let Some(type_id) = self.interner.get(name) else {
                     return false;
                 };
                 let Some(instance) = self
@@ -3744,11 +3745,48 @@ impl Simulation {
                 else {
                     return false;
                 };
-                return instance.set_charge_percentage(
-                    action.auxiliary_value(),
-                    sw,
-                    self.session.binary_frame,
-                );
+                if action.kind == 132 {
+                    instance.set_recharge_time(action.auxiliary_value());
+                } else {
+                    let Some(sw) = rules.super_weapon(name) else {
+                        return false;
+                    };
+                    return instance.set_charge_percentage(
+                        action.auxiliary_value(),
+                        sw,
+                        self.session.binary_frame,
+                    );
+                }
+            }
+            135 | 136 => {
+                // Execute1356E43E0/1366E4440 use Spring's incoming House,
+                // ignoring the action's scalar selector. Only135 reads+44;
+                // its packed-zero rejection preserves the previous target.
+                // Identity/controls: tools/spatial_oracle/
+                // trigger_superweapon_state.meta.json.
+                let Some(owner) = context.incoming_house else {
+                    return false;
+                };
+                let preferred = if action.kind == 135 {
+                    let Some(cell) = action
+                        .waypoint_index
+                        .and_then(|index| self.session.waypoint_cell(index as i32))
+                        .filter(|&cell| cell != (0, 0))
+                    else {
+                        return false;
+                    };
+                    Some((cell.0 as u16, cell.1 as u16))
+                } else {
+                    None
+                };
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                if let Some(cell) = preferred {
+                    house.set_preferred_super_weapon_target(cell);
+                } else {
+                    house.clear_preferred_super_weapon_target();
+                }
             }
             ACTION_SET_ALTERNATE_BASE => {
                 let Some(house_id) = context.incoming_house else {
@@ -3865,6 +3903,10 @@ mod tests;
 #[cfg(test)]
 #[path = "trigger_runtime_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_superweapon_state_tests.rs"]
+mod superweapon_state_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_all_to_hunt_tests.rs"]

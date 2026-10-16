@@ -38,6 +38,194 @@ fn oracle() -> &'static Value {
     crate::test_fixture::json("tools/superweapon_oracle.json")
 }
 
+fn scripted_preference(kind: i32) -> (u16, u16) {
+    let data = crate::test_fixture::json("tools/spatial_oracle/trigger_superweapon_state.json");
+    let control = data["consumer_controls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["kind"] == kind)
+        .unwrap();
+    let rows = control["rows"].as_array().unwrap();
+    let preferred = rows
+        .iter()
+        .find(|row| row["stage"] == "set_preferred")
+        .unwrap();
+    let suppressed = rows
+        .iter()
+        .find(|row| row["stage"] == "preferred_consumer")
+        .unwrap();
+    assert!(
+        suppressed["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|event| event["call"] != "fire")
+    );
+    wide(cell(&preferred["preferred"]))
+}
+
+#[test]
+fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let data = crate::test_fixture::json("tools/spatial_oracle/trigger_superweapon_state.json");
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map =
+        crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL03UMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("ALL03UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL03UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut reader = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = reader
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let preference = &data["retail_inputs"]["waypoints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|wp| wp["index"] == 364)
+        .unwrap()["cell"];
+    let seeds = &data["rng_seed_states"];
+    let rng_hashes = |sim: &Simulation| {
+        let hash = |hex: String| {
+            let bytes: Vec<u8> = hex
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect();
+            crate::util::sha256::sha256_hex(&bytes)
+        };
+        json!({"main": hash(sim.main_rng.native_state_hex()), "scenario": hash(sim.scenario_rng.native_state_hex()), "mapgen": hash(sim.mapgen_rng.native_state_hex())})
+    };
+    for control in data["consumer_controls"].as_array().unwrap() {
+        let kind = int(&control["kind"]);
+        if !matches!(kind, 0 | 2 | 5) {
+            continue;
+        }
+        let mut sim = Simulation::with_seed(0);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let computer = sim.interner.intern(COMPUTER);
+        let enemy = sim.interner.intern(ENEMY);
+        for owner in [computer, enemy] {
+            sim.houses
+                .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+            sim.session.house_order.push(owner);
+        }
+        let input = &control["input"];
+        sim.houses.get_mut(&computer).unwrap().difficulty =
+            HouseDifficulty::from_native(int(&input["difficulty"])).unwrap();
+        sim.houses.get_mut(&computer).unwrap().enemy_house = Some(enemy);
+        sim.houses.get_mut(&enemy).unwrap().base_center = Some(wide(cell(&input["enemy_base"])));
+        sim.houses
+            .get_mut(&enemy)
+            .unwrap()
+            .set_preferred_super_weapon_target(wide(cell(&input["initial_other_preferred"])));
+        sim.session.binary_frame = int(&control["frame"]) as u32;
+        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        // These are the five admitted MapClass predicate inputs in the
+        // generator, not a terrain-height fit to a captured target.
+        sim.playfield_bounds = Some(PlayfieldBounds {
+            base: 40,
+            off_fc: 2,
+            off_100: 4,
+            off_104: 36,
+            off_108: 36,
+        });
+        crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "scripted rally flat64");
+        for object in input["buildings"].as_array().unwrap() {
+            let at = wide(cell(&object["cell"]));
+            sim.spawn_object(
+                object["type"].as_str().unwrap(),
+                ENEMY,
+                at.0,
+                at.1,
+                0,
+                &rules,
+            )
+            .unwrap();
+        }
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
+        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
+        assert_eq!(rng_hashes(&sim), control["rng_before"]);
+        for row in control["rows"].as_array().unwrap() {
+            let stage = row["stage"].as_str().unwrap();
+            let expected = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|event| event["call"] == "fire")
+                .map(|event| wide(cell(&event["cell"])));
+            match stage {
+                "set_preferred" => sim
+                    .houses
+                    .get_mut(&computer)
+                    .unwrap()
+                    .set_preferred_super_weapon_target(wide(cell(preference))),
+                "clear_preferred" => sim
+                    .houses
+                    .get_mut(&computer)
+                    .unwrap()
+                    .clear_preferred_super_weapon_target(),
+                "preferred_consumer" | "cleared_consumer" if matches!(kind, 0 | 2) => {
+                    let (actual, draws) =
+                        crate::sim::rng::trace_draws(|| rally_target(&mut sim, &rules, computer));
+                    assert_eq!(actual, expected, "{} {stage}", control["name"]);
+                    let requests = row["rng_calls"].as_array().unwrap();
+                    assert_eq!(draws.len(), requests.len());
+                    for request in requests {
+                        assert_eq!(request["callee"], "0065C7E0");
+                        assert_eq!(request["stream"], "scenario");
+                        assert_eq!(request["bounds"], json!([0, 1]));
+                    }
+                }
+                "preferred_consumer" => assert_eq!(ground_rally_point(&sim, computer), expected),
+                "cleared_consumer" => {
+                    // The native fixture has zero cell-array bounds; its real
+                    // FNPC fails with (0,0). Compare that existing query seam's
+                    // downstream scalar here. Ordinary FNPC options/returns
+                    // retain the earlier ground-rally native tests' coverage.
+                    assert_eq!(input["map_bounds"], json!([0, 0, 0, 0]));
+                    assert!(
+                        row["events"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|event| event["call"] == "nearby_passable")
+                    );
+                    assert_eq!(ground_rally_cell((0, 0)), expected);
+                }
+                _ => panic!("unhandled native consumer stage {stage}"),
+            }
+            assert_eq!(
+                json!(sim.houses[&computer].preferred_super_weapon_target()),
+                row["preferred"]
+            );
+            assert_eq!(
+                json!(sim.houses[&enemy].preferred_super_weapon_target()),
+                row["other_preferred"]
+            );
+            assert_eq!(
+                rng_hashes(&sim),
+                row["rng_after"],
+                "{} {stage}",
+                control["name"]
+            );
+        }
+    }
+}
+
 fn rows<'a>(oracle: &'a Value, section: &str) -> &'a [Value] {
     oracle[section].as_array().unwrap()
 }
@@ -536,6 +724,19 @@ fn the_genetic_mutator_target_matches_native() {
             expected,
             "{row}"
         );
+        // The new original control establishes the nonzero-cell early exit.
+        // Exercise it on all existing positive/negative target fixtures, then
+        // restore the original golden rather than duplicating its picker.
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .set_preferred_super_weapon_target(scripted_preference(9));
+        assert_eq!(genetic_mutator_target(&sim, &rules, computer), None);
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .clear_preferred_super_weapon_target();
+        assert_eq!(genetic_mutator_target(&sim, &rules, computer), expected);
     }
 }
 
@@ -1062,5 +1263,15 @@ fn the_psychic_dominator_target_matches_native() {
             expected,
             "{row}"
         );
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .set_preferred_super_weapon_target(scripted_preference(7));
+        assert_eq!(psychic_dominator_target(&sim, &rules, computer), None);
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .clear_preferred_super_weapon_target();
+        assert_eq!(psychic_dominator_target(&sim, &rules, computer), expected);
     }
 }

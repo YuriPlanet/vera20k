@@ -17,16 +17,17 @@
 //!
 //! RESIDUALS:
 //! - The preferred target type (`+0x54EC`, constructor 1 at `0x004F5A77`),
-//!   the preferred target cell (`+0x54F0`, constructor empty at
-//!   `0x004F5A81`) and the second preferred defensive cell (`+0x54F8`) keep
+//!   and the second preferred defensive cell (`+0x54F8`) keep
 //!   their constructor values: their writers are trigger actions VERA's
 //!   trigger runtime does not run (`TActionClass 0x006E0ED0`,
 //!   `TriggerAction::Execute 0x006DE1F1`, the House setters at
-//!   `0x0050DA04`/`0x0050DA15`/`0x0050DA20`). Trigger: a map trigger that
+//!   `0x0050DA20`). Trigger: a map trigger that
 //!   names a superweapon target, mostly in campaigns. Effect: the computer
 //!   aims by its own pickers. `AI_FindTeamTarget @ 0x0050D170`, which another
 //!   preferred type selects (its first team's leader's Greatest_Threat), is
-//!   therefore not ported.
+//!   therefore not ported. TAction135/136's preferred cell54F0 is retained
+//!   by HouseState and consumed here; its nonzero value bypasses the
+//!   MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
 //! - A building's cloak stage (`BuildingClass+0x6ED`): a stage of 15 also
 //!   draws in AI_FindBestRallyTarget (`0x0050CF99..0x0050CFA8`); VERA has no
 //!   writer of the stage, so only CloakState 2 draws.
@@ -204,7 +205,13 @@ pub(crate) fn try_fire(
 /// cell, else for preferred type 1 [`find_best_rally_target`]; the empty cell
 /// fires nothing.
 fn rally_target(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) -> Option<(u16, u16)> {
-    let enemy = sim.houses.get(&owner)?.enemy_house?;
+    let house = sim.houses.get(&owner)?;
+    let enemy = house.enemy_house?;
+    let preferred = house.preferred_super_weapon_target();
+    //509968..5099E6 /509E00: the enemy gate precedes this preference.
+    if preferred != (0, 0) {
+        return Some(preferred);
+    }
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::BestRallyTarget);
     let (x, y) = find_best_rally_target(sim, rules, owner, enemy);
@@ -393,13 +400,22 @@ fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng) -> (i16, i16
 }
 
 /// `HouseClass::AI_GroundRallyPoint @ 0x00509CD0`, the ParaDrop,
-/// AmerParaDrop, SpyPlane and PsychicReveal arm, with the constructor's
-/// preferred target: a passable cell near [`ground_rally_seed`]
+/// AmerParaDrop, SpyPlane and PsychicReveal arm: a nonempty scripted
+/// preference returns directly; otherwise a passable cell near [`ground_rally_seed`]
 /// (`Find_Nearby_Passable_Cell(seed, Foot, no zone, Normal, 5x5, bridges
 /// allowed)`, `0x00509D61..0x00509D9A`; none found is the empty cell: its
 /// `0x0056E7A1` reads `0x00ABD480`, which only the startup `0x005618B0`
 /// writes, with zero), then [`ground_rally_cell`].
 fn ground_rally_point(sim: &Simulation, owner: InternedId) -> Option<(u16, u16)> {
+    if let Some(preferred) = sim
+        .houses
+        .get(&owner)
+        .map(HouseState::preferred_super_weapon_target)
+        .filter(|&cell| cell != (0, 0))
+    {
+        //509CF8: neither FNPC nor the two-cell offset applies to this branch.
+        return Some(preferred);
+    }
     let (x, y) = ground_rally_seed(&sim.houses, owner);
     let found = sim
         .find_plain_passable_cell(
@@ -438,7 +454,7 @@ fn ground_rally_cell((x, y): (u16, u16)) -> Option<(u16, u16)> {
     (cell != (0, 0)).then_some(cell)
 }
 
-/// `HouseClass::AI_Fire_GenMutator @ 0x00509F60` with the constructor's
+/// `HouseClass::AI_Fire_GenMutator @ 0x00509F60` with an
 /// empty preferred cell (a set one returns at once, `0x00509F78..
 /// 0x00509F93`): [`densest_spread_cell`] around each infantry of
 /// InfantryClass::Array with [`GENETIC_MUTATOR_SPREAD_BAND`]. Per cell it
@@ -450,6 +466,9 @@ fn genetic_mutator_target(
     rules: &RuleSet,
     owner: InternedId,
 ) -> Option<(u16, u16)> {
+    if sim.houses.get(&owner)?.preferred_super_weapon_target() != (0, 0) {
+        return None;
+    }
     let terrain = sim.resolved_terrain.as_ref()?;
     let entities = &sim.substrate.entities;
     let is_infantry = |member: &CellObjectMember| match member {
@@ -490,8 +509,8 @@ fn genetic_mutator_target(
 
 /// `HouseClass::AI_Fire_PsyDom @ 0x0050A150`: nothing while a Dominator runs
 /// (`PsyDom::Active`, `0x0050A157`) or without an enemy (`+0x5600`); with the
-/// constructor's empty preferred cell (a set one returns at once,
-/// `0x0050A171..0x0050A19D`, module RESIDUALS), [`densest_spread_cell`]
+/// empty preferred cell (a set one returns at once,
+/// `0x0050A171..0x0050A19D`), [`densest_spread_cell`]
 /// around each Foot of FootClass::Array (`0x008B3DC4`, which the Foot
 /// constructor appends to at `0x004D34D7`: stable-id order) with
 /// [`PSYCHIC_DOMINATOR_SPREAD_BAND`]. Per cell it reads the ground list
@@ -508,6 +527,9 @@ fn psychic_dominator_target(
         return None;
     }
     sim.houses.get(&owner)?.enemy_house?;
+    if sim.houses.get(&owner)?.preferred_super_weapon_target() != (0, 0) {
+        return None;
+    }
     let terrain = sim.resolved_terrain.as_ref()?;
     let entities = &sim.substrate.entities;
     let is_foot = |member: &CellObjectMember| match member {

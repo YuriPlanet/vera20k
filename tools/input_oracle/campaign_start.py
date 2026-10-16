@@ -46,7 +46,7 @@ def assets_root():
 class CampaignReader(BulletReader):
     """Campaign fixture on the shared original reader/allocation owner."""
 
-    def __init__(self):
+    def __init__(self, root=None):
         self.entropy = None
         self.entropy_events = []
         self.native_events = []
@@ -57,7 +57,7 @@ class CampaignReader(BulletReader):
         self.pending_side_string = None
         self.trigger_read_events = []
         self.pending_trigger_string = None
-        super().__init__({}, assets_root())
+        super().__init__({}, root if root is not None else assets_root())
         self.original_code = selected_ranges(image_bytes(), None, None, code_only=True)
         self.scenario = self.read32(0xA8B230)
         self.u.mem_write(0x889F64, b"\0")  # supplied runtime empty-default buffer

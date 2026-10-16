@@ -1057,7 +1057,8 @@ use crate::sim::world::Simulation;
 // 374 -> 375: CaptureManager retains its overload pip countdown.
 // 375 -> 376: Foots retain their shared signed Ammo and chrono reinforcements
 // retain the pending Teleport state (Techno+280).
-const SNAPSHOT_VERSION: u32 = 376;
+// 376 -> 377: per-Super recharge override and House scripted offensive target.
+const SNAPSHOT_VERSION: u32 = 377;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4580,7 +4581,8 @@ mod tests {
         // 373 -> 374: the batched target scan setting.
         // 374 -> 375: retained CaptureManager overload pip countdown.
         // 375 -> 376: retained Foot Ammo and chrono reinforcement pending state.
-        assert_eq!(super::SNAPSHOT_VERSION, 376);
+        // 376 -> 377: Super recharge override and House offensive target.
+        assert_eq!(super::SNAPSHOT_VERSION, 377);
     }
 
     #[test]

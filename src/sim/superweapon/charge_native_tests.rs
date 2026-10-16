@@ -61,6 +61,13 @@ fn assert_state(instance: &SuperWeaponInstance, expected: &Value, label: &str) {
         expected["held"].as_bool().unwrap(),
         "{label}: hold"
     );
+    if let Some(custom) = expected["custom_recharge"].as_i64() {
+        assert_eq!(
+            i64::from(instance.custom_recharge_time),
+            custom,
+            "{label}: custom"
+        );
+    }
 }
 
 #[test]
@@ -74,13 +81,9 @@ fn percentage_setter_matches_original_signed_timer_and_prior_flags() {
     let id = InternedId::from_index(1);
     for row in data["setter_controls"].as_array().unwrap() {
         let input = &row["input"];
-        // Action128's override storage/getter is a separate mechanism. These
-        // controls compare the type-time route that this owner implements.
-        if int(input, "custom_recharge") != -1 {
-            continue;
-        }
         sw.recharge_time_frames = int(input, "recharge");
         let mut instance = SuperWeaponInstance::new(id, id, 0);
+        instance.set_recharge_time(int(input, "custom_recharge"));
         instance.charge_start_tick = int(input, "start");
         instance.charge_duration = int(input, "duration");
         instance.is_active = input["granted"].as_bool().unwrap();
@@ -92,6 +95,39 @@ fn percentage_setter_matches_original_signed_timer_and_prior_flags() {
             row["rng_before"], row["rng_after"],
             "original setter has no RNG draws"
         );
+        assert!(row["rng_calls"].as_array().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn custom_recharge_survives_original_running_and_paused_reset_scalars() {
+    let data = crate::test_fixture::json("tools/spatial_oracle/trigger_superweapon_state.json");
+    let rules = stock_rules();
+    let sw = rules.super_weapon("PsychicDominatorSpecial").unwrap();
+    let id = InternedId::from_index(1);
+    for row in data["reset_controls"].as_array().unwrap() {
+        let input = &row["input"];
+        let mut instance = SuperWeaponInstance::new(id, id, int(row, "frame"));
+        instance.set_recharge_time(int(input, "custom_recharge"));
+        instance.charge_start_tick = int(input, "start");
+        instance.charge_duration = int(input, "duration");
+        instance.is_active = input["granted"].as_bool().unwrap();
+        instance.is_ready = input["ready"].as_bool().unwrap();
+        instance.is_suspended = input["held"].as_bool().unwrap();
+        instance.ready_tick = int(input, "ready_tick");
+        instance.charge_drain_state = int(input, "charge_drain_state");
+        // The original corpus also observes caller-side anim/notification
+        // retirement. This test compares the shared Reset scalar owner after
+        // that release; it does not claim those lifecycles from a scalar fixture.
+        instance.reset(sw, int(row, "frame") as u32);
+        let expected = &row["output"];
+        assert_state(&instance, expected, row["name"].as_str().unwrap());
+        assert_eq!(instance.ready_tick, int(expected, "ready_tick"));
+        assert_eq!(
+            instance.charge_drain_state,
+            int(expected, "charge_drain_state")
+        );
+        assert_eq!(row["rng_before"], row["rng_after"]);
         assert!(row["rng_calls"].as_array().unwrap().is_empty());
     }
 }

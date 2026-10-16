@@ -202,6 +202,10 @@ pub struct SuperWeaponInstance {
     pub charge_start_tick: i32,
     /// Total charge duration in native frames (may be adjusted on suspend/resume).
     pub charge_duration: i32,
+    /// Super+24, initialized to -1 by 0x006CAFA7. Exactly -1 inherits the type's
+    /// recharge time; every other signed value is retained verbatim.
+    #[serde(default = "inherited_recharge_time")]
+    custom_recharge_time: i32,
     /// Charge/drain state: -1=N/A, 0=empty, 1=charged, 2=draining.
     /// Only used when UseChargeDrain=yes (Force Shield). -1 for all others.
     pub charge_drain_state: i32,
@@ -244,6 +248,10 @@ fn idle_fade() -> i32 {
     -1
 }
 
+fn inherited_recharge_time() -> i32 {
+    -1
+}
+
 impl SuperWeaponInstance {
     #[inline]
     fn charge_timer(&self) -> CdTimer {
@@ -263,14 +271,29 @@ impl SuperWeaponInstance {
 
     /// `SuperClass::GetRechargeTime @ 0x006CC260`: the Super's own charge
     /// time (`+0x24`) unless it is -1, else its type's `RechargeTime=`.
-    ///
-    /// RESIDUAL: VERA keeps no charge time of its own, so this is always the
-    /// type's. Trigger: a map trigger that changes a super weapon's charge
-    /// time (none in skirmish maps). Effect: that Super charges in its
-    /// type's time, the AI readiness tests and the timer line's GameMode 0
-    /// hold skip compare against it.
     pub(crate) fn recharge_time(&self, sw: &SuperWeaponType) -> i32 {
-        sw.recharge_time_frames
+        if self.custom_recharge_time == -1 {
+            sw.recharge_time_frames
+        } else {
+            self.custom_recharge_time
+        }
+    }
+
+    /// SuperClass::SetRechargeTime @ 0x006CC280, called by TAction1326E4320:
+    /// only Super+24 changes, including before grant. The existing charge
+    /// timer, ready/held flags and anim are untouched; no RNG or detach.
+    /// Identity/controls: tools/spatial_oracle/trigger_superweapon_state.meta.json.
+    pub(crate) fn set_recharge_time(&mut self, frames: i32) {
+        self.custom_recharge_time = frames;
+    }
+
+    /// This newly retained state affects future grants/recharges even when
+    /// it currently equals the type value. Preserve the inherited-time fold.
+    pub(crate) fn hash_recharge_time(&self, hasher: &mut impl std::hash::Hasher) {
+        if self.custom_recharge_time != -1 {
+            std::hash::Hash::hash(b"super-recharge-time-v377", hasher);
+            std::hash::Hash::hash(&self.custom_recharge_time, hasher);
+        }
     }
 
     /// SuperClass constructor6CAF90: its charge timer starts at currentFrame
@@ -286,6 +309,7 @@ impl SuperWeaponInstance {
             is_suspended: false,
             charge_start_tick: frame,
             charge_duration: 0,
+            custom_recharge_time: inherited_recharge_time(),
             charge_drain_state: -1,
             ready_tick: -100,
             chrono_cell: (0, 0),
@@ -388,7 +412,8 @@ impl SuperWeaponInstance {
     /// that29-bit binary point, so signed division gives the same ftol integer.
     /// Native execution: trigger_super_charge_percent.json setter_controls.
     /// Preserve ready/held except that a zero remainder sets ready, and restart
-    /// the raw timer even while held. Custom recharge Action128 is unported.
+    /// the raw timer even while held. TAction132 changes the same effective
+    /// recharge time, without retroactively changing an existing timer.
     pub(crate) fn set_charge_percentage(
         &mut self,
         percentage: i32,
@@ -513,7 +538,7 @@ impl SuperWeaponInstance {
     ///
     /// gamemd.exe parity: standard `SuperClass::AnimStage` at `0x006CBEE0`
     /// (active caller `StripClass::Draw` at `0x006A99AC`) derives progress from
-    /// the type's full recharge time and the live `CDTimer` remainder.
+    /// the instance's effective recharge time and the live `CDTimer` remainder.
     pub fn charge_progress(&self, current_frame: u32, full_recharge_frames: i32) -> f32 {
         if self.is_ready {
             return 1.0;

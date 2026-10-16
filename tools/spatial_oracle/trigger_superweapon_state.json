@@ -1,0 +1,3725 @@
+{
+  "consumer_controls": [
+    {
+      "calls": [],
+      "frame": 500,
+      "initial_state": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": false,
+        "held": false,
+        "ready": true,
+        "start": 123
+      },
+      "input": {
+        "buildings": [
+          {
+            "cell": [
+              31,
+              32
+            ],
+            "owner": "enemy",
+            "type": "NAMISL"
+          },
+          {
+            "cell": [
+              40,
+              25
+            ],
+            "owner": "enemy",
+            "type": "NAMISL"
+          }
+        ],
+        "difficulty": 1,
+        "enemy_base": [
+          0,
+          0
+        ],
+        "enemy_index": 0,
+        "ground_land0_foot_bits": "00000000",
+        "infantry": [],
+        "initial_other_preferred": [
+          45,
+          46
+        ],
+        "map_bounds": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "map_word_f8": 0,
+        "preferred_type": 1,
+        "sparse_flat_cells": [
+          [
+            31,
+            32
+          ],
+          [
+            40,
+            25
+          ],
+          [
+            116,
+            73
+          ],
+          [
+            126,
+            140
+          ]
+        ]
+      },
+      "kind": 0,
+      "name": "multimissile",
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "e5b421afb5c3f61faf0a507274b9c2ea2a25bee8d8ff3adcc12f5842dfad6898"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": [
+        {
+          "bounds": [
+            0,
+            1
+          ],
+          "callee": "0065C7E0",
+          "stage": "cleared_consumer",
+          "stream": "scenario"
+        }
+      ],
+      "rows": [
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "135,0,364,0,0,0,0,NA",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "set_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "fire",
+              "cell": [
+                126,
+                140
+              ],
+              "index": 0,
+              "stage": "preferred_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "preferred_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "raw_action": "136,0,999,0,0,0,0,ZZ",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "clear_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "best_rally",
+              "returned_cell": [
+                32,
+                33
+              ],
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                32,
+                33
+              ],
+              "index": 0,
+              "stage": "cleared_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "e5b421afb5c3f61faf0a507274b9c2ea2a25bee8d8ff3adcc12f5842dfad6898"
+          },
+          "rng_calls": [
+            {
+              "bounds": [
+                0,
+                1
+              ],
+              "callee": "0065C7E0",
+              "stage": "cleared_consumer",
+              "stream": "scenario"
+            }
+          ],
+          "stage": "cleared_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        }
+      ],
+      "startup": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "object_level_leptons": 104,
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+      }
+    },
+    {
+      "calls": [],
+      "frame": 500,
+      "initial_state": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": false,
+        "held": false,
+        "ready": true,
+        "start": 123
+      },
+      "input": {
+        "buildings": [
+          {
+            "cell": [
+              31,
+              32
+            ],
+            "owner": "enemy",
+            "type": "NAMISL"
+          },
+          {
+            "cell": [
+              40,
+              25
+            ],
+            "owner": "enemy",
+            "type": "NAMISL"
+          }
+        ],
+        "difficulty": 1,
+        "enemy_base": [
+          0,
+          0
+        ],
+        "enemy_index": 0,
+        "ground_land0_foot_bits": "00000000",
+        "infantry": [],
+        "initial_other_preferred": [
+          45,
+          46
+        ],
+        "map_bounds": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "map_word_f8": 0,
+        "preferred_type": 1,
+        "sparse_flat_cells": [
+          [
+            31,
+            32
+          ],
+          [
+            40,
+            25
+          ],
+          [
+            116,
+            73
+          ],
+          [
+            126,
+            140
+          ]
+        ]
+      },
+      "kind": 2,
+      "name": "lightning_storm",
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "e5b421afb5c3f61faf0a507274b9c2ea2a25bee8d8ff3adcc12f5842dfad6898"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": [
+        {
+          "bounds": [
+            0,
+            1
+          ],
+          "callee": "0065C7E0",
+          "stage": "cleared_consumer",
+          "stream": "scenario"
+        }
+      ],
+      "rows": [
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "135,0,364,0,0,0,0,NA",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "set_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "storm_rally",
+              "stage": "preferred_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                126,
+                140
+              ],
+              "index": 0,
+              "stage": "preferred_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "preferred_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "raw_action": "136,0,999,0,0,0,0,ZZ",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "clear_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "storm_rally",
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "best_rally",
+              "returned_cell": [
+                32,
+                33
+              ],
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                32,
+                33
+              ],
+              "index": 0,
+              "stage": "cleared_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "e5b421afb5c3f61faf0a507274b9c2ea2a25bee8d8ff3adcc12f5842dfad6898"
+          },
+          "rng_calls": [
+            {
+              "bounds": [
+                0,
+                1
+              ],
+              "callee": "0065C7E0",
+              "stage": "cleared_consumer",
+              "stream": "scenario"
+            }
+          ],
+          "stage": "cleared_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        }
+      ],
+      "startup": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "object_level_leptons": 104,
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+      }
+    },
+    {
+      "calls": [],
+      "frame": 500,
+      "initial_state": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": false,
+        "held": false,
+        "ready": true,
+        "start": 123
+      },
+      "input": {
+        "buildings": [
+          {
+            "cell": [
+              31,
+              32
+            ],
+            "owner": "enemy",
+            "type": "NAMISL"
+          },
+          {
+            "cell": [
+              40,
+              25
+            ],
+            "owner": "enemy",
+            "type": "NAMISL"
+          }
+        ],
+        "difficulty": 1,
+        "enemy_base": [
+          0,
+          0
+        ],
+        "enemy_index": 0,
+        "ground_land0_foot_bits": "00000000",
+        "infantry": [],
+        "initial_other_preferred": [
+          45,
+          46
+        ],
+        "map_bounds": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "map_word_f8": 0,
+        "preferred_type": 1,
+        "sparse_flat_cells": [
+          [
+            31,
+            32
+          ],
+          [
+            40,
+            25
+          ],
+          [
+            116,
+            73
+          ],
+          [
+            126,
+            140
+          ]
+        ]
+      },
+      "kind": 5,
+      "name": "ground",
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": [],
+      "rows": [
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "135,0,364,0,0,0,0,NA",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "set_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "ground_rally",
+              "stage": "preferred_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                126,
+                140
+              ],
+              "index": 0,
+              "stage": "preferred_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "preferred_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "raw_action": "136,0,999,0,0,0,0,ZZ",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "clear_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "ground_rally",
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "nearby_passable",
+              "footprint": [
+                0,
+                0
+              ],
+              "input_cell": [
+                0,
+                0
+              ],
+              "movement_zone": -1,
+              "returned_cell": [
+                0,
+                0
+              ],
+              "scalar_arguments": [
+                0,
+                -1,
+                0,
+                0,
+                5,
+                5,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0
+              ],
+              "speed_type": 0,
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                2,
+                2
+              ],
+              "index": 0,
+              "stage": "cleared_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "cleared_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        }
+      ],
+      "startup": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "object_level_leptons": 104,
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+      }
+    },
+    {
+      "calls": [],
+      "frame": 500,
+      "initial_state": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": false,
+        "held": false,
+        "ready": true,
+        "start": 123
+      },
+      "input": {
+        "buildings": [],
+        "difficulty": 1,
+        "enemy_base": [
+          0,
+          0
+        ],
+        "enemy_index": 0,
+        "ground_land0_foot_bits": "00000000",
+        "infantry": [
+          {
+            "balloon": false,
+            "cell": [
+              31,
+              32
+            ],
+            "immune_to_psionics": false,
+            "iron_curtained": false,
+            "owner": "enemy"
+          }
+        ],
+        "initial_other_preferred": [
+          45,
+          46
+        ],
+        "map_bounds": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "map_word_f8": 0,
+        "preferred_type": 1,
+        "sparse_flat_cells": [
+          [
+            31,
+            32
+          ],
+          [
+            40,
+            25
+          ],
+          [
+            116,
+            73
+          ],
+          [
+            126,
+            140
+          ]
+        ]
+      },
+      "kind": 9,
+      "name": "genetic_mutator",
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": [],
+      "rows": [
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "135,0,364,0,0,0,0,NA",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "set_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "genetic_rally",
+              "stage": "preferred_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "preferred_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "raw_action": "136,0,999,0,0,0,0,ZZ",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "clear_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "genetic_rally",
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                31,
+                32
+              ],
+              "index": 0,
+              "stage": "cleared_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "cleared_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        }
+      ],
+      "startup": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "object_level_leptons": 104,
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+      }
+    },
+    {
+      "calls": [],
+      "frame": 500,
+      "initial_state": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": false,
+        "held": false,
+        "ready": true,
+        "start": 123
+      },
+      "input": {
+        "buildings": [],
+        "difficulty": 1,
+        "enemy_base": [
+          0,
+          0
+        ],
+        "enemy_index": 0,
+        "ground_land0_foot_bits": "00000000",
+        "infantry": [
+          {
+            "balloon": false,
+            "cell": [
+              31,
+              32
+            ],
+            "immune_to_psionics": false,
+            "iron_curtained": false,
+            "owner": "enemy"
+          }
+        ],
+        "initial_other_preferred": [
+          45,
+          46
+        ],
+        "map_bounds": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "map_word_f8": 0,
+        "preferred_type": 1,
+        "sparse_flat_cells": [
+          [
+            31,
+            32
+          ],
+          [
+            40,
+            25
+          ],
+          [
+            116,
+            73
+          ],
+          [
+            126,
+            140
+          ]
+        ]
+      },
+      "kind": 7,
+      "name": "psychic_dominator",
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": [],
+      "rows": [
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "135,0,364,0,0,0,0,NA",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "set_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "dominator_rally",
+              "stage": "preferred_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "preferred_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "raw_action": "136,0,999,0,0,0,0,ZZ",
+          "returned": 1,
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "clear_preferred",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        },
+        {
+          "events": [
+            {
+              "call": "dominator_rally",
+              "stage": "cleared_consumer"
+            },
+            {
+              "call": "fire",
+              "cell": [
+                31,
+                32
+              ],
+              "index": 0,
+              "stage": "cleared_consumer"
+            }
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "rng_after": {
+            "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+            "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+          },
+          "rng_calls": [],
+          "stage": "cleared_consumer",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 7000,
+            "granted": false,
+            "held": false,
+            "ready": true,
+            "start": 123
+          }
+        }
+      ],
+      "startup": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "object_level_leptons": 104,
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+      }
+    }
+  ],
+  "dispatch_controls": [
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_retail_4500",
+      "output": {
+        "custom_recharge": 4500,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,4500",
+        "read": "1,132,11,0,0,0,0,0,4500",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": false,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_null_owner",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,4500",
+        "read": "1,132,11,0,0,0,0,0,4500",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 0,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_negative_index",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,-1,0,0,0,0,4500",
+        "read": "1,132,11,-1,0,0,0,0,4500",
+        "value": -1,
+        "waypoint": 0
+      },
+      "returned": 0,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_above_count",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,13,0,0,0,0,4500",
+        "read": "1,132,11,13,0,0,0,0,4500",
+        "value": 13,
+        "waypoint": 0
+      },
+      "returned": 0,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": false,
+        "held": true,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": true,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_ungranted_ready_held",
+      "output": {
+        "custom_recharge": 4500,
+        "duration": 7000,
+        "granted": false,
+        "held": true,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": true,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,4500",
+        "read": "1,132,11,0,0,0,0,0,4500",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "135_waypoint_independent_of_scalar",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          31,
+          32
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 135,
+        "raw": "135,0,999,0,0,0,0,NA",
+        "read": "1,135,0,999,0,0,0,0,NA",
+        "value": 999,
+        "waypoint": 364
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": false,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "135_null_owner",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 135,
+        "raw": "135,0,364,0,0,0,0,NA",
+        "read": "1,135,0,364,0,0,0,0,NA",
+        "value": 364,
+        "waypoint": 364
+      },
+      "returned": 0,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          0,
+          0
+        ]
+      },
+      "name": "135_empty_waypoint",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 135,
+        "raw": "135,0,364,0,0,0,0,NA",
+        "read": "1,135,0,364,0,0,0,0,NA",
+        "value": 364,
+        "waypoint": 364
+      },
+      "returned": 0,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          0,
+          9
+        ]
+      },
+      "name": "135_one_zero_component",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          0,
+          9
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 135,
+        "raw": "135,0,364,0,0,0,0,NA",
+        "read": "1,135,0,364,0,0,0,0,NA",
+        "value": 364,
+        "waypoint": 364
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          -3,
+          32767
+        ]
+      },
+      "name": "135_signed_cell",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          -3,
+          32767
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 135,
+        "raw": "135,0,364,0,0,0,0,NA",
+        "read": "1,135,0,364,0,0,0,0,NA",
+        "value": 364,
+        "waypoint": 364
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute136"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "136_clear",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          0,
+          0
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 136,
+        "raw": "136,0,999,0,0,0,0,ZZ",
+        "read": "1,136,0,999,0,0,0,0,ZZ",
+        "value": 999,
+        "waypoint": 701
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute136"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          0,
+          0
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "136_already_empty",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          0,
+          0
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 136,
+        "raw": "136,0,999,0,0,0,0,ZZ",
+        "read": "1,136,0,999,0,0,0,0,ZZ",
+        "value": 999,
+        "waypoint": 701
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute136"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": false,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "136_null_owner",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 136,
+        "raw": "136,0,999,0,0,0,0,ZZ",
+        "read": "1,136,0,999,0,0,0,0,ZZ",
+        "value": 999,
+        "waypoint": 701
+      },
+      "returned": 0,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_signed_-1",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": -1,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,-1",
+        "read": "1,132,11,0,0,0,0,0,-1",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_signed_-2",
+      "output": {
+        "custom_recharge": -2,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": -2,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,-2",
+        "read": "1,132,11,0,0,0,0,0,-2",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_signed_0",
+      "output": {
+        "custom_recharge": 0,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,0",
+        "read": "1,132,11,0,0,0,0,0,0",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_signed_2147483647",
+      "output": {
+        "custom_recharge": 2147483647,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 2147483647,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,2147483647",
+        "read": "1,132,11,0,0,0,0,0,2147483647",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_signed_-2147483648",
+      "output": {
+        "custom_recharge": -2147483648,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": -2147483648,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,-2147483648",
+        "read": "1,132,11,0,0,0,0,0,-2147483648",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    }
+  ],
+  "native_edge_controls": [
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "input": {
+        "count": 0,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_equal_count_mapped_spare",
+      "output": {
+        "custom_recharge": 4500,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,4500",
+        "read": "1,132,11,0,0,0,0,0,4500",
+        "value": 0,
+        "waypoint": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        }
+      ],
+      "fault": {
+        "access": "write_unmapped",
+        "address": "00000024",
+        "pc": "006CC284"
+      },
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "132_null_super_slot",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 4500,
+        "kind": 132,
+        "raw": "132,11,0,0,0,0,0,4500",
+        "read": "1,132,11,0,0,0,0,0,4500",
+        "value": 0,
+        "waypoint": 0
+      },
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        }
+      ],
+      "input": {
+        "count": 12,
+        "custom_recharge": -1,
+        "duration": 7000,
+        "frame": 500,
+        "granted": true,
+        "held": false,
+        "mapped_waypoint_spare": true,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "owner_present": true,
+        "preferred": [
+          17,
+          18
+        ],
+        "ready": false,
+        "start": 123,
+        "waypoint_cell": [
+          31,
+          32
+        ]
+      },
+      "name": "135_outside_array_mapped_spare",
+      "output": {
+        "custom_recharge": -1,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "other_custom_recharge": 73,
+        "other_preferred": [
+          45,
+          46
+        ],
+        "preferred": [
+          31,
+          32
+        ],
+        "ready": false,
+        "start": 123
+      },
+      "read": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "auxiliary": 0,
+        "kind": 135,
+        "raw": "135,0,364,0,0,0,0,AAA",
+        "read": "1,135,0,364,0,0,0,0,AAA",
+        "value": 364,
+        "waypoint": 26
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    }
+  ],
+  "reset_controls": [
+    {
+      "calls": [],
+      "frame": 500,
+      "input": {
+        "animation_invalid": true,
+        "animation_loops": 3,
+        "animation_present": true,
+        "charge_drain_state": 5,
+        "charge_stage": 12,
+        "custom_recharge": 4500,
+        "duration": 7000,
+        "granted": true,
+        "held": false,
+        "notification_count": 1,
+        "one_time": false,
+        "preferred": [
+          31,
+          32
+        ],
+        "ready": true,
+        "ready_tick": 77,
+        "start": 123
+      },
+      "name": "running",
+      "output": {
+        "animation_invalid": false,
+        "animation_loops": 0,
+        "animation_present": false,
+        "charge_drain_state": 5,
+        "charge_stage": -1,
+        "custom_recharge": 4500,
+        "duration": 4500,
+        "granted": true,
+        "held": false,
+        "notification_count": 0,
+        "one_time": false,
+        "preferred": [
+          31,
+          32
+        ],
+        "ready": false,
+        "ready_tick": 77,
+        "start": 500
+      },
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    },
+    {
+      "calls": [],
+      "frame": 500,
+      "input": {
+        "animation_invalid": true,
+        "animation_loops": 3,
+        "animation_present": true,
+        "charge_drain_state": 5,
+        "charge_stage": 12,
+        "custom_recharge": 4500,
+        "duration": 7000,
+        "granted": true,
+        "held": true,
+        "notification_count": 1,
+        "one_time": false,
+        "preferred": [
+          31,
+          32
+        ],
+        "ready": true,
+        "ready_tick": 77,
+        "start": -1
+      },
+      "name": "paused",
+      "output": {
+        "animation_invalid": false,
+        "animation_loops": 0,
+        "animation_present": false,
+        "charge_drain_state": 5,
+        "charge_stage": -1,
+        "custom_recharge": 4500,
+        "duration": 4500,
+        "granted": true,
+        "held": true,
+        "notification_count": 0,
+        "one_time": false,
+        "preferred": [
+          31,
+          32
+        ],
+        "ready": false,
+        "ready_tick": 77,
+        "start": -1
+      },
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": []
+    }
+  ],
+  "retail_inputs": {
+    "country_registration": [
+      {
+        "file": "RULESMD.INI",
+        "names": [
+          "Americans",
+          "Alliance",
+          "French",
+          "Germans",
+          "British",
+          "Africans",
+          "Arabs",
+          "Confederation",
+          "Russians",
+          "YuriCountry",
+          "GDI",
+          "Nod",
+          "Neutral",
+          "Special"
+        ]
+      },
+      {
+        "file": "ALL03UMD.MAP",
+        "names": [
+          "Americans",
+          "Alliance",
+          "French",
+          "Germans",
+          "British",
+          "Africans",
+          "Arabs",
+          "Confederation",
+          "Russians",
+          "YuriCountry",
+          "GDI",
+          "Nod",
+          "Neutral",
+          "Special",
+          "PPTF Country",
+          "Backup1 Country",
+          "PPAD Country",
+          "MSGuard Country"
+        ]
+      }
+    ],
+    "house_inputs": [
+      {
+        "country_index": 0,
+        "iq": 0,
+        "name": "Americans",
+        "player_control": true,
+        "raw": {
+          "000": "CAMISC01,106,46",
+          "Allies": "Americans,Alliance,British,Neutral",
+          "Color": "DarkBlue",
+          "Country": "Americans",
+          "Credits": "100",
+          "Edge": "East",
+          "IQ": "0",
+          "NodeCount": "1",
+          "PercentBuilt": "0",
+          "PlayerControl": "yes",
+          "TechLevel": "2"
+        }
+      },
+      {
+        "country_index": 9,
+        "iq": 5,
+        "name": "YuriCountry",
+        "player_control": false,
+        "raw": {
+          "Allies": "French,Germans,Africans,Arabs,Confederation,Russians,YuriCountry,GDI,Nod,Neutral,PPTFHouse,Backup1House,PPADHouse,MSGuardHouse",
+          "Color": "Purple",
+          "Country": "YuriCountry",
+          "Credits": "400",
+          "Edge": "North",
+          "IQ": "5",
+          "NodeCount": "0",
+          "PercentBuilt": "0",
+          "PlayerControl": "no",
+          "TechLevel": "4"
+        }
+      }
+    ],
+    "layers": [
+      {
+        "file": "constructor",
+        "provider_state": {
+          "nuke_silo": false,
+          "power_drain": 0,
+          "power_output": 0,
+          "registry_index": 0,
+          "secondary_super_weapon_index": -1,
+          "super_weapon_index": -1
+        },
+        "super_state": {
+          "charge_drain": false,
+          "kind": 4294967295,
+          "manual_control": false,
+          "powered": true,
+          "recharge_frames": 4500,
+          "registry_index": 0,
+          "show_timer": false
+        }
+      },
+      {
+        "file": "RULESMD.INI",
+        "provider_returned": 1,
+        "provider_state": {
+          "nuke_silo": true,
+          "power_drain": 200,
+          "power_output": 0,
+          "registry_index": 0,
+          "secondary_super_weapon_index": -1,
+          "super_weapon_index": 0
+        },
+        "returned": 1,
+        "super_state": {
+          "charge_drain": false,
+          "kind": 0,
+          "manual_control": false,
+          "powered": true,
+          "recharge_frames": 9000,
+          "registry_index": 0,
+          "show_timer": true
+        }
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "absent": true,
+        "file": "ALL03UMD.INI"
+      },
+      {
+        "file": "ALL03UMD.MAP",
+        "provider_returned": 1,
+        "provider_state": {
+          "nuke_silo": true,
+          "power_drain": 810,
+          "power_output": 0,
+          "registry_index": 0,
+          "secondary_super_weapon_index": -1,
+          "super_weapon_index": 0
+        },
+        "returned": 0,
+        "super_state": {
+          "charge_drain": false,
+          "kind": 0,
+          "manual_control": false,
+          "powered": true,
+          "recharge_frames": 9000,
+          "registry_index": 0,
+          "show_timer": true
+        }
+      }
+    ],
+    "map_provider_overrides": {
+      "AIBasePlanningSide": "1",
+      "Adjacent": "2",
+      "Armor": "concrete",
+      "BuildCat": "Combat",
+      "Cost": "5000",
+      "Name": "Soviet Nuclear Missile Silo",
+      "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+      "Points": "30",
+      "Power": "-810",
+      "Prerequisite": "NATECH,NACNST",
+      "Sight": "4",
+      "Strength": "1000",
+      "SuperWeapon": "NukeSpecial",
+      "TechLevel": "10",
+      "UIName": "Name:NAMISL"
+    },
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "provider": "YuriCountry,NAMISL,256,48,89,0,0C61D96C,0,0,1,0,0,None,None,None,1,0",
+    "provider_read": {
+      "authored_strength": 256,
+      "boundary": "0044FAF8 before Building allocation",
+      "cell": [
+        48,
+        89
+      ],
+      "house_index": 1,
+      "new_ini_format": 4,
+      "read_string_capacity": 128,
+      "tag": "0C61D96C",
+      "type_index": 0
+    },
+    "registry": [
+      "NukeSpecial",
+      "IronCurtainSpecial",
+      "LightningStormSpecial",
+      "ChronoSphereSpecial",
+      "ChronoWarpSpecial",
+      "ParaDropSpecial",
+      "AmericanParaDropSpecial",
+      "PsychicDominatorSpecial",
+      "SpyPlaneSpecial",
+      "GeneticConverterSpecial",
+      "ForceShieldSpecial",
+      "PsychicRevealSpecial"
+    ],
+    "routes": [
+      {
+        "actions": "4,129,11,0,0,0,0,0,70,135,0,364,0,0,0,0,NA,132,11,0,0,0,0,0,4500,38,0,0,0,0,0,0,A",
+        "events": "1,13,0,1",
+        "id": "0AFF8D8C",
+        "native_actions": [
+          {
+            "auxiliary": 70,
+            "kind": 129,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 135,
+            "value": 364,
+            "waypoint": 364
+          },
+          {
+            "auxiliary": 4500,
+            "kind": 132,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 38,
+            "value": 0,
+            "waypoint": 0
+          }
+        ],
+        "tags": {
+          "0AFF8B5C": "0,Set_Nuke_Time,0AFF8D8C"
+        },
+        "trigger": "YuriCountry,<none>,Set_Nuke_Time,0,1,1,1,0"
+      },
+      {
+        "actions": "6,54,2,094F5A5C,0,0,0,0,A,54,2,043A430C,0,0,0,0,AA,136,0,26,0,0,0,0,AA,135,0,26,0,0,0,0,AA,56,0,4,0,0,0,0,A,54,2,094F5C2C,0,0,0,0,A",
+        "events": "3,36,0,5,37,0,4,13,0,1",
+        "id": "094F5C2C",
+        "native_actions": [
+          {
+            "auxiliary": 0,
+            "kind": 54,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 54,
+            "value": 0,
+            "waypoint": 26
+          },
+          {
+            "auxiliary": 0,
+            "kind": 136,
+            "value": 26,
+            "waypoint": 26
+          },
+          {
+            "auxiliary": 0,
+            "kind": 135,
+            "value": 26,
+            "waypoint": 26
+          },
+          {
+            "auxiliary": 0,
+            "kind": 56,
+            "value": 4,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 54,
+            "value": 0,
+            "waypoint": 0
+          }
+        ],
+        "tags": {},
+        "trigger": "YuriCountry,<none>,Nuke_AA_True,1,1,1,1,0"
+      },
+      {
+        "actions": "6,136,0,0,0,0,0,0,A,53,2,094F5C2C,0,0,0,0,A,53,2,094F5A5C,0,0,0,0,A,53,2,043A430C,0,0,0,0,A,53,2,094DE55C,0,0,0,0,A,54,2,094DE72C,0,0,0,0,A",
+        "events": "1,13,0,333",
+        "id": "094DE72C",
+        "native_actions": [
+          {
+            "auxiliary": 0,
+            "kind": 136,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "auxiliary": 0,
+            "kind": 54,
+            "value": 0,
+            "waypoint": 0
+          }
+        ],
+        "tags": {
+          "094DE64C": "2,Nuke_Timer_PP,094DE72C"
+        },
+        "trigger": "Americans,<none>,Nuke_Timer_PP,0,1,1,1,0"
+      }
+    ],
+    "sources": [
+      {
+        "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "file": "RULESMD.INI",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "source": "expandmd01.mix"
+      },
+      {
+        "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "file": "ALL03UMD.MAP",
+        "sha256": "b84a2e689cc00f0be064ecbfcd385635ac037f28bf8f72c02b426a0e52ff1547",
+        "source": "mapsmd03.mix"
+      },
+      {
+        "archive_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "file": "ARTMD.INI",
+        "member_archive_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
+        "source": "ra2md.mix -> localmd.mix"
+      }
+    ],
+    "waypoints": [
+      {
+        "cell": [
+          116,
+          73
+        ],
+        "index": 26,
+        "raw": "73116"
+      },
+      {
+        "cell": [
+          126,
+          140
+        ],
+        "index": 364,
+        "raw": "140126"
+      }
+    ]
+  },
+  "rng_seed_states": {
+    "main": "000000000000000067000000ef97752c07a9ad611ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027",
+    "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+    "scenario": "000000000000000067000000ef97752c07a9ad611ab6a23da8a525c9b0434466cb2d82a3ee3e8b6105b74a856a0df3837bf90e2f2c6d5bd167859988ce8fb369a2549c0c3f42b3e25f981383d4d6ec774593e560c50081e9b0514ab2821f419660a16387f5a5dece91823553741c88f3208dd5692ae15c93138e480a74e7d7485bd24c4f1f55f33f99fc2e7e30eecc21e0c5f4869fad379cfff7989063692861dc67aeb435e31be6f0ee462a7292bd2690fec20456ddfb5930305ada086f2e09cc0e2bffe7d3e06dfec227e3cd1b8ac087b30e854499f1756d65f8018386e990179219e5d813ef78b45090f6306b3b5378f9971ca643cf7cee36f3ef801322fd30967cfa6d1ed5ec9b2e4a4bdaf31d5f3ae92f1546d38b356660d0e35532938ca70fd534a674e6a4e7e2b8dad18faf0120b788a04c942cb48435bf85e17dafa09dadd55c57cac3b338e07eaa1c22b5b011395b63fb9f7142f0a15b99426bb4c8ac28f1237597d85a23f919835534ff70cdb1b12be8e6a472e6fda4fe10e50c9f4b502b4ec983f6330159b3d4230b4aa2d22fbf769f5fac30de382eaa50be4ee747caa65730a6dfaa815a858bae0ce5eb798fe7c8eb903eff41e16e8952b1ba429836b7a253a722beb794f001bb575d5062d1f43739cc0103e24e91a883116dd6a0b1f4251be8861b413bcd6362cc0f795d33d2cefb143e64ab95850b0291c29f3a90bf8fc8f0fc65fd1b4b37e49d9fe6665ba20fb823bf6f67211aa4d2ba948ab8249e0491b2dde335be91e74a27b4b8ca1819537727c8500602b655d21c3d117ace24e28349f7a0a8dff3bf0d57a629fd315ae87abfd5e7f2385d81eabaf06667f11c1c1e19dcf70e035de13a96906bd28c0e86ab2bdf84def28947ef81a71090dcc0937431bc348881284eaefd3b32f0f8b943360822bead7ee9145cd53008b8a81d594c1920a096f238d0c4e104616a7f6a78ad7fdc36c94845144965ce9df68aa0b5a566aac8ed7ae8b82981a7a35070e28636f8579f952ea70b2575c2e66ab997e23679ae8367d7b6cd56349791fbc8638816d7aff6b781c9aba120edcb196867f69141770946d58c074b69d4047c07159a695cb24276887fc14cb0c5ca5fc3cdc6de42a9df3063964fb4aaf3c6668255b35a43aae8be038e1b419158c3b3e0749935f1a3449af841b788708e485e1af65baba193efa736d67407687aa08252fddc16243d3c7423a5425af75e9560b320906ed56722308076578c0767e87978312d481ef804529e4151abdb8d17a4b82d29216a33bbbd2634e3688063b4dcb0744089c347c4a022a576c68c9159175b9a4d98907e16d61a868876e64aa5e4c3c3f320976b27d65a4c1c9416b200eb880a4b39a3c50b143d418d075acdca81fbc386e5de77229c183c5b6c5dc34e27988027"
+  },
+  "schema_version": 1,
+  "sequence_controls": [
+    {
+      "calls": [
+        {
+          "callee": "006CB560",
+          "caller": "fixture",
+          "stage": "grant"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "006CB724",
+          "stage": "grant"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "grant"
+        },
+        {
+          "argument": 70,
+          "callee": "006CC1E0",
+          "caller": "006E4312",
+          "stage": "execute129"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute129"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute135"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute132"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "execute38"
+        },
+        {
+          "callee": "006CBCA0",
+          "caller": "fixture",
+          "stage": "before_elapsed_ai"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "before_elapsed_ai"
+        },
+        {
+          "callee": "006CBCA0",
+          "caller": "fixture",
+          "stage": "elapsed_ai"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "elapsed_ai"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "enemy_selection_prior"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "npc_ai_fire"
+        },
+        {
+          "callee": "006CC260",
+          "caller": "fixture",
+          "stage": "reset_running"
+        }
+      ],
+      "events": [
+        {
+          "call": "fire",
+          "cell": [
+            126,
+            140
+          ],
+          "index": 0,
+          "stage": "npc_ai_fire"
+        },
+        {
+          "call": "click_fire",
+          "stage": "npc_ai_fire"
+        },
+        {
+          "call": "launch",
+          "stage": "npc_ai_fire"
+        },
+        {
+          "call": "audio",
+          "stage": "npc_ai_fire"
+        },
+        {
+          "call": "eva",
+          "stage": "npc_ai_fire"
+        },
+        {
+          "call": "reset",
+          "stage": "reset_running"
+        }
+      ],
+      "initial_frame": 0,
+      "initial_other_preferred": [
+        45,
+        46
+      ],
+      "initial_preferred": [
+        0,
+        0
+      ],
+      "initial_state": {
+        "custom_recharge": -1,
+        "duration": 0,
+        "granted": false,
+        "held": false,
+        "ready": false,
+        "start": 0
+      },
+      "name": "all03_authored_nuke",
+      "rng_after": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_before": {
+        "main": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "c82b3a6b383e8dda759d0d2fba474534bd9c7fc8f923058cca7de4e1b5ddf061"
+      },
+      "rng_calls": [],
+      "rows": [
+        {
+          "effective_recharge": 9000,
+          "enemy_index": 0,
+          "frame": 0,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "returned": 1,
+          "stage": "grant",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 9000,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 0
+          }
+        },
+        {
+          "effective_recharge": 9000,
+          "enemy_index": 0,
+          "frame": 15,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            0,
+            0
+          ],
+          "raw_action": "129,11,0,0,0,0,0,70",
+          "returned": 1,
+          "stage": "execute129",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 9000,
+          "enemy_index": 0,
+          "frame": 15,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "135,0,364,0,0,0,0,NA",
+          "returned": 1,
+          "stage": "execute135",
+          "state": {
+            "custom_recharge": -1,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": 0,
+          "frame": 15,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "132,11,0,0,0,0,0,4500",
+          "returned": 1,
+          "stage": "execute132",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": -1,
+          "frame": 15,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "raw_action": "38,0,0,0,0,0,0,A",
+          "returned": 1,
+          "stage": "execute38",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": -1,
+          "frame": 2715,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "stage": "before_elapsed_ai",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": -1,
+          "frame": 2716,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "stage": "elapsed_ai",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": true,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": 0,
+          "frame": 2716,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "stage": "enemy_selection_prior",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 2701,
+            "granted": true,
+            "held": false,
+            "ready": true,
+            "start": 15
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": 0,
+          "fire": [
+            {
+              "call": "fire",
+              "cell": [
+                126,
+                140
+              ],
+              "index": 0,
+              "stage": "npc_ai_fire"
+            }
+          ],
+          "firing_type": 0,
+          "frame": 2716,
+          "nuke_target": [
+            126,
+            140
+          ],
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "provider_mission": 22,
+          "provider_queued_mission": -1,
+          "stage": "npc_ai_fire",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 4500,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 2716
+          }
+        },
+        {
+          "effective_recharge": 4500,
+          "enemy_index": 0,
+          "frame": 3000,
+          "other_preferred": [
+            45,
+            46
+          ],
+          "preferred": [
+            126,
+            140
+          ],
+          "stage": "reset_running",
+          "state": {
+            "custom_recharge": 4500,
+            "duration": 4500,
+            "granted": true,
+            "held": false,
+            "ready": false,
+            "start": 3000
+          }
+        }
+      ],
+      "startup": {
+        "bridge_deck_leptons": 416,
+        "ground_level_leptons": 104,
+        "object_level_leptons": 104,
+        "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+      }
+    }
+  ]
+}
