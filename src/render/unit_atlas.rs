@@ -26,10 +26,10 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
+use crate::map::voxel_pose::VxlSlopeBlend;
 use crate::render::atlas_growth::{self, GrowthShelf, SPRITE_PADDING};
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::vxl_raster::{self, VxlRenderParams, VxlSlopeBlend, VxlSprite};
-use crate::rules::art_data;
+use crate::render::vxl_raster::{self, VxlRenderParams, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
 /// Edge of a growth page. One byte per texel makes it 64 MB, room for the
@@ -59,8 +59,8 @@ const TURRET_FACING_STEP: u8 = 8;
 /// Number of pre-rendered facing directions for turret/barrel sprites.
 const TURRET_FACING_BUCKETS: u16 = crate::render::vxl_raster::VOXEL_FACING_STEPS as u16;
 
-// VxlLayer lives in sim::components — re-exported here for convenience.
-pub use crate::sim::components::VxlLayer;
+// VxlLayer lives in rules::voxel_frame_catalog — re-exported here for convenience.
+pub use crate::rules::voxel_frame_catalog::VxlLayer;
 
 /// The locomotor Draw_Matrix arm a posed body is drawn through.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,6 +74,8 @@ pub enum PoseTilt {
     /// `RocketLocomotionClass::Draw_Matrix` (`0x00663470`): CurrentPitch in
     /// radians above the horizon, never zero here.
     Rocket(f32),
+    /// Shared Drive4AFF60/Ship69F670 dynamic matrix, retained per Unit part.
+    Ground(vxl_raster::GroundPose),
 }
 
 /// Cache key: unique combination of object type, facing, layer, frame, and slope.
@@ -623,10 +625,10 @@ impl CachedUnitSprite {
 // F09: the variant/layer/HVA-count derivation moved to the GPU-independent
 // sim-side catalog so construction (app + headless) and atlas seeding share
 // one source. Re-exported so this module's tests and callers keep their view.
-use crate::sim::voxel_frame_catalog::{
-    building_voxel_names, indexed_turret_count, voxel_gun_basename, voxel_image_id,
-};
-pub(crate) use crate::sim::voxel_frame_catalog::{
+#[cfg(test)]
+use crate::rules::voxel_frame_catalog::voxel_image_id;
+use crate::rules::voxel_frame_catalog::{building_voxel_names, voxel_gun_basename};
+pub(crate) use crate::rules::voxel_frame_catalog::{
     detect_hva_frame_count, seed_layers_for, unit_atlas_variants,
 };
 
@@ -966,28 +968,14 @@ pub fn build_unit_atlas(
     Some(atlas)
 }
 
-/// A parsed voxel part and its motion file.
-pub(crate) struct VoxelPart {
-    vxl: VxlFile,
-    hva: Option<HvaFile>,
-}
+// Physical admission has one GPU-independent owner shared with native
+// IsVoxel6F9E10/RockingUpdate. This module only materializes that owner's
+// parsed parts; it never infers loading from ART or maintains a second parser.
+use crate::rules::voxel_asset_catalog::VoxelPart;
 
 impl VoxelPart {
-    /// `{base}.VXL` with its optional HVA; None when the VXL is missing or
-    /// does not parse, which omits the part.
-    fn load(asset_manager: &AssetManager, base: &str, require_hva: bool) -> Option<Self> {
-        let vxl = VxlFile::from_bytes(asset_manager.get_ref(&format!("{base}.VXL"))?).ok()?;
-        let hva = asset_manager
-            .get_ref(&format!("{base}.HVA"))
-            .and_then(|data| HvaFile::from_bytes(data).ok());
-        if require_hva && hva.is_none() {
-            return None;
-        }
-        Some(Self { vxl, hva })
-    }
-
     fn render(&self, params: &VxlRenderParams, vpl: Option<&VplFile>) -> VxlSprite {
-        vxl_raster::render_vxl(&self.vxl, self.hva.as_ref(), params, vpl)
+        vxl_raster::render_vxl(self.vxl(), self.hva(), params, vpl)
     }
 
     /// `Ok(None)` for an omitted part; `Err` when a present part has no
@@ -999,14 +987,14 @@ impl VoxelPart {
         let Some(part) = part else {
             return Ok(None);
         };
-        vxl_raster::native_vxl_draw_bounds(&part.vxl, part.hva.as_ref(), params)
+        vxl_raster::native_vxl_draw_bounds(part.vxl(), part.hva(), params)
             .map(Some)
             .ok_or(())
     }
 }
 
 /// A voxel model's files, parsed once and shared by every sprite drawn from
-/// it. They are named from [`voxel_image_id`].
+/// it. They are named by [`crate::rules::voxel_frame_catalog::voxel_image_id`].
 pub(crate) struct UnitModel {
     type_id: String,
     /// Buildings have an SHP hull and only fill their native gun slots.
@@ -1061,74 +1049,15 @@ impl UnitModel {
                 drive_shadow: false,
             });
         }
-        let image = voxel_image_id(type_id, rules);
-        let (vxl_name, hva_name): (String, String) = art_data::voxel_asset_names(&image);
-
-        let vxl_data = asset_manager.get_ref(&vxl_name)?;
-        let body: VxlFile = match VxlFile::from_bytes(vxl_data) {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("Failed to parse {}: {}", vxl_name, e);
-                return None;
-            }
-        };
-
-        // HVA is optional — some models don't have animation files.
-        let body_hva: Option<HvaFile> =
-            asset_manager
-                .get_ref(&hva_name)
-                .and_then(|data| match HvaFile::from_bytes(data) {
-                    Ok(h) => Some(h),
-                    Err(e) => {
-                        log::trace!("No HVA for {} ({}), using default pose", type_id, e);
-                        None
-                    }
-                });
-        let indexed_count = indexed_turret_count(type_id, rules);
-        let has_turret = rules
-            .and_then(|rules| rules.object(type_id))
-            .is_some_and(|object| {
-                object.category == crate::rules::object_type::ObjectCategory::Vehicle
-                    && object.has_turret
-            });
-        let mut guns = Vec::new();
-        for index in 0..indexed_count.max(i32::from(has_turret)) {
-            let turret_name = voxel_gun_basename(&image, VxlLayer::Turret, index);
-            let turret = VoxelPart::load(asset_manager, &turret_name, indexed_count > 0);
-            // The indexed loader5F8640..5F86BF requires every TUR/HVA pair;
-            // failure cleanup5F8A60 unloads the body and all gun arrays.
-            // Legacy single-pair/HVA tolerance remains outside this claim.
-            if indexed_count > 0 && turret.is_none() {
-                log::warn!(
-                    "Missing or invalid indexed voxel pair {turret_name}; omitting {type_id}"
-                );
-                return None;
-            }
-            let barrel = if has_turret {
-                let name = voxel_gun_basename(&image, VxlLayer::Barrel, index);
-                // 5F7DB0 permits an absent BARL VXL. A present indexed barrel
-                // must load its HVA too, or the same model cleanup runs.
-                if asset_manager.get_ref(&format!("{name}.VXL")).is_some() {
-                    let part = VoxelPart::load(asset_manager, &name, indexed_count > 0);
-                    if indexed_count > 0 && part.is_none() {
-                        log::warn!("Invalid indexed voxel pair {name}; omitting {type_id}");
-                        return None;
-                    }
-                    part
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            guns.push(GunParts { turret, barrel });
-        }
+        let (body, guns) =
+            crate::rules::voxel_asset_catalog::load_main_voxel(asset_manager, type_id, rules)?;
+        let guns = guns
+            .into_iter()
+            .map(|(turret, barrel)| GunParts { turret, barrel })
+            .collect();
         Some(Self {
             type_id: type_id.to_string(),
-            body: Some(VoxelPart {
-                vxl: body,
-                hva: body_hva,
-            }),
+            body: Some(body),
             guns,
             drive_shadow: rules.and_then(|r| r.object(type_id)).is_some_and(|o| {
                 o.locomotor == crate::rules::locomotor_type::LocomotorKind::Drive
@@ -1182,7 +1111,7 @@ impl UnitModel {
             && key.frame == 0
             && self.drive_shadow
             && let Some(body) = &self.body
-            && let Some(sprite) = vxl_raster::shadow::render(&body.vxl, body.hva.as_ref(), &params)
+            && let Some(sprite) = vxl_raster::shadow::render(body.vxl(), body.hva(), &params)
         {
             let bounds = [
                 sprite.offset_x as i32,
@@ -1205,9 +1134,7 @@ impl UnitModel {
         // The rasterizer outputs post-VPL palette indices directly.
         let sprite: VxlSprite = match key.layer {
             VxlLayer::Composite => composite_parts(
-                self.body
-                    .as_ref()
-                    .map(|body| (&body.vxl, body.hva.as_ref())),
+                self.body.as_ref().map(|body| (body.vxl(), body.hva())),
                 turret,
                 barrel,
                 &params,
@@ -1215,7 +1142,7 @@ impl UnitModel {
             ),
             VxlLayer::Shadow => {
                 let body = self.body.as_ref()?;
-                vxl_raster::render_legacy_vxl_shadow(&body.vxl, body.hva.as_ref(), &params)
+                vxl_raster::render_legacy_vxl_shadow(body.vxl(), body.hva(), &params)
             }
             VxlLayer::Body | VxlLayer::Turret | VxlLayer::Barrel => {
                 let key_pose = (params.frame, params.facing, params.slope_type, slope_blend);
@@ -1286,15 +1213,47 @@ impl UnitModel {
         key: &UnitSpriteKey,
         vpl: Option<&VplFile>,
         tilt: PoseTilt,
-    ) -> (VxlSprite, Option<[i32; 4]>) {
-        let body = self.body.as_ref().expect("a posed body has a voxel body");
+    ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+        let body = self.body.as_ref()?;
+        if let PoseTilt::Ground(pose) = tilt {
+            let matrices = vxl_raster::ground_unit_pose_matrices(
+                key.slope_type,
+                pose,
+                crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes(body.vxl())
+                    .unwrap_or([0.; 2]),
+                key.facing,
+                key.barrel_pitch,
+            );
+            let (turret, barrel) = self.gun_parts(key.turret_index);
+            let (part, matrix) = match key.layer {
+                VxlLayer::Body => (body, matrices[0]),
+                VxlLayer::Turret => (turret?, matrices[1]),
+                VxlLayer::Barrel => (barrel?, matrices[2]),
+                // Unit consumer retains independent native-ordered parts;
+                // the existing un-tilted shadow has its own owner.
+                VxlLayer::Composite | VxlLayer::Shadow => return None,
+            };
+            let params = VxlRenderParams {
+                frame: key.frame,
+                body_tilt: Some(vxl_raster::BodyTilt::Matrix(matrix)),
+                ..VxlRenderParams::default()
+            };
+            return Some((
+                part.render(&params, vpl),
+                VoxelPart::native_draw_bounds(Some(part), &params)
+                    .ok()
+                    .flatten(),
+            ));
+        }
         let body_tilt = match tilt {
             PoseTilt::Fly(angles) => vxl_raster::BodyTilt::Fly(angles),
             PoseTilt::Jumpjet(angles) => vxl_raster::BodyTilt::Jumpjet {
                 angles,
-                half_sizes: vxl_raster::jumpjet_tilt_half_sizes(&body.vxl).unwrap_or([0.0; 2]),
+                half_sizes: crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes(body.vxl())
+                    .unwrap_or([0.0; 2]),
             },
             PoseTilt::Rocket(pitch) => vxl_raster::BodyTilt::Rocket(pitch),
+            PoseTilt::Ground(_) => unreachable!("ground parts returned above"),
         };
         let params = VxlRenderParams {
             frame: key.frame,
@@ -1304,17 +1263,11 @@ impl UnitModel {
             ..VxlRenderParams::default()
         };
         let (turret, barrel) = self.gun_parts(key.turret_index);
-        let sprite = composite_parts(
-            Some((&body.vxl, body.hva.as_ref())),
-            turret,
-            barrel,
-            &params,
-            vpl,
-        );
-        (
+        let sprite = composite_parts(Some((body.vxl(), body.hva())), turret, barrel, &params, vpl);
+        Some((
             sprite,
             self.native_draw_bounds(&params, VxlLayer::Composite, key.turret_index),
-        )
+        ))
     }
 
     /// A `VoxelAnimClass` piece at its bounce matrix: the body, drawn without
@@ -1331,12 +1284,15 @@ impl UnitModel {
         vpl: Option<&VplFile>,
     ) -> Option<(VxlSprite, Option<VxlSprite>)> {
         let body = self.body.as_ref()?;
-        if section != 0 || body.vxl.limbs.len() != 1 {
+        if section != 0 || body.vxl().limbs.len() != 1 {
             return None;
         }
         let (sprite, _) =
             self.render_matrix(matrix, 0, false, vxl_raster::VxlLighting::Diffuse, vpl)?;
-        Some((sprite, vxl_raster::shadow::render_matrix(&body.vxl, matrix)))
+        Some((
+            sprite,
+            vxl_raster::shadow::render_matrix(body.vxl(), matrix),
+        ))
     }
 
     /// Shared direct-matrix body raster. Bullet46B0C0 submits every section
@@ -1351,11 +1307,7 @@ impl UnitModel {
         vpl: Option<&VplFile>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let body = self.body.as_ref()?;
-        let hva = if use_hva {
-            Some(body.hva.as_ref()?)
-        } else {
-            None
-        };
+        let hva = if use_hva { Some(body.hva()?) } else { None };
         let frame = if let Some(hva) = hva {
             frame.checked_rem(hva.frame_count)?
         } else {
@@ -1367,9 +1319,9 @@ impl UnitModel {
             frame,
             ..VxlRenderParams::default()
         };
-        let bounds = vxl_raster::native_vxl_draw_bounds(&body.vxl, hva, &params)?;
+        let bounds = vxl_raster::native_vxl_draw_bounds(body.vxl(), hva, &params)?;
         Some((
-            vxl_raster::render_vxl(&body.vxl, hva, &params, vpl),
+            vxl_raster::render_vxl(body.vxl(), hva, &params, vpl),
             Some(bounds),
         ))
     }

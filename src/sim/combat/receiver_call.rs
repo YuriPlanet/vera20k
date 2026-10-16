@@ -199,7 +199,7 @@ pub(super) fn apply_building_receive_prelude(
     if target.category() != EntityCategory::Structure {
         return BuildingReceivePrelude::Continue;
     }
-    let Some(target_type) = rules.object(interner.resolve(target.type_ref())) else {
+    let Some(target_type) = interner.object_type(target.type_ref(), rules) else {
         return BuildingReceivePrelude::Continue;
     };
 
@@ -242,7 +242,7 @@ pub(super) fn resolve_receive_damage(
         return None;
     }
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
-    let target_type = rules.object(interner.resolve(target.type_ref()));
+    let target_type = interner.object_type(target.type_ref(), rules);
     let source = (event.attacker_id != RAD_NO_ATTACKER)
         .then(|| entities.get(event.attacker_id))
         .flatten();
@@ -472,7 +472,7 @@ pub(super) fn postmortem_duration_for_event(
         return None;
     }
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
-    let object = rules.object(interner.resolve(target.type_ref()))?;
+    let object = interner.object_type(target.type_ref(), rules)?;
     (warhead.causes_delay_kill && object.eligible_for_delay_kill)
         .then(|| postmortem_delay_duration(warhead, event.distance_leptons))
 }

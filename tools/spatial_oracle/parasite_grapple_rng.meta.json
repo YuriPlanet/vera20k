@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Fresh stock SQD/DEST direct Parasite6297F0 RNG/angle component with actual constructors, Unlimbo, ObjectLimbo and AttachTo",
+  "assumptions": [
+    "Existing building_death_anims physical reader/VM/allocator/House projection owns runtime. Actual SQD/DEST747620, ASW41CC20, SquidGrab/SQDJUMP/ParasitePlus readers and SQDG/WAKE1/H2O_EXP1..3 ART/SHP/sound binding execute; no full Rules process or native VXL binding is claimed.",
+    "Existing physical TMP binding owner loads genuine Water01.tem through original IsoTileType5447C0. Native TEMPERATMD scalar reader supplies WaterSet314/count838; sparse primary array/cache header and relocated TMP offsets are explicit existing input boundaries. Original47D2B0 Recalc precedes real UnitUnlimbo and derives water LandType2. Native tile before/after and true admission results are retained.",
+    "Original AircraftType4E73E0/Aircraft4E6BE0/Parasite629190/Spawn6B6C10 registries, Ship empty Coord69EBF0 and House counters49F9B0/748FD0 initialize selected prerequisites. Real stock DEST SpawnManager/ASW constructors execute. Source/victim are opposite existing fixture Houses, health200/600 from physical types, normal rank and fixed admitted positions. No full House/scenario startup claim.",
+    "Frame0 precedes all selected constructors. Actual ObjectLimbo5F4D30 returns1 immediately before CanInfect/AttachTo62A980. Both entry snapshots require source alive1/limbo1 and victim alive1/limbo0; real reciprocal links are asserted. Full FireAt/Bullet/LimboLaunch producer is excluded, not replaced by an attached prior.",
+    "Scenario map lighting/reset and cell relight are excluded. Initial lighting records the actual supplied Scenario current ambient/RGB/Ground/Level profile, raw fields/effect globals and selected Cell104..10E scalars. Original629DDE copies signed Cell10A into the held Anim Z-adjust; consumers must import this measured component lighting prior rather than full-map lighting defaults.",
+    "Initial game_speed is the signed observed GameOptions+A8EB60 input inherited from the joined construction fixture. Normalized Anim rates execute original SpeedNormalize5FB2E0 with that input; consumers must import it rather than use their default speed.",
+    "Only whole6297F0 is visited at monotonically increasing frames through the bounded collection endpoint. Other actor/Anim AI, audio update, whole Logic, culling/release/expiry and scene pixels are excluded. Original helper, direct sine/f32 angle store, all wake/splash ftol, full Anim constructors/Start/ID/Logic/Display and nonlethal receiver execute.",
+    "Full Main/Scenario/MapGen states are observed before/after every retained row without reseeding the admitted world. Ordered raw words include rejected ranged draws; constructor entry/return request indexes and native cursors preserve interleaving. Stored roll is native f32; simulation fixed-point quantization is a separate consumer boundary."
+  ],
+  "substitutions": [
+    "Inherited successful bounded allocation/free, physical lexical INI and requested-SHP cache, IDX/BAG transport, Windows GUID/COM activation/OleRun through original factories, and declared presentation sinks. No selector/trig/ftol/RNG/GetCoords/constructor/Unlimbo/AttachTo/damage gameplay return or original instruction is replaced."
+  ],
+  "entry_points": {
+    "grapple": "0x006297F0",
+    "stage": "0x00629720",
+    "wakes": "0x00629E90",
+    "attach": "0x0062A980",
+    "can_infect": "0x0062A8E0",
+    "unit_ctor": "0x007353C0",
+    "unit_unlimbo": "0x00737BA0",
+    "object_limbo": "0x005F4D30",
+    "anim_ctor": "0x00421EA0",
+    "anim_start": "0x00424CE0",
+    "next": "0x0065C780",
+    "ranged": "0x0065C7E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.parasite_water_gate --grapple",
+  "payload_sha256": "87956673b55d6472c17f2d66eb0442d82fe3d9666994c4f7eeda0acd611ae2d8"
+}

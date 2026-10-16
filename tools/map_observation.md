@@ -956,7 +956,7 @@ uses stock France, builds GAPOWR, GAREFN, GAAIRC and one ORCA by ordinary
 production and stops at step5400 with the Harrier parked on the Air Force Command.
 
 Both frames show whether a body is drawn from the sprites its model is seeded with
-(`draws_turret_parts` in [`voxel_frame_catalog.rs`](../src/sim/voxel_frame_catalog.rs)).
+(`draws_turret_parts` in [`voxel_frame_catalog.rs`](../src/rules/voxel_frame_catalog.rs)).
 Release captures of `6dab3753` drew neither body, only its health pips. With the
 turret split following the drawn model both are drawn: the simulation fingerprints
 are equal and the frames differ only inside x287..349/y246..298 (miner) and
@@ -2452,7 +2452,7 @@ last-build count includes rasterized shadow sprites, can differ from admitted
 resident entries, and stays unchanged on a no-op refresh.
 
 This is resident UnitAtlas texture payload for the captured scenario. It excludes
-CPU caches, `VxlPoseFrameCache`, `VxlSlopeTransitionCache`, other atlases, palettes,
+CPU caches, `VxlPoseFrameCache`, other atlases, palettes,
 driver overhead and peak allocation; it does not establish 30-player saturation.
 Statistics are captured with the final render evidence before readback and kept
 outside deterministic simulation fingerprints. GPU allocation may differ across

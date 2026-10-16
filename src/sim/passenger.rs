@@ -1052,8 +1052,8 @@ pub(crate) fn process_boarding_passenger(
             .entities
             .get(transport_id)
             .and_then(|transport| {
-                rules
-                    .object(sim.interner.resolve(transport.type_ref()))
+                sim.interner
+                    .object_type(transport.type_ref(), rules)
                     .and_then(|object| {
                         (transport.category() == EntityCategory::Structure
                             && object.extra_power > 0
@@ -1261,7 +1261,7 @@ fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_
     let Some(transport) = sim.substrate.entities.get(transport_id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(transport.type_ref())) else {
+    let Some(object) = sim.interner.object_type(transport.type_ref(), rules) else {
         return;
     };
     // Aircraft/Foot bind this virtual slot to the 4DE750 stub.
@@ -1271,8 +1271,9 @@ fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_
     let Some(passenger) = sim.substrate.entities.get(pax_id) else {
         return;
     };
-    let mode = rules
-        .object(sim.interner.resolve(passenger.type_ref()))
+    let mode = sim
+        .interner
+        .object_type(passenger.type_ref(), rules)
         .map_or(0, |p| p.ifv_mode);
     if sim.temporal_receive_gunner(transport_id, pax_id)
         && let Some(transport) = sim.substrate.entities.get_mut(transport_id)
@@ -1290,7 +1291,7 @@ fn remove_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_i
     let Some(transport) = sim.substrate.entities.get(transport_id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(transport.type_ref())) else {
+    let Some(object) = sim.interner.object_type(transport.type_ref(), rules) else {
         return;
     };
     // Aircraft/Foot bind this virtual slot to the 4DE760 stub.
@@ -1329,8 +1330,8 @@ pub(crate) fn open_topped_riders_follow(
     else {
         return;
     };
-    if !rules
-        .object(interner.resolve(transport.type_ref()))
+    if !interner
+        .object_type(transport.type_ref(), rules)
         .is_some_and(|object| object.open_topped)
     {
         return;
@@ -1427,7 +1428,14 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
         object.strength,
         rules.general.condition_red,
     ) {
-        garrison_eject::sell_building_occupants(sim, rules, registry, building_id, effects);
+        garrison_eject::sell_building_occupants(
+            sim,
+            rules,
+            registry,
+            building_id,
+            garrison_eject::GarrisonEjectMode::Release,
+            effects,
+        );
     }
     //458265/4582F2 re-read the live vector after ejection.
     let Some(building) = sim.substrate.entities.get(building_id) else {
@@ -3351,14 +3359,14 @@ ConditionYellow=50%
                 .get(building_id)
                 .expect("building present");
             let cargo = bldg.passenger_role.cargo().expect("cargo present");
-            let obj = rules
-                .object(sim.interner.resolve(bldg.type_ref()))
+            let obj = sim
+                .interner
+                .object_type(bldg.type_ref(), rules)
                 .expect("type exists");
             let (foundation_w, foundation_h) =
                 crate::rules::foundation::foundation_dimensions(&obj.foundation);
             crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                 building_id,
-                owner: bldg.owner(),
                 rx: bldg.position.rx(),
                 ry: bldg.position.ry(),
                 z: bldg.position.z(),

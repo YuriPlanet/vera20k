@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical SUBT native Bullet matrix/raster and completed RGB565 Flat/nonFlat surface draws; eleven supplied component controls.",
+  "assumptions": [
+    "Immutable retail SUBT.VXL/HVA and VOXELS.VPL. Original camera/light/viewer and x87 0E7F; supplied retained Bullet, velocity bits, frame0, point, clip and type Flat. No submarine launch, Display traversal, water physics or whole scene is executed.",
+    "Physical RULESMD Colors LightGold is parsed by the existing original474C70 owner. Selected UNITtem palette is supplied to original theater copy/expansion534CD3..534D31; whole68C710/68C3B0/555DA0 constructors produce actual paired1/53 ColorSchemes and Convert. Selected theater/name and two-entry registry are component boundaries, not full palette startup/Rules processing.",
+    "Original static7539D0 constructs the shared packed raster BSurface before completed Bullet Draw. Original selectors, raster-surface virtual dispatch, rectangle clipping, rowwalker and RGB565 leaves execute without substitutions. No reconstructed shade table, supplied blitter or expected RGB initializes output.",
+    "Prepared64x96 RGB565 BSurface/circular u16 Z/A, YOrigin0, full range6144words, supplied uniform background/depth/light with explicit physical per-index patches. One case supplies existing shroud-owner scroll offset50rows, crossing the ring end with exact observed Z/A offsets. DefaultZ32768 except declared negative-candidate boundary43. Native81AF00 retains its file-backed default-65; this is not a universal runtime-value claim.",
+    "Original sparse raster indices, matrices, packed rect, actual surface arguments, leaf destinations/source/candidates and after-each-draw RGB565 pixels/hash are retained. Exact complete Z/A byte arrays are compared with their supplied inputs. Full frame reconstructs from background plus changed pixels; unlisted pixels retain background.",
+    "Tie row uses32655 from an independently executed native full control at destination y48. Physical zero raster holes are retained. Two ordered draws reuse the same native machine and surfaces, without clearing RGB/Z/A between calls. No above65535 candidate claim for fixed-65 Flat policy."
+  ],
+  "substitutions": [
+    "Existing immutable file IO and successful bounded allocator transports; selected source-file/name/registry/surface component inputs.",
+    "CRT malloc7C9430 shares PaletteReader bounded allocation with operator new; original strdup and full constructors execute. CRT atexit7C978A supplies success0 and records destructor registration without a process lifetime; no gameplay/draw return is supplied."
+  ],
+  "entry_points": {
+    "bullet_draw": "0x00468090",
+    "voxel_draw": "0x0046B0C0",
+    "raster": "0x00754510",
+    "raster_surface_ctor": "0x007539D0",
+    "convert": "0x00490B90",
+    "surface": "0x004AF2A0",
+    "rowwalker": "0x004373B0",
+    "flat_leaf": "0x00494B60",
+    "nonflat_leaf": "0x00493DF0",
+    "color_scheme": "0x0068C710",
+    "light_convert": "0x00555DA0"
+  },
+  "replay_command": "python -m tools.voxel_oracle.raster_fixtures --bullet-flat",
+  "payload_sha256": "7a57e6ebaff5696e4f44b252d24f3d8ba409ea499277821b2d53b5fc9322ac5e"
+}

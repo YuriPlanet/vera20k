@@ -158,7 +158,7 @@ pub(crate) fn produce_cash_on_owner_change(
     if entity.category() != EntityCategory::Structure {
         return;
     }
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
     let old_passive = sim
@@ -217,7 +217,7 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
         return;
     }
     let owner = entity.owner();
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
     let amount = obj.produce_cash_amount;
@@ -404,8 +404,9 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
     let type_ref = entity.type_ref();
 
     if let Some(drainer_id) = draining_me
-        && rules
-            .object(sim.interner.resolve(type_ref))
+        && sim
+            .interner
+            .object_type(type_ref, rules)
             .is_some_and(|obj| obj.resource_destination)
     {
         let delay = rules.general.drain_money_frame_delay;

@@ -23,12 +23,84 @@ mod approach_tests;
 /// Is_Cell_Free_For_Landing419B00 is an any-match over live objects, so one
 /// pass answers every candidate of one search; nothing mutates between them.
 /// One search passes one `include_self`, which the pass already applied.
+/// VERA-only: the sets are bitmaps, built from every live object and asked
+/// about a few cells.
 pub(super) struct LandingCellClaims {
-    occupied: std::collections::BTreeSet<(i16, i16)>,
-    /// Reserved fixed-cell identities (`None` = the shared Dummy), or raw
-    /// reserved coordinates when no terrain is loaded.
-    reserved: std::collections::BTreeSet<Option<usize>>,
-    reserved_cells: std::collections::BTreeSet<(i16, i16)>,
+    occupied: CellSet,
+    /// Reserved fixed cells: real cells by index, and whether the shared
+    /// Dummy is reserved; or raw reserved coordinates when no terrain is
+    /// loaded.
+    reserved: Vec<u64>,
+    reserved_dummy: bool,
+    reserved_cells: CellSet,
+}
+
+/// A set of cells built once and then only asked: a bitmap over the box its
+/// members span, or a sorted list when that box is too large to allocate.
+enum CellSet {
+    Bitmap {
+        min: (i32, i32),
+        width: usize,
+        height: usize,
+        bits: Vec<u64>,
+    },
+    Sorted(Vec<(i16, i16)>),
+}
+
+impl CellSet {
+    /// The most cells a bitmap covers: 512 KiB of bits.
+    const MOST_BITMAP_CELLS: usize = 1 << 22;
+
+    fn new(mut cells: Vec<(i16, i16)>) -> Self {
+        let span = cells
+            .iter()
+            .fold(None::<(i32, i32, i32, i32)>, |span, &(x, y)| {
+                let (x, y) = (i32::from(x), i32::from(y));
+                Some(span.map_or((x, y, x, y), |(min_x, min_y, max_x, max_y)| {
+                    (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y))
+                }))
+            });
+        let Some((min_x, min_y, max_x, max_y)) = span else {
+            return Self::Sorted(cells);
+        };
+        let width = (max_x - min_x + 1) as usize;
+        let height = (max_y - min_y + 1) as usize;
+        if width * height > Self::MOST_BITMAP_CELLS {
+            cells.sort_unstable();
+            cells.dedup();
+            return Self::Sorted(cells);
+        }
+        let mut bits = vec![0u64; (width * height).div_ceil(64)];
+        for (x, y) in cells {
+            let index = (i32::from(y) - min_y) as usize * width + (i32::from(x) - min_x) as usize;
+            bits[index / 64] |= 1 << (index % 64);
+        }
+        Self::Bitmap {
+            min: (min_x, min_y),
+            width,
+            height,
+            bits,
+        }
+    }
+
+    fn contains(&self, cell: (i16, i16)) -> bool {
+        match self {
+            Self::Bitmap {
+                min,
+                width,
+                height,
+                bits,
+            } => {
+                let (dx, dy) = (i32::from(cell.0) - min.0, i32::from(cell.1) - min.1);
+                if dx < 0 || dy < 0 || dx as usize >= *width || dy as usize >= *height {
+                    return false;
+                }
+                let index = dy as usize * width + dx as usize;
+                bits[index / 64] >> (index % 64) & 1 != 0
+            }
+            Self::Sorted(cells) => cells.binary_search(&cell).is_ok(),
+        }
+    }
 }
 
 impl Simulation {
@@ -65,7 +137,7 @@ impl Simulation {
     ) -> Option<NavTargetRef> {
         let target = target?;
         let entity = self.substrate.entities.get(id)?;
-        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
         if combat_weapon::aircraft_strafes(rules, object, entity.veterancy.rank()) {
             return Some(target);
         }
@@ -185,9 +257,7 @@ impl Simulation {
             return true;
         }
         let entity = self.substrate.entities.get(id).unwrap();
-        let object = rules
-            .object(self.interner.resolve(entity.type_ref()))
-            .unwrap();
+        let object = self.interner.object_type(entity.type_ref(), rules).unwrap();
         if object.spawned {
             let resolved = self
                 .resolved_terrain
@@ -202,8 +272,9 @@ impl Simulation {
                 .and_then(|other| self.substrate.entities.get(other))
                 .is_some_and(|other| {
                     other.spawn_manager.is_some()
-                        || rules
-                            .object(self.interner.resolve(other.type_ref()))
+                        || self
+                            .interner
+                            .object_type(other.type_ref(), rules)
                             .is_some_and(|object| object.spawned)
                 })
             {
@@ -236,12 +307,15 @@ impl Simulation {
             .map(|t| t.native_cell_identity(cell));
         let own = (!include_self).then_some(id);
         let claims = claims.get_or_insert_with(|| self.landing_cell_claims(skip, own));
-        if claims.occupied.contains(&cell) {
+        if claims.occupied.contains(cell) {
             return false;
         }
         match identity {
-            Some(identity) => !claims.reserved.contains(&identity_key(identity)),
-            None => !claims.reserved_cells.contains(&cell),
+            Some(crate::map::cell_index::NativeCellIdentity::Real(index)) => {
+                claims.reserved[index / 64] >> (index % 64) & 1 == 0
+            }
+            Some(crate::map::cell_index::NativeCellIdentity::Dummy) => !claims.reserved_dummy,
+            None => !claims.reserved_cells.contains(cell),
         }
     }
 
@@ -249,11 +323,11 @@ impl Simulation {
     /// `carried` is a Carryall's Unit NavCom (`0x00419BF1`), `own` the
     /// aircraft itself when the call excludes it (`0x00419C05`).
     fn landing_cell_claims(&self, carried: Option<u64>, own: Option<u64>) -> LandingCellClaims {
-        let mut claims = LandingCellClaims {
-            occupied: Default::default(),
-            reserved: Default::default(),
-            reserved_cells: Default::default(),
-        };
+        let terrain = self.resolved_terrain.as_ref();
+        let mut occupied = Vec::new();
+        let mut reserved = vec![0u64; terrain.map_or(0, |t| t.cells().len().div_ceil(64))];
+        let mut reserved_dummy = false;
+        let mut reserved_cells = Vec::new();
         for other in self.substrate.entities.values() {
             if carried == Some(other.stable_id())
                 || own == Some(other.stable_id())
@@ -267,30 +341,23 @@ impl Simulation {
                 continue;
             }
             let coord = ground_pose::position_world_coord(&other.position);
-            claims
-                .occupied
-                .insert(((coord.x / 256) as i16, (coord.y / 256) as i16));
+            occupied.push(((coord.x / 256) as i16, (coord.y / 256) as i16));
             if let Some(NavTargetRef::Cell { rx, ry }) = other.navigation.nav_com() {
-                match self.resolved_terrain.as_ref() {
+                match terrain {
                     // Pointer equality must not restamp the shared Dummy.
-                    Some(t) => {
-                        claims
-                            .reserved
-                            .insert(t.native_fixed_cell_index(rx as i16, ry as i16));
-                    }
-                    None => {
-                        claims.reserved_cells.insert((rx as i16, ry as i16));
-                    }
+                    Some(t) => match t.native_fixed_cell_index(rx as i16, ry as i16) {
+                        Some(index) => reserved[index / 64] |= 1 << (index % 64),
+                        None => reserved_dummy = true,
+                    },
+                    None => reserved_cells.push((rx as i16, ry as i16)),
                 }
             }
         }
-        claims
-    }
-}
-
-fn identity_key(identity: crate::map::cell_index::NativeCellIdentity) -> Option<usize> {
-    match identity {
-        crate::map::cell_index::NativeCellIdentity::Real(index) => Some(index),
-        crate::map::cell_index::NativeCellIdentity::Dummy => None,
+        LandingCellClaims {
+            occupied: CellSet::new(occupied),
+            reserved,
+            reserved_dummy,
+            reserved_cells: CellSet::new(reserved_cells),
+        }
     }
 }

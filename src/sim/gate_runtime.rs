@@ -66,8 +66,9 @@ pub(crate) fn request_gate_open_for_cell(
             continue;
         };
         if candidate.category() != EntityCategory::Structure
-            || !rules
-                .object(sim.interner.resolve(candidate.type_ref()))
+            || !sim
+                .interner
+                .object_type(candidate.type_ref(), rules)
                 .is_some_and(|obj| obj.gate)
         {
             continue;
@@ -134,7 +135,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 0;
     };
-    let Some(object) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return 0;
     };
     let now = sim.session.binary_frame;

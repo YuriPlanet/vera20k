@@ -273,7 +273,9 @@ impl ResponseSelection {
             };
             let threat = live_threat_posed(
                 responder_entity,
-                rules.object(world.interner.resolve(responder_entity.type_ref())),
+                world
+                    .interner
+                    .object_type(responder_entity.type_ref(), rules),
                 &world.substrate.entities,
                 rules,
                 &world.interner,
@@ -432,10 +434,10 @@ pub(crate) fn respond_to_base_attack(
     let Some(attacker) = entities.get(attacker_id) else {
         return;
     };
-    let Some(victim_object) = rules.object(interner.resolve(victim.type_ref())) else {
+    let Some(victim_object) = interner.object_type(victim.type_ref(), rules) else {
         return;
     };
-    let Some(attacker_object) = rules.object(interner.resolve(attacker.type_ref())) else {
+    let Some(attacker_object) = interner.object_type(attacker.type_ref(), rules) else {
         return;
     };
     let victim_owner = victim.owner();
@@ -521,7 +523,7 @@ pub(crate) fn respond_to_base_attack(
             if candidate.category() != expected_category {
                 continue;
             }
-            let Some(candidate_object) = rules.object(sim.interner.resolve(candidate.type_ref()))
+            let Some(candidate_object) = sim.interner.object_type(candidate.type_ref(), rules)
             else {
                 continue;
             };

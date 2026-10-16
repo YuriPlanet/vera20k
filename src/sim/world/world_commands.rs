@@ -2109,7 +2109,8 @@ impl Simulation {
             return false;
         }
         rules.is_none_or(|r| {
-            r.object(self.interner.resolve(entity.type_ref()))
+            self.interner
+                .object_type(entity.type_ref(), r)
                 .is_none_or(|object| object.selectable)
         })
     }
@@ -2539,7 +2540,7 @@ impl Simulation {
         // (What_Action_OnCell7008BD's current-weapon test).
         if matches!(target, combat::TargetKind::Cell(..))
             && !rules
-                .and_then(|rules| rules.object(self.interner.resolve(attacker.type_ref())))
+                .and_then(|rules| self.interner.object_type(attacker.type_ref(), rules))
                 .is_some_and(|obj| combat::combat_weapon::is_armed(attacker, obj))
         {
             return false;

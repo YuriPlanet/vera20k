@@ -52,7 +52,7 @@ pub(crate) fn fired(
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
-    let Some(obj) = rules.object(world.interner.resolve(source.type_ref())) else {
+    let Some(obj) = world.interner.object_type(source.type_ref(), rules) else {
         return;
     };
     // FireAt6FF4CC gates on the fired weapon above, but its building arm
@@ -127,7 +127,7 @@ pub(crate) fn create<'w>(
         if let Some(from) = from.filter(|coord| *coord != ProjectileCoord::new(0, 0, 0)) {
             (from, 0)
         } else {
-            let object = rules.object(world.interner.resolve(source.type_ref()))?;
+            let object = world.interner.object_type(source.type_ref(), rules)?;
             let from = super::fire_coord::fire_coordinate(
                 world,
                 rules,
@@ -193,7 +193,7 @@ pub(crate) fn support(
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
-    let Some(obj) = rules.object(world.interner.resolve(source.type_ref())) else {
+    let Some(obj) = world.interner.object_type(source.type_ref(), rules) else {
         return;
     };
     let from = super::fire_coord::fire_coordinate(

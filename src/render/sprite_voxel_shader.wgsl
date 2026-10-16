@@ -55,6 +55,7 @@ struct Instance {
     // barrel are one native cache blit (`0x0073B140`), so they share one seed.
     @location(13) z_rect: vec2f,
     @location(14) palette_light: vec4u,
+    @location(15) source_palette: u32,
 };
 
 struct VertexOutput {
@@ -73,6 +74,7 @@ struct VertexOutput {
     @location(9) @interpolate(flat) z_adjust: f32,
     @location(10) @interpolate(flat) z_gradient: u32,
     @location(11) @interpolate(flat) palette_light: vec4u,
+    @location(12) @interpolate(flat) source_palette: u32,
 };
 
 @vertex
@@ -121,6 +123,7 @@ fn vs_main(
     out.z_adjust = instance.z_adjust;
     out.z_gradient = instance.z_gradient;
     out.palette_light = instance.palette_light;
+    out.source_palette = instance.source_palette;
     return out;
 }
 
@@ -182,6 +185,18 @@ fn native_candidate(in: VertexOutput) -> i32 {
     let row: i32 = clamp(i32(floor(in.world_pos.y - rect_top)), 0, height - 1);
     let z: i32 = native_row_z(gradient, screen_top, height, z_adjust, row);
     return z;
+}
+
+// PackedSpriteGpu keeps this shared prefix up to apply_fx; source-palette
+// selection must stay in the prefix alongside the shared projection/Z owner.
+// The global Convert (Init_Game52BFCE; VoxelAnim749E5A) reads UNITSNO
+// directly, including indices16..31. The ordinary and packed blitters share
+// this selection so representation cannot introduce a house substitution.
+fn voxel_source_rgb(index: u32, remap_row: u32, source_palette: u32) -> vec3f {
+    if source_palette == 0u && index >= 16u && index < 32u {
+        return textureLoad(house_ramp, vec2i(i32(index - 16u), i32(remap_row)), 0).rgb;
+    }
+    return textureLoad(palette, vec2i(i32(index), i32(source_palette)), 0).rgb;
 }
 
 fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
@@ -246,16 +261,7 @@ fn fs_main(in: VertexOutput) -> FragOutput {
         return out;
     }
 
-    // RGB substitution: bytes in [16, 32) sample the per-house ramp; all
-    // others sample the theater palette directly.
-    var rgb: vec3f;
-    if (byte >= 16u && byte < 32u) {
-        let ramp_coord: vec2i = vec2i(i32(byte - 16u), i32(in.remap_row));
-        rgb = textureLoad(house_ramp, ramp_coord, 0).rgb;
-    } else {
-        let palette_coord: vec2i = vec2i(i32(byte), 0);
-        rgb = textureLoad(palette, palette_coord, 0).rgb;
-    }
+    let rgb = voxel_source_rgb(byte, in.remap_row, in.source_palette);
 
     // The waterline changes geometry admission only. It must not opt an
     // otherwise opaque body out of the native packed-palette conversion.

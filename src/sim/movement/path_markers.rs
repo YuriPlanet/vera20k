@@ -368,7 +368,7 @@ fn peer_from_entity(
 ) -> BridgeMarkerPeer {
     let (path_start, path_directions) = remaining_path_from_entity(entity);
     let speed = rules
-        .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
+        .and_then(|rules| interner.object_type(entity.type_ref(), rules))
         .map_or(0, |object| object.speed);
     let foot_derived = matches!(
         entity.category(),

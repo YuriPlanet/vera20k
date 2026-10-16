@@ -60,7 +60,8 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
             colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
         };
         let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
-        let palettes = PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &ramps, &[]);
+        let palettes =
+            PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
         let mut parents = Vec::with_capacity(ROUNDS * 4);
         for round in 0..ROUNDS {
             for piece in 0..4 {
@@ -134,7 +135,6 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
             None,
             Some(&units),
             None,
-            &VxlSlopeTransitionCache::default(),
             Some(&shp),
             Some(&palettes),
             batch.default_zshape_bind_group(),

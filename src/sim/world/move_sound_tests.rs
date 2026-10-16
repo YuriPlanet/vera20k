@@ -177,7 +177,6 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             Some(crate::sim::movement::SpeedRules::new(
                 rules,
                 &sim.interner,
-                &sim.type_handles,
                 &sim.houses,
             )),
             crate::sim::animation::ShpVehicleCadence {

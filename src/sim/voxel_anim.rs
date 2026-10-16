@@ -35,6 +35,9 @@ use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoxelAnimObject {
     pub stable_id: u64,
+    /// Abstract74944E ->410230: assigned before constructor launch RNG.
+    /// Separate from the Rust stable handle and retained across save/load.
+    native_unique_id: i32,
     pub type_id: VoxelAnimTypeId,
     /// `+0x140`, seeded from the type's `Duration=` (`+0x29C`) by the
     /// constructor. Ticks remaining. `VoxelAnimClass::AI @ 0x00749F30`
@@ -43,8 +46,8 @@ pub struct VoxelAnimObject {
     pub duration: i32,
     /// `+0x110`. Queued for removal; the AI deletes on its next visit.
     pub marked_for_deletion: bool,
-    /// Owner house, or `None` — the constructor's fourth parameter, which the
-    /// debris path passes as the dying object's house.
+    /// Owner house, or `None` — Bullet debris passes null; Techno death
+    /// debris passes the dying object's house (VoxelAnim74941C).
     pub owner_house: Option<InternedId>,
     /// The embedded `BounceClass` at `+0xB0`.
     pub bounce: BounceState,
@@ -54,6 +57,11 @@ pub struct VoxelAnimObject {
 }
 
 impl VoxelAnimObject {
+    /// Constructor-assigned AbstractClass identity, separate from the stable handle.
+    pub const fn native_unique_id(&self) -> i32 {
+        self.native_unique_id
+    }
+
     /// The world coordinate the draw and the damage arms read, in leptons.
     ///
     /// `VoxelAnimClass::AI` refreshes `ObjectClass`'s own coordinate from the
@@ -129,17 +137,6 @@ impl crate::sim::world::Simulation {
 /// `ADD EAX, 0xa`).
 const LAUNCH_Z_OFFSET_LEPTONS: i32 = 10;
 
-/// Placeholder identity for a piece built inside the combat transaction.
-///
-/// Native's `AbstractClass::Create_ID` runs inside
-/// `VoxelAnimClass::Constructor`, interleaved with the death's other object
-/// allocations. Combat here does not hold the shared allocator — it borrows the
-/// entity store out of the world — so the id is stamped when the world admits
-/// the piece, preserving spawn ORDER but not the interleaving with any other
-/// allocation the same tick makes between the two points. The stores are keyed
-/// by that id, so order is what the hash and the AI walk read.
-const UNASSIGNED_STABLE_ID: u64 = 0;
-
 /// The `1.0` at `0x007E1718` that both inclusive-range divisors add before the
 /// `ftol` (`0x007495A8`, `0x0074960B`). It makes `MaxZVel`/`MaxAngularVelocity`
 /// reachable, and it is what collapses `[TIRE]`'s 12deg..24deg spin band to a
@@ -154,9 +151,10 @@ const DEBRIS_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_
 /// One raw `Random__Next()` draw taken through native's `CDQ/XOR/SUB` absolute
 /// value and then `CDQ/IDIV`.
 ///
-/// Mirrors [`SimRng::next_raw_abs_modulo`] exactly; it is spelled out here
-/// because the constructor takes all four draws BEFORE any divisor exists, so
-/// the draw and its remainder cannot be one call.
+/// Typed selectors469D7A..469D81/702320..702339 and constructor axes
+/// 74957B..749621/42259B..4225F4 take the absolute value BEFORE division.
+/// INT_MIN retains its negative two's-complement value. This intentionally
+/// differs from [`SimRng::next_raw_abs_modulo`]'s remainder-first contract.
 ///
 /// VERA-internal, gamemd equivalent UNCHECKED: a zero divisor returns 0 where
 /// native's `IDIV` raises a divide error. It needs `MaxXYVel` under 0.5, or a
@@ -169,17 +167,14 @@ const DEBRIS_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_
 /// of 1. The death-debris path is narrower still: all 36 stock `DebrisTypes=`
 /// lines name `[TIRE]`, at `MaxXYVel=10.0`.
 ///
-/// VERA-internal, gamemd equivalent UNCHECKED: the sign flips at exactly
-/// `draw == 0x8000_0000`. Native's `CDQ/XOR/SUB` two's-complement negate
-/// saturates there — `abs(i32::MIN)` is still `i32::MIN` — so its `IDIV`
-/// divides a NEGATIVE dividend and yields a negative remainder, while
-/// `(draw as i32) % divisor` followed by `.abs()` here yields the positive one.
-/// `|x| % d == |x % d|` for every other draw. One draw in 2^32.
+/// Native's zero-divisor and INT_MIN/-1 divide faults remain outside this
+/// numeric domain; compatibility recovery returns zero instead of emulating
+/// an x86 exception. Selected TIRE divisors are 20, 5, 1 and typed maximum 4 gives 5.
 pub(crate) fn raw_abs_modulo(draw: u32, divisor: i32) -> i32 {
     if divisor == 0 {
         return 0;
     }
-    ((draw as i32) % divisor).abs()
+    (draw as i32).wrapping_abs().wrapping_rem(divisor)
 }
 
 /// `VoxelAnimClass::Constructor @ 0x007493B0`, the ordinary (non-`IsMeteor`)
@@ -207,6 +202,7 @@ pub(crate) fn raw_abs_modulo(draw: u32, divisor: i32) -> i32 {
 /// Y component is the one from the THIRD draw even though its store comes last.
 pub fn spawn_debris_piece(
     stable_id: u64,
+    native_unique_id: i32,
     type_id: VoxelAnimTypeId,
     voxel_anim_type: &VoxelAnimType,
     owner_house: Option<InternedId>,
@@ -216,7 +212,7 @@ pub fn spawn_debris_piece(
     let start = IVec3::new(
         origin.x,
         origin.y,
-        origin.z.saturating_add(LAUNCH_Z_OFFSET_LEPTONS),
+        origin.z.wrapping_add(LAUNCH_Z_OFFSET_LEPTONS),
     );
 
     let angular_draw = rng.next_u32();
@@ -271,6 +267,7 @@ pub fn spawn_debris_piece(
 
     Ok(VoxelAnimObject {
         stable_id,
+        native_unique_id,
         type_id,
         duration: voxel_anim_type.duration,
         marked_for_deletion: false,
@@ -361,9 +358,8 @@ pub enum ShpDebrisSource {
 /// One `VoxelAnimClass` the death block asks the world to construct.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoxelDebrisSpawn {
-    pub type_id: VoxelAnimTypeId,
-    /// Everything the constructor and `BounceClass::Init` already decided; the
-    /// world only assigns the shared object id.
+    /// The complete constructor result, including both assigned identities;
+    /// delayed fixture delivery only registers it, never allocates again.
     pub object: VoxelAnimObject,
 }
 
@@ -387,9 +383,18 @@ pub trait ShpDebrisHost {
     ) -> Result<(), NativeX87Error>;
 }
 
-/// The death entry additionally admits its VoxelAnim pieces.
-pub trait DeathDebrisHost: ShpDebrisHost {
-    fn admit_voxel(&mut self, spawn: &VoxelDebrisSpawn);
+/// Shared typed debris construction. The host supplies each live origin and
+/// completes identity allocation, numeric construction and world admission
+/// before the next selector draw. Numeric fixtures provide explicit identities.
+pub trait VoxelDebrisHost: ShpDebrisHost {
+    fn voxel_origin(&self) -> IVec3;
+    fn construct_voxel(
+        &mut self,
+        type_id: VoxelAnimTypeId,
+        voxel_type: &VoxelAnimType,
+        owner_house: Option<InternedId>,
+        origin: IVec3,
+    ) -> Result<(), NativeX87Error>;
 }
 
 /// Techno702291..7022C8 and Bullet469D0C..469D2F share this signed budget
@@ -455,16 +460,82 @@ pub struct DebrisTypeData<'a> {
     pub metallic_debris_count: usize,
 }
 
-/// VERA-internal, gamemd equivalent UNCHECKED: the ceiling on the drain loop.
-///
-/// Native's loop is `while (0 < budget)` and only the per-entry count drains
-/// it, so a `DebrisMaximums=` list of all zeros gives a divisor of 1, a
-/// remainder that is always 0, and an infinite loop — gamemd hangs. Every stock
-/// `DebrisMaximums=` line is 4 or 6, so the divisor is never 1 and the loop is
-/// geometric; this bound only stops a mod from freezing the tick. It sits far
-/// above any reachable iteration count for a stock budget (`MaxDebris` tops out
-/// at 15 in stock rules).
+/// Recovery bound only for malformed or non-draining lists. Missing entries
+/// read outside native storage, divisor0 faults, and all-zero maxima spin.
+/// These authored inputs retain VERA's prior recovery, not native equivalence.
+/// Well-formed lists with a positive usable maximum have NO iteration limit:
+/// any number of zero picks must precede the eventual native budget drainage.
 const DEBRIS_LOOP_ITERATION_CEILING: u32 = 4096;
+
+/// Techno7022EC..7023DF and Bullet469D5C..469E12 share this cycling
+/// typed selector. A selected constructor finishes synchronously before the
+/// next selector, with the origin queried separately for every piece.
+pub(crate) fn throw_typed_debris(
+    mut budget: i32,
+    types: &[Option<(VoxelAnimTypeId, &VoxelAnimType)>],
+    maximums: &[i32],
+    owner_house: Option<InternedId>,
+    host: &mut impl VoxelDebrisHost,
+) -> Result<i32, NativeX87Error> {
+    if !types.is_empty() && budget > 0 {
+        let mut well_formed = true;
+        let mut can_drain = false;
+        for (index, entry) in types.iter().enumerate() {
+            well_formed &= entry.is_some();
+            match maximums.get(index).copied() {
+                Some(maximum) if (0..i32::MAX).contains(&maximum) => {
+                    can_drain |= maximum > 0;
+                }
+                _ => well_formed = false,
+            }
+        }
+        let bounded_recovery = !well_formed || !can_drain;
+        let mut index = 0usize;
+        let mut iterations = 0u32;
+        loop {
+            // VERA-internal, gamemd equivalent UNCHECKED: a `DebrisMaximums`
+            // entry this list does not have is treated as 0, where native reads
+            // past the vector's end. Stock authors the two lists at equal
+            // length — 36 sections, each `DebrisTypes=TIRE` with one maximum —
+            // so this is unreachable in stock.
+            let maximum = maximums.get(index).copied().unwrap_or(0);
+            // VERA-internal, gamemd equivalent UNCHECKED: the `.max(1)` floor.
+            // Native computes the divisor as `INC ECX` over the raw entry and
+            // divides with `IDIV ECX` at `0x00702339`, so a `DebrisMaximums=-1`
+            // entry faults there. Every stock `DebrisMaximums=` line is 4 or 6,
+            // so only a modded rules file reaches the floor.
+            let divisor = maximum.saturating_add(1).max(1);
+            let mut count = raw_abs_modulo(host.rng().next_u32(), divisor);
+            if count >= budget {
+                count = budget;
+            }
+            if count > 0
+                && let Some((type_id, voxel_type)) = types[index]
+            {
+                for _ in 0..count {
+                    let origin = host.voxel_origin();
+                    host.construct_voxel(type_id, voxel_type, owner_house, origin)?;
+                }
+            }
+            budget = budget.wrapping_sub(count);
+            index += 1;
+            if index >= types.len() {
+                index = 0;
+            }
+            if budget <= 0 {
+                break;
+            }
+            if bounded_recovery {
+                iterations += 1;
+                if iterations >= DEBRIS_LOOP_ITERATION_CEILING {
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(budget)
+}
 
 /// The whole debris block of `TechnoClass::ReceiveDamage @ 0x00701900`, read
 /// from the disassembly at `0x00702281`..`0x0070256C`.
@@ -560,8 +631,7 @@ const DEBRIS_LOOP_ITERATION_CEILING: u32 = 4096;
 pub fn throw_death_debris(
     data: &DebrisTypeData<'_>,
     owner_house: Option<InternedId>,
-    origin: IVec3,
-    host: &mut impl DeathDebrisHost,
+    host: &mut impl VoxelDebrisHost,
 ) -> Result<(), NativeX87Error> {
     // `Random__RandomRanged` sorts reversed bounds and consumes no draw when
     // they coincide; `next_range_i32_inclusive` models that helper directly.
@@ -574,55 +644,13 @@ pub fn throw_death_debris(
     // modded rules file inverts it.
     let mut budget = debris_budget(data.min_debris, data.max_debris, host.rng());
 
-    if !data.debris_types.is_empty() && budget > 0 {
-        let mut index = 0usize;
-        let mut iterations = 0u32;
-        loop {
-            // VERA-internal, gamemd equivalent UNCHECKED: a `DebrisMaximums`
-            // entry this list does not have is treated as 0, where native reads
-            // past the vector's end. Stock authors the two lists at equal
-            // length — 36 sections, each `DebrisTypes=TIRE` with one maximum —
-            // so this is unreachable in stock.
-            let maximum = data.debris_maximums.get(index).copied().unwrap_or(0);
-            // VERA-internal, gamemd equivalent UNCHECKED: the `.max(1)` floor.
-            // Native computes the divisor as `INC ECX` over the raw entry and
-            // divides with `IDIV ECX` at `0x00702339`, so a `DebrisMaximums=-1`
-            // entry faults there. Every stock `DebrisMaximums=` line is 4 or 6,
-            // so only a modded rules file reaches the floor.
-            let divisor = maximum.saturating_add(1).max(1) as u32;
-            let mut count = host.rng().next_raw_abs_modulo(divisor) as i32;
-            if count >= budget {
-                count = budget;
-            }
-            if count > 0
-                && let Some((type_id, voxel_type)) = data.debris_types[index]
-            {
-                for _ in 0..count {
-                    let spawn = VoxelDebrisSpawn {
-                        type_id,
-                        object: spawn_debris_piece(
-                            UNASSIGNED_STABLE_ID,
-                            type_id,
-                            voxel_type,
-                            owner_house,
-                            origin,
-                            host.rng(),
-                        )?,
-                    };
-                    host.admit_voxel(&spawn);
-                }
-            }
-            budget -= count;
-            index += 1;
-            if index >= data.debris_types.len() {
-                index = 0;
-            }
-            iterations += 1;
-            if budget <= 0 || iterations >= DEBRIS_LOOP_ITERATION_CEILING {
-                break;
-            }
-        }
-    }
+    budget = throw_typed_debris(
+        budget,
+        data.debris_types,
+        data.debris_maximums,
+        owner_house,
+        host,
+    )?;
 
     if data.debris_anim_count > 0 {
         throw_shp_debris(
@@ -686,9 +714,46 @@ mod tests {
         }
     }
 
+    /// Each live identity contributes to the world hash independently of the
+    /// shared constructor cursor. Only this owner may mutate it for the check.
+    #[test]
+    fn native_identity_changes_world_hash_without_advancing_the_cursor() {
+        let mut sim = crate::sim::world::Simulation::new();
+        let mut deferred = Vec::new();
+        sim.emit_debris_voxel(
+            VoxelAnimTypeId(0),
+            &tire(),
+            None,
+            IVec3::new(1280, 2560, 0),
+            true,
+            &mut deferred,
+        )
+        .expect("in domain");
+        assert!(deferred.is_empty());
+        let id = *sim.voxel_anims().iter().next().unwrap().0;
+        let original_id = sim.voxel_anims().get(id).unwrap().native_unique_id();
+        let cursor = sim.native_identity_cursor();
+        let before = sim.state_hash();
+        sim.substrate
+            .voxel_anims
+            .get_mut(id)
+            .unwrap()
+            .native_unique_id = 99;
+        assert_eq!(sim.native_identity_cursor(), cursor);
+        assert_ne!(sim.state_hash(), before);
+        sim.substrate
+            .voxel_anims
+            .get_mut(id)
+            .unwrap()
+            .native_unique_id = original_id;
+        assert_eq!(sim.native_identity_cursor(), cursor);
+        assert_eq!(sim.state_hash(), before);
+    }
+
     struct NumericDebrisHost<'a> {
         rng: &'a mut SimRng,
         receipt: DeathDebris,
+        next_id: u64,
     }
 
     impl ShpDebrisHost for NumericDebrisHost<'_> {
@@ -705,9 +770,30 @@ mod tests {
         }
     }
 
-    impl DeathDebrisHost for NumericDebrisHost<'_> {
-        fn admit_voxel(&mut self, spawn: &VoxelDebrisSpawn) {
-            self.receipt.voxels.push(spawn.clone());
+    impl VoxelDebrisHost for NumericDebrisHost<'_> {
+        fn voxel_origin(&self) -> IVec3 {
+            IVec3::new(1280, 2560, 0)
+        }
+        fn construct_voxel(
+            &mut self,
+            type_id: VoxelAnimTypeId,
+            voxel_type: &VoxelAnimType,
+            owner_house: Option<InternedId>,
+            origin: IVec3,
+        ) -> Result<(), NativeX87Error> {
+            self.next_id += 1;
+            // Supplied numeric-fixture identities, not native cursor evidence.
+            let object = spawn_debris_piece(
+                self.next_id,
+                self.next_id as i32,
+                type_id,
+                voxel_type,
+                owner_house,
+                origin,
+                self.rng,
+            )?;
+            self.receipt.voxels.push(VoxelDebrisSpawn { object });
+            Ok(())
         }
     }
 
@@ -715,8 +801,9 @@ mod tests {
         let mut host = NumericDebrisHost {
             rng,
             receipt: DeathDebris::default(),
+            next_id: 0,
         };
-        throw_death_debris(input, None, IVec3::new(1280, 2560, 0), &mut host)
+        throw_death_debris(input, None, &mut host)
             .expect("the debris block stays inside the verified x87 domain");
         host.receipt
     }
@@ -906,6 +993,7 @@ mod tests {
         );
         let piece = spawn_debris_piece(
             7,
+            0,
             VoxelAnimTypeId(0),
             &voxel_type,
             None,
@@ -947,6 +1035,7 @@ mod tests {
         let mut rng = SimRng::new(4);
         let piece = spawn_debris_piece(
             1,
+            0,
             VoxelAnimTypeId(0),
             &tire(),
             None,
@@ -995,6 +1084,7 @@ mod tests {
         let mut rng = SimRng::new(1234);
         let mut piece = spawn_debris_piece(
             1,
+            0,
             VoxelAnimTypeId(0),
             &tire(),
             None,
@@ -1039,9 +1129,16 @@ mod tests {
         // `+0x110` is tested at the top of the AI, above the decrement, so a
         // marked object never spends another tick of its duration.
         let mut rng = SimRng::new(3);
-        let mut piece =
-            spawn_debris_piece(1, VoxelAnimTypeId(0), &tire(), None, IVec3::ZERO, &mut rng)
-                .expect("in domain");
+        let mut piece = spawn_debris_piece(
+            1,
+            0,
+            VoxelAnimTypeId(0),
+            &tire(),
+            None,
+            IVec3::ZERO,
+            &mut rng,
+        )
+        .expect("in domain");
         piece.marked_for_deletion = true;
         assert_eq!(
             voxel_anim_ai(&mut piece, &FlatGround).expect("in domain"),
@@ -1083,6 +1180,7 @@ mod tests {
         let mut rng = SimRng::new(88);
         let mut piece = spawn_debris_piece(
             1,
+            0,
             VoxelAnimTypeId(0),
             &tire(),
             None,

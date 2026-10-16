@@ -1966,6 +1966,18 @@ impl Simulation {
         changed
     }
 
+    /// Manual frame writer62979A..6297D7: restart the owned stage timer,
+    /// write its reload rate (+C0 at6297B7), then set the requested frame.
+    /// The animation remains in Logic and must retain this rate on expiry.
+    pub(crate) fn set_anim_manual_frame(&mut self, id: AnimId, frame: i32, duration: u16) {
+        let current = self.session.binary_frame as i32;
+        if let Some(anim) = self.anim_mut_by_id(id) {
+            anim.runtime.frame_timer = CdTimer::started(current, i32::from(duration));
+            anim.runtime.rate_reload = duration;
+            anim.runtime.current_frame = frame;
+        }
+    }
+
     pub(crate) fn set_anim_frame_and_z_adjust(&mut self, id: AnimId, frame: i32, z_adjust: i32) {
         if let Some(anim) = self.anim_mut_by_id(id) {
             anim.runtime.current_frame = frame;
@@ -2105,8 +2117,9 @@ impl Simulation {
             {
                 return false;
             }
-            let radius = rules
-                .object(self.interner.resolve(entity.type_ref()))
+            let radius = self
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .map_or(0, |object| i32::from(object.psychic_detection_radius));
             if radius <= 0
                 || self.building_operational_state(entity.stable_id(), rules) != Some(true)
@@ -4673,6 +4686,136 @@ mod tests {
             }
         }
         assert_eq!(assigned_identity_rows, 134);
+    }
+
+    /// Original full Anim421EA0 constructor controls, with a supplied genuine
+    /// Random2Class state that makes one of the Z/Y/X draws INT_MIN. Shared
+    /// raw_abs_modulo must retain the native CDQ/XOR/SUB-before-IDIV sign.
+    /// Frame count 2 is a declared fixture binding; no image/render claim.
+    #[test]
+    fn bouncer_launch_int_min_axes_match_the_original() {
+        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/anim_bouncer_launch_intmin.json",
+        ))
+        .unwrap();
+        let rows = golden["ctor"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            let input = &row["input"];
+            let name = input["type"].as_str().unwrap();
+            let rate = &input["random_rate"];
+            let rules = runtime_rules(
+                &format!(
+                    "[{name}]\nBouncer=yes\nRandomRate={},{}\nElasticity={}\nMaxXYVel={}\nMinZVel={}\nEnd=2\n",
+                    rate[0], rate[1], input["elasticity"], input["max_xy"], input["min_z"],
+                ),
+                &[(name, 2)],
+            );
+            let mut sim = Simulation::with_seed(0);
+            // The recorded seed describes native setup, not this constrained
+            // boundary. Import every logical RNG field without reseeding it.
+            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+                row["rng_before"].as_str().unwrap(),
+            );
+            let type_id = sim.interner.intern(name);
+            let native_id = sim.next_native_runtime_id();
+            let at = |axis: usize| input["coord"][axis].as_i64().unwrap() as i32;
+            let (id, raw) = crate::sim::rng::trace_draws(|| {
+                sim.spawn_anim_at_world_with_constructor(
+                    &rules,
+                    runtime_descriptor(type_id, 0),
+                    AnimWorldCoord {
+                        x: at(0),
+                        y: at(1),
+                        z: at(2),
+                    },
+                    AnimConstructorInput::AssignedIdentity(native_id),
+                )
+                .unwrap()
+            });
+            let actual_raw: Vec<u32> = raw
+                .iter()
+                .map(|draw| draw["value"].as_u64().unwrap() as u32)
+                .collect();
+            let native_raw: Vec<u32> = row["raw_draws"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|draw| draw.as_u64().unwrap() as u32)
+                .collect();
+            assert_eq!(actual_raw, native_raw, "{input}: all raw words in order");
+            assert_eq!(
+                raw.len() as u64,
+                row["raw_draw_count"].as_u64().unwrap(),
+                "{input}"
+            );
+            assert_eq!(
+                sim.scenario_rng.native_state_hex(),
+                row["rng_after"].as_str().unwrap(),
+                "{input}"
+            );
+
+            let velocity_draws: Vec<u32> = row["velocity_draws"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|draw| draw.as_i64().unwrap() as i32 as u32)
+                .collect();
+            assert_eq!(
+                &actual_raw[..3],
+                velocity_draws.as_slice(),
+                "{input}: Z,Y,X first"
+            );
+            let exceptional_draw = match input["name"].as_str().unwrap() {
+                "int_min_z" => 0,
+                "int_min_y" => 1,
+                "int_min_x" => 2,
+                name => panic!("unexpected axis control {name}"),
+            };
+            assert_eq!(actual_raw[exceptional_draw], i32::MIN as u32, "{input}");
+            assert_eq!(
+                velocity_draws
+                    .iter()
+                    .filter(|&&word| word == i32::MIN as u32)
+                    .count(),
+                1
+            );
+            let request_sites: Vec<_> = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|event| event["site"].as_str())
+                .collect();
+            assert_eq!(
+                request_sites,
+                [
+                    "0x004221F5",
+                    "0x00422552",
+                    "0x00422564",
+                    "0x00422579",
+                    "0x00439857",
+                    "0x00439875",
+                    "0x00439897"
+                ],
+                "{input}"
+            );
+
+            let anim = sim.anim(id).unwrap();
+            assert_eq!(anim.native_unique_id, native_id);
+            let body = anim.bounce.expect("Bouncer=yes must construct its body");
+            // Every stored field, including both quaternions, is compared to
+            // the whole original constructor rather than a second launch port.
+            let actual = serde_json::json!({
+                "elasticity_bits": body.elasticity.bits(),
+                "gravity_bits": body.gravity.bits(),
+                "clamp_bits": body.angular_velocity_magnitude.bits(),
+                "position_bits": body.position.map(|v| v.bits()),
+                "velocity_bits": body.velocity.map(|v| v.bits()),
+                "orientation_bits": body.orientation.map(|v| v.bits()),
+                "rotation_bits": body.rotation.map(|v| v.bits()),
+            });
+            assert_eq!(actual, row["bounce"], "{input}: whole native Bounce state");
+        }
     }
 
     /// A stock-shaped debris chunk (`DBRIS1LG` numbers, `MaxXYVel` cut to 0.5

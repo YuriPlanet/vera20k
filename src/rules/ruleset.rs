@@ -3639,6 +3639,9 @@ pub struct RuleSet {
     /// Uppercase type ID → handle. Uppercase keys give O(1) case-insensitive
     /// resolution, matching the engine's case-insensitive find-or-allocate.
     object_index: LookupMap<String, TypeHandle>,
+    /// Distinct for every `RuleSet` the process builds, so a cache of this
+    /// set's handles can tell it from another set ([`Self::serial`]).
+    serial: u64,
     /// Per-native-registry identity authority. Unlike the broad lookup above,
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.
@@ -3647,11 +3650,11 @@ pub struct RuleSet {
     /// registries to its ordered array index (`+0xDF8`).
     type_array_indices: HashMap<(ObjectCategory, String), i32>,
     /// All weapons indexed by ID (e.g., "105mm" → WeaponType).
-    weapons: HashMap<String, WeaponType>,
+    weapons: LookupMap<String, WeaponType>,
     /// All warheads indexed by ID (e.g., "AP" → WarheadType).
-    warheads: HashMap<String, WarheadType>,
+    warheads: LookupMap<String, WarheadType>,
     /// All projectiles indexed by ID (e.g., "InvisibleLow" → ProjectileType).
-    projectiles: HashMap<String, ProjectileType>,
+    projectiles: LookupMap<String, ProjectileType>,
     /// Country-level rules indexed by country/house type ID.
     countries: HashMap<String, CountryRules>,
     /// Country identities in native `[Countries]` registration order.
@@ -3837,6 +3840,10 @@ pub struct RuleSet {
     /// GPU-independent SHP frame counts used by particle timing. Bound once
     /// from the active assets and ART data.
     effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog,
+    /// Immutable loaded main-VXL admission, rebuilt from ART/rules and the
+    /// active AssetManager with effect assets. Gameplay and rendering share
+    /// the GPU-independent physical model loader.
+    voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -3850,6 +3857,10 @@ pub struct RuleSet {
     /// this rules-owned resource directly; presentation cannot replace timing
     /// on an individual frame.
     animation_sequences: BTreeMap<String, crate::rules::animation_sequence::SequenceSet>,
+    /// Each object handle's `animation_sequences` entry (by the object's
+    /// canonical id), so a lookup by name needs no string search. Derived:
+    /// every writer of the catalog rebuilds it; never hashed.
+    animation_sequence_by_handle: Vec<Option<crate::rules::animation_sequence::SequenceSet>>,
     /// Original UnitType fixed-ART read state. The animation catalog derives
     /// its supported frame projection here; asset installation never rereads it.
     unit_shp_read_states: BTreeMap<String, crate::rules::shp_vehicle_sequence::UnitShpReadState>,
@@ -4415,7 +4426,7 @@ impl RuleSet {
         }
 
         // Step 3: Parse weapon sections.
-        let mut weapons: HashMap<String, WeaponType> = HashMap::new();
+        let mut weapons: LookupMap<String, WeaponType> = LookupMap::default();
         // RulesClass allocates every value in [Warheads] before the per-type
         // ReadINI pass. Keep reference-driven allocations too: later rules
         // layers and runtime-specific globals can create warheads outside the
@@ -4450,7 +4461,7 @@ impl RuleSet {
         // weapon — pull it into the referenced set explicitly so the periodic
         // radiation damage can resolve it.
         warhead_ids.insert(radiation.site_warhead.clone());
-        let mut warheads: HashMap<String, WarheadType> = HashMap::new();
+        let mut warheads: LookupMap<String, WarheadType> = LookupMap::default();
         for warhead_id in &warhead_ids {
             if let Some(section) = ini.section(warhead_id) {
                 // Find-or-allocate by canonical section name (see weapons above).
@@ -4464,7 +4475,7 @@ impl RuleSet {
         }
 
         // Step 5: Collect projectile IDs referenced by weapons and parse them.
-        let mut projectiles: HashMap<String, ProjectileType> = HashMap::new();
+        let mut projectiles: LookupMap<String, ProjectileType> = LookupMap::default();
         let mut projectile_ids: HashSet<String> = HashSet::new();
         for weapon in weapons.values() {
             if let Some(ref proj_id) = weapon.projectile {
@@ -4697,9 +4708,11 @@ impl RuleSet {
             check_unique_ci("super_weapons", super_weapons.keys().collect());
         }
 
+        static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let mut rules = RuleSet {
             object_list,
             object_index,
+            serial: SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
             object_category_index,
             type_array_indices,
             weapons,
@@ -4780,11 +4793,13 @@ impl RuleSet {
                 .filter(|name| !name.is_empty())
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
+            voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_spawner_assets:
                 crate::rules::terrain_asset_catalog::TerrainSpawnerAssetCatalog::default(),
             animation_sequences: BTreeMap::new(),
+            animation_sequence_by_handle: Vec::new(),
             unit_shp_read_states: BTreeMap::new(),
             mission_control,
             // Single-source callers hash their one parsed INI. Production
@@ -4806,7 +4821,10 @@ impl RuleSet {
     /// equal-ignoring-case (the original engine's case-insensitive find merges
     /// them), so the scan yields at most one hit and the result stays
     /// deterministic for lockstep.
-    fn lookup_ci<'a, T>(map: &'a HashMap<String, T>, id: &str) -> Option<&'a T> {
+    fn lookup_ci<'a, T, S: std::hash::BuildHasher>(
+        map: &'a HashMap<String, T, S>,
+        id: &str,
+    ) -> Option<&'a T> {
         map.get(id).or_else(|| {
             map.iter()
                 .find_map(|(key, value)| key.eq_ignore_ascii_case(id).then_some(value))
@@ -4844,6 +4862,13 @@ impl RuleSet {
         } else {
             self.object_index.get(id).copied()
         }
+    }
+
+    /// This set's identity: nonzero and distinct from every other `RuleSet`
+    /// built in the process. It reaches no result; caches of handles compare
+    /// it to know whose handles they hold.
+    pub fn serial(&self) -> u64 {
+        self.serial
     }
 
     /// Dereference a handle to its object. Handles only originate from this
@@ -5198,6 +5223,7 @@ impl RuleSet {
         self.animation_sequences.hash(&mut hasher);
         self.unit_shp_read_states.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
+        self.voxel_assets.hash(&mut hasher);
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_spawner_assets.hash(&mut hasher);
@@ -5789,6 +5815,7 @@ impl RuleSet {
     }
 
     fn project_art_data(&mut self) {
+        self.voxel_assets = Default::default();
         let art = &self.art_registry;
         // Projectile ART is already projected from the per-pass registry owner.
         // A final-image reread here would lose omission/cache/default semantics.
@@ -5983,6 +6010,7 @@ impl RuleSet {
         art: crate::rules::art_data::ArtRegistry,
     ) {
         self.art_registry = art;
+        self.voxel_assets = Default::default();
     }
 
     #[cfg(test)]
@@ -6035,6 +6063,7 @@ impl RuleSet {
         &mut self,
         name: &str,
     ) -> Option<&mut crate::rules::art_data::ArtEntry> {
+        self.voxel_assets = Default::default();
         self.art_registry.get_mut(name)
     }
 
@@ -6061,6 +6090,32 @@ impl RuleSet {
             theater_ext,
             theater_name,
         );
+        self.voxel_assets =
+            crate::rules::voxel_asset_catalog::VoxelAssetCatalog::bind(self, asset_manager);
+    }
+
+    /// Techno6F9E10's loaded-main-VXL predicate for the type `object` names,
+    /// never an ART declaration or renderer-cache query. Unbound/missing/
+    /// malformed models answer false.
+    pub(crate) fn object_has_loaded_voxel(&self, object: TypeHandle) -> bool {
+        self.voxel_assets.contains(object)
+    }
+
+    /// Original main-VXL half sizes retained by the same immutable binding as
+    /// IsVoxel6F9E10. Draw_Matrix and GetFLH consume this input independently
+    /// of the renderer's model or pose caches.
+    pub(crate) fn object_voxel_half_sizes(&self, type_id: &str) -> Option<[f32; 2]> {
+        self.voxel_assets.half_sizes(type_id)
+    }
+
+    /// Explicit loaded model prior for headless component fixtures. Production
+    /// callers bind immutable admission from the active physical assets.
+    #[cfg(test)]
+    pub(crate) fn supply_loaded_voxel_for_test(&mut self, type_id: &str) {
+        let object = self
+            .type_handle(type_id)
+            .expect("loaded type fixture must exist");
+        self.voxel_assets.supply_loaded(type_id, object);
     }
 
     /// Resolve raw terrain SHP frame counts for authoritative TIBTRE midpoint
@@ -6178,6 +6233,15 @@ impl RuleSet {
                 self,
                 infantry_sequences,
             );
+        self.index_animation_sequences();
+    }
+
+    fn index_animation_sequences(&mut self) {
+        self.animation_sequence_by_handle = self
+            .object_list
+            .iter()
+            .map(|object| self.animation_sequences.get(&object.id).cloned())
+            .collect();
     }
 
     pub(crate) fn animation_sequences(
@@ -6190,8 +6254,8 @@ impl RuleSet {
         &self,
         type_id: &str,
     ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
-        let canonical = self.object(type_id)?.id.as_str();
-        self.animation_sequences.get(canonical)
+        let handle = self.type_handle(type_id)?;
+        self.animation_sequence_by_handle[handle.0 as usize].as_ref()
     }
 
     pub(crate) fn unit_shp_read_state(
@@ -6208,6 +6272,7 @@ impl RuleSet {
         animation_sequences: BTreeMap<String, crate::rules::animation_sequence::SequenceSet>,
     ) {
         self.animation_sequences = animation_sequences;
+        self.index_animation_sequences();
     }
 
     #[cfg(test)]
@@ -6699,8 +6764,13 @@ SpawnCount=3
         assert_eq!(general.maximum_queued_objects, 29);
         assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
         assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
-        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else { return; };
-        assert_eq!(retail.rules.general.scold_sound.as_deref(), Some("MenuScold"));
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        assert_eq!(
+            retail.rules.general.scold_sound.as_deref(),
+            Some("MenuScold")
+        );
     }
 
     /// RulesClass constructor @ 0x00667588 stores 0x280 leptons; ReadGeneral
@@ -10254,6 +10324,28 @@ Projectile=Invisible
                 fire_angle,
                 "{object}"
             );
+        }
+    }
+
+    #[test]
+    fn weight_reads_keep_the_current_value_between_rules_passes() {
+        // TechnoType ctor710C66..710C71 initializes double1.0; reader
+        //7124CF..7124EA passes that current value to ReadDouble5283D0.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\n",
+        ));
+        for (text, expected) in [
+            ("[MTNK]\nArmor=heavy\n", SimFixed::ONE),
+            ("[MTNK]\nWeight=3.5\n", SimFixed::lit("3.5")),
+            ("[MTNK]\nSpeed=6\n", SimFixed::lit("3.5")),
+            // Native ReadDouble scans malformed authored text as zero; only
+            // an absent key retains the current field.
+            ("[MTNK]\nWeight=invalid\n", SimFixed::ZERO),
+            ("[MTNK]\nSpeed=7\n", SimFixed::ZERO),
+        ] {
+            layers.push(RulesLayerKind::Scenario, IniFile::from_str(text));
+            let rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(rules.object("MTNK").unwrap().weight, expected);
         }
     }
 

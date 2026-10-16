@@ -8,11 +8,11 @@
 //! derived too. Native comparisons: crate_ground_membership.json.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use super::ground_keys::{GroundKeys, GroundSortKeys, ReadContext};
 use crate::sim::touch_log::Touched;
+use crate::util::lookup_hash::LookupMap;
 
 /// Native layer index; -1 (no display) is represented by `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +58,7 @@ impl DisplayLayer {
 pub(crate) struct DisplayLayers {
     layers: [Vec<u64>; 5],
     /// Rebuilt from the vectors on deserialize; updated only by submit/remove.
-    registered: HashMap<u64, DisplayLayer>,
+    registered: LookupMap<u64, DisplayLayer>,
     /// What the Ground members' key reads kept, in lockstep with Ground.
     ground_keys: GroundKeys,
 }
@@ -101,9 +101,7 @@ impl DisplayLayers {
             // Compare5F6220 reads new, then existing. GetYSort is pure, so
             // the new object's key is read once for the whole scan.
             let (new_key, kept) = keys.read(id);
-            let index = (0..members.len())
-                .find(|&index| self.ground_keys.key(index, members[index], keys) > new_key)
-                .unwrap_or(members.len());
+            let index = self.ground_keys.first_greater(members, new_key, keys);
             self.ground_keys.insert(index, id, new_key, kept);
             index
         } else {
@@ -197,7 +195,7 @@ impl Serialize for DisplayLayers {
 impl<'de> Deserialize<'de> for DisplayLayers {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let layers = <[Vec<u64>; 5]>::deserialize(deserializer)?;
-        let mut registered = HashMap::new();
+        let mut registered = LookupMap::default();
         for (layer, members) in layers.iter().enumerate() {
             for &id in members {
                 if id == 0 || registered.insert(id, DisplayLayer(layer as u8)).is_some() {

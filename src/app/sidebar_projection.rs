@@ -424,7 +424,7 @@ pub(crate) fn cameo_candidates(
         if !candidates
             .iter()
             .any(|entry| entry.id == CameoId::Object(item.type_id))
-            && let Some(kind) = rules.object(sim.interner.resolve(item.type_id))
+            && let Some(kind) = sim.interner.object_type(item.type_id, rules)
             && let Some(entry) = object(item.type_id, true, sim.cost_of(owner, kind, rules))
         {
             candidates.push(entry);

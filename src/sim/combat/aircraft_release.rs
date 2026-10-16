@@ -26,11 +26,11 @@ fn live_shot<'r>(
     id: u64,
 ) -> Option<(i32, Option<AdmittedFire<'r>>)> {
     let entity = world.substrate.entities.get(id)?;
-    let obj = rules.object(world.interner.resolve(entity.type_ref()))?;
+    let obj = world.interner.object_type(entity.type_ref(), rules)?;
     let target = entity.attack_target.target();
     let target_facts = match target {
         Some(TargetKind::Entity(id)) => world.substrate.entities.get(id).and_then(|target| {
-            let obj = rules.object(world.interner.resolve(target.type_ref()))?;
+            let obj = world.interner.object_type(target.type_ref(), rules)?;
             Some(combat_weapon::techno_target_facts(
                 target,
                 obj,
@@ -108,7 +108,7 @@ pub(super) fn visit(
     else {
         return;
     };
-    let Some(obj) = rules.object(world.interner.resolve(snap.type_id)) else {
+    let Some(obj) = world.interner.object_type(snap.type_id, rules) else {
         return;
     };
     let entity = world.substrate.entities.get(id).unwrap();
@@ -196,9 +196,7 @@ impl CombatStrike<'_, '_, '_> {
         let target = self.target()?;
         let target_facts = match target {
             TargetKind::Entity(id) => world.substrate.entities.get(id).and_then(|target| {
-                let obj = self
-                    .rules
-                    .object(world.interner.resolve(target.type_ref()))?;
+                let obj = world.interner.object_type(target.type_ref(), self.rules)?;
                 Some(combat_weapon::techno_target_facts(
                     target,
                     obj,

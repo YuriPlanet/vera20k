@@ -9040,6 +9040,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 "voxel" => {
                     let debris = crate::sim::voxel_anim::spawn_debris_piece(
                         id,
+                        0,
                         VoxelAnimTypeId(0),
                         &voxel_type,
                         None,

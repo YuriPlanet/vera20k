@@ -26,7 +26,7 @@ fn stock_cloak_tick_facts(
     if entity.category() != EntityCategory::Unit || entity.cloak.is_none() {
         return None;
     }
-    let object = rules.object(sim.interner.resolve(entity.type_ref()))?;
+    let object = sim.interner.object_type(entity.type_ref(), rules)?;
     let rank_cloak = has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::Cloak);
     if !object.cloakable && !rank_cloak {
         return None;
@@ -46,7 +46,6 @@ fn stock_cloak_tick_facts(
                 Some(crate::sim::movement::SpeedRules::new(
                     rules,
                     &sim.interner,
-                    &sim.type_handles,
                     &sim.houses,
                 )),
                 sim.session.binary_frame,
@@ -96,7 +95,7 @@ fn stock_cloak_tick_facts(
             .entities
             .get(contact_id)
             .filter(|contact| contact.category() == EntityCategory::Structure)
-            .and_then(|contact| rules.object(sim.interner.resolve(contact.type_ref())))
+            .and_then(|contact| sim.interner.object_type(contact.type_ref(), rules))
             .is_some_and(|contact_type| contact_type.weapons_factory)
     });
     let current_frame = sim.session.binary_frame as i32;
@@ -478,8 +477,9 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         ) {
             continue;
         }
-        let detects = rules
-            .object(sim.interner.resolve(other.type_ref()))
+        let detects = sim
+            .interner
+            .object_type(other.type_ref(), rules)
             .is_some_and(|object| object.sensors);
         if !detects {
             continue;
@@ -494,7 +494,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         .substrate
         .entities
         .get(id)
-        .and_then(|entity| rules.object(sim.interner.resolve(entity.type_ref())))
+        .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
         .map_or(1, |object| object.cloaking_speed);
     let now = sim.session.binary_frame as i32;
     let surfaced = sim
@@ -605,7 +605,7 @@ pub(super) fn tick_stock_cloak_producer(
     if category != EntityCategory::Unit {
         return;
     }
-    let Some(object) = rules.object(sim.interner.resolve(type_ref)) else {
+    let Some(object) = sim.interner.object_type(type_ref, rules) else {
         return;
     };
     let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);

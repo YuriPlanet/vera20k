@@ -146,7 +146,7 @@ pub(crate) fn acquire_best_target_for_entity(
     {
         return super::greatest_threat::ThreatScanOutcome::default();
     }
-    let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
+    let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
         return super::greatest_threat::ThreatScanOutcome::default();
     };
     // Native `TechnoClass::Greatest_Threat @ 0x006F8DF0` has no weapon
@@ -198,7 +198,7 @@ pub(crate) fn greatest_threat_for_entity(
     let Some(entity) = entities.get(attacker_id) else {
         return super::greatest_threat::ThreatScanOutcome::default();
     };
-    let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
+    let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
         return super::greatest_threat::ThreatScanOutcome::default();
     };
     // Dummy target: no current target when acquiring fresh.
@@ -298,7 +298,7 @@ pub(crate) fn calculate_ai_threat_score(
     scorer_enemy_house: Option<crate::sim::intern::InternedId>,
 ) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
-    let scorer_type = rules.object(interner.resolve(scorer.type_ref()))?;
+    let scorer_type = interner.object_type(scorer.type_ref(), rules)?;
     let coefficients = super::greatest_threat::ThreatCoefficients::resolve(
         rules,
         scorer_type,
@@ -379,8 +379,8 @@ pub(crate) fn should_retaliate(
         return false;
     }
     let (Some(victim_type), Some(source_type)) = (
-        rules.object(interner.resolve(victim.type_ref())),
-        rules.object(interner.resolve(source.type_ref())),
+        interner.object_type(victim.type_ref(), rules),
+        interner.object_type(source.type_ref(), rules),
     ) else {
         return false;
     };

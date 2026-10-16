@@ -407,7 +407,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
         .is_some_and(|handles| handles.is_crush(origin.warhead_ref))
         || entities
             .get(origin.source_id)
-            .and_then(|source| rules.object(interner.resolve(source.type_ref())))
+            .and_then(|source| interner.object_type(source.type_ref(), rules))
             .is_some_and(|source_type| source_type.damage_self);
 
     let cell_spread = warhead.cell_spread_f64;

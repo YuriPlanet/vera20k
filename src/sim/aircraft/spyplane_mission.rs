@@ -117,7 +117,7 @@ pub(super) fn overfly(
 /// weapon without a NULL test; no retail Spy Plane lacks one.
 fn weapon(sim: &Simulation, id: u64, rules: &RuleSet) -> Option<(i32, i32)> {
     let plane = sim.substrate.entities.get(id)?;
-    let object = rules.object(sim.interner.resolve(plane.type_ref()))?;
+    let object = sim.interner.object_type(plane.type_ref(), rules)?;
     let weapon =
         crate::sim::combat::combat_weapon::primary_for_tier(object, plane.veterancy.rank())
             .and_then(|weapon| rules.weapon(weapon))?;

@@ -193,6 +193,7 @@ fn destination_change_preserves_the_committed_head() {
             z: -347,
         },
         None,
+        0,
     );
     assert_eq!(
         entity

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight whole original70B280 impulse controls and ordinary70B570 visits on physical loaded GTNK, including eight compact checkpoints from one60-visit history",
+  "assumptions": [
+    "Existing voxel_oracle.raster owns the one VM, physical GTNK VXL/HVA/VPL load and native7160B4 half-size postpass. Original Unit type getters and Facing Current4C93D0 execute on supplied Unit-shaped fields. Type+B0 points at the real native-loaded VXL; no supplied IsVoxel or ApplyRocker result.",
+    "Weight1 is the actual TechnoType710C66 constructor default/current-field7124CF reader fallback and selected retail MTNK has no authored override. Other supplied double inputs3.5/0/negative1 are explicit numeric controls, not stock tuning or an invented nonpositive fallback.",
+    "Position, raw facing, force1.5 or weak0.1, no_dampen and initial four binary32 state words are component inputs. Whole70B280 executes 3D distance, facing/table geometry, division/gates and assignment; ordered field stores and reached guard/cap instructions are observed. No RNG is permitted inside ApplyRocker.",
+    "Whole70B570 executes normal updates without replacing Facing/type getters or damage returns; these bounded rows stay below its self-damage envelope. Seven controls visit twice; north retains visits1/2/3/5/10/20/40/60 from60 monotonic original updates without reseeding or replacing intermediate state. Native f32 state is retained between calls. Simulation fixed-point conversion is a separate consumer boundary and must preserve amplified nonzero-rate branches where required.",
+    "The same original Drive4AF540/4AFF60 and physical raster run afterward only to reuse the loaded-model owner. Their pixels/matrices are not impulse expected outputs. No actor construction/Unlimbo, upstream Parasite random-side choice, whole AI scheduling, timer/cleanup or scene parity claim."
+  ],
+  "substitutions": [
+    "Inherited immutable file-vtable I/O, successful allocation and declared original startup/CRT transport from voxel_oracle.raster. Original impulse/update/math/loaded-model instructions remain unchanged."
+  ],
+  "entry_points": {
+    "impulse": "0x0070B280",
+    "update": "0x0070B570",
+    "model_load": "0x00755DB0",
+    "half_sizes": "0x007160B4",
+    "drive_ctor": "0x004AF540",
+    "drive_empty": "0x004AF4E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.unit_rocking_update --impulse",
+  "payload_sha256": "80ef66cb71acb401805e74491bfa9021cb42270da1d97eb35a0d2fbd82c0dd84"
+}

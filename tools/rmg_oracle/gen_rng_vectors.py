@@ -70,6 +70,36 @@ def draws(state: bytes, count: int) -> tuple[list[int], bytes]:
     return values, current
 
 
+def constrained_state(seed: int, constraints: dict[int, int]) -> dict:
+    """Prepare explicit state-word controls, then verify unchanged original Next.
+
+    Only the early independent XOR lanes are admitted. This is input generation,
+    not a substitute generator: seeded_struct and draws execute original code.
+    """
+    original = seeded_struct(seed)
+    state = bytearray(original)
+    a, b = struct.unpack_from('<II', state, 4)
+    count = max(constraints) + 1
+    assert 0 < count <= 32 and min(constraints) >= 0
+    left = {(a + n) % 250 for n in range(count)}
+    right = {(b + n) % 250 for n in range(count)}
+    assert not left & right, 'Only independent early XOR lanes are supported'
+    changes = []
+    for n, word in sorted(constraints.items()):
+        index = (a + n) % 250
+        other = struct.unpack_from('<I', state, 12 + 4 * ((b + n) % 250))[0]
+        value = other ^ word
+        changes.append(dict(raw_index=n, state_word=index,
+                            before=struct.unpack_from('<I', state, 12 + 4 * index)[0],
+                            after=value, required_raw=word))
+        struct.pack_into('<I', state, 12 + 4 * index, value)
+    values, after = draws(bytes(state), count)
+    assert all(values[n] == word for n, word in constraints.items())
+    return dict(source_seed=seed, seeded_state_hex=original.hex(),
+                word_changes=changes, before_state_hex=bytes(state).hex(),
+                native_draws=values, after_verification_state_hex=after.hex())
+
+
 def ranged_history(seed: int, advance_raw: int = 0) -> dict:
     """Execute unchanged original routines, observing results and draw stores.
 

@@ -11,7 +11,7 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::render::batch::{DepthAxis, SpriteInstance};
 use crate::render::palette_light::PaletteLight;
 use crate::render::sprite_atlas::SpriteAtlas;
-use crate::render::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
+use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncoding};
 use crate::render::terrain_draw::TerrainPiece;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::projectile_type::ProjectileType;
@@ -175,10 +175,6 @@ pub(crate) fn projectile_draw_instance(
         // Bullet468104..46824A returns before the SHP frame, shadow and
         // palette arms. Its retained LoadVoxelAssets5F8110 pair supplies
         // frame0, diffuse lighting, type Color and no owner/cell lighting.
-        // Flat voxel's global81AF00 Z policy remains outside the Kirov chain.
-        if kind.flat {
-            return None;
-        }
         let image = kind.voxel_image_load()?;
         let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity)?;
         let entry = render_voxel(image, matrix)?;
@@ -186,12 +182,27 @@ pub(crate) fn projectile_draw_instance(
         let remap_row = runtime_scheme / 2 + 1;
         let shades = if runtime_scheme & 1 == 0 { 1 } else { 53 };
         let palette_light = PaletteLight::new([1000; 3], shades, 1000, true);
-        // Non-Flat flags0x800 select Convert+6C (490CE5), whose493DF0
-        // leaf reads A and copies color without a Z test or store.
-        parent.policy = crate::render::tactical_draw_plan::BlitPolicy::z_none(encoding);
+        // Flat46B1AC..46B21A: flags2800 select Convert+98 ->494B60,
+        // a strict Z-read/no-write leaf, gradient0 and file-backed81AF00=-65.
+        // Non-Flat flags800 retain Convert+6C ->493DF0 (no Z test/store),
+        // gradient2 and zero adjustment. Both use the same body and palette.
+        let (policy, z_adjust, gradient) = if kind.flat {
+            (
+                BlitPolicy::z_read(encoding),
+                -65.0,
+                crate::render::native_z::ZGradient::Flat,
+            )
+        } else {
+            (
+                BlitPolicy::z_none(encoding),
+                0.0,
+                crate::render::native_z::ZGradient::Vertical,
+            )
+        };
+        parent.policy = policy;
         let piece = ObjectPieceInstance {
-            target: ObjectTexture::UnitPose,
-            render_z: RenderZPolicy::None,
+            target: ObjectTexture::UnitPosePage(entry.page),
+            render_z: policy.render_z,
             instance: SpriteInstance {
                 position: [point[0] + entry.offset_x, point[1] + entry.offset_y],
                 size: entry.pixel_size,
@@ -205,11 +216,8 @@ pub(crate) fn projectile_draw_instance(
                     remap_row,
                     ..Default::default()
                 },
-                z_adjust: 0.0,
-                z_gradient: crate::render::native_z::pack_z_gradient(
-                    crate::render::native_z::ZGradient::Vertical,
-                    false,
-                ),
+                z_adjust,
+                z_gradient: crate::render::native_z::pack_z_gradient(gradient, false),
                 ..Default::default()
             },
         };
@@ -292,4 +300,4 @@ mod tests {
 mod voxel_tests;
 
 #[cfg(test)]
-pub(crate) use voxel_tests::admitted_kirov_bomb;
+pub(crate) use voxel_tests::{admitted_kirov_bomb, launched_stock_submarine_torpedo};

@@ -163,8 +163,9 @@ impl Fixture {
                 .get(transport)
                 .expect("transport");
             let open_topped = self
-                .rules
-                .object(self.sim.interner.resolve(t.type_ref()))
+                .sim
+                .interner
+                .object_type(t.type_ref(), &self.rules)
                 .is_some_and(|object| object.open_topped);
             (t.position.rx(), t.position.ry(), open_topped)
         };

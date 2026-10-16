@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two whole original629FD0 DRON bites interleaved with preceding70B570 visits and real SparkSys constructors, plus retained fullGetFLH readbacks",
+  "assumptions": [
+    "Existing grapple_inputs/grapple_fixture configuration owns the physical reader and joined runtime, parameterized to DRON/MTNK/DroneJump/JUMP/Parasite on native-recalculated physical Clear tile0. Full selected Unit/weapon/projectile/warhead readers and actual selected SoundList execute. Type Weight/Strength, weapon Damage/ROF/Paralyzes, actual actor facing/coordinates/House slots, timers, game speed and component lighting are observed rather than imported from Rust defaults.",
+    "Existing electric_bolt.read_spark_types owns full original SparkSys/Spark constructors and layered readers on this same physical Reader VM; native type registries and heap references transfer through the existing joined runtime owner. Prepared empty runtime capacity is the existing transport boundary. Full62DC50/AbstractCreateID/Unlimbo/Logic execute before each upstream random-side request; no constructor or RNG result is supplied.",
+    "GTNK VXL/HVA/VPL original loader755DB0/5BD5C0 and postpass7160B4 execute through the existing physical raster VM. Actual produced header bytes/error flag and half-sizes are explicit component inputs to the joined MTNK Type+B0 and scalar fields; original6F9E10 admission returns1 and70B280 gate executes. Internal model pointers are not claimed as a full joined TypeReadVXL/I/O binding. File identities and produced fields are retained; sidecar records supported binary and replay command.",
+    "Frame0 precedes selected construction. Original source ObjectLimbo5F4D30 then CanInfect/AttachTo execute with living DRON/MTNK; full FireAt/Bullet/LimboLaunch is excluded. At each monotonic visit the victim whole70B570 precedes manager whole629FD0. Seven sparse rows cover two nonlethal bites, both actual random sides, lurch and settled incoming state. Full three-stream states and every original raw request/rejection, constructor/ID checkpoints and live coordinates are retained without per-bite reseeding.",
+    "Native f32 angles/rates remain authoritative between visits. Current component excludes other actor/ParticleSystem/Particle/Anim AI, whole Logic, culling/release/death/expiry and native scene pixels. Selected SparkSys constructors create no particles before AI and consume no RNG; this is observed, not assumed. RNG after this whole encounter is not an attribution proof for an ordinary full match.",
+    "Existing native_slope initializes original matrix/quaternion/camera prerequisites on the joined VM. Full GetFLH6F3AD0 reuses the ifv_fire_coord owner on actual MTNK inputs after each visit and asserts unchanged RNG/native cursor. The readonly query is a coordinate-control comparison, not a native actual tank firing claim."
+  ],
+  "substitutions": [
+    "Inherited successful bounded allocation/free, physical lexical INI and requested-SHP cache, IDX/BAG transport, Windows GUID/COM activation/OleRun through original factories, and declared presentation sinks. No selector/trig/ftol/RNG/GetCoords/constructor/Unlimbo/AttachTo/damage gameplay return or original instruction is replaced."
+  ],
+  "entry_points": {
+    "parasite": "0x00629FD0",
+    "rocking": "0x0070B570",
+    "impulse": "0x0070B280",
+    "side_choice": "0x0062A17F",
+    "impulse_call": "0x0062A21C",
+    "particle_ctor": "0x0062DC50",
+    "get_flh": "0x006F3AD0",
+    "drive_matrix": "0x004AFF60"
+  },
+  "replay_command": "python -m tools.spatial_oracle.parasite_water_gate --drone",
+  "payload_sha256": "82c9a59e26ea3aaff09a22786f24ee40b30c5af4139c157caeb8b06dd3b97826"
+}

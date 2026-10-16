@@ -97,7 +97,8 @@ pub struct SpriteInstance {
     pub palette_light: crate::render::palette_light::PaletteLight,
     /// For a palette-indexed SHP atlas page, the palette row its indices
     /// resolve through, plus one (`ShpSpriteEntry::source_palette`); 0 samples
-    /// an RGBA page.
+    /// an RGBA page. Voxel pages use 0 for the theater/house palette and
+    /// 1 for the native global UNITSNO palette, bypassing house substitution.
     pub source_palette: u32,
 }
 

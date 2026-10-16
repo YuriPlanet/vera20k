@@ -29,7 +29,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(None);
         };
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return Ok(None);
         };
         let terrain = self

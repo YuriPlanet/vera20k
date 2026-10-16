@@ -75,8 +75,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Build the game
-        # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord).
-        run: cargo build --release --locked --no-default-features --bin vera20k
+        # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
+        # and use the whole-program `shipping` profile (Cargo.toml).
+        run: cargo build --profile shipping --locked --no-default-features --bin vera20k
       - name: Package
         shell: bash
         run: |
@@ -84,7 +85,7 @@ jobs:
           version="${GITHUB_REF_NAME//\//-}"
           name="vera20k-$version-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp "target/release/${{ matrix.program }}" config.toml.example LICENSE-GPL \
+          cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
           sed "s/@VERSION@/$version/" .github/release/README.txt.in > "dist/$name/README.txt"
           # Files sit at the archive root so they can be extracted straight into

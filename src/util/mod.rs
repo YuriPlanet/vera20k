@@ -28,6 +28,7 @@ pub(crate) mod native_random;
 pub mod native_string;
 pub mod native_trig;
 pub mod native_x87;
+pub(crate) mod native_quaternion;
 pub mod pixel_conversion;
 pub mod read_helpers;
 pub(crate) mod retail_pointer_sort;
@@ -40,3 +41,5 @@ pub(crate) mod rect;
 pub(crate) mod native_file_time;
 
 pub mod native_file_name;
+
+pub(crate) mod native_affine;

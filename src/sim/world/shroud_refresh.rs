@@ -3,6 +3,7 @@
 //! House/view-cache reconciliation never advances these clocks or emits events.
 use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::{AllocatedCellOrder, ROW_NEIGHBORS};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::{pathfinding::PathGrid, vision};
 
@@ -35,6 +36,8 @@ struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
     discovery_queries: std::collections::BTreeSet<(u16, u16)>,
     notifications: Vec<((u16, u16), bool)>,
+    /// Map578100 receiver calls.
+    edge_visits: usize,
 }
 
 #[cfg(test)]
@@ -159,29 +162,193 @@ impl Simulation {
     /// Map578100's two complete allocated passes. A synchronous discovery
     /// may modify shroud or reset the shared cursor; do not retain a cursor,
     /// Cell snapshot or visibility borrow across its callback.
+    ///
+    /// On a regular terrain ([`AllocatedCellOrder`]) each pass visits only the
+    /// cells the viewer's map lists as changed ([`vision::ListedEdgeCells`]),
+    /// in walk order: the walk's other cells neither change nor notify. It
+    /// leaves the shared cursor and the canonical Dummy as the complete walk
+    /// does, and falls back to that walk when a callback moves the cursor.
+    /// Tests visiting every cell take the complete walk.
     fn update_shroud_edges(
         &mut self,
         viewer: crate::sim::intern::InternedId,
         context: UninitContext<'_>,
     ) {
-        for second_pass in [false, true] {
-            self.for_each_allocated_map_cell(context, |sim, cell| {
-                let notify = {
-                    let cells = context
-                        .terrain()
-                        .or(sim.resolved_terrain.as_ref())
-                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                    if second_pass {
-                        sim.fog
-                            .refresh_map_cell_ground_frame(viewer, cell, cells.as_ref())
-                    } else {
-                        sim.fog.sweep_pending_map_cell(viewer, cell, cells.as_ref())
-                    }
-                };
-                if let Some(notify) = notify {
-                    sim.notify_cell_change(notify.cell, viewer, notify.fresh, context);
-                }
+        self.update_shroud_edges_notifying(viewer, context, &mut |sim, notify| {
+            sim.notify_cell_change(notify.cell, viewer, notify.fresh, context);
+        });
+    }
+
+    /// [`Self::update_shroud_edges`] with `notify` receiving each change
+    /// synchronously, as CellChangeNotify does.
+    fn update_shroud_edges_notifying(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        context: UninitContext<'_>,
+        notify: &mut dyn FnMut(&mut Self, vision::MapCellNotification),
+    ) {
+        let order = self
+            .map_size_diamond()
+            .filter(|_| !vision::visit_every_cell())
+            .and_then(|(width, _)| {
+                let terrain = context.terrain().or(self.resolved_terrain.as_ref())?;
+                Some((
+                    terrain.allocated_cell_order(width)?,
+                    (terrain.width(), terrain.height()),
+                ))
             });
+        for refresh in [false, true] {
+            match &order {
+                Some((order, terrain_size)) => {
+                    let listed = self.fog.take_edge_cells(viewer, refresh, *terrain_size);
+                    let every = listed.is_none();
+                    self.walk_edge_cells(viewer, refresh, order, listed, context, notify);
+                    self.fog.finish_edge_walk(viewer);
+                    if refresh && every {
+                        self.fog.complete_edge_cells(viewer);
+                    }
+                }
+                None => {
+                    self.fog.untrack_edge_cells(viewer);
+                    self.for_each_allocated_map_cell(context, |sim, cell| {
+                        if let Some(change) = sim.visit_edge_cell(viewer, cell, refresh, context) {
+                            notify(sim, change);
+                        }
+                    });
+                }
+            }
+        }
+        #[cfg(test)]
+        if let Some((order, _)) = &order
+            && let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref())
+        {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            let missing = order.missing_neighbors_through(u32::MAX);
+            for rank in 0..order.len() {
+                let beside_dummy = missing
+                    .binary_search_by_key(&rank, |&(rank, _)| rank)
+                    .is_ok();
+                self.fog
+                    .assert_edge_cell_tracked(viewer, order.cell(rank), beside_dummy, &cells);
+            }
+        }
+    }
+
+    /// One Map578100 receiver: the sweep's, or with `refresh` the ground-frame
+    /// refresh's.
+    fn visit_edge_cell(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        cell: (u16, u16),
+        refresh: bool,
+        context: UninitContext<'_>,
+    ) -> Option<vision::MapCellNotification> {
+        #[cfg(test)]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.edge_visits += 1;
+            }
+        });
+        let cells = context
+            .terrain()
+            .or(self.resolved_terrain.as_ref())
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        if refresh {
+            self.fog
+                .refresh_map_cell_ground_frame(viewer, cell, cells.as_ref())
+        } else {
+            self.fog
+                .sweep_pending_map_cell(viewer, cell, cells.as_ref())
+        }
+    }
+
+    /// One Map578100 pass over `order`'s cells in walk order: the `listed`
+    /// ones (for a refresh with their neighbours, whose frames read them), or
+    /// every cell. Before each notification the shared cursor and the Dummy
+    /// hold what the complete walk leaves there, and cells the callback lists
+    /// later in the walk join this pass.
+    fn walk_edge_cells(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        refresh: bool,
+        order: &AllocatedCellOrder,
+        listed: Option<vision::ListedEdgeCells>,
+        context: UninitContext<'_>,
+        notify: &mut dyn FnMut(&mut Self, vision::MapCellNotification),
+    ) {
+        let mut ranks = RankSet::new(order.len());
+        match listed {
+            None => ranks.fill(order.len()),
+            Some(listed) => ranks.add_listed(order, &listed, refresh, 0),
+        }
+        let mut notified = None;
+        while let Some(rank) = ranks.pop() {
+            let Some(change) = self.visit_edge_cell(viewer, order.cell(rank), refresh, context)
+            else {
+                continue;
+            };
+            if refresh {
+                self.restamp_edge_dummy(viewer, order, notified, rank, context);
+            }
+            let cursor = order.cursor_after(rank);
+            self.native_allocated_cell_cursor = Some(cursor);
+            let mark = self.fog.edge_cells_listed(viewer, refresh);
+            notify(self, change);
+            notified = Some(rank);
+            if self.native_allocated_cell_cursor != Some(cursor) {
+                // A nested walk moved the shared cursor: the complete walk
+                // goes on from there, and the cells it may skip wait for
+                // the next update.
+                let rest: Vec<_> = ranks.drain().map(|rank| order.cell(rank)).collect();
+                self.fog.relist_edge_cells(viewer, refresh, rest);
+                while let Some(cell) = self.next_allocated_map_cell(context) {
+                    if let Some(change) = self.visit_edge_cell(viewer, cell, refresh, context) {
+                        notify(self, change);
+                    }
+                }
+                return;
+            }
+            let since = self.fog.edge_cells_since(viewer, refresh, mark);
+            ranks.add_listed(order, &since, refresh, rank + 1);
+        }
+        if refresh && let Some(last) = order.len().checked_sub(1) {
+            self.restamp_edge_dummy(viewer, order, notified, last, context);
+        }
+        self.native_allocated_cell_cursor = Some(order.end());
+    }
+
+    /// Leave the canonical Dummy as the complete refresh walk's lookups leave
+    /// it once it has visited `through`: stamped by the last unallocated
+    /// neighbour of the last cell after `after` whose frame reads its
+    /// neighbours. Without such a cell the walk stamped nothing since `after`.
+    fn restamp_edge_dummy(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        order: &AllocatedCellOrder,
+        after: Option<u32>,
+        through: u32,
+        context: UninitContext<'_>,
+    ) {
+        let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+            return;
+        };
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        for &(rank, missing) in order.missing_neighbors_through(through).iter().rev() {
+            if after.is_some_and(|after| rank <= after) {
+                return;
+            }
+            let cell = order.cell(rank);
+            if self
+                .fog
+                .ground_frame_reads_neighbors(viewer, cell, Some(&cells))
+            {
+                let (dx, dy) = ROW_NEIGHBORS[7 - missing.leading_zeros() as usize];
+                cells.lookup((
+                    (cell.0 as i16).wrapping_add(dx),
+                    (cell.1 as i16).wrapping_add(dy),
+                ));
+                return;
+            }
         }
     }
 
@@ -1098,12 +1265,7 @@ impl Simulation {
             || !crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 rules.map(|rules| {
-                    crate::sim::movement::SpeedRules::new(
-                        rules,
-                        &self.interner,
-                        &self.type_handles,
-                        &self.houses,
-                    )
+                    crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses)
                 }),
                 frame,
             )
@@ -1159,5 +1321,88 @@ impl Simulation {
                 entity.sight_refresh_timers.reload(viewer, frame);
             }
         }
+    }
+}
+
+/// Walk ranks still to visit, taken in ascending order.
+struct RankSet {
+    words: Vec<u64>,
+    /// No word before this one holds a rank.
+    first: usize,
+}
+
+impl RankSet {
+    fn new(len: u32) -> Self {
+        Self {
+            words: vec![0; (len as usize).div_ceil(64)],
+            first: 0,
+        }
+    }
+
+    fn insert(&mut self, rank: u32) {
+        let word = rank as usize / 64;
+        self.words[word] |= 1 << (rank % 64);
+        self.first = self.first.min(word);
+    }
+
+    /// Every rank below `len`.
+    fn fill(&mut self, len: u32) {
+        self.words.fill(u64::MAX);
+        if let Some(last) = self.words.last_mut()
+            && len % 64 != 0
+        {
+            *last = (1 << (len % 64)) - 1;
+        }
+        self.first = 0;
+    }
+
+    /// The ranks a pass visits for `listed`, from `from` on: each listed cell
+    /// and, for a refresh, the cells whose frames read it, and every cell
+    /// beside the Dummy when its ground changed.
+    fn add_listed(
+        &mut self,
+        order: &AllocatedCellOrder,
+        listed: &vision::ListedEdgeCells,
+        refresh: bool,
+        from: u32,
+    ) {
+        let mut add = |cell: (i32, i32)| {
+            if let Some(rank) = order.rank(cell).filter(|&rank| rank >= from) {
+                self.insert(rank);
+            }
+        };
+        for &(x, y) in &listed.cells {
+            let (x, y) = (i32::from(x), i32::from(y));
+            add((x, y));
+            if refresh {
+                for (dx, dy) in ROW_NEIGHBORS {
+                    add((x + i32::from(dx), y + i32::from(dy)));
+                }
+            }
+        }
+        if refresh && listed.beside_dummy {
+            for &(rank, _) in order.missing_neighbors_through(u32::MAX) {
+                if rank >= from {
+                    self.insert(rank);
+                }
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<u32> {
+        while let Some(word) = self.words.get_mut(self.first) {
+            if *word == 0 {
+                self.first += 1;
+                continue;
+            }
+            let bit = word.trailing_zeros();
+            *word &= *word - 1;
+            return Some(self.first as u32 * 64 + bit);
+        }
+        None
+    }
+
+    fn drain(&mut self) -> impl Iterator<Item = u32> + '_ {
+        std::iter::from_fn(|| self.pop())
     }
 }

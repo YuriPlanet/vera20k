@@ -265,6 +265,17 @@ def constructor_state(uc, anim):
 
 def execute(case):
     machine = Machine(case["seed"])
+    prepared = None
+    if case.get('intmin_raw_indices'):
+        from tools.rmg_oracle.gen_rng_vectors import constrained_state
+        from unicorn.x86_const import UC_X86_REG_ESI
+        prepared = constrained_state(case['seed'], {n: 0x80000000 for n in case['intmin_raw_indices']})
+        machine.uc.mem_write(SCENARIO + 0x218, bytes.fromhex(prepared['before_state_hex']))
+        raw_words = []
+        def observe_raw(uc, pc, _size, _data):
+            if pc in (0x65C79D, 0x65C84B):
+                raw_words.append(uc.reg_read(UC_X86_REG_ESI))
+        machine.uc.hook_add(UC_HOOK_CODE, observe_raw)
     uc = machine.uc
     pointer, rates = machine.anim_type(case["type"], case["elasticity"], case["max_xy"],
                                        case["min_z"], case["random_rate"])
@@ -283,9 +294,13 @@ def execute(case):
     draws = [e for e in machine.events if e["call"] in ("next", "ranged")]
     velocity_draws = [e["result"] for e in draws if e["site"] in ("0x00422552", "0x00422564",
                                                                    "0x00422579")]
-    return dict(input=case, random_rate_stored=rates, events=machine.events,
+    result = dict(input=case, random_rate_stored=rates, events=machine.events,
                 raw_draw_count=machine.advances, velocity_draws=velocity_draws,
                 **anim_state(uc, anim), rng_before=before, rng_after=machine.rng())
+    if prepared is not None:
+        assert len(raw_words) == machine.advances
+        result.update(rng_input=prepared, raw_draws=raw_words)
+    return result
 
 
 def execute_loop(case):
@@ -353,7 +368,35 @@ def generate():
                 debris_loop=[execute_loop(case) for case in loop_cases()])
 
 
+def intmin_generate():
+    rows = []
+    for index, axis in enumerate(('z', 'y', 'x')):
+        case = dict(name='int_min_' + axis, type='DBRIS1LG', seed=2,
+                    coord=[2688, 5248, 644], elasticity=0.0, max_xy=25.0,
+                    min_z=25.0, random_rate=[220, 600], intmin_raw_indices=[index])
+        row = execute(case)
+        assert row['velocity_draws'][index] == -2147483648
+        rows.append(row)
+    return dict(ctor=rows)
+
+
+def intmin_metadata():
+    return provenance(scope='Three original421EA0 SHP Bouncer ABS-before-IDIV INT_MIN controls through full Bounce4397E0',
+        assumptions=[
+            'Extends the existing Anim Bouncer owner unchanged: supplied retail DBRIS1LG scalar fields and declared map/redraw/display/Start boundaries; original constructor numeric launch and Bounce execute.',
+            'Each row supplies native-seeded full RNG input with one explicit state-word constraint. Unmodified original65C780 independently verifies INT_MIN; full constructor before/after state, every raw word and whole Bounce are observed.',
+            'Original RandomRate postread makes DBRIS1LG bounds1,1, so it consumes no raw word before Z/Y/X. This is a numeric constructor control, not full physical gameplay admission or Start/Logic continuation.',
+        ], substitutions=[
+            'Inherited dummy map-cell lookup, redraw1, recorded Display submit1 and Start return, successful bump allocation. No numeric constructor/Bounce/RNG return is substituted.'
+        ], entry_points={'ctor':CTOR, 'bounce':INIT, 'next':NEXT, 'z_preabs':0x4225B1,'y_preabs':0x42259B,'x_preabs':0x4225E4})
+
+
 if __name__ == "__main__":
+    import sys
+    if '--intmin' in sys.argv:
+        finish_vectors(intmin_generate, Path(__file__).with_name('anim_bouncer_launch_intmin.json'),
+                       provenance=intmin_metadata, argv=[arg for arg in sys.argv[1:] if arg != '--intmin'])
+        raise SystemExit(0)
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
         scope=("AnimClass::AnimClass 0x00421EA0 on Bouncer AnimTypes (retail DBRIS LG/SM/HV and "
                "DBRS10SM values, odd Elasticity/MaxXYVel/MinZVel), through Unlimbo, the Bouncer "

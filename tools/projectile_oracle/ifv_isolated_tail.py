@@ -157,11 +157,47 @@ def brute_setup():
   metallic_pool=m.state('MetallicDebris',r)['names'])
 
 
-def brute_execute(case):
+def typed_setup(case):
+ """Read authored typed lists and native TIRE scalars in the Brute world."""
+ m,b,wh,cell,obj,typ,initial=brute_setup();u=m.u
+ # Actual process owners: type registry, runtime registry, Display layer arrays.
+ for entry in (0x4e7660,0x40ee40,0x4a8630):m.invoke(entry,0)
+ names=case.get('debris_types',['TIRE']);maximums=case.get('debris_maximums',[4])
+ m.rules_cache({'Smashing':{'DebrisTypes':','.join(names),'DebrisMaximums':','.join(map(str,maximums))}})
+ m.invoke(0x75d3a0,wh,(RULES,));tire=m.read32(m.read32(wh+0x190))
+ assert m.string(tire+0x24)=='TIRE'
+ layers=[]
+ for filename in ('RULESMD.INI','LANGRULE.INI','MPBattleMD.ini','Hills.map'):
+  path=impact.assets_root()/filename
+  if not path.exists():continue
+  sections,_=impact.lexical(path.read_bytes(),{'TIRE'})
+  if not sections:continue
+  m.rules_cache(sections);u.mem_write(SP,dwords(0x30000000,RULES))
+  u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ECX,tire)
+  # Full scalar/degree post-read stops BEFORE model I/O, never supplies return.
+  run_checked(u,0x74b050,0x74b56c,required_addresses=(0x5283d0,))
+  layers.append(dict(file=filename,sha256=hashlib.sha256(path.read_bytes()).hexdigest(),selected=sections['TIRE']))
+ raw=(impact.assets_root()/'TIRE.VXL').read_bytes()
+ initial['tire']=dict(name='TIRE',duration=impact.i32(u,tire+0x29c),layers=layers,
+  physics_bits={name:f'{struct.unpack("<Q",u.mem_read(tire+offset,8))[0]:016x}' for name,offset in
+   [('elasticity',0x2a0),('min_angular',0x2a8),('max_angular',0x2b0),('min_z',0x2b8),('max_z',0x2c0),('max_xy',0x2c8)]},
+  assets=[dict(name='TIRE.VXL',size=len(raw),sha256=hashlib.sha256(raw).hexdigest())],
+  reader_stop='0x0074B56C',model_binding_excluded=True)
+ return m,b,wh,cell,obj,typ,initial
+
+
+def typed_warhead_state(m,wh):
+ count=m.read32(wh+0x19c);n=m.read32(wh+0x1b8)
+ return dict(minimum=impact.i32(m.u,wh+0x1c8),maximum=impact.i32(m.u,wh+0x1c4),typed_count=count,
+  debris_types=[m.string(m.read32(m.read32(wh+0x190)+4*i)+0x24) for i in range(count)],
+  debris_maximums=[impact.i32(m.u,m.read32(wh+0x1ac)+4*i) for i in range(n)])
+
+
+def brute_execute(case, *, typed=False):
  from tools.procedural_drawing_oracle.electric_bolt import RngTrace
  from tools.spatial_oracle.anim_bouncer_launch import constructor_state
  from tools.native_oracle import RET_MAGIC
- m,b,wh,cell,obj,typ,initial=brute_setup();u=m.u;scenario=m.read32(0xa8b230)
+ m,b,wh,cell,obj,typ,initial=typed_setup(case) if typed else brute_setup();u=m.u;scenario=m.read32(0xa8b230)
  case=dict(dict(seed=1,route='outer',receiver='empty',live=[2688,5248,624],placement=[2688,5248,624]),**case)
  if case.get('zero_max'):
   m.rules_cache({'Smashing':{'MaxDebris':'0','MinDebris':'0'}});m.invoke(0x75d3a0,wh,(RULES,))
@@ -172,9 +208,19 @@ def brute_execute(case):
   u.mem_write(obj+0x6c,dwords(300));u.mem_write(obj+0x90,b'\1');u.mem_write(obj+0x74,b'\1');u.mem_write(obj+0x81,b'\0')
   u.mem_write(obj+0x9c,dwords(*placement));u.mem_write(obj+0x18c,dwords(100));u.mem_write(obj+0x194,dwords(10 if case['receiver']=='iron_curtain' else 0));u.mem_write(obj+0x1c4,dwords(0))
  case.update(minimum=impact.i32(u,wh+0x1c8),maximum=impact.i32(u,wh+0x1c4),inviso=initial['projectile']['inviso'],cluster=initial['projectile']['cluster'],binary_frame=100,damage=100,scenario_rng_seed=case['seed']+1,ic_start=100,ic_duration=10 if case['receiver']=='iron_curtain' else 0,ic_kind=0)
- rng=RngTrace(u,scenario,case['seed']);before=rng.states();cursor=impact.i32(u,scenario+0x214)
- events=[];pending=[];anims=[];trace=deque(maxlen=24);raw_advances=[]
+ rng=RngTrace(u,scenario,case['seed'])
+ if typed:
+  case.update(debris_types=case.get('debris_types',['TIRE']),debris_maximums=case.get('debris_maximums',[4]))
+  warhead_after_read=typed_warhead_state(m,wh)
+  if case.get('intmin_raw_indices'):
+   from tools.rmg_oracle.gen_rng_vectors import constrained_state
+   prepared=constrained_state(case['scenario_rng_seed'],{n:0x80000000 for n in case['intmin_raw_indices']})
+   u.mem_write(scenario+0x218,bytes.fromhex(prepared['before_state_hex']))
+  else:prepared=None
+ before=rng.states();cursor=impact.i32(u,scenario+0x214)
+ events=[];pending=[];anims=[];voxels=[];trace=deque(maxlen=24);raw_advances=[]
  kinds={0x468d80:'Impact',0x4690b0:'Detonate',0x489280:'AreaDamage',0x48a4f0:'SelectAnim',0x421ea0:'AnimCtor',0x424ce0:'AnimStart',0x5f4ec0:'Unlimbo',0x4a9720:'DisplaySubmit',0x4397e0:'BounceInit',0x46a2a1:'NullifyBranch',0x49f420:'ClusterCoord',0x469e50:'DebrisGetCoords',0x68bcb0:'NextNativeId',0x469038:'SuccessorAliveGate'}
+ if typed:kinds.update({0x7493b0:'VoxelCtor',0x749453:'VoxelIdentity',0x469d5c:'TypedSelect',0x469d83:'TypedRemainder',0x469df3:'TypedBudget'})
  def event(kind,**kw):events.append(dict(event=kind,rng_request_count=len(rng.requests),native_cursor=impact.i32(u,scenario+0x214),**kw))
  def observe(_u,pc,_n,_d):
   trace.append(pc);sp=u.reg_read(UC_X86_REG_ESP)
@@ -184,6 +230,15 @@ def brute_execute(case):
    if kind=='AnimCtor':
     items=m.read32(0x87f77c);members=[m.read32(items+4*i) for i in range(m.read32(0x87f788))]
     row=dict(type=m.string(m.read32(ptr+0xc8)+0x24),logic_registered=ptr in members,**constructor_state(u,ptr));anims.append(row);event('AnimCtor_return',anim_index=len(anims)-1,native_id=row['native_id'],rng_scenario=rng.states()['scenario'])
+   elif kind=='VoxelCtor':
+    from tools.spatial_oracle.anim_bouncer_launch import body_fields
+    def member(base):return ptr in [m.read32(m.read32(base+4)+4*i) for i in range(m.read32(base+16))]
+    raw=bytes(u.mem_read(ptr+0xb0,0x50))
+    row=dict(type=m.string(m.read32(ptr+0x104)+0x24),native_id=impact.i32(u,ptr+0x10),owner_is_null=m.read32(ptr+0x10c)==0,
+     duration=impact.i32(u,ptr+0x140),location=impact.xyz(u,ptr+0x9c),bounce_hex=raw.hex(),bounce=body_fields(raw),
+     logic_registered=member(0x87f778),registry_registered=member(0x887388),display_layers=[i for i in range(5) if member(0x8a0360+24*i)],
+     marked_for_deletion=bool(u.mem_read(ptr+0x110,1)[0]),alive=u.mem_read(ptr+0x90,1)[0],limbo=u.mem_read(ptr+0x81,1)[0],marked=u.mem_read(ptr+0x74,1)[0])
+    voxels.append(row);event('VoxelCtor_return',voxel_index=len(voxels)-1,native_id=row['native_id'],rng_scenario=rng.states()['scenario'])
    elif kind=='ClusterCoord':event(kind+'_return',coord=impact.xyz(u,result))
    else:event(kind+'_return',result=result,selected=m.string(result+0x24) if kind=='SelectAnim' and result else None)
   if pc==0x737c90:event('ReceiveDamageBoundary',damage=impact.i32(u,m.read32(sp+4)),supplied_result=0);m.ret(0,28);return
@@ -193,12 +248,17 @@ def brute_execute(case):
   if kind=='AreaDamage':kw.update(position=impact.xyz(u,u.reg_read(UC_X86_REG_ECX)),damage=u.reg_read(UC_X86_REG_EDX))
   if kind=='SelectAnim':kw.update(position=impact.xyz(u,m.read32(sp+8)),damage=u.reg_read(UC_X86_REG_ECX),land=impact.i32(u,sp+4))
   if kind=='AnimCtor':kw.update(type=m.string(m.read32(sp+4)+0x24),position=impact.xyz(u,m.read32(sp+8)),delay=impact.i32(u,sp+12),loops=impact.i32(u,sp+16),flags=m.read32(sp+20),z_adjust=impact.i32(u,sp+24),reverse=m.read32(sp+28),rng_scenario=rng.states()['scenario'])
+  if kind=='VoxelCtor':kw.update(type=m.string(m.read32(sp+4)+0x24),position=impact.xyz(u,m.read32(sp+8)),owner_is_null=m.read32(sp+12)==0,rng_scenario=rng.states()['scenario'])
+  if kind=='VoxelIdentity':kw.update(native_id=impact.i32(u,u.reg_read(UC_X86_REG_ESI)+0x10))
+  if kind=='TypedSelect':kw.update(index=m.read32(sp+0x18),budget=impact.i32(u,sp+0x4c))
+  if kind=='TypedRemainder':kw.update(remainder=struct.unpack('<i',dwords(u.reg_read(UC_X86_REG_EDX)))[0])
+  if kind=='TypedBudget':kw.update(remaining=struct.unpack('<i',dwords(u.reg_read(UC_X86_REG_EBX)))[0])
   if kind=='DebrisGetCoords':kw['live_bullet']=impact.xyz(u,b+0x9c)
   if kind=='ClusterCoord':kw['distance']=impact.i32(u,sp+4)
   if kind=='SuccessorAliveGate':kw['bullet_alive']=bool(u.mem_read(b+0x90,1)[0])
   event(kind,**kw)
-  if kind in ('AreaDamage','SelectAnim','AnimCtor','ClusterCoord'):
-   cleanup={'AreaDamage':16,'SelectAnim':8,'AnimCtor':28,'ClusterCoord':8}[kind]
+  if kind in ('AreaDamage','SelectAnim','AnimCtor','ClusterCoord','VoxelCtor'):
+   cleanup={'AreaDamage':16,'SelectAnim':8,'AnimCtor':28,'ClusterCoord':8,'VoxelCtor':12}[kind]
    pending.append((m.read32(sp),sp+4+cleanup,kind,u.reg_read(UC_X86_REG_ECX)))
  h=u.hook_add(UC_HOOK_CODE,observe)
  try:
@@ -211,9 +271,11 @@ def brute_execute(case):
  assert before['main']==rng.states()['main'] and before['mapgen']==rng.states()['mapgen']
  assert sum(len(q['raw_draws']) for q in rng.requests)==len(raw_advances)
  assert all(a['logic_registered'] for a in anims)
- return dict(input=case,initial=initial,events=events,anims=anims,rng_before=before,rng_after=rng.states(),rng_requests=rng.requests,
+ result=dict(input=case,initial=initial,events=events,anims=anims,rng_before=before,rng_after=rng.states(),rng_requests=rng.requests,
   raw_draw_count=sum(len(q['raw_draws']) for q in rng.requests),raw_advance_count=len(raw_advances),raw_advance_sites=raw_advances,native_cursor_before=cursor,native_cursor_after=impact.i32(u,scenario+0x214),
   bullet_native_id=impact.i32(u,b+0x10),bullet_live_after=impact.xyz(u,b+0x9c),bullet_alive=bool(u.mem_read(b+0x90,1)[0]))
+ if typed:result.update(voxels=voxels,warhead_after_read=warhead_after_read,rng_input=prepared)
+ return result
 
 
 def brute_generate():
@@ -257,9 +319,39 @@ def brute_metadata():
  ],entry_points={'impact':0x468d80,'detonate':0x4690b0,'area_damage':0x489280,'select_anim':0x48a4f0,'budget':0x469d06,'debris_get_coords':0x469e50,'list_pick':0x469e85,'anim_ctor':0x421ea0,'anim_start':0x424ce0,'bounce_init':0x4397e0,'successor':0x469057,'random_ranged':0x65c7e0,'random_raw':0x65c780,'metallic_reader':0x66da90})
 
 
+def typed_generate():
+ cases=[dict(name='one_tire',seed=0),dict(name='two_tires',seed=1),
+  dict(name='zero_selection_wrap',seed=1,debris_types=['TIRE','TIRE'],debris_maximums=[0,4]),
+  dict(name='intmin_selector',seed=1,intmin_raw_indices=[2]),
+  dict(name='intmin_constructor_axes',seed=1,intmin_raw_indices=[3,4,5,6]),
+  dict(name='distinct_live_and_placement',seed=1,route='detonate',placement=[2816,5248,624]),
+  dict(name='isolated_iron_curtain',seed=1,receiver='iron_curtain'),dict(name='zero_max',seed=1,zero_max=True)]
+ rows=[brute_execute(case,typed=True) for case in cases]
+ initial=rows[0].pop('initial')
+ for row in rows[1:]:assert row.pop('initial')==initial
+ for row in rows:
+  assert row['native_cursor_after']-row['native_cursor_before']==len(row['anims'])+len(row['voxels'])
+  assert all(v['registry_registered'] and v['logic_registered'] and v['display_layers']==[3] for v in row['voxels'])
+ return dict(native_sha256=NATIVE_SHA256,initial=initial,rows=rows)
+
+
+def typed_metadata():
+ base=brute_metadata()
+ base['scope']='Eight authored Smashing typed TIRE controls: full4690B0/468D80, typed selector, full7493B0 identity/admission/seven draws, INT_MIN arithmetic and Cluster successor'
+ base['assumptions'] += [
+  'Authored Smashing DebrisTypes/Maximums run full native75D3A0; no vector/count/selector return is supplied. Physical TIRE scalar reader74B050 runs through degree conversion to stop74B56C before model file I/O. Model binding is excluded and the model pointer remains null; physical VXL identity is recorded, not a native loader claim.',
+  'Native type/runtime/Display startup4E7660/40EE40/4A8630 establishes actual registries. Full Voxel7493B0/CreateID410230/Bounce4397E0/Unlimbo/Logic/AIR publication execute and return. Object location is the supplied source; Bounce starts source+10. No later VoxelAI/flight/expiry is exercised.',
+  'INT_MIN controls alter explicit early state words after original native seed; unchanged65C780 independently verifies required raw words. Full before/after three streams and every raw word are retained. Signed ABS-before-IDIV remainder can be negative and grow the remaining budget.',
+ ]
+ base['entry_points'].update(voxel_ctor=0x7493b0,voxel_type_reader=0x74b050,voxel_type_model_boundary=0x74b56c,create_id=0x410230,typed_selector=0x469d5c,display_init=0x4a8630)
+ return base
+
+
 if __name__=='__main__':
  import sys
- if '--brute-debris' in sys.argv:
+ if '--typed-debris' in sys.argv:
+  finish_vectors(typed_generate,Path(__file__).with_name('typed_warhead_debris.json'),provenance=typed_metadata,argv=[arg for arg in sys.argv[1:] if arg!='--typed-debris'])
+ elif '--brute-debris' in sys.argv:
   finish_vectors(brute_generate,Path(__file__).with_name('brute_smash_debris.json'),provenance=brute_metadata,
    argv=[arg for arg in sys.argv[1:] if arg!='--brute-debris'])
  else:finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)

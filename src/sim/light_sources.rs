@@ -88,7 +88,7 @@ impl Simulation {
         if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let Some(source) = point_light_from_object(

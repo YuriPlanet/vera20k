@@ -56,8 +56,8 @@ pub(super) fn current_target_disposition(
         }
         Some(TargetKind::Entity(id))
             if entities.get(id).is_some_and(|target| {
-                rules
-                    .object(interner.resolve(target.type_ref()))
+                interner
+                    .object_type(target.type_ref(), rules)
                     .is_some_and(|object| is_armed(target, object))
             }) =>
         {

@@ -164,7 +164,7 @@ impl Simulation {
 
     fn live_spatial_threat(&self, id: u64, rules: &RuleSet) -> Option<i32> {
         let actor = self.substrate.entities.get(id)?;
-        let object = rules.object(self.interner.resolve(actor.type_ref()))?;
+        let object = self.interner.object_type(actor.type_ref(), rules)?;
         Some(crate::sim::combat::live_threat_posed(
             actor,
             Some(object),
@@ -352,22 +352,41 @@ impl Simulation {
             return;
         };
         let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero);
-        // Stable IDs are monotonic construction IDs, preserving Techno array
-        // order independently of active Logic membership (including limbo).
-        let mut contributions = Vec::new();
-        for (id, actor) in self.substrate.entities.iter_sorted().rev() {
+        let contributions = self.spatial_threat_contributions(owner, controlled, rules);
+        let house = self.houses.get_mut(&owner).unwrap();
+        house.clear_spatial_threat();
+        for (cell, value) in contributions {
+            house
+                .adjust_spatial_threat(cell, value)
+                .expect("native diplomacy rebuild requires an addressable House kernel");
+        }
+    }
+}
+
+impl Simulation {
+    /// What each object adds to `owner`'s rebuilt spatial threat, in the
+    /// rebuild's order: descending stable id, which as monotonic construction
+    /// ids keeps Techno array order independently of active Logic membership
+    /// (including limbo). VERA-only: the objects are read side by side, each
+    /// detached from the shared Dummy; when one would stamp it (a building
+    /// whose cell is off the map), the walk runs again one by one on the
+    /// shared Dummy, as native leaves it.
+    fn spatial_threat_contributions(
+        &self,
+        owner: InternedId,
+        controlled: bool,
+        rules: &RuleSet,
+    ) -> Vec<((i16, i16), i32)> {
+        let contribution = |id: u64, actor: &crate::sim::game_entity::GameEntity| {
             if actor.lifecycle.in_limbo() || !actor.lifecycle.object_alive() {
-                continue;
+                return None;
             }
-            let Some(value) = self
+            let value = self
                 .live_spatial_threat(id, rules)
-                .filter(|value| *value > 0)
-            else {
-                continue;
-            };
+                .filter(|value| *value > 0)?;
             let cell = if actor.category() == EntityCategory::Structure {
                 // Native non-Foot arm intentionally has no house/ally filter.
-                self.spatial_threat_current_cell(id, None)
+                self.spatial_threat_current_cell(id, None)?
             } else {
                 let cell = actor.navigation.neighbor_state.cell();
                 if cell == (0, 0)
@@ -379,21 +398,41 @@ impl Simulation {
                             self.interner.resolve(actor.owner()),
                         ))
                 {
-                    continue;
+                    return None;
                 }
-                Some(cell) //56BC50 directly reads Foot+55C; no GetCell here.
+                cell //56BC50 directly reads Foot+55C; no GetCell here.
             };
-            if let Some(cell) = cell {
-                contributions.push((cell, value));
-            }
+            Some((cell, value))
+        };
+        let one_by_one = || {
+            self.substrate
+                .entities
+                .iter_sorted()
+                .rev()
+                .filter_map(|(id, actor)| contribution(id, actor))
+                .collect::<Vec<_>>()
+        };
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return one_by_one();
+        };
+        let dummy = terrain.shared_cell_dummy();
+        let read = self.substrate.entities.par_filter_map(|id, actor| {
+            let (found, stamped) = dummy.detached_stamps(|| contribution(id, actor));
+            (found.is_some() || stamped).then_some((found, stamped))
+        });
+        if read.iter().any(|&(_, stamped)| stamped) {
+            return one_by_one();
         }
-        let house = self.houses.get_mut(&owner).unwrap();
-        house.clear_spatial_threat();
-        for (cell, value) in contributions {
-            house
-                .adjust_spatial_threat(cell, value)
-                .expect("native diplomacy rebuild requires an addressable House kernel");
-        }
+        let contributions: Vec<_> = read
+            .into_iter()
+            .rev()
+            .filter_map(|(found, _)| found)
+            .collect();
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled() || contributions == one_by_one(),
+            "the side-by-side threat census differs from the walk one by one"
+        );
+        contributions
     }
 }
 

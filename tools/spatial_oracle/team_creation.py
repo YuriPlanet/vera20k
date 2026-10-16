@@ -552,19 +552,8 @@ def initialize_aircraft(q, name='ORCA'):
     # 6C4ACC directly calls original Fly ctor4CC9A0; COM class registration
     # binds its parsed CLSID. No Fly ctor or gameplay result is supplied.
     def transport(_u,pc,_size,_data):
-        if pc==0x413DE2:
-            sp=u.reg_read(UC_X86_REG_ESP)
-            clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20))
-            assert any(bytes(u.mem_read(clsid,16))==bytes(u.mem_read(typ+0x34C,16))
-                for typ in q.native_fly_types)
-            assert (outer,context)==(0,7)
-            u.mem_write(sp,dwords(pc+6,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,0x6C4A90)
-            q.events.append(dict(kind='COM_Fly_original_factory',factory='0x006C4A90',
-                clsid=bytes(u.mem_read(clsid,16)).hex(),iid=bytes(u.mem_read(iid,16)).hex()))
-        elif pc==0x413DF1:
-            sp=u.reg_read(UC_X86_REG_ESP)
-            q.events.append(dict(kind='OS_OleRun',interface=hex(m.read32(sp))))
-            u.reg_write(UC_X86_REG_EAX,0);u.reg_write(UC_X86_REG_ESP,sp+4);u.reg_write(UC_X86_REG_EIP,pc+6)
+        if pc in (0x413DE2,0x413DF1):
+            native_owner.locomotor_com_transport(u,pc,m,q.events,detailed=True)
     if not hasattr(q,'orca_transport_hook'):
         q.orca_transport_hook=u.hook_add(UC_HOOK_CODE,transport)
     q.phase='logic'

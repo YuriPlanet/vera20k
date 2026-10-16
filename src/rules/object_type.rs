@@ -377,7 +377,8 @@ pub struct ObjectType {
     /// `IdleRate=` — signed native-frame divisor for idle Foot body animation.
     /// Zero disables idle counter advancement.
     pub idle_rate: i32,
-    /// Inertia weight (`Weight=` in vehicle/aircraft sections). Default 2.0.
+    /// Inertia weight (`Weight=`), initially 1.0 from TechnoType710C66..710C71.
+    /// ReadINI7124CF..7124EA passes the current double as each pass's default.
     /// Used as the divisor in rocker-impulse force scaling: heavier units rock
     /// proportionally less per equivalent impulse. Retail range: 0.5 (lightest
     /// vehicles) to 5 (Aircraft Carrier).
@@ -2416,7 +2417,7 @@ impl ObjectType {
             walk_rate: section.read_int("WalkRate", 1),
             idle_rate: section.read_int("IdleRate", 0),
             // Double fields (`0x007124A3..0x007124E5`).
-            weight: sim_from_f32(section.read_double("Weight", 2.0) as f32),
+            weight: sim_from_f32(section.read_double("Weight", 1.0) as f32),
             accel_factor: sim_from_f32(section.read_double("AccelerationFactor", 0.03) as f32),
             decel_factor: sim_from_f32(section.read_double("DeaccelerationFactor", 0.002) as f32),
             accelerates: section.read_bool("Accelerates", true),
@@ -5574,11 +5575,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_weight_default_two() {
+    fn parse_weight_constructor_default_one() {
         let ini: IniFile = IniFile::from_str("[MTNK]\nStrength=300\n");
         let section = ini.section("MTNK").expect("section");
         let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.weight, SimFixed::lit("2.0"));
+        assert_eq!(obj.weight, SimFixed::ONE);
     }
 
     #[test]
@@ -5603,16 +5604,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_retail_weight_grizzly_defaults_to_two() {
-        // Retail rulesmd.ini: MTNK (Grizzly) has no Weight= line, so it should
-        // fall back to the engine default 2.0.
+    fn absent_weight_keeps_the_techno_type_constructor_value() {
+        // Original TechnoType710C66..710C71 writes 1.0. UnitType7470D0
+        // does not replace it before its reader calls TechnoType712170.
         let ini = IniFile::from_str("[MTNK]\nStrength=300\n");
         let mtnk = ObjectType::from_ini_section(
             "MTNK",
             ini.section("MTNK").expect("MTNK section"),
             ObjectCategory::Vehicle,
         );
-        assert_eq!(mtnk.weight, SimFixed::lit("2.0"));
+        assert_eq!(mtnk.weight, SimFixed::ONE);
     }
 
     /// Retail `rulesmd.ini`, read from the gitignored `ini/` corpus.

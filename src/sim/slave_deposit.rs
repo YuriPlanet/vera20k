@@ -54,8 +54,8 @@ impl SlaveDepositQuery<'_> {
         };
         let building = owner.category() == EntityCategory::Structure;
         let foundation = self
-            .rules
-            .object(self.interner.resolve(owner.type_ref()))
+            .interner
+            .object_type(owner.type_ref(), self.rules)
             .map(|kind| crate::rules::foundation::foundation_dimensions(&kind.foundation));
         let Some(primary) = crate::sim::slave_manager::deploy_center(owner, foundation) else {
             return false;

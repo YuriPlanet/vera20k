@@ -47,7 +47,7 @@ pub(crate) fn observer_draw_context(
     let allied = local_owner.is_some_and(|observer| {
         crate::map::houses::is_allied_with(&sim.house_alliances, observer, owner)
     });
-    let object = rules.and_then(|r| r.object(sim.interner.resolve(entity.type_ref())));
+    let object = rules.and_then(|r| sim.interner.object_type(entity.type_ref(), r));
     let disguise_cell = entity
         .disguise
         .as_ref()

@@ -312,8 +312,8 @@ pub(crate) fn controlled_transport_house(
     rider: &GameEntity,
 ) -> Option<InternedId> {
     let transport = entities.get(rider.passenger_role.inside_transport_id()?)?;
-    let open_topped = rules
-        .object(interner.resolve(transport.type_ref()))
+    let open_topped = interner
+        .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
     open_topped
         .then(|| transport.mind_control.controller())
@@ -470,7 +470,7 @@ pub(crate) fn open_topped_cargo_range(
         let Some(passenger) = entities.get(id) else {
             break;
         };
-        let Some(kind) = rules.object(interner.resolve(passenger.type_ref())) else {
+        let Some(kind) = interner.object_type(passenger.type_ref(), rules) else {
             continue;
         };
         if let Some(weapon) = current_weapon(passenger, kind, entities, rules, interner) {
@@ -1067,7 +1067,7 @@ pub(crate) fn select_weapon_against_in_query<'a>(
     let target_facts = match target.copied() {
         Some(TargetKind::Entity(target_id)) => {
             let target_entity = entities.get(target_id)?;
-            let target_obj = rules.object(interner.resolve(target_entity.type_ref()))?;
+            let target_obj = interner.object_type(target_entity.type_ref(), rules)?;
             let is_ally = is_ally_by_object(
                 alliances,
                 interner,
@@ -1182,8 +1182,8 @@ fn occupied_weapon<'r>(
 ) -> Option<Option<&'r WeaponType>> {
     let occupant = entities.get(firing_occupant_id(entity, obj)?);
     Some(occupant.and_then(|occupant| {
-        rules
-            .object(interner.resolve(occupant.type_ref()))
+        interner
+            .object_type(occupant.type_ref(), rules)
             .and_then(|kind| occupant_weapon(rules, kind, occupant.veterancy.rank()))
     }))
 }

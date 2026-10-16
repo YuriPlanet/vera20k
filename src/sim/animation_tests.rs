@@ -17,7 +17,6 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::movement::{FacingClass, SpeedRules};
-use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
 /// Helper: create a SequenceDef for tests.
@@ -264,11 +263,10 @@ fn gsi_13_06_active_shp_unit(type_name: &str, kind: LocomotorKind) -> GameEntity
 }
 
 /// The inputs the live GetCurrentSpeed reads for the SHP fixtures: each type's
-/// `Speed=`, resolved by name through an unbuilt handle table.
+/// `Speed=`, resolved by name through an interner with no bound handles.
 struct Gsi1306Speed {
     rules: RuleSet,
     interner: StringInterner,
-    types: TypeHandleTable,
     houses: std::collections::BTreeMap<
         crate::sim::intern::InternedId,
         crate::sim::house_state::HouseState,
@@ -287,18 +285,12 @@ impl Gsi1306Speed {
             ))
             .expect("SHP fixture rules"),
             interner: crate::sim::intern::test_interner(),
-            types: TypeHandleTable::default(),
             houses: std::collections::BTreeMap::new(),
         }
     }
 
     fn rules(&self) -> Option<SpeedRules<'_>> {
-        Some(SpeedRules::new(
-            &self.rules,
-            &self.interner,
-            &self.types,
-            &self.houses,
-        ))
+        Some(SpeedRules::new(&self.rules, &self.interner, &self.houses))
     }
 }
 

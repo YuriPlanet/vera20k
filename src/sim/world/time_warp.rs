@@ -99,7 +99,7 @@ impl Simulation {
             else {
                 continue;
             };
-            let Some(object) = rules.object(self.interner.resolve(type_id)) else {
+            let Some(object) = self.interner.object_type(type_id, rules) else {
                 log::debug!("House50D320 record has an unavailable Type");
                 return false;
             };

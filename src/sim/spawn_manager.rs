@@ -423,7 +423,7 @@ impl SpawnManagerState {
                     .spawn
                     .and_then(|id| entities.get(id))
                     .filter(|child| !child.lifecycle.in_limbo())
-                    .and_then(|child| rules.object(interner.resolve(child.type_ref())))
+                    .and_then(|child| interner.object_type(child.type_ref(), rules))
                     .is_some_and(|kind| kind.missile_spawn),
                 _ => false,
             })
@@ -1206,7 +1206,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                     Some(crate::sim::movement::SpeedRules::new(
                         rules,
                         &sim.interner,
-                        &sim.type_handles,
                         &sim.houses,
                     )),
                     sim.session.binary_frame,

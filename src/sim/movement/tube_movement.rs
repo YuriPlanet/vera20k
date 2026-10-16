@@ -441,7 +441,7 @@ fn tick_active_tube_object(
     };
     let category = entity.category();
     let speed = rules
-        .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
+        .and_then(|rules| interner.object_type(entity.type_ref(), rules))
         .map_or(0, |object| {
             crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
         });

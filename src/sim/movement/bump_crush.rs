@@ -179,7 +179,7 @@ pub(crate) fn blocker_plane_source(
     let pos = (entity.position.rx(), entity.position.ry());
     if entity.category() == EntityCategory::Structure {
         let size = rules
-            .and_then(|r| r.object(interner.resolve(entity.type_ref())))
+            .and_then(|r| interner.object_type(entity.type_ref(), r))
             .map(|obj| crate::rules::foundation::foundation_dimensions(&obj.foundation))
             .unwrap_or((1, 1));
         Some(BlockerPlaneSource::Building { origin: pos, size })
@@ -282,7 +282,7 @@ pub(crate) fn ground_gate_is_open(
         .and_then(|id| entities.get(id))
         .is_some_and(|building| {
             rules
-                .and_then(|rules| rules.object(interner.resolve(building.type_ref())))
+                .and_then(|rules| interner.object_type(building.type_ref(), rules))
                 .is_some_and(|object| object.gate)
                 && building.is_open_gate()
         })

@@ -112,7 +112,7 @@ pub(super) fn commit_receiver_health(
             });
         }
         let reached_survivor_postlude = receive_outcome.reached_survivor_postlude;
-        let target_type = rules.object(interner.resolve(target.type_ref()))?;
+        let target_type = interner.object_type(target.type_ref(), rules)?;
         if target.category() == EntityCategory::Structure {
             building_entry_frame = Some(crate::sim::building_art::receiver_body_frame(
                 target,
@@ -208,7 +208,7 @@ pub(super) fn commit_receiver_health(
         .flatten();
     let attacker_owner = event.source_house.or(live_source_owner);
     if let Some(target) = world.substrate.entities.get_mut(target_id) {
-        let target_type = rules.object(interner.resolve(target.type_ref()))?;
+        let target_type = interner.object_type(target.type_ref(), rules)?;
         // Past the anger write, Object's result 5 (ObjectAlive already clear)
         // returns at once (`0x00701E71`, `0x00701F80..0x00701F91`): no reveal,
         // death arm or survivor tail.

@@ -92,7 +92,7 @@ impl Simulation {
         if entity.category() != EntityCategory::Structure {
             return None;
         }
-        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
         let facts = power_system::OperationalFacts {
             // `0x004555DA`: an offline building (the warp's latch) is not
             // operational unless two retained Tesla chargers bypass it.
@@ -133,7 +133,7 @@ impl Simulation {
         if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
             return None;
         }
-        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
         object
             .gap_generator
             .then(|| {

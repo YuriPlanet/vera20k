@@ -65,7 +65,7 @@ impl Simulation {
         let Some(registry) = registry else {
             return;
         };
-        let Some(object) = rules.object(self.interner.resolve(type_id)) else {
+        let Some(object) = self.interner.object_type(type_id, rules) else {
             return;
         };
         if rules.building_rubble_art(&object.id).is_some() {

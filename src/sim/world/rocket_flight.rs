@@ -97,8 +97,9 @@ impl RocketHost for RocketProcessHost<'_> {
     }
     fn type_speed(&self) -> i32 {
         let owner = self.owner();
-        self.rules
-            .object(self.sim.interner.resolve(owner.type_ref()))
+        self.sim
+            .interner
+            .object_type(owner.type_ref(), self.rules)
             .map_or(0, |object| {
                 crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
             })
@@ -160,8 +161,9 @@ impl RocketHost for RocketProcessHost<'_> {
         debug_assert_eq!(coord, self.location());
         let owner = self.owner();
         let Some(sound) = self
-            .rules
-            .object(self.sim.interner.resolve(owner.type_ref()))
+            .sim
+            .interner
+            .object_type(owner.type_ref(), self.rules)
             .and_then(|object| object.aux_sound1.clone())
         else {
             return;

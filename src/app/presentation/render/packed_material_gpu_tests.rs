@@ -111,16 +111,20 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             };
                             (SpriteAtlas::from_test_pages(vec![page]), 0)
                         };
-                        let voxel = batch.create_unit_atlas_texture_on_device(
-                            &gpu.device,
-                            &gpu.queue,
-                            size[0],
-                            size[1],
-                            &indices,
-                        );
+                        let voxel =
+                            crate::render::unit_pose_cache::VxlPoseFrameCache::from_test_textures(
+                                vec![batch.create_unit_atlas_texture_on_device(
+                                    &gpu.device,
+                                    &gpu.queue,
+                                    size[0],
+                                    size[1],
+                                    &indices,
+                                )],
+                            );
                         let palettes = PaletteSet::new_on_device(
                             &gpu.device,
                             &gpu.queue,
+                            &palette,
                             &palette,
                             &crate::rules::house_colors::HouseColorRamps::from_schemes(&[]),
                             &[],
@@ -147,7 +151,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                         target: if route == "shp" {
                                             ObjectTexture::ShpPage(0)
                                         } else {
-                                            ObjectTexture::UnitPose
+                                            ObjectTexture::UnitPosePage(0)
                                         },
                                         render_z: if row["writes_depth"] == true {
                                             RenderZPolicy::ReadWrite
@@ -344,7 +348,6 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             None,
                             None,
                             Some(&voxel),
-                            &VxlSlopeTransitionCache::default(),
                             Some(&shp),
                             Some(&palettes),
                             batch.default_zshape_bind_group(),
@@ -497,7 +500,6 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
             None,
             None,
             None,
-            &VxlSlopeTransitionCache::default(),
             Some(&shp),
             None,
             batch.default_zshape_bind_group(),
@@ -611,7 +613,6 @@ fn retained_packed_workload_timing() {
             None,
             None,
             None,
-            &VxlSlopeTransitionCache::default(),
             Some(&shp),
             None,
             batch.default_zshape_bind_group(),

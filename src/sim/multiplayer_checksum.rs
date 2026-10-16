@@ -752,6 +752,7 @@ mod tests {
         );
         let piece = crate::sim::voxel_anim::spawn_debris_piece(
             id,
+            0,
             VoxelAnimTypeId(0),
             &tire,
             None,

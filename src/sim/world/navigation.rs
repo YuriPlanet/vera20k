@@ -33,7 +33,7 @@ pub(super) fn marked_structure_movement_cells(
     if entity.category() != EntityCategory::Structure || !entity.lifecycle.cell_marked() {
         return Vec::new();
     }
-    let object_type = rules.object(interner.resolve(entity.type_ref()));
+    let object_type = interner.object_type(entity.type_ref(), rules);
     let foundation = object_type
         .map(|object| object.foundation.as_str())
         .unwrap_or("1x1");

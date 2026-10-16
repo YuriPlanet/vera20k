@@ -29,6 +29,13 @@ fn native_palette_word(rgb: vec3u, index: u32, light: vec4u, a: u32) -> u32 {
     if (light.y & 0x40000000u) != 0u { lit = min((rgb * scale) >> vec3u(16u), vec3u(255u)); }
     return ((lit.r >> 3u) << 11u) | ((lit.g >> 2u) << 5u) | (lit.b >> 3u);
 }
+// Original tinted copies494CD9/498293/4993C2. Translucent slots forward
+// to plain leaves; callers select whether the opaque colour word applies.
+fn native_colour_word(word: u32, index: u32, light: vec4u) -> u32 {
+    if index == 0u { return word; }
+    return word | (((light.x >> 18u) & 31u) << 11u) | (((light.y >> 18u) & 63u) << 5u)
+        | ((light.z >> 18u) & 31u);
+}
 fn resolve_palette(rgb_linear: vec3f, tint: vec3f, light: vec4u, index: u32, a: u32) -> vec3f {
     if light.x >> 24u == 0u {
         // Precomposed RGBA, alpha and FX lack native palette/packed-composition
@@ -41,12 +48,7 @@ fn resolve_palette(rgb_linear: vec3f, tint: vec3f, light: vec4u, index: u32, a: 
     // 493E52/494BDD/4991F4 read A only after source-hole/Z admission. A=0
     // still stores palette row zero; N1 and special indices keep their rules.
     var word = native_palette_word(rgb, index, light, a);
-    // The colour word the tinted blitters OR into each drawn pixel
-    // (494CD9/498293/4993C2), carried in bits 18.. of each channel word.
-    if index != 0u {
-        word = word | (((light.x >> 18u) & 31u) << 11u) | (((light.y >> 18u) & 63u) << 5u)
-            | ((light.z >> 18u) & 31u);
-    }
+    word = native_colour_word(word, index, light);
     let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
                         f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
     return srgb_decode(encoded);

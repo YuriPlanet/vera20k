@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original startup21 slope matrices/quaternions and seven full755A40 blend results",
+  "assumptions": [
+    "Existing native_slope VM and original initializer chronology produce B45188 matrices and B43188 quaternions. Runtime FPCW0E7F is restored after startup; actual cached CRT controls are observed.",
+    "Supplied valid slope indices and finite f64 phase values cover equal indices, endpoints, reversal, flat-to-ramp, the selected Ship1-to2 half transition and distinct-index5-to9 identical-quaternion aliases. Original755A40 stores phase as f32, calls full646590 and646980; no host quaternion, trig, normalization or interpolation computes expected outputs.",
+    "Original755A40 accepts phase endpoints without caller clamping; equal indices copy the original matrix directly. No whole locomotor timer/cell history or rendering result is claimed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "startup": "0x00754CB0",
+    "matrix": "0x007559B0",
+    "blend": "0x00755A40",
+    "slerp": "0x00646590",
+    "quaternion_matrix": "0x00646980"
+  },
+  "replay_command": "python -m tools.native_slope --blend",
+  "payload_sha256": "a23546c0ae6d4faa1c084b214b79b464763a1598dc28cfb7c6cef1ca35fe3a36"
+}

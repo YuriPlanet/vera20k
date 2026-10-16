@@ -124,8 +124,9 @@ impl Simulation {
         if !self.house_is_human_player(entity.owner()) {
             return Ok(MoveAction::None);
         }
-        let object = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .ok_or("What_Action receiver lacks its type")?;
         let terrain = self
             .resolved_terrain
@@ -264,8 +265,9 @@ impl Simulation {
         if refused {
             return Ok(None);
         }
-        let object = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .ok_or("Cell click receiver lacks its type")?;
         let map = self.click_map()?;
         let terrain = map.cells.terrain();
@@ -304,7 +306,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return action;
         };
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return action;
         };
         let human = self.house_is_human_player(entity.owner());
@@ -376,8 +378,9 @@ impl Simulation {
         if entity.category() == EntityCategory::Structure {
             return Err("a building answers ClickedAction through its own class".into());
         }
-        let object = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .ok_or("Move click receiver lacks its type")?;
         let action = self.foot_object_class_action(id, action, rules);
         let refused = match action {

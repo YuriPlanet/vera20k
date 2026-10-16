@@ -27,7 +27,7 @@ pub(crate) fn start_refinery_unload(sim: &mut Simulation, rules: &RuleSet, build
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(building.type_ref())) else {
+    let Some(object) = sim.interner.object_type(building.type_ref(), rules) else {
         return;
     };
     let damaged = at_or_below_condition_yellow(
@@ -45,7 +45,7 @@ pub(crate) fn begin_refinery_unload_gate(sim: &mut Simulation, rules: &RuleSet, 
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(building.type_ref())) else {
+    let Some(object) = sim.interner.object_type(building.type_ref(), rules) else {
         return;
     };
     let damaged = at_or_below_condition_yellow(
@@ -71,7 +71,7 @@ pub(crate) fn emit_refinery_smoke(sim: &mut Simulation, rules: &RuleSet, buildin
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(building.type_ref())) else {
+    let Some(object) = sim.interner.object_type(building.type_ref(), rules) else {
         return;
     };
     let raw = crate::sim::movement::ground_pose::position_world_coord(&building.position);
@@ -123,7 +123,7 @@ pub(crate) fn end_refinery_unload_empty(sim: &mut Simulation, rules: &RuleSet, b
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(building.type_ref())) else {
+    let Some(object) = sim.interner.object_type(building.type_ref(), rules) else {
         return;
     };
     let damaged = at_or_below_condition_yellow(

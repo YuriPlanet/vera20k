@@ -1325,8 +1325,8 @@ fn a_strike_damages_a_building() {
     assert_eq!(building.health.current(), 50);
     assert!(matches!(
         building.health.compare_ratio(
-            rules
-                .object(sim.interner.resolve(building.type_ref()))
+            sim.interner
+                .object_type(building.type_ref(), &rules)
                 .unwrap()
                 .strength,
             rules.general.condition_yellow,

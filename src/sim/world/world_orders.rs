@@ -981,7 +981,7 @@ impl Simulation {
             .get(building_id)
             .and_then(|building| {
                 let pending = building.pending_c4_detonation.pending()?;
-                let object = rules.object(self.interner.resolve(building.type_ref()))?;
+                let object = self.interner.object_type(building.type_ref(), rules)?;
                 Some((
                     pending,
                     building.health.current(),

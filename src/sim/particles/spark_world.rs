@@ -14,6 +14,7 @@ use super::spark::{
 use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::voxel_slope::slope_matrix;
 use crate::rules::foundation::foundation_dimensions;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
@@ -296,7 +297,7 @@ impl<'a> SparkCollisionWorld<'a> {
             CellRef::Real(cell) => cell.slope_type,
             CellRef::Dummy { cell } => cell.snapshot().slope_type,
         };
-        slope_matrix(slope_type)
+        slope_matrix(slope_type).ok_or(SparkWorldError::UnsupportedSlope(slope_type))
     }
 
     fn accepted_building(&self, rx: u16, ry: u16) -> Result<bool, SparkWorldError> {
@@ -331,107 +332,6 @@ impl<'a> SparkCollisionWorld<'a> {
         }
         Ok(false)
     }
-}
-
-macro_rules! matrix {
-    ($($bits:expr),+ $(,)?) => {
-        [$(NativeF32Bits::from_bits($bits)),+]
-    };
-}
-
-const SLOPE_MATRICES: [[NativeF32Bits; 12]; 21] = [
-    matrix![
-        0x3f800000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000
-    ],
-    matrix![
-        0x3f5f3968, 0xbaaf51ee, 0xbefaa753, 0x00000000, 0x3ac90fd4, 0x3f7fffec, 0x250a3d28,
-        0x00000000, 0x3efaa73f, 0xba44dce0, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f7fffec, 0xbac90fd4, 0x248a3d28, 0x00000000, 0x3aaf51ee, 0x3f5f3968, 0x3efaa753,
-        0x00000000, 0xba44dce0, 0xbefaa73f, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f5f3968, 0xbaaf51ee, 0x3efaa753, 0x00000000, 0x3ac90fd4, 0x3f7fffec, 0xa48a3d28,
-        0x00000000, 0xbefaa73f, 0x3a44dce0, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f800000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x3f5f397a, 0xbefaa753,
-        0x00000000, 0x00000000, 0x3efaa753, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f773916, 0x3d06934a, 0xbe83d955, 0x00000000, 0x3d12b5d0, 0x3f77322f, 0x3e83d955,
-        0x00000000, 0x3e83a584, 0xbe840d12, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f77322f, 0xbd12b5d0, 0x3e83d955, 0x00000000, 0xbd06934a, 0x3f773916, 0x3e83d955,
-        0x00000000, 0xbe840d12, 0xbe83a584, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f773916, 0x3d06934a, 0x3e83d955, 0x00000000, 0x3d12b5d0, 0x3f77322f, 0xbe83d955,
-        0x00000000, 0xbe83a584, 0x3e840d12, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f77322f, 0xbd12b5d0, 0xbe83d955, 0x00000000, 0xbd06934a, 0x3f773916, 0xbe83d955,
-        0x00000000, 0x3e840d12, 0x3e83a584, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f773916, 0x3d06934a, 0xbe83d955, 0x00000000, 0x3d12b5d0, 0x3f77322f, 0x3e83d955,
-        0x00000000, 0x3e83a584, 0xbe840d12, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f77322f, 0xbd12b5d0, 0x3e83d955, 0x00000000, 0xbd06934a, 0x3f773916, 0x3e83d955,
-        0x00000000, 0xbe840d12, 0xbe83a584, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f773916, 0x3d06934a, 0x3e83d955, 0x00000000, 0x3d12b5d0, 0x3f77322f, 0xbe83d955,
-        0x00000000, 0xbe83a584, 0x3e840d12, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f77322f, 0xbd12b5d0, 0xbe83d955, 0x00000000, 0xbd06934a, 0x3f773916, 0xbe83d955,
-        0x00000000, 0x3e840d12, 0x3e83a584, 0x3f6e6b6d, 0x00000000
-    ],
-    matrix![
-        0x3f6fa319, 0x3d80294a, 0xbeb13d26, 0x00000000, 0x3d860ad0, 0x3f6f963a, 0x3eb13d26,
-        0x00000000, 0x3eb0f77e, 0xbeb182b2, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f6f963a, 0xbd860ad0, 0x3eb13d26, 0x00000000, 0xbd80294a, 0x3f6fa319, 0x3eb13d26,
-        0x00000000, 0xbeb182b2, 0xbeb0f77e, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f6fa319, 0x3d80294a, 0x3eb13d26, 0x00000000, 0x3d860ad0, 0x3f6f963a, 0xbeb13d26,
-        0x00000000, 0xbeb0f77e, 0x3eb182b2, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f6f963a, 0xbd860ad0, 0xbeb13d26, 0x00000000, 0xbd80294a, 0x3f6fa319, 0xbeb13d26,
-        0x00000000, 0x3eb182b2, 0x3eb0f77e, 0x3f5f397a, 0x00000000
-    ],
-    matrix![
-        0x3f800000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000
-    ],
-    matrix![
-        0x3f800000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000
-    ],
-    matrix![
-        0x3f800000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000
-    ],
-    matrix![
-        0x3f800000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x3f800000, 0x00000000
-    ],
-];
-
-/// Exact behavior-3 matrix bits selected by CellClass slope type.
-pub fn slope_matrix(slope: u8) -> Result<[NativeF32Bits; 12], SparkWorldError> {
-    SLOPE_MATRICES
-        .get(slope as usize)
-        .copied()
-        .ok_or(SparkWorldError::UnsupportedSlope(slope))
 }
 
 #[cfg(test)]
@@ -537,7 +437,7 @@ pub(super) mod tests {
         }
         assert_eq!(slope_matrix(1).unwrap()[0].bits(), 0x3f5f3968);
         assert_eq!(slope_matrix(16).unwrap()[10].bits(), 0x3f5f397a);
-        assert_eq!(slope_matrix(21), Err(SparkWorldError::UnsupportedSlope(21)));
+        assert_eq!(slope_matrix(21), None);
     }
 
     #[test]

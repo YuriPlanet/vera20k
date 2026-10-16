@@ -24,8 +24,8 @@ pub(crate) fn landing_base(
     let Some((rules, interner)) = rules_context else {
         return 0;
     };
-    if !rules
-        .object(interner.resolve(entity.type_ref()))
+    if !interner
+        .object_type(entity.type_ref(), rules)
         .is_some_and(|object| object.carryall)
     {
         return 0;
@@ -42,7 +42,7 @@ pub(crate) fn landing_base(
             .slot(0)
             .and_then(|id| entities.get(id))
             .filter(|contact| contact.category() == EntityCategory::Structure)
-            .and_then(|contact| rules.object(interner.resolve(contact.type_ref())))
+            .and_then(|contact| interner.object_type(contact.type_ref(), rules))
             .is_some_and(|object| object.unit_repair || object.helipad);
         if docking_at_ground {
             return 0;

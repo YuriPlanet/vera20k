@@ -52,11 +52,11 @@ fn award_kill_experience(
     let Some(killer) = entities.get(killer_id) else {
         return;
     };
-    let Some(killer_type) = rules.object(interner.resolve(killer.type_ref())) else {
+    let Some(killer_type) = interner.object_type(killer.type_ref(), rules) else {
         return;
     };
     let trainable_cost = |id: u64| -> Option<(u64, i32)> {
-        let object = rules.object(interner.resolve(entities.get(id)?.type_ref()))?;
+        let object = interner.object_type(entities.get(id)?.type_ref(), rules)?;
         object.trainable.then_some((id, cost_of(object)))
     };
     // Branch 1: a passenger firing from an OpenTopped transport pays its
@@ -73,8 +73,7 @@ fn award_kill_experience(
     } else {
         // Branch 4: an occupied building pays the occupant at its fire index.
         combat_weapon::firing_occupant_id(killer, killer_type).and_then(|occupant| {
-            let occupant_type =
-                rules.object(interner.resolve(entities.get(occupant)?.type_ref()))?;
+            let occupant_type = interner.object_type(entities.get(occupant)?.type_ref(), rules)?;
             Some((occupant, cost_of(occupant_type)))
         })
     };
@@ -185,7 +184,7 @@ fn record_the_kill(
     let victim_house = houses
         .get(&victim_owner)
         .map(crate::sim::house_state::HouseState::cost_factors);
-    let victim_type = rules.object(interner.resolve(victim.type_ref()));
+    let victim_type = interner.object_type(victim.type_ref(), rules);
     let insignificant_building = victim.category() == EntityCategory::Structure
         && victim_type.is_some_and(|object| object.insignificant);
     // `0x00702E64` asks the killer's house `HouseClass::IsAlly @ 0x004F9A90`,
@@ -276,8 +275,9 @@ impl crate::sim::world::Simulation {
             .houses
             .get(&victim.owner())
             .map(HouseState::cost_factors);
-        let victim_cost = rules
-            .object(self.interner.resolve(victim.type_ref()))
+        let victim_cost = self
+            .interner
+            .object_type(victim.type_ref(), rules)
             .map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
         self.record_kill_tag_prefix(victim_id, source, context);
         record_the_kill(

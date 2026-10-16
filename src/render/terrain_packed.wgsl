@@ -27,6 +27,7 @@ fn admitted(p: vec2u) -> bool {
 }
 fn blend(source: u32, destination: u32) -> u32 {
     let selector = params.selector & 6u;
+    if selector == 0u { return source; } // Original opaque copy494B60.
     if selector == 4u {
         return (((source >> 1u) & 0x7befu) + ((destination >> 1u) & 0x7befu)) & 0xffffu;
     }

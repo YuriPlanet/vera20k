@@ -92,6 +92,8 @@ pub(crate) fn native_map_cell_fixture(
         seed_cell(&mut view, key, input);
     }
     seed_cell(&mut view, VisibilityCell::Dummy, dummy);
+    // A supplied native state bypasses the writers' lists.
+    view.edge_cells = EdgeCells::default();
     fog.by_owner.insert(viewer, view);
     (fog, terrain)
 }

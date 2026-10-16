@@ -165,7 +165,7 @@ impl ProjectileCollisionWorld<'_> {
                 let coords = self.location(target);
                 let object_type = self
                     .rules
-                    .and_then(|rules| rules.object(self.interner.resolve(target.type_ref())));
+                    .and_then(|rules| self.interner.object_type(target.type_ref(), rules));
                 let offset_coords = crate::sim::movement::ground_pose::object_target_coords(
                     target,
                     self.terrain,
@@ -302,7 +302,7 @@ impl ProjectileCollisionWorld<'_> {
                         .get(id)
                         .and_then(|object| {
                             self.rules.and_then(|rules| {
-                                rules.object(self.interner.resolve(object.type_ref()))
+                                self.interner.object_type(object.type_ref(), rules)
                             })
                         })
                         .is_some_and(|kind| {
@@ -529,7 +529,7 @@ impl ProjectileCollisionWorld<'_> {
                 let building = self
                     .rules
                     .filter(|_| target.category() == EntityCategory::Structure)
-                    .and_then(|rules| rules.object(self.interner.resolve(target.type_ref())))
+                    .and_then(|rules| self.interner.object_type(target.type_ref(), rules))
                     .map(|kind| {
                         let (width, height) =
                             crate::rules::foundation::foundation_dimensions(&kind.foundation);
@@ -622,7 +622,7 @@ impl ProjectileCollisionWorld<'_> {
                 if query == ProjectileTargetQuery::GuidanceAim {
                     let kind = self
                         .rules
-                        .and_then(|rules| rules.object(self.interner.resolve(target.type_ref())));
+                        .and_then(|rules| self.interner.object_type(target.type_ref(), rules));
                     let coord = crate::sim::movement::ground_pose::object_target_coords(
                         target,
                         self.terrain,

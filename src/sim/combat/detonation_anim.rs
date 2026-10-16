@@ -75,8 +75,9 @@ pub(crate) fn bullet_land(
         if let Some(crate::sim::occupancy::CellObjectMember::Entity(id)) = first
             && let Some(unit) = world.substrate.entities.get(id)
             && unit.category() == crate::map::entities::EntityCategory::Unit
-            && rules
-                .object(world.interner.resolve(unit.type_ref()))
+            && world
+                .interner
+                .object_type(unit.type_ref(), rules)
                 .is_some_and(|kind| kind.naval && !kind.underwater)
         {
             return -1;

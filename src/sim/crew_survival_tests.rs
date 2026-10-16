@@ -1038,8 +1038,9 @@ fn load_passengers(
 ) -> Vec<u64> {
     let (rx, ry, open_topped) = {
         let entity = sim.substrate.entities.get(transport).unwrap();
-        let open_topped = rules
-            .object(sim.interner.resolve(entity.type_ref()))
+        let open_topped = sim
+            .interner
+            .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.open_topped);
         (entity.position.rx(), entity.position.ry(), open_topped)
     };

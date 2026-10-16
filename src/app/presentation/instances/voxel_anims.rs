@@ -11,13 +11,6 @@
 //! The draw takes no RNG draws, writes no timers and detaches nothing.
 //!
 //! RESIDUAL: DrawIt arms VERA does not draw.
-//! - An unowned piece (`0x00749E3F..0x00749E78`). gamemd draws it through the
-//!   UNITSNO.PAL Convert Init_Game builds into `[0x0087F6B4]`
-//!   (`0x0052BFCE..0x0052C075`; `[0x0087F6BC]` holds the same Convert,
-//!   `0x0052C1EA..0x0052C1FB`), at its cell's intensity for an `IsTiberium=`
-//!   type and at 1000 otherwise. Trigger: a piece spawned without a house;
-//!   every piece VERA spawns is death debris, which carries the dying object's
-//!   house. Effect: VERA would draw it nothing. Downstream: presentation only.
 //! - A `VoxelIndex=` other than zero, a model with more than one section, and
 //!   the `Share*Data=` types (`[SONICTURRET]`, `[4TNKTURRET]`, `[CRYSTAL01]`),
 //!   whose ReadINI copies another type's model instead of loading `%s.VXL`:
@@ -102,30 +95,42 @@ fn geometry(location: IVec3, ground_z: i32, bridge: bool) -> DebrisGeometry {
 /// DrawIt's body Convert and intensity (`0x00749E05..0x00749E78`): an owned
 /// piece takes its house's ColorScheme Convert (`+0x30C`, the one a Techno's
 /// voxel body selects at `0x00705D70`) at the intensity of the cell under it.
-/// None for an unowned piece (module residual).
+/// An unowned piece takes the global UNITSNO plain Convert, at top-cell
+/// intensity for IsTiberium and at 1000 otherwise (749E3F..749E78).
 fn piece_palette(
     piece: &VoxelAnimObject,
+    kind: &VoxelAnimType,
     sim: &Simulation,
     house_colors: &HouseColorMap,
     light: &CellLightGrid,
-) -> Option<(u32, PaletteLight)> {
-    let owner = piece.owner_house?;
+) -> (u32, u32, PaletteLight) {
+    let location = piece.world_coord();
+    let [x, y] = [location.x, location.y]
+        .map(|lepton| lepton.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16);
+    let Some(owner) = piece.owner_house else {
+        let brightness = if kind.is_tiberium {
+            light
+                .cell_light_at((x, y))
+                .map_or(1000, |cell| cell.top_scalar)
+        } else {
+            1000
+        };
+        return (0, 1, PaletteLight::plain(53, brightness));
+    };
     let scheme = house_colors
         .get(sim.interner.resolve(owner))
         .copied()
         .unwrap_or(NO_REMAP);
-    let location = piece.world_coord();
-    let [x, y] = [location.x, location.y]
-        .map(|lepton| lepton.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16);
-    Some((
+    (
         super::units::house_color_to_remap_row(scheme),
+        0,
         crate::app::presentation::lighting::body_palette_light(
             light,
             &sim.session.lighting,
             (x, y),
             0,
         ),
-    ))
+    )
 }
 
 /// What every piece of one frame shares.
@@ -170,14 +175,13 @@ pub(crate) fn build_voxel_anim_instances(
     let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
     for (&id, piece) in sim.voxel_anims().iter() {
         let kind = rules.voxel_anim_type(piece.type_id);
-        let Some(palette) = piece_palette(
+        let palette = piece_palette(
             piece,
+            kind,
             sim,
             &presentation.house_color_map,
             presentation.lighting.grid(),
-        ) else {
-            continue;
-        };
+        );
         if let Some(object) = voxel_anim_draw_instance(
             id,
             piece,
@@ -199,7 +203,7 @@ fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
     kind: &VoxelAnimType,
-    (remap_row, palette_light): (u32, PaletteLight),
+    (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
     view: &DebrisView<'_>,
     order: &NativeDisplayOrder,
     render: impl FnOnce(&str, i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
@@ -244,6 +248,7 @@ fn voxel_anim_draw_instance(
             depth,
             draw_state,
             PaletteLight::default(),
+            source_palette,
         ));
     }
     // `0x2800`, or `0x2804` for a `Translucent=` type (`0x00749DEB..0x00749E00`).
@@ -261,6 +266,7 @@ fn voxel_anim_draw_instance(
         depth,
         draw_state,
         palette_light,
+        source_palette,
     ));
     Some(PlannedObjectInstance::object(parent, pieces))
 }
@@ -271,9 +277,10 @@ fn pose_piece(
     depth: f32,
     draw_state: DrawState,
     palette_light: PaletteLight,
+    source_palette: u32,
 ) -> ObjectPieceInstance {
     ObjectPieceInstance {
-        target: ObjectTexture::UnitPose,
+        target: ObjectTexture::UnitPosePage(entry.page),
         render_z: RenderZPolicy::ReadOnly,
         instance: SpriteInstance {
             position: [at.point[0] + entry.offset_x, at.point[1] + entry.offset_y],
@@ -283,6 +290,7 @@ fn pose_piece(
             depth,
             tint: crate::map::lighting::DEFAULT_TINT,
             palette_light,
+            source_palette,
             alpha: 1.0,
             draw_state,
             z_adjust: at.z_adjust as f32,

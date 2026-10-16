@@ -167,6 +167,7 @@ impl SavedTerrainTemplate {
             tile_animations: self.tile_animations,
             destroyable_cliff_catalog: None,
             bridge_recalc_catalog: None,
+            allocated_cell_order: Default::default(),
         })
     }
 }

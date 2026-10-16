@@ -141,7 +141,6 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
         None,
         None,
         None,
-        &VxlSlopeTransitionCache::default(),
         Some(&shp),
         None,
         batch.default_zshape_bind_group(),
@@ -204,7 +203,8 @@ fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
         colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
     };
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
-    let palettes = PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &ramps, &[]);
+    let palettes =
+        PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
     let parents = (0..2)
         .map(|i| {
             let mut body = sprite([1. + i as f32 * 4., 1.], [4., 4.], -1.);
@@ -231,7 +231,7 @@ fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
                         target: if i == 0 {
                             ObjectTexture::UnitAtlasPage(0)
                         } else {
-                            ObjectTexture::UnitPose
+                            ObjectTexture::UnitPosePage(0)
                         },
                         render_z: RenderZPolicy::ReadOnly,
                         instance: body,
@@ -265,6 +265,9 @@ fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
         65535,
         wgpu::LoadOp::Clear(wgpu::Color::WHITE),
     );
+    let poses = crate::render::unit_pose_cache::VxlPoseFrameCache::from_test_textures(vec![
+        batch.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, 1, 1, &[33]),
+    ]);
     let stats = draw_native_object_pass(
         &mut encoder,
         &cv,
@@ -276,8 +279,7 @@ fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
         &ground,
         None,
         Some(&units),
-        Some(&units.page(0).unwrap().texture),
-        &VxlSlopeTransitionCache::default(),
+        Some(&poses),
         None,
         Some(&palettes),
         batch.default_zshape_bind_group(),
@@ -360,7 +362,8 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
         colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
     };
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
-    let palettes = PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &ramps, &[]);
+    let palettes =
+        PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
     let white = rgba([248, 252, 248]);
     let ztex = gpu.device.create_texture_with_data(
         &gpu.queue,
@@ -440,7 +443,6 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
         (0x01e0, 65535),
         (0x00e0, 65535),
     ];
-    let cache = VxlSlopeTransitionCache::default();
     let mut pool = InstanceBufferPool::new();
     for count in 1..=steps.len() {
         let entries = steps[..count]
@@ -506,7 +508,6 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
             Some(&overlay),
             Some(&units),
             None,
-            &cache,
             Some(&shp),
             Some(&palettes),
             batch.default_zshape_bind_group(),
@@ -593,8 +594,8 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
         colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
     };
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
-    let palettes = PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &ramps, &[]);
-    let cache = VxlSlopeTransitionCache::default();
+    let palettes =
+        PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
     let mut pool = InstanceBufferPool::new();
     for (layer_index, read_only) in [(2usize, false), (3usize, true)] {
         let destination = |piece| {
@@ -620,10 +621,13 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
                     } else {
                         // Real UnitAtlas draw range, deliberately outside this tiny
                         // attachment. This is a planner-work/fence gate, not20k FPS.
-                        (
-                            ObjectTexture::UnitAtlasPage(0),
-                            sprite([200., 200.], [1., 1.], 0.),
-                        )
+                        let mut instance = sprite([200., 200.], [1., 1.], 0.);
+                        // Native-paletted opaque bodies exercise signed-range
+                        // admission while preserving the ordinary safe batch.
+                        instance.palette_light = crate::render::palette_light::PaletteLight::new(
+                            [1000; 3], 53, 1000, true,
+                        );
+                        (ObjectTexture::UnitAtlasPage(0), instance)
                     };
                     PlannedObjectInstance::object(
                         ObjectDraw {
@@ -672,7 +676,6 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
                     Some(&overlay),
                     Some(&units),
                     None,
-                    &cache,
                     Some(&shp),
                     Some(&palettes),
                     batch.default_zshape_bind_group(),

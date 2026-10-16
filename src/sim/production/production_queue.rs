@@ -483,8 +483,8 @@ fn exit_land(
         .expect("the producer remains live");
     let coord = crate::sim::movement::building_exit_coordinate(
         crate::sim::movement::ground_pose::position_world_coord(&producer.position),
-        rules
-            .object(sim.interner.resolve(producer.type_ref()))
+        sim.interner
+            .object_type(producer.type_ref(), rules)
             .expect("the producer has a type"),
         || {
             crate::sim::movement::ground_pose::object_get_coords(

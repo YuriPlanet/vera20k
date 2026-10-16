@@ -276,9 +276,9 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                             entity.health.current(),
                             state
                                 .rules()
-                                .and_then(
-                                    |rules| rules.object(sim.interner.resolve(entity.type_ref()))
-                                )
+                                .and_then(|rules| sim
+                                    .interner
+                                    .object_type(entity.type_ref(), rules))
                                 .map_or_else(|| "?".to_owned(), |obj| obj.strength.to_string()),
                         ));
                     }
@@ -298,8 +298,9 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                         if entity.category() != EntityCategory::Structure {
                             continue;
                         }
-                        let foundation = rules
-                            .object(sim.interner.resolve(entity.type_ref()))
+                        let foundation = sim
+                            .interner
+                            .object_type(entity.type_ref(), rules)
                             .map(|obj| obj.foundation.as_str())
                             .unwrap_or("1x1");
                         let (fw, fh) = crate::rules::foundation::foundation_dimensions(foundation);

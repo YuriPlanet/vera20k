@@ -881,6 +881,76 @@ fn test_in_place_matches_fresh() {
     }
 }
 
+/// Rust regression test: a frame pass over a tracked map after a shroud-edge
+/// sweep closed two of its cells leaves what a pass that visits every cell and
+/// footprint leaves. One swept cell lies under a retained footprint (its pending
+/// bit set directly: only the latch and alternate paths leave a covered cell
+/// pending) and gets its ground bits back; the other lies under an alternate
+/// footprint alone, which the pass does not mark, and keeps them off.
+#[test]
+fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
+    let americans = intern::test_intern("Americans");
+    let mut store = EntityStore::new();
+    spawn_with_vision(&mut store, 1, "Americans", 8, 8, 3);
+    let grid = PathGrid::new(24, 24);
+    let cfg = default_config();
+    let alliances = HouseAllianceMap::default();
+    let interner = ti();
+    let pass = |fog: &mut FogState| {
+        recompute_owner_visibility_in_place(
+            fog,
+            &store,
+            Some(&grid),
+            &alliances,
+            &cfg,
+            None,
+            None,
+            &interner,
+            None,
+        )
+    };
+    let mut fog = FogState::default();
+    pass(&mut fog);
+    fog.admit_alternate_sight(
+        2,
+        americans,
+        SightAdmission {
+            owner: intern::test_intern("Soviet"),
+            origin: (18, 18, 0),
+            radius: 1,
+            cells: vec![(18, 18)],
+        },
+    );
+    let (covered, alternate) = ((9, 8), (18, 18));
+    for (x, y) in [covered, alternate] {
+        let vis = fog.by_owner.get_mut(&americans).unwrap();
+        let index = vis.index(x, y).unwrap();
+        vis.shroud_knowledge[index].pending = true;
+        vis.publish_knowledge(index);
+        fog.sweep_pending_map_cell(americans, (x, y), None);
+    }
+    let ground = |fog: &FogState, (x, y): (u16, u16)| {
+        let vis = &fog.by_owner[&americans];
+        vis.ground_flags_raw()[vis.index(x, y).unwrap()] & (GROUND_VISIBLE | GROUND_OPEN)
+    };
+    assert_eq!(ground(&fog, covered), 0, "the sweep closes the cell");
+    let mut every_cell = fog.clone();
+    pass(&mut fog);
+    VISIT_EVERY_CELL.set(true);
+    pass(&mut every_cell);
+    VISIT_EVERY_CELL.set(false);
+    assert_eq!(ground(&fog, covered), GROUND_VISIBLE | GROUND_OPEN);
+    assert_eq!(ground(&fog, alternate), 0);
+    let tracked = &fog.by_owner[&americans];
+    let every_cell = &every_cell.by_owner[&americans];
+    assert_eq!(tracked.cells_raw(), every_cell.cells_raw());
+    assert_eq!(tracked.ground_flags_raw(), every_cell.ground_flags_raw());
+    assert_eq!(
+        tracked.shroud_knowledge_raw(),
+        every_cell.shroud_knowledge_raw()
+    );
+}
+
 // -- FLAG_GAP_COVERED tests --
 
 #[test]

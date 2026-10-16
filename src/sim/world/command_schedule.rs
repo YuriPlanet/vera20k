@@ -253,7 +253,7 @@ impl Simulation {
         };
         (applied
             && rules
-                .and_then(|rules| rules.object(self.interner.resolve(type_id)))
+                .and_then(|rules| self.interner.object_type(type_id, rules))
                 .is_some_and(|object| !object.wall))
         .then_some(command.owner)
     }
@@ -339,8 +339,9 @@ impl Simulation {
             .entities
             .get(entity_id)
             .expect("a group member stays live while its run is staged");
-        let movement_zone = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let movement_zone = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .map_or_else(Default::default, |object| object.movement_zone);
         let cells = NativeCellQuery::canonical(terrain);
         GroupMemberTarget {

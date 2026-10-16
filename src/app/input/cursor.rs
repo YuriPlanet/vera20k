@@ -479,8 +479,8 @@ pub(super) fn capability_cursor_for_hover(
     }
 
     let hovered_entity = sim.entities().get(hover.stable_id);
-    let hovered_obj = rules
-        .and_then(|r| hovered_entity.and_then(|e| r.object(sim.interner.resolve(e.type_ref()))));
+    let hovered_obj =
+        rules.and_then(|r| hovered_entity.and_then(|e| sim.interner.object_type(e.type_ref(), r)));
 
     // 1. Deployer self-hover — the cursor is over the selected unit itself.
     //    Show the deploy cursor for units with Deployer=yes (e.g. GGI, Guardian GI)
@@ -490,7 +490,7 @@ pub(super) fn capability_cursor_for_hover(
     if selected.len() == 1 && selected[0] == hover.stable_id {
         let entity = sim.entities().get(selected[0]);
         let obj =
-            entity.and_then(|e| rules.and_then(|r| r.object(sim.interner.resolve(e.type_ref()))));
+            entity.and_then(|e| rules.and_then(|r| sim.interner.object_type(e.type_ref(), r)));
         if let (Some(entity), Some(obj)) = (entity, obj) {
             if super::context_order::is_simple_deploy_unit(entity, obj) {
                 return if rules.is_some_and(|rules| sim.can_simple_deploy(hover.stable_id, rules)) {
@@ -542,14 +542,14 @@ pub(super) fn capability_cursor_for_hover(
     let best_is_ivan = !single_self
         && best_id
             .and_then(|id| sim.entities().get(id))
-            .and_then(|e| rules.and_then(|r| r.object(sim.interner.resolve(e.type_ref()))))
+            .and_then(|e| rules.and_then(|r| sim.interner.object_type(e.type_ref(), r)))
             .is_some_and(|obj| obj.ivan);
     if let Some(best_id) = best_id
         && let (Some(sel_entity), Some(sel_obj)) = (
             sim.entities().get(best_id),
             sim.entities()
                 .get(best_id)
-                .and_then(|e| rules.and_then(|r| r.object(sim.interner.resolve(e.type_ref())))),
+                .and_then(|e| rules.and_then(|r| sim.interner.object_type(e.type_ref(), r))),
         )
     {
         // `InfantryClass::What_Action_OnObject @ 0x0051E3B0`, right after
@@ -851,7 +851,7 @@ fn forced_bomb_feedback(
     use crate::map::entities::EntityCategory;
     let rules = rules?;
     let best = best_id.and_then(|id| sim.entities().get(id))?;
-    let best_obj = rules.object(sim.interner.resolve(best.type_ref()))?;
+    let best_obj = sim.interner.object_type(best.type_ref(), rules)?;
     let target = sim.entities().get(hover.stable_id)?;
     if best.category() == EntityCategory::Infantry
         && best_obj.engineer
@@ -866,7 +866,7 @@ fn forced_bomb_feedback(
     best_obj.ivan.then(|| {
         ivan_bomb_action(
             Some(target),
-            rules.object(sim.interner.resolve(target.type_ref())),
+            sim.interner.object_type(target.type_ref(), rules),
         )
     })
 }
@@ -993,7 +993,7 @@ pub(crate) fn select_best_for_action(
         let Some(entity) = sim.entities().get(sid) else {
             continue;
         };
-        let obj = rules.and_then(|r| r.object(sim.interner.resolve(entity.type_ref())));
+        let obj = rules.and_then(|r| sim.interner.object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
         } else if !obj.is_some_and(|obj| is_armed(entity, obj)) {

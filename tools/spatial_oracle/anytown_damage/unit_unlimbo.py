@@ -22,7 +22,7 @@ from tools.native_oracle import (
 )
 from tools.spatial_oracle.building_body_rules import SP, RULES, dwords
 from . import foot_missions
-from .navigation_inputs import extract_tiles
+from .navigation_inputs import bind_primary_tiles
 from .mission import HERE, Mission, base
 
 REPO = Path(__file__).resolve().parents[3]
@@ -795,46 +795,10 @@ class UnitUnlimboControls(Mission):
         m, u = self.m, self.u
         before_rng = self.rng_bytes()
         theater = base.identity.theater()
-        physical, receipt = extract_tiles(theater)
-        table, count = m.read32(0xA8ED2C), m.read32(0xA8ED38)
-        retained_header = bytes(u.mem_read(0xA8ED28, 24))
-        u.mem_write(0xA8ED28, dwords(0x7EB6D4, table, count, 1, count, 10))
-        # Original constructor also retains every primary/secondary tile type.
-        # The existing Reader remains the sole allocator in this composed VM.
-        u.mem_write(0xB0F670, dwords(0x7EB6D4, m.alloc(4096 * 4), 4096, 1, 0, 10))
-        rows = []
-        for tile in sorted({r['tile'] for r in self.resident.case['supplied_cells']}):
-            if tile >= count or m.read32(table + tile * 4):
-                continue
-            raw = physical.get(tile)
-            assert raw is not None, (tile, theater['tiles'][tile])
-            head, data = m.alloc(0x400), m.alloc(len(raw))
-            name = theater['tiles'][tile]
-            # Supply the sparse original primary-array loop index as caller state;
-            # the constructor itself installs its vtable/defaults and this entry.
-            u.mem_write(0xA8ED38, dwords(tile))
-            args = (tile, -65, 0, m.cstring(name[:-4]), 0)
-            returned = m.invoke(0x5447C0, head, args)
-            assert returned == head and m.read32(table + tile * 4) == head
-            tmp = bytearray(raw)
-            width, height = struct.unpack_from('<II', tmp)
-            for sub in range(width * height):
-                offset = struct.unpack_from('<I', tmp, 16 + sub * 4)[0]
-                if offset:
-                    struct.pack_into('<I', tmp, 16 + sub * 4, data + offset)
-            u.mem_write(data, bytes(tmp))
-            u.mem_write(head + 0xA4, dwords(data))
-            u.mem_write(head + 0x2E4, dwords(width & 255, height & 255))
-            rows.append(dict(tile=tile, file=name, raw_sha256=hashlib.sha256(raw).hexdigest(),
-                             raw_bytes=len(raw), original_ctor='0x005447C0', ctor_args=list(args),
-                             head=hex(head), vtable=hex(m.read32(head)), data=hex(data),
-                             original_defaults_hex=bytes(u.mem_read(head + 0x2C0, 0x3C)).hex(),
-                             relocated_sha256=hashlib.sha256(bytes(tmp)).hexdigest()))
-        u.mem_write(0xA8ED28, retained_header)
-        assert m.read32(0xA8ED38) == count
+        result = bind_primary_tiles(m, theater,
+            [row['tile'] for row in self.resident.case['supplied_cells']])
         assert before_rng == self.rng_bytes()
-        return dict(archive_inputs=receipt, added_rows=rows, rng=self.rng_pair(before_rng, self.rng_bytes()),
-                    boundary='Physical primary TMP cache supplied with original constructor heads and native default animation/shadow fields. The original archive loader, all tile INI properties and rendering variants are excluded. Existing crop Cell inputs are unchanged; later original Recalc owns land/slope/zone updates.')
+        return dict(result, rng=self.rng_pair(before_rng, self.rng_bytes()))
 
     def door_progress(self):
         # Observe this pure query through the existing original-function call owner.

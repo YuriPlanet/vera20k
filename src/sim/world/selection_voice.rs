@@ -73,7 +73,7 @@ impl Simulation {
         if !voices_enabled || (!human_player && !passive) {
             return None;
         }
-        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
         let voices = if entity.slave.owner().is_some() {
             &object.voice_select_enslaved
         } else if entity.deactivated.is_offline() {
@@ -100,7 +100,7 @@ impl Simulation {
         }
         let entity = self.entities().get(entity_id)?;
         let human_player = self.house_is_human_player(entity.owner());
-        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
         self.voice_request_from_list(&object.voice_special_attack, voices_enabled, human_player)
     }
 
@@ -132,7 +132,7 @@ impl Simulation {
 
         let entity = self.entities().get(entity_id)?;
         let human_player = self.house_is_human_player(entity.owner());
-        let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
         if entity.category() == EntityCategory::Structure
             && object.resource_gatherer
             && object.resource_destination

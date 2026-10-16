@@ -105,7 +105,7 @@ fn initial_range_leptons(
     {
         // AirRange bonus when target is high-flying.
         if is_high_flying_in_query(target_entity, cells, Some((rules, interner)))
-            && let Some(attacker_obj) = rules.object(interner.resolve(attacker.type_ref()))
+            && let Some(attacker_obj) = interner.object_type(attacker.type_ref(), rules)
             && let Some(air_bonus) = attacker_obj.air_range_bonus
         {
             range_lep += cells_fixed_to_leptons(air_bonus);
@@ -130,7 +130,7 @@ fn occupied_range_leptons(
     if attacker.category() != EntityCategory::Structure {
         return None;
     }
-    let obj = rules.object(interner.resolve(attacker.type_ref()))?;
+    let obj = interner.object_type(attacker.type_ref(), rules)?;
     combat_weapon::is_occupied(attacker, obj)
         .then(|| i64::from(combat_weapon::occupied_reach_cells(obj, rules).wrapping_shl(8)))
 }
@@ -505,7 +505,7 @@ fn compute_range_target(
     if let RangeTarget::Abstract(TargetKind::Entity(id)) = target
         && let Some(entity) = entities.get(*id)
         && entity.category() == EntityCategory::Structure
-        && let Some(object) = rules.object(interner.resolve(entity.type_ref()))
+        && let Some(object) = interner.object_type(entity.type_ref(), rules)
     {
         let (width, height) = foundation_dimensions(&object.foundation);
         max_range_lep += (width as i64 + height as i64) * 0x40;
@@ -886,7 +886,7 @@ pub(crate) fn can_fire_at_target_in_query(
     let Some(attacker) = entities.get(attacker_id) else {
         return false;
     };
-    let Some(attacker_obj) = rules.object(interner.resolve(attacker.type_ref())) else {
+    let Some(attacker_obj) = interner.object_type(attacker.type_ref(), rules) else {
         return false;
     };
     let Some((index, _)) = combat_weapon::select_weapon_against_in_query(

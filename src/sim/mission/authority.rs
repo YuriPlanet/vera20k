@@ -199,8 +199,9 @@ struct LiveUnitWorld<'a> {
 
 impl LiveUnitWorld<'_> {
     fn weapons_factory(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
-        self.rules
-            .object(self.sim.interner.resolve(entity.type_ref()))
+        self.sim
+            .interner
+            .object_type(entity.type_ref(), self.rules)
             .is_some_and(|obj| obj.weapons_factory)
     }
 }
@@ -333,12 +334,7 @@ fn evaluate_ready(
         let locomotor = crate::sim::movement::ready_producer::ready_state_for(
             entity,
             rules.map(|rules| {
-                crate::sim::movement::SpeedRules::new(
-                    rules,
-                    &sim.interner,
-                    &sim.type_handles,
-                    &sim.houses,
-                )
+                crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)
             }),
             sim.session.binary_frame,
         )

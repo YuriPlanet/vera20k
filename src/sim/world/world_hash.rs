@@ -321,10 +321,11 @@ mod shared_dummy_bridge_hash_tests {
 
     use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
+    use crate::map::voxel_slope::slope_matrix;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::particles::spark::SparkMotionStep;
-    use crate::sim::particles::spark_world::{SparkCollisionWorld, slope_matrix};
+    use crate::sim::particles::spark_world::SparkCollisionWorld;
     use crate::util::native_x87::NativeF32Bits;
 
     fn spark_motion_at(x: i32, y: i32, z: i32) -> SparkMotionStep {
@@ -1599,27 +1600,9 @@ impl Simulation {
     /// divergence in the stream itself, even though nothing in the physics
     /// reads them back.
     fn hash_voxel_anims(&self, hasher: &mut impl Hasher) {
-        // An empty store contributes NO bytes. Debris exists only between a
-        // death and the moment the last piece expires, so hashing a length of
-        // zero on every other frame would move every established golden and
-        // every historical schema probe for a plumbing reason rather than a
-        // behavioural one — and would keep doing so at each future store. It
-        // masks nothing: the fold is domain-separated by
-        // `b"voxel-anim-debris-v1"`, so an empty store carries no information a
-        // `0usize` would add.
-        //
-        // Be aware when reading this that it does NOT match its neighbours.
-        // `fold_raw_cell_occupation` is the precedent, but that is a sparse
-        // GRID fold; the two STORE folds this one sits between — `hash_anims`
-        // and `hash_particle_systems` — both write their length
-        // unconditionally. The skip was chosen to avoid a re-baseline, and it
-        // is load-bearing for that reason alone.
-        //
-        // Coverage gap: no parity harness and no replay fixture authors a
-        // positive `MaxDebris=`, so nothing red today exercises either this
-        // fold's populated arm or the producer that fills it. The first fixture
-        // that kills a `MaxDebris>0` type moves the goldens through the RNG
-        // cursor even before a single piece survives to be folded.
+        // Keep the established sparse-store domain: no live debris contributes
+        // no bytes. A live piece includes both independent Rust and native
+        // identities; the latter also advances the shared Scenario cursor.
         if self.substrate.voxel_anims.is_empty() {
             return;
         }
@@ -1627,6 +1610,7 @@ impl Simulation {
         self.substrate.voxel_anims.len().hash(hasher);
         for (id, debris) in self.substrate.voxel_anims.iter() {
             id.hash(hasher);
+            debris.native_unique_id().hash(hasher);
             debris.type_id.0.hash(hasher);
             debris.duration.hash(hasher);
             debris.marked_for_deletion.hash(hasher);
@@ -1702,6 +1686,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.building_entry.hash(hasher);
     }
     let latches = entity.house_tracking_latches();
+    if entity.tracking_facts.naval_combatant() {
+        // Retained across reload: later Remove_Tracking must use the same
+        // Naval/Passengers admission as construction, even while in limbo.
+        b"naval-tracking-eligibility-v1".hash(hasher);
+    }
     if latches != Default::default() {
         b"house-tracking-infantry-latches-v1".hash(hasher);
         latches.hash(hasher);
@@ -2313,16 +2302,13 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         0u8.hash(hasher);
     }
 
-    // Body rocking state. I16F16 doesn't implement Hash directly;
-    // .to_bits() gives the underlying i32. Drive/Ship slope state is
-    // hashed with its active/stashed locomotor payload below.
+    // Body rocking's four authoritative binary32 fields. A sub-fixed-quantum
+    // rate can select a different damping branch on the next visit, so the
+    // presentation's fixed getters cannot stand in for retained state.
+    // Drive/Ship slope state is hashed with its locomotor payload below.
     if let Some(ref r) = entity.rocking {
         1u8.hash(hasher);
-        r.angle_sideways().to_bits().hash(hasher);
-        r.angle_forwards().to_bits().hash(hasher);
-        r.vel_sideways().to_bits().hash(hasher);
-        r.vel_forwards().to_bits().hash(hasher);
-        r.is_ship_rocking().hash(hasher);
+        r.native_bits().hash(hasher);
     } else {
         0u8.hash(hasher);
     }
@@ -4568,7 +4554,7 @@ mod rocking_hash_tests {
         let id = a.substrate.entities.values().next().unwrap().stable_id();
         a.substrate.entities.get_mut(id).unwrap().rocking = Some({
             let mut value = RockingState::default();
-            value.set_angle_sideways_for_test(SimFixed::lit("0.1"));
+            value.set_angle_sideways(SimFixed::lit("0.1"));
             value
         });
         assert_ne!(a.state_hash(), b.state_hash());

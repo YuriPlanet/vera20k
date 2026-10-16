@@ -36,7 +36,7 @@ pub(crate) fn live_threat_posed(
             // recurse through this getter or add another reciprocal-link gate.
             return entities
                 .get(tank_id)
-                .and_then(|tank| rules.object(interner.resolve(tank.type_ref())))
+                .and_then(|tank| interner.object_type(tank.type_ref(), rules))
                 .map_or(0, |tank_type| tank_type.threat_posed);
         }
     }

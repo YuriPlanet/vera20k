@@ -2098,8 +2098,9 @@ pub(super) fn evaluate_foot_guard_cadence(
     // This does not alter709820's separate scan jitter or targeting timer.
     if sim.substrate.entities.get(id).is_some_and(|entity| {
         !entity.distributed_fire_candidates().is_empty()
-            && rules
-                .object(sim.interner.resolve(entity.type_ref()))
+            && sim
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|kind| kind.distributed_fire)
     }) {
         return MissionHandlerEvaluation::cadence(0);
@@ -2390,7 +2391,7 @@ fn foot_type_takes_cadence_band(
     attacker: &crate::sim::game_entity::GameEntity,
     close_primary_range_leptons: i64,
 ) -> bool {
-    let Some(object) = rules.object(sim.interner.resolve(attacker.type_ref())) else {
+    let Some(object) = sim.interner.object_type(attacker.type_ref(), rules) else {
         return false;
     };
     if attacker.category() == EntityCategory::Infantry && object.close_range {

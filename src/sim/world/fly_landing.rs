@@ -36,7 +36,7 @@ impl Simulation {
             );
         }
         let sound = rules
-            .and_then(|r| r.object(self.interner.resolve(e.type_ref())))
+            .and_then(|r| self.interner.object_type(e.type_ref(), r))
             .and_then(|o| o.aux_sound1.as_deref());
         if let Some(sound) = sound {
             let c = ground_pose::position_world_coord(&e.position);
@@ -85,7 +85,7 @@ impl Simulation {
         if bridge && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
             height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
         }
-        let object = rules.and_then(|r| r.object(self.interner.resolve(entity.type_ref())));
+        let object = rules.and_then(|r| self.interner.object_type(entity.type_ref(), r));
         let dropship = object.is_some_and(|o| o.is_dropship);
         let carryall =
             entity.category() == EntityCategory::Aircraft && object.is_some_and(|o| o.carryall);
@@ -368,12 +368,12 @@ impl Simulation {
             return other == id
                 || e.radio_contacts.slot(0) == Some(other)
                 || rules
-                    .and_then(|r| r.object(self.interner.resolve(e.type_ref())))
+                    .and_then(|r| self.interner.object_type(e.type_ref(), r))
                     .is_some_and(|o| o.spawned)
                     && self.substrate.entities.get(other).is_some_and(|o| {
                         o.spawn_manager.is_some()
                             || rules
-                                .and_then(|r| r.object(self.interner.resolve(o.type_ref())))
+                                .and_then(|r| self.interner.object_type(o.type_ref(), r))
                                 .is_some_and(|o| o.spawned)
                     });
         }

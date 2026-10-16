@@ -814,7 +814,7 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(());
         };
-        let Some(object_type) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object_type) = self.interner.object_type(entity.type_ref(), rules) else {
             return Ok(());
         };
         if entity.category() != EntityCategory::Unit

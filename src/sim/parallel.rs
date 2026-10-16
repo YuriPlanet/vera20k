@@ -16,12 +16,36 @@ pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) 
     items.par_iter().map(&work).collect()
 }
 
+/// [`map`] with scratch: each worker takes its own clone of `init` and keeps
+/// it across the items it takes, so `work` may cache in it answers that do
+/// not depend on the item.
+pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
+    items: &[T],
+    init: S,
+    work: impl Fn(&mut S, &T) -> R + Sync,
+) -> Vec<R> {
+    items
+        .par_iter()
+        .map_with(init, |scratch, item| work(scratch, item))
+        .collect()
+}
+
 /// The indices below `len` that `keep` selects, in ascending order.
 pub(crate) fn select_indices(len: usize, keep: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
     (0..len)
         .into_par_iter()
         .filter(|&index| keep(index))
         .collect()
+}
+
+/// `pick`'s answers for the indices below `len` it answers, in ascending
+/// index order.
+pub(crate) fn filter_map_indices<R: Send>(
+    len: usize,
+    pick: impl Fn(usize) -> Option<R> + Sync,
+) -> Vec<R> {
+    // A shared reference to a `Sync` closure is `Send`.
+    (0..len).into_par_iter().filter_map(&pick).collect()
 }
 
 /// `work` on every item in place.

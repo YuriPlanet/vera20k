@@ -257,7 +257,7 @@ impl Simulation {
 
         let Some((coords, owner_entity, system_types)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
-                let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
                 let offset = damage_smoke_offset(object);
                 let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
                 let coords = IVec3::new(

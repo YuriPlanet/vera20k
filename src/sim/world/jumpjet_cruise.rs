@@ -68,8 +68,11 @@ impl CruiseHost<'_> {
     }
 
     fn object_type(&self) -> Option<&crate::rules::object_type::ObjectType> {
-        self.rules
-            .and_then(|rules| rules.object(self.sim.interner.resolve(self.owner().type_ref())))
+        self.rules.and_then(|rules| {
+            self.sim
+                .interner
+                .object_type(self.owner().type_ref(), rules)
+        })
     }
 
     fn slot_holder(&self, cell: (i16, i16)) -> Option<u64> {
@@ -202,8 +205,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                     .get(id)
                     .zip(self.rules)
                     .and_then(|(building, rules)| {
-                        rules
-                            .object(self.sim.interner.resolve(building.type_ref()))
+                        self.sim
+                            .interner
+                            .object_type(building.type_ref(), rules)
                             .map(|object| rules.building_launch_height(object))
                     })
                     .unwrap_or(0)
@@ -396,7 +400,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             .slot(0)
             .and_then(|contact| self.sim.substrate.entities.get(contact))
             .filter(|contact| contact.category() == EntityCategory::Structure)
-            .and_then(|contact| rules.object(self.sim.interner.resolve(contact.type_ref())))
+            .and_then(|contact| self.sim.interner.object_type(contact.type_ref(), rules))
             .is_some_and(|contact| {
                 contact.weapons_factory
                     || contact.gdi_barracks()
@@ -656,7 +660,7 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get(id) else {
             return;
         };
-        let Some(object) = rules.object(self.interner.resolve(owner.type_ref())) else {
+        let Some(object) = self.interner.object_type(owner.type_ref(), rules) else {
             return;
         };
         if !(object.balloon_hover || object.jumpjet) || owner.radio_contacts.is_empty() {

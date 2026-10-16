@@ -1890,7 +1890,7 @@ impl Simulation {
         if !matches!(category, EntityCategory::Unit | EntityCategory::Infantry) {
             return;
         }
-        let Some(object) = rules.object(self.interner.resolve(type_ref)) else {
+        let Some(object) = self.interner.object_type(type_ref, rules) else {
             return;
         };
         let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
@@ -2068,7 +2068,6 @@ impl Simulation {
                     Some(crate::sim::movement::SpeedRules::new(
                         rules,
                         &self.interner,
-                        &self.type_handles,
                         &self.houses,
                     )),
                     now,
@@ -2436,7 +2435,7 @@ impl Simulation {
                 let health = crate::sim::conversion_health::ConversionHealth::capture(
                     building,
                     self.object_type(building.type_ref(), rules)?,
-                    rules.object(self.interner.resolve(unit_type_id))?,
+                    self.interner.object_type(unit_type_id, rules)?,
                     crate::sim::conversion_health::ConversionKind::Building,
                 );
                 Some((

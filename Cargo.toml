@@ -193,3 +193,11 @@ opt-level = 1
 # suite's run time rose from 12 s to 55-93 s. Run timing benchmarks with --release.
 [profile.test]
 opt-level = 0
+
+# Published builds (.github/workflows/release.yml): whole-program optimization
+# across every crate, compiled as one unit. It rebuilds everything for this
+# profile and links slowly, so day-to-day timing and play stay on --release.
+[profile.shipping]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

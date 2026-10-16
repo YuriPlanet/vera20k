@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three original421EA0 SHP Bouncer ABS-before-IDIV INT_MIN controls through full Bounce4397E0",
+  "assumptions": [
+    "Extends the existing Anim Bouncer owner unchanged: supplied retail DBRIS1LG scalar fields and declared map/redraw/display/Start boundaries; original constructor numeric launch and Bounce execute.",
+    "Each row supplies native-seeded full RNG input with one explicit state-word constraint. Unmodified original65C780 independently verifies INT_MIN; full constructor before/after state, every raw word and whole Bounce are observed.",
+    "Original RandomRate postread makes DBRIS1LG bounds1,1, so it consumes no raw word before Z/Y/X. This is a numeric constructor control, not full physical gameplay admission or Start/Logic continuation."
+  ],
+  "substitutions": [
+    "Inherited dummy map-cell lookup, redraw1, recorded Display submit1 and Start return, successful bump allocation. No numeric constructor/Bounce/RNG return is substituted."
+  ],
+  "entry_points": {
+    "ctor": "0x00421EA0",
+    "bounce": "0x004397E0",
+    "next": "0x0065C780",
+    "z_preabs": "0x004225B1",
+    "y_preabs": "0x0042259B",
+    "x_preabs": "0x004225E4"
+  },
+  "replay_command": "python -m tools.spatial_oracle.anim_bouncer_launch --intmin",
+  "payload_sha256": "51afb06e3471c1a53dd1c3c2afc68e7815d5ceb1dd6a0e25b6d0d40ff5524cda"
+}

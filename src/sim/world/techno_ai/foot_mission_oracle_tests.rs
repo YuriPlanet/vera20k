@@ -951,8 +951,10 @@ impl SuppliedFootFixture {
 fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &Value) -> usize {
     let name = row["input"]["name"].as_str().unwrap();
     let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();
-    let object = rules
-        .object(fixture.sim.interner.resolve(actor.type_ref()))
+    let object = fixture
+        .sim
+        .interner
+        .object_type(actor.type_ref(), rules)
         .unwrap();
     let coefficients = ThreatCoefficients::resolve(rules, object, HOUSE_SELECTS_OWN_COEFFICIENTS);
     let mut last_score = None;

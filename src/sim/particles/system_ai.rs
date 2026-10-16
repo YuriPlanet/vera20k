@@ -309,7 +309,7 @@ mod tests {
     fn flat_facts() -> SparkCollisionFacts {
         SparkCollisionFacts {
             ground_z: 0,
-            slope_matrix: Some(super::super::spark_world::slope_matrix(0).unwrap()),
+            slope_matrix: Some(crate::map::voxel_slope::slope_matrix(0).unwrap()),
             old_has_structural_bridge: false,
             candidate_has_structural_bridge: false,
             accepted_building: false,

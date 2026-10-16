@@ -434,6 +434,7 @@ fn mission_unload(
         rules,
         ctx.overlay_registry,
         id,
+        crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
         ctx.effects,
     );
     let entity = sim.substrate.entities.get(id)?;
@@ -697,7 +698,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 0;
     };
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return 0;
     };
     let current = entity
@@ -1118,7 +1119,7 @@ fn fire_arm(
         .substrate
         .entities
         .get(id)
-        .and_then(|entity| rules.object(sim.interner.resolve(entity.type_ref())))
+        .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
     else {
         return;
     };
@@ -1430,7 +1431,7 @@ fn voxel_turret_snaps(sim: &mut Simulation, id: u64, rules: &RuleSet, target: Ta
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return false;
     };
     if !(obj.has_turret && obj.turret_anim_is_voxel) {

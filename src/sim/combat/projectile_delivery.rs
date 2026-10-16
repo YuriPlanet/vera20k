@@ -20,8 +20,9 @@ pub(super) fn projectile_arm_delay(
 }
 
 /// The BulletType facts FireAt and `BulletClass::Fire` read for one shot.
-/// Every shot is a bullet; an `Inviso=` one is placed at its target and
-/// detonates on its first AI visit (`Projectile` `fire_inviso`).
+/// Every shot is a bullet; `Inviso=` places it at its target. Detonation
+/// still follows the common AI admission, including its Arm-gated proximity
+/// fuse (SQDJUMP has Arm=2); `fire_inviso` does not bypass that timer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProjectileDelivery {
     arm_frames: i32,

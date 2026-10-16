@@ -749,12 +749,7 @@ impl Simulation {
         };
         let moving_now = super::motion_query::is_really_moving_now(
             actor,
-            Some(super::SpeedRules::new(
-                rules,
-                &self.interner,
-                &self.type_handles,
-                &self.houses,
-            )),
+            Some(super::SpeedRules::new(rules, &self.interner, &self.houses)),
             self.session.binary_frame,
         );
         let requested = if moving_now {

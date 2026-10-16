@@ -943,7 +943,7 @@ impl Simulation {
                 if entity.category() != EntityCategory::Unit {
                     return None;
                 }
-                let object = rules?.object(sim.interner.resolve(entity.type_ref()))?;
+                let object = sim.interner.object_type(entity.type_ref(), rules?)?;
                 Some((
                     crate::sim::animation::ShpVehicleCadence {
                         walk_rate: object.walk_rate,
@@ -959,12 +959,7 @@ impl Simulation {
                 crate::sim::animation::tick_unit_body_frame_counter(
                     entity,
                     rules.map(|rules| {
-                        crate::sim::movement::SpeedRules::new(
-                            rules,
-                            &sim.interner,
-                            &sim.type_handles,
-                            &sim.houses,
-                        )
+                        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)
                     }),
                     cadence,
                     hover_attack,

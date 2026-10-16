@@ -340,6 +340,9 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         controller_house: None,
         fire_world: Some(&world),
         allies: Default::default(),
+        allies_of_scanner: Default::default(),
+        probe_firer: Default::default(),
+        scanner_facts: attacker_facts(firer, obj),
     };
     let walk = WalkArgs {
         flags: 0x8042,

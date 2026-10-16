@@ -725,8 +725,9 @@ fn retail_builds_step_at_the_native_frames() {
         // Full-strength buildings, so the plants give their retail 200 each.
         for id in 1..=5 {
             let entity = sim.substrate.entities.get_mut(id).expect("structure");
-            let strength = rules
-                .object(sim.interner.resolve(entity.type_ref()))
+            let strength = sim
+                .interner
+                .object_type(entity.type_ref(), &rules)
                 .expect("retail building")
                 .strength;
             entity.health.set_for_test(strength);

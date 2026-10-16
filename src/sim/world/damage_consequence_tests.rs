@@ -59,15 +59,6 @@ fn consequence_world() -> (Simulation, u64, u64) {
     (sim, attacker, victim)
 }
 
-fn debris_fingerprint(sim: &Simulation, id: u64) -> u64 {
-    bincode::serialize(sim.substrate.voxel_anims.get(id).unwrap())
-        .unwrap()
-        .into_iter()
-        .fold(0xcbf29ce484222325_u64, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-        })
-}
-
 fn delivered_ids(sim: &Simulation) -> Vec<u64> {
     let debris = sim.substrate.voxel_anims.ids();
     assert_eq!(debris.len(), 1);
@@ -148,23 +139,26 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         ["DEATHREPORT", "DESTROYREPORT", "DieA"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
-    // Rust regression, not a gamemd-derived golden. Fingerprint includes the
-    // complete debris body. Re-captured when the debris and Explosion= draws
-    // moved to the Scenario stream (`0x007022C8`, `0x007386A7`); the
-    // death sound stays on the main stream. Electric birth now also spends
-    // its Main RandomRanged(0,256) before that sound (Init4C2AA3; original
-    // draw/state controls in procedural_drawing_oracle/electric_bolt.json).
+    // Existing Rust stream regressions remain unchanged; native numeric body
+    // comparisons live with the constructor owner rather than a serialized
+    // Rust fingerprint that changes whenever its wire layout gains a field.
     assert_eq!(sim.scenario_rng.state(), 3954386809370758752);
     assert_eq!(sim.main_rng.state(), 8272706873942388551);
-    // FireAt now admits the spark in its own live slot, before the Bullet's
-    // fatal receiver allocates debris. Only this body's stable id shifts;
-    // normalizing that id reproduced the old F1AD17BB92AA72D9 fingerprint,
-    // and the Scenario fingerprint remains unchanged. The Main fingerprint
-    // includes the newly modeled electric phase draw before the death sound.
-    // Re-captured again when the body began keeping its native orientation
-    // and rotation quaternions in place of the axis and angle; both RNG
-    // states above were unchanged.
-    assert_eq!(debris_fingerprint(&sim, ids[0]), 13227534854384985671);
+    let debris_native = sim.voxel_anims().get(ids[0]).unwrap().native_unique_id();
+    let death_native = sim
+        .anims()
+        .find(|(id, _)| **id == ids[1])
+        .unwrap()
+        .1
+        .native_unique_id;
+    let destroy_native = sim
+        .anims()
+        .find(|(id, _)| **id == ids[2])
+        .unwrap()
+        .1
+        .native_unique_id;
+    assert_eq!(death_native, debris_native.wrapping_add(1));
+    assert_eq!(destroy_native, death_native.wrapping_add(1));
     let next_id = sim.allocate_stable_id();
     assert_eq!(next_id, ids[2] + 1);
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
@@ -257,13 +251,9 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
         ["DEATHREPORT", "DESTROYREPORT", "DieA"]
     );
     assert!(sim.particle_systems().is_empty());
-    // Rust regression from the real Bullet AI, re-captured when the debris and
-    // Explosion= draws moved to the Scenario stream; only the death sound
-    // stays on the main stream. The fingerprint was re-captured when the body
-    // began keeping its native quaternions; the RNG states were unchanged.
+    // Existing Rust stream regressions from the real Bullet AI.
     assert_eq!(sim.scenario_rng.state(), 2066545679410230777);
     assert_eq!(sim.main_rng.state(), 6706932826526710953);
-    assert_eq!(debris_fingerprint(&sim, ids[0]), 17321112424619809687);
     // Retired objects remain physically resolvable until the shared drain.
     // Visiting again must not deliver another death transaction.
     let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());

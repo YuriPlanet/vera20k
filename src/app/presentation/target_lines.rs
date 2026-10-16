@@ -327,7 +327,7 @@ pub(crate) fn build_factory_rally_line_instances(
         if owner != local_owner {
             continue;
         }
-        let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+        let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
             continue;
         };
         if !obj.has_rally_line() {

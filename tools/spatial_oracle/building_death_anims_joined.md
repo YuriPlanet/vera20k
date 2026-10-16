@@ -1,5 +1,92 @@
 # Ordinary GAPOWR fatal lifecycle: joined native comparison
 
+## Terror Drone numeric component
+
+`parasite_water_gate --drone` reuses the same configured reader and runtime for
+stock DRON/MTNK, DroneJump/JUMP/Parasite and DefaultSparkSystem. Actual original
+Unit constructors/Unlimbo run on recalculated physical Clear tile 0, followed
+by direct source Limbo and real CanInfect/AttachTo. Full FireAt/Bullet production
+is a separate production test boundary. Initial records include native type
+Weight/Strength, weapon Damage/ROF/Paralyzes, both measured facings, House slots,
+game speed, lighting, timers, identities and complete RNG state.
+
+The existing native VXL loader independently produces GTNK header bytes and
+half-sizes. Those actual bytes are explicit component inputs to the joined
+Type; original IsVoxel and ApplyRocker gates execute. This does not close the
+joined Type's whole VXL file-binding path or promise usable internal model
+pointers beyond the reached predicate. The separate Drive corpus executes its
+full physical loader and raster. Existing `electric_bolt.read_spark_types`
+provides native SparkSys/Spark reader fields on the same Reader VM, and its
+runtime-state owner observes complete original ParticleSystem construction.
+
+Each monotonic visit executes whole victim `70B570` before whole manager
+`629FD0`. The small `parasite_drone_rng.json` records two nonlethal bites,
+upstream random sides, actual impact coordinates, impulse assignments,
+constructor/ID/RNG interleaving, native f32 rocking state and readonly full
+GetFLH through the existing `ifv_fire_coord` owner. Other actor/effect AI,
+whole Logic and release/death/expiry are excluded. No per-bite reseed, supplied
+gameplay result or Rust-derived expected value is used.
+
+```sh
+PYTHONPATH=.:tools/spatial_oracle PYTHONDONTWRITEBYTECODE=1 \
+python -m tools.spatial_oracle.parasite_water_gate --drone --check
+```
+
+Set `VERA20K_BUILDING_DEATH_ASSETS` to the shared physical input directory with
+GTNK.VXL/HVA and VOXELS.VPL. `--write` changes only the new drone corpus and its
+binary/command sidecar. Historical Squid and default water-gate outputs remain
+unchanged.
+
+## Squid grapple numeric component
+
+The additive `parasite_water_gate --grapple` comparison reuses this physical
+reader and runtime. Its `grapple_inputs` and `grapple_fixture` configuration
+construct stock SQD and hostile DEST, including DEST's real SpawnManager/ASW
+child. Shared Mission transport dispatches the parsed Ship/Fly GUIDs to the
+original factories. Actual native registry and House counter constructors
+initialize the newly required startup fields.
+
+The supplied water projection binds physical `Water01.tem` through the existing
+primary TMP transport and original IsoTileType constructor. Original Cell
+recalculation derives water LandType before original Unit Unlimbo. Both actors
+must return successful Unlimbo with water retained. Frame 0 precedes selected
+construction; source Object::Limbo must then return true, CanInfect must accept,
+and original AttachTo must write both reciprocal links. Entry snapshots retain
+alive, limbo, health, coordinates, measured facing and House slot/alliance mask.
+The inherited partial Houses both have Abstract ID 0; that field cannot identify
+the hostile owners. Initial and row manager timers separate logical start and
+duration from opaque padding words. This calls Object::Limbo
+directly; it does not execute or claim the FireAt/Bullet/LimboLaunch producer.
+Scenario map-lighting/reset and cell relight are also excluded. The initial
+lighting record preserves the actual Scenario current profile, raw fields,
+effect globals and selected Cell scalars. Consumers import that component
+profile: original `629DDE` copies signed Cell `+10A` into the held Anim Z-adjust.
+The zero prior here is not the ordinary full-map lighting default.
+The initial signed `game_speed` readback similarly preserves the inherited
+GameOptions `A8EB60` input used by original `5FB2E0` to normalize Anim rates.
+
+Only whole `6297F0` receives successive frame visits. The small corpus retains
+both roll signs, native f32 angle stores, interleaved wake/splash constructors,
+nonlethal receiver calls, native ID order, actual constructor/Logic/Display
+state and full three-stream RNG states with every raw draw/rejection. Other
+actor and Anim AI, full Logic, culling/release/expiry, native VXL binding and
+scene pixels remain outside this component. Production gameplay and cleanup
+regressions supply separate evidence. Mutated diagnostic worlds are excluded.
+
+Set `VERA20K_BUILDING_DEATH_ASSETS` and `VERA20K_SHRAPNEL_INPUTS` to the physical
+joined input directory, extended with SQDG, WAKE1, H2O_EXP1/2/3 SHPs and the
+existing TEMPERATMD/XShrapnel theater-reader inputs. The selected scenario read
+remains Hills; XShrapnel is an inherited scalar-reader bootstrap input.
+
+```sh
+PYTHONPATH=.:tools/spatial_oracle PYTHONDONTWRITEBYTECODE=1 \
+python -m tools.spatial_oracle.parasite_water_gate --grapple --check
+```
+
+`--write` regenerates only `parasite_grapple_rng.json` and its binary/command
+sidecar. The historical Parasite, joined building and numeric corpora remain
+separate and unchanged.
+
 `building_death_anims.py --joined` adds four original-executable controls. It
 preserves the existing primitive `building_death_anims.json` and its sidecar.
 The binary is active-retail `gamemd.exe`, SHA-256

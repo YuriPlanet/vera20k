@@ -6,9 +6,10 @@ use super::*;
 
 /// The `Death_Announcement` (`+0x3B8`) input for one death site.
 ///
-/// Every native caller sits in a non-building `ReceiveDamage` override
-/// (`BuildingClass` has none), and `0x004D98DD` skips `Spawned=` types.
-/// Called by the damage kill loop only. The non-damage death sites that
+/// Native non-building receivers and Squid culling629C76 call this slot;
+/// BuildingClass has none. `0x004D98DD` skips `Spawned=` types. Culling
+/// announces the living hull before Stun without recording a kill. The other
+/// non-damage death sites that
 /// natively route through `+0x16C` (`ReceiveDamage`) with `C4Warhead=`,
 /// `InfantryClass::IronCurtain 0x00522632` and `CellClass::BlowUpBridge
 /// 0x0047DDAE`, reach it the same way: VERA kills through that loop too.
@@ -117,7 +118,7 @@ pub(crate) fn death_weapon_detonation(
     rules: &RuleSet,
 ) -> Option<ProjectileDetonation> {
     let entity = world.substrate.entities.get(id)?;
-    let object = rules.object(world.interner.resolve(entity.type_ref()))?;
+    let object = world.interner.object_type(entity.type_ref(), rules)?;
     let current_weapon = combat_weapon::current_weapon(
         entity,
         object,
@@ -246,10 +247,11 @@ pub(super) fn throw_debris_for_death(
         object_type,
         rules,
         anim_coord,
+        voxel_origin: origin,
         voxel_debris,
         explosion_effects,
     };
-    if let Err(error) = throw_death_debris(&data, Some(owner), origin, &mut host) {
+    if let Err(error) = throw_death_debris(&data, Some(owner), &mut host) {
         // Out-of-domain modded velocities retain the pieces already emitted;
         // the original ordered block has no rollback of earlier constructors.
         log::debug!("death debris stopped outside verified numeric domain: {error}");
@@ -263,6 +265,7 @@ struct DeathDebrisWorldHost<'w, 'r> {
     object_type: &'r ObjectType,
     rules: &'r RuleSet,
     anim_coord: crate::sim::anim_class::AnimWorldCoord,
+    voxel_origin: glam::IVec3,
     voxel_debris: &'w mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
     explosion_effects: &'w mut Vec<ExplosionEffect>,
 }
@@ -298,14 +301,27 @@ impl crate::sim::voxel_anim::ShpDebrisHost for DeathDebrisWorldHost<'_, '_> {
     }
 }
 
-impl crate::sim::voxel_anim::DeathDebrisHost for DeathDebrisWorldHost<'_, '_> {
-    fn admit_voxel(&mut self, spawn: &crate::sim::voxel_anim::VoxelDebrisSpawn) {
-        if world_receiver::callbacks_enabled(self.world) {
-            self.world
-                .admit_death_debris(std::iter::once(spawn.clone()));
-        } else {
-            self.voxel_debris.push(spawn.clone());
-        }
+impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
+    fn voxel_origin(&self) -> glam::IVec3 {
+        self.voxel_origin
+    }
+
+    fn construct_voxel(
+        &mut self,
+        type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId,
+        voxel_type: &crate::rules::voxel_anim_type::VoxelAnimType,
+        owner_house: Option<InternedId>,
+        origin: glam::IVec3,
+    ) -> Result<(), crate::util::native_x87::NativeX87Error> {
+        let admit_inline = world_receiver::callbacks_enabled(self.world);
+        self.world.emit_debris_voxel(
+            type_id,
+            voxel_type,
+            owner_house,
+            origin,
+            admit_inline,
+            self.voxel_debris,
+        )
     }
 }
 

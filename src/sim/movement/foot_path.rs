@@ -718,8 +718,9 @@ impl Simulation {
             own_cell: unlisted.map(|_| (own_cell.0 as i16, own_cell.1 as i16)),
             read_own_cell: std::cell::Cell::new(false),
             passive_unit: actor.category() == EntityCategory::Unit
-                && rules
-                    .object(self.interner.resolve(actor.type_ref()))
+                && self
+                    .interner
+                    .object_type(actor.type_ref(), rules)
                     .is_some_and(|object| object.passive),
         };
         let searched = request.search(
@@ -1343,8 +1344,9 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("missing Foot precheck actor")?;
-        let object = rules
-            .object(self.interner.resolve(actor.type_ref()))
+        let object = self
+            .interner
+            .object_type(actor.type_ref(), rules)
             .ok_or("missing Foot precheck type")?;
         if object.movement_zone == MovementZone::Invalid {
             return Ok(true);
@@ -1369,8 +1371,9 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("missing Foot navigation reachability actor")?;
-        let object = rules
-            .object(self.interner.resolve(actor.type_ref()))
+        let object = self
+            .interner
+            .object_type(actor.type_ref(), rules)
             .ok_or("missing Foot navigation reachability type")?;
         let destination = coord_cell(destination);
         let source = self.foot_navigation_coordinate(id)?;

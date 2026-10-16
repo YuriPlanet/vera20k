@@ -55,8 +55,8 @@ pub(crate) fn apply_unit_facing(
         let Some(entity) = entities.get(id) else {
             continue;
         };
-        let rot = rules
-            .object(interner.resolve(entity.type_ref()))
+        let rot = interner
+            .object_type(entity.type_ref(), rules)
             .map(|obj| obj.turret_rot)
             .unwrap_or(5);
         let before = UnitFacing::of(entity);

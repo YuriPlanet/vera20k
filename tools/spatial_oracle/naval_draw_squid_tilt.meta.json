@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight physical DEST original69F670 matrices, original loaded-VXL half-size postpass, two physical hull rasters and two explicit shared gun-component controls",
+  "assumptions": [
+    "Existing raster VM loads actual DEST VXL/HVA/VPL via original755DB0/5BD5C0/753B70. Original7160B4..716123 derives type half-sizes from first native-loaded section. Original6F9E10 tests actual model header byte0 through Unit type+B0; physical model validity and first section dimensions are recorded.",
+    "Actual Ship69EC50 constructor and original69EBF0 empty-Coord startup run. Frame0 or6, facing/angles/slope/timer are explicit component inputs. Full69F670 preserves native cached versus dynamic gate, table trig/ftol, retained slope interpolation and native multiply grouping. No full native scenario/unit asset-binding/locomotor process claim.",
+    "Only positive/negative roll controls retain physical hull packed rasters. Existing original loader/raster, camera and matrix owners are reused. Retail DEST Turret=no and derived DESTTUR/BARL assets absent; two gun_component rows explicitly supply offset50/turretstep6/pitch3800 to the existing full73BA4C..73BC26 owner using the original Ship matrix. Those are shared numerical controls, not physical DEST gun rendering.",
+    "Original69EBF0 initializes cold Ship empty Coord globals. Frame and actor/type/facing links are supplied component inputs, not fabricated gameplay callable results. Sideways angle input is exact binary32; conversion to simulation fixed point is an explicitly separate consumer boundary.",
+    "Shared native_slope startup runs original754980 yaw and all original slope/quaternion initializers on this same VM. The21 historical slope matrices remain unchanged. CRT math-error-handler slotB7819C is supplied as its PE loader-zero virtual-tail prior (original setter7C8F96); the strict uninitialized-read guard remains active. No new native shadow execution or shadow-pixel claim."
+  ],
+  "substitutions": [
+    "Inherited immutable requested-file vtable IO, successful bump allocation and original startup camera transport. No Ship DrawMatrix/IsVoxel/postpass/trig/ftol/multiply/gun-arm/raster return or instruction is replaced."
+  ],
+  "entry_points": {
+    "ship_ctor": "0x0069EC50",
+    "ship_empty_startup": "0x0069EBF0",
+    "half_sizes": "0x007160B4",
+    "is_voxel": "0x006F9E10",
+    "ship_matrix": "0x0069F670",
+    "gun_arm": "0x0073BA4C",
+    "raster": "0x00754510"
+  },
+  "replay_command": "python -m tools.spatial_oracle.naval_draw_bounds --squid-tilt",
+  "payload_sha256": "bb51f305a763786e3ce9ad760e6665dea90cb47d8345ef3127ac8752d6fa854e"
+}

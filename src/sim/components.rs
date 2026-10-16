@@ -527,29 +527,6 @@ pub struct DriveOccupationFootprint {
     pub layer: MovementLayer,
 }
 
-/// Which part of a multi-part voxel model an entity/atlas entry represents.
-///
-/// Non-turret units use `Composite` (body+turret+barrel baked together).
-/// Turret units store Body/Turret/Barrel separately so the turret can
-/// be drawn at a different facing than the body at render time.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
-pub enum VxlLayer {
-    /// All parts composited into one sprite (for units without independent turret).
-    Composite,
-    /// Body only (hull/chassis).
-    Body,
-    /// Turret only ({IMAGE}TUR.VXL).
-    Turret,
-    /// Barrel only ({IMAGE}BARL.VXL).
-    Barrel,
-    /// Ground shadow of the main voxel: each section's occupied (x, y) columns
-    /// flattened onto z = 0 and shifted by the shadow light vector, always at
-    /// motion frame 0. See `render::vxl_raster::render_vxl_shadow`.
-    Shadow,
-}
-
 /// Constructor row for a generic AnimClass-like runtime spawn.
 ///
 /// This preserves the fields passed to `AnimClass::Constructor` separately from

@@ -113,8 +113,9 @@ impl Simulation {
         {
             return 10;
         }
-        let object = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .expect("aircraft type");
         if combat_weapon::aircraft_strafes(rules, object, entity.veterancy.rank()) {
             let weapon = combat_weapon::primary_for_tier(object, entity.veterancy.rank())
@@ -156,9 +157,7 @@ impl Simulation {
             )
             .expect("live approach Target")
         } else {
-            let object = rules
-                .object(self.interner.resolve(entity.type_ref()))
-                .unwrap();
+            let object = self.interner.object_type(entity.type_ref(), rules).unwrap();
             let snap = crate::sim::combat::build_attacker_snapshot(entity, target, None);
             let origin = fire_coord::fire_coordinate(
                 self,

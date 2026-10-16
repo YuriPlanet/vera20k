@@ -253,9 +253,6 @@ pub struct WarheadType {
     /// (`0x0075CFB3`). The bullet's impact resolution skips its last snaps
     /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
     /// mounted by no stock weapon.
-    /// RESIDUAL: `Paralyzes=` (`+0x170`, `ReadInt` at `0x0075D92A`) is not
-    /// parsed; its one stock user, `[ParasitePlus]`, belongs to the unported
-    /// parasite effect.
     pub em_effect: bool,
     /// Money transfer on hit. Native offset **UNKNOWN** — VERA-internal,
     /// gamemd equivalent UNCHECKED. `WarheadTypeClass::ReadINI_Body` reads no

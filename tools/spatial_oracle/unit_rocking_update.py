@@ -7,6 +7,7 @@ and caller-contract corpus, not AI scheduling, impulse or damage-body parity.
 from itertools import product
 from pathlib import Path
 import hashlib
+import os
 import struct
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
@@ -363,5 +364,53 @@ def metadata():
     return result
 
 
+def impulse_generate():
+    from tools.voxel_oracle.raster import render_native
+    root=Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])
+    files={name:(root/name).read_bytes() for name in ('GTNK.VXL','GTNK.HVA','VOXELS.VPL')}
+    normal=dict(frame=0,facing=0,position=[2432,2176,0],weight_bits='3ff0000000000000',
+        angle_bits=[0,0],velocity_bits=[0,0],update_steps=2)
+    hit=lambda origin,**changes:dict(origin=origin,force_bits=0x3FC00000,no_dampen=0,**changes)
+    cases=[dict(name='north',impulses=[hit([2432,2178,0])],update_steps=60,update_samples=[1,2,3,5,10,20,40,60]),
+        dict(name='south',impulses=[hit([2432,2174,0])]),
+        dict(name='diagonal_height_weight3_5',facing=0x6000,weight_bits='400c000000000000',
+            impulses=[dict(origin=[2304,2112,104],force_bits=0x3FC00000,no_dampen=1)]),
+        dict(name='zero_distance_preserves_rates',velocity_bits=[0x3CA3D70A,0xBCA3D70A],
+            impulses=[hit([2432,2176,0])]),
+        dict(name='weak_preserves_rates',velocity_bits=[0x3CA3D70A,0xBCA3D70A],
+            weight_bits='400c000000000000',impulses=[dict(origin=[2432,2178,0],force_bits=0x3DCCCCCD,no_dampen=0)]),
+        dict(name='zero_weight',weight_bits='0000000000000000',impulses=[hit([2432,2178,0])]),
+        dict(name='negative_weight',weight_bits='bff0000000000000',velocity_bits=[0x3CA3D70A,0xBCA3D70A],
+            impulses=[hit([2432,2178,0])]),
+        dict(name='second_impulse_replaces',impulses=[hit([2432,2178,0]),hit([2432,2174,0])])]
+    rows=[];model=None
+    for case in cases:
+        pose=dict(normal,**case)
+        result=render_native(files['GTNK.VXL'],files['GTNK.HVA'],files['VOXELS.VPL'],drive_pose=pose)['drive']
+        selected={key:result[key] for key in ('model_header_hex','is_voxel','first_section_size','half_size_bits')}
+        assert model is None or model==selected
+        model=selected
+        rows.append(dict(input=pose,impulses=result['impulses'],updates=result['updates']))
+    return dict(schema=1,model=model,files={name:dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+        for name,raw in files.items()},cases=rows)
+
+
+def impulse_metadata():
+    return provenance(scope='Eight whole original70B280 impulse controls and ordinary70B570 visits on physical loaded GTNK, including eight compact checkpoints from one60-visit history',
+        assumptions=[
+            'Existing voxel_oracle.raster owns the one VM, physical GTNK VXL/HVA/VPL load and native7160B4 half-size postpass. Original Unit type getters and Facing Current4C93D0 execute on supplied Unit-shaped fields. Type+B0 points at the real native-loaded VXL; no supplied IsVoxel or ApplyRocker result.',
+            'Weight1 is the actual TechnoType710C66 constructor default/current-field7124CF reader fallback and selected retail MTNK has no authored override. Other supplied double inputs3.5/0/negative1 are explicit numeric controls, not stock tuning or an invented nonpositive fallback.',
+            'Position, raw facing, force1.5 or weak0.1, no_dampen and initial four binary32 state words are component inputs. Whole70B280 executes 3D distance, facing/table geometry, division/gates and assignment; ordered field stores and reached guard/cap instructions are observed. No RNG is permitted inside ApplyRocker.',
+            'Whole70B570 executes normal updates without replacing Facing/type getters or damage returns; these bounded rows stay below its self-damage envelope. Seven controls visit twice; north retains visits1/2/3/5/10/20/40/60 from60 monotonic original updates without reseeding or replacing intermediate state. Native f32 state is retained between calls. Simulation fixed-point conversion is a separate consumer boundary and must preserve amplified nonzero-rate branches where required.',
+            'The same original Drive4AF540/4AFF60 and physical raster run afterward only to reuse the loaded-model owner. Their pixels/matrices are not impulse expected outputs. No actor construction/Unlimbo, upstream Parasite random-side choice, whole AI scheduling, timer/cleanup or scene parity claim.',
+        ],substitutions=['Inherited immutable file-vtable I/O, successful allocation and declared original startup/CRT transport from voxel_oracle.raster. Original impulse/update/math/loaded-model instructions remain unchanged.'],
+        entry_points=dict(impulse=0x70B280,update=0x70B570,model_load=0x755DB0,half_sizes=0x7160B4,drive_ctor=0x4AF540,drive_empty=0x4AF4E0))
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    import sys
+    if '--impulse' in sys.argv[1:]:
+        finish_vectors(impulse_generate,Path(__file__).with_name('unit_rocker_impulse.json'),
+            provenance=impulse_metadata,argv=[a for a in sys.argv[1:] if a!='--impulse'])
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)

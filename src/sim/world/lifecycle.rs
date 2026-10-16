@@ -923,7 +923,7 @@ impl Simulation {
         let aircraft_type = context
             .rules
             .filter(|_| entity.category() == EntityCategory::Aircraft)
-            .and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
+            .and_then(|rules| self.interner.object_type(entity.type_ref(), rules));
         if aircraft_type.is_some_and(|object| object.missile_spawn) {
             return position
                 .exact_z_leptons()
@@ -1278,7 +1278,7 @@ impl Simulation {
             && self.substrate.entities.get(stable_id).is_some_and(|e| {
                 context
                     .rules
-                    .and_then(|r| r.object(self.interner.resolve(e.type_ref())))
+                    .and_then(|r| self.interner.object_type(e.type_ref(), r))
                     .map_or(e.category() == EntityCategory::Aircraft, |o| {
                         o.considered_aircraft
                     })
@@ -1295,7 +1295,7 @@ impl Simulation {
                 entity.category(),
                 EntityCategory::Infantry | EntityCategory::Unit | EntityCategory::Aircraft
             )
-            && let Some(object) = rules.object(self.interner.resolve(entity.type_ref()))
+            && let Some(object) = self.interner.object_type(entity.type_ref(), rules)
         {
             entity
                 .navigation
@@ -1331,7 +1331,7 @@ impl Simulation {
                     self.substrate
                         .entities
                         .get(stable_id)
-                        .and_then(|entity| rules.object(self.interner.resolve(entity.type_ref())))
+                        .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                 })
                 .is_some_and(|object| object.small_visceroid || object.large_visceroid);
             let value = if visceroid {
@@ -2426,7 +2426,8 @@ impl Simulation {
         let non_landable_level = (entity.category() == EntityCategory::Aircraft)
             .then(|| {
                 rules.and_then(|r| {
-                    r.object(self.interner.resolve(entity.type_ref()))
+                    self.interner
+                        .object_type(entity.type_ref(), r)
                         .filter(|object| !object.landable)
                         .map(|object| object.flight_level(r.general.flight_level))
                 })
@@ -3932,6 +3933,12 @@ impl Simulation {
         .into_iter()
         .flatten()
         .for_each(&mut name);
+        listener
+            .parasite
+            .class()
+            .and_then(|class| class.grapple_anim())
+            .into_iter()
+            .for_each(&mut name);
         listener.mega_mission.referenced_ids().for_each(&mut name);
         listener.distributed_fire_references().for_each(&mut name);
         // The SpawnManager, CaptureManager and TemporalClass forwards act on
@@ -4737,11 +4744,17 @@ impl Simulation {
     /// Anim4's dedicated holder announcement725A16..725A4C, before Anim
     /// conceal/removal (UnInit42561F, destructor422906). It does not enter
     /// the generic Object/bomb/factory/team broadcast. This dispatches the
-    /// Bullet subset; Building receivers stay at their existing boundaries,
+    /// Bullet and Parasite-holder subsets; Building receivers stay at their existing boundaries,
     /// including their distinct ordinary-UnInit versus scalar slot handling.
     pub(crate) fn notify_anim_pointer_expired(&mut self, expired_id: u64) {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
+        }
+        let holders = self
+            .expiry_listeners
+            .entities_reached_by(&mut self.substrate.entities, expired_id);
+        for owner in holders {
+            self.parasite_anim_pointer_expired(owner, expired_id);
         }
         let acting = self
             .expiry_listeners
@@ -5640,6 +5653,9 @@ impl Simulation {
             self.sound_events
                 .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
         }
+        // Foot's Parasite destructor6293E0 destroys its held Anim and clears
+        // progress; it neither invents a release nor rewrites the host's HP.
+        self.reset_parasite_grapple(stable_id, context.rules());
         // The Building destructor's Release406060 on its +0x6B4 working-sound
         // handle (43BD1A), the same most-derived destructor slot.
         self.release_building_working_sound(stable_id, context.rules());

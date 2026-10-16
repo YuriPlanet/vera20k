@@ -972,7 +972,7 @@ impl Simulation {
 
     /// Jumpjet State 5's sink for a dropped object its own landing test
     /// refused over water (`0x0054CEB4..0x0054CF37`): `+0x3CD` and the Stun
-    /// ([`Self::begin_warp_sinking`]), its slaves freed to the dropping
+    /// ([`Self::begin_living_ship_sinking`]), its slaves freed to the dropping
     /// Magnetron with no house (`FreeSlaves(+0x428, 0)`, `0x0054CEDF`) and
     /// its SlaveManager deleted, and its death booked
     /// ([`Self::record_manipulated_kill`]).
@@ -983,7 +983,12 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        self.begin_warp_sinking(id, rules, effects);
+        self.begin_living_ship_sinking(
+            id,
+            crate::sim::world::LivingSinkTrigger::PostWarpValidation,
+            rules,
+            effects,
+        );
         let killer = self
             .substrate
             .entities

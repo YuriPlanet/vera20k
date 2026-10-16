@@ -2838,7 +2838,7 @@ fn deployer_is_deployed(
     id: u64,
 ) -> Option<bool> {
     let entity = sim.entities().get(id)?;
-    let object = rules?.object(sim.interner.resolve(entity.type_ref()))?;
+    let object = sim.interner.object_type(entity.type_ref(), rules?)?;
     match entity.category() {
         EntityCategory::Infantry if object.deployer => Some(entity.infantry_deploy_doing()),
         EntityCategory::Unit if object.is_simple_deployer => Some(
@@ -2860,7 +2860,7 @@ fn deploy_key_command(
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
-    let obj = rules.and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())));
+    let obj = rules.and_then(|rules| sim.interner.object_type(entity.type_ref(), rules));
     match entity.category() {
         EntityCategory::Structure => {
             // Absorbers and garrisons share unload admission; otherwise a
@@ -3199,7 +3199,7 @@ fn jump_camera_to_base(state: &mut AppState) {
                     && owner_name
                         .is_none_or(|o| sim.interner.resolve(e.owner()).eq_ignore_ascii_case(o))
                     && rules
-                        .and_then(|r| r.object(sim.interner.resolve(e.type_ref())))
+                        .and_then(|r| sim.interner.object_type(e.type_ref(), r))
                         .is_some_and(|o| o.undeploys_into.is_some())
             });
             if let Some(entity) = conyard {
@@ -3217,7 +3217,7 @@ fn jump_camera_to_base(state: &mut AppState) {
                     && owner_name
                         .is_none_or(|o| sim.interner.resolve(e.owner()).eq_ignore_ascii_case(o))
                     && rules
-                        .and_then(|r| r.object(sim.interner.resolve(e.type_ref())))
+                        .and_then(|r| sim.interner.object_type(e.type_ref(), r))
                         .is_some_and(|o| o.deploys_into.is_some())
             });
             if let Some(entity) = mcv {

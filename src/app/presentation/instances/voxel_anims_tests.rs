@@ -114,9 +114,9 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         let kind = rules.voxel_anim_type(piece.type_id);
         assert_eq!(kind.image, "TIRE");
         let location = piece.world_coord();
-        let palette = piece_palette(piece, &sim, &house_colors, &light)
-            .expect("death debris carries the dying miner's house");
-        let (remap_row, lit) = palette;
+        let palette = piece_palette(piece, kind, &sim, &house_colors, &light);
+        let (remap_row, source_palette, lit) = palette;
+        assert_eq!(source_palette, 0);
         assert_eq!(remap_row, 5, "Americans' scheme 4");
         let [x, y] = [location.x, location.y].map(|lepton| (lepton / 256) as u16);
         assert_eq!(lit.0[3], intensity(x, y) as u32, "the cell's intensity");
@@ -150,7 +150,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             panic!("a shadow and a body");
         };
         for drawn in [shadow, body] {
-            assert_eq!(drawn.target, ObjectTexture::UnitPose);
+            assert_eq!(drawn.target, ObjectTexture::UnitPosePage(0));
             assert_eq!(drawn.render_z, RenderZPolicy::ReadOnly);
         }
         assert_eq!(shadow.instance.draw_state.fx_flags, FX_SHADOW);
@@ -197,4 +197,108 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         ids.iter()
             .all(|&id| order.object_draw(id, SpriteEncoding::Voxel).is_none())
     );
+}
+
+/// Bullet469DBA leaves a typed piece's owner null. Its production constructor,
+/// Logic/Display admission and retail TIRE raster must still reach DrawIt;
+/// this presentation fixture supplies the impact coordinate, not combat.
+#[test]
+fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let rules = &battle.rules;
+    let tire_id = rules.voxel_anim_type_id_by_name("TIRE").unwrap();
+    let kind = rules.voxel_anim_type(tire_id);
+    assert!(!kind.is_tiberium);
+    let mut sim = Simulation::with_seed(17);
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        32,
+    ));
+    sim.emit_debris_voxel(
+        tire_id,
+        kind,
+        None,
+        IVec3::new(12 * 256 + 128, 12 * 256 + 128, 0),
+        true,
+        &mut Vec::new(),
+    )
+    .unwrap();
+    let ids = sim.voxel_anims().ids();
+    assert_eq!(ids.len(), 1);
+    let id = ids[0];
+    for _ in 0..6 {
+        sim.visit_voxel_anim(id, Some(rules));
+    }
+    let piece = sim.voxel_anims().get(id).unwrap();
+    assert_eq!(piece.owner_house, None);
+    let mut light = CellLightGrid::new();
+    let location = piece.world_coord();
+    let cell = ((location.x / 256) as u16, (location.y / 256) as u16);
+    light.insert_light(
+        cell,
+        crate::map::lighting::CellLight::new(
+            light.profiles().default_profile_id(),
+            [400; 3],
+            [400; 3],
+            65536,
+            0,
+            0,
+            425,
+            425,
+            425,
+            425,
+            425,
+        ),
+    );
+    let palette = piece_palette(piece, kind, &sim, &HouseColorMap::new(), &light);
+    assert_eq!(
+        palette,
+        (0, 1, PaletteLight::plain(53, 1000)),
+        "non-tiberium ignores cell intensity"
+    );
+    let mut tiberium = kind.clone();
+    tiberium.is_tiberium = true; // Declared render-header control for the adjacent arm.
+    assert_eq!(
+        piece_palette(piece, &tiberium, &sim, &HouseColorMap::new(), &light),
+        (0, 1, PaletteLight::plain(53, 425)),
+    );
+    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let [x, y] = screen(location.x, location.y, location.z);
+    let view = DebrisView {
+        terrain: sim.resolved_terrain.as_ref().unwrap(),
+        camera: [x - 400., y - 300.],
+        viewport: [800., 600.],
+        axis: DepthAxis::NONE,
+    };
+    let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
+    assert_eq!(cache.fill_test_page().page, 0);
+    let object = voxel_anim_draw_instance(
+        id,
+        piece,
+        kind,
+        palette,
+        &view,
+        &order,
+        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix),
+    )
+    .expect("an unowned admitted tyre reaches the physical TIRE pose page");
+    assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());
+    let [shadow, body] = object.pieces.as_slice() else {
+        panic!("shadow then body")
+    };
+    assert_eq!(shadow.instance.draw_state.fx_flags, FX_SHADOW);
+    for drawn in [shadow, body] {
+        assert!(
+            matches!(drawn.target, ObjectTexture::UnitPosePage(page) if page > 0),
+            "every actual TIRE part retains its overflow page"
+        );
+    }
+    assert_eq!(body.instance.source_palette, 1);
+    assert_eq!(body.instance.draw_state.remap_row, 0);
+    assert_eq!(body.instance.palette_light, PaletteLight::plain(53, 1000));
+    assert!(body.instance.size.iter().all(|size| *size > 0.));
 }

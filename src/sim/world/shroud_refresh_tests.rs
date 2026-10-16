@@ -950,3 +950,362 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
     assert_eq!(sim.radar_terrain_dirty_cells, walk);
     assert_eq!(discovery(&sim, resident), json!([0, 1, 0]));
 }
+
+/// What an update leaves that a listed walk could get wrong: every map
+/// plane, the Dummy, the shared cursor, and the update's notifications and
+/// their consumers.
+fn edge_update_record(sim: &Simulation, calls: &RevealCalls, residents: &[u64]) -> Value {
+    use std::hash::Hasher;
+    let planes: BTreeMap<_, _> = sim
+        .fog
+        .by_owner
+        .iter()
+        .map(|(viewer, plane)| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            plane.hash_cells(&mut hasher);
+            (sim.interner.resolve(*viewer).to_string(), hasher.finish())
+        })
+        .collect();
+    json!({
+        "planes": planes,
+        "dummy": format!("{:?}", sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy().snapshot()),
+        "cursor": format!("{:?}", sim.native_allocated_cell_cursor),
+        "notifications": calls.notifications,
+        "queries": calls.discovery_queries,
+        "radar": sim.radar_terrain_dirty_cells,
+        "discovery": residents.iter().map(|&id| discovery(sim, id)).collect::<Vec<_>>(),
+    })
+}
+
+/// How many receiver calls an update made.
+fn edge_visits(record: &Value) -> u64 {
+    record["visits"].as_u64().unwrap()
+}
+
+/// Three Houses' maps on a Size 12x8 diamond allocated as a materialized map
+/// allocates it, with residents to discover, and the script that writes them
+/// between updates.
+struct EdgeScript {
+    sim: Simulation,
+    viewers: Vec<InternedId>,
+    /// The walk's cells, in walk order.
+    walk: Vec<(u16, u16)>,
+    /// The walk's cells with an unallocated neighbour.
+    edge: Vec<(u16, u16)>,
+    residents: Vec<u64>,
+    seed: u32,
+}
+
+impl EdgeScript {
+    const SIZE: (u32, u32) = (12, 8);
+
+    fn new() -> Self {
+        let mut sim = Simulation::with_seed(31);
+        let viewers: Vec<_> = ["Player", "Other", "Third"]
+            .into_iter()
+            .map(|name| sim.interner.intern(name))
+            .collect();
+        sim.session.current_house = Some(viewers[0]);
+        sim.session.game_mode_nonzero = false;
+        for (index, &owner) in viewers.iter().enumerate() {
+            sim.houses
+                .insert(owner, HouseState::new(owner, 0, None, index == 0, 0, 10));
+        }
+        let (width, height) = Self::SIZE;
+        let side = (width + height) as u16;
+        let mut terrain = crate::map::resolved_terrain::test_grid(side, side, |rx, ry| {
+            let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
+            cell.level = ((rx * 7 + ry * 3) % 4) as u8;
+            cell
+        });
+        let walk: Vec<(u16, u16)> = terrain
+            .native_cell_iterator(width as i32)
+            .map(|cell| (cell.rx, cell.ry))
+            .collect();
+        terrain.test_set_native_allocated_cells(&walk);
+        let edge = walk
+            .iter()
+            .copied()
+            .filter(|&(x, y)| {
+                crate::map::resolved_terrain::ROW_NEIGHBORS
+                    .iter()
+                    .any(|&(dx, dy)| {
+                        terrain
+                            .native_fixed_cell_index(
+                                (x as i16).wrapping_add(dx),
+                                (y as i16).wrapping_add(dy),
+                            )
+                            .is_none()
+                    })
+            })
+            .collect();
+        sim.install_resolved_terrain_for_new_map(terrain);
+        sim.fog = crate::sim::vision::FogState::new(side, side);
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".to_string(),
+            fill: "Clear".to_string(),
+            level: 0,
+            width,
+            height,
+            local_left: 0,
+            local_top: 0,
+            local_width: width,
+            local_height: height,
+        });
+        let residents = [walk[17], walk[60], walk[101], walk[140]]
+            .into_iter()
+            .enumerate()
+            .map(|(index, cell)| {
+                let id = actor(
+                    &mut sim,
+                    viewers[index % 3],
+                    cell,
+                    (128, 128),
+                    EntityCategory::Infantry,
+                );
+                put(&mut sim, id, cell, false);
+                id
+            })
+            .collect();
+        Self {
+            sim,
+            viewers,
+            walk,
+            edge,
+            residents,
+            seed: 0x9E37_79B9,
+        }
+    }
+
+    fn next(&mut self, n: usize) -> usize {
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 17;
+        self.seed ^= self.seed << 5;
+        self.seed as usize % n
+    }
+
+    /// A cell of `cells` (the walk or its edge) picked by the script.
+    fn pick(&mut self, edge: bool) -> (u16, u16) {
+        let cells = if edge { &self.edge } else { &self.walk };
+        let index = self.next(cells.len());
+        if edge {
+            self.edge[index]
+        } else {
+            self.walk[index]
+        }
+    }
+
+    /// One round's writes on every map: reveals and leaves, conceals, a fire
+    /// reveal (pending cells), a reveal on the map's edge (Dummy stamps), and
+    /// on odd rounds a reveal off the map (the Dummy's ground).
+    fn write(&mut self, round: u32) {
+        for viewer in self.viewers.clone() {
+            for _ in 0..3 {
+                let (x, y) = self.pick(false);
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)] {
+                    let cell = ((x as i16 + dx) as u16, (y as i16 + dy) as u16);
+                    reveal_cell(&mut self.sim, viewer, cell, false);
+                    if self.next(2) == 0 {
+                        reveal_cell(&mut self.sim, viewer, cell, true);
+                    }
+                }
+            }
+            for _ in 0..4 {
+                let cell = self.pick(false);
+                conceal(&mut self.sim, viewer, cell);
+            }
+            let cell = self.pick(false);
+            fire_reveal(&mut self.sim, viewer, cell);
+            let cell = self.pick(true);
+            reveal_cell(&mut self.sim, viewer, cell, false);
+            if round % 2 == 1 {
+                reveal_cell(&mut self.sim, viewer, (0, 0), round == 3);
+            }
+        }
+    }
+}
+
+fn conceal(sim: &mut Simulation, viewer: InternedId, cell: (u16, u16)) {
+    let query = crate::map::resolved_terrain::NativeCellQuery::canonical(
+        sim.resolved_terrain.as_ref().unwrap(),
+    );
+    sim.fog.conceal_map_cell(viewer, cell, Some(&query));
+}
+
+fn fire_reveal(sim: &mut Simulation, viewer: InternedId, cell: (u16, u16)) {
+    crate::sim::vision::reveal_shroud_on_fire(
+        &mut sim.fog,
+        viewer,
+        crate::sim::components::DriveCoord {
+            x: i32::from(cell.0) * 256 + 128,
+            y: i32::from(cell.1) * 256 + 128,
+            z: 0,
+        },
+        &crate::sim::vision::VisionConfig::default(),
+        None,
+    );
+}
+
+/// The scripted rounds' 120-frame updates; halfway a save and load drops the
+/// lists. Returns each update's record.
+fn scripted_edge_updates() -> Vec<Value> {
+    let mut script = EdgeScript::new();
+    let mut records = Vec::new();
+    for round in 0..6u32 {
+        if round == 3 {
+            script.sim.fog =
+                bincode::deserialize(&bincode::serialize(&script.sim.fog).unwrap()).unwrap();
+        }
+        script.write(round);
+        script.sim.session.binary_frame = 120 * (round + 1);
+        let ((), calls) = trace_reveal_calls(|| {
+            script
+                .sim
+                .tick_pending_shroud_conceal(UninitContext::default())
+        });
+        let mut record = edge_update_record(&script.sim, &calls, &script.residents);
+        record["visits"] = json!(calls.edge_visits);
+        records.push(record);
+    }
+    assert!(
+        script
+            .sim
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .allocated_cell_order(EdgeScript::SIZE.0 as i32)
+            .is_some()
+    );
+    records
+}
+
+/// Rust regression test: updates that visit the listed cells leave what the
+/// complete walk leaves.
+#[test]
+fn listed_shroud_edge_updates_match_the_complete_walk() {
+    crate::sim::vision::VISIT_EVERY_CELL.set(true);
+    let complete = scripted_edge_updates();
+    crate::sim::vision::VISIT_EVERY_CELL.set(false);
+    let listed = scripted_edge_updates();
+    let notified = complete
+        .iter()
+        .filter(|record| !record["notifications"].as_array().unwrap().is_empty())
+        .count();
+    assert!(notified >= 3, "the script makes the updates notify");
+    for (round, (listed, complete)) in listed.iter().zip(&complete).enumerate() {
+        // Six passes over 184 cells for three Houses visit 1,104 cells; the
+        // listed updates visit fewer, except the one after the load.
+        assert_eq!(edge_visits(complete), 3 * 2 * 184, "update {round}");
+        if round != 3 {
+            assert!(
+                edge_visits(listed) < edge_visits(complete) / 2,
+                "update {round}"
+            );
+        }
+        let mut listed = listed.clone();
+        listed["visits"] = complete["visits"].clone();
+        assert_eq!(&listed, complete, "update {round}");
+    }
+}
+
+/// Updates whose notifications change the maps under the walk: every third
+/// reveals, conceals and fire-reveals cells ahead of and behind it, every
+/// fourth runs a whole nested update of the same map and every fifth one of
+/// another, either of which moves the shared cursor. Each notification logs
+/// the cursor and the Dummy it sees.
+fn edge_updates_with_callbacks() -> Vec<Value> {
+    let mut script = EdgeScript::new();
+    let mut records = Vec::new();
+    let walk = script.walk.clone();
+    for round in 0..4u32 {
+        script.write(round);
+        let mut log = Vec::new();
+        let mut count = 0usize;
+        let viewers = script.viewers.clone();
+        for (index, &viewer) in viewers.iter().enumerate() {
+            let other = viewers[(index + 1) % viewers.len()];
+            let mut callback = |sim: &mut Simulation, change: vision::MapCellNotification| {
+                count += 1;
+                let seen = |sim: &Simulation, nested: bool| {
+                    json!([
+                        change.cell,
+                        change.fresh,
+                        nested,
+                        format!("{:?}", sim.native_allocated_cell_cursor),
+                        format!(
+                            "{:?}",
+                            sim.resolved_terrain
+                                .as_ref()
+                                .unwrap()
+                                .shared_cell_dummy()
+                                .snapshot()
+                        )
+                    ])
+                };
+                log.push(seen(sim, false));
+                sim.notify_cell_change(change.cell, viewer, change.fresh, UninitContext::default());
+                if count % 3 == 0 {
+                    for step in 0..3 {
+                        let cell = walk[(count * 37 + step * 61) % walk.len()];
+                        reveal_cell(sim, viewer, cell, step == 1);
+                        conceal(sim, viewer, walk[(count * 53 + step * 17) % walk.len()]);
+                    }
+                    fire_reveal(sim, viewer, walk[(count * 29) % walk.len()]);
+                }
+                for (every, nested) in [(4, viewer), (5, other)] {
+                    if count % every == 0 {
+                        sim.update_shroud_edges_notifying(
+                            nested,
+                            UninitContext::default(),
+                            &mut |sim, change| {
+                                log.push(json!([change.cell, change.fresh, true]));
+                                sim.notify_cell_change(
+                                    change.cell,
+                                    nested,
+                                    change.fresh,
+                                    UninitContext::default(),
+                                );
+                            },
+                        );
+                    }
+                }
+            };
+            let ((), calls) = trace_reveal_calls(|| {
+                script.sim.update_shroud_edges_notifying(
+                    viewer,
+                    UninitContext::default(),
+                    &mut callback,
+                )
+            });
+            let mut record = edge_update_record(&script.sim, &calls, &script.residents);
+            record["visits"] = json!(calls.edge_visits);
+            records.push(record);
+        }
+        records.push(json!(log));
+    }
+    records
+}
+
+/// Rust regression test: notifications that change the maps or move the
+/// cursor see, and leave, what they do under the complete walk.
+#[test]
+fn listed_shroud_edge_updates_survive_their_callbacks() {
+    crate::sim::vision::VISIT_EVERY_CELL.set(true);
+    let complete = edge_updates_with_callbacks();
+    crate::sim::vision::VISIT_EVERY_CELL.set(false);
+    let listed = edge_updates_with_callbacks();
+    let nested = complete
+        .iter()
+        .filter_map(|record| record.as_array())
+        .flatten()
+        .filter(|entry| entry[2] == true)
+        .count();
+    assert!(nested > 0, "the callbacks nest updates");
+    for (index, (listed, complete)) in listed.iter().zip(&complete).enumerate() {
+        let mut listed = listed.clone();
+        if listed.get("visits").is_some() {
+            listed["visits"] = complete["visits"].clone();
+        }
+        assert_eq!(&listed, complete, "record {index}");
+    }
+}

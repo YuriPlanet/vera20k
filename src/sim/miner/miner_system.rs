@@ -1217,7 +1217,7 @@ fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot) {
 ///
 /// [`HouseTracking::owns_any_building`]: crate::sim::house_tracking::HouseTracking::owns_any_building
 fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> bool {
-    let Some(harvester) = rules.object(sim.interner.resolve(snap.type_id)) else {
+    let Some(harvester) = sim.interner.object_type(snap.type_id, rules) else {
         return true;
     };
     sim.houses.get(&snap.owner).is_some_and(|house| {
@@ -1336,7 +1336,7 @@ pub(crate) fn find_docking_bay(
     frame_effects: FrameEffects<'_>,
 ) -> Option<u64> {
     let type_id = sim.substrate.entities.get(requester)?.type_ref();
-    let requester_type = rules.object(sim.interner.resolve(type_id))?;
+    let requester_type = sim.interner.object_type(type_id, rules)?;
     let mut result: Option<u64> = None;
     let mut best = -1_i32;
     for dock_type in &requester_type.dock {

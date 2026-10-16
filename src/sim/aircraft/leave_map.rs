@@ -47,7 +47,7 @@ impl Simulation {
         if entity.category() != EntityCategory::Aircraft {
             return false;
         }
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return false;
         };
         // No MapClass authority (headless fixtures): no map to leave.

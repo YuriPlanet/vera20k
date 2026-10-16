@@ -179,7 +179,6 @@ pub struct VoxelDepthRegion {
 /// Eligibility uses the original height; clipping happens afterwards in
 /// each Standard_SHP_blitter call (0x0073B2FE, 0x00437461). This does not
 /// choose the gameplay/type predicate or move the parent's painter position.
-#[cfg(test)]
 pub fn voxel_depth_region(
     rect: [i32; 2],
     packed_gradient: u32,
@@ -213,6 +212,70 @@ pub fn voxel_depth_region(
         gradient,
         z_adjust,
     })
+}
+
+/// Conservative signed candidate envelope for a posed voxel body. Within
+/// each native region the existing row kernel is monotone, so its two ends
+/// suffice. Split and clip boundaries may seed independent regions.
+/// None means that no valid bounded range was established, not safe hardware Z.
+pub(crate) fn voxel_depth_range(
+    rect: [i32; 2],
+    packed_gradient: u32,
+    z_adjust: i32,
+    camera_row: i32,
+    clip: [i32; 2],
+) -> Option<[i32; 2]> {
+    let [top, height] = rect;
+    if height <= 0 {
+        return None;
+    }
+    let bottom = top.checked_add(height)?;
+    // Moderate gradient row accumulation multiplies by two.
+    height.checked_mul(2)?;
+    // Guard malformed/overflowing presentation inputs before the i32 kernel.
+    z_adjust.checked_add(i32::from(u16::MAX))?;
+    z_adjust.checked_sub(5)?.checked_sub(height)?;
+    let split = bottom.checked_sub(16)?;
+    let probes = [
+        top,
+        bottom - 1,
+        split.checked_sub(1)?,
+        split,
+        clip[0],
+        clip[1].checked_sub(1)?,
+    ];
+    let count = if packed_gradient & Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG != 0 {
+        probes.len()
+    } else {
+        1
+    };
+    let mut range: Option<[i32; 2]> = None;
+    for &world_row in &probes[..count] {
+        let Some(region) = voxel_depth_region(rect, packed_gradient, z_adjust, world_row, clip)
+        else {
+            continue;
+        };
+        let screen_top = region.top.checked_sub(camera_row)?;
+        // sprite_seed_z computes DEFAULT_Z-height-screen_top before its u16 cast.
+        DEFAULT_Z
+            .checked_sub(region.height)?
+            .checked_sub(screen_top)?
+            .checked_add(1)?;
+        for row in [0, region.height - 1] {
+            let value = sprite_row_z(
+                region.gradient,
+                screen_top,
+                region.height,
+                region.z_adjust,
+                row,
+            );
+            range = Some(match range {
+                Some([min, max]) => [min.min(value), max.max(value)],
+                None => [value, value],
+            });
+        }
+    }
+    range
 }
 
 pub const fn pack_building_z_gradient(zshape: bool, extended: bool) -> u32 {
@@ -262,7 +325,6 @@ pub fn sprite_seed_z(
 
 /// Z of row `row` (0 = top) of a blit seeded by [`sprite_seed_z`]. The walker
 /// steps after each row (`0x00437921`), so row `k` has absorbed `k` increments.
-#[cfg(test)]
 pub fn sprite_row_z(
     gradient: ZGradient,
     screen_top: i32,
@@ -366,6 +428,44 @@ pub fn depth_for_native_z(z: i32, camera_y: i32, origin_y: f32, world_height: f3
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn voxel_candidate_envelope_covers_existing_regions_and_shader_clip_boundaries() {
+        for rect in [[43, 15], [43, 48], [-10, 64]] {
+            for gradient in [
+                pack_voxel_z_gradient(ZGradient::Flat, false),
+                pack_voxel_z_gradient(ZGradient::Vertical, false),
+                pack_voxel_z_gradient(ZGradient::Vertical, true),
+            ] {
+                for clip in [[0, 96], [48, 62], [-5, 10], [200, 300]] {
+                    for camera in [0, -32725] {
+                        let range = voxel_depth_range(rect, gradient, -65, camera, clip);
+                        for world_row in rect[0]..rect[0] + rect[1] {
+                            if let Some(region) =
+                                voxel_depth_region(rect, gradient, -65, world_row, clip)
+                            {
+                                let value = sprite_row_z(
+                                    region.gradient,
+                                    region.top - camera,
+                                    region.height,
+                                    region.z_adjust,
+                                    world_row - region.top,
+                                );
+                                let [min, max] = range.expect("an admitted region has an envelope");
+                                assert!(
+                                    min <= value && value <= max,
+                                    "{rect:?}/{gradient}/{clip:?}/{world_row}: {range:?} misses{value}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(voxel_depth_range([43, 15], 0, -65, 0, [0, 96]).unwrap()[0] >= 0);
+        assert!(voxel_depth_range([43, 15], 0, -65, -32725, [-32725, -32629]).unwrap()[1] < 0);
+        assert_eq!(voxel_depth_range([i32::MAX, 15], 0, -65, 0, [0, 96]), None);
+    }
+
     #[test]
     fn native_stored_depth_preserves_every_word_and_distinguishes_empty_from_seed() {
         assert_eq!(stored_z(STORED_DEPTH_CLEAR), EMPTY_Z);

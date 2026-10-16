@@ -485,8 +485,8 @@ impl SkirmishCapture {
             .values_sorted()
             .filter(|entity| sim.interner.resolve(entity.owner()) == owner)
             .find(|entity| {
-                rules
-                    .object(sim.interner.resolve(entity.type_ref()))
+                sim.interner
+                    .object_type(entity.type_ref(), rules)
                     .is_some_and(&wanted)
             })
             .map(|entity| entity.stable_id())

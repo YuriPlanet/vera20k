@@ -146,7 +146,9 @@ def fly(case):
 def flight_cases():
     # [TIRE]: Elasticity=0.8, MinZVel=28..MaxZVel=32, MaxXYVel=10, spin 12..24 degrees
     # (ReadINI stores radians). Launch Z = ground + 10 (VoxelAnimClass 0x0074950C).
-    # The double angles are 12 and 24 degrees times the pi/180 at 0x007F65E8.
+    # These are supplied numeric angle controls near the TIRE band, using
+    # mathematical pi/180 rather than the different file constant at7F65E8.
+    # Actual TIRE reader/constructor bits are covered by typed_warhead_debris.
     pi_180 = struct.unpack("<d", struct.pack("<Q", 0x3F91DF46A2452B7C))[0]
     angles = [f64(12.0 * pi_180), f64(24.0 * pi_180), f64(0.0), f64(-1.0 * pi_180), f64(2.75)]
     velocities = [(3.0, -4.0, 30.0), (-10.0, 9.0, 28.0), (0.0, 0.0, 32.0), (7.0, 1.0, 29.0)]

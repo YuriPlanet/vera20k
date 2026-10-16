@@ -120,7 +120,7 @@ impl ScatterTechno {
         use crate::sim::combat::veterancy::has_weapon_ability;
         Self {
             has_scatter_ability: rules
-                .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
+                .and_then(|rules| interner.object_type(entity.type_ref(), rules))
                 .is_some_and(|object| {
                     has_weapon_ability(
                         entity.veterancy.rank_kind(),
@@ -281,8 +281,8 @@ fn receive_damage_scatter_admitted(
     if rules.general.player_scatter {
         return Ok(true);
     }
-    let object = rules
-        .object(interner.resolve(entity.type_ref()))
+    let object = interner
+        .object_type(entity.type_ref(), rules)
         .ok_or("damage Scatter requires a Techno type")?;
     Ok(crate::sim::combat::veterancy::has_weapon_ability(
         entity.veterancy.rank_kind(),

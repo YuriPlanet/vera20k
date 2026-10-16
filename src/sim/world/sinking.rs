@@ -2,9 +2,10 @@
 //!
 //! This owner alone mutates Techno+3CD/+3CE. The fatal receiver still runs
 //! Mark(UP), passenger/crew work and its ordinary tail; +3CD then suppresses
-//! immediate UnInit. A Chrono Warp's PostWarpValidation also sinks a living
-//! object it leaves marked ([`Simulation::begin_warp_sinking`]). Foot AI skips Process, observes the sound edge, and Unit
-//! AI lowers the raw coordinate until its terminal RecordKill/UnInit.
+//! immediate UnInit. PostWarpValidation and Squid culling also sink a living,
+//! still-marked hull through [`Simulation::begin_living_ship_sinking`]. Foot AI
+//! skips Process, observes the sound edge, and Unit AI lowers the raw
+//! coordinate until its terminal RecordKill/UnInit.
 //! Native execution: tools/spatial_oracle/naval_occupants and naval_sink_tick.
 
 use super::{SimSoundEvent, Simulation, UninitContext};
@@ -14,6 +15,12 @@ use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coord};
 use crate::sim::world::FrameEffects;
+
+/// Native callers of a living, still-marked hull's sink transition.
+pub(crate) enum LivingSinkTrigger {
+    PostWarpValidation,
+    ParasiteCull,
+}
 
 /// Techno constructor6F2F2B/6F2F31 initializes both bytes to zero. Kept
 /// separate from Foot+425/+426 (`GameEntity::crashing` and its sound edge).
@@ -63,13 +70,14 @@ impl Simulation {
         );
     }
 
-    /// PostWarpValidation's sink (`0x00718968..0x00718977`,
-    /// `0x00718ABF..0x00718ACE`): +3CD and the Stun (vt+0x3A0) on a living
-    /// object, which no receiver unmarked: Unit AI lowers it through
+    /// PostWarpValidation (`0x00718968..0x00718977`, `0x00718ABF..0x00718ACE`)
+    /// and Squid culling (`0x00629C69..0x00629C80`) set +3CD and Stun
+    /// (vt+0x3A0) on a living object, which no receiver unmarked. Unit AI lowers it through
     /// SetLocation's marked arm until its terminal RecordKill/UnInit.
-    pub(crate) fn begin_warp_sinking(
+    pub(crate) fn begin_living_ship_sinking(
         &mut self,
         id: u64,
+        trigger: LivingSinkTrigger,
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
@@ -77,6 +85,23 @@ impl Simulation {
             return;
         };
         entity.sinking.active = true;
+        // Squid629C69..629C80 announces after +3CD and before Stun.
+        // Warp718968/718ABF has no announcement. Neither rewrites health,
+        // Alive, marking or loss accounting as the fatal receiver does.
+        if matches!(trigger, LivingSinkTrigger::ParasiteCull) {
+            let announcement = self.substrate.entities.get(id).and_then(|entity| {
+                crate::sim::combat::death_announcement_event(
+                    self.object_type(entity.type_ref(), rules)?,
+                    entity.category(),
+                    entity.position.rx(),
+                    entity.position.ry(),
+                    entity.owner(),
+                )
+            });
+            if let Some(event) = announcement {
+                self.dispatch_unit_lost_events(&[event]);
+            }
+        }
         self.techno_death_stun(
             id,
             UninitContext::with_rules(rules).with_effects(frame_effects),

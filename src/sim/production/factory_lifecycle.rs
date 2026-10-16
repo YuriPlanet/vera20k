@@ -477,8 +477,9 @@ pub(super) fn publish_completion(
     {
         return;
     }
-    if rules
-        .object(sim.interner.resolve(type_id))
+    if sim
+        .interner
+        .object_type(type_id, rules)
         .is_some_and(|object| object.category == ObjectCategory::Building)
     {
         sim.sound_events

@@ -40,7 +40,7 @@ impl Simulation {
                 json!({"id":e.stable_id(),"type_name":self.interner.resolve(e.type_ref()),
                     "owner_name":self.interner.resolve(e.owner()),"entity":e,
                     "team_present":self.team_script_vm.team_for_member(e.stable_id()).is_some(),
-                    "type":format!("{:?}",rules.object(self.interner.resolve(e.type_ref()))),
+                    "type":format!("{:?}",self.interner.object_type(e.type_ref(), rules)),
                 })
             })
             .collect();
@@ -125,9 +125,9 @@ fn capture_probe(
     ));
     let mut snapshot = zone_snapshot(sim, name);
     let actor = sim.entities().get(engineer).unwrap();
-    let object = resources
-        .rules
-        .object(sim.interner.resolve(actor.type_ref()))
+    let object = sim
+        .interner
+        .object_type(actor.type_ref(), &resources.rules)
         .unwrap();
     let destination = actor
         .locomotor

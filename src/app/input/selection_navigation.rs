@@ -6,6 +6,7 @@ use super::{AppState, SelectionMutation};
 use crate::app::types::CategoryNavigationKind;
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
+use crate::sim::combat::health_category;
 
 #[cfg(test)]
 #[path = "selection_navigation_tests.rs"]
@@ -183,8 +184,9 @@ fn combatant_selection(
     let combatant = |id: &u64| {
         sim.entities().get(*id).is_some_and(|entity| {
             entity.category() != EntityCategory::Structure
-                && rules
-                    .object(sim.interner.resolve(entity.type_ref()))
+                && sim
+                    .interner
+                    .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.is_selectable_combatant)
                 && crate::app::input::entity_pick::selection_dynamic_prefix(
                     entity,
@@ -374,23 +376,6 @@ pub(crate) fn reset_for_world_replacement(input: &mut crate::app::input::state::
     input.selection_order_pending = false;
 }
 
-/// 5F5DD0 uses inclusive red/yellow thresholds and live type Strength.
-fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8 {
-    use crate::util::native_x87::MaskedX87Ordering::Greater;
-    let health = crate::sim::combat::Health::new(current);
-    // Object5F5DD0: all three TEST AH,41 comparisons include unordered;
-    // only the first red branch also requires signed actual > 0.
-    // Original whole-function outputs: health_ratio_predicates.json.
-    let above_red = health.compare_ratio(strength, red) == Greater;
-    if current > 0 && !above_red {
-        0
-    } else if above_red && health.compare_ratio(strength, yellow) != Greater {
-        1
-    } else {
-        2
-    }
-}
-
 fn category_key(kind: CategoryNavigationKind, category: u8) -> &'static str {
     match (kind, category) {
         (CategoryNavigationKind::Health, 0) => "MSG:Critical",
@@ -411,7 +396,7 @@ fn entity_navigation_category(
     let entity = sim.entities().get(id)?;
     match kind {
         CategoryNavigationKind::Health => {
-            let object = rules.object(sim.interner.resolve(entity.type_ref()))?;
+            let object = sim.interner.object_type(entity.type_ref(), rules)?;
             Some(health_category(
                 entity.health.current(),
                 object.strength,
@@ -575,7 +560,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         .filter_map(|id| sim.entities().get(*id))
         .filter_map(|entity| {
             let rules = state.rules()?;
-            let object = rules.object(sim.interner.resolve(entity.type_ref()))?;
+            let object = sim.interner.object_type(entity.type_ref(), rules)?;
             Some(sim.cost_of(entity.owner(), object, rules))
         })
         .fold(0_i32, |total, cost| total.wrapping_add(cost));

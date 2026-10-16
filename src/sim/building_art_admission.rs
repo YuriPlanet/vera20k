@@ -45,8 +45,9 @@ impl Simulation {
         };
         if entity.category() == crate::map::entities::EntityCategory::Structure
             && !entity.building_has_engineer.is_set()
-            && rules
-                .object(self.interner.resolve(entity.type_ref()))
+            && self
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|o| o.needs_engineer)
         {
             self.set_building_stuff_enabled(id, false, rules);
@@ -64,8 +65,9 @@ impl Simulation {
         }
         entity.building_has_engineer.set = true;
         if let Some(rules) = rules
-            && rules
-                .object(self.interner.resolve(entity.type_ref()))
+            && self
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|o| o.needs_engineer)
         {
             self.set_building_stuff_enabled(id, true, rules);
@@ -78,7 +80,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         if entity.category() != crate::map::entities::EntityCategory::Structure

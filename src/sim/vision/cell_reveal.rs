@@ -6,7 +6,7 @@
 
 use super::{FogState, GROUND_OPEN, GROUND_VISIBLE, InternedId, OwnerVisibility, ShroudKnowledge};
 use crate::map::cell_index::NativeCellIdentity;
-use crate::map::resolved_terrain::NativeCellQuery;
+use crate::map::resolved_terrain::{NativeCellQuery, ROW_NEIGHBORS};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
@@ -69,7 +69,99 @@ pub(crate) struct MapCellNotification {
     pub(crate) fresh: bool,
 }
 
+/// The cells the two passes of `Map578100` can change
+/// ([`FogState::sweep_pending_map_cell`],
+/// [`FogState::refresh_map_cell_ground_frame`]), so an update visits what
+/// changed rather than every allocated cell. Derived from the grids: when
+/// `complete`, every pending cell is in `pending`, and every cell whose
+/// cached ground frame differs from the one its ground bits and its
+/// neighbours' give is in `changed`, beside a cell there, or beside the Dummy
+/// while `dummy_changed`. The lists may repeat cells. A load clears
+/// `complete`, and the next update visits every cell.
+#[derive(Debug, Clone, Default)]
+pub(super) struct EdgeCells {
+    complete: bool,
+    /// Cells whose pending bit rose since the last sweep.
+    pub(super) pending: Vec<u32>,
+    /// Cells whose ground bits or ground frame changed since the last
+    /// refresh, other than by the refresh itself.
+    changed: Vec<u32>,
+    /// Whether the Dummy's ground bits or ground frame changed since then.
+    dummy_changed: bool,
+    /// Passes that hold cells taken from the lists and not yet visited. A
+    /// nested update cannot see those cells, so it visits every cell.
+    walking: u32,
+}
+
+impl EdgeCells {
+    /// The lists of a grid whose cells all hold their constructor state: a
+    /// cell without ground bits caches the -2 its frame gives.
+    pub(super) fn complete() -> Self {
+        Self {
+            complete: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// The cells one pass of a shroud-edge update must visit
+/// ([`FogState::take_edge_cells`]).
+#[derive(Debug, Default)]
+pub(crate) struct ListedEdgeCells {
+    /// For the sweep, the cells that may be pending; for the refresh, the
+    /// cells whose ground bits or ground frame changed.
+    pub(crate) cells: Vec<(u16, u16)>,
+    /// For the refresh, whether the Dummy's ground bits changed, so that
+    /// every cell beside it may read a new frame.
+    pub(crate) beside_dummy: bool,
+}
+
+/// `Tactical::6D8700`'s gates for one channel of a cell: whether it is
+/// explored or open at all (its fallback frame is -1 rather than -2), and
+/// whether its frame reads its neighbours.
+fn edge_frame_gates(ground: u8, cache: MapCellEdgeCache, fog_channel: bool) -> (bool, bool) {
+    if fog_channel {
+        (cache.initialized || cache.fog_open, cache.initialized)
+    } else {
+        (
+            ground & (GROUND_VISIBLE | GROUND_OPEN) != 0,
+            ground & GROUND_VISIBLE != 0,
+        )
+    }
+}
+
+/// The neighbour bits of [`SHROUD_EDGE_LUT`]'s index, for [`ROW_NEIGHBORS`].
+const EDGE_FRAME_BITS: [u8; 8] = [0x40, 0x80, 0x01, 0x20, 0x02, 0x10, 0x08, 0x04];
+
 impl OwnerVisibility {
+    /// Store `index`'s ground bits, listing the cell for the next shroud-edge
+    /// refresh when they change.
+    pub(super) fn set_ground_bits(&mut self, index: usize, bits: u8) {
+        if self.ground_flags[index] != bits {
+            self.ground_flags[index] = bits;
+            self.edge_cells.changed.push(index as u32);
+        }
+    }
+
+    /// What the ground channel of `Tactical::6D8700` reads of `key`, and the
+    /// ground frame cached there.
+    fn edge_inputs(&self, key: VisibilityCell) -> (u8, i8) {
+        let (ground, cache) = self.map_cell_parts(key);
+        (ground, cache.frames[0])
+    }
+
+    /// List `key` for the next shroud-edge refresh when its edge inputs
+    /// differ from `before`.
+    fn note_edge_inputs(&mut self, key: VisibilityCell, before: (u8, i8)) {
+        if self.edge_inputs(key) == before {
+            return;
+        }
+        match key {
+            VisibilityCell::Real(index) => self.edge_cells.changed.push(index as u32),
+            VisibilityCell::Dummy => self.edge_cells.dummy_changed = true,
+        }
+    }
+
     /// Map577C90's per-cell receiver577D1F..577D47, unlike577AB0's
     /// counter overwrite. Reuse the unique Cell487690 leave arithmetic and
     /// clear knowledge/cache bits only when the resulting counter is>=0.
@@ -83,7 +175,10 @@ impl OwnerVisibility {
         if state.counter >= 0 {
             state.open = false;
             state.transient_visible = false;
-            self.ground_flags[index] &= !(GROUND_VISIBLE | GROUND_OPEN);
+            self.set_ground_bits(
+                index,
+                self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
+            );
             self.map_cell_edge_cache[index].initialized = false;
             self.map_cell_edge_cache[index].fog_open = false;
         }
@@ -101,12 +196,12 @@ impl OwnerVisibility {
         state.counter = i32::from(reset);
         state.gap_counter = 0;
         state.open = !reset;
-        let ground = &mut self.ground_flags[index];
-        if reset {
-            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+        let ground = if reset {
+            self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN)
         } else {
-            *ground |= GROUND_VISIBLE | GROUND_OPEN;
-        }
+            self.ground_flags[index] | GROUND_VISIBLE | GROUND_OPEN
+        };
+        self.set_ground_bits(index, ground);
         let cache = &mut self.map_cell_edge_cache[index];
         cache.initialized = !reset;
         cache.fog_open = !reset;
@@ -198,6 +293,7 @@ impl FogState {
             .entry(viewer)
             .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
         let key = vis.visibility_cell(cell, native_cells);
+        let before = vis.edge_inputs(key);
         let (state, ground, _) = vis.map_cell_parts_mut(key);
         if state.counter != 0 {
             return;
@@ -205,8 +301,9 @@ impl FogState {
         state.counter = 1;
         state.open = false;
         *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+        vis.note_edge_inputs(key, before);
         if let VisibilityCell::Real(index) = key {
-            vis.tracked.complete = false;
+            vis.tracked.cleared.push(index as u32);
             vis.publish_knowledge(index);
         }
     }
@@ -222,6 +319,7 @@ impl FogState {
     ) -> Option<MapCellNotification> {
         let vis = self.by_owner.get_mut(&viewer)?;
         let key = vis.visibility_cell(cell, native_cells);
+        let before = vis.edge_inputs(key);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
         if !state.pending {
             return None;
@@ -231,8 +329,9 @@ impl FogState {
         cache.initialized = false;
         cache.fog_open = false;
         let notify = cache.frames[0] == -2;
+        vis.note_edge_inputs(key, before);
         if let VisibilityCell::Real(index) = key {
-            vis.tracked.complete = false;
+            vis.tracked.cleared.push(index as u32);
             vis.publish_knowledge(index);
         }
         notify.then_some(MapCellNotification { cell, fresh: true })
@@ -240,7 +339,9 @@ impl FogState {
 
     /// Second578100 pass. Recompute every allocated Cell's ground channel
     /// through the sole Tactical6D8700 owner; changed frame-2 synchronously
-    /// notifies. No counter, pending bit, fog channel or open-bit write.
+    /// notifies. No counter, pending bit, fog channel or open-bit write. The
+    /// stored frame is the one the ground bits give, so the cell is not
+    /// listed for the next refresh ([`EdgeCells`]).
     pub(crate) fn refresh_map_cell_ground_frame(
         &mut self,
         viewer: InternedId,
@@ -280,6 +381,7 @@ impl FogState {
             .entry(viewer)
             .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
         let key = vis.visibility_cell(cell, native_cells);
+        let before = vis.edge_inputs(key);
         let (ground, old) = vis.map_cell_parts(key);
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
@@ -296,6 +398,7 @@ impl FogState {
         if ground == -1 {
             *flags |= GROUND_OPEN;
         }
+        vis.note_edge_inputs(key, before);
         let fog = self.map_cell_edge_frame(viewer, cell, true, native_cells);
         let vis = self.by_owner.get_mut(&viewer).unwrap();
         let (_, _, cache) = vis.map_cell_parts_mut(key);
@@ -342,6 +445,7 @@ impl FogState {
             .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
         //4A9CA9 is distinct from each6D8713 center lookup below.
         let key = vis.visibility_cell(cell, native_cells);
+        let before = vis.edge_inputs(key);
         let (ground, old) = vis.map_cell_parts(key);
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
@@ -361,9 +465,7 @@ impl FogState {
         if let VisibilityCell::Real(index) = key {
             vis.tracked.transient.push(index as u32);
             if !open {
-                // The next pass's sight puts back cleared ground bits under
-                // its footprints (`SightApply::Mark`), so it visits them all.
-                vis.tracked.complete = false;
+                vis.tracked.cleared.push(index as u32);
             }
             vis.publish_knowledge(index);
         }
@@ -374,6 +476,7 @@ impl FogState {
         if ground == -1 {
             *flags |= GROUND_OPEN;
         }
+        vis.note_edge_inputs(key, before);
         let fog = self.map_cell_edge_frame(viewer, cell, true, native_cells);
         let vis = self.by_owner.get_mut(&viewer).unwrap();
         let (_, _, cache) = vis.map_cell_parts_mut(key);
@@ -409,29 +512,13 @@ impl FogState {
         };
         let center = vis.visibility_cell(cell, native_cells);
         let (ground, cache) = vis.map_cell_parts(center);
-        let (any, eligible) = if fog_channel {
-            (cache.initialized || cache.fog_open, cache.initialized)
-        } else {
-            (
-                ground & (GROUND_VISIBLE | GROUND_OPEN) != 0,
-                ground & GROUND_VISIBLE != 0,
-            )
-        };
+        let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
         let fallback = if any { -1 } else { -2 };
         if !eligible {
             return fallback;
         }
         let mut mask = 0u8;
-        for (dx, dy, bit) in [
-            (-1i16, -1i16, 0x40),
-            (0, -1, 0x80),
-            (1, -1, 0x01),
-            (-1, 0, 0x20),
-            (1, 0, 0x02),
-            (-1, 1, 0x10),
-            (0, 1, 0x08),
-            (1, 1, 0x04),
-        ] {
+        for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
             let neighbor = (
                 (cell.0 as i16).wrapping_add(dx) as u16,
                 (cell.1 as i16).wrapping_add(dy) as u16,
@@ -495,6 +582,7 @@ impl FogState {
             .entry(viewer)
             .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
         let center = vis.visibility_cell(cell, native_cells);
+        let before = vis.edge_inputs(center);
         let (state, ground, _) = vis.map_cell_parts_mut(center);
         let fresh = *ground & GROUND_VISIBLE == 0;
         *ground |= GROUND_VISIBLE;
@@ -510,6 +598,7 @@ impl FogState {
         if frame == -1 {
             *ground |= GROUND_OPEN;
         }
+        vis.note_edge_inputs(center, before);
         for neighbor in cell_neighbors(cell) {
             self.propagate_map_cell_edge(viewer, neighbor, false, native_cells);
         }
@@ -548,6 +637,7 @@ impl FogState {
         }
         let frame = self.map_cell_edge_frame(viewer, neighbor, fog_channel, native_cells);
         let vis = self.by_owner.get_mut(&viewer).unwrap();
+        let before = vis.edge_inputs(key);
         let (_, ground, cache) = vis.map_cell_parts_mut(key);
         let channel = usize::from(fog_channel);
         if frame == -1 {
@@ -556,14 +646,18 @@ impl FogState {
             } else {
                 *ground |= GROUND_OPEN;
             }
+            vis.note_edge_inputs(key, before);
             for next in cell_neighbors(neighbor) {
                 let key = self.by_owner[&viewer].visibility_cell(next, native_cells);
                 let frame = self.map_cell_edge_frame(viewer, next, fog_channel, native_cells);
                 let vis = self.by_owner.get_mut(&viewer).unwrap();
+                let before = vis.edge_inputs(key);
                 vis.map_cell_parts_mut(key).2.frames[channel] = frame;
+                vis.note_edge_inputs(key, before);
             }
         } else if frame >= 0 {
             cache.frames[channel] = frame;
+            vis.note_edge_inputs(key, before);
         }
     }
 
@@ -572,6 +666,197 @@ impl FogState {
             .get(&viewer)
             .is_some_and(|vis| vis.dummy_visibility.ground & GROUND_VISIBLE != 0)
     }
+}
+
+/// What `Map578100`'s walk takes from [`EdgeCells`]: the sweep's list
+/// (`refresh` false) or the ground-frame refresh's.
+impl FogState {
+    /// Take what `viewer`'s next sweep, or with `refresh` its refresh, must
+    /// visit on a walk over `terrain_size` storage, until
+    /// [`Self::finish_edge_walk`]. `None` when it must visit every cell: the
+    /// lists are incomplete, a walk that holds taken cells is under way, or
+    /// this grid does not cover the storage, so a real cell can read the
+    /// Dummy's knowledge.
+    pub(crate) fn take_edge_cells(
+        &mut self,
+        viewer: InternedId,
+        refresh: bool,
+        terrain_size: (u16, u16),
+    ) -> Option<ListedEdgeCells> {
+        let width = self.width;
+        let covers = terrain_size.0 <= self.width && terrain_size.1 <= self.height;
+        let Some(vis) = self.by_owner.get_mut(&viewer) else {
+            // Without a map plane neither pass reads or writes anything.
+            return Some(ListedEdgeCells::default());
+        };
+        let edges = &mut vis.edge_cells;
+        let listed = if refresh {
+            std::mem::take(&mut edges.changed)
+        } else {
+            std::mem::take(&mut edges.pending)
+        };
+        let beside_dummy = refresh && std::mem::take(&mut edges.dummy_changed);
+        let nested = edges.walking > 0;
+        edges.walking += 1;
+        if !edges.complete || !covers || nested {
+            return None;
+        }
+        Some(ListedEdgeCells {
+            cells: cells_of(&listed, width),
+            beside_dummy,
+        })
+    }
+
+    /// End the walk [`Self::take_edge_cells`] began.
+    pub(crate) fn finish_edge_walk(&mut self, viewer: InternedId) {
+        // A plane its callbacks created took nothing.
+        if let Some(vis) = self.by_owner.get_mut(&viewer) {
+            vis.edge_cells.walking = vis.edge_cells.walking.saturating_sub(1);
+        }
+    }
+
+    /// How many cells that pass's list holds now: a mark for
+    /// [`Self::edge_cells_since`].
+    pub(crate) fn edge_cells_listed(&self, viewer: InternedId, refresh: bool) -> usize {
+        self.by_owner.get(&viewer).map_or(0, |vis| {
+            if refresh {
+                vis.edge_cells.changed.len()
+            } else {
+                vis.edge_cells.pending.len()
+            }
+        })
+    }
+
+    /// The cells that pass's list gained after `mark`, and for the refresh
+    /// whether the Dummy's ground bits changed since the take.
+    pub(crate) fn edge_cells_since(
+        &self,
+        viewer: InternedId,
+        refresh: bool,
+        mark: usize,
+    ) -> ListedEdgeCells {
+        let Some(vis) = self.by_owner.get(&viewer) else {
+            return ListedEdgeCells::default();
+        };
+        let edges = &vis.edge_cells;
+        let list = if refresh {
+            &edges.changed
+        } else {
+            &edges.pending
+        };
+        ListedEdgeCells {
+            cells: cells_of(list.get(mark..).unwrap_or_default(), self.width),
+            beside_dummy: refresh && edges.dummy_changed,
+        }
+    }
+
+    /// List `cells` for that pass of `viewer`'s next update.
+    pub(crate) fn relist_edge_cells(
+        &mut self,
+        viewer: InternedId,
+        refresh: bool,
+        cells: impl IntoIterator<Item = (u16, u16)>,
+    ) {
+        let Some(vis) = self.by_owner.get_mut(&viewer) else {
+            return;
+        };
+        for (x, y) in cells {
+            if let Some(index) = vis.index(x, y) {
+                let edges = &mut vis.edge_cells;
+                if refresh {
+                    edges.changed.push(index as u32);
+                } else {
+                    edges.pending.push(index as u32);
+                }
+            }
+        }
+    }
+
+    /// Drop `viewer`'s lists for an update that visits every cell without
+    /// them; the next listed update visits every cell too.
+    pub(crate) fn untrack_edge_cells(&mut self, viewer: InternedId) {
+        if let Some(vis) = self.by_owner.get_mut(&viewer) {
+            vis.edge_cells = EdgeCells::default();
+        }
+    }
+
+    /// Mark `viewer`'s lists complete: its update just visited every cell.
+    pub(crate) fn complete_edge_cells(&mut self, viewer: InternedId) {
+        if let Some(vis) = self.by_owner.get_mut(&viewer) {
+            vis.edge_cells.complete = true;
+        }
+    }
+
+    /// Whether `cell`'s ground frame reads its neighbours, the gate of
+    /// [`Self::map_cell_edge_frame`] that decides its neighbour lookups.
+    pub(crate) fn ground_frame_reads_neighbors(
+        &self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        self.by_owner.get(&viewer).is_some_and(|vis| {
+            let (ground, cache) = vis.map_cell_parts(vis.visibility_cell(cell, native_cells));
+            edge_frame_gates(ground, cache, false).1
+        })
+    }
+}
+
+#[cfg(test)]
+impl FogState {
+    /// Panics unless `viewer`'s lists, when complete, cover `cell` as
+    /// [`EdgeCells`] promises. `beside_dummy`: the cell has an unallocated
+    /// neighbour. `cells` must not stamp the canonical Dummy.
+    pub(crate) fn assert_edge_cell_tracked(
+        &self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        beside_dummy: bool,
+        cells: &NativeCellQuery<'_>,
+    ) {
+        let Some(vis) = self.by_owner.get(&viewer) else {
+            return;
+        };
+        let VisibilityCell::Real(index) = vis.visibility_cell(cell, Some(cells)) else {
+            return;
+        };
+        let edges = &vis.edge_cells;
+        if !edges.complete {
+            return;
+        }
+        assert!(
+            !vis.shroud_knowledge[index].pending || edges.pending.contains(&(index as u32)),
+            "{cell:?}: unlisted pending cell"
+        );
+        if self.map_cell_edge_frame(viewer, cell, false, Some(cells))
+            == vis.map_cell_edge_cache[index].frames[0]
+        {
+            return;
+        }
+        let listed = std::iter::once((0, 0))
+            .chain(ROW_NEIGHBORS)
+            .any(|(dx, dy)| {
+                let (x, y) = (
+                    (cell.0 as i16).wrapping_add(dx) as u16,
+                    (cell.1 as i16).wrapping_add(dy) as u16,
+                );
+                vis.index(x, y)
+                    .is_some_and(|index| edges.changed.contains(&(index as u32)))
+            });
+        assert!(
+            listed || beside_dummy && edges.dummy_changed,
+            "{cell:?}: unlisted stale ground frame"
+        );
+    }
+}
+
+/// The cells at `indices` of a grid `width` wide.
+fn cells_of(indices: &[u32], width: u16) -> Vec<(u16, u16)> {
+    let width = u32::from(width);
+    indices
+        .iter()
+        .map(|&index| ((index % width) as u16, (index / width) as u16))
+        .collect()
 }
 
 /// The eight cells around `cell` in `0x0089F688` order, with the native signed

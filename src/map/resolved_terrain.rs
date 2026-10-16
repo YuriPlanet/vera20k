@@ -49,6 +49,7 @@ use std::sync::{
     atomic::{AtomicI16, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering},
 };
 
+mod allocated_order;
 mod bridge_flags;
 mod build;
 mod cell_recalc;
@@ -67,6 +68,7 @@ mod pavement_catalog_tests;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub(crate) use build::{
     AuthoredTerrainFill, OverlayLoadSource, RadarColorMetadata, current_tile_permissions,
@@ -601,6 +603,8 @@ pub struct ResolvedTerrainGrid {
     /// Immutable pristine/policy inputs, shared by derived clones and snapshot
     /// templates. Mutable terrain, bounds and overlays remain separate owners.
     bridge_recalc_catalog: Option<Arc<BridgeRecalcCatalog>>,
+    /// Derived from the allocation; see [`Self::allocated_cell_order`].
+    allocated_cell_order: allocated_order::AllocatedCellOrderCache,
 }
 
 /// A `size` x `size` flat level-0 grid whose land rows admit Foot, Track and
@@ -817,6 +821,7 @@ impl ResolvedTerrainGrid {
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
             bridge_recalc_catalog: None,
+            allocated_cell_order: Default::default(),
         }
     }
 

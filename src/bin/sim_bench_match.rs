@@ -1031,10 +1031,8 @@ impl MatchScenario {
                 let slave = sim.interner.get(SLAVE);
                 let house = &self.houses[index];
                 let selectable = |type_ref: InternedId| {
-                    runtime
-                        .resources
-                        .rules
-                        .object(sim.interner.resolve(type_ref))
+                    sim.interner
+                        .object_type(type_ref, &runtime.resources.rules)
                         .is_some_and(|object| object.selectable)
                 };
                 let fresh: Vec<(u64, bool)> = sim

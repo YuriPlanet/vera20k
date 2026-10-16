@@ -69,12 +69,7 @@ impl Simulation {
             || crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 rules.map(|rules| {
-                    crate::sim::movement::SpeedRules::new(
-                        rules,
-                        &self.interner,
-                        &self.type_handles,
-                        &self.houses,
-                    )
+                    crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses)
                 }),
                 self.session.binary_frame,
             );

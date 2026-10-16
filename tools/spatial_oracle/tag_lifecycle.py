@@ -1699,6 +1699,165 @@ def loss_threshold_event_metadata():
             'country_house':0x502D30,'state_a':0x71F950,'state_b':0x71F9C0})
 
 
+
+
+def naval_land_retail_inputs():
+    """Existing Country/type reader owners, with selected ALL05 retail bytes."""
+    from tools.input_oracle.campaign_start import CampaignReader, prepare_house_rules, assets_root
+    from tools.sidebar_oracle.stock import mix, mix_hash
+    from tools.rules_oracle.bridge_child_sound import sections
+    from tools.spatial_oracle.building_body_rules import INI
+    root=Path(os.environ['RA2_DIR'])
+    raw_map=mix((root/'mapsmd03.mix').read_bytes())[mix_hash('ALL05UMD.MAP')]
+    raw_rules=Path('ini/rulesmd.ini').read_bytes()
+    physical_map,physical_rules=sections(raw_map),sections(raw_rules)
+    # The inherited owner eagerly reads its asset directory. This selected
+    # prefix needs no assets; require an empty directory rather than silently
+    # reading a whole retail installation or introducing supplied image data.
+    assets=assets_root()
+    if not assets.is_dir() or next(assets.iterdir(),None) is not None:
+        raise ValueError('Set VERA20K_CAMPAIGN_START_ASSETS to an empty directory for --naval-land-events')
+    m=CampaignReader();m.invoke(0x6832C0,m.scenario)
+    rules=prepare_house_rules(m,physical_rules)
+    registries=[]
+    for label,values in (('RULESMD.INI',physical_rules),('ALL05UMD.MAP',physical_map)):
+        m.ordered_ini({'Countries':values.get('Countries',{})})
+        m.u.reg_write(UC_X86_REG_ESI,INI);m.u.reg_write(UC_X86_REG_EDI,rules)
+        m.region(0x668C8B,0x668CDB)
+        registries.append(dict(layer=label,entries=[dict(index=i,
+            name=m.string(m.read32(m.read32(0xA83C9C)+i*4)+0x24))
+            for i in range(m.read32(0xA83CA8))]))
+    # This is the shared base TechnoType constructor and field-block boundary
+    # used by ifv_select_anim, not a full UnitType or Rules Process replay.
+    m.u.mem_write(0xA8EB00,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
+    typ=m.alloc(0xE00);m.invoke(0x710AF0,typ,(m.cstring('BSUB'),))
+    def fields():
+        return dict(naval=m.u.mem_read(typ+0xCCE,1)[0],
+                    passengers=struct.unpack('<i',m.u.mem_read(typ+0x5E0,4))[0])
+    readers=[dict(layer='TechnoType_constructor710AF0',fields=fields())]
+    for label,values in (('RULESMD.INI',physical_rules),('ALL05UMD.MAP',physical_map)):
+        body=values.get('BSUB',{})
+        m.ordered_ini({'BSUB':body})
+        for begin,end in ((0x714A63,0x714A7D),(0x714B35,0x714B56)):
+            m.u.reg_write(UC_X86_REG_EBP,typ);m.u.reg_write(UC_X86_REG_EBX,typ+0x24)
+            m.u.reg_write(UC_X86_REG_EDI,INI);m.region(begin,end)
+        readers.append(dict(layer=label,section_present='BSUB' in values,
+                            naval_key=body.get('Naval'),passengers_key=body.get('Passengers'),
+                            fields=fields()))
+    m.check_code()
+    identity,tag_id='0E5FA1BC','0E5FB56C'
+    raw=physical_map['Events'][identity]
+    return dict(map='ALL05UMD.MAP',map_sha256=hashlib.sha256(raw_map).hexdigest(),
+        rules_sha256=hashlib.sha256(raw_rules).hexdigest(),trigger_id=identity,
+        raw_event=raw,native_read=PowerEventControls.read_event(raw),
+        trigger=physical_map['Triggers'][identity],tag_id=tag_id,tag=physical_map['Tags'][tag_id],
+        actions=physical_map['Actions'][identity],selected_house_name='BadGuy2 House',
+        selected_house=physical_map['BadGuy2 House'],initial_bsub_entry_id='38',
+        initial_bsub_entry=physical_map['Units']['38'],authored_health=184,
+        country_registries=registries,type_field_readers=readers)
+
+
+def generate_naval_land_events():
+    """Signed tracked-count predicates; keep the existing tracking oracle owner."""
+    from tools.native_oracle import image_sha256, NATIVE_FPCW, first_difference
+    from tools.spatial_oracle import house_tracking
+    m=PowerEventControls(reader_inputs=())
+    m.SPANS=[*m.SPANS,(0x71F950,0x71FA40)]
+    m.original.append(bytes(m.u.mem_read(0x71F950,0xF0)))
+    controls,classifiers=[],[]
+
+    def probe(kind,name,counts,value=0,house=1,actor=1,raised=8,
+              order=(0,1,2),buildup=False,persistence=0):
+        for pointer,(vehicles,navy,infantry) in zip(m.houses,counts):
+            m.u.mem_write(pointer+0x2E8,dwords(vehicles,navy,0,infantry))
+        before=list(struct.unpack('<iii',m.u.mem_read(m.timer,12)))
+        m.predicate(f'naval_land{kind}_{name}',f'1,{kind},0,{value}',
+                    house_index=house,actor_index=actor,raised=raised,order=order,
+                    scenario_init=buildup,initial_persistence=persistence)
+        row=m.predicates[-1]
+        after=list(struct.unpack('<iii',m.u.mem_read(m.timer,12)))
+        assert after==before and row['persistence']==persistence
+        assert row['event54']==struct.unpack('<i',dwords(0xABCD1234))[0]
+        controls.append(dict(name=row['name'],kind=kind,value=value,tracked_counts=counts,
+            house_order=order,incoming_house=house,actor_owner=actor,raised=raised,
+            scenario_init=buildup,initial_persistence=persistence,result=row['result'],
+            persistence=row['persistence'],event54=row['event54'],timer_before=before,timer_after=after))
+
+    for navy in (-2147483648,-1,0,1,2147483647):
+        probe(55,f'navy{navy}',((3,navy,9),(7,7,7),(4,2,0)))
+    for index,selected in enumerate(((0,0,0),(1,0,0),(0,0,1),(5,5,0),(6,5,0),(4,5,0),
+                                     (0,0,-1),(0,0,-2147483648),(0,0,2147483647),
+                                     (-2147483648,1,0),(2147483647,-1,0),
+                                     (-2147483648,2147483647,0),(2147483647,-2147483648,0),
+                                     (-1,0,0))):
+        probe(56,f'signed_sub_infantry{index}',(selected,(7,7,7),(4,2,0)))
+    for kind in (55,56):
+        probe(kind,'all_houses_zero',((0,0,0),)*3,house=0,actor=None)
+        for order in ((0,1,2),(2,1,0)):
+            probe(kind,f'first_country_order{order}',((0,0,0),(7,7,7),(4,2,0)),order=order)
+        for value in (-1,999):
+            probe(kind,f'absent_country{value}',((2,1,1),)*3,value=value)
+        probe(kind,'country7',((7,7,7),(0,0,0),(7,7,7)),value=7,house=0,actor=2)
+        probe(kind,'null_incoming_selected_positive',((2,1,0),(0,0,0),(4,2,0)),house=None)
+        for buildup in (False,True):
+            probe(kind,f'wrong_raise_buildup{int(buildup)}',((0,0,0),(7,7,7),(4,2,0)),
+                  raised=99,buildup=buildup)
+        probe(kind,'retained_persistence_one',((0,0,0),(7,7,7),(4,2,0)),persistence=1)
+        classifiers.append(dict(kind=kind,state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+                                state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255))
+    m.assert_unchanged()
+    # Re-execute the sole tracking producer, compare its existing complete
+    # corpus, and record actual replay identity separately from old provenance.
+    actual=house_tracking.generate()
+    saved_path=Path(house_tracking.__file__).with_suffix('.json')
+    saved=json.loads(saved_path.read_text(encoding='utf-8'))
+    difference=first_difference(saved,actual)
+    assert difference is None,difference
+    digest=hashlib.sha256(json.dumps(actual,sort_keys=True,separators=(',',':'),
+                                   allow_nan=False).encode('utf-8')).hexdigest()
+    old_meta=json.loads(saved_path.with_suffix('.meta.json').read_text(encoding='utf-8'))
+    replay=dict(cases=len(actual),payload_matches_saved=True,payload_sha256=digest,
+                saved_provenance_native_sha256=old_meta['native_sha256'],
+                replayed_native_sha256=image_sha256())
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+                country_indices=[0,7,0],controls=controls,classification=classifiers,
+                tracking_replay=replay,retail=naval_land_retail_inputs(),
+                code_unchanged=True,zero_predicate_rng_calls=True)
+
+
+def naval_land_event_metadata():
+    result=provenance(
+        scope='39 original HasOccurred55/56 predicates, four StateA/StateB calls, replay of the existing36 tracking controls, selected retail ALL05 Event/Country and BSUB Naval/Passengers readers. Not full House/object construction, resource search, reinforcement execution or campaign parity.',
+        assumptions=[
+            'Reuse PowerEventControls/FlagsFixture original image, counted TEvent reader and minimal three-House arena with Country bindings0/7/0. Supplied tracked+2E8/+2EC/+2F4 priors are vehicles/navy/infantry. Original Country502D30 and HasOccurred71E940 execute; incoming House, actor, raised kind and A8ED6B do not select these predicates\' House.',
+            '55 at71F159 tests signed navy<=0.56 at71F16F subtracts navy from vehicles with32-bit wrapping, TEST/JG, then independently tests tracked infantry<=0. INT_MIN/MAX, overflow, independent infantry signs, first duplicate Country order, absent Country, null incoming House, unrelated actor/raised flag and initial persistence0/1 are executed. Event+54 and timer remain unchanged; StateA/B are0/1 and existing observers assert no predicate65C780/65C7E0 entry. No own timer write or detach belongs to these leaves.',
+            'house_tracking.generate is the existing sole Add/Remove fixture. Its complete36-case replay on the actual selected image must match every saved payload field. The old sidecar names the other supported1cdd image: actual replay identity and matching canonical payload hash are separate fields here, not a rewrite of that older provenance. Existing supplied virtuals, per-type Counter and owned-type sinks remain; this is not a concrete constructor/destructor lifecycle replay.',
+            'Original tracking increases/decreases+2EC only in Unit RTTI1, after Insignificant/DontScore admission, when Naval+CCE is nonzero AND signed Passengers+5E0 is exactly0. Naval transports with any nonzero capacity remain vehicles without navy contribution. Production integration must retain the existing tracking construction, ChangeOwner and actual final-deletion owners rather than active count, factory/naval statistics or a map scan.',
+            'Actual mapsmd03.mix member ALL05UMD.MAP and extracted retail ini/rulesmd.ini bytes are SHA-identified. Lexical cached entries feed original counted TEvent and Country registration668C8B..668CDB; rules followed by map registration yields Country17 BadGuy2. The retained BadGuy2 House BSUB Units entry is raw data; authored health184 is not executed actual HP. Trigger0E5FA1BC starts enabled and one-shot;53/21/53 activates existing black-eagle support consumers. Later AIProduction74 and whole-level behavior are outside this evidence.',
+            'Existing CampaignReader and shared TechnoType710AF0 constructor establish Naval=false/Passengers0. Original field blocks714A63..714A7D and714B35..714B56 execute on physical RULESMD BSUB then the absent map section: Naval=yes ->1, absent Passengers retains0; the map retains1/0. Readers pass current fields as defaults, exact-case keys, ReadBool5295F0/ReadInt5276D0 without clamps. The absent-section row deliberately executes selected readers; it does not claim whole ReadINI section admission, full UnitType construction, all Rules Process passes, physical loading or exhaustive LANGRULE/scenario-INI absence. Campaign has no mode layer in this selected input.',
+            'CampaignReader is supplied an existing empty asset directory through VERA20K_CAMPAIGN_START_ASSETS; its inherited constructor preloads that directory, and these selected Country/type controls request no asset files. Registries have declared spare capacity. No original Tag/House polling/action execution is added here; the Rust production regressions and existing lifecycle evidence own their separate coverage.'],
+        substitutions=['Existing FlagsFixture/CampaignReader allocator/CRT/TLS/INI-cache transports and explicit scalar/vector/House priors; existing house_tracking virtual/per-type sinks retain their published boundary. No selected event, Country lookup, field reader or tracking-body return is replaced.'],
+        entry_points={'has_occurred':0x71E940,'navy_predicate':0x71F159,'land_predicate':0x71F16F,
+            'country_house':0x502D30,'state_a':0x71F950,'state_b':0x71F9C0,
+            'add_tracking':0x4FF700,'remove_tracking':0x4FF550,'country_registration':0x668C8B,
+            'techno_type_constructor':0x710AF0,'naval_reader':0x714A63,'passengers_reader':0x714B35})
+    result['environment']={'RA2_DIR':'retail installation containing gamemd.exe and mapsmd03.mix',
+        'VERA20K_CAMPAIGN_START_ASSETS':'existing empty directory; selected Country/type prefix needs no assets',
+        'checkout_prerequisite':'ini/rulesmd.ini is the selected extracted retail RULESMD'}
+    return result
+
+
+def naval_land_event_source_paths():
+    paths=power_event_source_paths()
+    paths.update(tracking=Path(__file__).with_name('house_tracking.py'),
+                 country_reader=Path(__file__).parents[1]/'input_oracle'/'campaign_start.py',
+                 retail_mix=Path(__file__).parents[1]/'sidebar_oracle'/'stock.py',
+                 retail_lexical=Path(__file__).parents[1]/'rules_oracle'/'bridge_child_sound.py')
+    return paths
+
+
+
+
 def no_factories_predicates():
     """Event17 on explicit tracked-count/list priors, using the shared VM."""
     from types import SimpleNamespace
@@ -2180,6 +2339,10 @@ if __name__=='__main__':
         args.remove('--no-factories-events')
         finish_vectors(generate_no_factories_events,Path(__file__).with_name('trigger_no_factories_events.json'),
                        provenance=no_factories_event_metadata,source_paths=no_factories_event_source_paths(),argv=args)
+    elif '--naval-land-events' in args:
+        args.remove('--naval-land-events')
+        finish_vectors(generate_naval_land_events,Path(__file__).with_name('trigger_naval_land_events.json'),
+                       provenance=naval_land_event_metadata,source_paths=naval_land_event_source_paths(),argv=args)
     elif '--loss-threshold-events' in args:
         args.remove('--loss-threshold-events')
         finish_vectors(generate_loss_threshold_events,Path(__file__).with_name('trigger_loss_threshold_events.json'),

@@ -512,8 +512,9 @@ fn area_record_dispatches(world: &Simulation, rules: &RuleSet, event: &EntityDam
         .is_some_and(|target| {
             target.lifecycle.object_alive()
                 && !(target.category() == EntityCategory::Structure
-                    && rules
-                        .object(world.interner.resolve(target.type_ref()))
+                    && world
+                        .interner
+                        .object_type(target.type_ref(), rules)
                         .is_some_and(|object| object.invisible_in_game))
                 && target.health.current() > 0
                 && target.lifecycle.cell_marked()
@@ -822,8 +823,9 @@ pub(crate) fn commit_entities(
         if result_one_arm && sound_enabled {
             for _ in 0..2 {
                 if let Some(target) = world.substrate.entities.get(target_id)
-                    && let Some(sound_id) = rules
-                        .object(world.interner.resolve(target.type_ref()))
+                    && let Some(sound_id) = world
+                        .interner
+                        .object_type(target.type_ref(), rules)
                         .and_then(|object| object.damage_sound())
                 {
                     let coordinate =
@@ -847,7 +849,7 @@ pub(crate) fn commit_entities(
         // Original executed controls: input_oracle/unit_voice_playback.
         if receive_state == damage::DamageState::Yellow
             && let Some(target) = world.substrate.entities.get(target_id)
-            && let Some(object) = rules.object(world.interner.resolve(target.type_ref()))
+            && let Some(object) = world.interner.object_type(target.type_ref(), rules)
             && !object.voice_feedback.is_empty()
             && world.main_rng.next_range_i32_inclusive(0, 99) < 0x1E
             && world.house_is_human_player(target.owner())
@@ -884,8 +886,9 @@ pub(crate) fn commit_entities(
                 .entities
                 .get(target_id)
                 .is_some_and(|target| {
-                    rules
-                        .object(world.interner.resolve(target.type_ref()))
+                    world
+                        .interner
+                        .object_type(target.type_ref(), rules)
                         .is_some_and(|object| object.to_protect)
                         && world.houses.contains_key(&target.owner())
                         && !world.owner_is_human(target.owner())
@@ -914,7 +917,7 @@ pub(crate) fn commit_entities(
                 .substrate
                 .entities
                 .get(target_id)
-                .and_then(|target| rules.object(world.interner.resolve(target.type_ref())))
+                .and_then(|target| world.interner.object_type(target.type_ref(), rules))
                 .map_or(1, |object| object.cloaking_speed);
             // `TechnoClass::ReceiveDamage @ 0x0070281D` invokes virtual
             // `+0xFC` (`0x00703850`, a plain `StartUncloaking(0)` wrapper) for
@@ -1184,8 +1187,9 @@ pub(crate) fn commit_entities(
             && let Some(target) = world.substrate.entities.get(target_id)
             && target.category() == EntityCategory::Structure
             && target.lifecycle.object_alive()
-            && rules
-                .object(world.interner.resolve(target.type_ref()))
+            && world
+                .interner
+                .object_type(target.type_ref(), rules)
                 .is_some_and(|object| object.damage_sound().is_none())
             && let Some(sound_id) = rules.general.building_damage_sound()
         {
@@ -1314,8 +1318,9 @@ pub(crate) fn commit_entities(
                     .get(target_id)
                     .is_some_and(|target| {
                         !world.owner_is_human(target.owner())
-                            && rules
-                                .object(world.interner.resolve(target.type_ref()))
+                            && world
+                                .interner
+                                .object_type(target.type_ref(), rules)
                                 .is_some_and(|obj| obj.engineer)
                             && matches!(
                                 target.mission.effective().known(),
@@ -1346,7 +1351,7 @@ pub(crate) fn commit_entities(
                 );
             }
             if let Some(target) = world.substrate.entities.get_mut(target_id) {
-                if let Some(obj) = rules.object(world.interner.resolve(target.type_ref())) {
+                if let Some(obj) = world.interner.object_type(target.type_ref(), rules) {
                     infantry::apply_fear_from_damage(
                         obj,
                         target,
@@ -1360,8 +1365,9 @@ pub(crate) fn commit_entities(
                 // with or without a source. A building's ping is its
                 // retaliation block's, below.
                 if target.category() != EntityCategory::Structure
-                    && rules
-                        .object(world.interner.resolve(target.type_ref()))
+                    && world
+                        .interner
+                        .object_type(target.type_ref(), rules)
                         .is_some_and(|obj| obj.harvester)
                 {
                     under_attack_events.push(UnderAttackEvent {
@@ -1441,7 +1447,7 @@ fn finish_building_art_receiver(
     if !target.lifecycle.object_alive() {
         return;
     }
-    let Some(object) = rules.object(world.interner.resolve(target.type_ref())) else {
+    let Some(object) = world.interner.object_type(target.type_ref(), rules) else {
         return;
     };
     if state != damage::DamageState::Unaffected
@@ -1703,7 +1709,7 @@ fn finish_concrete_death(
         entity.animation.is_some(),
     );
     let mut concrete_smudge_plans = Vec::new();
-    if let Some(obj) = rules.object(world.interner.resolve(type_id)) {
+    if let Some(obj) = world.interner.object_type(type_id, rules) {
         // `TechnoClass::Death_Announcement @ 0x004D98C0` runs at the
         // Aircraft/Infantry/Unit `ReceiveDamage` kill sites (vtable
         // `+0x3B8`; `BuildingClass` has none) and skips `Spawned=`
@@ -1956,8 +1962,8 @@ enum SpecialArmTarget {
 
 /// The special arm of `BulletClass::DetonateAtCoord @ 0x004690B0`
 /// (`0x0046920B..0x00469A3D`) the warhead's flags selected, for both
-/// deliveries: a visible bullet's detonation, and an `Inviso=` bullet's first
-/// AI visit, which detonates through the same chain.
+/// deliveries: visible and `Inviso=` bullets both enter when their AI
+/// admits detonation; Inviso placement does not bypass the Arm-gated fuse.
 ///
 /// Whatever the arm does, it claims the impact: every arm, its internal
 /// refusals included, leaves by `JMP 0x00469AA4`, and `Apply_area_damage`
@@ -2386,10 +2392,10 @@ fn bullet_location(
     }
 }
 
-/// Bullet469D06..469EBA's fallback SHP arm. The typed VoxelAnim arm
-/// 469D40..469E18 remains an authored-rule residual: it consumes the budget
-/// request but must never be replaced by a MetallicDebris fallback. Stock
-/// Smashing/TRexWH retain an empty typed list and use this complete SHP path.
+/// Bullet469D06..469EBA: one budget, then the typed VoxelAnim arm or the
+/// MetallicDebris SHP fallback. Both finish constructors synchronously before
+/// the outer cluster successor. Stock Smashing/TRexWH use the empty-list arm;
+/// an authored Smashing TIRE list uses the same typed selector as Techno deaths.
 fn emit_warhead_debris(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -2397,42 +2403,60 @@ fn emit_warhead_debris(
     warhead: &WarheadType,
     out: &mut CombatEmit,
 ) {
-    use crate::sim::voxel_anim::{ShpDebrisSource, debris_budget, throw_shp_debris};
+    use crate::sim::voxel_anim::{
+        ShpDebrisSource, debris_budget, throw_shp_debris, throw_typed_debris,
+    };
 
     let budget = debris_budget(
         warhead.min_debris,
         warhead.max_debris,
         &mut world.scenario_rng,
     );
-    if budget <= 0 || !warhead.debris_types.is_empty() {
+    if budget <= 0 {
         return;
     }
-    let mut host = WarheadShpDebrisHost {
+    let mut host = WarheadDebrisHost {
         world,
         rules,
         detonation: *detonation,
         anims: &mut out.effects.explosion_effects,
+        voxels: &mut out.effects.voxel_debris,
     };
-    if let Err(error) = throw_shp_debris(
-        budget,
-        ShpDebrisSource::RulesMetallicDebris,
-        rules.general.metallic_debris.len(),
-        &mut host,
-    ) {
+    let result = if warhead.debris_types.is_empty() {
+        throw_shp_debris(
+            budget,
+            ShpDebrisSource::RulesMetallicDebris,
+            rules.general.metallic_debris.len(),
+            &mut host,
+        )
+    } else {
+        let types: Vec<_> = warhead
+            .debris_types
+            .iter()
+            .map(|name| {
+                rules
+                    .voxel_anim_type_id_by_name(name)
+                    .map(|id| (id, rules.voxel_anim_type(id)))
+            })
+            .collect();
+        throw_typed_debris(budget, &types, &warhead.debris_maximums, None, &mut host).map(|_| ())
+    };
+    if let Err(error) = result {
         // Preserve earlier synchronous births on unsupported authored launch
         // arithmetic, as the existing Techno debris entry does.
         log::debug!("warhead debris stopped outside verified numeric domain: {error}");
     }
 }
 
-struct WarheadShpDebrisHost<'w, 'r> {
+struct WarheadDebrisHost<'w, 'r> {
     world: &'w mut Simulation,
     rules: &'r RuleSet,
     detonation: ProjectileDetonation,
     anims: &'w mut Vec<ExplosionEffect>,
+    voxels: &'w mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
 }
 
-impl crate::sim::voxel_anim::ShpDebrisHost for WarheadShpDebrisHost<'_, '_> {
+impl crate::sim::voxel_anim::ShpDebrisHost for WarheadDebrisHost<'_, '_> {
     fn rng(&mut self) -> &mut SimRng {
         &mut self.world.scenario_rng
     }
@@ -2463,6 +2487,33 @@ impl crate::sim::voxel_anim::ShpDebrisHost for WarheadShpDebrisHost<'_, '_> {
                 .map(String::as_str),
             coord,
             self.anims,
+        )
+    }
+}
+
+impl crate::sim::voxel_anim::VoxelDebrisHost for WarheadDebrisHost<'_, '_> {
+    fn voxel_origin(&self) -> glam::IVec3 {
+        // 469DC3..469DCF queries the live Bullet per constructor. Unlike
+        // SHP469E50 it adds no 20; VoxelAnim74950C owns its own 10-lepton lift.
+        let coord = bullet_location(self.world, &self.detonation).0;
+        glam::IVec3::new(coord.x, coord.y, coord.z)
+    }
+
+    fn construct_voxel(
+        &mut self,
+        type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId,
+        voxel_type: &crate::rules::voxel_anim_type::VoxelAnimType,
+        owner_house: Option<InternedId>,
+        origin: glam::IVec3,
+    ) -> Result<(), crate::util::native_x87::NativeX87Error> {
+        let admit_inline = callbacks_enabled(self.world);
+        self.world.emit_debris_voxel(
+            type_id,
+            voxel_type,
+            owner_house,
+            origin,
+            admit_inline,
+            self.voxels,
         )
     }
 }

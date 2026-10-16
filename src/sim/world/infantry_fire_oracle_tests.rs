@@ -357,8 +357,10 @@ fn recorded_fire_error(fixture: &SuppliedFootFixture, case: &Value, rules: &Rule
         overlay_registry: None,
         fog: None,
         firer: actor,
-        obj: rules
-            .object(fixture.sim.interner.resolve(actor.type_ref()))
+        obj: fixture
+            .sim
+            .interner
+            .object_type(actor.type_ref(), rules)
             .unwrap(),
         target: fixture.target(&case["input"]["target"]),
         weapon_index: 0,

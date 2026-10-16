@@ -165,7 +165,7 @@ impl NativeLocalCellCursor {
 /// Original578350/578290. Null returns retain the advanced cursor; a Rust
 /// Iterator adapter may fuse after null, but nested simulation users must
 /// share these live words and must not add a native terminal flag.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NativeAllocatedCellCursor {
     x: i32,
     y: i32,
@@ -181,6 +181,11 @@ impl NativeAllocatedCellCursor {
         }
     }
 
+    /// The cursor at `(x, y)` with `remaining` cells left in its row.
+    pub(super) fn at(x: i32, y: i32, remaining: i32) -> Self {
+        Self { x, y, remaining }
+    }
+
     pub(crate) fn next_in_terrain(
         &mut self,
         terrain: &ResolvedTerrainGrid,
@@ -192,6 +197,12 @@ impl NativeAllocatedCellCursor {
             .then(|| terrain.native_fixed_cell_index((index % 512) as i16, (index / 512) as i16))
             .flatten()
             .map(NativeCellIdentity::Real);
+        self.advance(size_width);
+        selected
+    }
+
+    /// Next578290's step past the current position.
+    pub(super) fn advance(&mut self, size_width: i32) {
         if self.remaining != 0 {
             self.x = self.x.wrapping_add(1);
             self.y = self.y.wrapping_sub(1);
@@ -213,7 +224,6 @@ impl NativeAllocatedCellCursor {
                 self.y = self.y.wrapping_add(1);
             }
         }
-        selected
     }
 }
 
@@ -491,6 +501,16 @@ impl SharedCellDummy {
         let word = self.cell_word();
         let _restore = Restore(DETACHED_CELL.replace(Some((self.address(), word))));
         work()
+    }
+
+    /// [`Self::detached`], also answering whether `work` changed the private
+    /// copy: a lookup it made stamped the Dummy.
+    pub(crate) fn detached_stamps<R>(&self, work: impl FnOnce() -> R) -> (R, bool) {
+        self.detached(|| {
+            let before = self.cell_word();
+            let result = work();
+            (result, self.cell_word() != before)
+        })
     }
 
     fn address(&self) -> usize {
@@ -1054,6 +1074,7 @@ impl ResolvedTerrainGrid {
             }
         }
         self.native_allocated = Some(mask);
+        self.allocated_cell_order = Default::default();
     }
 
     /// `CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`: advance

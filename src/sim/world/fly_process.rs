@@ -339,7 +339,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let object = rules.and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
+        let object = rules.and_then(|rules| self.interner.object_type(entity.type_ref(), rules));
         let dropship = object.is_some_and(|object| object.is_dropship);
         let location = ground_pose::object_location(entity, self.resolved_terrain.as_ref());
         let speed = air_movement::current_fly_speed(
@@ -505,7 +505,7 @@ impl Simulation {
                 })
                 .filter(|building| building.category() == EntityCategory::Structure)
                 .and_then(|building| {
-                    rules.and_then(|rules| rules.object(self.interner.resolve(building.type_ref())))
+                    rules.and_then(|rules| self.interner.object_type(building.type_ref(), rules))
                 })
                 .is_some_and(|object| object.helipad);
         if entering_helipad {
@@ -606,7 +606,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return 0;
         };
-        let object = rules.and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
+        let object = rules.and_then(|rules| self.interner.object_type(entity.type_ref(), rules));
         let aircraft = entity.category() == EntityCategory::Aircraft;
         let strafe = aircraft
             && rules.zip(object).is_some_and(|(rules, object)| {

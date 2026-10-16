@@ -136,8 +136,9 @@ impl Simulation {
             .get(factory)
             .is_some_and(|building| {
                 building.category() == EntityCategory::Structure
-                    && rules
-                        .object(self.interner.resolve(building.type_ref()))
+                    && self
+                        .interner
+                        .object_type(building.type_ref(), rules)
                         .is_some_and(|object| object.weapons_factory)
             })
             && self.substrate.occupancy.first_building_on_layer(
@@ -217,7 +218,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        let Some(object) = rules.object(self.interner.resolve(unit.type_ref())) else {
+        let Some(object) = self.interner.object_type(unit.type_ref(), rules) else {
             return;
         };
         if !(object.harvester || object.weeder)
@@ -270,7 +271,7 @@ impl Simulation {
         ) else {
             return false;
         };
-        let Some(object) = rules.object(self.interner.resolve(unit.type_ref())) else {
+        let Some(object) = self.interner.object_type(unit.type_ref(), rules) else {
             return false;
         };
         let Some(house) = self.houses.get(&unit.owner()) else {

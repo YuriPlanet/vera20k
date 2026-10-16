@@ -292,7 +292,7 @@ impl Simulation {
     pub(crate) fn add_unit_sensor_after_unlimbo(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some((owner, center, radius, in_limbo)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
-                let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
                 Some((
                     entity.owner(),
                     (entity.position.rx(), entity.position.ry()),
@@ -334,7 +334,7 @@ impl Simulation {
     pub(crate) fn add_building_sensor_array_if_powered(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some((owner, center, sight, remove_radius, detect_radius, powered, in_limbo)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
-                let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
                 if entity.category() != EntityCategory::Structure
                     || object.category != ObjectCategory::Building
                 {

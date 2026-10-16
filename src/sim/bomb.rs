@@ -329,7 +329,7 @@ impl Simulation {
             if entity.lifecycle.in_limbo() || !entity.lifecycle.object_alive() {
                 continue;
             }
-            let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+            let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
                 continue;
             };
             if object.bomb_sight != 0 {
@@ -485,8 +485,9 @@ impl Simulation {
             bomb.planter,
         );
         let bridge_hut = entity.category() == EntityCategory::Structure
-            && rules
-                .object(self.interner.resolve(entity.type_ref()))
+            && self
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.bridge_repair_hut);
         let location = object_location(entity, self.resolved_terrain.as_ref());
         Some(BombBlast {

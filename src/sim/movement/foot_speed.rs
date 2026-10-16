@@ -4,7 +4,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF32Bits;
 use std::collections::BTreeMap;
@@ -68,13 +67,12 @@ pub(crate) fn owner_current_speed_from_fraction(
 }
 
 /// What the live GetCurrentSpeed reads beyond the owner: its type, through
-/// the precomputed handle table, and `VeteranSpeed`. A query that runs every
+/// the interner's bound handles, and `VeteranSpeed`. A query that runs every
 /// frame for every Foot must not resolve the type by name.
 #[derive(Clone, Copy)]
 pub(crate) struct SpeedRules<'a> {
     rules: &'a RuleSet,
     interner: &'a StringInterner,
-    types: &'a TypeHandleTable,
     houses: &'a BTreeMap<InternedId, HouseState>,
 }
 
@@ -82,13 +80,11 @@ impl<'a> SpeedRules<'a> {
     pub(crate) fn new(
         rules: &'a RuleSet,
         interner: &'a StringInterner,
-        types: &'a TypeHandleTable,
         houses: &'a BTreeMap<InternedId, HouseState>,
     ) -> Self {
         Self {
             rules,
             interner,
-            types,
             houses,
         }
     }
@@ -97,8 +93,7 @@ impl<'a> SpeedRules<'a> {
     pub(crate) fn owner_current_speed(self, entity: &GameEntity) -> i32 {
         owner_current_speed(
             entity,
-            self.types
-                .object(self.interner, entity.type_ref(), self.rules),
+            self.interner.object_type(entity.type_ref(), self.rules),
             self.rules.general.veteran_speed,
             self.houses,
         )

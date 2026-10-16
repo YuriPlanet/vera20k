@@ -19,11 +19,11 @@ use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct VoxelAnimTypeId(pub u32);
 
-/// `pi / 180`, the degrees-to-radians factor at `0x007F65E8` that
-/// `VoxelAnimTypeClass::ReadINI` applies to both angular-velocity keys. Carried
-/// as bits: the stored constant is not the correctly-rounded `pi/180`, and the
-/// spin it drives is compared against authored thresholds.
-pub const DEGREES_TO_RADIANS: NativeF64Bits = NativeF64Bits::from_bits(0x3f91_df46_a245_2b7c);
+/// The degrees-to-radians factor read by VoxelAnimType74B128/74B159 from
+/// file-backed 7F65E8: bytes `05 A1 1E 17 24 DF 91 3F`. It differs from
+/// mathematical pi/180. Native reader/constructor comparisons consume its
+/// resulting TIRE angular bits in tools/projectile_oracle/typed_warhead_debris.
+pub const DEGREES_TO_RADIANS: NativeF64Bits = NativeF64Bits::from_bits(0x3f91_df24_171e_a105);
 
 /// Constructor defaults, all read from `VoxelAnimTypeClass::Constructor @
 /// 0x0074AD80`. Named rather than inlined because several are load-bearing for
@@ -34,8 +34,8 @@ const DEFAULT_DURATION: i32 = 30;
 const DEFAULT_ELASTICITY: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_9999_a000_0000);
 /// Zero (`0x0074ADBE`, `0x0074ADFB`).
 const DEFAULT_MIN_ANGULAR_VELOCITY: NativeF64Bits = NativeF64Bits::POSITIVE_ZERO;
-/// `0x3FC656ED_1CE64946` (`0x0074ADC4`, `0x0074AE01`): 10 * 3.1415 / 180
-/// folded by the compiler, not 10 degrees through the `0x007F65E8` factor.
+/// Constructor literal `0x3FC656ED_1CE64946`, written at74ADC4/74AE01.
+/// The reader's separate degree conversion must use its own file constant.
 const DEFAULT_MAX_ANGULAR_VELOCITY: NativeF64Bits = NativeF64Bits::from_bits(0x3fc6_56ed_1ce6_4946);
 const DEFAULT_MIN_Z_VEL: f64 = 3.5;
 const DEFAULT_MAX_Z_VEL: f64 = 5.0;
@@ -261,12 +261,8 @@ mod tests {
         assert_eq!(f64::from_bits(vat.max_xy_vel.bits()), 15.0);
         assert!(!vat.is_meteor && !vat.is_tiberium);
         assert_eq!(vat.spawn_count, 0);
-        // The constructor's own constant, not 10 degrees through pi/180.
+        // Literal stores at74ADC4/74AE01 establish the constructor default.
         assert_eq!(vat.max_angular_velocity.bits(), 0x3fc6_56ed_1ce6_4946);
-        assert_ne!(
-            f64::from_bits(vat.max_angular_velocity.bits()),
-            10.0 * f64::from_bits(DEGREES_TO_RADIANS.bits())
-        );
     }
 
     #[test]

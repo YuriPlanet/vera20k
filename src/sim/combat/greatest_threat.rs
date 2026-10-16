@@ -86,10 +86,10 @@ use std::ops::ControlFlow;
 
 use super::combat_targeting::AttackerSnapshot;
 use super::combat_weapon::{
-    AttackerFacts, attacker_facts, controlled_transport_house, get_weapon, is_ally_by_object,
-    is_armed, is_armed_from_facts, is_occupied, occupied_reach_cells, passive_scan_class_bits,
-    primary_warhead_spares_medium_and_wood, resolve_selected_weapon, techno_target_facts,
-    weapon_damage_value,
+    AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, get_weapon,
+    is_ally_by_object, is_armed, is_armed_from_facts, is_occupied, occupied_reach_cells,
+    passive_scan_class_bits, primary_warhead_spares_medium_and_wood, resolve_selected_weapon,
+    techno_target_facts, weapon_damage_value,
 };
 use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, max_weapon_range, scan_range};
@@ -347,8 +347,80 @@ pub(crate) fn calculate_threat_score(
 ) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
     let candidate = entities.get(candidate_id)?;
-    let scorer_type = rules.object(interner.resolve(scorer.type_ref()))?;
-    let candidate_type = rules.object(interner.resolve(candidate.type_ref()))?;
+    let pair = ThreatPair {
+        scorer,
+        scorer_type: interner.object_type(scorer.type_ref(), rules)?,
+        candidate,
+        candidate_type: interner.object_type(candidate.type_ref(), rules)?,
+        candidate_allies_scorer: is_ally_by_object(
+            alliances,
+            interner,
+            candidate.owner(),
+            scorer.owner(),
+        ),
+    };
+    // A: the scorer's selected weapon against the candidate.
+    let candidate_as_target = techno_target_facts(
+        candidate,
+        pair.candidate_type,
+        terrain,
+        is_ally_by_object(alliances, interner, scorer.owner(), candidate.owner()),
+        rules,
+        interner,
+    );
+    let scorer_weapon = resolve_selected_weapon(
+        rules,
+        scorer,
+        pair.scorer_type,
+        &attacker_facts(scorer, pair.scorer_type),
+        Some(&candidate_as_target),
+        entities,
+        interner,
+    );
+    threat_score(
+        &pair,
+        scorer_weapon.as_ref(),
+        entities,
+        rules,
+        interner,
+        terrain,
+        coefficients,
+        reference,
+        scorer_enemy_house,
+    )
+}
+
+/// The two objects [`threat_score`] weighs, their types, and whether the
+/// candidate's house counts the scorer's as an ally (the B term's question).
+struct ThreatPair<'e, 'r> {
+    scorer: &'e GameEntity,
+    scorer_type: &'r ObjectType,
+    candidate: &'e GameEntity,
+    candidate_type: &'r ObjectType,
+    candidate_allies_scorer: bool,
+}
+
+/// [`calculate_threat_score`] with the scorer's selected weapon against the
+/// candidate (its A term) already chosen: a target scan has chosen it for the
+/// candidate's verses gate.
+fn threat_score(
+    pair: &ThreatPair<'_, '_>,
+    scorer_weapon: Option<&SelectedWeapon<'_>>,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    terrain: Option<&ResolvedTerrainGrid>,
+    coefficients: ThreatCoefficients,
+    reference: ThreatReference,
+    scorer_enemy_house: Option<InternedId>,
+) -> Option<MaskedX87Value> {
+    let &ThreatPair {
+        scorer,
+        scorer_type,
+        candidate,
+        candidate_type,
+        candidate_allies_scorer,
+    } = pair;
     let coeff_a = load_threat_double(coefficients.my_effectiveness);
     let coeff_b = load_threat_double(coefficients.target_effectiveness);
     let coeff_c = load_threat_double(coefficients.target_special_threat);
@@ -363,7 +435,7 @@ pub(crate) fn calculate_threat_score(
         scorer,
         scorer_type,
         terrain,
-        is_ally_by_object(alliances, interner, candidate.owner(), scorer.owner()),
+        candidate_allies_scorer,
         rules,
         interner,
     );
@@ -397,26 +469,9 @@ pub(crate) fn calculate_threat_score(
             .then_some(rules.general.enemy_house_threat_bonus),
     );
 
-    // A: the scorer's selected weapon against the candidate. Retain the
-    // selected weapon for the native range term below.
-    let candidate_as_target = techno_target_facts(
-        candidate,
-        candidate_type,
-        terrain,
-        is_ally_by_object(alliances, interner, scorer.owner(), candidate.owner()),
-        rules,
-        interner,
-    );
-    let selected_scorer_weapon = resolve_selected_weapon(
-        rules,
-        scorer,
-        scorer_type,
-        &attacker_facts(scorer, scorer_type),
-        Some(&candidate_as_target),
-        entities,
-        interner,
-    );
-    if let Some(selected) = selected_scorer_weapon.as_ref() {
+    // A: the scorer's selected weapon against the candidate, retained for the
+    // native range term below.
+    if let Some(selected) = scorer_weapon {
         let verses =
             load_threat_double(selected.warhead.verses_f64[armor_index(&candidate_type.armor)]);
         score = spill_threat_double(ScoreX87::add(ScoreX87::mul(coeff_a, verses), score));
@@ -462,7 +517,7 @@ pub(crate) fn calculate_threat_score(
         // `JMP 0x0070D0A0 @ 0x0070D021` — the shift is on the other branch.
         distance_leptons
     };
-    let range_cells = selected_scorer_weapon.as_ref().map_or_else(
+    let range_cells = scorer_weapon.map_or_else(
         || {
             scorer_type
                 .guard_range
@@ -561,6 +616,9 @@ fn scan_radius_cells(
 }
 
 /// Everything one scan needs that does not change between candidates.
+/// Candidates scored side by side ([`flat_scores`]) each take a clone, so the
+/// answer memos below are each worker's own.
+#[derive(Clone)]
 struct ScanContext<'a> {
     entities: &'a EntityStore,
     /// The live scanner, `Greatest_Threat`'s `this`.
@@ -617,6 +675,13 @@ struct ScanContext<'a> {
     /// A scan changes no alliance, and its cell walk asks about the same few
     /// houses for each object it passes.
     allies: std::cell::RefCell<Vec<(InternedId, bool)>>,
+    /// VERA-only: [`Self::allies_scanner`]'s answers so far, by candidate owner.
+    allies_of_scanner: std::cell::RefCell<Vec<(InternedId, bool)>>,
+    /// VERA-only: the scanner's half of the G2b probe's facts, read at the
+    /// first probe. A scan changes nothing of the scanner.
+    probe_firer: std::cell::OnceCell<super::fire_error_world::FirerPart>,
+    /// The scanner's selection-ladder facts (`attacker_facts`), read once.
+    scanner_facts: AttackerFacts,
 }
 
 impl ScanContext<'_> {
@@ -654,6 +719,22 @@ impl ScanContext<'_> {
         }
         let ally = is_ally_by_object(self.alliances(), self.interner, self.attacker.owner, owner);
         self.allies.borrow_mut().push((owner, ally));
+        ally
+    }
+
+    /// Whether `owner`'s house counts the scanner's as an ally, the question
+    /// the threat score's B term asks.
+    fn allies_scanner(&self, owner: InternedId) -> bool {
+        if let Some(&(_, ally)) = self
+            .allies_of_scanner
+            .borrow()
+            .iter()
+            .find(|(asked, _)| *asked == owner)
+        {
+            return ally;
+        }
+        let ally = is_ally_by_object(self.alliances(), self.interner, owner, self.attacker.owner);
+        self.allies_of_scanner.borrow_mut().push((owner, ally));
         ally
     }
 
@@ -717,10 +798,7 @@ impl ScanContext<'_> {
     /// `candidate`, a Techno other than the scanner.
     fn cell_walk_stops_at(&self, candidate: &GameEntity) -> bool {
         // Only the healer and engineer arms read the type.
-        let obj = || {
-            self.rules
-                .object(self.interner.resolve(candidate.type_ref()))
-        };
+        let obj = || self.interner.object_type(candidate.type_ref(), self.rules);
         // HealthRatio (`0x005F5C60`) against a Rules threshold.
         let ratio =
             |threshold| obj().map(|obj| candidate.health.compare_ratio(obj.strength, threshold));
@@ -1178,6 +1256,9 @@ pub(crate) fn greatest_threat(
         controller_house,
         fire_world,
         allies: Default::default(),
+        allies_of_scanner: Default::default(),
+        probe_firer: Default::default(),
+        scanner_facts: facts,
     };
 
     if flat {
@@ -1489,11 +1570,7 @@ fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Opt
         // `0x006F9B99..0x006F9BD2`: the aircraft walk's ally test spares
         // only the `AttackFriendlies=`, berserk and mind-controlled-transport
         // scanners.
-        for candidate in ctx
-            .entities
-            .values()
-            .filter(|candidate| candidate.category() == EntityCategory::Aircraft)
-        {
+        for candidate in ctx.entities.values_of_category(EntityCategory::Aircraft) {
             if (ctx.is_ally(candidate) && !ctx.attacks_allies())
                 || !ctx.house_gates_admit(candidate)
             {
@@ -1510,31 +1587,90 @@ fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Opt
     walk.zone = zone;
     // `MOV EBP,[ESP+0x74] @ 0x006F9C76`, `PUSH EBP @ 0x006F9D64`.
     walk.reference = ThreatReference::Coords(ctx.scan_coord);
-    for candidate in ctx.entities.values() {
-        // `0x006F9C92..0x006F9D0D`: a healer and a computer engineer also
-        // look at allies.
-        if !ctx.offers(candidate) {
-            continue;
-        }
-        // `CMP [EDI+0x94],0x2 ; JNZ @ 0x006F9D13`: only objects the display
-        // last submitted to its Ground layer. Airborne aircraft are left to
-        // the aircraft walk; an airborne jumpjet is in neither walk, as
-        // native. VERA-internal: with no world (walk unit tests) there is no
-        // display and the gate is off.
-        if let Some(world) = ctx.fire_world
-            && world.display_layers().layer_of(candidate.stable_id())
-                != Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
-        {
-            continue;
-        }
-        if !ctx.house_gates_admit(candidate) {
-            continue;
-        }
-        if let Some(score) = evaluate_candidate(ctx, walk, candidate) {
+    let candidates: Vec<&GameEntity> = ctx.entities.values().collect();
+    for (candidate, score) in candidates.iter().zip(flat_scores(ctx, walk, &candidates)) {
+        if let Some(score) = score {
             keep(candidate, score);
         }
     }
     best
+}
+
+/// The global list at which [`flat_scores`] scores side by side.
+const SIDE_BY_SIDE_CANDIDATES: usize = 256;
+
+#[cfg(test)]
+thread_local! {
+    /// Tests set this to score every flat walk one by one, the reference
+    /// side-by-side scoring must match; [`FLAT_WALKS_SIDE_BY_SIDE`] counts
+    /// the walks scored side by side.
+    static SERIAL_FLAT_SCORES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FLAT_WALKS_SIDE_BY_SIDE: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// The flat walk's score of each object in `candidates`, in order
+/// ([`flat_score`]).
+///
+/// VERA-only: a mask-0 scan (a Hunt) scores every object on the map, so a
+/// long list is scored side by side on the worker pool, results in list
+/// order: the walk keeps exactly what the one-by-one walk keeps. A score
+/// reads nothing the walk changes except the shared Dummy, which a
+/// candidate's cell lookups can stamp and a later candidate's read. Each
+/// candidate is therefore scored on a private copy of the Dummy, and when
+/// any of them stamped it the list is scored again one by one on the shared
+/// Dummy, as natively.
+fn flat_scores(
+    ctx: &ScanContext<'_>,
+    walk: WalkArgs,
+    candidates: &[&GameEntity],
+) -> Vec<Option<i32>> {
+    #[cfg(test)]
+    let serial = SERIAL_FLAT_SCORES.get();
+    #[cfg(not(test))]
+    let serial = false;
+    if !serial
+        && candidates.len() >= SIDE_BY_SIDE_CANDIDATES
+        && let Some(terrain) = ctx.terrain
+    {
+        let dummy = terrain.shared_cell_dummy();
+        let scored = crate::sim::parallel::map_with(candidates, ctx.clone(), |ctx, candidate| {
+            dummy.detached_stamps(|| flat_score(ctx, walk, candidate))
+        });
+        if scored.iter().all(|&(_, stamped)| !stamped) {
+            #[cfg(test)]
+            FLAT_WALKS_SIDE_BY_SIDE.set(FLAT_WALKS_SIDE_BY_SIDE.get() + 1);
+            return scored.into_iter().map(|(score, _)| score).collect();
+        }
+    }
+    candidates
+        .iter()
+        .map(|candidate| flat_score(ctx, walk, candidate))
+        .collect()
+}
+
+/// One object's score in the flat walk: `None` for an object the walk's
+/// gates or [`evaluate_candidate`] refuse.
+fn flat_score(ctx: &ScanContext<'_>, walk: WalkArgs, candidate: &GameEntity) -> Option<i32> {
+    // `0x006F9C92..0x006F9D0D`: a healer and a computer engineer also look
+    // at allies.
+    if !ctx.offers(candidate) {
+        return None;
+    }
+    // `CMP [EDI+0x94],0x2 ; JNZ @ 0x006F9D13`: only objects the display last
+    // submitted to its Ground layer. Airborne aircraft are left to the
+    // aircraft walk; an airborne jumpjet is in neither walk, as native.
+    // VERA-internal: with no world (walk unit tests) there is no display and
+    // the gate is off.
+    if let Some(world) = ctx.fire_world
+        && world.display_layers().layer_of(candidate.stable_id())
+            != Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
+    {
+        return None;
+    }
+    if !ctx.house_gates_admit(candidate) {
+        return None;
+    }
+    evaluate_candidate(ctx, walk, candidate)
 }
 
 /// `TechnoClass::Scan_Cell_For_Target @ 0x006F8960`, narrowed to the armed
@@ -1698,10 +1834,8 @@ fn evaluate_candidate(
     // its armor is at or below the `0.02f` floor. Resolve the native selection
     // without the legacy partial fire-error filter; G2b below owns the full
     // native probe, including early REARM before later target-legality gates.
-    let candidate_obj = ctx
-        .rules
-        .object(ctx.interner.resolve(candidate.type_ref()))?;
-    let scanner_facts = attacker_facts(ctx.scanner, ctx.attacker_obj);
+    let candidate_obj = ctx.interner.object_type(candidate.type_ref(), ctx.rules)?;
+    let scanner_facts = &ctx.scanner_facts;
     let candidate_facts = techno_target_facts(
         candidate,
         candidate_obj,
@@ -1714,7 +1848,7 @@ fn evaluate_candidate(
         ctx.rules,
         ctx.scanner,
         ctx.attacker_obj,
-        &scanner_facts,
+        scanner_facts,
         Some(&candidate_facts),
         ctx.entities,
         ctx.interner,
@@ -2108,19 +2242,45 @@ fn evaluate_candidate(
     }
 
     // G28/P9 — truncate first, then Normal VHPScan, then the house and
-    // quarry terms, then final acceptance.
-    let score = calculate_threat_score(
+    // quarry terms, then final acceptance. The score's A term is G1's
+    // selection: the same scanner, candidate and ally answer.
+    let pair = ThreatPair {
+        scorer: ctx.scanner,
+        scorer_type: ctx.attacker_obj,
+        candidate,
+        candidate_type: candidate_obj,
+        candidate_allies_scorer: ctx.allies_scanner(candidate.owner()),
+    };
+    let score = threat_score(
+        &pair,
+        Some(&selected),
         ctx.entities,
-        ctx.attacker.stable_id,
-        candidate.stable_id(),
         ctx.rules,
         ctx.interner,
         ctx.terrain,
-        ctx.alliances(),
         ctx.coefficients,
         walk.reference,
         ctx.standing.enemy(),
-    )?;
+    );
+    debug_assert!(
+        !crate::sim::touch_log::live_read_check_enabled()
+            || score
+                == calculate_threat_score(
+                    ctx.entities,
+                    ctx.attacker.stable_id,
+                    candidate.stable_id(),
+                    ctx.rules,
+                    ctx.interner,
+                    ctx.terrain,
+                    ctx.alliances(),
+                    ctx.coefficients,
+                    walk.reference,
+                    ctx.standing.enemy(),
+                ),
+        "candidate {}: the scan's threat score diverged from a fresh one",
+        candidate.stable_id()
+    );
+    let score = score?;
     let score = truncate_score(score);
     let score = adjust_vhp_score(
         ctx.attacker_obj.vhp_scan,
@@ -2272,7 +2432,7 @@ fn probe_is_illegal(
     let Some(firer) = world.substrate.entities.get(ctx.attacker.stable_id) else {
         return false;
     };
-    super::fire_error_world::FireSubject {
+    let subject = super::fire_error_world::FireSubject {
         world,
         rules: ctx.rules,
         overlay_registry: ctx.los.overlay_registry,
@@ -2281,8 +2441,8 @@ fn probe_is_illegal(
         obj: ctx.attacker_obj,
         target: Some(super::TargetKind::Entity(candidate.stable_id())),
         weapon_index,
-    }
-    .fire_error(false)
+    };
+    subject.fire_error_with(ctx.probe_firer.get_or_init(|| subject.firer_part()), false)
         == super::fire_error::FireError::Illegal
 }
 
@@ -2745,6 +2905,142 @@ mod tests {
             None,
         )
         .target()
+    }
+
+    /// A Hunt scan (the mask-0 flat walk) by a tank amid a `20 x 15` block of
+    /// ground units of two houses and many healths, every walk scored one by one
+    /// when `serial`; `hole` leaves one unit's cell unallocated, so its
+    /// lookups stamp the shared Dummy. Answers the pick, the Dummy after the
+    /// scan and how many walks were scored side by side.
+    fn long_flat_scan(
+        serial: bool,
+        hole: Option<(u16, u16)>,
+    ) -> (
+        Option<u64>,
+        crate::map::resolved_terrain::SharedCellDummySnapshot,
+        u32,
+    ) {
+        use crate::sim::world::Simulation;
+        use crate::sim::world::display_layers::DisplayLayer;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n1=APC\n\
+             [TANK]\nStrength=300\nPrimary=GUN\n[APC]\nStrength=200\n\
+             [WeaponTypes]\n0=GUN\n[GUN]\nDamage=60\nRange=6\nProjectile=SHOT\nWarhead=WH\n\
+             [SHOT]\nAA=no\nAG=yes\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(0);
+        sim.session.map_width = 40;
+        sim.session.map_height = 40;
+        let mut terrain = crate::map::resolved_terrain::test_grid(
+            40,
+            40,
+            crate::map::resolved_terrain::test_flat_cell,
+        );
+        if let Some(hole) = hole {
+            let allocated: Vec<_> = (0..40u16)
+                .flat_map(|y| (0..40u16).map(move |x| (x, y)))
+                .filter(|&cell| cell != hole)
+                .collect();
+            terrain.test_set_native_allocated_cells(&allocated);
+        }
+        sim.resolved_terrain = Some(terrain);
+        place(
+            &mut sim.substrate.entities,
+            1,
+            "TANK",
+            "Americans",
+            20,
+            20,
+            EntityCategory::Unit,
+        );
+        let mut units = vec![1];
+        for ry in 12..27u16 {
+            for rx in 10..30u16 {
+                if (rx, ry) == (20, 20) {
+                    continue;
+                }
+                let id = 1 + units.len() as u64;
+                let owner = if (rx + ry) % 7 == 0 {
+                    "Americans"
+                } else {
+                    "Soviet"
+                };
+                place(
+                    &mut sim.substrate.entities,
+                    id,
+                    "APC",
+                    owner,
+                    rx,
+                    ry,
+                    EntityCategory::Unit,
+                );
+                units.push(id);
+            }
+        }
+        sim.interner = test_interner();
+        for &id in &units {
+            if id != 1 {
+                let health = 20 + (id * 37 % 170) as i32;
+                sim.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .health
+                    .set_for_test(health);
+            }
+            sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
+        }
+        // Setup's lookups stamped the Dummy; start the scan from a coordinate
+        // no candidate stamps.
+        let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
+        dummy.stamp_coord(1, 1);
+        SERIAL_FLAT_SCORES.set(serial);
+        FLAT_WALKS_SIDE_BY_SIDE.set(0);
+        let target = super::super::acquire_best_target_for_entity(
+            &sim.substrate.entities,
+            &sim.substrate.occupancy,
+            &rules,
+            &sim.interner,
+            1,
+            None,
+            sim.resolved_terrain.as_ref(),
+            false,
+            super::super::ScanMission::Hunt,
+            None,
+            crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+            Some(&sim),
+            None,
+        )
+        .target();
+        SERIAL_FLAT_SCORES.set(false);
+        (target, dummy.snapshot(), FLAT_WALKS_SIDE_BY_SIDE.get())
+    }
+
+    #[test]
+    fn a_long_flat_walk_scores_side_by_side_as_one_by_one() {
+        let (target, dummy, side_by_side) = long_flat_scan(false, None);
+        assert_eq!(side_by_side, 1);
+        assert!(target.is_some());
+        let serial = long_flat_scan(true, None);
+        assert_eq!(serial.2, 0);
+        assert_eq!((target, dummy), (serial.0, serial.1));
+    }
+
+    #[test]
+    fn a_long_flat_walk_that_stamps_the_dummy_scores_one_by_one() {
+        let hole = Some((23, 18));
+        let (target, dummy, side_by_side) = long_flat_scan(false, hole);
+        assert_eq!(side_by_side, 0, "the stamp sends the walk one by one");
+        let serial = long_flat_scan(true, hole);
+        assert_eq!(
+            dummy.coord,
+            (23, 18),
+            "the unallocated cell's lookups stamp the Dummy"
+        );
+        assert_eq!((target, dummy), (serial.0, serial.1));
     }
 
     #[test]

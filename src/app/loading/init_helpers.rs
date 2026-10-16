@@ -590,16 +590,25 @@ pub(crate) fn build_presentation_manifest(
             Some(&sim.interner),
         )
     });
+    // Init_Game52BFCE..52C075 builds the global 53-row plain Convert
+    // from the literal UNITSNO.PAL (8260D8), even in a temperate scenario.
+    // VoxelAnim749E32..749E78 selects it for unowned pieces; never replace
+    // it with the theater palette, whose debris-band entries differ.
+    let global_palette = asset_manager
+        .get_ref("UNITSNO.PAL")
+        .and_then(|bytes| Palette::from_bytes(bytes).ok());
     // Build PaletteSet from active houses and voxel Bullet type Colors.
     // Row0 remains the no-remap fallback; type-owned rows do not require a house.
     let default_ramps = crate::rules::house_colors::HouseColorRamps::default();
     let house_ramps: &crate::rules::house_colors::HouseColorRamps = rules
         .map(|r| &r.house_color_ramps)
         .unwrap_or(&default_ramps);
-    let palette_set: Option<crate::render::palette_textures::PaletteSet> =
-        palette.as_ref().map(|pal| {
+    let palette_set: Option<crate::render::palette_textures::PaletteSet> = palette
+        .as_ref()
+        .zip(global_palette.as_ref())
+        .map(|(pal, global)| {
             let active = voxel_palette_demand(house_colors, rules);
-            crate::render::palette_textures::PaletteSet::new(gpu, pal, house_ramps, &active)
+            crate::render::palette_textures::PaletteSet::new(gpu, pal, global, house_ramps, &active)
         });
     PresentationManifest {
         unit_atlas,

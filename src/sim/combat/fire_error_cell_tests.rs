@@ -225,7 +225,7 @@ fn cell_target_equality_uses_real_aliases_and_one_shared_dummy() {
         target: Some(TargetKind::Cell(42, 42)),
         weapon_index: 0,
     };
-    assert_eq!(subject.facts().target.land_type, 6);
+    assert_eq!(subject.whole_facts().target.land_type, 6);
     assert_eq!(
         dummy.snapshot().coord,
         (17, -19),
@@ -359,7 +359,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
             target: Some(TargetKind::Entity(2)),
             weapon_index: 0,
         };
-        let mut facts = subject.facts();
+        let mut facts = subject.whole_facts();
         match row.name.as_str() {
             "temporal_held_target" => facts.firer.temporal = Some(Link::Target),
             "firer_lifted" => facts.firer.magnetron_lifted = true,

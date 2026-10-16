@@ -58,6 +58,11 @@ recorded callback boundaries, with explicit list-mutation controls.
 on a small allocated diamond. Native projection, radius read and Cell/cache
 effects run; only the existing no-dirty-screen world prior excludes rendering.
 
+``--all-to-hunt`` independently records Action6/House501400 and the shared
+garrison-release procedure on explicit world priors. Actual ALL06 records,
+source-aware Scatter/RNG and stated placement/Team/lifecycle seams remain
+separate from whole-campaign or general Hunt parity.
+
 ``--music-theme`` executes Action20 Read/Execute and the shared Theme queue,
 with declared catalog/stream priors and recorded device transports.
 """
@@ -68,7 +73,7 @@ import struct
 from functools import lru_cache
 from types import SimpleNamespace
 
-from unicorn import UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX,
                                UC_X86_REG_EIP, UC_X86_REG_ESP,
                                UC_X86_REG_EDI, UC_X86_REG_ESI)
@@ -4447,6 +4452,466 @@ def music_theme_metadata():
                           interp_tick=0x4071C0, still_playing=0x720FD0))
 
 
+
+
+def all_to_hunt_action_controls():
+    f = AllChangeHouseFixture()
+    u = f.u
+    f.houses = [f.allocate(0x17000) for _ in range(3)]
+    for house, typ, country in zip(f.houses, f.house_types, (0, 7, 0)):
+        u.mem_write(house, bytes(0x17000))
+        u.mem_write(house+0x24, dwords(0x7EA834))
+        u.mem_write(house+0x34, dwords(typ))
+        u.mem_write(typ+0xB8, dwords(country))
+    assert f.read32(0x7EA834+0x38) == 0x501400
+    for start, end in ((0x6E45E0, 0x6E462B), (0x501400, 0x50153D)):
+        f.ranges.append((start, end))
+        f.original.append(bytes(u.mem_read(start, end-start)))
+    vtable, mission_sink, occupants_sink = f.allocate(0x500), f.allocate(4), f.allocate(4)
+    u.mem_write(vtable, bytes(0x500))
+    u.mem_write(vtable+0x2C, dwords(f.what_sink))
+    u.mem_write(vtable+0x1E8, dwords(mission_sink))
+    u.mem_write(vtable+0x408, dwords(occupants_sink))
+    f.actors = [dict(owner=0, team=True, foot=True, down=True, limbo=False, **{'class':1}),
+        dict(owner=0, team=False, foot=True, down=True, limbo=False, **{'class':1}),
+        dict(owner=2, team=False, foot=True, down=True, limbo=False, **{'class':1}),
+        dict(owner=1, team=False, foot=True, down=True, limbo=False, **{'class':1}),
+        dict(owner=0, team=False, foot=True, down=True, limbo=True, **{'class':1}),
+        dict(owner=0, team=False, foot=True, down=False, limbo=False, **{'class':1}),
+        dict(owner=0, team=False, foot=False, down=True, limbo=False, **{'class':6})]
+    f.actor_index = {pointer:i for i,pointer in enumerate(f.pool[:len(f.actors)])}
+    f.active = list(range(len(f.actors)))
+    calls, writes, events = [], [], []
+
+    def observe(vm, pc, _size, _data):
+        sp = vm.reg_read(UC_X86_REG_ESP)
+        if pc == 0x501400:
+            calls.append(dict(entry=hex(pc), house=f.house_index(f.read32(sp+4)-0x24)))
+        elif pc == mission_sink:
+            events.append(dict(call='queue_mission', actor=f.actor_index[vm.reg_read(UC_X86_REG_ECX)],
+                               mission=f.integer(sp+4), arg=f.integer(sp+8)))
+            return_from_sink(vm, 8, 1)
+        elif pc == 0x6EA870:
+            events.append(dict(call='team_remove', actor=f.actor_index[f.read32(sp+4)],
+                               arg1=f.integer(sp+8), arg2=f.integer(sp+12)))
+            return_from_sink(vm, 12, 1)
+        elif pc == occupants_sink:
+            events.append(dict(call='occupant_count', actor=f.actor_index[vm.reg_read(UC_X86_REG_ECX)], result=0))
+            return_from_sink(vm, 0, 0)
+
+    def write(vm, _access, at, size, value, _data):
+        for index, pointer in enumerate(f.houses):
+            if pointer <= at < pointer+0x17000:
+                writes.append(dict(house=index, offset=hex(at-pointer), size=size,
+                                   value=value, pc=hex(vm.reg_read(UC_X86_REG_EIP))))
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    u.hook_add(UC_HOOK_MEM_WRITE, write)
+    view = SimpleNamespace(u=u, scenario=SCENARIO)
+    cases = [dict(name='country0_not_incoming_or_retained', selector=0),
+        dict(name='country7', selector=7),
+        dict(name='duplicate_country_reversed', selector=0, order=(2,1,0)),
+        dict(name='retained_house8997', selector=8997),
+        dict(name='retained_house_null', selector=8997, trigger_owner=None),
+        dict(name='null_trigger_valid_country', selector=0, null_trigger=True),
+        dict(name='missing_country999', selector=999),
+        dict(name='null_incoming_valid_country', selector=0, incoming=None)]
+    rows = []
+    for case in cases:
+        f.selectors, f.rng_calls = [], []
+        order = case.get('order', (0,1,2))
+        u.mem_write(f.house_array, dwords(*(f.houses[i] for i in order)))
+        u.mem_write(f.live, bytes(0x48))
+        owner = case.get('trigger_owner', 2)
+        u.mem_write(f.live+0x2C, dwords(f.houses[owner] if owner is not None else 0))
+        for i, house in enumerate(f.houses):
+            u.mem_write(house+0x249, b'\0')
+            u.mem_write(house+0x250, dwords((-7,3,5)[i]))
+            u.mem_write(house+0x5634, dwords(41+i,777+i,108+i))
+        for pointer, actor in zip(f.pool, f.actors):
+            u.mem_write(pointer, bytes(0x600))
+            u.mem_write(pointer, dwords(vtable))
+            u.mem_write(pointer+0x14, dwords(4 if actor['foot'] else 0))
+            u.mem_write(pointer+0x21C, dwords(f.houses[actor['owner']]))
+            u.mem_write(pointer+0x74, bytes([actor['down']]))
+            u.mem_write(pointer+0x81, bytes([actor['limbo']]))
+            u.mem_write(pointer+0x5D4, dwords(0x7EA70000 if actor['team'] else 0))
+        f.publish()
+        read = f.read_action(f"6,0,{case['selector']},0,0,0,0,A")
+        rng_before = CampaignReader.rng_state(view)
+        before = [bytes(u.mem_read(p, 0x17000)) for p in f.houses]
+        calls.clear(); events.clear(); writes.clear()
+        incoming = case.get('incoming', 1)
+        result = f.call(0x6DD8B0, [f.houses[incoming] if incoming is not None else 0,
+            0, 0 if case.get('null_trigger') else f.live, 0], ecx=ACTION)&255
+        after = [bytes(u.mem_read(p, 0x17000)) for p in f.houses]
+        rng_after = CampaignReader.rng_state(view)
+        assert rng_before == rng_after and not f.rng_calls
+        assert all(w['offset']=='0x249' and w['size']==1 and w['value']==1 for w in writes)
+        assert all(all(j == 0x249 for j,(a,b) in enumerate(zip(left,right)) if a != b)
+                   for left,right in zip(before,after))
+        rows.append(dict(input=case, native_read=read, result=result, selector_calls=f.selectors,
+            calls=list(calls), events=list(events), writes=list(writes),
+            latch_after=[raw[0x249] for raw in after],
+            strategy_timers_before=[list(struct.unpack_from('<iii',raw,0x5634)) for raw in before],
+            strategy_timers_after=[list(struct.unpack_from('<iii',raw,0x5634)) for raw in after],
+            modes_before=[struct.unpack_from('<i',raw,0x250)[0] for raw in before],
+            modes_after=[struct.unpack_from('<i',raw,0x250)[0] for raw in after],
+            three_full_rng_states_unchanged=True,
+            rng_before={k:hashlib.sha256(bytes.fromhex(v)).hexdigest() for k,v in rng_before.items()},
+            rng_after={k:hashlib.sha256(bytes.fromhex(v)).hexdigest() for k,v in rng_after.items()}))
+    f.check_code()
+    return dict(country_priors=[0,7,0],actors=f.actors,controls=rows,code_unchanged=True,
+        rng_full_seed31=CampaignReader.rng_state(view),
+        limits='Original constructor/record-reader/Execute Action6/6E45E0 and actual7EA834+38/501400 execute. House/list/actor priors are supplied. Team_remove and QueueMission are existing-style recorded leaves, not full Team or Mission execution. The nonfoot Building has explicitly zero occupants; no garrison, permanent-Dominator damage or actual cleanup result is certified.')
+
+
+def all_to_hunt_garrison_controls():
+    # Same VM, original map/CRT/allocator and seed owners as existing controls.
+    from tools.native_oracle import image_sha256
+    from tools.spatial_oracle.unit_source_scatter import make_source_fixture, CELLS, SCENARIO as scenario
+    f = ActionFixture()
+    u, _, read = make_source_fixture(dict(seed=31, live_entry=True), uc=f.u)
+    alloc = f.allocate
+    building, btype, bvt = alloc(0x800), alloc(0x1800), alloc(0x500)
+    foots = [alloc(0x800), alloc(0x800)]
+    types, locos, houses = [alloc(0x1000) for _ in foots], [alloc(0x200) for _ in foots], [alloc(0x6000) for _ in foots]
+    # Supplied reciprocal+2A8 pair; actual Temporal pointers are+274/+278.
+    targets, reciprocal2a8_peers = [alloc(0x800) for _ in foots], [alloc(0x400) for _ in foots]
+    vector, fvt, rules = alloc(0x100), alloc(0x600), alloc(0x2000)
+    u.mem_write(rules,bytes(0x2000))
+    u.mem_write(0x8871E0,dwords(rules))
+    unlimbo, uninit, can_enter, scatter, do_action, destination = [alloc(4) for _ in range(6)]
+    u.mem_write(bvt, bytes(u.mem_read(0x7E3EBC,0x500)))
+    u.mem_write(fvt, bytes(u.mem_read(0x7EB058,0x600)))
+    # Actual selected class slots. Placement/lifecycle/DoAction are boundaries.
+    for slot,pointer in ((0xD8,unlimbo),(0xF8,uninit),(0x558,do_action),(0x480,destination)):
+        u.mem_write(fvt+slot,dwords(pointer))
+    original_ranges = ((0x457DE0,0x4581E5),(0x4585C0,0x458741),
+        (0x51B1F0,0x51B350),(0x6FCDB0,0x6FCF95),(0x5B35E0,0x5B3645),
+        (0x51D0D0,0x51D6F0),(0x45EC90,0x45ECE0),(0x447AC0,0x447B14),
+        (0x5657A0,0x565803),(0x41BEA0,0x41BEDD),(0x65C6D0,0x65C88D))
+    code = [bytes(u.mem_read(a,b-a)) for a,b in original_ranges]
+    names = {pointer:index for index,pointer in enumerate(foots)}
+    calls, writes, rng_calls, pending_rng, raw_draws = [], [], [], [], []
+    row = {}
+    returned_entries = []
+    watch = {0x51B1F0:'infantry_assign_target',0x6FCDB0:'techno_assign_target',
+        0x51D0D0:'scatter_native',0x5B35E0:'queue_native',0x4585C0:'kill_occupants',
+        0x4581F0:'occupant_count_native',0x5657A0:'map_lookup_native'}
+    phase = 'setup'
+
+    def actor_index(pointer):
+        return names.get(pointer)
+
+    def observe(vm,pc,_size,_data):
+        if phase != 'run': return
+        sp, this = vm.reg_read(UC_X86_REG_ESP), vm.reg_read(UC_X86_REG_ECX)
+        index = actor_index(this)
+        for returning in list(pending_rng):
+            if pc==returning['return_pc'] and sp==returning['return_sp']:
+                returning['result']=vm.reg_read(UC_X86_REG_EAX)
+                pending_rng.remove(returning)
+        if pc in (0x65C780,0x65C7E0):
+            entry=dict(pc=hex(pc),this=hex(this),return_pc=read(sp),
+                return_sp=sp+(12 if pc==0x65C7E0 else 4),
+                args=[read(sp+4),read(sp+8)] if pc == 0x65C7E0 else [])
+            rng_calls.append(entry);pending_rng.append(entry)
+        if pc in (0x65C79D,0x65C84B):
+            # The same actual XOR-word store observed by the existing RNG owner.
+            raw_draws.append(vm.reg_read(UC_X86_REG_ESI)&0xFFFFFFFF)
+        if pc in watch:
+            count = {0x51B1F0:1,0x6FCDB0:1,0x51D0D0:3,0x5B35E0:2,0x4585C0:1,0x5657A0:1}.get(pc,0)
+            entry=dict(call=watch[pc],actor=index,args=[read(sp+4+4*i) for i in range(count)])
+            if pc == 0x51D0D0:
+                entry['source']=list(struct.unpack('<3i',vm.mem_read(read(sp+4),12)))
+            if pc == 0x5657A0:
+                entry['cell']=list(struct.unpack('<2h',vm.mem_read(read(sp+4),4)))
+            calls.append(entry)
+        if pc in (can_enter,0x51BF90):
+            cell = read(sp+4)
+            args=[read(sp+4+4*i) for i in range(5)]
+            entry=dict(call='can_enter_native' if pc == 0x51BF90 else 'can_enter_supplied',
+                actor=index,cell=list(struct.unpack('<2h',vm.mem_read(cell+0x24,4))),args=args[1:])
+            calls.append(entry)
+            if pc == can_enter:
+                count=sum(item['call']=='can_enter_supplied' for item in calls)
+                value=0 if row.get('accept_probe')==count else 7
+                entry['supplied_result']=value
+                return_from_sink(vm,20,value)
+            else:
+                returned_entries.append((read(sp),sp+24,entry))
+        for returning in list(returned_entries):
+            if pc==returning[0] and sp==returning[1]:
+                returning[2]['native_result']=vm.reg_read(UC_X86_REG_EAX)
+                returned_entries.remove(returning)
+        if pc == unlimbo:
+            coords=list(struct.unpack('<3i',vm.mem_read(read(sp+4),12)))
+            ok=index not in row.get('fail_unlimbo',[])
+            calls.append(dict(call='unlimbo_supplied',actor=index,coords=coords,
+                facing=read(sp+8),priority=read(0xA8E7AC),supplied_result=ok))
+            if ok:
+                # Explicit post-placement XYZ prestate, not a claimed full Unlimbo.
+                vm.mem_write(this+0x9C,dwords(*coords))
+                vm.mem_write(this+0x81,b'\x00')
+                vm.mem_write(this+0x74,b'\x01')
+            return_from_sink(vm,8,int(ok))
+        elif pc == uninit:
+            calls.append(dict(call='uninit_recorded',actor=index,priority=read(0xA8E7AC)))
+            return_from_sink(vm,0,0)
+        elif pc == scatter:
+            calls.append(dict(call='scatter_recorded',actor=index,
+                source=list(struct.unpack('<3i',vm.mem_read(read(sp+4),12))),
+                args=[read(sp+8),read(sp+12)]))
+            return_from_sink(vm,12,0)
+        elif pc == do_action:
+            calls.append(dict(call='do_action_recorded',actor=index,
+                args=[read(sp+4+4*i) for i in range(3)]))
+            return_from_sink(vm,12,1)
+        elif pc == destination:
+            cell=read(sp+4)
+            calls.append(dict(call='destination_recorded',actor=index,
+                cell=list(struct.unpack('<2h',vm.mem_read(cell+0x24,4))),mode=read(sp+8)))
+            return_from_sink(vm,8,0)
+        elif pc == 0x6EA870:
+            calls.append(dict(call='team_remove_recorded',actor=actor_index(read(sp+4)),
+                args=[f.integer(sp+8),f.integer(sp+12)]))
+            return_from_sink(vm,12,1)
+        elif pc == 0x70F6E0:
+            calls.append(dict(call='refresh_recorded',this_is_building=this==building,arg=read(sp+4)))
+            return_from_sink(vm,4,0)
+        elif pc in (0x7258D0,0x70D4A0):
+            calls.append(dict(call='detach_native_entry',pc=hex(pc)))
+
+    def write(vm,_access,address,size,value,_data):
+        if phase != 'run': return
+        if address == 0xA8E7AC:
+            writes.append(dict(global_='placement_priority',value=value,pc=hex(vm.reg_read(UC_X86_REG_EIP))))
+        for index,pointer in enumerate(foots):
+            if pointer<=address<pointer+0x800:
+                writes.append(dict(actor=index,offset=hex(address-pointer),size=size,value=value,
+                    pc=hex(vm.reg_read(UC_X86_REG_EIP))))
+
+    u.hook_add(UC_HOOK_CODE,observe)
+    u.hook_add(UC_HOOK_MEM_WRITE,write)
+    view=SimpleNamespace(u=u,scenario=scenario)
+    cases=[dict(name='empty_hunt',count=0,hunt=1,inside=0),
+        dict(name='outside_first_hunt',hunt=1,inside=0,accept_probe=1),
+        dict(name='outside_later_hunt',hunt=1,inside=0,accept_probe=6),
+        dict(name='outside_nonhunt',hunt=0,inside=0,accept_probe=1),
+        dict(name='distinct_building_and_passenger_owners',hunt=1,inside=0,
+             accept_probe=1,building_owner=0,passenger_owners=[1,0]),
+        dict(name='no_exit_hunt',hunt=1,inside=0),
+        dict(name='inside_fallback_control',hunt=1,inside=1),
+        dict(name='outside_failed_last_unlimbo',hunt=1,inside=0,accept_probe=1,fail_unlimbo=[1]),
+        dict(name='actual_empty_cell_entry',hunt=1,inside=0,live_entry=True),
+        dict(name='actual_blocked_terrain_entry',hunt=1,inside=0,live_entry=True,blocked=True),
+        dict(name='actual_entry_outside_playfield',hunt=1,inside=0,live_entry=True,bounds=[16,0,0,1,1]),
+        dict(name='nested_placement_scope',hunt=1,inside=0,live_entry=True,priority=7),
+        dict(name='actual_scatter_move_then_hunt',hunt=1,inside=0,live_entry=True,live_scatter=True),
+        dict(name='actual_nonfraidy_scatter_move_then_hunt',hunt=1,inside=0,live_entry=True,live_scatter=True,fraidycat=False)]
+    output=[]
+    for row in cases:
+        phase='setup'
+        for pointer,size in ((building,0x800),(btype,0x1800),(vector,0x100)):
+            u.mem_write(pointer,bytes(size))
+        u.mem_write(building,dwords(bvt));u.mem_write(building+0x520,dwords(btype))
+        u.mem_write(building+0x9C,dwords(2688,2688,0))
+        owner=row.get('building_owner')
+        u.mem_write(building+0x21C,dwords(houses[owner] if owner is not None else 0))
+        u.mem_write(btype+0xEF0,dwords(3)) # Actual image Foundation index3 =2x2.
+        count=row.get('count',2)
+        u.mem_write(vector,dwords(*foots))
+        u.mem_write(building+0x684,dwords(0x7E43C8,vector,2,0x101,count,10))
+        u.mem_write(building+0x69C,dwords(7))
+        u.mem_write(fvt+0x1AC,dwords(0x51BF90 if row.get('live_entry') else can_enter))
+        u.mem_write(fvt+0x174,dwords(0x51D0D0 if row.get('live_scatter') else scatter))
+        for y in range(32):
+            for x in range(32):
+                u.mem_write(CELLS+(y*32+x)*0x200+0xEC,dwords(int(row.get('blocked',False))))
+        bounds=row.get('bounds',[16,-16,-16,64,64])
+        u.mem_write(0x87F7E8+0xF4,dwords(bounds[0]));u.mem_write(0x87F7E8+0xFC,dwords(*bounds[1:]))
+        for i,(foot,typ,loco,house,target,reciprocal2a8_peer) in enumerate(zip(foots,types,locos,houses,targets,reciprocal2a8_peers)):
+            for pointer,size in ((foot,0x800),(typ,0x1000),(loco,0x200),(house,0x6000),(target,0x800),(reciprocal2a8_peer,0x400)):
+                u.mem_write(pointer,bytes(size))
+            u.mem_write(foot,dwords(fvt));u.mem_write(foot+0x14,dwords(5))
+            u.mem_write(foot+0x6C0,dwords(typ));u.mem_write(foot+0x6C4,dwords(-1))
+            u.mem_write(foot+0x6C,dwords(100));u.mem_write(foot+0x90,b'\x01')
+            u.mem_write(foot+0x81,b'\x01')
+            u.mem_write(foot+0x21C,dwords(houses[row.get('passenger_owners',[0,1])[i]]))
+            u.mem_write(house+0x1EC,bytes([i==0]))
+            u.mem_write(house+0x5788,dwords(1));u.mem_write(foot+0x3D5,b'\x01')
+            u.mem_write(foot+0xAC,dwords(5,-1,-1));u.mem_write(foot+0xB8,b'\x01')
+            u.mem_write(foot+0xC8,dwords(41,777,108));u.mem_write(foot+0x640,dwords(42,778,109))
+            u.mem_write(foot+0x690,b'\x01\x01')
+            u.mem_write(foot+0x2B4,dwords(target));u.mem_write(foot+0x2A8,dwords(reciprocal2a8_peer))
+            u.mem_write(reciprocal2a8_peer+0x2A8,dwords(foot));u.mem_write(foot+0x3B8,dwords(99))
+            u.mem_write(foot+0x5D4,dwords(target if i==1 else 0))
+            u.mem_write(foot+0x5E0,dwords(9));u.mem_write(foot+0x684,b'\xff')
+            u.mem_write(typ+0x67C,dwords(1));u.mem_write(typ+0xDFC,dwords(-1))
+            u.mem_write(typ+0xEBF,bytes([row.get('fraidycat',True)]))
+            f.call(0x75AA90,[],ecx=loco)
+            u.mem_write(loco+0xC,dwords(foot));u.mem_write(foot+0x674,dwords(loco+4))
+        u.mem_write(0xA8E9A0,b'\x01');u.mem_write(0xA8B238,dwords(1))
+        priority=row.get('priority',0)
+        u.mem_write(0xA8ED84,dwords(100));u.mem_write(0xA8E7AC,dwords(priority))
+        for pointer in (scenario+0x218,0x886B88,0xABE890): f.call(0x65C6D0,[31],ecx=pointer)
+        before=CampaignReader.rng_state(view)
+        calls.clear();writes.clear();rng_calls.clear();returned_entries.clear();pending_rng.clear();raw_draws.clear()
+        phase='run'
+        f.call(0x457DE0,[row['hunt'],row['inside']],ecx=building)
+        phase='setup'
+        after=CampaignReader.rng_state(view)
+        assert not pending_rng and not returned_entries
+        assert before['main']==after['main'] and before['mapgen']==after['mapgen']
+        assert row.get('live_scatter') or before==after
+        assert read(0xA8E7AC)==priority
+        assert all(bytes(u.mem_read(a,b-a))==blob for (a,b),blob in zip(original_ranges,code))
+        f.check_code()
+        final=[]
+        for foot,reciprocal2a8_peer in zip(foots,reciprocal2a8_peers):
+            final.append(dict(owner=houses.index(read(foot+0x21C)),
+                target=read(foot+0x2B4),reciprocal2a8=read(foot+0x2A8),
+                reciprocal2a8_backlink=read(reciprocal2a8_peer+0x2A8),path0=f.integer(foot+0x5E0),
+                health=f.integer(foot+0x6C),limbo=bool(u.mem_read(foot+0x81,1)[0]),
+                cell_marked=bool(u.mem_read(foot+0x74,1)[0]),
+                current_mission=f.integer(foot+0xAC),queued_mission=f.integer(foot+0xB4),
+                occupy_seeks=list(u.mem_read(foot+0x690,2)),
+                mission_timer=list(struct.unpack('<3i',u.mem_read(foot+0xC8,12))),
+                movement_timer=list(struct.unpack('<3i',u.mem_read(foot+0x640,12)))))
+        output.append(dict(input=row,calls=list(calls),writes=list(writes),occupants_after=read(building+0x694),
+            fire_index_after=read(building+0x69C),priority_after=read(0xA8E7AC),foot_after=final,
+            three_full_rng_states_unchanged=before==after,
+            rng_before={k:hashlib.sha256(bytes.fromhex(v)).hexdigest() for k,v in before.items()},
+            rng_after={k:hashlib.sha256(bytes.fromhex(v)).hexdigest() for k,v in after.items()},
+            rng_calls=list(rng_calls),raw_draws=list(raw_draws),
+            rng_full_before=before if row.get('live_scatter') else None,
+            rng_full_after=after if row.get('live_scatter') else None))
+    return dict(native_sha256=image_sha256(),
+        priors=dict(building_xyz=[2688,2688,0],foundation_index=3,
+            native_foundation_dimensions=[read(0x8192B8+12),read(0x819310+12)],
+            foot_health=100,foot_current_mission=5,foot_queued_mission=-1,
+            human_by_foot=[True,False],team_present_by_foot=[False,True],
+            mission_timer=[41,777,108],movement_timer=[42,778,109],
+            rules_player_scatter=False,game_mode=1,all_three_rng_seeds=31,
+            placement_priority_default=0,nonnull_targets_and_reciprocal2a8_links=True,
+            foot_initial_limbo=True,foot_initial_cell_marked=False,
+            successful_unlimbo_supplied_xyz_and_limbo_clear_and_cell_marked=True,
+            building_owner_default=None,passenger_owners_default=[0,1]),
+        controls=output,code_unchanged=True,
+        limits=['Original complete457DE0 and4585C0(NULL), actual foundation2x2 table, Building/Cell coords, Map lookup, live dynamic-vector clear/resize, Infantry51B1F0/Techno6FCDB0 NULL setter and Queue5B35E0 execute.',
+            'Infantry51B25D..51B26D clears both supplied reciprocal+2A8 fields. These are native observations only: Rust has no corresponding reciprocal2a8 state in this batch, so neither this pair nor Temporal cleanup is claimed implemented. Actual Temporal pointers are+274/+278; see foot_navigation_coordinate.py and src/sim/mission/infantry_target_tests.rs.',
+            'Some CanEnter rows supply numeric results; empty/blocked/outside-playfield/nested-scope rows execute real51BF90. Final two rows additionally execute source-aware51D0D0 with actual flags1,1 and native RNG, varying Fraidycat. All use the existing source-map owner and single ActionFixture VM.',
+            'Unlimbo return and successful XYZ publication are explicit supplied prestates. Complete placement, world/House publication and locomotor state setup are not certified.',
+            'DoAction, TeamRemove, UnInit and threat refresh record argument/order only. Native queue15,0 does not commence Hunt; future Hunt cadence is outside this procedure. SetDestination records selected Cell without executing movement/path/timers. No complete Scatter movement, detach/death/Team lifecycle or whole campaign parity claim.',
+            'RNG counts and unchanged timers cover only actual executed instructions across those named supplied seams. Full Unlimbo, DoAction, TeamRemove, UnInit and future Hunt may add draws/timer/detach effects; zero direct detach observations do not prove zero in those excluded dependencies.'])
+
+
+def all_to_hunt_retail_inputs():
+    """Exact retained ALL06 records plus existing original scalar readers.
+
+    Lexical section extraction retains source data, not native gameplay. The
+    counted Event/flags/Action6 and Country-registration readers run unchanged.
+    Team admission/placement is explicitly a prerequisite, not a supplied result.
+    """
+    from tools.input_oracle.campaign_start import prepare_house_rules
+    from tools.spatial_oracle.tag_lifecycle import PowerEventControls
+
+    install=configured_gamemd().parent
+    archive=(install/'mapsmd03.mix').read_bytes()
+    raw_map=mix(archive)[mix_hash('ALL06UMD.MAP')]
+    rules_path=Path(__file__).parents[2]/'ini'/'rulesmd.ini'
+    raw_rules=rules_path.read_bytes()
+    values,rule_values=sections(raw_map),sections(raw_rules)
+    m=CampaignReader()
+    m.invoke(0x6832C0,m.scenario)
+    rules_pointer=prepare_house_rules(m,rule_values)
+    registrations=[]
+    for label,entries in (('RULESMD.INI',rule_values),('ALL06UMD.MAP',values)):
+        m.ordered_ini({'Countries':entries.get('Countries',{})})
+        m.u.reg_write(UC_X86_REG_ESI,INI);m.u.reg_write(UC_X86_REG_EDI,rules_pointer)
+        m.region(0x668C8B,0x668CDB)
+        registrations.append(dict(layer=label,entries=[dict(index=i,
+            name=m.string(m.read32(m.read32(0xA83C9C)+i*4)+0x24))
+            for i in range(m.read32(0xA83CA8))]))
+    houses=[]
+    for name in values['Houses'].values():
+        m.ordered_ini({name:values[name]})
+        country=m.invoke(0x475540,INI,(m.cstring(name),m.cstring('Country'),0xFFFFFFFF))
+        if country==9:
+            houses.append(dict(name=name,raw=values[name],native_country=country))
+    flags=FlagsFixture()
+    routes={}
+    for identity in ('095EB2AC','05C6450C','05C6397C'):
+        raw_event=values['Events'][identity]
+        routes[identity]=dict(trigger=values['Triggers'][identity],event=raw_event,
+            native_event=PowerEventControls.read_event(raw_event),
+            native_flags=flags.execute(values['Triggers'][identity],[1,1,1,1,0]),
+            actions=values['Actions'][identity],
+            tags={key:body for key,body in values['Tags'].items() if body.endswith(','+identity)})
+    # Action6 is scalar Country9; original counted reader/constructor are the
+    # same owner as the executable controls. Other action lists stay raw here.
+    action=ActionFixture()
+    native_action=action.read_action('6,0,9,0,0,0,0,A',ini_capacity=512)
+    team_id='06C0E3DC';team=values[team_id]
+    tf_id,script_id=team['TaskForce'],team['Script']
+    selected_names={row['name'] for row in houses}
+    m.check_code();action.check_code()
+    return dict(map='ALL06UMD.MAP',archive='mapsmd03.mix',
+        archive_sha256=hashlib.sha256(archive).hexdigest(),map_sha256=hashlib.sha256(raw_map).hexdigest(),
+        rules_file='ini/rulesmd.ini',rules_sha256=hashlib.sha256(raw_rules).hexdigest(),
+        basic=values['Basic'],country_registration=registrations,target_houses=houses,
+        routes=routes,native_action6_read=native_action,
+        target_initial_units={key:body for key,body in values.get('Units',{}).items()
+            if body.split(',')[0] in selected_names},
+        target_initial_infantry={key:body for key,body in values.get('Infantry',{}).items()
+            if body.split(',')[0] in selected_names},
+        preferred_ordinary_team=dict(id=team_id,team=team,task_force_id=tf_id,
+            task_force=values[tf_id],script_id=script_id,script=values[script_id]),
+        limits='Three exact raw elapsed/enable/Hunt records and raw Wave4 Team/TaskForce/Script bind the selected common YTNK route. Original counted Event, flags, Action6 and Country readers execute. Target Country9 has no initial Foot: the real reinforcement/Team owner must admit the selected3YTNK, or production tests must name that precondition explicitly. No native whole Team creation, elapsed Tag scheduling, physical full-map load, world placement or whole campaign outcome is claimed. The other Action53/7 lists and Tag records are exact retail bytes, not native reference-resolution executions in this row.')
+
+
+def all_to_hunt_generate():
+    from tools.native_oracle import image_sha256,NATIVE_FPCW
+    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+        action6=all_to_hunt_action_controls(),garrison=all_to_hunt_garrison_controls(),
+        retail=all_to_hunt_retail_inputs())
+
+
+def all_to_hunt_metadata():
+    result=provenance(
+        scope='Eight original Action6 selector/state controls, fourteen complete457DE0 garrison procedure controls around explicit dependencies, and retained retail ALL06 Country9 elapsed/enable/Hunt binding. Not a complete campaign, native Team/placement/UnInit lifecycle, general Hunt or Dominator-death parity claim.',
+        assumptions=[
+            'Reuse the existing ActionFixture/AllChangeHouseFixture VM, allocation/CRT/INI owners. Original Action constructor6DD000, counted read6DD5B0, Execute6DD8B0 and selector6E45E0 execute before actual House IHouse+24/vt38 dispatch501400. Country0/7/0 House order, first duplicate, retained8997/null, null live Trigger, unknown Country and unrelated/null incoming House are supplied priors. A null live Trigger rejects even a valid Country. All three full native seed31 states are saved, not only hashes.',
+            '501400 captures the initial global Techno count once, traverses reverse ordinal order and re-reads the current array pointer at each ordinal; owner, cell-marked+74 and not-limbo admission run. The ordinary Foot TeamRemove(-1,0)/QueueMission(Hunt,0) calls are recorded, and only selected House+249 changes. Mode+250 and strategy timers+5634 remain untouched. Permanent Dominator/Insignificant damage is outside the selected ordinary route, not claimed absent.',
+            'The existing make_source_fixture on the same ActionFixture VM supplies the small32x32 map and original Walk setup. Garrison rows execute complete457DE0 and no-exit4585C0(NULL), actual image Foundation index3 dimensions2x2, Building/Cell coordinates, map lookup and dynamic-vector clear/resize. Some CanEnter results are supplied; declared empty/blocked/outside-playfield/nested-scope rows run real51BF90. Field/list/House/limbo/type/mission priors are explicit, not native full constructors or entry lifecycle.',
+            'Successful Unlimbo result/XYZ/limbo-clear/cell-marked publication is a supplied boundary. Actual Infantry51B1F0 and Techno6FCDB0 NULL target setters clear old Target, supplied reciprocal+2A8 links and path0 with their DoAction child recorded. Infantry51B25D..51B26D clears both supplied+2A8 fields; these are native observations only, with no corresponding Rust reciprocal2a8 state in this batch. Neither this pair nor Temporal cleanup is claimed implemented; actual Temporal pointers are+274/+278. Building centre feeds Scatter(1,1), then TeamRemove(-1,0) if a Team remains, then original QueueMission15,0. The selected owner-transfer control has distinct Building/passenger House priors and records actual per-field writes; SellBuilding only reads the passenger House+21C for its human-seek test. Full Unlimbo remains excluded.',
+            'The final two garrison controls execute original source-aware Infantry Scatter with flags1,1, real heading, RandomRanged, rejection/XOR stores, map/CanEnter and QueueMove2,0. SetDestination records the selected Cell without moving it. Full three-stream RNG before/after hex, individual range returns and raw words are retained. Two range calls need three raw words for seed31; Main/MapGen are unchanged. Do not infer total world-chain draws from this bounded subgraph.',
+            'Actual Queue15,0 only queues Hunt; the declared Guard current mission and mission/movement timers remain unchanged by executed instructions. Placement priority brackets the successful loop and returns to its input; no-exit does not raise it. DoAction, TeamRemove, UnInit, destination and threat-refresh dependencies are recorded, so their own timer/RNG/detach/lifecycle effects and later Hunt cadence remain outside this execution. Unlimbo failure invokes original caller UnInit before continuing, and no-exit removes all occupant callbacks LIFO before vector cleanup.',
+            'Actual mapsmd03.mix ALL06UMD.MAP and retained ini/rulesmd.ini have file hashes. Existing CampaignReader registers physical Rules then map Country entries and reads target Houses Country; counted Event/Trigger flags and scalar Action6 readers execute. Raw three-route Trigger/Tag/Actions and selected Wave4 Team/TaskForce/Script records bind the ordinary path without hand-authored gameplay tuning. Country9 has zero initial Units/Infantry; production must use existing reinforcement/Team admission or explicitly supply that precondition. No original entire wave schedule or full physical INI layering is certified.',
+            'CampaignReader requires VERA20K_CAMPAIGN_START_ASSETS to name an existing empty directory; its constructor otherwise preloads that directory. Selected Country prefixes request no assets. RA2_DIR or VERA20K_GAMEMD_EXE selects the supported retail binary and adjacent mapsmd03.mix. Keep native evidence identity separate from prior corpus provenance.'],
+        substitutions=[
+            'Inherited CRT/heap/TLS/import and cached-INI transports only; original selected dispatch, selector, House loop, garrison branch, target-setter, CanEnter, Scatter/RNG, queue and vector instructions are unmodified.',
+            'Ordinary Action6 Foot TeamRemove/QueueMission are recorded leaves. Garrison Unlimbo supplies success and declared post-placement fields; failed rows returnfalse. UnInit, DoAction, TeamRemove, SetDestination and spatial-threat refresh record calls without executing their full effects. No damage result is substituted into a claimed Dominator chain.'],
+        entry_points=dict(action_constructor=0x6DD000,action_read=0x6DD5B0,action_execute=0x6DD8B0,
+            action6=0x6DEBF9,live_house_selector=0x6E45E0,all_to_hunt=0x501400,
+            garrison_release=0x457DE0,no_exit_cleanup=0x4585C0,
+            infantry_target=0x51B1F0,techno_target=0x6FCDB0,infantry_entry=0x51BF90,
+            infantry_scatter=0x51D0D0,queue_mission=0x5B35E0,random_seed=0x65C6D0,
+            random_ranged=0x65C7E0,country_registration=0x668C8B))
+    result['environment']=dict(RA2_DIR='retail install containing gamemd.exe and mapsmd03.mix',
+        VERA20K_CAMPAIGN_START_ASSETS='existing empty directory; selected prefixes request no assets',
+        checkout_prerequisite='ini/rulesmd.ini is the extracted retail RULESMD.INI')
+    return result
+
+
+def all_to_hunt_source_paths():
+    paths=dict(SOURCE_PATHS)
+    paths.update(source_map=Path(__file__).with_name('unit_source_scatter.py'),
+        source_state=Path(__file__).with_name('unit_scatter_state.py'))
+    return paths
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -4465,9 +4930,16 @@ if __name__=='__main__':
     selected_modes.add_argument('--all-change-house', action='store_true')
     selected_modes.add_argument('--conceal-area', action='store_true')
     selected_modes.add_argument('--music-theme', action='store_true')
+    selected_modes.add_argument('--all-to-hunt', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.music_theme:
+    if selected.all_to_hunt:
+        if selected.inputs is not None:
+            selector.error('--all-to-hunt reads configured retail ALL06, not --inputs')
+        finish_vectors(all_to_hunt_generate,
+            Path(__file__).with_name('trigger_all_to_hunt.json'),
+            provenance=all_to_hunt_metadata, argv=remaining, source_paths=all_to_hunt_source_paths())
+    elif selected.music_theme:
         if selected.inputs is not None:
             selector.error('--music-theme uses its declared Theme priors, not --inputs')
         finish_vectors(music_theme_generate,

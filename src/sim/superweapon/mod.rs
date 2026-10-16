@@ -163,7 +163,7 @@ fn strength_receiver_event(
         .substrate
         .entities
         .get(id)
-        .and_then(|entity| rules.object(sim.interner.resolve(entity.type_ref())))
+        .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
         .map(|object| object.strength)?;
     Some(crate::sim::combat::EntityDamageEvent::direct_receiver(
         id,

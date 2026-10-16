@@ -1370,7 +1370,7 @@ fn emit_unit_terrain_body(
             && (!grounded
                 || state
                     .rules()
-                    .and_then(|rules| rules.object(sim.interner.resolve(entity.type_ref())))
+                    .and_then(|rules| sim.interner.object_type(entity.type_ref(), rules))
                     .is_some_and(|object| object.no_shadow))
         {
             continue;
@@ -1468,7 +1468,7 @@ pub(crate) fn resolve_object_shp_frame(
             .rules()
             .and_then(|rules| {
                 let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-                rules.object(sim.interner.resolve(entity.type_ref()))
+                sim.interner.object_type(entity.type_ref(), rules)
             })
             .filter(|object| object.jumpjet && !object.jumpjet_turn)
             .filter(|_| {

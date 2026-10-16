@@ -888,9 +888,7 @@ pub(crate) fn build_occupant_pip_instances(
                 let pax_id = cargo.passengers()[i as usize];
                 sim.entities()
                     .get(pax_id)
-                    .and_then(|pax| {
-                        rules.and_then(|r| r.object(sim.interner.resolve(pax.type_ref())))
-                    })
+                    .and_then(|pax| rules.and_then(|r| sim.interner.object_type(pax.type_ref(), r)))
                     .map(|pax_obj| pax_obj.occupy_pip)
                     .unwrap_or(7) // default PersonGreen
             } else {
@@ -1222,7 +1220,7 @@ pub(crate) fn build_unit_status_bg_instances(
         };
         let bracket_delta: f32 = state
             .rules()
-            .and_then(|r| r.object(sim.interner.resolve(e.type_ref())))
+            .and_then(|r| sim.interner.object_type(e.type_ref(), r))
             .map(|obj| obj.pixel_selection_bracket_delta as f32)
             .unwrap_or(0.0);
         let (off_x, off_y) = overlay.pipbrd_offset(is_infantry);
@@ -1298,7 +1296,7 @@ pub(crate) fn build_unit_status_fill_instances(
         let (sx, sy) = crate::app::presentation::instances::interpolated_screen_position_entity(e);
         let Some(obj) = state
             .rules()
-            .and_then(|rules| rules.object(sim.interner.resolve(e.type_ref())))
+            .and_then(|rules| sim.interner.object_type(e.type_ref(), rules))
         else {
             continue;
         };
@@ -1458,7 +1456,7 @@ pub(crate) fn build_self_heal_pip_instances(
         }
         let Some(obj) = state
             .rules()
-            .and_then(|rules| rules.object(sim.interner.resolve(e.type_ref())))
+            .and_then(|rules| sim.interner.object_type(e.type_ref(), rules))
         else {
             continue;
         };
@@ -1538,7 +1536,7 @@ pub(crate) fn build_cargo_pip_instances(state: &AppState, sw: f32, sh: f32) -> V
         }
         let obj = state
             .rules()
-            .and_then(|r| r.object(sim.interner.resolve(e.type_ref())));
+            .and_then(|r| sim.interner.object_type(e.type_ref(), r));
         let is_tiberium_scale = obj
             .map(|o| o.pip_scale == crate::rules::object_type::PipScale::Tiberium)
             .unwrap_or(false);

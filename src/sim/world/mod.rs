@@ -35,7 +35,7 @@ mod trigger_chrono;
 pub(crate) use sound_boundary::{FrameEffects, SoundBoundary};
 #[cfg(test)]
 mod unit_unlimbo_tests;
-pub(crate) use sinking::SinkingState;
+pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
 mod gap_generator;
 pub(crate) use gap_generator::GapGeneratorRuntime;
@@ -162,6 +162,10 @@ mod projectile_trailer_tests;
 mod aegis_distributed_fire_tests;
 #[cfg(test)]
 mod brute_smash_debris_tests;
+#[cfg(test)]
+mod squid_grapple_tests;
+#[cfg(test)]
+mod drone_rocking_tests;
 #[cfg(test)]
 pub(crate) use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
@@ -1024,11 +1028,6 @@ where
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
     pub interner: crate::sim::intern::StringInterner,
-    /// Derived cache: interned-id -> object handle for one-hop type resolution.
-    /// Built at init by `resolve_type_handles`; empty after deserialize (then
-    /// `object_type` uses the name-path fallback). NOT serialized, NOT hashed.
-    #[serde(skip)]
-    pub(crate) type_handles: crate::sim::type_handle_table::TypeHandleTable,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
@@ -1915,7 +1914,7 @@ impl Simulation {
                     return;
                 }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
-                    let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+                    let object = self.interner.object_type(entity.type_ref(), rules)?;
                     let passenger_ids = entity
                         .passenger_role
                         .cargo()
@@ -1929,7 +1928,6 @@ impl Simulation {
                     Some(
                         crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                             building_id: stable_id,
-                            owner: entity.owner(),
                             rx: entity.position.rx(),
                             ry: entity.position.ry(),
                             z: entity.position.z(),
@@ -1948,8 +1946,8 @@ impl Simulation {
                     .entities
                     .get(stable_id)
                     .is_some_and(|entity| {
-                        rules
-                            .object(self.interner.resolve(entity.type_ref()))
+                        self.interner
+                            .object_type(entity.type_ref(), rules)
                             .is_some_and(|object| object.infantry_absorb || object.unit_absorb)
                     });
                 if let Some(event) = garrison {
@@ -2211,7 +2209,7 @@ impl Simulation {
                 let coords = crate::sim::movement::ground_pose::object_target_coords(
                     entity,
                     terrain,
-                    rules.object(interner.resolve(entity.type_ref())),
+                    interner.object_type(entity.type_ref(), rules),
                 );
                 ProjectileCoord::new(coords.x, coords.y, coords.z)
             }
@@ -2383,8 +2381,7 @@ impl Simulation {
                 let Some(firer) = self.substrate.entities.get(request.firer_id) else {
                     break;
                 };
-                let Some(object_type) = rules.object(self.interner.resolve(firer.type_ref()))
-                else {
+                let Some(object_type) = self.interner.object_type(firer.type_ref(), rules) else {
                     break;
                 };
                 let Some(weapon_name) = crate::sim::combat::combat_weapon::primary_for_tier(
@@ -2969,8 +2966,8 @@ impl Simulation {
         }
     }
 
-    /// `TechnoClass::Death_Announcement @ 0x004D98C0` for this tick's damage
-    /// kills: owner passes `HouseClass::IsHumanPlayer @ 0x0050B6F0`
+    /// `TechnoClass::Death_Announcement @ 0x004D98C0` for damage kills
+    /// and the living-hull Squid cull: owner passes `HouseClass::IsHumanPlayer @ 0x0050B6F0`
     /// (`0x004D98CA`; the local player natively, every human house here with
     /// the app filtering), then `CreateRadarEvent(7, cell)` (`0x004D98FE`,
     /// 8-cell dedupe, admitted client-side) gates `EVA_UnitLost`
@@ -3252,14 +3249,15 @@ impl Simulation {
         Self::with_seed(DEFAULT_SIM_SEED)
     }
 
-    /// Build the interned-id -> type-handle table and the pre-resolved rule
-    /// handles beside it. Call once at sim init AFTER `intern_rule_type_ids`,
-    /// and again after load once the RuleSet is available. Idempotent: the
-    /// warhead names are already interned on every re-resolution path, so
-    /// serialized interner state cannot grow or reorder.
+    /// Bind the interner's type handles ([`StringInterner::bind_types`]) and
+    /// build the pre-resolved rule handles beside them. Call once at sim init
+    /// AFTER `intern_rule_type_ids`, and again after load once the RuleSet is
+    /// available. Idempotent: the warhead names are already interned on every
+    /// re-resolution path, so serialized interner state cannot grow or reorder.
+    ///
+    /// [`StringInterner::bind_types`]: crate::sim::intern::StringInterner::bind_types
     pub fn resolve_type_handles(&mut self, rules: &RuleSet) {
-        self.type_handles =
-            crate::sim::type_handle_table::TypeHandleTable::build(rules, &self.interner);
+        self.interner.bind_types(rules);
         self.rule_handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
             rules,
             &mut self.interner,
@@ -3316,17 +3314,16 @@ impl Simulation {
         )
     }
 
-    /// Resolve an entity's type to its `ObjectType` in one precomputed hop
-    /// (two array indexes, no string allocation). Falls back to the name path
-    /// when the table is unbuilt (test setups that skip `resolve_type_handles`),
-    /// so no caller observes a stale empty table.
+    /// Resolve an entity's type to its `ObjectType` through the interner's
+    /// bound handles (`StringInterner::object_type`): two array indexes, no
+    /// hashing, and the name path wherever the handles do not apply.
     #[inline]
     pub fn object_type<'r>(
         &self,
         type_ref: InternedId,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
-        self.type_handles.object(&self.interner, type_ref, rules)
+        self.interner.object_type(type_ref, rules)
     }
 
     /// Create a new empty simulation with an explicit deterministic seed.
@@ -3360,7 +3357,6 @@ impl Simulation {
             expiry_listeners: Default::default(),
             path_batch: None,
             interner: crate::sim::intern::StringInterner::new(),
-            type_handles: crate::sim::type_handle_table::TypeHandleTable::default(),
             rule_handles: None,
             production: ProductionState::default(),
             session,
@@ -4654,23 +4650,49 @@ impl Simulation {
         self.substrate.logic.set_order_for_test(order);
     }
 
-    /// Admit the `VoxelAnimClass` debris a death threw.
-    ///
-    /// gamemd-derived: `VoxelAnimClass::Constructor @ 0x007493B0` assigns the
-    /// shared unique id (`AbstractClass::Create_ID`), appends to the
-    /// VoxelAnim registry, then `ObjectClass::Unlimbo` reveals the piece into
-    /// the LogicClass vector. The launch velocity and the physics body were
-    /// already built inside the combat transaction, which consumed the draws in
-    /// native order; only the identity and the registration happen here.
+    /// Common VoxelAnim7493B0 constructor/admission for typed Techno and
+    /// Bullet debris. Create_ID74944E precedes launch74951D..749559 and
+    /// Bounce4397E0 RNG; admission finishes before the next typed selector.
+    /// `admit_inline=false` is the caller's existing no-callback numeric-fixture
+    /// boundary: its packet retains both identities for later registration.
+    pub(crate) fn emit_debris_voxel(
+        &mut self,
+        type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId,
+        voxel_type: &crate::rules::voxel_anim_type::VoxelAnimType,
+        owner_house: Option<InternedId>,
+        origin: glam::IVec3,
+        admit_inline: bool,
+        packets: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
+    ) -> Result<(), crate::util::native_x87::NativeX87Error> {
+        let stable_id = self.allocate_stable_id();
+        let native_unique_id = self.next_native_runtime_id();
+        let object = crate::sim::voxel_anim::spawn_debris_piece(
+            stable_id,
+            native_unique_id,
+            type_id,
+            voxel_type,
+            owner_house,
+            origin,
+            &mut self.scenario_rng,
+        )?;
+        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn { object };
+        if admit_inline {
+            self.admit_death_debris(std::iter::once(spawn));
+        } else {
+            packets.push(spawn);
+        }
+        Ok(())
+    }
+
+    /// Register already-constructed debris. This also delivers numeric-fixture
+    /// packets; neither stable nor native identity is allocated a second time.
     pub(crate) fn admit_death_debris(
         &mut self,
         spawns: impl IntoIterator<Item = crate::sim::voxel_anim::VoxelDebrisSpawn>,
     ) {
         for spawn in spawns {
-            let stable_id = self.allocate_stable_id();
-            let mut object = spawn.object;
-            object.stable_id = stable_id;
-            self.substrate.voxel_anims.insert(object);
+            let stable_id = spawn.object.stable_id;
+            self.substrate.voxel_anims.insert(spawn.object);
             self.reveal_voxel_anim(stable_id);
         }
     }
@@ -5055,8 +5077,9 @@ impl Simulation {
         if category == EntityCategory::Structure
             && let Some(rules) = rules
             && let Some(entity) = self.substrate.entities.get(stable_id)
-            && !rules
-                .object(self.interner.resolve(entity.type_ref()))
+            && !self
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.can_be_occupied)
         {
             self.bomb_defuse(stable_id);
@@ -6443,8 +6466,9 @@ impl Simulation {
         else {
             return;
         };
-        let Some(section) = rules
-            .object(self.interner.resolve(type_ref))
+        let Some(section) = self
+            .interner
+            .object_type(type_ref, rules)
             .and_then(|obj| obj.super_weapon.clone())
         else {
             return;
@@ -6700,7 +6724,6 @@ impl Simulation {
         let rules_context = Some(crate::sim::movement::SpeedRules::new(
             rules,
             &self.interner,
-            &self.type_handles,
             &self.houses,
         ));
         let wake_positions: Vec<(u16, u16, SimFixed, SimFixed, u8)> = self
@@ -7021,21 +7044,6 @@ impl Simulation {
         // separate from the weapon-damage wall path. No-op when no crusher sits
         // on a wall, so it is hash-neutral for every non-crush scenario.
         self.apply_wall_crush_on_driveover(rules, overlay_registry);
-        // --- Phase 2.5: body rocking ---
-        // Drive/Ship slope sampling now belongs to locomotor Process entry,
-        // before movement. Body rocking keeps its established post-movement
-        // order, rules/terrain gate, and fallback-coefficient input
-        // independently.
-        if let (Some(rules), Some(_terrain)) = (rules, self.resolved_terrain.as_ref()) {
-            let mut hook = crate::sim::rocking::self_destruct::NoopSelfDestruct;
-            crate::sim::rocking::tick(
-                &mut self.substrate.entities,
-                rules,
-                &self.interner,
-                &mut hook,
-            );
-        }
-
         // Aircraft missions retain their existing deferred receiver. Building
         // shots already finished in their own dynamic Logic slots.
         let fire_requests = std::mem::take(&mut self.fire_requests);

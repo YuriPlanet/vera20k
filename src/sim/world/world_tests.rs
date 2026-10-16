@@ -539,12 +539,7 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
             crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_TRANSLATE,
         )
         .with_moving_for_test(true);
-    let speed = crate::sim::movement::SpeedRules::new(
-        &rules,
-        &sim.interner,
-        &sim.type_handles,
-        &sim.houses,
-    );
+    let speed = crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses);
     let jumpjet = sim.substrate.entities.get(id).expect("Jumpjet");
     assert!(crate::sim::movement::motion_query::is_moving_now(
         jumpjet,
@@ -11399,22 +11394,30 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
 
     let mut sim = Simulation::new();
     let empty_hash = sim.state_hash();
-    let mut rng = crate::sim::rng::SimRng::new(17);
-    let pieces: Vec<_> = (0..3)
-        .map(|_| crate::sim::voxel_anim::VoxelDebrisSpawn {
-            type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
-            object: crate::sim::voxel_anim::spawn_debris_piece(
-                0,
-                crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
-                &voxel_type,
-                None,
-                glam::IVec3::new(1280, 2560, 0),
-                &mut rng,
-            )
-            .expect("in domain"),
-        })
-        .collect();
-    sim.admit_death_debris(pieces);
+    sim.native_unique_ids =
+        Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
+    let mut deferred = Vec::new();
+    for _ in 0..3 {
+        sim.emit_debris_voxel(
+            crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
+            &voxel_type,
+            None,
+            glam::IVec3::new(1280, 2560, 0),
+            true,
+            &mut deferred,
+        )
+        .expect("in domain");
+    }
+    assert!(deferred.is_empty());
+    assert_eq!(sim.native_identity_cursor(), Some(1003));
+    assert_eq!(
+        sim.voxel_anims()
+            .iter()
+            .map(|(_, piece)| piece.native_unique_id())
+            .collect::<Vec<_>>(),
+        [1001, 1002, 1003],
+        "constructor native IDs are independent of stable handles"
+    );
 
     assert_eq!(sim.substrate.voxel_anims.len(), 3);
     let ids: Vec<u64> = sim.substrate.voxel_anims.ids();
@@ -11454,16 +11457,25 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
 
     let expected_order = sim.live_object_order_snapshot();
     let expected_store = sim.substrate.voxel_anims.clone();
-    let bytes = bincode::serialize(&sim).expect("serialize sim with VoxelAnimStore");
-    let mut restored: Simulation =
-        bincode::deserialize(&bytes).expect("deserialize VoxelAnimStore");
-    restored.rebuild_logic_membership();
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "live voxel debris", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
+        .expect("current envelope preserves VoxelAnimStore")
+        .sim;
+    restored
+        .restore_after_snapshot_load()
+        .expect("restore live debris");
     assert_eq!(restored.live_object_order_snapshot(), expected_order);
     assert_eq!(
         restored.substrate.voxel_anims, expected_store,
         "every piece and its physics body survive the snapshot"
     );
     restored.debug_assert_logic_membership_consistent();
+    assert_eq!(
+        restored.native_identity_cursor(),
+        sim.native_identity_cursor()
+    );
+    assert_eq!(restored.next_native_runtime_id(), 1004);
 
     // The scheduler slot advances the physics body, and a piece leaves the live
     // order once its AI reaches Delete.
@@ -11883,4 +11895,37 @@ fn a_captured_war_factory_takes_its_contact_along() {
         assert!(entity.radio_contacts.contains(partner), "{id}");
         assert_eq!(entity.tether.partner(), Some(partner), "{id}");
     }
+}
+
+/// Callback-disabled damage fixtures may deliver after another constructor;
+/// they retain the original constructor IDs and spend no second RNG/ID draws.
+#[test]
+fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
+    let mut sim = Simulation::with_seed(17);
+    let kind = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("DEBRIS");
+    let type_id = crate::rules::voxel_anim_type::VoxelAnimTypeId(0);
+    let mut packets = Vec::new();
+    sim.emit_debris_voxel(type_id, &kind, None, glam::IVec3::ZERO, false, &mut packets)
+        .unwrap();
+    assert_eq!(packets.len(), 1);
+    let id = packets[0].object.stable_id;
+    let native_id = packets[0].object.native_unique_id();
+    assert_eq!(sim.native_identity_cursor(), Some(native_id as u32));
+    assert!(sim.voxel_anims().is_empty());
+    assert!(sim.live_object_order_snapshot().is_empty());
+    let adjacent = sim.next_native_runtime_id();
+    assert_ne!(adjacent, native_id);
+    let cursor = sim.native_identity_cursor();
+    let rng = sim.scenario_rng.logical_state();
+    let stable_cursor = sim.substrate.next_stable_object_id;
+    sim.admit_death_debris(packets);
+    assert_eq!(
+        sim.voxel_anims().get(id).unwrap().native_unique_id(),
+        native_id
+    );
+    assert_eq!(sim.native_identity_cursor(), cursor);
+    assert_eq!(sim.scenario_rng.logical_state(), rng);
+    assert_eq!(sim.substrate.next_stable_object_id, stable_cursor);
+    assert_eq!(sim.live_object_order_snapshot(), [id]);
+    sim.debug_assert_logic_membership_consistent();
 }

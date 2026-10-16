@@ -10,7 +10,6 @@ use crate::sim::movement::SpeedRules;
 use crate::sim::movement::motion_query::is_moving_now;
 use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
-use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 use crate::util::native_x87::NativeF64Bits;
 
@@ -74,9 +73,8 @@ fn driving_unit_reports_moving() {
     let mut entity = driving_mtnk();
     let rules = mtnk_rules();
     let interner = crate::sim::intern::test_interner();
-    let types = TypeHandleTable::default();
     let houses = std::collections::BTreeMap::new();
-    let speed = Some(SpeedRules::new(&rules, &interner, &types, &houses));
+    let speed = Some(SpeedRules::new(&rules, &interner, &houses));
 
     let state = ready_state_for(&entity, speed, 100).expect("Drive has a producer");
     assert!(state.is_moving_now(), "a driving tank must report moving");
@@ -97,9 +95,8 @@ fn speed_crate_reaches_the_next_moving_query() {
     let mut entity = driving_mtnk();
     let rules = mtnk_rules();
     let interner = crate::sim::intern::test_interner();
-    let types = TypeHandleTable::default();
     let houses = std::collections::BTreeMap::new();
-    let speed = SpeedRules::new(&rules, &interner, &types, &houses);
+    let speed = SpeedRules::new(&rules, &interner, &houses);
 
     let full = speed.owner_current_speed(&entity);
     assert!(full > 1, "MTNK covers several leptons per frame");

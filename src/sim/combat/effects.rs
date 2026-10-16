@@ -132,9 +132,9 @@ pub(crate) struct DeathEffects {
     pub(crate) immediate_uninit_ids: Vec<u64>,
     pub(crate) structure_destroyed: bool,
     pub(crate) explosion_effects: Vec<ExplosionEffect>,
-    /// `VoxelAnimClass` debris planned by the death block for admission at the
-    /// world consequence boundary. The live receiver has allocator access;
-    /// deferred admission preserves the existing allocation and Logic order.
+    /// Already-constructed, identified `VoxelAnimClass` pieces retained only
+    /// by callback-disabled damage fixtures. Live Bullet and Techno constructors
+    /// register synchronously; delivering these packets never allocates IDs.
     pub(crate) voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
     pub(crate) combat_light_requests: Vec<CombatLightRequest>,
     /// Receipt of synchronous Apply_area_damage bridge callbacks. Gameplay

@@ -18,6 +18,25 @@ from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,finish_vecto
 from tools.spatial_oracle.building_body_rules import SP,RULES,dwords
 from tools.rules_oracle.bridge_anim_inputs import Reader
 
+def locomotor_com_transport(u,pc,m,events,*,detailed=False):
+ """Shared Windows activation transport; full original factories own locomotion."""
+ sp=u.reg_read(UC_X86_REG_ESP)
+ if pc in (0x41C27D,0x41C2CB,0x413DE2):
+  clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20));assert (outer,context)==(0,7)
+  guid=bytes(u.mem_read(clsid,16))
+  factories={bytes(u.mem_read(address,16)):(factory,name) for address,factory,name in
+    ((0x7E9A30,0x6C4010,'Drive'),(0x7E9AB0,0x6C4F10,'Ship'),(0x7E9A80,0x6C4A90,'Fly'))}
+  factory,name=factories[guid]
+  assert pc!=0x413DE2 or name=='Fly'
+  u.mem_write(sp,dwords(pc+6,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,factory)
+  row=dict(kind='COM_'+name+'_original_factory')
+  if detailed:row.update(factory=f'0x{factory:08X}',clsid=guid.hex(),iid=bytes(u.mem_read(iid,16)).hex())
+  events.append(row);return True
+ if pc in (0x41C28C,0x413DF1):
+  events.append(dict(kind='OS_OleRun',interface=hex(m.read32(sp))))
+  u.reg_write(UC_X86_REG_EAX,0);u.reg_write(UC_X86_REG_ESP,sp+4);u.reg_write(UC_X86_REG_EIP,pc+6);return True
+ return False
+
 class Mission:
  def __init__(self,continuation=None):
   self.continuation=continuation
@@ -63,11 +82,7 @@ class Mission:
   # Composed worlds retain the existing generic read32/string/ret receiver;
   # call the single Reader transport owner without requiring Reader inheritance.
   if Reader.guid_transport(m,u,a,sp,self.events):return
-  if a in (0x41C27D,0x41C2CB):
-   clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20));assert bytes(u.mem_read(clsid,16))==bytes(u.mem_read(0x7E9A30,16));assert outer==0 and context==7
-   u.mem_write(sp,dwords(a+6,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,0x6C4010);self.events.append(dict(kind='COM_Drive_original_factory'));return
-  if a==0x41C28C:
-   self.events.append(dict(kind='OS_OleRun',interface=hex(m.read32(sp))));u.reg_write(UC_X86_REG_EAX,0);u.reg_write(UC_X86_REG_ESP,sp+4);u.reg_write(UC_X86_REG_EIP,a+6);return
+  if locomotor_com_transport(u,a,m,self.events):return
   if a==0x46B072:
    clsid,outer,context,iid,ppv=struct.unpack('<5I',u.mem_read(sp,20));assert (clsid,outer,context,iid)==(0x7E96E0,0,7,0x7F7C90)
    u.mem_write(sp,dwords(0x46B078,0,outer,iid,ppv));u.reg_write(UC_X86_REG_EIP,0x6C5090);self.events.append(dict(kind='COM_Bullet_original_factory'));return

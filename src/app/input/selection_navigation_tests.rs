@@ -537,8 +537,8 @@ fn compare_category_feedback(
         .iter()
         .filter_map(|&id| sim.entities().get(id))
         .filter_map(|entity| {
-            rules
-                .object(sim.interner.resolve(entity.type_ref()))
+            sim.interner
+                .object_type(entity.type_ref(), rules)
                 .map(|object| sim.cost_of(entity.owner(), object, rules))
         })
         .fold(0_i32, i32::wrapping_add);

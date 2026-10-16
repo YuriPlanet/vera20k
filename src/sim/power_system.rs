@@ -331,7 +331,7 @@ fn recalculate_power_for_owner(
         if !participates_in_power_accounting(entity) || entity.owner() != owner_id {
             continue;
         }
-        let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
+        let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
             continue;
         };
 
@@ -509,8 +509,8 @@ fn radar_provider_available(
             || !entity.building_online()
             || entity.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
             || entity.mission.queued().known() == Some(crate::sim::mission::MissionType::Selling)
-            || !rules
-                .object(interner.resolve(entity.type_ref()))
+            || !interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|obj| obj.radar)
         {
             continue;
@@ -565,7 +565,7 @@ pub fn is_building_powered(
     if entity.category() != EntityCategory::Structure {
         return true;
     }
-    let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
+    let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
         return true;
     };
     //4555D0 gates the ratio read on strictly positive native Type+EE4.

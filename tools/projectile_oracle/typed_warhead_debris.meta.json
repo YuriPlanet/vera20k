@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight authored Smashing typed TIRE controls: full4690B0/468D80, typed selector, full7493B0 identity/admission/seven draws, INT_MIN arithmetic and Cluster successor",
+  "assumptions": [
+    "Existing physical IFV world/readers establish a supplied admitted Bullet/source/receiver boundary, not full Brute launch or MTNK health. New native Smash/InvisibleLow/Smashing readers run on physical RULESMD, absent LANGRULE, Battle and current Hills lexical caches. Weapon postpass includes physical AudioVisual.Gravity.",
+    "Rules MetallicDebris runs original constructor/read128/strtok/FindOrAllocate on the same Rules object. Fourteen real DBRIS types plus unreadD result; no supplied20-pool. Actual physical ART/SHP bytes run full427530/427D00/image binding, including absentD ART and physical IRONFX.",
+    "Original AreaDamage489280, IC timer/isolation, SelectAnim48A4F0, nullify branch, debris budget/list picks, full Anim421EA0/Unlimbo/Logic/Start424CE0 and Cluster1 successor49F420 run. No return at those gates is supplied. The distinct-placement row invokes full4690B0 alone; all other rows enter full468D80.",
+    "Normal physical Smashing has no ordinary impact Anim. Min1/Max3 produces original inclusive1..2 budget. The zero control reads explicit authored Max0/Min0 through native Warhead reader; stock fields otherwise remain unchanged. Live BulletXYZ2688,5248,624 and direct placement2816,5248,624 are supplied coordinate boundaries.",
+    "Receiver empty is the original no-receiver AreaDamage1 result. Receiver/IC rows supply admitted original Unit-vtable state and timer with UnitReceiveDamage737C90 returning0/no health mutation; original AreaDamage independently returns0/2. No full native MTNK receiver RNG/IDs/health or whole native ID-prefix claim.",
+    "GameActive1, flat level6 mapped cells, native frame100, no bridge/tile/overlay effects and empty sound registry are explicit inputs. All allocations succeed in this corpus; OOM/allocator failure is excluded. Sound binding/playback, whole Logic scheduling and later AnimAI flight/landing are excluded.",
+    "Existing RngTrace records full0x3F4 Main/Scenario/MapGen states, helper bounds/results and every rejected raw word; direct advance stores independently count actual generator advances. Main=baseSeed, Scenario=baseSeed+1, MapGen=baseSeed+2. Native-found seeds were rerun on fresh worlds; no Rust output supplies goldens.",
+    "Authored Smashing DebrisTypes/Maximums run full native75D3A0; no vector/count/selector return is supplied. Physical TIRE scalar reader74B050 runs through degree conversion to stop74B56C before model file I/O. Model binding is excluded and the model pointer remains null; physical VXL identity is recorded, not a native loader claim.",
+    "Native type/runtime/Display startup4E7660/40EE40/4A8630 establishes actual registries. Full Voxel7493B0/CreateID410230/Bounce4397E0/Unlimbo/Logic/AIR publication execute and return. Object location is the supplied source; Bounce starts source+10. No later VoxelAI/flight/expiry is exercised.",
+    "INT_MIN controls alter explicit early state words after original native seed; unchanged65C780 independently verifies required raw words. Full before/after three streams and every raw word are retained. Signed ABS-before-IDIV remainder can be negative and grow the remaining budget."
+  ],
+  "substitutions": [
+    "Existing physical lexical INI caches, raw archive-byte I/O, allocator/delete/CRT/TLS transport and mapped empty SEH. CRT atexit7C978A returns0, registering no host process teardown; this existing OS/CRT boundary supplies no gameplay result. UnitReceiveDamage737C90 is the declared receiver-only boundary. No detonation/AreaDamage/selector/IC/debris/RNG/Anim constructor/Start result is replaced."
+  ],
+  "entry_points": {
+    "impact": "0x00468D80",
+    "detonate": "0x004690B0",
+    "area_damage": "0x00489280",
+    "select_anim": "0x0048A4F0",
+    "budget": "0x00469D06",
+    "debris_get_coords": "0x00469E50",
+    "list_pick": "0x00469E85",
+    "anim_ctor": "0x00421EA0",
+    "anim_start": "0x00424CE0",
+    "bounce_init": "0x004397E0",
+    "successor": "0x00469057",
+    "random_ranged": "0x0065C7E0",
+    "random_raw": "0x0065C780",
+    "metallic_reader": "0x0066DA90",
+    "voxel_ctor": 7639984,
+    "voxel_type_reader": 7647312,
+    "voxel_type_model_boundary": 7648620,
+    "create_id": 4260400,
+    "typed_selector": 4627804,
+    "display_init": 4884016
+  },
+  "replay_command": "python -m tools.projectile_oracle.ifv_isolated_tail --typed-debris",
+  "payload_sha256": "9a775cd8438c25cf7fa8b816b1a0edebc8fb589a2b0f99f60fee36e384ad390c"
+}

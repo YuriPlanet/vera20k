@@ -390,7 +390,7 @@ fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: Mis
     if !can_acquire_target(sim, id, rules) {
         return false;
     }
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return false;
     };
     if mission == MissionType::Move
@@ -481,7 +481,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     if entity.slave.owner().is_some() {
         return false;
     }
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return false;
     };
     if !obj.can_passive_acquire {
@@ -521,7 +521,7 @@ fn fire_subject<'a>(
     overlay_registry: Option<&'a OverlayTypeRegistry>,
 ) -> Option<FireSubject<'a>> {
     let firer = sim.substrate.entities.get(id)?;
-    let obj = rules.object(sim.interner.resolve(firer.type_ref()))?;
+    let obj = sim.interner.object_type(firer.type_ref(), rules)?;
     Some(FireSubject {
         world: sim,
         rules,
@@ -558,15 +558,15 @@ pub(super) fn select_weapon(
     let Some(firer) = sim.substrate.entities.get(id) else {
         return 0;
     };
-    let Some(obj) = rules.object(sim.interner.resolve(firer.type_ref())) else {
+    let Some(obj) = sim.interner.object_type(firer.type_ref(), rules) else {
         return 0;
     };
     let terrain = sim.resolved_terrain.as_ref();
     let target_facts = match target {
         Some(TargetKind::Entity(target_id)) => {
             sim.substrate.entities.get(target_id).and_then(|target| {
-                rules
-                    .object(sim.interner.resolve(target.type_ref()))
+                sim.interner
+                    .object_type(target.type_ref(), rules)
                     .map(|target_obj| {
                         combat_weapon::techno_target_facts(
                             target,
@@ -776,8 +776,9 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn distributed_fire(&mut self) -> bool {
-        self.rules
-            .object(self.sim.interner.resolve(self.entity().type_ref()))
+        self.sim
+            .interner
+            .object_type(self.entity().type_ref(), self.rules)
             .is_some_and(|obj| obj.distributed_fire)
     }
 

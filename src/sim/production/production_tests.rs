@@ -577,8 +577,9 @@ pub(super) fn stamp_type_foundation(sim: &mut Simulation, rules: &RuleSet, sid: 
         .entities
         .get(sid)
         .expect("a spawned structure");
-    let foundation = rules
-        .object(sim.interner.resolve(entity.type_ref()))
+    let foundation = sim
+        .interner
+        .object_type(entity.type_ref(), rules)
         .expect("the structure's type")
         .foundation
         .clone();

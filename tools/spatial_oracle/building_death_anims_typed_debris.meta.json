@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "One whole native MTNK fatal737C90\u2192701900 typed TIRE construction and adjacent S_BRNL58 identity/RNG control",
+  "assumptions": [
+    "Existing physical joined_inputs/joined_fixture own all reader/VM/asset/House/map/registry transport. Actual UnitType reader747620 reads authored MTNK DebrisTypes=TIRE/Maximums4/Min1/Max3. Original TIRE scalar reader74B050 stops at74B56C before VXL I/O, with no completed reader return supplied and no model-binding claim.",
+    "Full source MTNK7353C0/Unlimbo737BA0 run in the supplied admitted flat-map/House world. Actual recorded prior is health300, nativeID3, ownerID0, coordinate2944,2176,0, frame0. Direct damage1000/AP/distance0/ignoreDefenses1/null attacker/null sourceHouse enters whole737C90. This is a receiver control, not a full launch or earlier-world identity-prefix claim.",
+    "Actual full fatal body emits TIRE4/TIRE5 before ordinary S_BRNL58 Anim6. CreateID precedes seven Voxel constructor draws. Full three-stream before/after state, ordered original requests/raw words and Bounce bodies are retained. Voxel state is constructor-return; Anim state/membership is receiver-return. No stock MTNK DeathWeapon is reached. Observation ends at receiver return; later Logic/deferred deletion is excluded.",
+    "The typed-only physical selected SoundList includes the actual MTNK VoiceDie/DieSound references before full UnitType read. Retail VoiceDie is empty and DieSound resolves GenVehicleDie; original7021E4 consumes Main2025287381 before the17 Scenario requests. Original7509E0 executes without a supplied playback result; actual sound vectors, owner IsHuman50B6F0 and sound entries are retained.",
+    "All allocations succeed. Null-model TIRE numeric/admission fields are bounded here; actual Rust physical loading and GPU output are independent checks. No Voxel/Anim/ID/RNG/GetCoords/Unlimbo/registry success is supplied."
+  ],
+  "substitutions": [
+    "Existing Engineer/Construction reader-cache, physical requested-file byte IO, bump allocator/delete, COM/CRT TLS, original audioIDX/qsort/BAG/backend device transport boundaries are reused. Native Drive/Bullet/Walk COM factories execute rather than fabricated locomotor/projectile responses.",
+    "Only listed existing Mission OS/COM/presentation transport arms are delegated. Supplied640x480surface prior executes original vtable rectangle getter; original sound registry/readers/event allocation execute, hardware sample output is not audible parity. Existing UpdateAnimation presentation callbacks are retained; no selected gameplay body or numeric decision is replaced."
+  ],
+  "entry_points": {
+    "unit_type_reader": "0x00747620",
+    "tire_scalar_reader": "0x0074B050",
+    "model_boundary": "0x0074B56C",
+    "unit_ctor": "0x007353C0",
+    "unit_unlimbo": "0x00737BA0",
+    "unit_damage": "0x00737C90",
+    "techno_damage": "0x00701900",
+    "typed_selector": "0x0070232B",
+    "voxel_ctor": "0x007493B0",
+    "create_id": "0x00410230",
+    "bounce": "0x004397E0",
+    "death_anim_ctor": "0x00421EA0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_death_anims --typed-debris",
+  "payload_sha256": "2cf64b284f2bb7d1c391f2798d1a167131d6a575bc8ce8848fbf17badd2679af"
+}

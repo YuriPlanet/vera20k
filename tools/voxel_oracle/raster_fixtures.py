@@ -241,7 +241,103 @@ def bullet_metadata():
                           stop_before_convert=0x46b21a, vertical_begin=0x4671e0, vertical_end=0x467334))
 
 
-if __name__ == '__main__' and '--bullet' in sys.argv:
+def bullet_flat_generate():
+    from tools.projectile_oracle.bridge_render_inputs import assets_root
+    from tools.projectile_oracle.bridge_render_inputs_palette import color_scheme_palette
+    from tools.projectile_oracle.bridge_render_shape import WIDTH, HEIGHT
+    root = assets_root()
+    names = dict(vxl='SUBT.VXL', hva='SUBT.HVA', vpl='VOXELS.VPL')
+    assets = {key: (root / name).read_bytes() for key, name in names.items()}
+    palette, color = color_scheme_palette()
+    east = ['3ff0000000000000', '0000000000000000', '0000000000000000']
+    north = ['0000000000000000', 'bff0000000000000', '0000000000000000']
+    cases = [dict(name='full'), dict(name='reject', old_z=0),
+        dict(name='tie_row48', old_z=32655),
+        dict(name='clip_top_left', point=[0, 0]),
+        dict(name='clip_bottom_right', point=[63, 95]),
+        dict(name='fully_clipped', point=[-64, -64]),
+        dict(name='a_lighting', a_patches=[[48 * WIDTH + 32, 32], [49 * WIDTH + 34, 64]]),
+        dict(name='ordered', next_draws=[dict(velocity_bits=north, point=[32, 48])]),
+        dict(name='nonflat_rejecting_z', flat=False, old_z=0),
+        dict(name='negative_candidate', depth_baseline=43, old_z=0),
+        dict(name='circular_wrap', scroll_rows=50, z_patches=[[32, 0]], a_patches=[[95, 32]])]
+    rows = []
+    for case in cases:
+        spec = dict(background=0xffff, old_z=0xffff, a_value=127,
+                    depth_baseline=32768, flat=True, point=[32, 48], clip=[0, 0, WIDTH, HEIGHT])
+        spec.update(case)
+        result = render_native(**{f'{key}_bytes': raw for key, raw in assets.items()},
+                               bullet_velocity_bits=east, bullet_surface=spec, palette=palette)
+        rows.append(dict(name=spec.pop('name'), input={k: v for k, v in spec.items() if k != 'next_draws'},
+                         draws=result['surface_draws'], reached=result['reached']))
+    by_name = {row['name']: row for row in rows}
+    full = by_name['full']['draws'][0]
+    assert full['after_draw']['changed_pixels']
+    assert any(0 in leaf['source_indices'] for leaf in full['leaves'])
+    assert any(any(leaf['source_indices']) for leaf in full['leaves'])
+    assert not by_name['reject']['draws'][0]['after_draw']['changed_pixels']
+    tie = by_name['tie_row48']['draws'][0]
+    assert any(leaf['y'] == 48 and leaf['candidate_z'] == 32655
+               and any(leaf['source_indices']) for leaf in tie['leaves'])
+    assert tie['after_draw']['changed_pixels']
+    assert all(y > 48 for _, y, _ in tie['after_draw']['changed_pixels'])
+    assert not by_name['fully_clipped']['draws'][0]['leaves']
+    assert not by_name['fully_clipped']['draws'][0]['after_draw']['changed_pixels']
+    assert by_name['a_lighting']['draws'][0]['after_draw']['color_sha256'] != full['after_draw']['color_sha256']
+    assert len(by_name['ordered']['draws']) == 2
+    assert by_name['ordered']['draws'][0]['after_draw'] == full['after_draw']
+    assert by_name['ordered']['draws'][1]['after_draw']['color_sha256'] != full['after_draw']['color_sha256']
+    for name in ('nonflat_rejecting_z', 'negative_candidate'):
+        assert by_name[name]['draws'][0]['after_draw']['color_sha256'] == full['after_draw']['color_sha256']
+    assert all(draw['after_draw']['z_unchanged'] and draw['after_draw']['a_unchanged']
+               for row in rows for draw in row['draws'])
+    assert any(leaf['candidate_z'] < 0 for leaf in by_name['negative_candidate']['draws'][0]['leaves'])
+    assert '00493DF0' in by_name['nonflat_rejecting_z']['reached']
+    wrap = by_name['circular_wrap']['draws'][0]
+    assert any(a['z_offset_words'] > b['z_offset_words'] for a, b in zip(wrap['leaves'], wrap['leaves'][1:]))
+    for leaf in wrap['leaves']:
+        expected = ((leaf['y'] + 50) % HEIGHT) * WIDTH + leaf['x']
+        assert leaf['z_offset_words'] == leaf['a_offset_words'] == expected
+    for row in rows:
+        for draw in row['draws']:
+            assert all(0 <= x < WIDTH and 0 <= y < HEIGHT
+                       for x, y, _ in draw['after_draw']['changed_pixels'])
+            assert draw['palette_call']['flags'] == (0x2800 if row['input']['flat'] else 0x800)
+            assert draw['surface_call']['z_adjust'] == (-65 if row['input']['flat'] else 0)
+    sources = dict(vxl=('ra2.mix -> local.mix', '65B17FD8'),
+                   hva=('ra2.mix -> local.mix', '933BA091'),
+                   vpl=('ra2md.mix -> localmd.mix', 'DECF668B'))
+    return dict(source='unicorn/gamemd.exe', assets={key: dict(name=names[key], bytes=len(raw),
+                    archive=sources[key][0], entry_id=sources[key][1],
+                    sha256=hashlib.sha256(raw).hexdigest()) for key, raw in assets.items()},
+                color_scheme=color,
+                surface=dict(width=WIDTH, height=HEIGHT, pitch_bytes=WIDTH * 2,
+                             row_stride_words=WIDTH, y_origin=0, buffer_words=WIDTH * HEIGHT), rows=rows)
+
+
+def bullet_flat_metadata():
+    return provenance(scope='Physical SUBT native Bullet matrix/raster and completed RGB565 Flat/nonFlat surface draws; eleven supplied component controls.',
+        assumptions=[
+            'Immutable retail SUBT.VXL/HVA and VOXELS.VPL. Original camera/light/viewer and x87 0E7F; supplied retained Bullet, velocity bits, frame0, point, clip and type Flat. No submarine launch, Display traversal, water physics or whole scene is executed.',
+            'Physical RULESMD Colors LightGold is parsed by the existing original474C70 owner. Selected UNITtem palette is supplied to original theater copy/expansion534CD3..534D31; whole68C710/68C3B0/555DA0 constructors produce actual paired1/53 ColorSchemes and Convert. Selected theater/name and two-entry registry are component boundaries, not full palette startup/Rules processing.',
+            'Original static7539D0 constructs the shared packed raster BSurface before completed Bullet Draw. Original selectors, raster-surface virtual dispatch, rectangle clipping, rowwalker and RGB565 leaves execute without substitutions. No reconstructed shade table, supplied blitter or expected RGB initializes output.',
+            'Prepared64x96 RGB565 BSurface/circular u16 Z/A, YOrigin0, full range6144words, supplied uniform background/depth/light with explicit physical per-index patches. One case supplies existing shroud-owner scroll offset50rows, crossing the ring end with exact observed Z/A offsets. DefaultZ32768 except declared negative-candidate boundary43. Native81AF00 retains its file-backed default-65; this is not a universal runtime-value claim.',
+            'Original sparse raster indices, matrices, packed rect, actual surface arguments, leaf destinations/source/candidates and after-each-draw RGB565 pixels/hash are retained. Exact complete Z/A byte arrays are compared with their supplied inputs. Full frame reconstructs from background plus changed pixels; unlisted pixels retain background.',
+            'Tie row uses32655 from an independently executed native full control at destination y48. Physical zero raster holes are retained. Two ordered draws reuse the same native machine and surfaces, without clearing RGB/Z/A between calls. No above65535 candidate claim for fixed-65 Flat policy.',
+        ], substitutions=['Existing immutable file IO and successful bounded allocator transports; selected source-file/name/registry/surface component inputs.',
+            'CRT malloc7C9430 shares PaletteReader bounded allocation with operator new; original strdup and full constructors execute. CRT atexit7C978A supplies success0 and records destructor registration without a process lifetime; no gameplay/draw return is supplied.'],
+        entry_points=dict(bullet_draw=0x468090, voxel_draw=0x46b0c0, raster=0x754510,
+            raster_surface_ctor=0x7539d0, convert=0x490b90, surface=0x4af2a0,
+            rowwalker=0x4373b0, flat_leaf=0x494b60, nonflat_leaf=0x493df0,
+            color_scheme=0x68c710, light_convert=0x555da0))
+
+
+if __name__ == '__main__' and '--bullet-flat' in sys.argv:
+    args = sys.argv[1:]
+    args.remove('--bullet-flat')
+    finish_vectors(bullet_flat_generate, Path(__file__).with_name('bullet_flat_fixtures.json'),
+                   provenance=bullet_flat_metadata, argv=args)
+elif __name__ == '__main__' and '--bullet' in sys.argv:
     args = sys.argv[1:]
     args.remove('--bullet')
     finish_vectors(bullet_generate, Path(__file__).with_name('bullet_fixtures.json'),

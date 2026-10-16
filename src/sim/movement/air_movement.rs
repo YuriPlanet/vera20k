@@ -196,8 +196,8 @@ pub(crate) fn fly_speed_facts(
     )>,
 ) -> FlySpeedFacts {
     let aircraft = entity.category() == EntityCategory::Aircraft;
-    let object = rules_context
-        .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())));
+    let object =
+        rules_context.and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
     let strafe_or_fighter = aircraft
         && rules_context
             .zip(object)
@@ -450,8 +450,8 @@ pub(crate) fn type_flight_level(
     )>,
 ) -> i32 {
     rules_context.map_or(500, |(rules, interner)| {
-        rules
-            .object(interner.resolve(entity.type_ref()))
+        interner
+            .object_type(entity.type_ref(), rules)
             .map_or(rules.general.flight_level, |object| {
                 object.flight_level(rules.general.flight_level)
             })
@@ -476,8 +476,8 @@ pub(crate) fn update_fly_height(
         let cell = grid.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
         grid.native_cell_flags(cell) & 0x100 != 0
     });
-    let object = rules_context
-        .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())));
+    let object =
+        rules_context.and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
     let flight_level = type_flight_level(entity, rules_context);
     let has_passenger = entity.category() == crate::map::entities::EntityCategory::Aircraft
         && entity

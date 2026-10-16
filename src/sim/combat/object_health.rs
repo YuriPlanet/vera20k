@@ -94,6 +94,23 @@ impl Health {
     }
 }
 
+/// 5F5DD0 uses inclusive red/yellow thresholds and live type Strength.
+pub fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8 {
+    use crate::util::native_x87::MaskedX87Ordering::Greater;
+    let health = crate::sim::combat::Health::new(current);
+    // Object5F5DD0: all three TEST AH,41 comparisons include unordered;
+    // only the first red branch also requires signed actual > 0.
+    // Original whole-function outputs: health_ratio_predicates.json.
+    let above_red = health.compare_ratio(strength, red) == Greater;
+    if current > 0 && !above_red {
+        0
+    } else if above_red && health.compare_ratio(strength, yellow) != Greater {
+        1
+    } else {
+        2
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HealthCallback {
     Changed,

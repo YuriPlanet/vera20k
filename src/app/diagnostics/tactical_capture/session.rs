@@ -527,8 +527,9 @@ impl TacticalCaptureSession {
             .filter(|(_, entity)| {
                 entity.is_active()
                     && sim.interner.resolve(entity.owner()) == owner
-                    && rules
-                        .object(sim.interner.resolve(entity.type_ref()))
+                    && sim
+                        .interner
+                        .object_type(entity.type_ref(), rules)
                         .is_some_and(|object| object.deploys_into.is_some())
             })
             .collect();

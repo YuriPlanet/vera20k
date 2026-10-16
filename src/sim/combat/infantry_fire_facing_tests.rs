@@ -421,6 +421,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
             matrix: facing,
         },
         0,
+        None,
     )
     .expect("bounded FLH");
     assert_eq!(event.fire_coord.x, source_x + delta.0);

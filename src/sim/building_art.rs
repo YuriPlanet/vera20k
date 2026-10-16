@@ -302,7 +302,7 @@ impl Simulation {
         {
             return;
         }
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let first_opening = !entity.building_art.actually_placed;
@@ -441,7 +441,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let damaged = requested_damage_state(
@@ -644,7 +644,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(owner) else {
             return;
         };
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let damaged = requested_damage_state(
@@ -682,7 +682,7 @@ impl Simulation {
         {
             return;
         }
-        let Some(object) = rules.object(self.interner.resolve(entity.type_ref())) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let unit_repair = object.unit_repair;

@@ -225,7 +225,7 @@ impl Simulation {
             .substrate
             .entities
             .get(invocation.entity_id)
-            .and_then(|e| rules?.object(self.interner.resolve(e.type_ref())));
+            .and_then(|e| self.interner.object_type(e.type_ref(), rules?));
         let Some(entity) = self.substrate.entities.get_mut(invocation.entity_id) else {
             return Ok(TrackPass::default());
         };
@@ -935,7 +935,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|entity| rules.object(self.interner.resolve(entity.type_ref())))
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
             .is_some_and(|object| object.passive)
         {
             return Ok(false);
@@ -1234,8 +1234,7 @@ impl Simulation {
         let current = entity.mission.current().known();
         let effective = entity.mission.effective().known();
         let category = entity.category();
-        let unit_type =
-            rules.and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
+        let unit_type = rules.and_then(|rules| self.interner.object_type(entity.type_ref(), rules));
         let miner = unit_type.is_some_and(|object| object.harvester || object.weeder);
         // Unit738A6E calls the existing IsArmed701120 owner only after the
         // Harvester/Weeder gates. Armed idle keeps TarCom and burst; the

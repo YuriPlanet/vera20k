@@ -109,17 +109,8 @@ impl ExpiryListeners {
             projectiles,
             waves,
         } = stores;
-        let ids = self.entities.rereads(
-            entities.take_touched(TouchReader::ExpiryListeners),
-            entities.len(),
-            || entities.keys_sorted(),
-        );
+        self.refresh_entities(entities);
         let entities = &*entities;
-        self.entities.reread_pooled(ids, |id, names| {
-            entities
-                .get(id)
-                .map(|entity| Simulation::entity_expiry_holds(entity, |name| names.push(name)))
-        });
         // The other listeners hold only a few ids: reading them costs
         // less than handing them to the worker pool.
         let ids = self.anims.rereads(
@@ -214,6 +205,30 @@ impl ExpiryListeners {
         );
         reached.sort_unstable_by_key(|&(id, _)| id);
         reached
+    }
+
+    /// Dedicated Anim callbacks select Parasite holders through the same
+    /// entity-reference index, without a generic Object callback broadcast.
+    pub(crate) fn entities_reached_by(
+        &mut self,
+        entities: &mut EntityStore,
+        expired: u64,
+    ) -> Vec<u64> {
+        self.refresh_entities(entities);
+        self.entities.reaching(expired).collect()
+    }
+
+    fn refresh_entities(&mut self, entities: &mut EntityStore) {
+        let ids = self.entities.rereads(
+            entities.take_touched(TouchReader::ExpiryListeners),
+            entities.len(),
+            || entities.keys_sorted(),
+        );
+        self.entities.reread_pooled(ids, |id, names| {
+            entities
+                .get(id)
+                .map(|entity| Simulation::entity_expiry_holds(entity, |name| names.push(name)))
+        });
     }
 
     /// The Bullet subset of the same index, for Anim4's dedicated holder

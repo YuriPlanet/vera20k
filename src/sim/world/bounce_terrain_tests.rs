@@ -327,22 +327,19 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .find(|c| c["name"] == name)
             .unwrap();
         let mut sim = fixture(case);
-        let mut rng = crate::sim::rng::SimRng::new(17);
-        let mut object = crate::sim::voxel_anim::spawn_debris_piece(
-            0,
+        sim.emit_debris_voxel(
             crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
             &kind,
             None,
             IVec3::ZERO,
-            &mut rng,
+            true,
+            &mut Vec::new(),
         )
         .unwrap();
-        object.bounce = body(case);
-        sim.admit_death_debris(vec![crate::sim::voxel_anim::VoxelDebrisSpawn {
-            type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
-            object,
-        }]);
         let id = sim.substrate.voxel_anims.ids()[0];
+        // This terrain-consumer fixture supplies the independently captured
+        // Bounce body after the ordinary constructor has admitted the object.
+        sim.substrate.voxel_anims.get_mut(id).unwrap().bounce = body(case);
         assert!(sim.live_object_order_snapshot().contains(&id));
         let before = sim.state_hash();
         sim.visit_voxel_anim(id, Some(&rules));

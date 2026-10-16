@@ -354,7 +354,7 @@ pub(crate) fn enter_idle_mode_for(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(object) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
     let landing = super::landing_base::landing_base(

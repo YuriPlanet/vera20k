@@ -1,6 +1,7 @@
 //! Palette + per-house RGB ramp GPU resources for voxel sprite shading.
 //!
-//! Owns the per-theater palette (256 RGB entries) and the per-game house
+//! Owns the theater and native global UNITSNO palettes (256 RGB entries each)
+//! and the per-game house
 //! ramps (16 RGB entries × N_houses). Consumed by the voxel sprite
 //! fragment shader to translate atlas-tile palette indices into final RGB:
 //!
@@ -37,7 +38,8 @@ pub const RAMP_SIZE: u32 = 16;
 
 /// GPU resources for voxel sprite color resolution.
 pub struct PaletteSet {
-    /// 1×256 Rgba8UnormSrgb texture: palette[i] = RGB color for index i (alpha = 255).
+    /// 256×2 Rgba8UnormSrgb texture: row 0 is the theater palette, row 1
+    /// is the native global UNITSNO.PAL Convert palette (without house remap).
     /// sRGB format so the GPU sampler decodes the raw `.pal` display bytes
     /// (which are sRGB-encoded) into linear RGB on read, matching the
     /// pre-Phase-1 atlas semantics and the sRGB surface output.
@@ -64,25 +66,35 @@ impl PaletteSet {
     pub fn new(
         gpu: &GpuContext,
         palette: &Palette,
+        global_palette: &Palette,
         ramps: &HouseColorRamps,
         houses: &[HouseColorIndex],
     ) -> Self {
-        Self::new_on_device(&gpu.device, &gpu.queue, palette, ramps, houses)
+        Self::new_on_device(
+            &gpu.device,
+            &gpu.queue,
+            palette,
+            global_palette,
+            ramps,
+            houses,
+        )
     }
 
     pub(crate) fn new_on_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         palette: &Palette,
+        global_palette: &Palette,
         ramps: &HouseColorRamps,
         houses: &[HouseColorIndex],
     ) -> Self {
-        let palette_bytes: Vec<u8> = build_palette_bytes(palette);
+        let mut palette_bytes = build_palette_bytes(palette);
+        palette_bytes.extend(build_palette_bytes(global_palette));
         let palette_tex: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("voxel_palette_tex"),
             size: wgpu::Extent3d {
                 width: PALETTE_ENTRIES,
-                height: 1,
+                height: 2,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -103,11 +115,11 @@ impl PaletteSet {
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(PALETTE_ENTRIES * 4),
-                rows_per_image: Some(1),
+                rows_per_image: Some(2),
             },
             wgpu::Extent3d {
                 width: PALETTE_ENTRIES,
-                height: 1,
+                height: 2,
                 depth_or_array_layers: 1,
             },
         );

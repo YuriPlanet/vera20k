@@ -12,6 +12,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::rules::object_type::ObjectType;
+use crate::rules::ruleset::{RuleSet, TypeHandle};
+use crate::sim::type_handle_table::TypeHandleTable;
+
 /// Interned string handle — `Copy`, `Eq`, `Ord`, `Hash`. Zero-cost clones.
 #[derive(
     Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize,
@@ -55,6 +59,9 @@ pub struct StringInterner {
     to_id: BTreeMap<String, InternedId>,
     /// ID (index) → display string (first-seen casing).
     to_str: Vec<String>,
+    /// Derived: each id's object handle in the bound rules
+    /// ([`Self::bind_types`]). Never serialized; a load binds again.
+    types: TypeHandleTable,
 }
 
 impl StringInterner {
@@ -63,7 +70,29 @@ impl StringInterner {
         Self {
             to_id: BTreeMap::new(),
             to_str: Vec::new(),
+            types: TypeHandleTable::default(),
         }
+    }
+
+    /// Resolve the strings interned so far to their objects in `rules`, so
+    /// [`Self::object_type`] answers for them without hashing a name.
+    pub fn bind_types(&mut self, rules: &RuleSet) {
+        self.types = TypeHandleTable::build(rules, self);
+    }
+
+    /// The object type `id` names in `rules`, as
+    /// `rules.object(self.resolve(id))` answers, through the bound handles
+    /// where they apply.
+    #[inline]
+    pub fn object_type<'r>(&self, id: InternedId, rules: &'r RuleSet) -> Option<&'r ObjectType> {
+        self.types.object(self, id, rules)
+    }
+
+    /// The handle of the object type `id` names in `rules`, as
+    /// `rules.type_handle(self.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
+        self.types.handle(self, id, rules)
     }
 
     /// Intern a string, returning its ID. If already interned (case-insensitive),
@@ -133,6 +162,7 @@ impl<'de> serde::Deserialize<'de> for StringInterner {
         Ok(StringInterner {
             to_id,
             to_str: strings,
+            types: TypeHandleTable::default(),
         })
     }
 }

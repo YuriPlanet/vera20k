@@ -66,7 +66,7 @@ impl Simulation {
 
     fn aircraft_guard_facts(&self, id: u64, rules: &RuleSet) -> GuardFacts {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
-        let object = rules.object(self.interner.resolve(entity.type_ref()));
+        let object = self.interner.object_type(entity.type_ref(), rules);
         GuardFacts {
             height: air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()),
             flight_level: air_movement::type_flight_level(entity, Some((rules, &self.interner))),

@@ -127,8 +127,9 @@ impl PrismScene {
         };
         let actor = self.world.substrate.entities.get(source).unwrap();
         let object = self
-            .rules
-            .object(self.world.interner.resolve(actor.type_ref()))
+            .world
+            .interner
+            .object_type(actor.type_ref(), &self.rules)
             .unwrap();
         let selected = combat_weapon::resolve_weapon_index(
             &self.rules,

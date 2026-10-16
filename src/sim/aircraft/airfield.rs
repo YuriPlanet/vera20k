@@ -60,8 +60,9 @@ impl Simulation {
             let coords = ground_pose::object_get_coords(other, terrain);
             distance_3d_leptons([own.x, own.y, own.z], [coords.x, coords.y, coords.z])
         };
-        let docks = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let docks = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .map_or(&[][..], |object| object.dock.as_slice());
         let mut best = None;
         if let Some(first) = docks.first() {
@@ -146,8 +147,9 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> Option<u64> {
         let entity = self.substrate.entities.get(id)?;
-        let airport_bound = rules
-            .object(self.interner.resolve(entity.type_ref()))
+        let airport_bound = self
+            .interner
+            .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.airport_bound);
         let cached = entity.aircraft_ammo.as_ref().and_then(|ammo| ammo.dock());
         if airport_bound && let Some(cached) = cached {

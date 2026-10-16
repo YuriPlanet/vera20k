@@ -247,6 +247,77 @@ fn building_loss_event_waits_for_the_real_destructor_and_house_poll() {
 }
 
 #[test]
+
+fn naval_land_events_poll_final_tracking_removal_from_the_master_house_rung() {
+    let (mut sim, rules, overlay) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[Countries]\n0=Country0\n[Country0]\n\
+         [VehicleTypes]\n0=NAVAL\n1=LAND\n\
+         [NAVAL]\nStrength=100\nNaval=yes\n[LAND]\nStrength=100\n",
+    );
+    let country = sim.interner.intern("Country0");
+    let owner = sim.interner.intern("House0");
+    sim.houses.insert(
+        owner,
+        crate::sim::house_state::HouseState::new(owner, 0, Some(country), true, 0, 10),
+    );
+    sim.session.house_order.push(owner);
+    sim.session.game_mode_nonzero = false;
+    let navy = sim
+        .spawn_object_limbo_at_height("NAVAL", "House0", 15, 15, 0, 0, &rules)
+        .unwrap();
+    let land = sim
+        .spawn_object_limbo_at_height("LAND", "House0", 17, 15, 0, 0, &rules)
+        .unwrap();
+    let map = install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nNAVY=Country0,<none>,Navy,0,1,1,1,0\nLAND=Country0,<none>,Land,0,1,1,1,0\n\
+         [Events]\nNAVY=1,55,0,0\nLAND=1,56,0,0\n\
+         [Actions]\nNAVY=1,28,0,7,0,0,0,0,A\nLAND=1,28,0,8,0,0,0,0,A\n\
+         [Tags]\nNAVY_TAG=0,Navy,NAVY\nLAND_TAG=0,Land,LAND\n",
+    );
+    for frame in 0..=24 {
+        assert_eq!(sim.session.binary_frame, frame);
+        if frame == 7 {
+            sim.uninit_with_rules(navy, &rules);
+            assert_eq!(sim.houses[&owner].tracking.navy(), 1);
+        } else if frame == 15 {
+            sim.uninit_with_rules(land, &rules);
+            assert_eq!(sim.houses[&owner].tracking.vehicles(), 1);
+        }
+        sim.advance_master_frame(
+            &[],
+            Some(&rules),
+            Some(&overlay),
+            67,
+            TickLane::Ordinary,
+            Some(TriggerInputs {
+                events: &map.events,
+                actions: &map.actions,
+                rules: Some(&rules),
+            }),
+            FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&7),
+            frame >= 8,
+            "navy at frame{frame}"
+        );
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&8),
+            frame >= 16,
+            "land at frame{frame}"
+        );
+    }
+    assert_eq!(sim.trigger_runtime.action_trace, [(28, 7), (28, 8)]);
+    assert!(
+        sim.trigger_runtime.tag_order.is_empty(),
+        "both one-shot tags detach and drain"
+    );
+}
+
+#[test]
 fn music_action_reaches_the_ordered_presentation_effects() {
     let (mut sim, rules, overlay, _) = event_ingress_fixture();
     install_event_ingress_map(

@@ -43,8 +43,7 @@ pub(crate) enum ObjectTexture {
     /// and no depth write. The atlas page is payload, never an ordering key.
     ProjectileShp(usize, crate::render::terrain_draw::TerrainPiece),
     UnitAtlasPage(usize),
-    UnitTransitionPage(usize),
-    UnitPose,
+    UnitPosePage(usize),
     ShpPage(usize),
 }
 
@@ -301,8 +300,7 @@ fn push_object_piece(pass: &mut ObjectLayerPass, owner: DrawId, piece: ObjectPie
     let packed_parent = (matches!(
         piece.target,
         ObjectTexture::UnitAtlasPage(_)
-            | ObjectTexture::UnitTransitionPage(_)
-            | ObjectTexture::UnitPose
+            | ObjectTexture::UnitPosePage(_)
             | ObjectTexture::ShpPage(_)
             | ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body)
     ) && piece.instance.draw_state.native_selector_bits() & 6 != 0
@@ -653,8 +651,8 @@ mod tests {
                 plain_parent(&order, 1),
                 vec![
                     packed(ObjectTexture::UnitAtlasPage(0), 11, 4),
-                    packed(ObjectTexture::UnitTransitionPage(1), 12, 4),
-                    packed(ObjectTexture::UnitPose, 13, 4),
+                    packed(ObjectTexture::UnitAtlasPage(1), 12, 4),
+                    packed(ObjectTexture::UnitPosePage(0), 13, 4),
                 ],
             ),
             PlannedObjectInstance::object(
@@ -698,10 +696,10 @@ mod tests {
         use crate::render::draw_state::FX_SHADOW;
 
         let order = NativeDisplayOrder::new(&[1, 2, 3, 4]);
-        let mut rgba_alpha = marked_piece(ObjectTexture::UnitPose, 2);
+        let mut rgba_alpha = marked_piece(ObjectTexture::UnitPosePage(0), 2);
         rgba_alpha.instance.alpha = 0.5;
         rgba_alpha.instance.draw_state.fx_params[0] = 0.25;
-        let mut shadow = marked_piece(ObjectTexture::UnitPose, 3);
+        let mut shadow = marked_piece(ObjectTexture::UnitPosePage(0), 3);
         shadow.instance.draw_state.fx_params[1] = 4.0;
         shadow.instance.draw_state.fx_flags |= FX_SHADOW;
         let mut terrain = marked_piece(
@@ -712,7 +710,7 @@ mod tests {
         let pass = lower_ground_object_instances(vec![
             PlannedObjectInstance::object(
                 plain_parent(&order, 1),
-                vec![marked_piece(ObjectTexture::UnitPose, 1)],
+                vec![marked_piece(ObjectTexture::UnitPosePage(0), 1)],
             ),
             PlannedObjectInstance::object(plain_parent(&order, 2), vec![rgba_alpha]),
             PlannedObjectInstance::object(plain_parent(&order, 3), vec![shadow]),

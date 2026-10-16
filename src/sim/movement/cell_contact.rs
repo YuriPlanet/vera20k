@@ -51,8 +51,9 @@ impl Simulation {
                     .get(id)
                     .ok_or("cell contact has retired receiver")?;
                 if actor.cloak.is_some() {
-                    let speed = rules
-                        .object(self.interner.resolve(actor.type_ref()))
+                    let speed = self
+                        .interner
+                        .object_type(actor.type_ref(), rules)
                         .ok_or("cell contact lacks TechnoType")?
                         .cloaking_speed;
                     // Cell483480 calls the ground-list receiver+FC
