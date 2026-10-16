@@ -4002,20 +4002,38 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
     );
     let destruction = damage["object_destruction_controls"].as_array().unwrap();
     assert_eq!(destruction.len(), 3);
+    assert_eq!(
+        replay_native_histories(rows().into_iter().chain(destruction.iter().cloned())),
+        65
+    );
+}
+
+/// One history driver for the original lifecycle corpus and bounded consumers.
+/// Operations continue through the same production owners and saved authority.
+pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usize {
+    use crate::sim::rng::SimRng;
+
     let mut compared = 0;
-    for row in rows()
-        .into_iter()
-        .chain(destruction.iter().cloned())
-        .filter(|row| {
-            !row["input"]["stock_prefix"].as_bool().unwrap_or(false)
-                && !row["input"]["reference_controls"]
-                    .as_bool()
-                    .unwrap_or(false)
-        })
-    {
+    for row in rows.filter(|row| {
+        !row["input"]["stock_prefix"].as_bool().unwrap_or(false)
+            && !row["input"]["reference_controls"]
+                .as_bool()
+                .unwrap_or(false)
+    }) {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
+        if let Some(states) = row.get("full_rng_before") {
+            // Newer controls supply all three process/scenario priors. In
+            // particular, their native MapGen Seed(31) differs from a fresh
+            // fixed-map Simulation's process default Seed(0).
+            sim.scenario_rng =
+                SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
+            sim.main_rng =
+                SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+            sim.mapgen_rng =
+                SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
+        }
         // The original small-world fixture supplies initialized CellClass
         // allocations at(50,60)/(51,60). This is a storage prerequisite,
         // not a claim about the production retail terrain-construction pass.
@@ -4297,6 +4315,23 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
                 sim.validate_restored_trigger_runtime().unwrap();
             }
         }
+        if let Some(states) = row.get("full_rng_after_history") {
+            assert_eq!(
+                sim.scenario_rng.native_state_hex(),
+                states["scenario"],
+                "{name}: full Scenario"
+            );
+            assert_eq!(
+                sim.main_rng.native_state_hex(),
+                states["main"],
+                "{name}: full Main"
+            );
+            assert_eq!(
+                sim.mapgen_rng.native_state_hex(),
+                states["mapgen"],
+                "{name}: full MapGen"
+            );
+        }
         assert_eq!(
             sim.scenario_rng.next_u32(),
             row["next_random"].as_u64().unwrap() as u32,
@@ -4304,7 +4339,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
         );
         compared += 1;
     }
-    assert_eq!(compared, 65);
+    compared
 }
 
 #[test]

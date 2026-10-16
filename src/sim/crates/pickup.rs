@@ -16,7 +16,8 @@
 //! 2. `0x00481A3F..0x00481A67`: outside game mode 0 a `MultiplayPassive=`
 //!    owner returns true.
 //! 3. `0x00481A6D..0x00481AC1`: a `CrateTrigger=` overlay springs the actor's
-//!    attached tag (event `0x31`) and latches `Scenario+0x34BE` (residual).
+//!    attached tag (event `0x31`), rereads Alive after a nonnull Tag callback,
+//!    and latches `Scenario+0x34BE` if it survived.
 //! 4. `0x00481AC8..0x00481B94`: [`select_pickup_outcome`].
 //! 5. `0x00481B99..0x00481D81`: outside mode 0, the MCV pre-empt, the
 //!    per-powerup eligibility switch and the over-water fallback, each falling
@@ -90,7 +91,7 @@ pub(super) fn select_pickup_outcome(
     rng: &mut SimRng,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
-    overlay_id: u8,
+    overlay_id: Option<u8>,
     stored_selection: u8,
     multiplayer: bool,
 ) -> PickupSelection {
@@ -123,7 +124,9 @@ pub(super) fn select_pickup_outcome(
             (&crate_rules.wood_crate_img, crate_rules.wood_crate),
             (&crate_rules.water_crate_img, crate_rules.water_crate),
         ] {
-            if image.as_deref().and_then(|name| registry.id_for_name(name)) == Some(overlay_id) {
+            if overlay_id.is_some()
+                && image.as_deref().and_then(|name| registry.id_for_name(name)) == overlay_id
+            {
                 powerup = selection;
             }
         }
@@ -316,7 +319,7 @@ pub(crate) fn pickup_crate(
         return true;
     };
     let owner = actor.owner();
-    let (overlay_id, stored_selection) = read_crate_mark_fields(sim, cell);
+    let (overlay_id, _) = read_crate_mark_fields(sim, cell);
     let Some(overlay_id) = overlay_id else {
         return true;
     };
@@ -335,14 +338,40 @@ pub(crate) fn pickup_crate(
     {
         return true;
     }
-    // `0x00481A6D..0x00481AC1`: a `CrateTrigger=` overlay (both stock crate
-    // images) springs the actor's attached TagClass with event 0x31 and
-    // latches `Scenario+0x34BE`. RESIDUAL: VERA attaches no Tags to objects
-    // and keeps no owner for that latch. Trigger: a tagged object (map
-    // scripting) picking up a crate. Effect: the map trigger's "picks up
-    // crate" event never fires and a trigger that killed the actor cannot
-    // make this return false. Frequency: authored maps only. Risk: none in
-    // skirmish.
+    //Steam3e81a617:481A6D..481AC1, trigger_action_values --crate.
+    //The original EmptyCell89E748 is initialized to(0,0) by47B2F0.
+    //Only an actual nonnull Tag call gates on the actor's reread Alive byte;
+    //a null Tag still sets Scenario34BE, even for an already-dead input.
+    if flags.crate_trigger {
+        let had_tag = sim.dispatch_object_tag_event(
+            actor_id,
+            49,
+            Some(actor_id),
+            None,
+            crate::sim::world::UninitContext::new(Some(rules), Some(registry))
+                .with_effects(frame_effects),
+        );
+        if had_tag
+            && sim
+                .substrate
+                .entities
+                .get(actor_id)
+                .is_none_or(|actor| !actor.lifecycle.object_alive())
+        {
+            return false;
+        }
+        sim.mark_crate_pickup_event();
+    }
+    //481AC8/481B3D..481B90 reread Cell data/images;4824A7..4824CE
+    //reread the actor's House. A synchronous Tag can change all three.
+    let Some(actor) = sim.substrate.entities.get(actor_id) else {
+        return false;
+    };
+    let owner = actor.owner();
+    let (overlay_id, stored_selection) = read_crate_mark_fields(sim, cell);
+    //A callback leaving no OverlayType has no supported native lookup
+    //contract (solo's array[-1]); retain None as a nonmatching image rather
+    //than reusing the pre-callback type. No parity claim for that invalid case.
     let selection = select_pickup_outcome(
         &mut sim.scenario_rng,
         rules,
@@ -666,7 +695,7 @@ mod tests {
                 &mut rng,
                 &rules,
                 &registry,
-                registry.id_for_name("WOOD").unwrap(),
+                registry.id_for_name("WOOD"),
                 input["selection"].as_u64().unwrap_or(10) as u8,
                 input["mode"].as_i64() != Some(0),
             );

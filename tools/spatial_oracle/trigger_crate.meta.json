@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded active Action108 placement, original solo Money pickup and synchronous49 caller mutation controls,49/50 predicates, Logic50 histories and one retail ALL07 reader binding. Not whole crate/world/campaign parity.",
+  "assumptions": [
+    "Reuse ActionFixture, make_source_fixture and OriginalBridgeConstructor prepare_success/empty_registries on one VM; flat32x32 allocated Cell table, Size16x16/LocalSize0,0,16,16, empty occupants/Terrain, resident1x1 TMP metadata, OverlayType/raw Rules state, GameActive1, mode0/frame100 and spare native registry capacity are supplied world priors. Land0 speed rows1.0, land1 rows0.0 and remaining image-default rows0.0; water contrast deliberately reaches Float5 then fails this supplied zero table. Original FNPC, slot creation, Overlay constructor/Mark, timer arithmetic and original RNG execute. No physical full-map load or pathfinding/movement integration is claimed.",
+    "Place controls supply CrateRegen3 minutes and selected image/type priors; actual original three RandomClass streams seeded31 and full hex before/after are retained. Missing waypoint row supplies zero-initialized absent Scenario slot; native GetWaypointCoords reads it and FNPC executes, rather than an invented missing-index reject. Malformed out-of-range waypoint indexing is excluded. Full dword scalar20 is random sentinel;276 stores low byte20. Timer draw executes in campaign too.",
+    "The same existing money placement row additionally observes the real Overlay constructor/ID, five registry baselines and increments, Alive0/limbo1/on_map0, pending object identity and actual725C70 -> Overlay/Object destructors/free. Action construction already occupies one AllAbstract/B0F670 entry, so its retained1 baseline is not an Overlay leak. Each of the five arrays loses the Overlay during drain, cursor stays1001 and all three full RNG states remain unchanged by the drain. No released-memory host object is prescribed.",
+    "Pickup reuses crate_pickup.execute on the reader VM via crate_speed_effect.fixture optional VM. Original actor/vtables, neutral House income1, empty storage and balances100/200, one owned building, CrateTrigger/raw images, fixed solo choices and money5000 are explicit priors, not full constructors/INI layering. Original AddCredits executes; FillSilos/nonempty storage/conversion and multiplayer regeneration are excluded.",
+    "49 invokes a declared sink with actual Tag/actor/EmptyCell/force/source ABI. Named sink controls kill actor, change owner or change Cell data; they do not execute Tag action bodies. Original caller rereads Alive only after nonnull Tag callback, then dirty34BE, data and later House/images. No Tag deletion, attachment lifecycle or whole callback-effect parity is claimed by this sink.",
+    "Original47B2F0 establishes global89E748 EmptyCell(0,0); its CRT pointer and bytes are retained. It is BSS, not file-backed data. Dirty34BE writes are conditional on CrateTrigger and outside the nonnull-Tag branch, while callback death exits before dirty and removal.",
+    "PowerEventControls provides eight49/50 predicate controls and four classification calls with explicit persistence, timer, retained, actor/source/House null priors. All three seeded states are checked unchanged per leaf. Existing tag_lifecycle.execute owns two Logic/Tag/Register/Action28 histories: dirty producer is supplied by scenario_flags, not a claimed connected native pickup-to-Logic world execution. Its existing observe_object_cleanup mode seeds and observes all three full states unchanged after each operation; no Object is constructed by these histories. Original timer/completed/pending fields and cleanup calls remain in the inherited history shape.",
+    "retail.crate_cell_anim retains the actual CRATE section and absent ALL07 override, then executes only original ReadString528A10 with the exact CellAnim key, empty default and capacity128. Its empty result combines with the saved static OverlayType constructor+29C zero store and ReadINI missing-key retain branch; this is not whole OverlayType construction/ReadINI, arbitrary animation lookup or all language-layer execution evidence.",
+    "Selected actual ALL07SMD from mapsmd03 is bound by higher-priority-source absence probes, member/archive SHA, raw route/Tags/rules and native Action/Event/flags/Waypoints field readers. Rules/Powerups raw sections are source evidence, not a full Rules reader claim. Placement uses small synthetic geometry, not the distant retail waypoint coordinates. Existing production asset policy remains authoritative."
+  ],
+  "substitutions": [
+    "Inherited cached INI/CRT/heap/TLS/Windows transports. Screen rectangle calls return empty rectangles; dirty-screen and diagnostic printf are recorded/no-op presentation sinks. The money-row drain uses OriginalBridgeConstructor Windows SEH/IsBadReadPtr transport and inherited external-free sink; original gameplay cleanup is not replaced.",
+    "Tag6E53A0 pickup callback is an explicit mutation sink. No Place, FNPC, Mark, RandomRanged, Money amount, AddCredits or predicate return is supplied. Inherited source fixture has unused movement observer seams; selected Place does not invoke them."
+  ],
+  "entry_points": {
+    "action_execute": "0x006DD8B0",
+    "action108": "0x006DF69B",
+    "waypoint": "0x0068BCC0",
+    "place": "0x0056BEC0",
+    "slot_place": "0x004A17C0",
+    "slot_create": "0x004A18F0",
+    "pickup": "0x00481A00",
+    "tag49": "0x006E53A0",
+    "add_credits": "0x004F9950",
+    "has_occurred": "0x0071E940",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0",
+    "logic": "0x0055AFB0",
+    "empty_cell_init": "0x0047B2F0",
+    "overlay_constructor": "0x005FC380",
+    "object_uninit": "0x005F65F0",
+    "deferred_drain": "0x00725C70",
+    "overlay_destructor": "0x005FDF70",
+    "object_destructor": "0x005F3B80"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --crate",
+  "payload_sha256": "f850b10f9926f42df8ea327fbd7ebd6aea27086a731c083f7d2abb34995d4dc0"
+}

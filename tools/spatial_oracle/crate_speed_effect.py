@@ -20,12 +20,16 @@ VTABLES = {'infantry': 0x7EB058, 'unit': 0x7F5C70, 'aircraft': 0x7E22A4}
 TYPE_VTABLES = {'infantry': 0x7EB610, 'unit': 0x7F6218, 'aircraft': 0x7E2868}
 
 
-def fixture(case):
-    u = Uc(UC_ARCH_X86, UC_MODE_32)
-    load_image(u)
-    u.mem_map(STACK_BASE, STACK_SIZE)
-    u.mem_map(SCRATCH, 0x20000)
-    u.mem_map(RET_MAGIC, 0x1000)
+def fixture(case, *, uc=None):
+    # Joined pickup controls reuse the established reader/CRT VM. The caller
+    # owns its mapped arenas; the default standalone fixture stays unchanged.
+    u = uc
+    if u is None:
+        u = Uc(UC_ARCH_X86, UC_MODE_32)
+        load_image(u)
+        u.mem_map(STACK_BASE, STACK_SIZE)
+        u.mem_map(SCRATCH, 0x20000)
+        u.mem_map(RET_MAGIC, 0x1000)
     u.reg_write(UC_X86_REG_FPCW, 0x0E7F)
     sp = STACK_BASE + STACK_SIZE - 0x1000
     # Entry follows the diagnostic printf;482F4F still removes its three args.

@@ -65,6 +65,10 @@ separate from whole-campaign or general Hunt parity.
 
 ``--music-theme`` executes Action20 Read/Execute and the shared Theme queue,
 with declared catalog/stream priors and recorded device transports.
+
+``--crate`` independently records108 placement, solo Money/49 callback
+boundaries,49/50 predicates and bounded Logic50 histories. World geometry,
+actor/House and callback seams are explicit; no full campaign is replayed.
 """
 from pathlib import Path
 import hashlib
@@ -4912,6 +4916,295 @@ def all_to_hunt_source_paths():
     return paths
 
 
+def crate_placement_control(case):
+    """Actual108/Place/Overlay constructor on the shared small flat map.
+
+    Reuse the source-aware movement map and Overlay constructor's TMP/registry
+    priors. No placement, FNPC, Mark, random or timer return is supplied.
+    """
+    from tools.spatial_oracle.unit_source_scatter import make_source_fixture, CELLS
+    from tools.spatial_oracle.bridge_constructor import D, REGISTRIES
+    f=ActionFixture();u=f.u
+    make_source_fixture(dict(seed=31,live_entry=True),uc=u)
+    u.mem_map(D,0x200000)
+    overlay=f.allocate(0x400)
+    native=OriginalBridgeConstructor.__new__(OriginalBridgeConstructor)
+    native.uc=u;native.typ=overlay;native.overlay_id=0;native.required=[]
+    native.cell=CELLS+(10*32+10)*0x200
+    native.prepare_success('success')
+    u.mem_write(overlay,bytes(0x400));u.mem_write(overlay,dwords(0x7EF600))
+    u.mem_write(overlay+0x294,dwords(0));u.mem_write(overlay+0x2AA,b'\1')
+    rules=D+0x40000
+    u.mem_write(rules+0xF8,dwords(overlay));u.mem_write(rules+0x100,dwords(overlay))
+    u.mem_write(rules+0x1678,struct.pack('<d',case.get('regen_minutes',3.0)))
+    u.mem_write(0x87F7E8+0xF4,dwords(16,16,0,0,16,16))
+    u.mem_write(0x87F7E8+0x158,bytes(16*256))
+    u.mem_write(0xA8B230,dwords(SCENARIO));u.mem_write(SCENARIO+0x214,dwords(1000))
+    u.mem_write(0xA8B238,dwords(0));u.mem_write(0xA8ED84,dwords(100))
+    u.mem_write(0xA8E9A0,b'\1');u.mem_write(0xA8ED2C,dwords(D+0x48000))
+    f.call(0x47B2F0,[]);f.call(0x5FC310,[])
+    # Slot EmptyCell has its own original static initializer; the native image
+    # starts at zero here, and the same actual value is retained in output.
+    OriginalBridgeConstructor.empty_registries(u,f.allocate)
+    if case.get('slots_full'):
+        u.mem_write(0x87F7E8+0x158,(dwords(50,777,100)+packed(5,5))*256)
+    for y in range(32):
+        for x in range(32):
+            cell=CELLS+(y*32+x)*0x200
+            if case.get('all_occupied'):
+                u.mem_write(cell+0x44,dwords(0))
+            if case.get('blocked'):
+                u.mem_write(cell+0x124,dwords(0xFF))
+            if case.get('water'):
+                u.mem_write(cell+0xEC,dwords(2))
+    read=f.read_action(f"108,0,{case.get('scalar',0)},0,0,0,0,A",ini_capacity=512)
+    requested=case.get('waypoint',[10,10])
+    if not case.get('missing_waypoint'):
+        u.mem_write(SCENARIO+0x632,packed(*requested))
+    waypoint=list(struct.unpack('<2h',u.mem_read(SCENARIO+0x632,4)))
+    for stream in (SCENARIO+0x218,0x886B88,0xABE890):
+        f.call(0x65C6D0,[31],ecx=stream)
+    proxy=SimpleNamespace(u=u,scenario=SCENARIO)
+    before=CampaignReader.rng_state(proxy)
+    events=[];rng_calls=[]
+    lifecycle_calls=[];overlay_object=None
+    observe_lifecycle=case['name']=='money'
+    def lifecycle_snapshot(*,live_object=False):
+        pending=f.read32(0xB0F6A8);array=f.read32(0xB0F69C)
+        state=dict(cursor=f.read32(SCENARIO+0x214),
+            registry_counts={f'{p:08X}':f.read32(p+16) for p in REGISTRIES},
+            pending_native_ids=[f.read32(f.read32(array+n*4)+0x10) for n in range(pending)])
+        if live_object:
+            state.update(native_id=f.read32(overlay_object+0x10),
+                alive=u.mem_read(overlay_object+0x90,1)[0],
+                limbo=u.mem_read(overlay_object+0x81,1)[0],
+                on_map=u.mem_read(overlay_object+0x74,1)[0])
+        return state
+    lifecycle_before=lifecycle_snapshot() if observe_lifecycle else None
+    addresses={0x56BEC0:'place',0x56DC20:'find_nearby',0x4A17C0:'slot_place',
+        0x4A18F0:'validate_create',0x5FC380:'overlay_constructor',0x5FC570:'overlay_mark'}
+    def observe(vm,pc,size,data):
+        nonlocal overlay_object
+        sp=vm.reg_read(UC_X86_REG_ESP)
+        if observe_lifecycle:
+            receiver=vm.reg_read(UC_X86_REG_ECX)
+            if pc==0x5FC380:
+                assert overlay_object is None
+                overlay_object=receiver
+                lifecycle_calls.append(dict(pc=f'{pc:08X}',call='overlay_constructor'))
+            elif overlay_object is not None:
+                if pc==0x410230 and f.read32(sp+4)==overlay_object+4:
+                    lifecycle_calls.append(dict(pc=f'{pc:08X}',call='create_id',
+                        cursor_before=f.read32(SCENARIO+0x214)))
+                elif pc==0x68BCB0 and receiver==SCENARIO:
+                    lifecycle_calls.append(dict(pc=f'{pc:08X}',call='next_unique_id',
+                        cursor_before=f.read32(SCENARIO+0x214)))
+                elif receiver==overlay_object and pc in (0x5FC570,0x5F65F0,0x7258D0,0x5FDF70,0x5F3B80):
+                    names={0x5FC570:'mark',0x5F65F0:'uninit',0x7258D0:'announce_expired',
+                           0x5FDF70:'overlay_destructor',0x5F3B80:'object_destructor'}
+                    lifecycle_calls.append(dict(pc=f'{pc:08X}',call=names[pc]))
+                elif pc in (0x725C70,0x7C8B3D):
+                    lifecycle_calls.append(dict(pc=f'{pc:08X}',call='drain' if pc==0x725C70 else 'crt_free'))
+        if pc in addresses:
+            row=dict(call=addresses[pc])
+            if pc==0x56BEC0:
+                row.update(cell=list(struct.unpack('<2h',vm.mem_read(sp+4,4))),
+                    scalar=struct.unpack('<i',vm.mem_read(sp+8,4))[0])
+            elif pc==0x56DC20:
+                row.update(speed=f.read32(sp+12))
+            events.append(row)
+        if pc in (0x65C780,0x65C7E0):
+            rng_calls.append(dict(address=f'{pc:08X}',receiver=f'{vm.reg_read(UC_X86_REG_ECX):08X}',
+                args=list(struct.unpack('<2i',vm.mem_read(sp+4,8))) if pc==0x65C7E0 else []))
+        if pc in (0x47FDE0,0x47FB90):
+            output=f.read32(sp+4);vm.mem_write(output,bytes(16))
+            return_from_sink(vm,4,output)
+        elif pc==0x6D2790:
+            return_from_sink(vm,20,0)
+        elif pc==0x4068E0:
+            return_from_sink(vm,0,0)
+    u.hook_add(UC_HOOK_CODE,observe)
+    returned=f.call(0x6DD8B0,[0,0,0,0],ecx=ACTION)&255
+    slots=[list(struct.unpack('<3i2h',u.mem_read(0x87F7E8+0x158+i*16,16))) for i in range(256)]
+    placed=[dict(xy=[x,y],overlay=struct.unpack('<i',u.mem_read(CELLS+(y*32+x)*0x200+0x44,4))[0],
+        data=u.mem_read(CELLS+(y*32+x)*0x200+0x11E,1)[0])
+        for y in range(32) for x in range(32)
+        if struct.unpack('<i',u.mem_read(CELLS+(y*32+x)*0x200+0x44,4))[0]!=-1]
+    f.check_code()
+    result=dict(input=case,native_read=read,native_waypoint=waypoint,
+        output=dict(returned=returned,first_slot=slots[0],second_slot=slots[1],
+            occupied_slots=sum(row[3:]!=[0,0] for row in slots),
+            cells=placed if not case.get('all_occupied') else [],
+            all_occupied_prior=bool(case.get('all_occupied')),scenario_id_cursor=f.read32(SCENARIO+0x214),
+            empty_cell=list(struct.unpack('<2h',u.mem_read(0x89E748,4)))),
+        events=events,rng_calls=rng_calls,rng_before=before,rng_after=CampaignReader.rng_state(proxy))
+    if observe_lifecycle:
+        assert overlay_object is not None
+        after_placement=lifecycle_snapshot(live_object=True)
+        before_drain=CampaignReader.rng_state(proxy)
+        # Shared constructor/deferred Windows transport; the actual drain and
+        # Overlay/Object destructors execute. No lifecycle result is supplied.
+        OriginalBridgeConstructor.prepare_deferred_services(u)
+        f.call(0x725C70,[])
+        after_drain=lifecycle_snapshot()
+        after_drain['free_calls']=sum(row['call']=='crt_free' for row in lifecycle_calls)
+        after_rng=CampaignReader.rng_state(proxy)
+        assert before_drain==after_rng
+        result['lifecycle']=dict(before=lifecycle_before,after_placement=after_placement,
+            after_drain=after_drain,calls=lifecycle_calls,
+            rng_before_drain=before_drain,rng_after_drain=after_rng)
+        f.check_code()
+    return result
+
+
+def crate_retail_inputs():
+    """One actual active ALL07 map and original counted input readers."""
+    from tools.spatial_oracle.tag_lifecycle import PowerEventControls
+    directory=configured_gamemd().parent
+    probes=[];raw_map=None
+    for name in ('langmd.mix','language.mix','expandmd01.mix','mapsmd03.mix'):
+        data=(directory/name).read_bytes();member=mix(data).get(mix_hash('ALL07SMD.MAP'))
+        probes.append(dict(archive=name,sha256=hashlib.sha256(data).hexdigest(),
+            member_sha256=None if member is None else hashlib.sha256(member).hexdigest(),
+            member_bytes=None if member is None else len(member)))
+        if member is not None and raw_map is None:raw_map=member
+    assert [row['archive'] for row in probes if row['member_sha256']] == ['mapsmd03.mix']
+    values=sections(raw_map);rules_raw=(Path(__file__).parents[2]/'ini/rulesmd.ini').read_bytes()
+    rules=sections(rules_raw);identity='04F0AACC';f=ActionFixture()
+    tokens=values['Actions'][identity].split(',');actions=[]
+    for index in range(2):
+        action=f.read_action(','.join(tokens[1+index*8:9+index*8]),ini_capacity=512)
+        wp=action['waypoint'];f.ordered_ini({'Waypoints':values['Waypoints']})
+        f.u.mem_write(SP+0x10,str(wp).encode()+b'\0')
+        for reg,value in ((UC_X86_REG_ESP,SP),(UC_X86_REG_EBX,INI),
+                (UC_X86_REG_ESI,wp),(UC_X86_REG_EDI,SCENARIO+0x632+wp*4)):
+            f.u.reg_write(reg,value)
+        run_checked(f.u,0x68BDE7,0x68BE35,required_addresses=(0x5276D0,))
+        action.update(raw_waypoint=values['Waypoints'][str(wp)],
+            native_waypoint=list(struct.unpack('<2h',f.u.mem_read(SCENARIO+0x632+wp*4,4))))
+        actions.append(action)
+    # Exact selected section only: this is a ReadString field-block probe,
+    # not a second Rules loader or a full OverlayType::ReadINI execution.
+    f.ordered_ini({'CRATE':rules['CRATE']})
+    section=f.allocate(16);buffer=f.allocate(128)
+    f.u.mem_write(section,b'CRATE\0');f.u.mem_write(buffer,bytes(128))
+    cell_anim_length=f.call(0x528A10,[section,0x833544,0x889F64,buffer,128],ecx=INI)
+    cell_anim=dict(rules_section=rules['CRATE'],map_override=values.get('CRATE'),
+        key='CellAnim',capacity=128,default='',native_read_length=cell_anim_length,
+        native_read=bytes(f.u.mem_read(buffer,128)).split(b'\0')[0].decode('latin1'))
+    flags=FlagsFixture();f.check_code()
+    return dict(map='ALL07SMD.MAP',map_sha256=hashlib.sha256(raw_map).hexdigest(),
+        source_scan=probes,selected_source='mapsmd03.mix',
+        rules_file='ini/rulesmd.ini',rules_sha256=hashlib.sha256(rules_raw).hexdigest(),
+        trigger_id=identity,trigger=values['Triggers'][identity],events=values['Events'][identity],
+        actions=values['Actions'][identity],tags={k:v for k,v in values['Tags'].items() if v.endswith(','+identity)},
+        native_events=PowerEventControls.read_event(values['Events'][identity]),
+        native_flags=flags.execute(values['Triggers'][identity],[1,1,1,1,0]),native_actions=actions,
+        raw_rules={name:rules[name] for name in ('CrateRules','Powerups')},
+        raw_overrides={name:values[name] for name in ('CrateRules','Powerups') if name in values},
+        crate_cell_anim=cell_anim,
+        limits='Physical registered-source probes bind this install and existing AssetManager priority; no new general resolver. Native Event/Action/flags/Waypoints field readers execute. CrateRules/Powerups values are raw source records here, not a whole Rules loader or whole-map placement execution.')
+
+
+def crate_generate():
+    from tools.native_oracle import image_sha256,file_span,image_bytes
+    from tools.spatial_oracle.crate_pickup import execute as pickup_execute
+    from tools.spatial_oracle.tag_lifecycle import PowerEventControls,execute as tag_execute
+    placement=[crate_placement_control(case) for case in (
+        dict(name='money',scalar=0),dict(name='random_sentinel20',scalar=20),
+        dict(name='scalar276_low_byte20',scalar=276),dict(name='negative_scalar_low_byte255',scalar=-1),
+        dict(name='missing_waypoint_zero_prior',missing_waypoint=True),
+        dict(name='full_slots',slots_full=True),dict(name='already_occupied_cells',all_occupied=True),
+        dict(name='water_speed_zero_table_reject',water=True))]
+    pickups=[]
+    for extra in (
+        dict(name='ordinary_money'),dict(name='no_tag',tag=False),
+        dict(name='no_crate_trigger',crate_trigger=False),dict(name='callback_kill',mutation='kill'),
+        dict(name='callback_owner1',mutation='owner1'),
+        dict(name='callback_data10',mutation='selection10',prefix_only=True),
+        dict(name='callback_data0',selection=10,mutation='selection0'),
+        dict(name='dead_no_tag_bypasses_alive_gate',tag=False,alive=False),
+        dict(name='random_money_amount',solo_money=0)):
+        case=dict(mode=0,selection=0,solo_choices=[2,0,0],same_images=True,solo_money=5000)|extra
+        f=ActionFixture();f.u.mem_map(SCRATCH+0x10000,0x10000)
+        pickups.append(pickup_execute(case,native_fixture=f));f.check_code()
+    m=PowerEventControls(reader_inputs=[]);pscene=m.arena+0xB0000
+    m.u.mem_write(0xA8B230,dwords(pscene))
+    for stream in (pscene+0x218,0x886B88,0xABE890):m.fixture.call(0x65C6D0,[31],ecx=stream)
+    predicate_rng=CampaignReader.rng_state(SimpleNamespace(u=m.u,scenario=pscene));classification=[]
+    for kind in (49,50):
+        for name,raised,bypass,persist in (
+            ('matching',kind,False,0),('wrong_raise',8,False,0),
+            ('scenario_init',kind,True,0),('initial_persistence1',kind,False,1)):
+            # predicate supplies this sentinel immediately before its call.
+            m.u.mem_write(m.event+0x54,dwords(0xABCD1234))
+            event54=struct.unpack('<i',m.u.mem_read(m.event+0x54,4))[0]
+            before=list(struct.unpack('<3i',m.u.mem_read(m.timer,12)))
+            m.predicate(f'{kind}_{name}',f'1,{kind},0,-7',house_index=None,
+                raised=raised,actor_index=None,scenario_init=bypass,initial_persistence=persist)
+            row=m.predicates[-1];row.update(timer_before=before,
+                timer_after=list(struct.unpack('<3i',m.u.mem_read(m.timer,12))),event54_before=event54,
+                three_rng_unchanged=predicate_rng==CampaignReader.rng_state(SimpleNamespace(u=m.u,scenario=pscene)))
+            row['inputs']['initial_persistence']=persist
+            assert row['three_rng_unchanged']
+        classification.append(dict(kind=kind,state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
+            state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255))
+    m.assert_unchanged()
+    histories=[tag_execute(dict(name=f'crate_logic_repeat{repeat}',repeat=repeat,polling=True,lifecycle=True,
+        observe_object_cleanup=True,
+        triggers=[dict(events=[[50,0]],actions=[[28,7]])],
+        operations=[['shared'],['register_logic',0],['poll'],['scenario_flags',0,0,0,1],
+            ['poll'],['poll'],['scenario_flags',0,0,0,1],['poll'],['drain']])) for repeat in (0,2)]
+    image=image_bytes()
+    ranges=(('action108',0x6DF69B,0x35),('waypoint',0x68BCC0,0x14),
+        ('empty_cell_initializer',0x47B2F0,0xF),('empty_cell_crt_pointer',0x812A24,4),
+        ('place',0x56BEC0,0x160),('slot_place_timer',0x4A17C0,0x130),
+        ('slot_validate_create',0x4A18F0,0x1B0),('pickup_selection',0x481A00,0x199),
+        ('pickup_money',0x482465,0x86),('logic_poll',0x55AFB0,0x255),
+        ('overlay_constructor',0x5FC380,0x12E),('overlay_uninit',0x5F65F0,0x92),
+        ('overlay_destructor',0x5FDF70,0x96),('object_destructor',0x5F3B80,0x204),
+        ('overlay_type_constructor_defaults',0x5FE250,0x70),('cell_anim_read',0x5FE865,0x58))
+    return dict(schema_version=1,native_sha256=image_sha256(),
+        placement_controls=placement,pickup_controls=pickups,event_controls=m.predicates,
+        classification=classification,predicate_rng_seed31=predicate_rng,logic_histories=histories,
+        retail=crate_retail_inputs(),bytes={name:dict(address=f'{a:08X}',size=n,
+            hex=file_span(image,a,n)[1].hex()) for name,a,n in ranges})
+
+
+def crate_metadata():
+    return provenance(
+        scope='Bounded active Action108 placement, original solo Money pickup and synchronous49 caller mutation controls,49/50 predicates, Logic50 histories and one retail ALL07 reader binding. Not whole crate/world/campaign parity.',
+        assumptions=[
+            'Reuse ActionFixture, make_source_fixture and OriginalBridgeConstructor prepare_success/empty_registries on one VM; flat32x32 allocated Cell table, Size16x16/LocalSize0,0,16,16, empty occupants/Terrain, resident1x1 TMP metadata, OverlayType/raw Rules state, GameActive1, mode0/frame100 and spare native registry capacity are supplied world priors. Land0 speed rows1.0, land1 rows0.0 and remaining image-default rows0.0; water contrast deliberately reaches Float5 then fails this supplied zero table. Original FNPC, slot creation, Overlay constructor/Mark, timer arithmetic and original RNG execute. No physical full-map load or pathfinding/movement integration is claimed.',
+            'Place controls supply CrateRegen3 minutes and selected image/type priors; actual original three RandomClass streams seeded31 and full hex before/after are retained. Missing waypoint row supplies zero-initialized absent Scenario slot; native GetWaypointCoords reads it and FNPC executes, rather than an invented missing-index reject. Malformed out-of-range waypoint indexing is excluded. Full dword scalar20 is random sentinel;276 stores low byte20. Timer draw executes in campaign too.',
+            'The same existing money placement row additionally observes the real Overlay constructor/ID, five registry baselines and increments, Alive0/limbo1/on_map0, pending object identity and actual725C70 -> Overlay/Object destructors/free. Action construction already occupies one AllAbstract/B0F670 entry, so its retained1 baseline is not an Overlay leak. Each of the five arrays loses the Overlay during drain, cursor stays1001 and all three full RNG states remain unchanged by the drain. No released-memory host object is prescribed.',
+            'Pickup reuses crate_pickup.execute on the reader VM via crate_speed_effect.fixture optional VM. Original actor/vtables, neutral House income1, empty storage and balances100/200, one owned building, CrateTrigger/raw images, fixed solo choices and money5000 are explicit priors, not full constructors/INI layering. Original AddCredits executes; FillSilos/nonempty storage/conversion and multiplayer regeneration are excluded.',
+            '49 invokes a declared sink with actual Tag/actor/EmptyCell/force/source ABI. Named sink controls kill actor, change owner or change Cell data; they do not execute Tag action bodies. Original caller rereads Alive only after nonnull Tag callback, then dirty34BE, data and later House/images. No Tag deletion, attachment lifecycle or whole callback-effect parity is claimed by this sink.',
+            'Original47B2F0 establishes global89E748 EmptyCell(0,0); its CRT pointer and bytes are retained. It is BSS, not file-backed data. Dirty34BE writes are conditional on CrateTrigger and outside the nonnull-Tag branch, while callback death exits before dirty and removal.',
+            'PowerEventControls provides eight49/50 predicate controls and four classification calls with explicit persistence, timer, retained, actor/source/House null priors. All three seeded states are checked unchanged per leaf. Existing tag_lifecycle.execute owns two Logic/Tag/Register/Action28 histories: dirty producer is supplied by scenario_flags, not a claimed connected native pickup-to-Logic world execution. Its existing observe_object_cleanup mode seeds and observes all three full states unchanged after each operation; no Object is constructed by these histories. Original timer/completed/pending fields and cleanup calls remain in the inherited history shape.',
+            'retail.crate_cell_anim retains the actual CRATE section and absent ALL07 override, then executes only original ReadString528A10 with the exact CellAnim key, empty default and capacity128. Its empty result combines with the saved static OverlayType constructor+29C zero store and ReadINI missing-key retain branch; this is not whole OverlayType construction/ReadINI, arbitrary animation lookup or all language-layer execution evidence.',
+            'Selected actual ALL07SMD from mapsmd03 is bound by higher-priority-source absence probes, member/archive SHA, raw route/Tags/rules and native Action/Event/flags/Waypoints field readers. Rules/Powerups raw sections are source evidence, not a full Rules reader claim. Placement uses small synthetic geometry, not the distant retail waypoint coordinates. Existing production asset policy remains authoritative.'],
+        substitutions=[
+            'Inherited cached INI/CRT/heap/TLS/Windows transports. Screen rectangle calls return empty rectangles; dirty-screen and diagnostic printf are recorded/no-op presentation sinks. The money-row drain uses OriginalBridgeConstructor Windows SEH/IsBadReadPtr transport and inherited external-free sink; original gameplay cleanup is not replaced.',
+            'Tag6E53A0 pickup callback is an explicit mutation sink. No Place, FNPC, Mark, RandomRanged, Money amount, AddCredits or predicate return is supplied. Inherited source fixture has unused movement observer seams; selected Place does not invoke them.'],
+        entry_points=dict(action_execute=0x6DD8B0,action108=0x6DF69B,waypoint=0x68BCC0,
+            place=0x56BEC0,slot_place=0x4A17C0,slot_create=0x4A18F0,
+            pickup=0x481A00,tag49=0x6E53A0,add_credits=0x4F9950,
+            has_occurred=0x71E940,state_a=0x71F950,state_b=0x71F9C0,
+            logic=0x55AFB0,empty_cell_init=0x47B2F0,overlay_constructor=0x5FC380,
+            object_uninit=0x5F65F0,deferred_drain=0x725C70,
+            overlay_destructor=0x5FDF70,object_destructor=0x5F3B80))
+
+
+def crate_source_paths():
+    paths=dict(SOURCE_PATHS)
+    paths.update(crate_pickup=Path(__file__).with_name('crate_pickup.py'),
+        crate_actor=Path(__file__).with_name('crate_speed_effect.py'),
+        source_map=Path(__file__).with_name('unit_source_scatter.py'),
+        source_state=Path(__file__).with_name('unit_scatter_state.py'))
+    return paths
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -4931,9 +5224,15 @@ if __name__=='__main__':
     selected_modes.add_argument('--conceal-area', action='store_true')
     selected_modes.add_argument('--music-theme', action='store_true')
     selected_modes.add_argument('--all-to-hunt', action='store_true')
+    selected_modes.add_argument('--crate', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.all_to_hunt:
+    if selected.crate:
+        if selected.inputs is not None:
+            selector.error('--crate uses configured retail assets, not --inputs')
+        finish_vectors(crate_generate, Path(__file__).with_name('trigger_crate.json'),
+            provenance=crate_metadata, argv=remaining, source_paths=crate_source_paths())
+    elif selected.all_to_hunt:
         if selected.inputs is not None:
             selector.error('--all-to-hunt reads configured retail ALL06, not --inputs')
         finish_vectors(all_to_hunt_generate,
