@@ -6,7 +6,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::production::{ProductionCategory, construct_active_factory_fixture};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn rows(section: &str) -> Vec<Value> {
     let data: Value =
@@ -259,6 +259,35 @@ fn check_build_limit_matches_the_original() {
         let (sim, owner) = sim_for(&row, &rules);
         let answer = check_build_limit(&sim, &rules, owner, &query(&row, &rules));
         assert_eq!(i32::from(answer), int(&row["answer"]), "{}", row["name"]);
+    }
+}
+
+#[test]
+fn can_build_after_runtime_tech_level_change_matches_original_current_value_controls() {
+    for row in rows("can_build") {
+        let native_tech_level = row["type"]["tech"].as_i64().unwrap_or(1) as i32;
+        let mut initial = row.clone();
+        // The original corpus's current value comes from the trigger owner,
+        // deliberately differing from this fixture's frozen reader output.
+        initial["type"]["tech"] = json!(if native_tech_level == -1 { 255 } else { -1 });
+        let rules = rules_for(&initial);
+        let (mut sim, owner) = sim_for(&row, &rules);
+        sim.set_object_type_tech_level("Q", native_tech_level, &rules);
+        let args = row["args"].as_array().unwrap();
+        let answer = can_build(
+            &sim,
+            &rules,
+            owner,
+            &query(&row, &rules),
+            args[0].as_bool().unwrap(),
+            args[1].as_bool().unwrap(),
+        );
+        let answer = match answer {
+            CanBuild::No => 0,
+            CanBuild::Yes => 1,
+            CanBuild::AtLimit => -1,
+        };
+        assert_eq!(answer, int(&row["answer"]), "{}", row["name"]);
     }
 }
 

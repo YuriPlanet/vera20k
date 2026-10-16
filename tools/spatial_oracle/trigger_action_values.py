@@ -87,6 +87,12 @@ ALL03 NPC NukeSpecial sequence, real recharge/Reset and preferred-cell
 consumers. Physical MD bytes come from the configured original installation.
 Detailed ABI receipts may be retained externally with
 ``VERA20K_TRIGGER_SUPER_STATE_RECEIPTS`` when writing the new corpus.
+
+``--tech-level`` executes106's exact global type lookup, physical counted
+retail/scalar readers and the existing reset owner. A bounded ALL05 paid ORCA
+history follows both authored106 actions through House/Strip and local receive.
+It reuses the existing Factory fixture with explicit campaign layers; terrain,
+played-world and OS/service priors do not certify full campaign startup.
 """
 from pathlib import Path
 import hashlib
@@ -6654,6 +6660,270 @@ def chrono_reinforcement_metadata():
     return record
 
 
+def tech_level_retail():
+    """Physical MD layers and original727516..7275A5 counted Action reader."""
+    root = configured_gamemd().parent
+    archive_raw = (root/'mapsmd03.mix').read_bytes()
+    archive = mix(archive_raw)
+    patch_raw = (root/'expandmd01.mix').read_bytes()
+    rules_raw = mix(patch_raw)[mix_hash('RULESMD.INI')]
+    rules = sections(rules_raw)
+    sources = [dict(file='RULESMD.INI', archive='expandmd01.mix',
+        archive_sha256=hashlib.sha256(patch_raw).hexdigest(),
+        sha256=hashlib.sha256(rules_raw).hexdigest())]
+    routes, layers = [], []
+    for filename, identity, names in (
+        ('SOV03UMD.MAP','0D3F1D6C',('TTNK',)),
+        ('SOV04DMD.MAP','068A958C',('NAIRON',)),
+        ('SOV07TMD.MAP','093BB0FC',('TERROR','DTRUCK')),
+        ('ALL05UMD.MAP','068397DC',('ORCA','BEAG'))):
+        raw = archive[mix_hash(filename)]
+        values = sections(raw)
+        sources.append(dict(file=filename, archive='mapsmd03.mix',
+            archive_sha256=hashlib.sha256(archive_raw).hexdigest(),
+            sha256=hashlib.sha256(raw).hexdigest()))
+        f = ActionFixture()
+        f.call(0x7C8F5E, [])
+        f.ordered_ini({'Actions': {identity: values['Actions'][identity]}})
+        trigger = f.allocate(0xB4)
+        f.u.mem_write(trigger, bytes(0xB4))
+        f.u.mem_write(trigger+0x24, identity.encode()+b'\0')
+        f.u.mem_write(SP+0x248, dwords(INI))
+        f.u.reg_write(UC_X86_REG_ESP, SP)
+        f.u.reg_write(UC_X86_REG_EBP, trigger)
+        f.u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(f.u, 0x727516, 0x7275A5)
+        ptr, actions = f.read32(trigger+0xB0), []
+        while ptr:
+            actions.append(dict(kind=f.integer(ptr+0x2C),
+                inline_type=f.string(ptr+0x54), value=f.integer(ptr+0x90),
+                args=[f.integer(ptr+n) for n in (0x34,0x38,0x3C,0x40)],
+                waypoint=f.integer(ptr+0x44)))
+            ptr = f.read32(ptr+0x28)
+        f.check_code()
+        routes.append(dict(map=filename, trigger_id=identity,
+            trigger=values['Triggers'][identity], events=values['Events'][identity],
+            raw_actions=values['Actions'][identity], actions=actions,
+            tags={key: body for key,body in values['Tags'].items()
+                  if body.endswith(','+identity)}))
+        for name in names:
+            scalar = ActionFixture()
+            scalar.call(0x7C8F5E, [])
+            pointer = scalar.allocate(0x800)
+            scalar.u.mem_write(pointer, bytes(0x800))
+            scalar.u.mem_write(pointer+0x24, name.encode()+b'\0')
+            scalar.u.reg_write(UC_X86_REG_ESI, pointer)
+            run_checked(scalar.u, 0x711082, 0x71108C)
+            constructor = scalar.integer(pointer+0x634)
+            passes = []
+            # Optional files are absent in the supported install. Keep that
+            # absence explicit rather than substituting the RA2 base INIs.
+            for label, entries in [('RULESMD.INI',rules),
+                    ('LANGRULE.INI',None),(filename[:-4]+'.INI',None),
+                    (filename,values)]:
+                if entries is None:
+                    assert not (root/label).exists(), label
+                    passes.append(dict(layer=label, absent=True,
+                        raw_key=None, value=scalar.integer(pointer+0x634)))
+                    continue
+                section = entries.get(name,{})
+                scalar.ordered_ini({name: section})
+                scalar.u.reg_write(UC_X86_REG_ESP, SP)
+                scalar.u.reg_write(UC_X86_REG_EBP, pointer)
+                scalar.u.reg_write(UC_X86_REG_EBX, pointer+0x24)
+                scalar.u.reg_write(UC_X86_REG_ESI, INI)
+                run_checked(scalar.u, 0x714570, 0x71458A,
+                    required_addresses=(0x5276D0,0x714584))
+                passes.append(dict(layer=label, absent=False,
+                    raw_key=section.get('TechLevel'),
+                    value=scalar.integer(pointer+0x634)))
+            scalar.check_code()
+            layers.append(dict(map=filename,type=name,constructor=constructor,passes=passes))
+    return dict(sources=sources,routes=routes), layers
+
+
+def tech_level_dispatch_controls():
+    """Original106 on declared global Type/House registration priors."""
+    specs = [
+        ('retail_ttnk','TTNK',1,[('TTNK','Vehicle',12),('NAIRON','Building',11)],2),
+        ('case_miss','ttnk',1,[('TTNK','Vehicle',12)],2),
+        ('missing_type','MISSING',1,[('TTNK','Vehicle',12)],2),
+        ('reverse_duplicate','TTNK',1,[('TTNK','Vehicle',12),('NAIRON','Building',11),('TTNK','Aircraft',9)],2),
+        ('negative','TTNK',-2,[('TTNK','Vehicle',12)],2),
+        ('i32_min','TTNK',-2147483648,[('TTNK','Vehicle',12)],2),
+        ('i32_max','TTNK',2147483647,[('TTNK','Vehicle',12)],2),
+        ('no_houses','TTNK',1,[('TTNK','Vehicle',12)],0),
+        ('empty_registry','TTNK',1,[],2)]
+    output = []
+    for name, target, value, types, house_count in specs:
+        f = ActionFixture()
+        f.call(0x7C8F5E, [])
+        proxy = SimpleNamespace(u=f.u,scenario=SCENARIO,
+            invoke=lambda pc,this,args: f.call(pc,list(args),ecx=this))
+        CampaignReader.seed_streams(proxy,31)
+        pointers, houses, writes, calls = [], [], [], []
+        for identity, category, prior in types:
+            pointer = f.allocate(0x700)
+            f.u.mem_write(pointer,bytes(0x700))
+            f.u.mem_write(pointer+0x24,identity.encode()+b'\0')
+            f.u.mem_write(pointer+0x634,dwords(prior))
+            pointers.append(pointer)
+        for _ in range(house_count):
+            pointer=f.allocate(0x200)
+            f.u.mem_write(pointer,bytes(0x200))
+            houses.append(pointer)
+        for slot,items in ((0xA8EB04,pointers),(0xA8022C,houses)):
+            storage=f.allocate(max(4,4*len(items)))
+            f.u.mem_write(storage,dwords(*items) if items else dwords(0))
+            f.u.mem_write(slot,dwords(storage))
+            f.u.mem_write(slot+12,dwords(len(items)))
+        def observe_write(u,_access,address,size,stored,_data):
+            for owner,items,offset in (('type',pointers,0x634),('house',houses,0x1FC)):
+                if address in [p+offset for p in items]:
+                    signed=struct.unpack('<i',dwords(stored))[0] if owner=='type' else stored
+                    writes.append(dict(owner=owner,index=items.index(address-offset),size=size,value=signed))
+        def observe_rng(u,pc,_size,_data):
+            if pc in (0x65C780,0x65C7E0):
+                calls.append(f'{pc:08X}')
+        raw=f'106,9,{target},0,0,0,0,{value}'
+        read=f.read_action(raw)
+        before=f.rng_hashes()
+        f.u.hook_add(UC_HOOK_MEM_WRITE,observe_write)
+        f.u.hook_add(UC_HOOK_CODE,observe_rng)
+        returned=f.call(0x6DD8B0,[0,0,0,0],ecx=ACTION)&255
+        f.check_code()
+        output.append(dict(name=name,input=dict(raw_action=raw,
+            types=[dict(id=i,category=c,tech_level=v) for i,c,v in types],
+            house_dirty=[False]*house_count,incoming_house=None),
+            read=dict(kind=read['kind'],value=read['value'],inline_type=f.string(ACTION+0x54)),
+            output=dict(returned=returned,tech_levels=[f.integer(p+0x634) for p in pointers],
+                house_dirty=[bool(f.u.mem_read(p+0x1FC,1)[0]) for p in houses],writes=writes),
+            rng_seed=31,rng_before=before,rng_after=f.rng_hashes(),rng_calls=calls))
+    return output
+
+
+def tech_level_lifecycle():
+    """Compose existing reset owner; observe live prefix and Type retirement."""
+    from tools.rules_oracle.select_anim_reset import fresh_reset
+    from tools.native_inspect import selected_ranges
+    from tools.native_oracle import image_bytes
+    m,rules=fresh_reset()
+    u=m.u
+    original=selected_ranges(image_bytes(),None,None,code_only=True)
+    for start,end in ((0x4E7A60,0x4E7A96),(0x4E73E0,0x4E7416)):
+        u.reg_write(UC_X86_REG_ESP,SP)
+        run_checked(u,start,end)
+    types={name:m.invoke(0x41CEF0,m.cstring(name)) for name in ('ORCA','BEAG')}
+    def state(name):
+        items=m.read32(0xA8EB04)
+        return dict(name=name,global_count=m.read32(0xA8EB10),
+            aircraft_count=m.read32(0xA8B228),
+            types=[dict(id=m.string(m.read32(items+i*4)+0x24),category='Aircraft',
+                tech_level=struct.unpack('<i',u.mem_read(m.read32(items+i*4)+0x634,4))[0])
+                for i in range(m.read32(0xA8EB10))])
+    stages=[state('constructors')]
+    u.mem_write(0xA80238,dwords(0))
+    action=m.alloc(0x94)
+    u.mem_write(action,bytes(0x94))
+    u.mem_write(action+0x2C,dwords(106))
+    raw_actions=['106,9,ORCA,0,0,0,0,11','106,9,BEAG,0,0,0,0,3']
+    for name,value in (('ORCA',11),('BEAG',3)):
+        u.mem_write(action+0x54,bytes(25))
+        u.mem_write(action+0x54,name.encode()+b'\0')
+        u.mem_write(action+0x90,dwords(value))
+        assert m.invoke(0x6DD8B0,action,(0,0,0,0))&255==1
+    stages.append(state('actions'))
+    passes=[dict(name='prefix_missing_key',sections={'ORCA':{'Name':'ORCA'},'BEAG':{'Name':'BEAG'}}),
+        dict(name='prefix_present_key',sections={'ORCA':{'TechLevel':'7'},'BEAG':{'TechLevel':'8'}})]
+    for row in passes:
+        m.rules_cache(row['sections'])
+        m.invoke(0x668BF0,rules,(RULES,))
+        stages.append(state(row['name']))
+    m.rules_cache({})
+    # ResetReader observes free before its existing transport rewrites ESP.
+    # A second later code hook would see the returned stack, not the argument.
+    m.retiring={ptr:dict(name=name,pointer=ptr,family='Aircraft') for name,ptr in types.items()}
+    m.record_reset=True
+    u.reg_write(UC_X86_REG_ESP,SP)
+    u.reg_write(UC_X86_REG_ECX,rules)
+    u.mem_write(SP+4,dwords(RULES))
+    run_checked(u,0x6686C0,0x6689E7,count=2_000_000)
+    m.record_reset=False
+    events=[dict(event='delete_type',id=row['name']) for row in m.reset_events
+            if row['event']=='delete_type']
+    assert sorted(row['id'] for row in events)==sorted(types)
+    stages.append(state('destructive_reset'))
+    for name in ('ORCA','BEAG'):
+        m.invoke(0x41CEF0,m.cstring(name))
+    stages.append(state('new_constructors'))
+    assert all(bytes(u.mem_read(x['address'],len(x['bytes'])))==x['bytes'] for x in original)
+    return dict(input=dict(raw_actions=raw_actions,prefix_passes=passes),
+        stages=stages,events=events,code_unchanged=True)
+
+
+def tech_level_generate(root, *, production=True):
+    from tools.native_oracle import image_sha256
+    retail,layers=tech_level_retail()
+    return dict(schema=1,native_sha256=image_sha256(),retail=retail,
+        dispatch_controls=tech_level_dispatch_controls(),scalar_layers=layers,
+        lifecycle=tech_level_lifecycle(),
+        production_history=tech_level_production_history(root) if production else None)
+
+
+def tech_level_production_history(root):
+    from tools.sidebar_oracle.factory_loss import aircraft_tech_setup,aircraft_tech_history
+    retail,_=tech_level_retail()
+    row=next(row for row in retail['routes'] if row['map']=='ALL05UMD.MAP')
+    for source in retail['sources']:
+        if source['file'] in ('RULESMD.INI',row['map']):
+            assert hashlib.sha256((root/source['file']).read_bytes()).hexdigest()==source['sha256']
+    # Preserve the actual counted reader's order. The subsequent Action53
+    # enables another trigger and is outside this production common path.
+    actions=[a for a in row['actions'] if a['kind']==106]
+    tokens=row['raw_actions'].split(',')
+    assert int(tokens[0])==len(row['actions']) and len(tokens)==1+8*len(row['actions'])
+    raw=[','.join(tokens[1+i*8:1+(i+1)*8]) for i,a in enumerate(row['actions']) if a['kind']==106]
+    return aircraft_tech_history(aircraft_tech_setup(root),raw,actions)
+
+
+def tech_level_metadata(root):
+    record = provenance(scope='Original106 exact global lookup/write/all-House dirty, selected '
+        'physical MD counted records/scalar layers, Type prefix/reset and bounded ALL05 paid '
+        'Aircraft production/Strip/event history. No full campaign or Event55 replay.',
+        assumptions=[
+            'Dispatch controls supply minimal named Type shells in explicit native global registration order and House dirty fields, not full constructors. Same-name reverse control uses distinct Vehicle/Aircraft identities.',
+            'Selected four maps come from physical mapsmd03.mix and patched RULESMD from expandmd01.mix. Real727516..7275A5 counted reader and714570..71458A scalar reader execute; optional layers absent in supported installation. No RA2 base INI is used.',
+            'Lifecycle reuses select_anim_reset.fresh_reset, actual Type vector CRT/constructor/destructor, full Process on declared two-section caches and reset before first post-reset Process. Prefix7/8 are custom inputs, not ALL05 named INI. New objects and deleted objects are distinct lifetimes.',
+            'Three RNG seed31 states use existing trigger ActionFixture SHA256 format. Leaf observations do not assert downstream recheck has no RNG/timer/detach effects.',
+            'ALL05 production reuses ReadyBuildingFixture with explicit RULESMD/optionalLANGRULE/ALL05 layers; Battle/Hills gameplay reads are excluded. Hills provides only the existing flat terrain crop. Local Country is Player, not its ParentCountry Americans.',
+            'Healthy completed GACNST/GAPILE/GAPOWR/GAAIRC and already-open sidebar, TechLevel10 and credits10000 are declared played-world priors. Aircraft real constructors/CRT, actual type readers, General production/prerequisite readers, original paid Factory AI,106, House dirty suffix, wholeStrip and same-frame receive execute.',
+            'Original Building health sampler440042..440074 and House power consumer4F84D9..4F84F1 establish the four completed buildings power cache before production. Native input geometry is the existing16x16 map/32x32 coordinate crop/33x33 class-height plane. Only the admitted local production House is registered in this bounded fixture; inherited unrelated actors do not run AI.',
+            'BeginProduction starts at the recorded initial_frame. Each payment visit increments FRAME before FactoryAI; no frame is rewritten to fit a refund. rng_seed_states imports the three complete native states after fixture setup without reseeding, so comparisons bound the production segment rather than full constructor chronology.',
+            'All three raw Factory timer dwords and writes are observed. Canonical writes name the actual Factory and relative offsets; its unused running middle word can retain native stack bytes. Rust CdTimer comparisons cover start/duration, not a claim about that raw middle word.',
+            'Native type9/count-reader materialization is copied into the joined runtime Action input shell before realExecute. This is an explicit parser-to-runtime input boundary, not a replacement gameplay decision. Event55 and original full-map/GUI startup remain excluded.',
+        ],substitutions=[
+            'Existing original-reader lexical cache, allocation/free, CRT/TLS/Windows and joined physical asset/audio service boundaries are reused. No admission/cancel/refund/timer answer is supplied. Lifecycle free is observed without heap storage reuse.',
+            'Joined Mission COM transport forwards Fly activation to the original6C4A90 factory. Reused type visual-asset boundaries do not certify rendered aircraft/assets or mounted theater/archive precedence. Audio/window/device inputs remain declared existing transports.',
+        ],entry_points=dict(action_reader=0x6DD5B0,action_execute=0x6DD8B0,
+            action106=0x6DF5D1,tech_level_reader=0x714570,type_reset=0x6686C0,
+            house_tail=0x4F9265,can_build=0x4F7870,strip_recalculate=0x6AA600,
+            building_health_sample=0x440042,house_power_consumer=0x4F84D9,
+            begin_production=0x4FA350,factory_ai=0x4C9B20,
+            held_aircraft_delete=0x41C210,factory_abandon=0x4C9FF0,
+            event_receive=0x6474C7))
+    record['command']='python -m tools.spatial_oracle.trigger_action_values --tech-level --check'
+    record['required_inputs']={'VERA20K_TRIGGER_TECH_INPUTS':'existing joined retail asset cache plus physical ALL05UMD.MAP; --inputs is equivalent'}
+    receipt=root/'extraction-receipt.json'
+    record['physical_input_sources']=json.loads(receipt.read_text(encoding='utf-8')) if receipt.exists() else {
+        'files':[dict(file=p.name,sha256=hashlib.sha256(p.read_bytes()).hexdigest())
+                 for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower()!='.json']}
+    for row in record['physical_input_sources']['files']:
+        assert hashlib.sha256((root/row['file']).read_bytes()).hexdigest()==row['sha256']
+    for name in record['physical_input_sources'].get('missing_candidate_names',[]):
+        assert not (root/name).exists(),name
+    return record
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -6678,6 +6948,7 @@ if __name__=='__main__':
     selected_modes.add_argument('--wakeup', action='store_true')
     selected_modes.add_argument('--ai-activation', action='store_true')
     selected_modes.add_argument('--chrono-reinforcement', action='store_true')
+    selected_modes.add_argument('--tech-level', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
     if selected.superweapon_state:
@@ -6687,6 +6958,20 @@ if __name__=='__main__':
         finish_vectors(lambda: superweapon_state_generate(receipt_path=receipt_path),
             Path(__file__).with_name('trigger_superweapon_state.json'),
             provenance=superweapon_state_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.tech_level:
+        from tools.spatial_oracle.building_construction import JOINED_ROOT
+        inputs_root = selected.inputs or Path(os.environ.get('VERA20K_TRIGGER_TECH_INPUTS', str(JOINED_ROOT)))
+        finish_vectors(lambda: tech_level_generate(inputs_root),
+            Path(__file__).with_name('trigger_object_tech_level.json'),
+            provenance=lambda: tech_level_metadata(inputs_root), argv=remaining,
+            source_paths=dict(SOURCE_PATHS,
+                reset_owner=Path(__file__).parents[1]/'rules_oracle/select_anim_reset.py',
+                factory_loss_owner=Path(__file__).parents[1]/'sidebar_oracle/factory_loss.py',
+                sidebar_owner=Path(__file__).parents[1]/'sidebar_oracle/cameo_order.py',
+                construction_owner=Path(__file__).with_name('building_construction.py'),
+                engineer_owner=Path(__file__).with_name('engineer_repair_admission.py'),
+                joined_owner=Path(__file__).with_name('building_death_anims.py'),
+                com_owner=Path(__file__).parent/'anytown_damage/mission.py'))
     elif selected.chrono_reinforcement:
         if selected.inputs is not None:
             selector.error('--chrono-reinforcement reuses the configured retail FootMissions inputs, not --inputs')

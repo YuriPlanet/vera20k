@@ -344,7 +344,7 @@ pub(crate) fn build_shp_instances(
                                     .gate
                                     .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
                                 occupants: obj.can_be_occupied.then_some(occupant_count as i32),
-                                tech_level: obj.tech_level,
+                                tech_level: sim.object_tech_level(obj),
                                 selling: entity.building_down(),
                                 buildup: [0, 1],
                                 ordinary: art.map_or([[0, 1]; 4], |entry| {

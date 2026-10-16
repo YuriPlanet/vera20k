@@ -201,7 +201,10 @@ pub(super) fn commit_receiver_health(
         let ty = world.interner.object_type(target.type_ref(), rules)?;
         if target.category() == EntityCategory::Structure {
             building_entry_frame = Some(crate::sim::building_art::receiver_body_frame(
-                target, ty, rules,
+                target,
+                ty,
+                rules,
+                world.object_tech_level(ty),
             ));
         }
         (

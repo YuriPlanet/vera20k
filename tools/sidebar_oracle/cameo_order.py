@@ -525,12 +525,12 @@ def recharge_reader():
     return dict(constructor_frames=initial, cases=rows)
 
 
-def ready_building_inputs(root):
+def ready_building_inputs(root, *, layers=None):
     """Extend the existing physical joined reader; no placement result is supplied."""
     from tools.spatial_oracle import building_construction as bc
     from tools.spatial_oracle import building_death_anims as death
     from tools.rules_oracle.bridge_child_sound import sections
-    m = death.joined_inputs(root, damage_fires=False)
+    m = death.joined_inputs(root, damage_fires=False, layers=layers)
     u, get = m.u, m.read32
     sound = sections((root / 'SOUNDMD.INI').read_bytes())
     wanted = ('MenuClick', 'PlaceBuilding')
@@ -551,7 +551,7 @@ def ready_building_inputs(root):
     m.invoke(0x45DD90, pill, (m.cstring('GAPILL'),))
     m.types['GAPILL'] = pill
     m.ready_layers = []
-    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'):
+    for filename in m.input_rule_layers:
         path = root / filename
         row = dict(file=filename, absent=not path.exists())
         m.ready_layers.append(row)

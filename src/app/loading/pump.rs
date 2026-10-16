@@ -974,6 +974,14 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             native_rules_owner.expect("native Rules availability checked before split borrow");
+        // The outgoing scene no longer advances. Return its live TechnoType
+        // values before Full_Init's optional prefix Process; the existing
+        // destructive reset then retires those exact types, not just names.
+        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+            native_rules_owner.consume_outgoing_type_tech_levels(
+                runtime.simulation.retire_object_type_tech_levels(),
+            )?;
+        }
         let load_result = {
             let mut progress = LoadingPhaseProgress::select(
                 native.as_mut(),

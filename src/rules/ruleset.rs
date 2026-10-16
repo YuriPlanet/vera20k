@@ -3711,6 +3711,12 @@ pub struct RuleSet {
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.
     object_category_index: HashMap<(ObjectCategory, String), TypeHandle>,
+    /// Read-only projection of the process owner's global TechnoType array.
+    /// Constructor order can interleave categories across lazy allocations
+    /// and later Rules passes; it is not TYPE_REGISTRIES order. An absent
+    /// handle records a native slot the older name-based object projection
+    /// cannot represent uniquely, so exact lookup must not silently alias it.
+    native_techno_type_order: Vec<(ObjectCategory, String, Option<TypeHandle>)>,
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
     type_array_indices: HashMap<(ObjectCategory, String), i32>,
@@ -3952,8 +3958,30 @@ impl RuleSet {
     }
 
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
+        processed.validate_saved_state()?;
         let mut rules =
             Self::from_projected_ini(processed.ini(), project_country_side_registry(processed))?;
+        let mut native_identity_counts = HashMap::new();
+        for (category, id, _) in processed.techno_type_states() {
+            *native_identity_counts
+                .entry((category, id.to_ascii_uppercase()))
+                .or_insert(0usize) += 1;
+        }
+        for (category, id, tech_level) in processed.techno_type_states() {
+            let key = (category, id.to_ascii_uppercase());
+            let handle = (native_identity_counts[&key] == 1)
+                .then(|| rules.object_category_index.get(&key).copied())
+                .flatten()
+                .filter(|handle| rules.object_by_handle(*handle).id == id);
+            if let Some(handle) = handle {
+                // TechnoType+634 is retained typed state, not a merged INI
+                // default: reached ReadINI714570 and outgoing106 handoff.
+                rules.object_list[handle.0 as usize].tech_level = tech_level;
+            }
+            rules
+                .native_techno_type_order
+                .push((category, id.to_owned(), handle));
+        }
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
         rules.missile_spawn = processed.missile_spawn().clone();
@@ -4796,6 +4824,7 @@ impl RuleSet {
             object_index,
             serial: next_rule_set_serial(),
             object_category_index,
+            native_techno_type_order: Vec::new(),
             type_array_indices,
             weapons,
             warheads,
@@ -4944,6 +4973,23 @@ impl RuleSet {
         } else {
             self.object_index.get(id).copied()
         }
+    }
+
+    /// TAction106's active6DF5D1 body compares stored IDs with exact case,
+    /// scanning TechnoType::Array A8EB04/countA8EB10 backwards. This has
+    /// different semantics from broad `object()` and subtype lookup.
+    ///
+    /// The old ObjectType projection merges repeated IDs in one category.
+    /// Native can construct those from >24-byte factory inputs. If the last
+    /// native match is one of these unrepresentable identities, return None;
+    /// never redirect the mutation to an earlier/global broad-lookup winner.
+    pub(crate) fn native_techno_type_exact(&self, id: &str) -> Option<&ObjectType> {
+        self.native_techno_type_order
+            .iter()
+            .rev()
+            .find(|(_, stored_id, _)| stored_id == id)
+            .and_then(|(_, _, handle)| *handle)
+            .map(|handle| self.object_by_handle(handle))
     }
 
     /// This set's identity: nonzero and distinct from every other `RuleSet`
@@ -5227,6 +5273,17 @@ impl RuleSet {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         b"rules-simulation-config-v16".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // Global construction order changes which category106 mutates when
+        // IDs coincide. Current TechLevels can also differ after retained
+        // default reads even when the compatibility INI is identical.
+        b"native-techno-type-order-and-tech-level-v1".hash(&mut hasher);
+        self.native_techno_type_order.hash(&mut hasher);
+        for (category, id, handle) in &self.native_techno_type_order {
+            (category, id).hash(&mut hasher);
+            handle
+                .map(|handle| self.object_by_handle(handle).tech_level)
+                .hash(&mut hasher);
+        }
         // A continued Rules process can retain a different BuildingType+EBC
         // for the same current source stack. Hash the effective projection.
         self.object_list

@@ -1381,7 +1381,12 @@ fn finish_building_art_receiver(
         return;
     };
     if state != damage::DamageState::Unaffected
-        || crate::sim::building_art::receiver_body_frame(target, object, rules) != entry_frame
+        || crate::sim::building_art::receiver_body_frame(
+            target,
+            object,
+            rules,
+            world.object_tech_level(object),
+        ) != entry_frame
     {
         world.refresh_building_damage_state(target_id, rules);
     }

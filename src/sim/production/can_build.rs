@@ -113,7 +113,8 @@ pub(crate) fn can_build(
     }
     // `0x004F7976..0x004F79E2`: each `RequiresStolen*Tech=` needs the
     // house's stolen-tech byte, which a spy's BuildTech infiltration sets.
-    if obj.tech_level == -1 || !house.has_stolen_tech_for(obj) {
+    let type_tech_level = sim.object_tech_level(obj);
+    if type_tech_level == -1 || !house.has_stolen_tech_for(obj) {
         return CanBuild::No;
     }
     let house_bit = crate::sim::ai_buildable::house_country_bit(
@@ -137,7 +138,7 @@ pub(crate) fn can_build(
     {
         return CanBuild::No;
     }
-    if obj.tech_level > house.tech_level {
+    if type_tech_level > house.tech_level {
         return CanBuild::No;
     }
     if !house.is_controlled_by_human(sim.session.game_mode_nonzero) {

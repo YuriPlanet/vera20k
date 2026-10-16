@@ -32,7 +32,9 @@ mod sinking;
 mod sound_boundary;
 mod time_warp;
 mod trigger_chrono;
+mod type_tech_levels;
 pub use sound_boundary::{FrameEffects, SoundBoundary};
+pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
@@ -1049,6 +1051,9 @@ where
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
     pub interner: crate::sim::intern::StringInterner,
+    /// Runtime TechnoType+634 writes; RuleSet remains the frozen read projection.
+    #[serde(default)]
+    type_tech_levels: TypeTechLevels,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
@@ -3381,6 +3386,7 @@ impl Simulation {
             path_batch: None,
             scan_batch: None,
             interner: crate::sim::intern::StringInterner::new(),
+            type_tech_levels: TypeTechLevels::default(),
             rule_handles: None,
             production: ProductionState::default(),
             session,

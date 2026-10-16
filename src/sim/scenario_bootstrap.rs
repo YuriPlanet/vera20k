@@ -4079,6 +4079,7 @@ mod tests {
         recalc_base_plan(
             &mut actual_plan,
             &rules,
+            &crate::sim::world::TypeTechLevels::default(),
             "Americans",
             0,
             HouseDifficulty::Normal,
@@ -4089,6 +4090,7 @@ mod tests {
         recalc_base_plan(
             &mut expected_plan,
             &rules,
+            &crate::sim::world::TypeTechLevels::default(),
             "Americans",
             0,
             HouseDifficulty::Normal,

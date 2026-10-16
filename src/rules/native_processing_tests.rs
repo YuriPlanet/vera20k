@@ -456,12 +456,20 @@ fn building_foundation_pass_matches_original_art_reads() {
         // The native corpus supplies a current +EF0 field, including nonzero
         // retained-state controls. Seed that exact fixture on the sole registry
         // owner; the production Process pass performs both actual ART reads.
-        let mut member = ProcessedType::new(type_id.to_owned());
-        member.building_foundation = input["initial_foundation_id"].as_u64().unwrap() as u8;
-        let mut registry = NativeRulesRegistryState::default();
+        let registered = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[BuildingTypes]\n0={type_id}\n"
+        )))
+        .process()
+        .unwrap();
+        let mut registry = registered
+            .into_ini_and_native_type_construction_trace()
+            .1
+            .into_registry_state_discarding_events();
         registry
             .families
-            .insert(RulesTypeFamily::Building, vec![member]);
+            .get_mut(&RulesTypeFamily::Building)
+            .unwrap()[0]
+            .building_foundation = input["initial_foundation_id"].as_u64().unwrap() as u8;
         let mut raw = IniSection::new(type_id.to_owned());
         raw.set("Image", input["image"].as_str().unwrap());
         if let Some(poison) = input["rules_foundation_poison"].as_str() {

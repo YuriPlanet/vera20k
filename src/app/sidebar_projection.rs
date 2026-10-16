@@ -479,7 +479,7 @@ fn object_cameo(
             own_side: side == Some(object.ai_base_planning_side),
             considered_aircraft: vehicle && object.considered_aircraft,
             naval: vehicle && object.naval,
-            tech_level: object.tech_level,
+            tech_level: sim.object_tech_level(object),
             cost,
             name: crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf),
         },

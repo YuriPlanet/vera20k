@@ -3678,6 +3678,14 @@ impl Simulation {
                     frame_effects,
                 );
             }
+            106 => {
+                // Active inline Execute6DF5D1, not the similarly annotated
+                // separate helper6E37F0. Type9's string is+54; raw value is+90.
+                let (Some(rules), Some(value)) = (rules, value) else {
+                    return false;
+                };
+                self.set_object_type_tech_level(action.inline_type_name(), value, rules);
+            }
             ACTION_SET_SUPER_CHARGE_PERCENTAGE | 132 => {
                 // Execute1296E42D0 and1326E4320 select the incoming House's
                 // stock Super-array ordinal (+90), using +48 as the value.
@@ -3872,6 +3880,10 @@ mod native_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_superweapon_state_tests.rs"]
 mod superweapon_state_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_type_tech_level_tests.rs"]
+mod type_tech_level_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_all_to_hunt_tests.rs"]

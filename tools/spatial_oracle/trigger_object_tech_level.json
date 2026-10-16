@@ -1,0 +1,1596 @@
+{
+  "dispatch_controls": [
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,1",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          },
+          {
+            "category": "Building",
+            "id": "NAIRON",
+            "tech_level": 11
+          }
+        ]
+      },
+      "name": "retail_ttnk",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          1,
+          11
+        ],
+        "writes": [
+          {
+            "index": 0,
+            "owner": "type",
+            "size": 4,
+            "value": 1
+          },
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": 1
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,ttnk,0,0,0,0,1",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          }
+        ]
+      },
+      "name": "case_miss",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          12
+        ],
+        "writes": [
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "ttnk",
+        "kind": 106,
+        "value": 1
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,MISSING,0,0,0,0,1",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          }
+        ]
+      },
+      "name": "missing_type",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          12
+        ],
+        "writes": [
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "MISSING",
+        "kind": 106,
+        "value": 1
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,1",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          },
+          {
+            "category": "Building",
+            "id": "NAIRON",
+            "tech_level": 11
+          },
+          {
+            "category": "Aircraft",
+            "id": "TTNK",
+            "tech_level": 9
+          }
+        ]
+      },
+      "name": "reverse_duplicate",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          12,
+          11,
+          1
+        ],
+        "writes": [
+          {
+            "index": 2,
+            "owner": "type",
+            "size": 4,
+            "value": 1
+          },
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": 1
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,-2",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          }
+        ]
+      },
+      "name": "negative",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          -2
+        ],
+        "writes": [
+          {
+            "index": 0,
+            "owner": "type",
+            "size": 4,
+            "value": -2
+          },
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": -2
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,-2147483648",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          }
+        ]
+      },
+      "name": "i32_min",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          -2147483648
+        ],
+        "writes": [
+          {
+            "index": 0,
+            "owner": "type",
+            "size": 4,
+            "value": -2147483648
+          },
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": -2147483648
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,2147483647",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          }
+        ]
+      },
+      "name": "i32_max",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [
+          2147483647
+        ],
+        "writes": [
+          {
+            "index": 0,
+            "owner": "type",
+            "size": 4,
+            "value": 2147483647
+          },
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": 2147483647
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,1",
+        "types": [
+          {
+            "category": "Vehicle",
+            "id": "TTNK",
+            "tech_level": 12
+          }
+        ]
+      },
+      "name": "no_houses",
+      "output": {
+        "house_dirty": [],
+        "returned": 1,
+        "tech_levels": [
+          1
+        ],
+        "writes": [
+          {
+            "index": 0,
+            "owner": "type",
+            "size": 4,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": 1
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    },
+    {
+      "input": {
+        "house_dirty": [
+          false,
+          false
+        ],
+        "incoming_house": null,
+        "raw_action": "106,9,TTNK,0,0,0,0,1",
+        "types": []
+      },
+      "name": "empty_registry",
+      "output": {
+        "house_dirty": [
+          true,
+          true
+        ],
+        "returned": 1,
+        "tech_levels": [],
+        "writes": [
+          {
+            "index": 1,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          },
+          {
+            "index": 0,
+            "owner": "house",
+            "size": 1,
+            "value": 1
+          }
+        ]
+      },
+      "read": {
+        "inline_type": "TTNK",
+        "kind": 106,
+        "value": 1
+      },
+      "rng_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_calls": [],
+      "rng_seed": 31
+    }
+  ],
+  "lifecycle": {
+    "code_unchanged": true,
+    "events": [
+      {
+        "event": "delete_type",
+        "id": "ORCA"
+      },
+      {
+        "event": "delete_type",
+        "id": "BEAG"
+      }
+    ],
+    "input": {
+      "prefix_passes": [
+        {
+          "name": "prefix_missing_key",
+          "sections": {
+            "BEAG": {
+              "Name": "BEAG"
+            },
+            "ORCA": {
+              "Name": "ORCA"
+            }
+          }
+        },
+        {
+          "name": "prefix_present_key",
+          "sections": {
+            "BEAG": {
+              "TechLevel": "8"
+            },
+            "ORCA": {
+              "TechLevel": "7"
+            }
+          }
+        }
+      ],
+      "raw_actions": [
+        "106,9,ORCA,0,0,0,0,11",
+        "106,9,BEAG,0,0,0,0,3"
+      ]
+    },
+    "stages": [
+      {
+        "aircraft_count": 2,
+        "global_count": 2,
+        "name": "constructors",
+        "types": [
+          {
+            "category": "Aircraft",
+            "id": "ORCA",
+            "tech_level": 255
+          },
+          {
+            "category": "Aircraft",
+            "id": "BEAG",
+            "tech_level": 255
+          }
+        ]
+      },
+      {
+        "aircraft_count": 2,
+        "global_count": 2,
+        "name": "actions",
+        "types": [
+          {
+            "category": "Aircraft",
+            "id": "ORCA",
+            "tech_level": 11
+          },
+          {
+            "category": "Aircraft",
+            "id": "BEAG",
+            "tech_level": 3
+          }
+        ]
+      },
+      {
+        "aircraft_count": 2,
+        "global_count": 2,
+        "name": "prefix_missing_key",
+        "types": [
+          {
+            "category": "Aircraft",
+            "id": "ORCA",
+            "tech_level": 11
+          },
+          {
+            "category": "Aircraft",
+            "id": "BEAG",
+            "tech_level": 3
+          }
+        ]
+      },
+      {
+        "aircraft_count": 2,
+        "global_count": 2,
+        "name": "prefix_present_key",
+        "types": [
+          {
+            "category": "Aircraft",
+            "id": "ORCA",
+            "tech_level": 7
+          },
+          {
+            "category": "Aircraft",
+            "id": "BEAG",
+            "tech_level": 8
+          }
+        ]
+      },
+      {
+        "aircraft_count": 0,
+        "global_count": 0,
+        "name": "destructive_reset",
+        "types": []
+      },
+      {
+        "aircraft_count": 2,
+        "global_count": 2,
+        "name": "new_constructors",
+        "types": [
+          {
+            "category": "Aircraft",
+            "id": "ORCA",
+            "tech_level": 255
+          },
+          {
+            "category": "Aircraft",
+            "id": "BEAG",
+            "tech_level": 255
+          }
+        ]
+      }
+    ]
+  },
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "production_history": {
+    "code_unchanged": true,
+    "held_delete_entry": "0041C210",
+    "initial_state": {
+      "can_build": {
+        "BEAG": 0,
+        "ORCA": 1
+      },
+      "credits": 10000,
+      "dirty": false,
+      "events": [],
+      "factory": null,
+      "frame": 0,
+      "name": "initial",
+      "rng": {
+        "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "184c5aea444399337da46602f8778efd7f8934eee362b4b1802598ded58f5463"
+      },
+      "spent": 0,
+      "tech_levels": {
+        "BEAG": 11,
+        "ORCA": 3
+      }
+    },
+    "input": {
+      "airport_docks": 4,
+      "building_cells": {
+        "GAAIRC": [
+          25,
+          20
+        ],
+        "GACNST": [
+          14,
+          14
+        ],
+        "GAPILE": [
+          18,
+          14
+        ],
+        "GAPOWR": [
+          22,
+          14
+        ]
+      },
+      "country": "Player",
+      "country_index": 15,
+      "geometry": {
+        "coordinate_bounds": [
+          0,
+          0,
+          32,
+          32
+        ],
+        "map_size": [
+          16,
+          16
+        ],
+        "owned_buildings": [
+          {
+            "cell": [
+              14,
+              14
+            ],
+            "type": "GACNST"
+          },
+          {
+            "cell": [
+              18,
+              14
+            ],
+            "type": "GAPILE"
+          },
+          {
+            "cell": [
+              22,
+              14
+            ],
+            "type": "GAPOWR"
+          },
+          {
+            "cell": [
+              25,
+              20
+            ],
+            "type": "GAAIRC"
+          }
+        ],
+        "terrain": "declared_flat_ground_crop"
+      },
+      "house": "Player House",
+      "house_power": [
+        200,
+        60
+      ],
+      "house_tech": 10,
+      "initial_credits": 10000,
+      "initial_frame": 0,
+      "map": "ALL05UMD.MAP",
+      "owned_buildings": [
+        "GACNST",
+        "GAPILE",
+        "GAPOWR",
+        "GAAIRC"
+      ],
+      "paid_frame": 13,
+      "raw_actions": [
+        "106,9,ORCA,0,0,0,0,11",
+        "106,9,BEAG,0,0,0,0,3"
+      ],
+      "native_aircraft_registry": [
+        {
+          "id": "ORCA",
+          "index": 0
+        },
+        {
+          "id": "BEAG",
+          "index": 1
+        }
+      ]
+    },
+    "lifecycle_calls": [
+      "house_abandon",
+      "sidebar_abandon_factory",
+      "factory_abandon",
+      "held_aircraft_scalar_delete",
+      "factory_pointer_expired",
+      "factory_scalar_delete",
+      "house_pointer_expired",
+      "factory_abandon",
+      "house_abandon"
+    ],
+    "rng_requests": [
+      {
+        "args": [],
+        "entry": 6670208,
+        "frame": 0,
+        "result": 19015573,
+        "site": 7287380,
+        "stream": "scenario"
+      }
+    ],
+    "rng_seed_states": {
+      "main": "000000000000000067000000a3e56e528f889c726c506cd6c6d5913b7d4d7e199ddd1f9f82662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67",
+      "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+      "scenario": "00000000060000006d0000001283cfa5eb1c2564f668f457753195d2773e1fd3db1cbf8082662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67"
+    },
+    "stages": [
+      {
+        "can_build": {
+          "BEAG": 0,
+          "ORCA": 1
+        },
+        "credits": 9978,
+        "dirty": false,
+        "events": [],
+        "factory": {
+          "balance": 1178,
+          "exists": true,
+          "held_type": "ORCA",
+          "rate": 13,
+          "stage": 1,
+          "timer": [
+            13,
+            0,
+            13
+          ]
+        },
+        "frame": 13,
+        "name": "paid_orca",
+        "rng": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "spent": 22,
+        "tech_levels": {
+          "BEAG": 11,
+          "ORCA": 3
+        }
+      },
+      {
+        "can_build": {
+          "BEAG": 0,
+          "ORCA": 0
+        },
+        "credits": 9978,
+        "dirty": true,
+        "events": [],
+        "factory": {
+          "balance": 1178,
+          "exists": true,
+          "held_type": "ORCA",
+          "rate": 13,
+          "stage": 1,
+          "timer": [
+            13,
+            0,
+            13
+          ]
+        },
+        "frame": 13,
+        "name": "action_orca",
+        "rng": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "spent": 22,
+        "tech_levels": {
+          "BEAG": 11,
+          "ORCA": 11
+        }
+      },
+      {
+        "can_build": {
+          "BEAG": 1,
+          "ORCA": 0
+        },
+        "credits": 9978,
+        "dirty": true,
+        "events": [],
+        "factory": {
+          "balance": 1178,
+          "exists": true,
+          "held_type": "ORCA",
+          "rate": 13,
+          "stage": 1,
+          "timer": [
+            13,
+            0,
+            13
+          ]
+        },
+        "frame": 13,
+        "name": "action_beag",
+        "rng": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "spent": 22,
+        "tech_levels": {
+          "BEAG": 3,
+          "ORCA": 11
+        }
+      },
+      {
+        "can_build": {
+          "BEAG": 1,
+          "ORCA": 0
+        },
+        "credits": 9978,
+        "dirty": false,
+        "events": [
+          {
+            "frame": 13,
+            "index": 0,
+            "kind": 16,
+            "rtti": 3
+          },
+          {
+            "frame": 13,
+            "index": 0,
+            "kind": 46,
+            "rtti": 3
+          }
+        ],
+        "factory": {
+          "balance": 1178,
+          "exists": true,
+          "held_type": "ORCA",
+          "rate": 13,
+          "stage": 1,
+          "timer": [
+            13,
+            0,
+            13
+          ]
+        },
+        "frame": 13,
+        "name": "house_recheck",
+        "rng": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "spent": 22,
+        "tech_levels": {
+          "BEAG": 3,
+          "ORCA": 11
+        }
+      },
+      {
+        "can_build": {
+          "BEAG": 1,
+          "ORCA": 0
+        },
+        "credits": 10000,
+        "dirty": false,
+        "events": [],
+        "factory": null,
+        "frame": 13,
+        "name": "receive",
+        "rng": {
+          "main": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "64900b641333038fe24ac41c09eec66f9084a6bfa300b209d86a99fcdb9577a6"
+        },
+        "spent": 22,
+        "tech_levels": {
+          "BEAG": 3,
+          "ORCA": 11
+        }
+      }
+    ],
+    "timer_writes": [
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 52,
+        "owner": "aircraft_factory",
+        "pc": "0x4c98c9",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 44,
+        "owner": "aircraft_factory",
+        "pc": "0x4c98cc",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 44,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9999",
+        "size": 4
+      },
+      {
+        "after": "01000000",
+        "before": "00000000",
+        "offset": 48,
+        "owner": "aircraft_factory",
+        "pc": "0x4c999f",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 52,
+        "owner": "aircraft_factory",
+        "pc": "0x4c99a2",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 44,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9d85",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "01000000",
+        "offset": 48,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9d8e",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 52,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9d92",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "00000000",
+        "offset": 44,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9f2b",
+        "size": 4
+      },
+      {
+        "after": "d6a54f00",
+        "before": "00000000",
+        "offset": 48,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9f31",
+        "size": 4
+      },
+      {
+        "after": "0d000000",
+        "before": "00000000",
+        "offset": 52,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9f34",
+        "size": 4
+      },
+      {
+        "after": "0d000000",
+        "before": "00000000",
+        "offset": 44,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9b92",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "d6a54f00",
+        "offset": 48,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9b94",
+        "size": 4
+      },
+      {
+        "after": "0d000000",
+        "before": "0d000000",
+        "offset": 52,
+        "owner": "aircraft_factory",
+        "pc": "0x4c9b97",
+        "size": 4
+      },
+      {
+        "after": "0d000000",
+        "before": "0d000000",
+        "offset": 44,
+        "owner": "aircraft_factory",
+        "pc": "0x4ca068",
+        "size": 4
+      },
+      {
+        "after": "03000000",
+        "before": "00000000",
+        "offset": 48,
+        "owner": "aircraft_factory",
+        "pc": "0x4ca06e",
+        "size": 4
+      },
+      {
+        "after": "00000000",
+        "before": "0d000000",
+        "offset": 52,
+        "owner": "aircraft_factory",
+        "pc": "0x4ca071",
+        "size": 4
+      }
+    ]
+  },
+  "retail": {
+    "routes": [
+      {
+        "actions": [
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 21,
+            "value": -1,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "TTNK",
+            "kind": 106,
+            "value": 1,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 114,
+            "value": 3,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "TTNK",
+            "kind": 115,
+            "value": 100,
+            "waypoint": 0
+          }
+        ],
+        "events": "2,13,0,30,32,0,7",
+        "map": "SOV03UMD.MAP",
+        "raw_actions": "4,21,6,Mis_xS3_ZofiaTeslaTankReady,0,0,0,0,A,106,9,TTNK,0,0,0,0,1,114,0,3,0,0,0,0,A,115,9,TTNK,0,0,0,0,100",
+        "tags": {
+          "0D3F1C8C": "0,VO_Zoifa_RE_TeslaTank,0D3F1D6C"
+        },
+        "trigger": "SovietsCountry,<none>,VO_Zofia_RE_TeslaTank,1,1,1,1,0",
+        "trigger_id": "0D3F1D6C"
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "NAIRON",
+            "kind": 106,
+            "value": 1,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 21,
+            "value": -1,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          }
+        ],
+        "events": "1,13,0,3",
+        "map": "SOV04DMD.MAP",
+        "raw_actions": "3,106,9,NAIRON,0,0,0,0,1,21,6,Mis_xS4_RomanovIronCurtain,0,0,0,0,A,53,2,0DC26F3C,0,0,0,0,A",
+        "tags": {
+          "067F811C": "0,_Rom's Iron Curtain,068A958C"
+        },
+        "trigger": "Russians,<none>,_Rom's Iron Curtain,1,1,1,1,0",
+        "trigger_id": "068A958C"
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 4,
+            "value": 0,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "TERROR",
+            "kind": 106,
+            "value": 5,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "DTRUCK",
+            "kind": 106,
+            "value": 5,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          }
+        ],
+        "events": "2,36,0,2,36,0,1",
+        "map": "SOV07TMD.MAP",
+        "raw_actions": "4,4,1,0BF4446C,0,0,0,0,A,106,9,TERROR,0,0,0,0,5,106,9,DTRUCK,0,0,0,0,5,53,2,093B91CC,0,0,0,0,A",
+        "tags": {
+          "093B92BC": "0,Rally Volunteers 02,093BB0FC"
+        },
+        "trigger": "Player,<none>,Rally Volunteers 02,0,1,1,1,0",
+        "trigger_id": "093BB0FC"
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "ORCA",
+            "kind": 106,
+            "value": 11,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "BEAG",
+            "kind": 106,
+            "value": 3,
+            "waypoint": 0
+          },
+          {
+            "args": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "inline_type": "",
+            "kind": 53,
+            "value": 0,
+            "waypoint": 0
+          }
+        ],
+        "events": "1,55,0,17",
+        "map": "ALL05UMD.MAP",
+        "raw_actions": "3,106,9,ORCA,0,0,0,0,11,106,9,BEAG,0,0,0,0,3,53,2,0E5CDB7C,0,0,0,0,A",
+        "tags": {
+          "0683CDDC": "0,Replace Harriers,068397DC"
+        },
+        "trigger": "Player,<none>,Replace Harriers,0,1,1,1,0",
+        "trigger_id": "068397DC"
+      }
+    ],
+    "sources": [
+      {
+        "archive": "expandmd01.mix",
+        "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "file": "RULESMD.INI",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "archive": "mapsmd03.mix",
+        "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "file": "SOV03UMD.MAP",
+        "sha256": "df69d0f63f982823bb5818d3d49776028a719a2c20ced2526fab8f5cecb49fe6"
+      },
+      {
+        "archive": "mapsmd03.mix",
+        "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "file": "SOV04DMD.MAP",
+        "sha256": "702bd788efbd08ae5b7591a1dfc240684e73faedace2ffaac68baefdfd0fb12a"
+      },
+      {
+        "archive": "mapsmd03.mix",
+        "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "file": "SOV07TMD.MAP",
+        "sha256": "eacf89952cb6e8eacd762f97895a062e0b6bfa16c8f916b901c1e667def266d4"
+      },
+      {
+        "archive": "mapsmd03.mix",
+        "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "file": "ALL05UMD.MAP",
+        "sha256": "7ee8148ad4b0092b7970588d9b064ddd6b753fc7bfb352bcc043affeb72c6aed"
+      }
+    ]
+  },
+  "scalar_layers": [
+    {
+      "constructor": 255,
+      "map": "SOV03UMD.MAP",
+      "passes": [
+        {
+          "absent": false,
+          "layer": "RULESMD.INI",
+          "raw_key": "10",
+          "value": 10
+        },
+        {
+          "absent": true,
+          "layer": "LANGRULE.INI",
+          "raw_key": null,
+          "value": 10
+        },
+        {
+          "absent": true,
+          "layer": "SOV03UMD.INI",
+          "raw_key": null,
+          "value": 10
+        },
+        {
+          "absent": false,
+          "layer": "SOV03UMD.MAP",
+          "raw_key": "12",
+          "value": 12
+        }
+      ],
+      "type": "TTNK"
+    },
+    {
+      "constructor": 255,
+      "map": "SOV04DMD.MAP",
+      "passes": [
+        {
+          "absent": false,
+          "layer": "RULESMD.INI",
+          "raw_key": "10",
+          "value": 10
+        },
+        {
+          "absent": true,
+          "layer": "LANGRULE.INI",
+          "raw_key": null,
+          "value": 10
+        },
+        {
+          "absent": true,
+          "layer": "SOV04DMD.INI",
+          "raw_key": null,
+          "value": 10
+        },
+        {
+          "absent": false,
+          "layer": "SOV04DMD.MAP",
+          "raw_key": "11",
+          "value": 11
+        }
+      ],
+      "type": "NAIRON"
+    },
+    {
+      "constructor": 255,
+      "map": "SOV07TMD.MAP",
+      "passes": [
+        {
+          "absent": false,
+          "layer": "RULESMD.INI",
+          "raw_key": "5",
+          "value": 5
+        },
+        {
+          "absent": true,
+          "layer": "LANGRULE.INI",
+          "raw_key": null,
+          "value": 5
+        },
+        {
+          "absent": true,
+          "layer": "SOV07TMD.INI",
+          "raw_key": null,
+          "value": 5
+        },
+        {
+          "absent": false,
+          "layer": "SOV07TMD.MAP",
+          "raw_key": "12",
+          "value": 12
+        }
+      ],
+      "type": "TERROR"
+    },
+    {
+      "constructor": 255,
+      "map": "SOV07TMD.MAP",
+      "passes": [
+        {
+          "absent": false,
+          "layer": "RULESMD.INI",
+          "raw_key": "10",
+          "value": 10
+        },
+        {
+          "absent": true,
+          "layer": "LANGRULE.INI",
+          "raw_key": null,
+          "value": 10
+        },
+        {
+          "absent": true,
+          "layer": "SOV07TMD.INI",
+          "raw_key": null,
+          "value": 10
+        },
+        {
+          "absent": false,
+          "layer": "SOV07TMD.MAP",
+          "raw_key": "12",
+          "value": 12
+        }
+      ],
+      "type": "DTRUCK"
+    },
+    {
+      "constructor": 255,
+      "map": "ALL05UMD.MAP",
+      "passes": [
+        {
+          "absent": false,
+          "layer": "RULESMD.INI",
+          "raw_key": "3",
+          "value": 3
+        },
+        {
+          "absent": true,
+          "layer": "LANGRULE.INI",
+          "raw_key": null,
+          "value": 3
+        },
+        {
+          "absent": true,
+          "layer": "ALL05UMD.INI",
+          "raw_key": null,
+          "value": 3
+        },
+        {
+          "absent": false,
+          "layer": "ALL05UMD.MAP",
+          "raw_key": null,
+          "value": 3
+        }
+      ],
+      "type": "ORCA"
+    },
+    {
+      "constructor": 255,
+      "map": "ALL05UMD.MAP",
+      "passes": [
+        {
+          "absent": false,
+          "layer": "RULESMD.INI",
+          "raw_key": "3",
+          "value": 3
+        },
+        {
+          "absent": true,
+          "layer": "LANGRULE.INI",
+          "raw_key": null,
+          "value": 3
+        },
+        {
+          "absent": true,
+          "layer": "ALL05UMD.INI",
+          "raw_key": null,
+          "value": 3
+        },
+        {
+          "absent": false,
+          "layer": "ALL05UMD.MAP",
+          "raw_key": "11",
+          "value": 11
+        }
+      ],
+      "type": "BEAG"
+    }
+  ],
+  "schema": 1
+}

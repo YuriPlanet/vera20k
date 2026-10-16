@@ -842,8 +842,9 @@ pub(in crate::sim) fn revalidate_and_step_factories(
 /// Residual: native client-local sidebar entry order and saturated/network
 /// OutList transport are separate mechanisms. VERA represents every human
 /// strip in deterministic House order; a single rejected stock MGTK cameo
-/// has no cross-entry ordering ambiguity. Trigger-action recheck writers and
-/// unpowered-factory cameo admission remain separate existing gaps.
+/// has no cross-entry ordering ambiguity. TAction106 now requests this same
+/// House recheck. Other unported trigger writers and unpowered-factory cameo
+/// admission remain separate existing gaps.
 pub(in crate::sim) fn recalculate_strips(
     sim: &Simulation,
     rules: &RuleSet,

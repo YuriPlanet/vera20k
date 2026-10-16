@@ -499,13 +499,13 @@ def read_repair_reference(inputs, sections):
     return struct.unpack('<i', u.mem_read(inputs.rules + 0x1C4, 4))[0]
 
 
-def prepare_joined_inputs(root):
+def prepare_joined_inputs(root, *, layers=None):
     # Construction dynamically imports Sound, so this selects an extension of
     # that one reader/allocator owner. No existing primitive is changed.
     original = bridge_child_sound.Sound
     bridge_child_sound.Sound = EngineerInputs
     try:
-        inputs = construction.joined_inputs(root)
+        inputs = construction.joined_inputs(root, layers=layers)
     finally:
         bridge_child_sound.Sound = original
     u, read = inputs.u, inputs.read32
@@ -584,7 +584,8 @@ def prepare_joined_inputs(root):
            if name in all_art}
     land_names = [inputs.string(read(0x839D68 + i * 4)) for i in range(12)]
     inputs.engineer_layers = []
-    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.mmx'):
+    for filename in (layers if layers is not None else
+                     ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.mmx')):
         path = root / filename
         if not path.exists():
             assert filename == 'LANGRULE.INI'

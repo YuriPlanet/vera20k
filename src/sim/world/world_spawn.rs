@@ -2322,6 +2322,7 @@ impl Simulation {
                 recalc_base_plan(
                     &mut house.base_plan,
                     rules,
+                    &self.type_tech_levels,
                     country_name
                         .as_deref()
                         .expect("empty qualifying plan was preflighted with a country"),

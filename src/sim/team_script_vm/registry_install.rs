@@ -471,6 +471,9 @@ fn trigger_task_force_tech_level(
                     )
                 })
                 .fold(0_i32, |current, member_type| {
+                    // This threshold is a post-read installation result
+                    // (6E879C), not a live TechnoType field query. TAction106
+                    // does not rebuild already-installed AITrigger thresholds.
                     let tech_level = member_type.tech_level;
                     if tech_level > current {
                         tech_level

@@ -611,6 +611,7 @@ impl Simulation {
         // guided Bullet steering. The saved prefix/phase also controls a fresh
         // map-read continuation. This is independent of Rust stable handles.
         self.native_unique_ids.hash(hasher);
+        self.hash_type_tech_levels(hasher);
         self.substrate.next_stable_object_id.hash(hasher);
         self.substrate.next_air_tracker_order.hash(hasher);
         // YR LogicClass trigger latches are save/lockstep state, even though

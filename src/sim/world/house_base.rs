@@ -548,6 +548,11 @@ impl Simulation {
     /// [`Self::house_absorbers`], it is House+68 filtered by the gate, in
     /// order. On retail rules only the Battle Bunker (`NABNKR`) passes.
     pub(crate) fn house_occupiables(&self, owner: InternedId, rules: &RuleSet) -> Vec<u64> {
+        // RESIDUAL: native retains membership at Unlimbo/ChangeOwner/expiry;
+        // 106 does not rebuild it. Keep the existing initial-type filter here
+        // rather than introducing a new live recomputation after106. A map
+        // changing an occupiable BuildingType needs the separate list-lifecycle
+        // port; the ALL05 aircraft production chain does not visit this list.
         self.house_buildings_where(owner, rules, |object| {
             object.can_be_occupied && object.tech_level > -1
         })

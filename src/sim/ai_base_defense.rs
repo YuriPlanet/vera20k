@@ -305,6 +305,10 @@ pub(crate) struct DefenseChoice<'r> {
     pub country_bit: u32,
     /// `HouseClass+0x1D4`.
     pub tech_level: i32,
+    /// Per-choice immutable facts, aligned with the side's defense list.
+    /// Gathered from the sole live type owner before this call's RNG draws;
+    /// rebuilt for every choice, so no trigger needs to invalidate a cache.
+    candidate_tech_levels: Vec<Option<i32>>,
     /// The enemy's force values; `None` for `+0x5600 == -1`.
     pub enemy: Option<ForceValues>,
     /// `AIForcePredictionFudge=` at the house's difficulty (`+0x184`).
@@ -369,6 +373,15 @@ impl<'r> DefenseChoice<'r> {
             side_index: house.side_index,
             country_bit,
             tech_level: house.tech_level,
+            candidate_tech_levels: rules
+                .base_defense_types(house.side_index)
+                .iter()
+                .map(|id| {
+                    rules
+                        .object_in_category(ObjectCategory::Building, id)
+                        .map(|object| sim.object_tech_level(object))
+                })
+                .collect(),
             enemy,
             fudge,
             node_type,
@@ -497,14 +510,22 @@ impl<'r> DefenseChoice<'r> {
         self.rules
             .base_defense_types(self.side_index)
             .iter()
+            .enumerate()
             .rev()
-            .filter_map(|id| self.rules.object_in_category(ObjectCategory::Building, id))
-            .filter(|ty| {
+            .filter_map(|(index, id)| {
+                Some((
+                    self.rules
+                        .object_in_category(ObjectCategory::Building, id)?,
+                    self.candidate_tech_levels[index]?,
+                ))
+            })
+            .filter(|(ty, tech_level)| {
                 owner_allows(ty, self.country_bit, self.rules)
-                    && ty.tech_level <= self.tech_level
+                    && *tech_level <= self.tech_level
                     && category.value(ty) > 0
                     && prerequisites_satisfied(ty, owned, self.rules)
             })
+            .map(|(ty, _)| ty)
             .collect()
     }
 }
