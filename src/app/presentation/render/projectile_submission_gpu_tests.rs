@@ -135,7 +135,6 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
             None,
             Some(&units),
             None,
-            &VxlSlopeTransitionCache::default(),
             Some(&shp),
             Some(&palettes),
             batch.default_zshape_bind_group(),

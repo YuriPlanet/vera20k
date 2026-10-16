@@ -2452,7 +2452,7 @@ last-build count includes rasterized shadow sprites, can differ from admitted
 resident entries, and stays unchanged on a no-op refresh.
 
 This is resident UnitAtlas texture payload for the captured scenario. It excludes
-CPU caches, `VxlPoseFrameCache`, `VxlSlopeTransitionCache`, other atlases, palettes,
+CPU caches, `VxlPoseFrameCache`, other atlases, palettes,
 driver overhead and peak allocation; it does not establish 30-player saturation.
 Statistics are captured with the final render evidence before readback and kept
 outside deterministic simulation fingerprints. GPU allocation may differ across

@@ -20,13 +20,14 @@
 use crate::map::bridge_facts::BridgeFlags;
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainCell};
-use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
+use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, BRIDGE_DECK_HEIGHT_LEVELS};
 
 /// Which persistent cell list an object belongs to. The ground list and the
 /// bridge-deck list are distinct so movers/projectiles on a high bridge do not
 /// interact with whatever sits underneath the span.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ListLayer {
+    #[default]
     Ground,
     Bridge,
 }
@@ -110,22 +111,18 @@ impl CellBridgeView {
 
     // --- AoE object-layer selector -------------------------------------------
     //
-    // GATE A2/A1: which per-cell object list an AoE detonation damages, by
-    // comparing the detonation Z against the deck mid-height.
+    // One AreaDamage invocation retains this layer across every scanned cell
+    // and through receiver callbacks into the later rocking continuation.
 
-    /// Select the AoE damage object list for a detonation over this cell.
-    ///
-    /// gamemd compares the impact Z against `ground_z + half_deck`, where the
-    /// half-deck term is two levels (`DECK / 2 = 2`). The compare is
-    /// STRICT `>` (impact exactly at the mid-height stays on the ground list).
-    /// `ground_z` is the `GetGroundHeight`-equivalent operand in the SAME domain
-    /// as `impact_z` (both Level units here).
-    ///
-    /// (Source: `GATE_BRIDGE_ONBRIDGE_OCCUPANCY_RESOLUTION_GHIDRA_REPORT.md` +
-    /// `GATE_BRIDGE_DECK_HEIGHT_RESOLUTION_GHIDRA_REPORT.md` §3/§4.)
+    /// AreaDamage48955E..48958D selects one list before its cell callbacks.
+    /// Map578080 supplies the ground-only floor at the exact impact XY; both
+    /// operands are absolute leptons, including the one-lepton remainder.
+    /// The original89E864 deck is416 leptons; equality at floor+208 stays Ground.
     #[inline]
-    pub fn aoe_object_layer(&self, impact_z: i32, ground_z: i32) -> ListLayer {
-        if self.is_bridge_cell() && impact_z > ground_z + BRIDGE_DECK_HEIGHT_LEVELS / 2 {
+    pub fn aoe_object_layer(&self, impact_z_leptons: i32, floor_z_leptons: i32) -> ListLayer {
+        if self.is_bridge_cell()
+            && impact_z_leptons > floor_z_leptons.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS / 2)
+        {
             ListLayer::Bridge
         } else {
             ListLayer::Ground
@@ -197,12 +194,11 @@ mod tests {
 
     #[test]
     fn aoe_object_layer_strict_gt_half_deck() {
-        // GATE A2/A1: STRICT `>` against ground + half_deck (half = DECK/2 = 2).
-        // base = 100; structural cell.
+        // Original strict lepton boundary, independent of whole-Level rounding.
         let bridge = view(100, BRIDGE_FLAG_STRUCTURAL);
         let ground_z = 100;
-        let half = BRIDGE_DECK_HEIGHT_LEVELS / 2; // = 2
-        assert_eq!(half, 2, "half-deck is 2 levels");
+        let half = BRIDGE_DECK_HEIGHT_LEPTONS / 2;
+        assert_eq!(half, 208, "half-deck retains native lepton precision");
 
         // Exactly at the mid-height -> Ground (strict `>` excludes equality).
         assert_eq!(

@@ -426,6 +426,20 @@ impl EntityStore {
         .collect()
     }
 
+    /// `pick`'s answers for the stored entities it answers, in ascending
+    /// stable_id order. `pick` runs on worker threads
+    /// ([`crate::sim::parallel`]), so it only reads.
+    pub(crate) fn par_filter_map<'a, R: Send>(
+        &'a self,
+        pick: impl Fn(u64, &'a GameEntity) -> Option<R> + Sync,
+    ) -> Vec<R> {
+        crate::sim::parallel::filter_map_indices(self.ids.len(), |slot| {
+            self.entities[slot]
+                .as_deref()
+                .and_then(|entity| pick(self.ids[slot], entity))
+        })
+    }
+
     /// Action14's full Techno array, independent of Logic and Display order.
     /// Read length/slot afresh after callbacks; append/removal is visible.
     pub(crate) fn techno_registry_at(&self, index: usize) -> Option<u64> {

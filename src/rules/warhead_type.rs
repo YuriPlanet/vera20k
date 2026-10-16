@@ -106,8 +106,9 @@ pub struct WarheadType {
     /// written by `WarheadTypeClass::ReadINI` @ `0x0075d4ee` from the key
     /// string at `0x00847e34`. (`+0x14B` is `Sonic=`, not this.)
     pub conventional: bool,
-    /// Area-damage rocker: detonation pushes a rocker impulse into every
-    /// vehicle in a 3×3 cell radius (`Rocker=` in `[Warhead]`). Default `no`.
+    /// Area-damage rocker: `489B49..489E87` visits 49 cells (center ±3 per
+    /// axis) after receivers. Shared `Techno70B280` owns the loaded-VXL
+    /// candidate gate (`Rocker=` in `[Warhead]`). Default `no`.
     /// `WarheadTypeClass+0x14E`, written by `WarheadTypeClass::ReadINI`
     /// @ `0x0075d5be` from the key string at `0x00847de8`.
     pub rocker: bool,

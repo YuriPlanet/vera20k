@@ -165,6 +165,10 @@ mod brute_smash_debris_tests;
 #[cfg(test)]
 mod squid_grapple_tests;
 #[cfg(test)]
+mod drone_rocking_tests;
+#[cfg(test)]
+mod area_rocker_tests;
+#[cfg(test)]
 pub(crate) use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
 mod team_script_vm_tests;
@@ -1244,6 +1248,9 @@ pub struct Simulation {
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
     pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
+    /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
+    /// native order. A save carries only the setting.
+    pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
@@ -1923,7 +1930,6 @@ impl Simulation {
                     Some(
                         crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                             building_id: stable_id,
-                            owner: entity.owner(),
                             rx: entity.position.rx(),
                             ry: entity.position.ry(),
                             z: entity.position.z(),
@@ -2571,8 +2577,7 @@ impl Simulation {
                                 grid,
                                 registry,
                                 self.resolved_terrain.as_mut(),
-                                rx,
-                                ry,
+                                crate::sim::overlay_grid::WallPointerTarget::Real(rx, ry),
                                 raw_ambient_damage,
                                 &mut self.scenario_rng,
                                 Some(&mut host),
@@ -3352,6 +3357,7 @@ impl Simulation {
             movement_pass_cache: Default::default(),
             expiry_listeners: Default::default(),
             path_batch: None,
+            scan_batch: None,
             interner: crate::sim::intern::StringInterner::new(),
             rule_handles: None,
             production: ProductionState::default(),
@@ -6096,8 +6102,7 @@ impl Simulation {
                 grid,
                 overlay_registry,
                 self.resolved_terrain.as_mut(),
-                event.rx,
-                event.ry,
+                crate::sim::overlay_grid::WallPointerTarget::Real(event.rx, event.ry),
                 event.damage,
                 &mut self.scenario_rng,
                 Some(&mut host),

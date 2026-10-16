@@ -236,6 +236,21 @@ impl BlockerNeighborCounts {
         self.counts[index] = self.counts[index].wrapping_add(delta);
     }
 
+    /// Bring the retained wall/Foot part of these counts from `kept` to
+    /// `now`, cell by cell, and make `kept` a copy of `now`. The counts wrap,
+    /// so this is every delta between them applied at once.
+    pub(crate) fn apply_retained_difference(&mut self, kept: &mut [u8], now: &[u8]) {
+        assert_eq!(
+            (kept.len(), now.len()),
+            (self.counts.len(), self.counts.len()),
+            "retained wall-neighbor plane must match pathfinding dimensions"
+        );
+        for ((count, kept), &now) in self.counts.iter_mut().zip(kept.iter_mut()).zip(now) {
+            *count = count.wrapping_add(now.wrapping_sub(*kept));
+            *kept = now;
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn set_count(&mut self, x: u16, y: u16, count: u8) {
         if x < self.width && y < self.height {

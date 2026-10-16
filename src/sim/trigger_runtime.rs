@@ -1655,6 +1655,61 @@ impl Simulation {
             .clone();
         match condition.kind {
             14 => self.session.scenario_timer_elapsed(),
+            17 => {
+                // Steam3e81a617..08600:71EE82 takes the incoming House;
+                // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
+                // Only null/limbo entries are skipped: neither Health nor
+                // Alive gates this leaf. Factory is the raw nonzero RTTI,
+                // independent of Event.value, actor, raised kind and init.
+                // No persistence, Event+54, timer, RNG or detach write.
+                // Executed controls: tag_lifecycle --no-factories-events.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                let Some(house) = self.houses.get(&owner) else {
+                    return false;
+                };
+                if house.tracking.buildings() <= 0 {
+                    return true;
+                }
+                let Some(rules) = rules else {
+                    return false;
+                };
+                !house.base_projection.buildings().iter().any(|&id| {
+                    self.substrate.entities.get(id).is_some_and(|building| {
+                        !building.lifecycle.in_limbo()
+                            && self
+                                .object_type(building.type_ref(), rules)
+                                .is_some_and(|ty| ty.has_factory())
+                    })
+                })
+            }
+            19..=22 => {
+                // Steam3e81a617: HasOccurred71EFEB..71F03D reads incoming
+                // House+26C/+274/+270/+278, not a Country or built count.
+                // Match sets persistence; mismatch leaves it alone. The null
+                // House takes the generic true tail without that write.
+                // Original execution: tag_lifecycle --build-type-events.
+                let Some(owner) = incoming_house else {
+                    return true;
+                };
+                use crate::rules::object_type::ObjectCategory;
+                let category = match condition.kind {
+                    19 => ObjectCategory::Building,
+                    20 => ObjectCategory::Vehicle,
+                    21 => ObjectCategory::Infantry,
+                    22 => ObjectCategory::Aircraft,
+                    _ => unreachable!(),
+                };
+                let matched = self
+                    .houses
+                    .get(&owner)
+                    .is_some_and(|house| house.last_built_type_index(category) == condition.value);
+                if matched {
+                    *persistence = true;
+                }
+                matched
+            }
             12 | 52 => {
                 // Steam3e81a617..08600: HasOccurred71EF01/71EF20 calls
                 // IHouse::AvailableMoney4F6990 on Register7264C0's incoming
@@ -2697,6 +2752,44 @@ impl Simulation {
         let sound = action.sound.as_deref();
         let action = &action.entry;
         match action.kind {
+            6 => {
+                // Steam3e81a617..08600, Execute6DEBF9..6DEC3B:
+                // shared6E45E0 selects the House, then IHouse vt+38 is
+                // AllToHunt501400. A NULL Trigger/House is rejected.
+                // Native evidence: trigger_action_values --all-to-hunt.
+                let (Some(live), Some(value), Some(rules)) = (context.live_index, value, rules)
+                else {
+                    return false;
+                };
+                let Some(owner) = self.live_action_house(live, value, rules) else {
+                    return false;
+                };
+                crate::sim::house_strategy::all_to_hunt(
+                    self,
+                    rules,
+                    owner,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
+            9 => {
+                // Execute6DEAD6 -> shared House selector6E45E0;6DEAFF
+                // writes only House+250=4. No immediate FireSale/Hunt and
+                // no strategy timer reset. Those remain with house_strategy.
+                // The shared6E45E0 selector rejects a null Trigger.
+                // Steam3e81a617..08600, --no-factories-events Action9 controls.
+                let (Some(live), Some(value), Some(rules)) = (context.live_index, value, rules)
+                else {
+                    return false;
+                };
+                let Some(house) = self
+                    .live_action_house(live, value, rules)
+                    .and_then(|owner| self.houses.get_mut(&owner))
+                else {
+                    return false;
+                };
+                house.strategy_emergency.set_state_four();
+            }
             12 => {
                 // Steam3e81a617..08600, Execute6DF051..6DF08F: reverse
                 // live Trigger array, then726720's deferred marker. No
@@ -3016,6 +3109,7 @@ impl Simulation {
                             rules,
                             overlay_registry,
                             id,
+                            crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
                             frame_effects,
                         );
                         return true;
@@ -3651,9 +3745,21 @@ mod tests;
 mod native_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_all_to_hunt_tests.rs"]
+mod all_to_hunt_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_no_factories_tests.rs"]
+mod no_factories_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_damage_event_tests.rs"]
 mod damage_event_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]
 mod reveal_zone_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_build_type_tests.rs"]
+mod build_type_tests;

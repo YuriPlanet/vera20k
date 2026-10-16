@@ -6,8 +6,8 @@
 //! destination darkening. The 256-square composed Unit surface masks the
 //! first cache fill; the resulting stencil is then retained by its owner.
 
-use super::native::{ftol, load, matrix_product, store, transform_point};
 use super::{HvaFile, Vec3, VxlFile, VxlRenderParams, VxlSprite};
+use crate::util::native_affine::{ftol, load, matrix_product, store, transform_point};
 use crate::util::native_x87::X87Chop53 as Fpu;
 
 pub(crate) fn supported(vxl: &VxlFile, params: &VxlRenderParams) -> bool {
@@ -79,6 +79,7 @@ pub(crate) fn render_matrix(vxl: &VxlFile, matrix: super::Mat4) -> Option<VxlSpr
     .enumerate()
     {
         let mut p = transform_point(matrix, point)?;
+        p.y = -p.y;
         p.x = store(Fpu::add(load(p.x)?, load(light_x)?))?;
         p.z = 0.0;
         for axis in 0..2 {

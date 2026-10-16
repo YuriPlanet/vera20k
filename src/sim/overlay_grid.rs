@@ -1166,6 +1166,15 @@ enum NativeRuntimeOverlayCell {
     Dummy,
 }
 
+impl From<WallPointerTarget> for NativeRuntimeOverlayCell {
+    fn from(target: WallPointerTarget) -> Self {
+        match target {
+            WallPointerTarget::Real(rx, ry) => Self::Real(rx, ry),
+            WallPointerTarget::SharedDummy => Self::Dummy,
+        }
+    }
+}
+
 impl From<NativeRuntimeOverlayCell> for WallPointerTarget {
     fn from(target: NativeRuntimeOverlayCell) -> Self {
         match target {
@@ -1351,20 +1360,20 @@ pub(crate) fn damage_wall_overlay_with_terrain(
         overlay_grid,
         registry,
         resolved_terrain,
-        rx,
-        ry,
+        WallPointerTarget::Real(rx, ry),
         damage,
         rng,
         None,
     )
 }
 
+/// Damage the already retained Cell receiver, including its shared-Dummy
+/// identity. The caller has performed Map5657A0; do not look it up again.
 pub(crate) fn damage_wall_overlay_with_runtime_host(
     overlay_grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
     mut resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-    rx: u16,
-    ry: u16,
+    target: WallPointerTarget,
     damage: i32,
     rng: &mut crate::sim::rng::SimRng,
     mut host: Option<&mut dyn WallDamageTransactionHost>,
@@ -1379,7 +1388,7 @@ pub(crate) fn damage_wall_overlay_with_runtime_host(
         registry,
         &mut resolved_terrain,
         &mut host,
-        NativeRuntimeOverlayCell::Real(rx, ry),
+        target.into(),
         damage,
         rng,
         &mut result,
@@ -3965,8 +3974,7 @@ Strength=400
             &mut rejected,
             &registry,
             Some(&mut rejected_terrain),
-            5,
-            5,
+            WallPointerTarget::Real(5, 5),
             0,
             &mut rejected_rng,
             Some(&mut rejected_host),
@@ -3985,8 +3993,7 @@ Strength=400
             &mut retained,
             &registry,
             Some(&mut retained_terrain),
-            5,
-            5,
+            WallPointerTarget::Real(5, 5),
             100,
             &mut retained_rng,
             Some(&mut retained_host),
@@ -4006,8 +4013,7 @@ Strength=400
             &mut terminal,
             &registry,
             Some(&mut terminal_terrain),
-            5,
-            5,
+            WallPointerTarget::Real(5, 5),
             -1,
             &mut terminal_rng,
             Some(&mut terminal_host),
@@ -4057,18 +4063,14 @@ Strength=400
         dummy.write_overlay_identity_state(0, 0);
         let mut dummy_rng = crate::sim::rng::SimRng::new(0x40A);
         let mut dummy_host = WallHostSpy::default();
-        let mut dummy_result = WallDamageResult::default();
-        let mut terrain_authority = Some(&mut dummy_terrain);
-        let mut host_authority: Option<&mut dyn WallDamageTransactionHost> = Some(&mut dummy_host);
-        damage_wall_recursive(
+        let _ = damage_wall_overlay_with_runtime_host(
             &mut dummy_grid,
             &registry,
-            &mut terrain_authority,
-            &mut host_authority,
-            NativeRuntimeOverlayCell::Dummy,
+            Some(&mut dummy_terrain),
+            WallPointerTarget::SharedDummy,
             -1,
             &mut dummy_rng,
-            &mut dummy_result,
+            Some(&mut dummy_host),
         );
         assert_eq!(
             dummy_host.events.first(),

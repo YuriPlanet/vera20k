@@ -357,7 +357,6 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
     use crate::rules::color_scheme::scheme_entry_for_priority;
     use crate::rules::foundation::{foundation_dimensions, foundation_id};
     use crate::rules::house_colors::HouseColorIndex;
-    use crate::rules::object_type::FactoryType;
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -370,12 +369,8 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
     let type_name = stock["result"]["type_id"].as_str().unwrap();
     let object = rules.object(type_name).unwrap();
     assert_eq!(
-        object.factory,
-        FactoryType::from_ini(
-            stock["physical_files"]["rules"]["keys"]["Factory"]
-                .as_str()
-                .unwrap()
-        )
+        serde_json::json!(object.factory_rtti()),
+        stock["result"]["factory"]
     );
     assert_eq!(
         serde_json::json!(foundation_id(&object.foundation)),

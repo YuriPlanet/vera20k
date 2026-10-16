@@ -69,7 +69,105 @@ const STRTRIM_MAX: u8 = 0x20;
 /// (`DAT_00817F70`).
 const COMMA: &[char] = &[','];
 
+/// AbstractType_From_Name40DCE0's compiled table at816EE0, read from Steam
+/// gamemd3e81a617..08600. Values are explicit: Temporal precedes RadSite in
+/// the name table but their RTTI values are70 and69, respectively.
+const ABSTRACT_TYPES: &[(&str, i32)] = &[
+    ("<none>", 0),
+    ("Unit", 1),
+    ("Aircraft", 2),
+    ("AircraftType", 3),
+    ("Anim", 4),
+    ("AnimType", 5),
+    ("Building", 6),
+    ("BuildingType", 7),
+    ("Bullet", 8),
+    ("BulletType", 9),
+    ("Campaign", 10),
+    ("Cell", 11),
+    ("Factory", 12),
+    ("House", 13),
+    ("HouseType", 14),
+    ("Infantry", 15),
+    ("InfantryType", 16),
+    ("Isotile", 17),
+    ("IsotileType", 18),
+    ("Light", 19),
+    ("Overlay", 20),
+    ("OverlayType", 21),
+    ("Particle", 22),
+    ("ParticleType", 23),
+    ("ParticleSystem", 24),
+    ("ParticleSystemType", 25),
+    ("Script", 26),
+    ("ScriptType", 27),
+    ("Side", 28),
+    ("Smudge", 29),
+    ("SmudgeType", 30),
+    ("Special", 31),
+    ("SuperWeaponType", 32),
+    ("TaskForce", 33),
+    ("Team", 34),
+    ("TeamType", 35),
+    ("Terrain", 36),
+    ("TerrainType", 37),
+    ("Trigger", 38),
+    ("TriggerType", 39),
+    ("UnitType", 40),
+    ("VoxelAnim", 41),
+    ("VoxelAnimType", 42),
+    ("Wave", 43),
+    ("Tag", 44),
+    ("TagType", 45),
+    ("Tiberium", 46),
+    ("Action", 47),
+    ("Event", 48),
+    ("WeaponType", 49),
+    ("WarheadType", 50),
+    ("Waypoint", 51),
+    ("Abstract", 52),
+    ("Tube", 53),
+    ("LightSource", 54),
+    ("EMPulse", 55),
+    ("TacticalMap", 56),
+    ("SuperWeapon", 57),
+    ("AITrigger", 58),
+    ("AITriggerType", 59),
+    ("Neuron", 60),
+    ("FoggedObject", 61),
+    ("AlphaShape", 62),
+    ("VeinholeMonster", 63),
+    ("NavyType", 64),
+    ("SpawnManager", 65),
+    ("CaptureManager", 66),
+    ("Parasite", 67),
+    ("Bomb", 68),
+    ("Temporal", 70),
+    ("RadSite", 69),
+    ("Airstrike", 71),
+    ("SlaveManager", 72),
+    ("DiskLaser", 73),
+];
+
 impl IniSection {
+    /// ReadFactory474FF0 -> AbstractType_From_Name40DCE0. Each BuildingType
+    /// pass460529 supplies its current RTTI name as ReadString32's default;
+    /// absent therefore retains it. A present unknown/empty cache value is0.
+    /// The raw loader still omits physical empty values. Do not conflate the
+    /// full class value with the four production-type comparisons.
+    /// Executed reader/table controls: trigger_no_factories_events.json.
+    pub(crate) fn read_factory(&self, key: &str, current: i32) -> i32 {
+        self.fold_rules_values(key, current, |_, raw| {
+            let name = strtrim_ascii(truncate_native_bytes(raw, 0x1f));
+            ABSTRACT_TYPES
+                .iter()
+                .find_map(|&(candidate, value)| {
+                    candidate.eq_ignore_ascii_case(name).then_some(value)
+                })
+                .unwrap_or(0)
+        })
+    }
+
     /// ReadColor474A90: ReadString32 defaults to the current scheme's name,
     /// then a case-insensitive scan skips the shade-count1 member of each
     /// registered pair. Unknown names keep the supplied native index. A
@@ -989,6 +1087,43 @@ mod tests {
 
     fn sec(body: &str) -> IniFile {
         IniFile::from_str(body)
+    }
+
+    #[test]
+    fn read_factory_matches_original_full_rtti_table_and_layer_defaults() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/trigger_no_factories_events.json",
+        ))
+        .unwrap();
+        let native = &corpus["factory"];
+        let names = native["rtti_name_table"].as_array().unwrap();
+        assert_eq!(names.len(), 74);
+        for row in names {
+            let ini = sec(&format!("[S]\nFactory={}\n", row["name"].as_str().unwrap()));
+            assert_eq!(
+                ini.section("S").unwrap().read_factory("Factory", 0),
+                row["value"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+        }
+        let controls = native["controls"].as_array().unwrap();
+        assert_eq!(controls.len(), 17);
+        for row in controls {
+            let section_name = row["type"].as_str().unwrap();
+            let mut section = IniSection::new(section_name.to_owned());
+            if let Some(keys) = row["raw_cache"][section_name].as_object() {
+                for (key, value) in keys {
+                    section.set(key, value.as_str().unwrap());
+                }
+            }
+            // Stored-empty is deliberately a reader-cache input. Physical
+            // Factory= remains omitted by the existing raw loader.
+            assert_eq!(
+                section.read_factory("Factory", row["before"].as_i64().unwrap() as i32),
+                row["after"].as_i64().unwrap() as i32,
+                "{row}"
+            );
+        }
     }
 
     #[test]

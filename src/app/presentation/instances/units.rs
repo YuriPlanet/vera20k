@@ -26,9 +26,6 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::unit_atlas::{
     UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing, canonical_unit_facing,
 };
-use crate::render::unit_slope_transition_cache::{
-    TransitionUnitSpriteEntry, TransitionUnitSpriteKey,
-};
 use crate::rules::house_colors::{self, HouseColorIndex};
 use crate::rules::voxel_frame_catalog::{
     NO_SPAWN_ALT_SUFFIX, draws_turret_parts, voxel_turret_index,
@@ -92,8 +89,7 @@ enum UnitRenderSlopeState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UnitTextureSource {
     Stable(usize),
-    Transition(usize),
-    Pose,
+    Pose(usize),
 }
 
 // Original755852..755875 initializes17..20 to identity, so the stable
@@ -417,7 +413,7 @@ pub(crate) fn build_unit_instances(
 
         // Sampled at the turret's frame, so the two sprites cannot disagree.
         let body_facing = entity.body_facing_byte(sim.session.binary_frame);
-        let ship_pose = ship_pose(entity, slope_state, sim.session.binary_frame);
+        let ground_pose = ground_pose(entity, slope_state, sim.session.binary_frame);
         if let BodyDraw::Pose(tilt) = body {
             let key = UnitSpriteKey {
                 type_id: type_str.to_string(),
@@ -440,7 +436,7 @@ pub(crate) fn build_unit_instances(
                 body_light,
                 draw_state,
             );
-        } else if ship_pose.is_some() || matches!(body, BodyDraw::Turret { .. }) {
+        } else if ground_pose.is_some() || matches!(body, BodyDraw::Turret { .. }) {
             let (turret_facing, barrel_elevation) = match body {
                 BodyDraw::Turret {
                     turret,
@@ -476,7 +472,7 @@ pub(crate) fn build_unit_instances(
                 dock_depth_y_offset,
                 slope_state,
                 band,
-                ship_pose,
+                ground_pose,
                 &mut pieces,
             );
         } else {
@@ -495,9 +491,7 @@ pub(crate) fn build_unit_instances(
                 slope_type: stable_slope_for_key(slope_state),
                 barrel_pitch: 0,
             };
-            if let Some((entry, texture_source)) =
-                unit_entry_for_slope_state(state, atlas, &key, slope_state, None)
-            {
+            if let Some((entry, texture_source)) = unit_entry_for_pose(state, atlas, &key, None) {
                 let depth_y: f32 = sy + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
                 let depth: f32 = body_sort_depth(state, entity, depth_y, interp_z);
                 let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true) as f32;
@@ -784,16 +778,13 @@ fn body_pose(
         return (pitch != 0.0).then_some(PoseTilt::Rocket(pitch));
     }
     let rocking = entity.rocking.as_ref()?;
-    let angles = [
-        rocking.angle_sideways().to_num::<f32>(),
-        rocking.angle_forwards().to_num::<f32>(),
-    ];
+    let angles = rocking.angles_native();
     match locomotor.active_kind() {
         LocomotorKind::Fly if entity.crash.is_crashing() && band != EntityDrawBand::Ground => {
             Some(PoseTilt::Fly(angles))
         }
         LocomotorKind::Jumpjet
-            if tilt_crash_jumpjet && crate::render::vxl_raster::voxel_tilt_applies(angles) =>
+            if tilt_crash_jumpjet && crate::map::voxel_pose::voxel_tilt_applies(angles) =>
         {
             Some(PoseTilt::Jumpjet(angles))
         }
@@ -801,29 +792,32 @@ fn body_pose(
     }
 }
 
-/// Ship69F6C0..69F6F8 keys dynamic draws for an unsettled slope or either
+/// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
 /// qualifying angle. Model loading stays with UnitModel; no ART boolean is
 /// used as evidence that a VXL loaded. Read-only: no RNG/timer/detach writes.
-fn ship_pose(
+fn ground_pose(
     entity: &crate::sim::game_entity::GameEntity,
     slope: UnitRenderSlopeState,
     binary_frame: u32,
-) -> Option<crate::render::vxl_raster::ShipPose> {
-    if entity.locomotor.as_ref()?.active_kind() != crate::rules::locomotor_type::LocomotorKind::Ship
-    {
+) -> Option<crate::render::vxl_raster::GroundPose> {
+    if !matches!(
+        entity.locomotor.as_ref()?.active_kind(),
+        crate::rules::locomotor_type::LocomotorKind::Drive
+            | crate::rules::locomotor_type::LocomotorKind::Ship
+    ) {
         return None;
     }
-    let angles = entity.rocking.as_ref().map_or([0.; 2], |rocking| {
-        [
-            rocking.angle_sideways().to_num::<f32>(),
-            rocking.angle_forwards().to_num::<f32>(),
-        ]
-    });
+    let angles = entity
+        .rocking
+        .as_ref()
+        .map_or([0.; 2], |rocking| rocking.angles_native());
     (matches!(slope, UnitRenderSlopeState::Transition { .. })
-        || crate::render::vxl_raster::voxel_tilt_applies(angles))
-    .then_some(crate::render::vxl_raster::ShipPose {
+        || crate::map::voxel_pose::voxel_tilt_applies(angles))
+    .then_some(crate::render::vxl_raster::GroundPose {
         angles,
-        body_facing: entity.body_facing_byte(binary_frame),
+        body_facing: crate::render::vxl_raster::voxel_facing_step_u16(
+            entity.body_facing_current(binary_frame),
+        ) * 8,
         slope_blend: slope_blend_for_render_state(slope),
         turret_offset: 0,
     })
@@ -862,7 +856,7 @@ fn emit_pose_sprite(
     let bounds = composite_draw_bounds([(entry, [center_x, center_y])]);
     let (composite_rect, split) = bounds.depth_rect(false);
     pieces.push(ObjectPieceInstance {
-        target: ObjectTexture::UnitPose,
+        target: ObjectTexture::UnitPosePage(entry.page),
         render_z: RenderZPolicy::ReadOnly,
         instance: SpriteInstance {
             position: [center_x + entry.offset_x, center_y + entry.offset_y],
@@ -907,7 +901,7 @@ fn turret_screen_offset(
 /// tilt angles (`TechnoClass+0x328`, `+0x32C`) under 0.005
 /// (`0x004AFFB0..0x004AFFE8`, `[0x007E44E8]`); otherwise it keys -1
 /// (`0x004B0187`), and the turret and barrel draw uncached (`0x0073B74C`,
-/// `0x007067EF`). VERA's rocking angles approximate the native floats.
+/// `0x007067EF`).
 fn turret_images_cached(
     entity: &crate::sim::game_entity::GameEntity,
     slope_state: UnitRenderSlopeState,
@@ -1004,7 +998,7 @@ fn stable_slope_for_key(slope_state: UnitRenderSlopeState) -> u8 {
 
 fn slope_blend_for_render_state(
     slope_state: UnitRenderSlopeState,
-) -> Option<crate::render::vxl_raster::VxlSlopeBlend> {
+) -> Option<crate::map::voxel_pose::VxlSlopeBlend> {
     match slope_state {
         UnitRenderSlopeState::Stable(_) => None,
         UnitRenderSlopeState::Transition {
@@ -1012,7 +1006,7 @@ fn slope_blend_for_render_state(
             to_slope,
             phase_num,
             phase_den,
-        } => Some(crate::render::vxl_raster::VxlSlopeBlend {
+        } => Some(crate::map::voxel_pose::VxlSlopeBlend {
             from_slope,
             to_slope,
             phase_num,
@@ -1021,66 +1015,22 @@ fn slope_blend_for_render_state(
     }
 }
 
-fn transition_key_for_unit(
-    key: &UnitSpriteKey,
-    slope_state: UnitRenderSlopeState,
-) -> Option<TransitionUnitSpriteKey> {
-    match slope_state {
-        UnitRenderSlopeState::Stable(_) => None,
-        UnitRenderSlopeState::Transition {
-            from_slope,
-            to_slope,
-            phase_num,
-            phase_den,
-        } => Some(TransitionUnitSpriteKey {
-            type_id: key.type_id.clone(),
-            turret_index: key.turret_index,
-            facing: key.facing,
-            layer: key.layer,
-            frame: key.frame,
-            from_slope,
-            to_slope,
-            phase_num,
-            phase_den,
-            barrel_pitch: key.barrel_pitch,
-        }),
-    }
-}
-
-fn unit_entry_for_slope_state(
+fn unit_entry_for_pose(
     state: &AppState,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     key: &UnitSpriteKey,
-    slope_state: UnitRenderSlopeState,
-    ship_pose: Option<crate::render::vxl_raster::ShipPose>,
+    ground_pose: Option<crate::render::vxl_raster::GroundPose>,
 ) -> Option<(UnitSpriteEntry, UnitTextureSource)> {
-    if let Some(pose) = ship_pose {
+    if let Some(pose) = ground_pose {
         let assets = state.process_assets.manager()?;
         let entry = state.renderer.vxl_pose_frame_cache.borrow_mut().render(
             assets,
             state.rules(),
             key,
-            crate::render::unit_atlas::PoseTilt::Ship(pose),
+            crate::render::unit_atlas::PoseTilt::Ground(pose),
         )?;
-        return Some((entry, UnitTextureSource::Pose));
+        return Some((entry, UnitTextureSource::Pose(entry.page)));
     }
-    if let Some(transition_key) = transition_key_for_unit(key, slope_state)
-        && let Some(asset_manager) = state.process_assets.manager()
-        && let Some(TransitionUnitSpriteEntry { page, entry }) = state
-            .renderer
-            .vxl_slope_transition_cache
-            .borrow_mut()
-            .get_or_render(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                asset_manager,
-                state.rules(),
-                transition_key,
-            )
-    {
-        return Some((entry, UnitTextureSource::Transition(page)));
-    }
-
     atlas_get_with_frame_fallback(atlas, key)
         .copied()
         .map(|entry| (entry, UnitTextureSource::Stable(entry.page)))
@@ -1224,8 +1174,7 @@ fn push_unit_sprite(
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     let target = match texture_source {
-        UnitTextureSource::Transition(page) => ObjectTexture::UnitTransitionPage(page),
-        UnitTextureSource::Pose => ObjectTexture::UnitPose,
+        UnitTextureSource::Pose(page) => ObjectTexture::UnitPosePage(page),
         UnitTextureSource::Stable(page) => ObjectTexture::UnitAtlasPage(page),
     };
     pieces.push(ObjectPieceInstance {
@@ -1387,7 +1336,7 @@ fn emit_turret_unit_sprites(
     dock_depth_y_offset: f32,
     slope_state: UnitRenderSlopeState,
     band: EntityDrawBand,
-    mut ship_pose: Option<crate::render::vxl_raster::ShipPose>,
+    mut ground_pose: Option<crate::render::vxl_raster::GroundPose>,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     let slope_type = stable_slope_for_key(slope_state);
@@ -1427,10 +1376,10 @@ fn emit_turret_unit_sprites(
         .unwrap_or(0);
     // Use the same stable or quaternion-SLERP slope matrix as every hull,
     // turret, and barrel raster layer in this presentation phase.
-    if let Some(pose) = ship_pose.as_mut() {
+    if let Some(pose) = ground_pose.as_mut() {
         pose.turret_offset = art_offset;
     }
-    let (tur_ox, tur_oy) = if ship_pose.is_some() {
+    let (tur_ox, tur_oy) = if ground_pose.is_some() {
         (0., 0.)
     } else {
         turret_screen_offset(art_offset, body_facing, slope_state)
@@ -1440,7 +1389,8 @@ fn emit_turret_unit_sprites(
     // 0x0073BB96`). A pose the turret image is cached under draws the pitch its
     // type cached there; an uncached pose draws the unit's own.
     let drawn_pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
-    barrel_key.barrel_pitch = if ship_pose.is_none() && turret_images_cached(entity, slope_state) {
+    barrel_key.barrel_pitch = if ground_pose.is_none() && turret_images_cached(entity, slope_state)
+    {
         state
             .match_state
             .match_presentation
@@ -1454,7 +1404,7 @@ fn emit_turret_unit_sprites(
     } else {
         drawn_pitch
     };
-    let (barrel_ox, barrel_oy) = if ship_pose.is_some() {
+    let (barrel_ox, barrel_oy) = if ground_pose.is_some() {
         (0., 0.)
     } else {
         let (x, y) = crate::render::vxl_raster::barrel_pivot_screen_offset(
@@ -1472,8 +1422,7 @@ fn emit_turret_unit_sprites(
     // (body, then turret/barrel) controls visual stacking via stable sort.
     // Per-layer depth derived from each sprite's bounding box caused tie-break
     // collisions where body could sort over turret at certain facings.
-    let body_entry_opt =
-        unit_entry_for_slope_state(state, atlas, &body_key, slope_state, ship_pose);
+    let body_entry_opt = unit_entry_for_pose(state, atlas, &body_key, ground_pose);
     let entity_depth_y: f32 = match body_entry_opt {
         Some((e, _)) => center_y + e.offset_y + e.pixel_size[1] + dock_depth_y_offset,
         None => center_y + dock_depth_y_offset,
@@ -1492,7 +1441,7 @@ fn emit_turret_unit_sprites(
     )
     .into_iter()
     .filter_map(|(key, offset)| {
-        unit_entry_for_slope_state(state, atlas, key, slope_state, ship_pose)
+        unit_entry_for_pose(state, atlas, key, ground_pose)
             .map(|(entry, source)| (entry, source, offset))
     })
     .collect();
@@ -2059,64 +2008,66 @@ mod tests {
     }
 
     #[test]
-    fn a_ship_pose_reads_roll_or_unsettled_slope_without_replacing_other_locomotors() {
-        let mut entity = GameEntity::test_default(1, "DEST", "Americans", 0, 0);
-        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
-        assert!(ship_pose(&entity, UnitRenderSlopeState::Stable(0), 0).is_none());
-        let transition = UnitRenderSlopeState::Transition {
-            from_slope: 0,
-            to_slope: 1,
-            phase_num: 1,
-            phase_den: 3,
-        };
-        let pose = ship_pose(&entity, transition, 0)
-            .expect("slope transition is uncached even without rocking");
-        assert_eq!(pose.angles, [0.; 2]);
-        assert_eq!(
-            pose.slope_blend.unwrap(),
-            crate::render::vxl_raster::VxlSlopeBlend {
+    fn ground_pose_reads_drive_and_ship_roll_or_slope_without_replacing_other_locomotors() {
+        for ground_kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+            let mut entity = GameEntity::test_default(1, "DEST", "Americans", 0, 0);
+            entity.locomotor = Some(LocomotorState::for_test_kind(ground_kind));
+            assert!(ground_pose(&entity, UnitRenderSlopeState::Stable(0), 0).is_none());
+            let transition = UnitRenderSlopeState::Transition {
                 from_slope: 0,
                 to_slope: 1,
                 phase_num: 1,
                 phase_den: 3,
+            };
+            let pose = ground_pose(&entity, transition, 0)
+                .expect("slope transition is uncached even without rocking");
+            assert_eq!(pose.angles, [0.; 2]);
+            assert_eq!(
+                pose.slope_blend.unwrap(),
+                crate::map::voxel_pose::VxlSlopeBlend {
+                    from_slope: 0,
+                    to_slope: 1,
+                    phase_num: 1,
+                    phase_den: 3,
+                }
+            );
+            entity.rocking = Some(crate::sim::rocking::RockingState::default());
+            for roll in [-0.5, 0.5] {
+                entity
+                    .rocking
+                    .as_mut()
+                    .unwrap()
+                    .set_angle_sideways(crate::util::fixed_math::SimFixed::from_num(roll));
+                let pose = ground_pose(&entity, UnitRenderSlopeState::Stable(0), 0).unwrap();
+                assert_eq!(pose.angles, [roll, 0.]);
+                assert!(pose.slope_blend.is_none());
+                assert!(!turret_images_cached(
+                    &entity,
+                    UnitRenderSlopeState::Stable(0)
+                ));
+                // Both dynamic ground bodies retain the existing untilted shadow
+                // owner (Drive4B0410 / Ship69FB20 → base55A7D0).
+                assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
+                for kind in [
+                    LocomotorKind::Fly,
+                    LocomotorKind::Jumpjet,
+                    LocomotorKind::Rocket,
+                ] {
+                    entity.locomotor = Some(LocomotorState::for_test_kind(kind));
+                    assert!(ground_pose(&entity, transition, 0).is_none());
+                }
+                entity.locomotor = Some(LocomotorState::for_test_kind(ground_kind));
             }
-        );
-        entity.rocking = Some(crate::sim::rocking::RockingState::default());
-        for roll in [-0.5, 0.5] {
             entity
                 .rocking
                 .as_mut()
                 .unwrap()
-                .set_angle_sideways(crate::util::fixed_math::SimFixed::from_num(roll));
-            let pose = ship_pose(&entity, UnitRenderSlopeState::Stable(0), 0).unwrap();
-            assert_eq!(pose.angles, [roll, 0.]);
-            assert!(pose.slope_blend.is_none());
-            assert!(!turret_images_cached(
-                &entity,
-                UnitRenderSlopeState::Stable(0)
-            ));
-            // Ship roll poses only the body; existing ordinary shadow admission
-            // and its un-tilted base matrix remain authoritative (69FB20).
-            assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
-            for kind in [
-                LocomotorKind::Fly,
-                LocomotorKind::Jumpjet,
-                LocomotorKind::Rocket,
-            ] {
-                entity.locomotor = Some(LocomotorState::for_test_kind(kind));
-                assert!(ship_pose(&entity, transition, 0).is_none());
-            }
-            entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
+                .set_angle_sideways(crate::util::fixed_math::SimFixed::ZERO);
+            assert!(
+                ground_pose(&entity, UnitRenderSlopeState::Stable(0), 0).is_none(),
+                "release restores ordinary atlas admission"
+            );
         }
-        entity
-            .rocking
-            .as_mut()
-            .unwrap()
-            .set_angle_sideways(crate::util::fixed_math::SimFixed::ZERO);
-        assert!(
-            ship_pose(&entity, UnitRenderSlopeState::Stable(0), 0).is_none(),
-            "release restores ordinary atlas admission"
-        );
     }
 
     /// A missile draws its plain facing while CurrentPitch is zero and Rocket

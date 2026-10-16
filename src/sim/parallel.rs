@@ -38,6 +38,16 @@ pub(crate) fn select_indices(len: usize, keep: impl Fn(usize) -> bool + Sync) ->
         .collect()
 }
 
+/// `pick`'s answers for the indices below `len` it answers, in ascending
+/// index order.
+pub(crate) fn filter_map_indices<R: Send>(
+    len: usize,
+    pick: impl Fn(usize) -> Option<R> + Sync,
+) -> Vec<R> {
+    // A shared reference to a `Sync` closure is `Send`.
+    (0..len).into_par_iter().filter_map(&pick).collect()
+}
+
 /// `work` on every item in place.
 pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Sync) {
     items.par_iter_mut().for_each(&work);

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "28 original HasOccurred19..22 controls, eight StateA/StateB calls, three original Register latch steps, real House/Type constructors, existing Building discovery replay, eight whole Record_Last_Built calls and actual ALL07 binding through the first8 stock BuildingTypes entries. Not entire production/placement, full type registry, audio, complete House/Logic/Spring/EVA or campaign parity.",
+  "assumptions": [
+    "PowerEventControls/FlagsFixture owns the unchanged HasOccurred/reader/Register VM. Three supplied Houses have Country0/7/0, independent last-built priors and actor2.19/20/21/22 read incoming House+26C/+274/+270/+278, not Event.value Country; null incoming succeeds without persistence mutation. Signed bit-pattern equality, negative-1, mismatch, wrong raised99/A8ED6B, distinct incoming House and initial persistence0/1 execute. Event+54 and timer remain unchanged; successful nonnull matches set persistence1.",
+    "Original StateA71F950 andStateB71F9C0 execute for each of four kinds: four rows/eight calls. Their1/1 result makes successful19 eligible for existing Register completion bits even on a nonrepeating Tag. Actual19/7 then13/10 Register history at0/149/150 records completion1 before the elapsed condition succeeds; changing last-built7 to8 does not undo the latch. Timer[0,0,150] stays unchanged. The existing House8-frame Tag classification/poll owner is not reimplemented or full-world executed here.",
+    "Three native65C6D0 constructors seed31; full0x3F4-byte Scenario/Main/MapGen before/after hex is saved for predicates/classifiers and every Record control. Predicate/Register instructions draw no observed RNG or detach. Full House4F54A0 initialization is separate and DOES consume Scenario RNG; constructor before/after and actual events are retained, not claimed zero-draw.",
+    "CampaignReader executes existing Scenario6832C0, Rules665650, Country5113F0 and House4F54A0 constructors. Four last-built slots initialize-1. Physical RULESMD first8 BuildingTypes cache entries feed real ReadBuildingTypes672660/constructors under the original2M cap and spare vector capacity. Actual index7 and TypeDF8 are GAWEAP/7. Whole cold/reset catalog, ReadTypeData/ART, discovery-appended types and full physical INI layers remain excluded. Real ALL07 map/archive hashes, Trigger0C028AFC, Tag0C029C8C, counted Events and raw Action21 EVA string bind this ordinary route; Spring/EVA execution remains a Rust production consumer check.",
+    "Record inputs use real stock prefixes: GAWEAP/index7 from first8 BuildingTypes, AMCV/index0 from first VehicleTypes via672360, E1/index0 from first InfantryTypes via672280, and PDPLANE/index6 from first7 AircraftTypes via6723D0. Original list readers/constructors/ArrayIndex getters execute and save every registration. Aircraft first entry APACHE has no physical object section; selecting PDPLANE retains its real prefix index instead of treating it as0. This corrects the earlier standalone MTNK/ORCA fixture-local0 inputs; new results are a changed input set, not claimed identical prior controls. Actual instance vtables, type-pointer offsets and owner layouts remain supplied priors, not full Actor constructors/Unlimbo/tracking/PLACE. Original WhatAmI/GetTechnoType/TypeArrayIndex virtuals execute. Original House4FB6B0 executes for each DontScore0/1 through existing AccountingObservation. Last-built writes occur for both flags; built Counter49FA00 is skipped only by DontScore. Capacity8, zero-item/total Counter priors exclude allocation/growth.",
+    "Type CreateSound and Rules+178/+17C/+180 are explicitly-1; actual constructor defaults are retained separately. No native sound/detach entry occurs in these eight Record bodies, and supplied notification timer[29,17,90] stays unchanged while246/1FC set1. Future House90-frame rearm, audible output/audio RNG and full TechTree effects are outside these scalar calls.",
+    "Existing trigger_action_values.discovery_building_override runs actual44D5D0 after shared6F4960 admission, with synthetic TypeDF8=73, priorHouse26C=99 and an already-openedBuilding6E4=1 Grand_Opening fast return. Init2 owner entry preserves99, first current-player discovery atinit0 writes73/246, repeat discovery retains it; exact44D5D0..44D621 bytes are saved. This helper retains its existing three-stream SHA observations, not a new full-state replay claim for that subgraph. Current-player/owner/placement priors, sparse map and existing supplied unrelated calls retain that owner's boundaries; no complete first opening, arbitrary discovery or whole-world lifecycle claim.",
+    "Record_Last_Built4FB6B0 and Building44D601 are distinct native writers of the same House slot. Production must use one private House state owner, not count-derived last type, presentation visibility or a new direct build-event dispatcher. No existing reader/VM/Counter/allocator/RNG algorithm is duplicated."
+  ],
+  "substitutions": [
+    "Inherited FlagsFixture/CampaignReader/DiscoveryFixture CRT, heap, TLS, platform and cached-INI transports. Explicit House/Actor/vector/counter/timer/type/mission priors retain stated limits. No HasOccurred, Register, last-built writer, Counter increment, virtual type getter or selected RNG return is substituted. Existing discovery helper retains its declared presentation/first-opening seams."
+  ],
+  "entry_points": {
+    "has_occurred": "0x0071E940",
+    "building_predicate": "0x0071EFEB",
+    "vehicle_predicate": "0x0071F003",
+    "infantry_predicate": "0x0071F01D",
+    "aircraft_predicate": "0x0071F037",
+    "state_a": "0x0071F950",
+    "state_b": "0x0071F9C0",
+    "register": "0x007264C0",
+    "house_constructor": "0x004F54A0",
+    "record_last_built": "0x004FB6B0",
+    "counter_increment": "0x0049FA00",
+    "building_discovery": "0x0044D5D0",
+    "discovery_last_built_store": "0x0044D601",
+    "building_types_reader": "0x00672660",
+    "vehicle_types_reader": "0x00672360",
+    "infantry_types_reader": "0x00672280",
+    "aircraft_types_reader": "0x006723D0",
+    "random_seed": "0x0065C6D0"
+  },
+  "environment": {
+    "RA2_DIR": "retail installation containing gamemd.exe and mapsmd03.mix",
+    "VERA20K_CAMPAIGN_START_ASSETS": "existing empty directory; selected constructor/list controls request no assets",
+    "checkout_prerequisite": "ini/rulesmd.ini is the extracted retail RULESMD"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --build-type-events",
+  "payload_sha256": "081c8719c31902a9f84f1096b8fd91d5858b83a71f705978911a26742984aeeb"
+}

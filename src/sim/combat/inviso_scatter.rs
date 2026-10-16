@@ -7,11 +7,14 @@
 //! coordinate.
 
 use crate::sim::rng::SimRng;
+#[cfg(test)]
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, X87Chop53};
 
+#[cfg(test)]
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 const MAP_CELL_LIMIT: u32 = 512;
+#[cfg(test)]
 const INVISO_ANIM_RADIUS: i32 = 0x20;
 
 /// The final byte argument of the one shared Coord49F420 owner.
@@ -98,7 +101,9 @@ const COSINE_BITS: [u32; 256] = [
     0xBE47C5C1, 0xBE2F10A2, 0xBE164083, 0xBDFAB272, 0xBDC8BD35, 0xBD96A904, 0xBD48FB2F, 0xBCC90AAF,
 ];
 
-/// Consume one Scenario-RNG draw and derive only the impact-animation coordinate.
+/// Compatibility for cell-packet tests; production calls the raw Coord owner
+/// directly so packing never changes the input to native49F420.
+#[cfg(test)]
 pub(crate) fn scatter_inviso_effect_coord(
     rng: &mut SimRng,
     rx: u16,
@@ -106,8 +111,8 @@ pub(crate) fn scatter_inviso_effect_coord(
     sub_x: SimFixed,
     sub_y: SimFixed,
 ) -> (u16, u16, SimFixed, SimFixed) {
-    let base_x = i32::from(rx) * LEPTONS_PER_CELL + sub_x.to_num::<i32>();
-    let base_y = i32::from(ry) * LEPTONS_PER_CELL + sub_y.to_num::<i32>();
+    let base_x = crate::util::lepton::absolute_lepton_axis(rx, sub_x);
+    let base_y = crate::util::lepton::absolute_lepton_axis(ry, sub_y);
     let (x, y) = random_direction_coord(
         rng,
         base_x,
@@ -126,8 +131,8 @@ fn scatter_effect_coord_for_byte(
     sub_x: SimFixed,
     sub_y: SimFixed,
 ) -> (u16, u16, SimFixed, SimFixed) {
-    let base_x = i32::from(rx) * LEPTONS_PER_CELL + sub_x.to_num::<i32>();
-    let base_y = i32::from(ry) * LEPTONS_PER_CELL + sub_y.to_num::<i32>();
+    let base_x = crate::util::lepton::absolute_lepton_axis(rx, sub_x);
+    let base_y = crate::util::lepton::absolute_lepton_axis(ry, sub_y);
     let (x, y) = random_direction_coord_for_byte(
         byte,
         base_x,
@@ -196,15 +201,11 @@ pub(crate) fn random_direction_coord_for_byte(
     }
 }
 
+#[cfg(test)]
 fn split_valid_coord(x: i32, y: i32) -> (u16, u16, SimFixed, SimFixed) {
-    let x_cell = crate::util::lepton::lepton_to_cell(x);
-    let y_cell = crate::util::lepton::lepton_to_cell(y);
-    (
-        x_cell as u16,
-        y_cell as u16,
-        SimFixed::from_num(x - x_cell * LEPTONS_PER_CELL),
-        SimFixed::from_num(y - y_cell * LEPTONS_PER_CELL),
-    )
+    let (rx, sub_x) = crate::util::lepton::split_lepton_axis(x);
+    let (ry, sub_y) = crate::util::lepton::split_lepton_axis(y);
+    (rx, ry, sub_x, sub_y)
 }
 
 #[cfg(test)]
@@ -474,7 +475,7 @@ mod tests {
     ];
 
     fn flat(rx: u16, sub: SimFixed) -> i32 {
-        i32::from(rx) * LEPTONS_PER_CELL + sub.to_num::<i32>()
+        crate::util::lepton::absolute_lepton_axis(rx, sub)
     }
 
     /// `tools/projectile_oracle/launch_scatter.json`: the original helper

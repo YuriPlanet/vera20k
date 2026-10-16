@@ -2300,7 +2300,7 @@ fn evaluate_candidate(
             power_bonus: candidate_obj.power.max(0),
             max_occupants: candidate_obj.max_number_occupants as i32,
             needs_engineer: candidate_obj.needs_engineer,
-            factory: candidate_obj.factory.is_some(),
+            factory: candidate_obj.has_factory(),
             can_be_occupied: candidate_obj.can_be_occupied,
             occupants: candidate
                 .passenger_role

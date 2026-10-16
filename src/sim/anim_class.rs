@@ -91,18 +91,8 @@ impl AnimWorldCoord {
         crate::util::fixed_math::SimFixed,
         u8,
     ) {
-        let rx = self
-            .x
-            .div_euclid(LEPTONS_PER_CELL)
-            .clamp(0, i32::from(u16::MAX)) as u16;
-        let ry = self
-            .y
-            .div_euclid(LEPTONS_PER_CELL)
-            .clamp(0, i32::from(u16::MAX)) as u16;
-        let sub_x =
-            crate::util::fixed_math::SimFixed::from_num(self.x.rem_euclid(LEPTONS_PER_CELL));
-        let sub_y =
-            crate::util::fixed_math::SimFixed::from_num(self.y.rem_euclid(LEPTONS_PER_CELL));
+        let (rx, sub_x) = crate::util::lepton::split_lepton_axis(self.x);
+        let (ry, sub_y) = crate::util::lepton::split_lepton_axis(self.y);
         let z = self
             .z
             .div_euclid(LEVEL_HEIGHT_LEPTONS)
@@ -123,12 +113,8 @@ impl AnimWorldCoord {
         z: u8,
     ) -> Self {
         Self {
-            x: i32::from(rx)
-                .wrapping_mul(LEPTONS_PER_CELL)
-                .wrapping_add(sub_x.to_num::<i32>()),
-            y: i32::from(ry)
-                .wrapping_mul(LEPTONS_PER_CELL)
-                .wrapping_add(sub_y.to_num::<i32>()),
+            x: crate::util::lepton::absolute_lepton_axis(rx, sub_x),
+            y: crate::util::lepton::absolute_lepton_axis(ry, sub_y),
             z: i32::from(z).wrapping_mul(LEVEL_HEIGHT_LEPTONS),
         }
     }
@@ -152,6 +138,7 @@ pub const COMBAT_EXPLOSION_DRAW_FLAGS: u32 = 0x2600;
 /// value and ignores it, always yielding `-15`.
 pub const COMBAT_EXPLOSION_Z_ADJUST: i32 = -15;
 
+#[cfg(test)]
 const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 /// The native level height. `AnimClass` coordinates are ordinary world
 /// `CoordStruct` leptons, so a producer that places an anim by height level
@@ -3990,6 +3977,31 @@ mod tests {
 
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(starts(&sim), 1, "Start runs once per delay");
+    }
+
+    #[test]
+    fn signed_impact_packet_keeps_exact_xy_through_explosion_admission() {
+        let rules = runtime_rules("[TWLT036]\nEnd=8\n", &[("TWLT036", 8)]);
+        for (x, y) in [(-257, -511), (-1, 1811), (-128_128, 5248), (2694, 5253)] {
+            let mut sim = Simulation::new();
+            let type_id = sim.interner.intern("TWLT036");
+            let point = crate::sim::projectile::ProjectileCoord::new(x, y, 209);
+            let packet = crate::sim::combat::detonation_anim::placed_effect(type_id, point);
+            let packed = (packet.rx, packet.ry, packet.sub_x, packet.sub_y);
+            crate::sim::world::damage_consequences::admit_explosion_effect(
+                &mut sim, &rules, packet,
+            );
+            let ids = sim.anims().map(|(id, _)| *id).collect::<Vec<_>>();
+            assert_eq!(
+                ids.len(),
+                1,
+                "the real constructor admits the impact packet"
+            );
+            let coord = sim.anim_absolute_coord(ids[0]).unwrap();
+            assert_eq!(coord, AnimWorldCoord { x, y, z: 209 });
+            let (rx, ry, sub_x, sub_y, _) = coord.to_cell_sub_z();
+            assert_eq!((rx, ry, sub_x, sub_y), packed);
+        }
     }
 
     #[test]

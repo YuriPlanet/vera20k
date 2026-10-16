@@ -95,7 +95,7 @@ def metadata():
 
 
 
-def grapple_generate():
+def grapple_generate(*,drone=False):
     import os,hashlib
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_ECX
@@ -103,7 +103,7 @@ def grapple_generate():
     from tools.spatial_oracle.anim_bouncer_launch import constructor_state
     from tools.procedural_drawing_oracle.electric_bolt import RngTrace
     root=Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
-    inputs=host.grapple_inputs(root);f=host.grapple_fixture(inputs,root)
+    inputs=host.grapple_inputs(root,drone=drone);f=host.grapple_fixture(inputs,root,drone=drone)
     u,read=f.u,f.read32;source,victim,manager=f.grapple_source,f.grapple_victim,f.grapple_manager
     scenario=read(0xA8B230)
     rng=RngTrace.__new__(RngTrace);rng.u=u
@@ -118,18 +118,30 @@ def grapple_generate():
         return dict(start=read(p),opaque=read(p+4),duration=read(p+8))
     def snapshot():
         a=read(manager+0x44)
-        return dict(source=actor(source),victim=dict(actor(victim),sinking=u.mem_read(victim+0x3CD,1)[0],
+        result=dict(source=actor(source),victim=dict(actor(victim),sinking=u.mem_read(victim+0x3CD,1)[0],
                 angle_bits=read(victim+0x328),paralysis_timer=[read(victim+0x6A0+o) for o in (0,4,8)]),
             manager=dict(native_id=struct.unpack('<i',dwords(read(manager+0x10)))[0],phase=read(manager+0x48),stage=read(manager+0x4C),delay=read(manager+0x50),
                 invalidated=u.mem_read(manager+0x54,1)[0],anim_native_id=read(a+0x10) if a else None,
                 timer_2c=timer(manager+0x2C),timer_38=timer(manager+0x38)),
             held_anim=constructor_state(u,a) if a else None)
-    pending=[];constructed=[];events=[]
+        if drone:result['victim']['rocking_bits']=list(struct.unpack('<4I',u.mem_read(victim+0x328,16)))
+        return result
+    pending=[];constructed=[];events=[];particle_constructed=[];systems=[];impulse_pending=[]
     def event(kind,**values):events.append(dict(event=kind,rng_request_count=len(rng.requests),native_cursor=read(scenario+0x214),**values))
     def observe(_u,pc,_size,_data):
         sp=u.reg_read(UC_X86_REG_ESP)
+        if impulse_pending and (pc,sp)==impulse_pending[-1][:2]:
+            _,_,row=impulse_pending.pop();row['after_bits']=list(struct.unpack('<4I',u.mem_read(victim+0x328,16)))
         if pending and (pc,sp)==pending[-1][:2]:
             _,_,p,row=pending.pop()
+            if row.pop('_kind',None)=='system':
+                from types import SimpleNamespace
+                from tools.procedural_drawing_oracle.electric_bolt import SparkBirth
+                proxy=SimpleNamespace(u=u,read32=read,scenario=scenario,systems=systems,particles=[],lights=[])
+                state=SparkBirth.runtime_state(proxy)
+                row.update(state=state['systems'][-1],rng_request_after=len(rng.requests),native_cursor_after=read(scenario+0x214))
+                particle_constructed.append(row);event('ParticleSystemCtor_return',native_id=row['state']['native_id'])
+                return
             row.update(constructor_state(u,p),logic_registered=member(p,0x87F778),
                 display_layers=[i for i in range(5) if member(p,0x8A0360+24*i)],
                 rng_request_after=len(rng.requests),native_cursor_after=read(scenario+0x214))
@@ -140,15 +152,27 @@ def grapple_generate():
                 loops=read(sp+16),flags=read(sp+20),z_adjust=struct.unpack('<i',dwords(read(sp+24)))[0],extra=read(sp+28)),
                 native_cursor_before=read(scenario+0x214),rng_request_before=len(rng.requests))
             pending.append((read(sp),sp+32,p,row));event('AnimCtor',type=row['type'])
+        elif drone and pc==0x62DC50:
+            p=u.reg_read(UC_X86_REG_ECX);systems.append(p)
+            row=dict(_kind='system',type=f.string(read(sp+4)+0x24),position=xyz(read(sp+8)),
+                args=dict(target_object_is_null=read(sp+12)==0,owner_is_null=read(sp+16)==0,
+                    target=xyz(read(sp+20)),house_is_null=read(sp+24)==0),
+                native_cursor_before=read(scenario+0x214),rng_request_before=len(rng.requests))
+            pending.append((read(sp),sp+28,p,row));event('ParticleSystemCtor',type=row['type'])
+        elif drone and pc==0x70B280:
+            row=dict(origin=xyz(read(sp+4)),force_bits=read(sp+8),no_dampen=read(sp+12)&255,
+                before_bits=list(struct.unpack('<4I',u.mem_read(victim+0x328,16))))
+            event('ApplyRocker',**row);impulse_pending.append((read(sp),sp+16,events[-1]))
         elif pc==0x410230:event('CreateId',caller=f'{read(sp):08X}')
         elif pc==0x629D3B:event('ReceiveDamage_call')
     u.hook_add(UC_HOOK_CODE,observe)
-    selected={};angle_rows={};first_roll=None;opposite=None;damage=[]
+    selected={};angle_rows={};first_roll=None;opposite=None;damage=[];previous=None
     for frame in range(201):
         u.mem_write(bc.FRAME,dwords(frame));before=rng.states();prior=snapshot()
-        cursor=read(scenario+0x214);start=len(rng.requests);mark=len(constructed);ev=len(events)
-        bc.invoke(u,0x6297F0,manager)
-        after=snapshot();assert not pending and not rng.pending
+        cursor=read(scenario+0x214);start=len(rng.requests);mark=len(constructed);ev=len(events);particle_mark=len(particle_constructed)
+        if drone:bc.invoke(u,0x70B570,victim)
+        bc.invoke(u,0x629FD0 if drone else 0x6297F0,manager)
+        after=snapshot();assert not pending and not rng.pending and not impulse_pending
         assert after['source']['alive']==1 and after['source']['limbo']==1
         assert after['victim']['alive']==1 and after['victim']['limbo']==0
         row=dict(input=dict(frame=frame,entry='006297F0'),before=prior,after=after,
@@ -156,6 +180,25 @@ def grapple_generate():
             rng_before=before,rng_after=rng.states(),rng_requests=rng.requests[start:],
             raw_draw_count=sum(len(r['raw_draws']) for r in rng.requests[start:]),
             anims=constructed[mark:],events=events[ev:])
+        if drone:
+            row['input']['entry']=['0070B570','00629FD0']
+            row['particle_systems']=particle_constructed[particle_mark:]
+            from types import SimpleNamespace
+            from tools.projectile_oracle.ifv_fire_coord import native_get_flh
+            prior_rng=rng.states();prior_cursor=read(scenario+0x214)
+            out=f.allocate(12)
+            view=SimpleNamespace(invoke=lambda address,obj,args:bc.invoke(u,address,obj,*args))
+            native_get_flh(view,victim,out)
+            row['victim_flh']=xyz(out)
+            assert rng.states()==prior_rng and read(scenario+0x214)==prior_cursor
+            if frame in (0,1,2,10):selected[frame]=row
+            if after['victim']['health']<prior['victim']['health']:
+                damage.append(row);selected[frame]=row
+                if previous is not None:selected[previous['input']['frame']]=previous
+            if damage and frame==damage[-1]['input']['frame']+1:selected[frame]=row
+            if len(damage)>=2 and frame>damage[-1]['input']['frame']:break
+            previous=row
+            continue
         if frame==0:selected[frame]=row
         branch=next((r for r in row['rng_requests'] if r['caller'] in ('0x6299ae','0x629d5d')),None)
         if branch is not None:
@@ -171,11 +214,11 @@ def grapple_generate():
             for value in angle_rows.values():selected[value['input']['frame']]=value
             if len(selected)<8:selected[damage[1]['input']['frame']]=damage[1]
             break
-    assert len(angle_rows)==4 and opposite is not None and len(damage)>=2
-    assert 7<=len(selected)<=8 and f.code_unchanged()
+    assert (drone or len(angle_rows)==4 and opposite is not None) and len(damage)>=2
+    assert (drone or 7<=len(selected)<=8) and f.code_unchanged()
     return dict(schema=1,initial=dict(f.grapple_context,layers=inputs.grapple_layers,
         anim_types=inputs.grapple_anims,assets={name:dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
-            for name in ('SQDG.SHP','WAKE1.SHP','H2O_EXP1.SHP','H2O_EXP2.SHP','H2O_EXP3.SHP')
+            for name in (() if drone else ('SQDG.SHP','WAKE1.SHP','H2O_EXP1.SHP','H2O_EXP2.SHP','H2O_EXP3.SHP'))
             for raw in [(root/name).read_bytes()]}),visits_end=frame,rows=[selected[k] for k in sorted(selected)])
 
 
@@ -194,8 +237,25 @@ def grapple_metadata():
             'Inherited successful bounded allocation/free, physical lexical INI and requested-SHP cache, IDX/BAG transport, Windows GUID/COM activation/OleRun through original factories, and declared presentation sinks. No selector/trig/ftol/RNG/GetCoords/constructor/Unlimbo/AttachTo/damage gameplay return or original instruction is replaced.'
         ],entry_points=dict(grapple=0x6297F0,stage=0x629720,wakes=0x629E90,attach=0x62A980,can_infect=0x62A8E0,unit_ctor=0x7353C0,unit_unlimbo=0x737BA0,object_limbo=0x5F4D30,anim_ctor=0x421EA0,anim_start=0x424CE0,next=0x65C780,ranged=0x65C7E0))
 
+
+def drone_metadata():
+    return provenance(scope='Two whole original629FD0 DRON bites interleaved with preceding70B570 visits and real SparkSys constructors, plus retained fullGetFLH readbacks',
+        assumptions=[
+            'Existing grapple_inputs/grapple_fixture configuration owns the physical reader and joined runtime, parameterized to DRON/MTNK/DroneJump/JUMP/Parasite on native-recalculated physical Clear tile0. Full selected Unit/weapon/projectile/warhead readers and actual selected SoundList execute. Type Weight/Strength, weapon Damage/ROF/Paralyzes, actual actor facing/coordinates/House slots, timers, game speed and component lighting are observed rather than imported from Rust defaults.',
+            'Existing electric_bolt.read_spark_types owns full original SparkSys/Spark constructors and layered readers on this same physical Reader VM; native type registries and heap references transfer through the existing joined runtime owner. Prepared empty runtime capacity is the existing transport boundary. Full62DC50/AbstractCreateID/Unlimbo/Logic execute before each upstream random-side request; no constructor or RNG result is supplied.',
+            'GTNK VXL/HVA/VPL original loader755DB0/5BD5C0 and postpass7160B4 execute through the existing physical raster VM. Actual produced header bytes/error flag and half-sizes are explicit component inputs to the joined MTNK Type+B0 and scalar fields; original6F9E10 admission returns1 and70B280 gate executes. Internal model pointers are not claimed as a full joined TypeReadVXL/I/O binding. File identities and produced fields are retained; sidecar records supported binary and replay command.',
+            'Frame0 precedes selected construction. Original source ObjectLimbo5F4D30 then CanInfect/AttachTo execute with living DRON/MTNK; full FireAt/Bullet/LimboLaunch is excluded. At each monotonic visit the victim whole70B570 precedes manager whole629FD0. Seven sparse rows cover two nonlethal bites, both actual random sides, lurch and settled incoming state. Full three-stream states and every original raw request/rejection, constructor/ID checkpoints and live coordinates are retained without per-bite reseeding.',
+            'Native f32 angles/rates remain authoritative between visits. Current component excludes other actor/ParticleSystem/Particle/Anim AI, whole Logic, culling/release/death/expiry and native scene pixels. Selected SparkSys constructors create no particles before AI and consume no RNG; this is observed, not assumed. RNG after this whole encounter is not an attribution proof for an ordinary full match.',
+            'Existing native_slope initializes original matrix/quaternion/camera prerequisites on the joined VM. Full GetFLH6F3AD0 reuses the ifv_fire_coord owner on actual MTNK inputs after each visit and asserts unchanged RNG/native cursor. The readonly query is a coordinate-control comparison, not a native actual tank firing claim.',
+        ],substitutions=grapple_metadata()['substitutions'],entry_points=dict(parasite=0x629FD0,rocking=0x70B570,impulse=0x70B280,
+            side_choice=0x62A17F,impulse_call=0x62A21C,particle_ctor=0x62DC50,get_flh=0x6F3AD0,drive_matrix=0x4AFF60))
+
 if __name__ == '__main__':
     import sys
+    if '--drone' in sys.argv:
+        finish_vectors(lambda:grapple_generate(drone=True),Path(__file__).with_name('parasite_drone_rng.json'),
+            provenance=drone_metadata,argv=[a for a in sys.argv[1:] if a!='--drone'])
+        raise SystemExit(0)
     if '--grapple' in sys.argv:
         finish_vectors(grapple_generate,Path(__file__).with_name('parasite_grapple_rng.json'),
             provenance=grapple_metadata,argv=[a for a in sys.argv[1:] if a!='--grapple'])

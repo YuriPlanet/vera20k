@@ -15,7 +15,7 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
     let rules = &battle.rules;
     let model = UnitModel::load(&assets, "DEST", Some(rules)).expect("physical stock DEST model");
     let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
-    let pose = ShipPose {
+    let pose = GroundPose {
         angles: [0.5, 0.],
         body_facing: 64,
         slope_blend: None,
@@ -31,13 +31,13 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         barrel_pitch: 0,
     };
     let (body, body_bounds) = model
-        .render_pose(&key, Some(&vpl), PoseTilt::Ship(pose))
+        .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
         .unwrap();
     assert!(body.palette_indices.iter().any(|&index| index != 0));
     assert!(body_bounds.is_some());
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     let entry = cache
-        .render(&assets, Some(rules), &key, PoseTilt::Ship(pose))
+        .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
         .unwrap();
     assert_eq!(entry.pixel_size, [body.width as f32, body.height as f32]);
     assert_eq!(
@@ -56,22 +56,22 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         };
         assert!(
             model
-                .render_pose(&key, Some(&vpl), PoseTilt::Ship(pose))
+                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
                 .is_none(),
             "no invented stock DEST gun assets"
         );
         assert!(
             cache
-                .render(&assets, Some(rules), &key, PoseTilt::Ship(pose))
+                .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
                 .is_none()
         );
     }
-    let level = ShipPose {
+    let level = GroundPose {
         angles: [0.; 2],
         ..pose
     };
     let (unposed, _) = model
-        .render_pose(&key, Some(&vpl), PoseTilt::Ship(level))
+        .render_pose(&key, Some(&vpl), PoseTilt::Ground(level))
         .unwrap();
     assert_ne!(
         (body.width, body.height, body.palette_indices),
@@ -98,13 +98,13 @@ fn ship_parts_reuse_native_unit_uncached_gun_arm_controls() {
         let body_step = row["body_step"].as_u64().unwrap() as u8;
         let turret_step = row["turret_step"].as_u64().unwrap() as u8;
         let raw_pitch = row["barrel"].as_u64().unwrap() as u16;
-        let pose = ShipPose {
+        let pose = GroundPose {
             angles: [0.; 2],
             body_facing: body_step * 8,
             slope_blend: None,
             turret_offset: row["turret_offset"].as_i64().unwrap() as i32,
         };
-        let matrices = ship_pose_matrices(
+        let matrices = ground_unit_pose_matrices(
             0,
             pose,
             [0.; 2],
@@ -133,7 +133,7 @@ pub(crate) fn native_ship_corpus() -> serde_json::Value {
     .unwrap()
 }
 
-pub(crate) fn native_ship_pose(input: &serde_json::Value) -> ShipPose {
+pub(crate) fn native_ground_pose(input: &serde_json::Value) -> GroundPose {
     let timer = &input["slope_timer"];
     let total = timer["total"].as_i64().unwrap() as i32;
     let remaining = crate::sim::timer::CdTimer::from_raw(
@@ -141,7 +141,7 @@ pub(crate) fn native_ship_pose(input: &serde_json::Value) -> ShipPose {
         timer["duration"].as_i64().unwrap() as i32,
     )
     .remaining(input["frame"].as_i64().unwrap() as i32);
-    ShipPose {
+    GroundPose {
         angles: std::array::from_fn(|i| {
             f32::from_bits(input["angle_bits"][i].as_u64().unwrap() as u32)
         }),
@@ -158,7 +158,59 @@ pub(crate) fn native_ship_pose(input: &serde_json::Value) -> ShipPose {
 
 #[test]
 fn original_ship_matrices_loaded_half_sizes_and_physical_hull_rasters_match() {
-    let corpus = native_ship_corpus();
+    assert_native_ground_matrices_and_parts(native_ship_corpus(), "DEST", "ship");
+}
+
+pub(crate) fn native_drive_corpus() -> serde_json::Value {
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/drive_draw_drone_tilt.json",
+    ))
+    .unwrap()
+}
+
+#[test]
+fn original_drive_matrices_and_physical_hull_turret_barrel_rasters_match() {
+    assert_native_ground_matrices_and_parts(native_drive_corpus(), "MTNK", "drive");
+}
+
+/// Reconstruct only the declared component input. Native owns expected bits,
+/// model postpass and every retained raster pixel.
+pub(crate) fn native_ground_part(
+    type_id: &str,
+    row: &serde_json::Value,
+    layer: VxlLayer,
+) -> (GroundPose, UnitSpriteKey) {
+    let mut pose = native_ground_pose(&row["input"]);
+    let mut facing = pose.body_facing;
+    let mut barrel_pitch = 0;
+    if layer != VxlLayer::Body {
+        let gun = &row["gun_component"]["input"];
+        pose.turret_offset = gun["turret_offset"].as_i64().unwrap() as i32;
+        facing = gun["turret_step"].as_u64().unwrap() as u8 * 8;
+        if layer == VxlLayer::Barrel {
+            barrel_pitch =
+                voxel_facing_step_u16(gun["barrel_raw"].as_u64().unwrap() as u16) as i8 - 8;
+        }
+    }
+    (
+        pose,
+        UnitSpriteKey {
+            type_id: type_id.into(),
+            turret_index: 0,
+            facing,
+            layer,
+            frame: 0,
+            slope_type: row["input"]["slope"].as_u64().unwrap() as u8,
+            barrel_pitch,
+        },
+    )
+}
+
+fn assert_native_ground_matrices_and_parts(
+    corpus: serde_json::Value,
+    type_id: &str,
+    locomotor: &str,
+) {
     let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
@@ -170,8 +222,9 @@ fn original_ship_matrices_loaded_half_sizes_and_physical_hull_rasters_match() {
         assert_eq!(data.len() as u64, file["bytes"]);
         assert_eq!(crate::util::sha256::sha256_hex(data), file["sha256"]);
     }
-    let model = UnitModel::load(&assets, "DEST", Some(&battle.rules)).unwrap();
-    let vxl = VxlFile::from_bytes(assets.get_ref("DEST.VXL").unwrap()).unwrap();
+    let model = UnitModel::load(&assets, type_id, Some(&battle.rules)).unwrap();
+    let image = crate::rules::voxel_frame_catalog::voxel_image_id(type_id, Some(&battle.rules));
+    let vxl = VxlFile::from_bytes(assets.get_ref(&format!("{image}.VXL")).unwrap()).unwrap();
     let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
     let bits = |matrix: Mat4| {
         (0..3)
@@ -183,12 +236,12 @@ fn original_ship_matrices_loaded_half_sizes_and_physical_hull_rasters_match() {
     for row in rows {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
-        let pose = native_ship_pose(input);
+        let pose = native_ground_pose(input);
         let slope = input["slope"].as_u64().unwrap() as u8;
-        assert_eq!(row["ship"]["is_voxel"], true);
+        assert_eq!(row[locomotor]["is_voxel"], true);
         let half_sizes = std::array::from_fn(|i| {
             f64::from_bits(
-                u64::from_str_radix(row["ship"]["half_size_bits"][i].as_str().unwrap(), 16)
+                u64::from_str_radix(row[locomotor]["half_size_bits"][i].as_str().unwrap(), 16)
                     .unwrap(),
             ) as f32
         });
@@ -198,29 +251,35 @@ fn original_ship_matrices_loaded_half_sizes_and_physical_hull_rasters_match() {
             "{name}: native loaded-section postpass"
         );
         assert_eq!(
-            serde_json::json!(bits(ship_locomotor_matrix(slope, pose, half_sizes))),
-            row["ship"]["matrix_bits"],
-            "{name}: full original69F670"
+            serde_json::json!(bits(ground_locomotor_matrix(
+                slope,
+                pose.slope_blend,
+                voxel_facing_step(pose.body_facing),
+                pose.angles,
+                half_sizes
+            ))),
+            row[locomotor]["matrix_bits"],
+            "{name}: full original locomotor matrix"
         );
         assert_eq!(
-            row["ship"]["key_out"] == u32::MAX,
+            row[locomotor]["key_out"] == u32::MAX,
             pose.slope_blend.is_some() || voxel_tilt_applies(pose.angles),
             "{name}: native cached/dynamic gate"
         );
         assert_eq!(
             serde_json::json!(bits(
-                ship_pose_matrices(slope, pose, half_sizes, pose.body_facing, 0)[0]
+                ground_unit_pose_matrices(slope, pose, half_sizes, pose.body_facing, 0)[0]
             )),
             row["body_draw_bits"],
             "{name}: native camera product"
         );
         if let Some(gun) = row.get("gun_component") {
             let control = &gun["input"];
-            let pose = ShipPose {
+            let pose = GroundPose {
                 turret_offset: control["turret_offset"].as_i64().unwrap() as i32,
                 ..pose
             };
-            let matrices = ship_pose_matrices(
+            let matrices = ground_unit_pose_matrices(
                 slope,
                 pose,
                 half_sizes,
@@ -238,18 +297,20 @@ fn original_ship_matrices_loaded_half_sizes_and_physical_hull_rasters_match() {
                 "{name}: supplied gun-component barrel"
             );
         }
-        if let Some(raster) = row.get("rasters").and_then(|rasters| rasters.get("body")) {
-            let key = UnitSpriteKey {
-                type_id: "DEST".into(),
-                turret_index: 0,
-                facing: pose.body_facing,
-                layer: VxlLayer::Body,
-                frame: 0,
-                slope_type: slope,
-                barrel_pitch: 0,
+        for (part_name, layer) in [
+            ("body", VxlLayer::Body),
+            ("turret", VxlLayer::Turret),
+            ("barrel", VxlLayer::Barrel),
+        ] {
+            let Some(raster) = row
+                .get("rasters")
+                .and_then(|rasters| rasters.get(part_name))
+            else {
+                continue;
             };
+            let (pose, key) = native_ground_part(type_id, row, layer);
             let (sprite, bounds) = model
-                .render_pose(&key, Some(&vpl), PoseTilt::Ship(pose))
+                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
                 .unwrap();
             let rect: [i32; 6] =
                 std::array::from_fn(|i| raster["rect"][i].as_i64().unwrap() as i32);
@@ -276,7 +337,7 @@ fn original_ship_matrices_loaded_half_sizes_and_physical_hull_rasters_match() {
             }
             assert_eq!(
                 actual, expected,
-                "{name}: all native physical hull visibility bytes"
+                "{type_id} {name}/{part_name}: all native physical part visibility bytes"
             );
         }
     }

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Nine original post-receiver AreaDamage489B49..489E87 numeric controls through full70B280",
+  "assumptions": [
+    "Existing IFV physical reader/setup/VM and original full BlimpHE reader consume RULESMD/LANGRULE when present/mode/map; row spread0 is an explicit native-reader override. Incoming damage/source/impact, fixed selected ground-layer local, ordered center/neighbor resident inputs and initial zero angles/rates are declared component priors. No full shot or receiver-lifecycle claim.",
+    "Existing voxel_oracle.raster executes physical GTNK VXL/HVA/VPL loading/postpass. Produced header/error flag/half-size bytes are explicit model inputs in the Area VM, as in the joined Drone fixture; full original IsVoxel/Unit getters/ApplyRocker execute with native constructor Weight1. Full joined TypeReadVXL binding is not claimed.",
+    "Coupled source displacement, source absent, source/candidate equality, pure vertical source at floor624+stockJumpjetHeight750, CellSpread0 and damage30/31/400/401 are compact numeric controls. Original source normalization/sqrt/ftol, threshold/cap and ordered four-word stores execute; no computed Rust or Python expected output.",
+    "Full Main/Scenario/Mapgen structs are natively seeded31/32/33 before controls and unchanged across every selected numeric body. Receiver deaths, particle/Anim construction, bridge continuation, whole flight/frame scheduling and native scene pixels are excluded."
+  ],
+  "substitutions": [
+    "Inherited physical INI/file/archive/allocation/CRT transport only. The post-receiver frame and live resident/source/model priors are supplied; no source/getter/cast/Area numeric/ApplyRocker/RNG return is supplied."
+  ],
+  "entry_points": {
+    "area_rocker": "0x00489B49",
+    "after_rocker": "0x00489E87",
+    "apply_rocker": "0x0070B280",
+    "cast": "0x0040DD70",
+    "warhead_reader": "0x0075D3A0",
+    "model_load": "0x00755DB0",
+    "is_voxel": "0x006F9E10"
+  },
+  "replay_command": "python -m tools.projectile_oracle.ifv_area_receipt --rocker",
+  "payload_sha256": "0f4532ee17c5208cea278a221d412c9bd9de15609d23662df75d5b8e33430814"
+}

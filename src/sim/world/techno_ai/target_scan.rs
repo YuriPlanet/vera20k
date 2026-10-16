@@ -290,25 +290,48 @@ pub(super) fn passive_acquire_step(
     let Some(rules) = rules else {
         return;
     };
-    let now = sim.session.binary_frame;
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
+    match targeting_slot(entity, sim.session.binary_frame) {
+        TargetingSlot::Skip => {}
+        TargetingSlot::ArrivalHandler => sim.foot_arrival_target_handler(id, rules, ctx),
+        TargetingSlot::PassiveAcquire(_) => {
+            passive_target_acquire(sim, id, rules, ctx);
+        }
+    }
+}
+
+/// Where the passive block goes ([`targeting_slot`]).
+pub(super) enum TargetingSlot {
+    /// The targeting timer still runs, or the mission is none of the three.
+    Skip,
+    /// An attack-mover's Arrival_Target_Handler.
+    ArrivalHandler,
+    /// [`passive_target_acquire`] on this mission.
+    PassiveAcquire(MissionType),
+}
+
+/// Where the passive block of `TechnoClass::AI_Update` goes for `entity` at
+/// `now` ([`passive_acquire_step`]).
+pub(super) fn targeting_slot(
+    entity: &crate::sim::game_entity::GameEntity,
+    now: u32,
+) -> TargetingSlot {
     if !entity.passive_scan.timer().due(now) {
-        return;
+        return TargetingSlot::Skip;
     }
     if entity.mega_mission.is_attack_move() {
-        sim.foot_arrival_target_handler(id, rules, ctx);
-        return;
+        return TargetingSlot::ArrivalHandler;
     }
     let mission = entity.passive_acquire_mission();
     if !matches!(
         mission,
         MissionType::Move | MissionType::Guard | MissionType::Harvest
     ) {
-        return;
+        return TargetingSlot::Skip;
     }
-    passive_target_acquire(sim, id, rules, ctx);
+    TargetingSlot::PassiveAcquire(mission)
 }
 
 /// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
@@ -368,7 +391,12 @@ pub(crate) fn passive_target_acquire(
 ///
 /// Native execution: `tools/spatial_oracle/passive_acquire_gate.py` runs the
 /// original gate and CanAcquireTarget with supplied queries ([`tests`]).
-fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: MissionType) -> bool {
+pub(super) fn passive_acquire_gate(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+    mission: MissionType,
+) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
@@ -762,16 +790,27 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         );
     }
 
+    /// Through the gated entry, or this pass's batched answer
+    /// ([`super::scan_batch`]).
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
+        let (rules, registry) = (self.rules, self.ctx.overlay_registry);
+        let outcome =
+            match self
+                .sim
+                .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
+            {
+                Some(outcome) => outcome,
+                None => self.sim.threat_scan(
+                    rules,
+                    registry,
+                    self.id,
+                    mask,
+                    self.scan_coord,
+                    crate::sim::combat::acquire_best_target_for_entity,
+                ),
+            };
         self.sim
-            .greatest_threat_represented(
-                self.rules,
-                self.ctx.overlay_registry,
-                self.id,
-                mask,
-                self.scan_coord,
-                crate::sim::combat::acquire_best_target_for_entity,
-            )
+            .commit_threat_scan(self.id, outcome)
             .map(TargetKind::Entity)
     }
 
@@ -861,7 +900,21 @@ impl Simulation {
         scan_coord: Option<[i32; 3]>,
         entry: ScanEntry,
     ) -> Option<u64> {
-        let mut result = entry(
+        let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord, entry);
+        self.commit_threat_scan(id, result)
+    }
+
+    /// `id`'s Greatest_Threat through `entry` against the world as it stands.
+    pub(super) fn threat_scan(
+        &self,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        id: u64,
+        mask: ScanMission,
+        scan_coord: Option<[i32; 3]>,
+        entry: ScanEntry,
+    ) -> crate::sim::combat::greatest_threat::ThreatScanOutcome {
+        entry(
             &self.substrate.entities,
             &self.substrate.occupancy,
             rules,
@@ -879,7 +932,16 @@ impl Simulation {
             },
             Some(self),
             scan_coord,
-        );
+        )
+    }
+
+    /// A scan's writes to its scanner, in the order the adapter commits them,
+    /// and its pick.
+    fn commit_threat_scan(
+        &mut self,
+        id: u64,
+        mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
+    ) -> Option<u64> {
         if let Some(collected) = result.take_collected()
             && let Some(entity) = self.substrate.entities.get_mut(id)
         {

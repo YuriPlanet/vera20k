@@ -1,166 +1,137 @@
-//! Rocker impulse application (port of TechnoClass::ApplyRocker).
-//!
-//! Pure function over `(rocking, force, weight, dx, dy)` — no entity-store
-//! access, no rules dependency. Multiple impulses in the same tick stack
-//! additively before the per-axis velocity cap is enforced.
+//! TechnoClass::ApplyRocker70B280..70B56D, one shared numeric owner.
+//! No RNG or timers here: callers choose the impact coordinate and force.
+//! Field assignments replace earlier rates; rejected gates preserve sparse
+//! absence and existing state. Native controls: unit_rocker_impulse.json.
 
-use crate::sim::rocking::RockingState;
-use crate::sim::rocking::rocking_system::{FORCE_SATURATION, IMPULSE_VEL_CAP};
+use super::{RockingState, absolute, double, load, store};
+use crate::map::retail_trig::TrigTable;
 use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Ordering, NativeF32Bits, NativeF64Bits, X87Chop53 as X,
+    X87Ordering, sqrt_approx_f32,
+};
 
-/// Base force coefficient for the impulse-to-velocity conversion. L31's
-/// distance attenuation `(0.04 − dist × 2.5e-5)` is deferred and approximated
-/// here as the constant maximum 0.04 — documented parity drift.
-const FORCE_COEFFICIENT: SimFixed = SimFixed::lit("0.04");
+#[derive(Debug, Clone, Copy)]
+pub struct RockerImpulse {
+    pub position: [i32; 3],
+    pub origin: [i32; 3],
+    pub body_facing: u16,
+    pub force: NativeF32Bits,
+    /// Existing rules precision boundary. Stock1/3.5 and the retained0/-1
+    /// controls are exact; arbitrary authored doubles retain I16F16 tuning.
+    pub weight: SimFixed,
+    pub no_dampen: bool,
+    pub has_loaded_voxel: bool,
+}
 
-/// Below this scaled force, the impulse is dropped entirely. Prevents
-/// heavy-Weight units from getting a visible-but-tiny twitch from every
-/// glancing hit.
-const TOO_WEAK_FLOOR: SimFixed = SimFixed::lit("0.01");
+pub fn apply_rocker_impulse(state: &mut Option<RockingState>, request: RockerImpulse) -> bool {
+    //70B290..70B2B7 is the same loaded-main-VXL predicate as6F9E10.
+    if !request.has_loaded_voxel {
+        return false;
+    }
+    let d = [
+        request.position[0].wrapping_sub(request.origin[0]),
+        request.origin[1].wrapping_sub(request.position[1]),
+        request.position[2].wrapping_sub(request.origin[2]),
+    ]
+    .map(|v| store(X::load_i32(v)));
+    let squared = X::add(
+        X::add(
+            X::mul(load(d[0]), load(d[0])),
+            X::mul(load(d[1]), load(d[1])),
+        ),
+        X::mul(load(d[2]), load(d[2])),
+    );
+    let distance = sqrt_approx_f32(squared).expect("finite squared rocker distance");
+    //70B32A..70B341 uses the shared signed word-to-radians owner,
+    // including its binary64 store, not a quantized compass step.
+    let angle = X::load_f64(crate::sim::projectile::native_math::radians(
+        request.body_facing,
+    ))
+    .unwrap();
+    let table = TrigTable::embedded();
+    let sin = store(table.sin_from_table(angle));
+    let cos = store(table.cos_from_table(angle));
+    //70B390..70B3BE: native f32 attenuation constants, double numerator
+    // spill, actual double Weight division, then a binary32 scaled force.
+    let numerator = X::mul(
+        X::sub(
+            load(NativeF32Bits::from_bits(0x3d23_d70a)),
+            X::mul(load(distance), load(NativeF32Bits::from_bits(0x37d1_b717))),
+        ),
+        load(request.force),
+    );
+    let weight = NativeF64Bits::from_bits(request.weight.to_num::<f64>().to_bits());
+    let mut scaled = M::store_f32_masked_chop(M::div(
+        M::load_f64(X::store_f64(numerator).unwrap()),
+        M::load_f64(weight),
+    ));
+    if X::compare(absolute(load(distance)), double(0x3ef4_f8b5_88e3_68f1)) == X87Ordering::Less
+        || matches!(
+            M::compare(
+                M::load_f32(scaled),
+                M::load_f32(NativeF32Bits::from_bits(0x3c23_d70a))
+            ),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+        )
+    {
+        return false;
+    }
+    if M::compare(
+        M::load_f32(scaled),
+        M::load_f32(NativeF32Bits::from_bits(0x3d4c_cccd)),
+    ) == MaskedX87Ordering::Greater
+    {
+        scaled = NativeF32Bits::from_bits(0x3d4c_cccd);
+    }
 
-/// Forwards-axis dampener: when the no_dampen flag is false (the case at
-/// both visible reference-engine call sites), the forwards component is
-/// halved before being applied. Sideways is NOT halved — the asymmetry is
-/// intentional.
-const FORWARDS_DAMPENER: SimFixed = SimFixed::lit("0.5");
-
-/// Default Weight used when the target's INI weight is missing or
-/// non-positive. Matches the reference engine's TechnoTypeClass default.
-const DEFAULT_WEIGHT: SimFixed = SimFixed::lit("2.0");
-
-/// Apply a rocker impulse to a target unit.
-///
-/// Computes a direction-aware velocity pair from the source-to-target
-/// vector and adds it to `rocking.vel_*`, clamping each axis to
-/// `±IMPULSE_VEL_CAP`.
-///
-/// Parameters:
-///   - `rocking`: target's rocking state (mutated in place).
-///   - `force`: pre-saturated [0, 4.0] force magnitude from the source-side
-///     computation (defensively re-clamped here).
-///   - `weight`: target's Weight (default 2.0; retail range 0.5–5). Heavier
-///     units rock less per equivalent force. L12c — observable parity:
-///     MUST NOT be dropped.
-///   - `dx`, `dy`: target_position − source_position in sim units. Only the
-///     direction matters; magnitude cancels in the normalization.
-///
-/// **NO PRODUCTION CALLER** — see the module header. Every drift below is
-/// therefore latent: it costs nothing today and must be settled in the slice
-/// that wires a producer and a renderer.
-///
-/// DRIFT (GSI-08.14), verified this session by `decompile_function 0x0070B280`
-/// (`TechnoClass::ApplyRocker`, vtable `+0x3D8`):
-///   - **Assignment, not accumulation.** Native ends with
-///     `this+0x334 = forwards` and `this+0x330 = -sideways` — plain stores. This
-///     function adds into `vel_forwards`/`vel_sideways` and then clamps, so two
-///     impulses in one tick stack here and the second simply replaces the first
-///     natively. Trigger: two `Rocker=` detonations on one vehicle in a frame.
-///     Player effect: a doubled lurch. Frequency: common under artillery fire.
-///   - **The type gate.** Native does nothing at all unless
-///     `TechnoType(vtable+0x84) + 0xB0` is non-null AND the string it points at
-///     is empty (`**(char**)(Type+0xB0) == 0`). Field identity UNCHECKED. Until
-///     it is named, which types can rock at all is unknown.
-///   - **L31 distance attenuation.** Native scales by
-///     `(0.04 - dist * 2.5e-05)` over the 3D source-to-target distance and
-///     additionally refuses the impulse when `|dist| < 2e-05`; this function
-///     uses the constant maximum `0.04`. Player effect: distant hits rock as
-///     hard as point-blank ones.
-///   - **Weight source.** Native divides by `TechnoType+0x370` read as a
-///     `double`; the `Weight=` binding here is DOC, not re-verified.
-///   - **L32:** rate-timer jitter on impulse direction. Dropped entirely.
-pub fn apply_rocker_impulse(
-    rocking: &mut RockingState,
-    force: SimFixed,
-    weight: SimFixed,
-    dx: SimFixed,
-    dy: SimFixed,
-) {
-    // Defensive: clamp force to [0, FORCE_SATURATION]. The source side
-    // already saturates at 4.0; re-clamp here to catch any wiring error.
-    let force = force.clamp(SimFixed::ZERO, FORCE_SATURATION);
-
-    // Defensive: Weight=0 (malformed INI) would divide-by-zero. Treat any
-    // non-positive weight as the engine default 2.0.
-    let weight = if weight <= SimFixed::ZERO {
-        DEFAULT_WEIGHT
+    let planar = sqrt_approx_f32(X::add(
+        X::mul(load(d[0]), load(d[0])),
+        X::mul(load(d[1]), load(d[1])),
+    ))
+    .expect("finite planar rocker distance");
+    let [nx, ny] = if X::compare(load(planar), X::load_i32(0)) == X87Ordering::Equal {
+        [d[0], d[1]]
     } else {
-        weight
+        [
+            store(X::div(load(d[0]), load(planar)).unwrap()),
+            store(X::div(load(d[1]), load(planar)).unwrap()),
+        ]
     };
-
-    // Normalize the source-to-target direction. Scaling by max(|dx|, |dy|)
-    // before squaring keeps the intermediates inside I16F16's ±32767 range
-    // regardless of the unit the caller passes (cells, leptons, etc.).
-    let max_abs = dx.abs().max(dy.abs());
-    if max_abs == SimFixed::ZERO {
-        // Source at target — no direction; abort.
-        return;
+    let forwards = store(X::add(
+        X::mul(load(ny), load(sin)),
+        X::mul(load(nx), load(cos)),
+    ));
+    let cross = X::sub(X::mul(load(nx), load(sin)), X::mul(load(ny), load(cos)));
+    // The normalized vector's Z is explicitly zero. The cross-vector's
+    // other two components therefore contribute exact zero to its length.
+    let mut sideways = load(sqrt_approx_f32(X::mul(cross, cross)).unwrap());
+    let reconstructed_x = X::sub(
+        X::sub(
+            X::mul(load(cos), load(forwards)),
+            X::mul(load(sin), sideways),
+        ),
+        load(nx),
+    );
+    let reconstructed_y = X::sub(
+        X::add(
+            X::mul(load(sin), load(forwards)),
+            X::mul(load(cos), sideways),
+        ),
+        load(ny),
+    );
+    let tolerance = double(0x3f2a_36e2_eb1c_432d); //7EC0A8
+    if X::compare(absolute(reconstructed_x), tolerance) == X87Ordering::Greater
+        || X::compare(absolute(reconstructed_y), tolerance) == X87Ordering::Greater
+    {
+        sideways = X::neg(sideways);
     }
-    let sdx = dx / max_abs;
-    let sdy = dy / max_abs;
-    let dist_sq = sdx * sdx + sdy * sdy;
-    let dist = sqrt_approx(dist_sq);
-    if dist == SimFixed::ZERO {
-        return;
+    let mut forwards = X::mul(load(forwards), load(scaled));
+    if !request.no_dampen {
+        forwards = X::mul(forwards, double(0x3fe0_0000_0000_0000));
     }
-    let nx = sdx / dist;
-    let ny = sdy / dist;
-
-    // L12c: 0.04 × force / Weight. Then per-axis cap at 0.05.
-    let mut force_scaled = FORCE_COEFFICIENT * force / weight;
-    if force_scaled > IMPULSE_VEL_CAP {
-        force_scaled = IMPULSE_VEL_CAP;
-    }
-    // L11: too-weak gate.
-    if force_scaled < TOO_WEAK_FLOOR {
-        return;
-    }
-
-    // L12b: forwards halved, sideways unaltered.
-    let vel_fwd = ny * force_scaled * FORWARDS_DAMPENER;
-    let vel_side = -nx * force_scaled;
-
-    // Additive stacking with per-axis clamp.
-    rocking.vel_forwards =
-        (rocking.vel_forwards + vel_fwd).clamp(-IMPULSE_VEL_CAP, IMPULSE_VEL_CAP);
-    rocking.vel_sideways =
-        (rocking.vel_sideways + vel_side).clamp(-IMPULSE_VEL_CAP, IMPULSE_VEL_CAP);
-}
-
-/// Newton-Raphson square root for `SimFixed`. Converges within 6 iterations
-/// over the dist-squared range encountered here (always in [0, 2] after the
-/// max-abs normalization in `apply_rocker_impulse`).
-fn sqrt_approx(x: SimFixed) -> SimFixed {
-    if x <= SimFixed::ZERO {
-        return SimFixed::ZERO;
-    }
-    // Start from `x` and iterate. For x in [0, 2] the seed is good enough
-    // to converge to ~DELTA precision in 6 steps.
-    let mut s = x;
-    let two = SimFixed::from_num(2);
-    for _ in 0..6 {
-        s = (s + x / s) / two;
-    }
-    s
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sqrt_approx_known_values() {
-        let eps = SimFixed::lit("0.001");
-        // sqrt(1) = 1
-        assert!((sqrt_approx(SimFixed::ONE) - SimFixed::ONE).abs() < eps);
-        // sqrt(2) ≈ 1.4142
-        assert!((sqrt_approx(SimFixed::from_num(2)) - SimFixed::lit("1.4142")).abs() < eps);
-        // sqrt(0) = 0
-        assert_eq!(sqrt_approx(SimFixed::ZERO), SimFixed::ZERO);
-    }
-
-    #[test]
-    fn negative_or_zero_input_returns_zero() {
-        assert_eq!(sqrt_approx(SimFixed::ZERO), SimFixed::ZERO);
-        assert_eq!(sqrt_approx(SimFixed::from_num(-1)), SimFixed::ZERO);
-    }
+    let state = state.get_or_insert_with(RockingState::default);
+    state.vel_forwards = store(forwards);
+    state.vel_sideways = store(X::neg(X::mul(sideways, load(scaled))));
+    true
 }

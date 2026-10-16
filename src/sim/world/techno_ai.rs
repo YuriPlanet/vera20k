@@ -24,6 +24,7 @@ pub(crate) use building_missions::PrismSupport;
 pub(crate) use building_missions::queue_and_commence;
 pub(crate) use building_missions::{BuildingDelayedFire, DelayedFire};
 mod mission_handlers;
+mod scan_batch;
 mod target_scan;
 pub(crate) use mission_handlers::dispatch_foot_mission;
 pub(crate) use mission_handlers::enter_idle_mode;
@@ -31,6 +32,7 @@ pub(crate) use mission_handlers::foot_enter_idle_mode_selection;
 pub(crate) use mission_handlers::techno_unlimbo_idle_mode;
 #[cfg(test)]
 use mission_handlers::*;
+pub(crate) use scan_batch::ScanBatch;
 pub(crate) use target_scan::PassiveScan;
 pub(crate) use target_scan::direct_greatest_threat;
 pub(crate) use target_scan::passive_target_acquire;
@@ -929,18 +931,17 @@ fn techno_ai_shell(
                     ctx.effects,
                 );
                 // A `Factory=` type's own production (`0x004401BB..0x004401CD`).
-                let factory_type = sim
+                let has_factory = sim
                     .substrate
                     .entities
                     .get(id)
                     .and_then(|entity| sim.object_type(entity.type_ref(), rules))
-                    .and_then(|ty| ty.factory);
-                if let Some(factory_type) = factory_type {
+                    .is_some_and(|ty| ty.has_factory());
+                if has_factory {
                     crate::sim::production::factory_ai(
                         sim,
                         rules,
                         id,
-                        factory_type,
                         ctx.overlay_registry,
                         ctx.effects,
                     );
@@ -1377,19 +1378,38 @@ fn techno_common_steps(
     // locomotor Process and the Foot parasite tail; no later global update
     // may erase a parasite's direct sideways-angle write.
     let rocking_type = sim.substrate.entities.get(id).and_then(|entity| {
-        sim.object_type(entity.type_ref(), rules)
-            .filter(|object| rules.object_has_loaded_voxel(&object.id))
+        let object = sim.interner.type_handle(entity.type_ref(), rules)?;
+        rules
+            .object_has_loaded_voxel(object)
+            .then(|| rules.object_by_handle(object))
     });
     if let Some(object) = rocking_type {
-        if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            // The ordinary wide-angle self-damage hook remains the existing
-            // bounded residual; crash spin returns before that check.
+        let needs_self_damage = sim.substrate.entities.get_mut(id).is_some_and(|entity| {
             crate::sim::rocking::update(
                 entity,
                 object,
                 rules.general.fallback_coefficient,
-                &mut crate::sim::rocking::NoopSelfDestruct,
+                sim.session.binary_frame,
+            )
+        });
+        if needs_self_damage {
+            // RockingUpdate70BC23..70BCA3 calls the actual receiver with
+            // type Strength, Rules C4Warhead, ignore-defenses and arg6=false.
+            // Commit after releasing the entity borrow, before the Alive guard.
+            let c4 = sim.interner.intern(&rules.bridge_warheads.c4_name);
+            let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                object.strength,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                c4,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
             );
+            sim.commit_direct_damage_receiver(rules, overlay_registry, event, effects);
         }
         if !ai_alive(sim, id) {
             return false;
@@ -2200,6 +2220,57 @@ mod tests {
         (sim, rules, first, second)
     }
 
+    #[test]
+    fn rocking_tipover_uses_real_c4_receiver_before_the_alive_guard() {
+        let Some(mut rules) =
+            crate::rules::retail_ini_fixture::retail_battle_rules().map(|r| r.rules)
+        else {
+            return;
+        };
+        let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let victim = sim
+            .spawn_object("MTNK", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        // Explicit retained-state component input from original70B570;
+        // this does not claim a stock Drone impulse reaches the tipover gate.
+        let controls: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_rocking_update.json",
+        ))
+        .unwrap();
+        let row = controls
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| {
+                row["output"]["damage_called"] == true
+                    && row["input"]["direct_rocker_link"] == false
+                    && row["input"]["crash"] == 0
+                    && row["input"]["sinking"] == 0
+            })
+            .unwrap();
+        let word =
+            |key: &str| u32::from_str_radix(row["input"][key].as_str().unwrap(), 16).unwrap();
+        let prior = serde_json::from_value(serde_json::json!({
+            "angle_sideways": word("side_angle_bits"),
+            "angle_forwards": word("forward_angle_bits"),
+            "vel_sideways": word("side_velocity_bits"),
+            "vel_forwards": word("forward_velocity_bits"),
+        }))
+        .unwrap();
+        sim.substrate.entities.get_mut(victim).unwrap().rocking = Some(prior);
+        sim.object_ai_visit_one(victim, Some(&rules), ObjectAiCtx::default());
+        assert!(
+            sim.substrate.entities.get(victim).is_none_or(|entity| {
+                !entity.lifecycle.object_alive() || entity.health.current() <= 0
+            }),
+            "Rocking's C4 request must reach the real fatal receiver, not a no-op hook"
+        );
+    }
+
     /// A supplied earlier/later callback invokes the real Crash owner on a
     /// represented airborne Unit. Production live-cursor and Techno visits
     /// decide whether its new rates are consumed in this same pass.
@@ -2288,7 +2359,8 @@ mod tests {
                 "unloaded" => {
                     // Replacing ART invalidates the previously supplied model.
                     rules.install_art_fixture(crate::rules::art_data::ArtRegistry::empty());
-                    assert!(!rules.object_has_loaded_voxel("TEST"));
+                    let object = rules.type_handle("TEST").unwrap();
+                    assert!(!rules.object_has_loaded_voxel(object));
                 }
                 "temporal" => {
                     let warper = sim

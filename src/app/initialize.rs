@@ -682,7 +682,6 @@ impl App {
                 status_screen_fill,
                 bit_font,
                 outcome_banner_art,
-                vxl_slope_transition_cache: std::cell::RefCell::new(Default::default()),
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
             },

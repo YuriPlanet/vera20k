@@ -41,3 +41,5 @@ pub(crate) mod rect;
 pub(crate) mod native_file_time;
 
 pub mod native_file_name;
+
+pub(crate) mod native_affine;

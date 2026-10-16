@@ -189,7 +189,6 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.building_zshape = assets.building_zshape;
     state.match_state.match_presentation.unit_atlas = assets.unit_atlas;
     // Both voxel caches resolve model images through the replaced RuleSet.
-    *state.renderer.vxl_slope_transition_cache.borrow_mut() = Default::default();
     *state.renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
     state.match_state.match_presentation.palette_set = assets.palette_set;
     state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
@@ -383,6 +382,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
         simulation.session.set_started(true);
         simulation.batch_path_searches();
+        simulation.batch_target_scans();
         crate::sim::runtime::SimRuntime {
             simulation,
             resources: crate::sim::runtime::SimResources {

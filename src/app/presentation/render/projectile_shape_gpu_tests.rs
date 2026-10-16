@@ -373,7 +373,6 @@ fn compare_shape_corpus(
                 None,
                 None,
                 None,
-                &VxlSlopeTransitionCache::default(),
                 Some(atlas),
                 None,
                 batch.default_zshape_bind_group(),

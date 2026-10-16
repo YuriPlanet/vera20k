@@ -1,57 +1,11 @@
-//! Body-rocking simulation.
+//! Authoritative body rocking: Techno70B280 impulses and70B570 updates.
 //!
-//! Implements the spring-damper that drives `RockingState::angle_*` toward zero
-//! each tick. Drive/Ship slope interpolation is owned separately by locomotor
-//! runtime payload state.
-//!
-//! # Crash spin and Squid roll are live; ordinary impulses remain deferred
-//!
-//! `FootClass::Crash @ 0x004DEBB0` writes a crashing object's spin rates
-//! (`sim::world::crash`), [`rocking_system::update`]'s crashing branch
-//! ([`rocking_system::advance_crash_spin`], `RockingUpdate 0x0070B63D`)
-//! integrates them, and the unit renderer draws the angles through Fly
-//! Draw_Matrix's crashing arm (`render::vxl_raster`); Jumpjet crash tilt also
-//! consumes these angles. Squid Parasite629A46 directly writes sideways roll
-//! after this update, and Ship69F670 consumes it. Both producers install the
-//! sparse state on first use. Everything below is about the ordinary damped
-//! ground rocker, which still has no producer or Drive body-drawing consumer:
-//!
-//! - **No producer.** [`apply_rocker_impulse`] has no caller outside this
-//!   module's tests. gamemd reaches `TechnoClass::ApplyRocker` (vtable `+0x3D8`
-//!   → `0x0070B280`) from exactly four places, established this session by a
-//!   `CALL [reg+0x3D8]` census over all 1.16M instructions in the image:
-//!   `BulletClass::DetonateAtCoord @ 0x004699A1` (`DirectRocker=`, zero stock
-//!   authors), `Apply_area_damage @ 0x00489DFF`/`0x00489E3E` (`Rocker=`), and
-//!   `ParasiteClass::AI @ 0x0062A21C` (a parasite bite
-//!   on a non-Infantry victim, force `1.5`; its lateral-sign RNG draw at
-//!   `0x0062A17F` is taken in `combat/parasite.rs`).
-//!   `FootClass::ReceiveEMP @ 0x004DECF0` writes the velocities directly
-//!   instead. **Firing never rocks the body** — there is no
-//!   `ApplyRocker` site in `Fire_At`, and none in any crush or deploy path.
-//! - **No ground-body consumer.** The presentation consumers of
-//!   `GameEntity::rocking` select Fly/Jumpjet crash arms, not ordinary Drive
-//!   Draw_Matrix. A ground impulse alone would not tilt its vehicle body, and
-//!   the self-destruct hook the production caller passes is
-//!   [`NoopSelfDestruct`].
-//!
-//! - Trigger: a `Rocker=yes` warhead, such as stock `V3WH`, detonating near a
-//!   vehicle. Ordinary stock `105mm`/`AP` shots do not enter either warhead
-//!   rocker arm: the original Warhead constructor and `ReadINI 0x0075D3A0`
-//!   retain both `Rocker` and `DirectRocker` as false for physical AP.
-//!   Evidence: `tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json`.
-//! - Player effect: vehicles do not lurch when shells land beside them. The
-//!   whole "shot lands next to the Rhino and the Rhino rocks" reading is
-//!   missing.
-//! - Frequency: engagements involving the applicable warheads or parasites.
-//! - Downstream risk: wiring the producer alone would add per-entity
-//!   deterministic state and move the pinned replay hash while changing nothing
-//!   a player can see, so the producer and the renderer belong in one slice. See
-//!   the verified DRIFT list on [`apply_rocker_impulse`] for what the impulse
-//!   maths must also change when that slice lands.
-//!
-//! ## Dependency rules
-//! - Part of sim/ — depends only on sim/components, sim/entity_store, map,
-//!   rules, util/fixed_math. Never on render/, ui/, audio/, net/.
+//! The four retained native binary32 words are the sole simulation state.
+//! Keeping tiny nonzero rates matters: native damping can amplify them on the
+//! next visit. Quantizing them to I16F16 first loses that gameplay branch.
+//! Arithmetic uses the existing deterministic x87 numeric owners, not host
+//! floating-point arithmetic. Native controls: unit_rocker_impulse.json and
+//! unit_rocking_update.json. Drive/Ship slope state remains locomotor-owned.
 
 pub mod impulse;
 pub mod rocking_system;
@@ -61,100 +15,116 @@ pub mod self_destruct;
 #[path = "rocking_tests.rs"]
 mod rocking_tests;
 
-pub use impulse::apply_rocker_impulse;
+pub use impulse::{RockerImpulse, apply_rocker_impulse};
 pub(crate) use rocking_system::update;
-pub use self_destruct::{NoopSelfDestruct, SelfDestructHook, check_and_fire};
 
 use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X, X87Value};
 
-/// Body rocking state for voxel-bodied units.
-///
-/// Tracks spring-damped roll/pitch angles driven by weapon impacts and EMP
-/// wobble. Drive/Ship slope interpolation is locomotor-owned state and is
-/// intentionally independent from this optional component.
-///
-/// Optional sparse component on `GameEntity`: absence represents the native
-/// zero angles/rates. Crash and Squid grapple producers install it when
-/// needed; ordinary vehicle admission does not allocate a neutral component.
-#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RockingState {
-    /// Roll angle, rad. Positive sign matches AngleRotatedSideways convention.
-    angle_sideways: SimFixed,
-    /// Pitch angle, rad. Positive sign matches AngleRotatedForwards convention.
-    angle_forwards: SimFixed,
-    /// Roll angular velocity, rad/tick.
-    vel_sideways: SimFixed,
-    /// Pitch angular velocity, rad/tick.
-    vel_forwards: SimFixed,
-    /// If true, integrate without damping (EMP wobble, naval continuous rocking).
-    is_ship_rocking: bool,
+    angle_sideways: NativeF32Bits,
+    angle_forwards: NativeF32Bits,
+    vel_sideways: NativeF32Bits,
+    vel_forwards: NativeF32Bits,
+}
+
+impl Default for RockingState {
+    fn default() -> Self {
+        Self {
+            angle_sideways: NativeF32Bits::POSITIVE_ZERO,
+            angle_forwards: NativeF32Bits::POSITIVE_ZERO,
+            vel_sideways: NativeF32Bits::POSITIVE_ZERO,
+            vel_forwards: NativeF32Bits::POSITIVE_ZERO,
+        }
+    }
 }
 
 impl RockingState {
-    /// Tilt-renderer deadband — both angles below this snap to zero and the unit
-    /// renders via the static atlas path.
     pub const DEADBAND: SimFixed = SimFixed::lit("0.00002");
 
-    /// Roll angle, rad.
+    /// Compatibility boundary only; simulation and pose consumers retain the
+    /// native words. A value outside I16F16 saturates at this read boundary.
     pub fn angle_sideways(&self) -> SimFixed {
-        self.angle_sideways
+        fixed(self.angle_sideways)
     }
-
-    /// Pitch angle, rad.
     pub fn angle_forwards(&self) -> SimFixed {
-        self.angle_forwards
+        fixed(self.angle_forwards)
     }
-
-    /// Roll angular velocity, rad/tick.
     pub fn vel_sideways(&self) -> SimFixed {
-        self.vel_sideways
+        fixed(self.vel_sideways)
     }
-
-    /// Pitch angular velocity, rad/tick.
     pub fn vel_forwards(&self) -> SimFixed {
-        self.vel_forwards
+        fixed(self.vel_forwards)
     }
 
-    /// Integrates without damping.
-    pub fn is_ship_rocking(&self) -> bool {
-        self.is_ship_rocking
+    pub fn angles_native(&self) -> [f32; 2] {
+        [self.angle_sideways, self.angle_forwards].map(|word| f32::from_bits(word.bits()))
     }
 
-    /// `FootClass::Crash @ 0x004DEBB0`'s spin rates on a crashing object,
-    /// installing the state when it has none.
+    /// AngleSideways, AngleForwards, RateSideways, RateForwards, in native
+    /// field order328/32C/330/334. Hash/save never quantize these words.
+    pub fn native_bits(&self) -> [u32; 4] {
+        [
+            self.angle_sideways,
+            self.angle_forwards,
+            self.vel_sideways,
+            self.vel_forwards,
+        ]
+        .map(NativeF32Bits::bits)
+    }
+
     pub(crate) fn spin_for_crash(
         rocking: &mut Option<Self>,
-        vel_sideways: SimFixed,
-        vel_forwards: SimFixed,
+        sideways: SimFixed,
+        forwards: SimFixed,
     ) {
-        let rocking = rocking.get_or_insert_with(Self::default);
-        rocking.vel_sideways = vel_sideways;
-        rocking.vel_forwards = vel_forwards;
+        let state = rocking.get_or_insert_with(Self::default);
+        state.vel_sideways = fixed_word(sideways);
+        state.vel_forwards = fixed_word(forwards);
     }
 
-    /// Parasite629A46 directly writes the grapple roll; release62A869
-    /// clears that same angle. Neither writer changes its angular velocity.
+    /// Parasite629A46 writes sideways angle; ExitUnit62A869 clears it.
+    /// Neither writer changes either angular rate.
     pub(crate) fn set_angle_sideways(&mut self, angle: SimFixed) {
-        self.angle_sideways = angle;
+        self.angle_sideways = fixed_word(angle);
     }
 
-    /// Install a fixture's forwards angle.
     #[cfg(test)]
     pub(crate) fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {
-        self.angle_forwards = angle;
+        self.angle_forwards = fixed_word(angle);
     }
-
-    /// Install a fixture's sideways rate.
     #[cfg(test)]
-    pub(crate) fn set_vel_sideways_for_test(&mut self, vel: SimFixed) {
-        self.vel_sideways = vel;
+    pub(crate) fn set_vel_sideways_for_test(&mut self, value: SimFixed) {
+        self.vel_sideways = fixed_word(value);
     }
-
-    /// Returns true when the body-rocking transform is neutral.
     #[cfg(test)]
     pub fn is_neutral(&self) -> bool {
-        !self.is_ship_rocking
-            && self.angle_sideways.abs() <= Self::DEADBAND
-            && self.angle_forwards.abs() <= Self::DEADBAND
+        self.angles_native()
+            .iter()
+            .all(|angle| angle.abs() <= 0.00002)
+    }
+}
+
+fn fixed(word: NativeF32Bits) -> SimFixed {
+    SimFixed::saturating_from_num(f32::from_bits(word.bits()))
+}
+fn fixed_word(value: SimFixed) -> NativeF32Bits {
+    NativeF32Bits::from_bits(value.to_num::<f32>().to_bits())
+}
+pub(super) fn load(word: NativeF32Bits) -> X87Value {
+    X::load_f32(word).expect("finite rocking state")
+}
+pub(super) fn double(bits: u64) -> X87Value {
+    X::load_f64(NativeF64Bits::from_bits(bits)).unwrap()
+}
+pub(super) fn store(value: X87Value) -> NativeF32Bits {
+    X::store_f32_masked_chop(value)
+}
+pub(super) fn absolute(value: X87Value) -> X87Value {
+    if X::compare(value, X::load_i32(0)) == crate::util::native_x87::X87Ordering::Less {
+        X::neg(value)
+    } else {
+        value
     }
 }

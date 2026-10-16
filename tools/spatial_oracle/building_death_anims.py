@@ -2214,7 +2214,7 @@ def typed_debris_main(argv):
 
 
 
-def grapple_inputs(root):
+def grapple_inputs(root, *, drone=False):
     """Extend the existing physical reader for the selected stock SQD/DEST route."""
     from collections import deque
     from types import SimpleNamespace
@@ -2232,26 +2232,38 @@ def grapple_inputs(root):
      elif pc==0x7c978a:m.ret(0)
     h=u.hook_add(UC_HOOK_CODE,transport)
     m.invoke(0x4e73e0,0)
-    artall=sections((root/'ARTMD.INI').read_bytes());animnames=['SQDG','WAKE1','H2O_EXP1','H2O_EXP2','H2O_EXP3']
-    art={k:v for k,v in m.death_art_input_sections.items() if v};art.update({k:artall[k] for k in ['SQD','DEST','ASW']+animnames if k in artall})
+    actors=['DRON','MTNK'] if drone else ['SQD','DEST']
+    weapon,projectile,warhead=('DroneJump','JUMP','Parasite') if drone else ('SquidGrab','SQDJUMP','ParasitePlus')
+    artall=sections((root/'ARTMD.INI').read_bytes());animnames=[] if drone else ['SQDG','WAKE1','H2O_EXP1','H2O_EXP2','H2O_EXP3']
+    artnames=['DRON','GTNK'] if drone else ['SQD','DEST','ASW']
+    art={k:v for k,v in m.death_art_input_sections.items() if v};art.update({k:artall[k] for k in artnames+animnames if k in artall})
     for n in animnames:m.assets[n+'.SHP']=(root/(n+'.SHP')).read_bytes()
     sound=sections((root/'SOUNDMD.INI').read_bytes());wanted=set()
     for n in animnames:
      for k in ['Report','StartSound']:wanted.update(art.get(n,{}).get(k,'').split(','))
+    if drone:
+     for filename in ['RULESMD.INI','LANGRULE.INI','MPBattleMD.ini','Hills.map']:
+      path=root/filename
+      if not path.exists():continue
+      physical=sections(path.read_bytes())
+      for name in actors:
+       for key,value in physical.get(name,{}).items():
+        if key.startswith('Voice') or key.endswith('Sound'):wanted.update(value.split(','))
     wanted.discard('');selected={k:v for k,v in sound.items() if k in wanted|{'Defaults'}};selected['SoundList']={k:v for k,v in sound['SoundList'].items() if v in wanted};m.make_ini(selected);m.invoke(0x7510d0,INI)
     m.make_ini(art);artcache=bytes(u.mem_read(INI,0x40))
-    for name in ['SQD','DEST']:
+    for name in actors:
      t=m.alloc(0xf00);m.invoke(0x7470d0,t,(m.cstring(name),));m.types[name]=t
-    w=m.invoke(0x772fa0,m.cstring('SquidGrab'))
+    w=m.invoke(0x772fa0,m.cstring(weapon))
     for fn in ['RULESMD.INI','LANGRULE.INI','MPBattleMD.ini','Hills.map']:
      p=root/fn
      if not p.exists():
       assert fn=='LANGRULE.INI';m.grapple_layers.append(dict(file=fn,absent=True));continue
      m.grapple_layers.append(dict(file=fn,sha256=hashlib.sha256(p.read_bytes()).hexdigest()))
-     all=sections(p.read_bytes());sel={k:v for k,v in all.items() if k in {'SQD','DEST','SquidGrab','SQDJUMP','ParasitePlus','ASW','General','CombatDamage'}}
+     all=sections(p.read_bytes());sel={k:v for k,v in all.items() if k in {*actors,weapon,projectile,warhead,'ASW','General','CombatDamage'}}
      m.make_ini(sel);rules=m.alloc(0x40);u.mem_write(rules,bytes(u.mem_read(INI,0x40)));u.mem_write(INI,artcache)
-     for name in ['SQD','DEST']:m.invoke(0x747620,m.types[name],(rules,))
-     asw=read(m.types['DEST']+0xd58);m.types['ASW']=asw;m.invoke(0x41cc20,asw,(rules,))
+     for name in actors:m.invoke(0x747620,m.types[name],(rules,))
+     if not drone:
+      asw=read(m.types['DEST']+0xd58);m.types['ASW']=asw;m.invoke(0x41cc20,asw,(rules,))
      m.invoke(0x772080,w,(rules,));m.invoke(0x46bee0,read(w+0xa0),(rules,));m.invoke(0x75d3a0,read(w+0xac),(rules,));m.invoke(0x7729f0,w)
      for a,b in [(0x66d847,0x66d894),(0x66c184,0x66c287)]:
       u.mem_write(SP-4,dwords(0));u.reg_write(UC_X86_REG_ESP,SP-4 if a==0x66d847 else SP);u.reg_write(UC_X86_REG_ESI,m.rules);u.reg_write(UC_X86_REG_EDI,rules);run_checked(u,a,b)
@@ -2260,17 +2272,26 @@ def grapple_inputs(root):
     for name in animnames:
      t=m.invoke(0x428b80,m.cstring(name));result=m.invoke(0x427d00,t,(INI,));anim_rows.append(dict(pointer=t,**m.result(name,t,result)))
     u.hook_del(h)
+    if drone:
+     from tools.procedural_drawing_oracle.electric_bolt import read_spark_types,prepare_spark_capacity
+     prepare_spark_capacity(m,(0xA83C98,0xA83D98,0xA83D68,0x8874C0))
+     layers=[(fn,None,(root/fn).read_bytes() if (root/fn).exists() else None)
+         for fn in ['RULESMD.INI','LANGRULE.INI','MPBattleMD.ini','Hills.map']]
+     h=u.hook_add(UC_HOOK_CODE,transport)
+     read_spark_types(m,layers,cache=m.make_ini,ini_pointer=INI)
+     u.hook_del(h)
     m.grapple_weapon=w;m.grapple_anims=anim_rows
     return m
 
 
-def grapple_fixture(inputs, root, *, seed=1):
+def grapple_fixture(inputs, root, *, seed=1, drone=False):
     """Fresh stock actors on the shared runtime's declared water projection.
 
     This calls Object::Limbo directly before AttachTo; native FireAt and the
     Bullet producer are excluded. Every selected actor remains genuinely alive.
     """
     from types import SimpleNamespace
+    import hashlib
     from tools.spatial_oracle import building_construction as bc
     from tools.spatial_oracle.refinery_dock import cell
     from tools.spatial_oracle.anytown_damage import next_family_native as identity
@@ -2292,7 +2313,7 @@ def grapple_fixture(inputs, root, *, seed=1):
     view.invoke=lambda address,obj,args=():bc.invoke(u,address,obj,*args)
     view.cstring=lambda name:Reader.cstring(view,name)
     u.mem_write(0xA8ED28,dwords(0x7EB6D4,0x44000000,theater['count'],1,theater['count'],10))
-    water=theater['globals'][0xAA0738]
+    water=0 if drone else theater['globals'][0xAA0738]
     tiles=bind_primary_tiles(view,theater,[water],preserve_abstract_registry=True)
     for address,value in theater['globals'].items():u.mem_write(address,dwords(value))
     for y in range(7,10):
@@ -2308,27 +2329,49 @@ def grapple_fixture(inputs, root, *, seed=1):
         # Parasite helper629736 passes output storage, then reads that DWORD.
         current=f.allocate(4);u.mem_write(current,dwords(0))
         assert bc.invoke(u,0x4C93D0,p+0x388,current)==current
-        return dict(native_id=read(p+0x10),alive=u.mem_read(p+0x90,1)[0],
+        result=dict(native_id=read(p+0x10),alive=u.mem_read(p+0x90,1)[0],
             limbo=u.mem_read(p+0x81,1)[0],health=read(p+0x6C),
             location=list(struct.unpack('<3i',u.mem_read(p+0x9C,12))),
             owner_native_id=read(owner+0x10),owner_slot=read(owner+0x30),
             owner_alliances=read(owner+0x5788),
             primary_facing_hex=bytes(u.mem_read(p+0x388,20)).hex(),
             primary_current_raw=read(current))
+        if drone:
+            assert bc.invoke(u,0x4C93D0,p+0x3A0,current)==current
+            result.update(secondary_current_raw=read(current),secondary_facing_hex=bytes(u.mem_read(p+0x3A0,20)).hex())
+        return result
     def manager_timers(p):
         return {name:dict(start=read(p+offset),opaque=read(p+offset+4),duration=read(p+offset+8))
             for name,offset in [('timer_2c',0x2C),('timer_38',0x38)]}
     actors=[];admissions=[]
-    for name,xy,house in [('SQD',(8,8),f.owner_houses[0]),('DEST',(9,8),f.owner_houses[1])]:
+    names=['DRON','MTNK'] if drone else ['SQD','DEST']
+    for name,xy,house in [(names[0],(8,8),f.owner_houses[0]),(names[1],(9,8),f.owner_houses[1])]:
         p=f.allocate(0x1000);bc.invoke(u,0x7353C0,p,f.types[name],house)
         c=cell(*xy);before_tile=read(c+0x38);coord=f.allocate(12)
         u.mem_write(coord,dwords(xy[0]*256+128,xy[1]*256+128,0))
         answer=bc.invoke(u,0x737BA0,p,coord,128)&255
-        assert answer==1 and read(c+0x38)==water and read(c+0xEC)==2
+        assert answer==1 and read(c+0x38)==water and read(c+0xEC)==(0 if drone else 2)
         assert actor_state(p)['alive']==1 and actor_state(p)['limbo']==0
         actors.append(p);admissions.append(dict(type=name,**actor_state(p),
             unlimbo_al=answer,unlimbo_facing_input=128,tile_before=before_tile,tile_after=read(c+0x38),land_after=read(c+0xEC)))
     source,victim=actors;manager=read(source+0x69C)
+    if drone:
+        from tools.voxel_oracle.raster import render_native
+        from tools.procedural_drawing_oracle.electric_bolt import prepare_spark_capacity
+        from tools.native_slope import initialize_slope_tables
+        from tools.native_oracle import RET_MAGIC
+        from tools.spatial_oracle.building_body_rules import SP
+        initialize_slope_tables(u,SP-0x1000,RET_MAGIC)
+        for address in (0xA83C98,0xA83D98):u.mem_write(address,bytes(inputs.u.mem_read(address,24)))
+        prepare_spark_capacity(SimpleNamespace(u=u,alloc=f.allocate),(0xA83D68,0x8874C0))
+        files={name:(root/name).read_bytes() for name in ['GTNK.VXL','GTNK.HVA','VOXELS.VPL']}
+        loaded=render_native(files['GTNK.VXL'],files['GTNK.HVA'],files['VOXELS.VPL'],drive_pose=dict(frame=0))['drive']
+        header=f.allocate(32);u.mem_write(header,bytes.fromhex(loaded['model_header_hex']))
+        u.mem_write(f.types['MTNK']+0xB0,dwords(header))
+        for offset,bits in zip((0x360,0x368),loaded['half_size_bits']):u.mem_write(f.types['MTNK']+offset,struct.pack('<Q',int(bits,16)))
+        admitted=bc.invoke(u,0x6F9E10,victim)&255;assert admitted==1
+        f.drone_model_input=dict(**{key:loaded[key] for key in ('model_header_hex','is_voxel','first_section_size','half_size_bits')},
+            joined_is_voxel_al=admitted,files={name:dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest()) for name,raw in files.items()})
     assert read(manager+0x10)==0xFFFFFFFF
     limbo=bc.invoke(u,0x5F4D30,source)&255;assert limbo==1
     attach_entry=[actor_state(p) for p in actors]
@@ -2361,6 +2404,15 @@ def grapple_fixture(inputs, root, *, seed=1):
         water=dict(tile=water,theater_count=theater['count'],theater_sha256=theater['sha256'],
             selected_tmp=tiles['added_rows'],projection_bounds=[7,7,10,9],
             recalc_entry='0047D2B0'),native_cursor=read(read(0xA8B230)+0x214))
+    if drone:
+        w=inputs.grapple_weapon;wh=read(w+0xAC)
+        f.grapple_context.update(model_input=f.drone_model_input,
+            type_inputs=[dict(name=name,strength=read(f.types[name]+0xA0),
+                weight_bits=f'{struct.unpack("<Q",u.mem_read(f.types[name]+0x370,8))[0]:016x}',
+                primary_flh=list(struct.unpack('<3i',u.mem_read(f.types[name]+0x89C,12)))) for name in names],
+            weapon_input=dict(name=f.string(w+0x24),damage=read(w+0xA4),rof=read(w+0xB0),
+                warhead=f.string(wh+0x24),paralyzes=read(wh+0x170)),
+            spark_type_inputs=inputs.effective_types,sound_names=inputs.sound_names)
     assert f.code_unchanged()
     return f
 

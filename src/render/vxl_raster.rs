@@ -15,7 +15,16 @@ use glam::{Mat3, Mat4, Vec3, Vec4};
 use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::{VxlFile, VxlLimb};
+#[cfg(test)]
+use crate::map::voxel_pose::voxel_tilt_applies;
+use crate::map::voxel_pose::{
+    VxlSlopeBlend, compute_slope_blend_rotation, compute_slope_rotation, ground_locomotor_matrix,
+    voxel_body_facing, voxel_table_rotation, voxel_tilt_frame,
+};
 use crate::render::vxl_normals;
+#[cfg(test)]
+use crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes;
+use crate::util::native_affine as affine;
 
 #[path = "vxl_native.rs"]
 mod native;
@@ -109,49 +118,14 @@ fn voxel_camera_view() -> Mat4 {
     )
 }
 
-/// `LocomotionClass::Draw_Matrix @ 0x0055A730`: signed step -8..23, native
-/// double angle and float store before table trig. Share the established
-/// table with FLH rather than recomputing an approximately equal sine.
-/// `RotateZ @ 0x005AF1A0` turns each row of the identity into `x*cos +
-/// y*sin` and `y*cos - x*sin`; on ones and zeros that is exact in binary32,
-/// so the zeros keep the signs those products give (row 2 is -0 in one
-/// column for steps 17..31; `tools/rocket_oracle/draw_matrix.json`).
-fn voxel_body_facing(step: u8) -> Mat4 {
-    let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(i32::from(step) - 8)
-        .expect("five-bit voxel facing fits native trig table");
-    voxel_rotate_z(Mat4::IDENTITY, sin, cos)
-}
-
 fn voxel_draw_rotation(slope: Mat4, facing: Mat4) -> Mat4 {
     // DriveLocomotion 0x004B03DA first multiplies slope * facing;
     // UnitClass 0x0073B71C then multiplies camera * that result.
-    native::matrix_product(
+    affine::matrix_product(
         voxel_camera_view(),
-        native::matrix_product(slope, facing).expect("finite voxel rotation"),
+        affine::matrix_product(slope, facing).expect("finite voxel rotation"),
     )
     .expect("finite voxel rotation")
-}
-
-/// `Matrix_rotate_y_axis @ 0x005AF080`: post-multiplies a 3x4 matrix in
-/// place by a rotation about its Y axis. Each row's X and Z become
-/// `x*cos - z*sin` and `z*cos + x*sin`, evaluated in x87 precision and
-/// stored as floats; Y and the translation column are untouched. The sine
-/// and cosine are the table's (`0x004CACB0`, `0x004CAD00`).
-fn voxel_rotate_y(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
-    use crate::util::native_x87::{NativeF32Bits, X87Chop53 as Fpu};
-    let load = |value: f32| {
-        Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits())).expect("voxel basis is finite")
-    };
-    let store =
-        |value| f32::from_bits(Fpu::store_f32(value).expect("rotation fits a float").bits());
-    let mut result = matrix;
-    for row in 0..3 {
-        let x = load(matrix.col(0)[row]);
-        let z = load(matrix.col(2)[row]);
-        result.col_mut(0)[row] = store(Fpu::sub(Fpu::mul(x, load(cos)), Fpu::mul(z, load(sin))));
-        result.col_mut(2)[row] = store(Fpu::add(Fpu::mul(z, load(cos)), Fpu::mul(x, load(sin))));
-    }
-    result
 }
 
 /// A barrel part's pitch. `UnitClass::DrawVoxelBody` converts the barrel
@@ -162,7 +136,7 @@ fn voxel_rotate_y(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
 fn voxel_barrel_pitch(matrix: Mat4, pitch: i8) -> Mat4 {
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(-i32::from(pitch))
         .expect("a five-bit pitch step fits the native trig table");
-    voxel_rotate_y(matrix, sin, cos)
+    affine::rotate_y(matrix, sin, cos)
 }
 
 /// The draw rotation of a pitched barrel: slope * facing, then the pitch,
@@ -177,10 +151,10 @@ fn voxel_pitched_draw_rotation(
         || compute_slope_rotation(if slope_type < 17 { slope_type } else { 0 }),
         compute_slope_blend_rotation,
     );
-    native::matrix_product(
+    affine::matrix_product(
         voxel_camera_view(),
         voxel_barrel_pitch(
-            native::matrix_product(slope, voxel_body_facing(step)).expect("finite voxel rotation"),
+            affine::matrix_product(slope, voxel_body_facing(step)).expect("finite voxel rotation"),
             pitch,
         ),
     )
@@ -207,9 +181,9 @@ thread_local! {
 /// `type+0x3A8`) is omitted: the Fly speed of a crash never changes and no
 /// stock aircraft both exceeds its `PitchSpeed=` and authors a `PitchAngle=`.
 /// Native reads table sine/cosine; the same in-place rotation owner serves
-/// Fly, Jumpjet and Ship so callers cannot diverge.
+/// Fly, Jumpjet, Drive and Ship so callers cannot diverge.
 fn voxel_crash_rotation(step: u8, tilt: [f32; 2]) -> Mat4 {
-    native::matrix_product(
+    affine::matrix_product(
         voxel_camera_view(),
         voxel_crash_locomotor_matrix(step, tilt),
     )
@@ -219,9 +193,9 @@ fn voxel_crash_rotation(step: u8, tilt: [f32; 2]) -> Mat4 {
 /// The locomotor half of [`voxel_crash_rotation`], before the camera.
 fn voxel_crash_locomotor_matrix(step: u8, tilt: [f32; 2]) -> Mat4 {
     let (sin, cos) = voxel_table_rotation(tilt[0]);
-    let frame = voxel_rotate_x(voxel_body_facing(step), sin, cos);
+    let frame = affine::rotate_x(voxel_body_facing(step), sin, cos);
     let (sin, cos) = voxel_table_rotation(tilt[1]);
-    voxel_rotate_y(frame, sin, cos)
+    affine::rotate_y(frame, sin, cos)
 }
 
 /// `RocketLocomotionClass::Draw_Matrix @ 0x00663470`: the facing matrix of
@@ -247,7 +221,7 @@ fn voxel_rocket_locomotor_matrix(step: u8, pitch: f32) -> Mat4 {
                 .bits(),
         )
     };
-    voxel_rotate_y(
+    affine::rotate_y(
         facing,
         entry(trig.sin_from_table(angle)),
         entry(trig.cos_from_table(angle)),
@@ -259,227 +233,54 @@ fn voxel_rocket_locomotor_matrix(step: u8, pitch: f32) -> Mat4 {
 /// `LocomotionClass::Draw_Matrix @ 0x0055A730` between a lift and a shifted,
 /// rolled and pitched frame, `T_z * F * (T_xy * R_x(roll) * R_y(pitch))`, each
 /// product `MatrixMultiply @ 0x005AF980` in the native order. The offsets are
-/// the whole voxels [`voxel_tilt_offsets`] keeps the tilted body's rim on;
+/// the whole voxels [`crate::map::voxel_pose::voxel_tilt_offsets`] keeps the tilted body's rim on;
 /// the in-place rotations share the native table/float-store owners.
 fn voxel_jumpjet_tilt_locomotor_matrix(step: u8, angles: [f32; 2], half_sizes: [f32; 2]) -> Mat4 {
     let (lift, frame) = voxel_tilt_frame(angles, half_sizes);
-    let product = |left, right| native::matrix_product(left, right).expect("finite tilt matrix");
+    let product = |left, right| affine::matrix_product(left, right).expect("finite tilt matrix");
     product(product(lift, voxel_body_facing(step)), frame)
 }
 
-/// Jumpjet54DD48..54DE53 / Ship69F790..69F827 support offsets,
-/// `[x, y, z]` in whole voxels
-/// (`0x0054DD48..0x0054DE53`), as the original evaluates them: the table sine
-/// and cosine stored as binary32, `Math::ftol` truncation, and the signs of
-/// the pitch and roll. `half_sizes` are `TechnoTypeClass+0x360` and `+0x368`
-/// ([`voxel_tilt_half_sizes`]); `angles` are the roll and pitch
-/// (`TechnoClass+0x328`, `+0x32C`).
-pub(crate) fn voxel_tilt_offsets(
-    trig: &crate::map::retail_trig::TrigTable,
-    [roll, pitch]: [f32; 2],
-    [half_y, half_x]: [f32; 2],
-) -> [i32; 3] {
-    use crate::util::native_x87::{NativeF32Bits, X87Chop53 as Fpu, X87Ordering, X87Value};
-    let single = |value: f32| {
-        Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits())).unwrap_or(Fpu::load_i32(0))
-    };
-    // `FSTP float`: the table entries are binary32 already, so the store is
-    // exact; kept to mirror the four stack slots.
-    let stored = |value: X87Value| {
-        Fpu::store_f32(value).map_or(Fpu::load_i32(0), |bits| {
-            Fpu::load_f32(bits).unwrap_or(Fpu::load_i32(0))
-        })
-    };
-    let abs = |value: X87Value| {
-        if Fpu::compare(value, Fpu::load_i32(0)) == X87Ordering::Less {
-            Fpu::neg(value)
-        } else {
-            value
-        }
-    };
-    let (a, b) = (single(half_y), single(half_x));
-    let cos_pitch = stored(trig.cos_from_table(single(pitch)));
-    let sin_pitch = stored(trig.sin_from_table(single(pitch)));
-    let cos_roll = stored(trig.cos_from_table(single(roll)));
-    let sin_roll = trig.sin_from_table(single(roll));
-    let z = Fpu::ftol_i32_low_masked(Fpu::add(
-        Fpu::mul(abs(sin_roll), a),
-        Fpu::mul(abs(sin_pitch), b),
-    ));
-    let shifted = |cosine: X87Value, half: X87Value| {
-        let truncated = Fpu::ftol_i32_low_masked(Fpu::mul(cosine, half));
-        Fpu::ftol_i32_low_masked(Fpu::sub(half, Fpu::load_i32(truncated)))
-    };
-    let mut x = shifted(cos_pitch, b);
-    let mut y = shifted(cos_roll, a);
-    // `FCOMP float 0.0`: a negative pitch and a positive roll flip their shift.
-    if pitch < 0.0 {
-        x = x.wrapping_neg();
-    }
-    if roll > 0.0 {
-        y = y.wrapping_neg();
-    }
-    [x, y, z]
-}
-
-/// Jumpjet54DCE8..54DD13 and Ship69F6CD..69F6F8 tilt when either
-/// angle's magnitude, widened to double, is at least 0.005 (`0x007E44E8`); a
-/// NaN never tilts.
-pub(crate) fn voxel_tilt_applies(angles: [f32; 2]) -> bool {
-    angles
-        .into_iter()
-        .any(|angle| f64::from(angle.abs()) >= 0.005)
-}
-
-/// `TechnoTypeClass+0x360` and `+0x368` from the main voxel's first section
-/// (`TechnoTypeClass::ReadINI 0x007160C7..0x0071611D`, section info
-/// `0x007564B0(0, 0)`): its `SizeY` (`+0xA1`) times 0.5 plus 0.5, and its
-/// `SizeX` (`+0xA0`) times 0.5, both exact.
-pub(crate) fn voxel_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
-    let section = vxl.limbs.first()?;
-    Some([
-        f32::from(section.size_y) * 0.5 + 0.5,
-        f32::from(section.size_x) * 0.5,
-    ])
-}
-
-/// Ship69F670's render-only inputs. The locomotor owns slope/blend; the
+/// Drive4AFF60 / Ship69F670 render-only per-part inputs. The locomotor owns slope/blend; the
 /// object owns facing and angles; ART owns TurretOffset. The loaded model
 /// supplies the main first-section half sizes, including for its gun parts.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ShipPose {
+pub struct GroundPose {
     pub angles: [f32; 2],
     pub body_facing: u8,
     pub slope_blend: Option<VxlSlopeBlend>,
     pub turret_offset: i32,
 }
 
-/// Native in-place axis rotation (5AEF60/5AF080/5AF1A0): each row's two
-/// changed columns store separately as floats. Reuse the existing Y owner.
-fn voxel_rotate_x(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
-    use crate::util::native_x87::X87Chop53 as Fpu;
-    let mut result = matrix;
-    for row in 0..3 {
-        let y = native::load(matrix.col(1)[row]).expect("finite voxel basis");
-        let z = native::load(matrix.col(2)[row]).expect("finite voxel basis");
-        let sin = native::load(sin).expect("finite table entry");
-        let cos = native::load(cos).expect("finite table entry");
-        result.col_mut(1)[row] =
-            native::store(Fpu::add(Fpu::mul(y, cos), Fpu::mul(z, sin))).unwrap();
-        result.col_mut(2)[row] =
-            native::store(Fpu::sub(Fpu::mul(z, cos), Fpu::mul(y, sin))).unwrap();
-    }
-    result
-}
-
-fn voxel_rotate_z(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
-    use crate::util::native_x87::X87Chop53 as Fpu;
-    let mut result = matrix;
-    for row in 0..3 {
-        let x = native::load(matrix.col(0)[row]).expect("finite voxel basis");
-        let y = native::load(matrix.col(1)[row]).expect("finite voxel basis");
-        let sin = native::load(sin).expect("finite table entry");
-        let cos = native::load(cos).expect("finite table entry");
-        result.col_mut(0)[row] =
-            native::store(Fpu::add(Fpu::mul(x, cos), Fpu::mul(y, sin))).unwrap();
-        result.col_mut(1)[row] =
-            native::store(Fpu::sub(Fpu::mul(y, cos), Fpu::mul(x, sin))).unwrap();
-    }
-    result
-}
-
-/// Original TranslateX5AE980 and Translate5AE8F0 update the translation
-/// column from the existing basis. A vector in this frame is not a screen
-/// displacement; keep the native float store before the next rotation.
-fn voxel_translate(matrix: Mat4, offset: &[f32]) -> Mat4 {
-    use crate::util::native_x87::X87Chop53 as Fpu;
-    debug_assert!(offset.len() == 1 || offset.len() == 3);
-    let mut result = matrix;
-    for row in 0..3 {
-        let mut sum = native::load(matrix.col(3)[row]).expect("finite voxel translation");
-        for (axis, &amount) in offset.iter().enumerate() {
-            sum = Fpu::add(
-                Fpu::mul(
-                    native::load(amount).unwrap(),
-                    native::load(matrix.col(axis)[row]).unwrap(),
-                ),
-                sum,
-            );
-            // Vector5AE8F0 reloads X/Y float intermediates after each axis,
-            // but retains its Z accumulation on the x87 stack to the end.
-            if row < 2 && axis + 1 < offset.len() {
-                sum = native::load(native::store(sum).unwrap()).unwrap();
-            }
-        }
-        result.col_mut(3)[row] = native::store(sum).expect("translation fits float");
-    }
-    result
-}
-
-fn voxel_tilt_frame(angles: [f32; 2], half_sizes: [f32; 2]) -> (Mat4, Mat4) {
-    let [x, y, z] = voxel_tilt_offsets(
-        crate::map::retail_trig::TrigTable::embedded(),
-        angles,
-        half_sizes,
-    );
-    let lift = Mat4::from_translation(Vec3::new(0., 0., z as f32));
-    let frame = Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.));
-    let (sin, cos) = voxel_table_rotation(angles[0]);
-    let frame = voxel_rotate_x(frame, sin, cos);
-    let (sin, cos) = voxel_table_rotation(angles[1]);
-    (lift, voxel_rotate_y(frame, sin, cos))
-}
-
-fn voxel_table_rotation(angle: f32) -> (f32, f32) {
-    let trig = crate::map::retail_trig::TrigTable::embedded();
-    let angle = native::load(angle).expect("finite voxel angle");
-    (
-        native::store(trig.sin_from_table(angle)).expect("finite table entry"),
-        native::store(trig.cos_from_table(angle)).expect("finite table entry"),
-    )
-}
-
-/// Full dynamic ShipDrawMatrix69F670. Three original5AF980 calls retain
-/// **((lift * slope) * facing) * shifted_rotation**, with a float store at
-/// every product. The cached ordinary arm remains the existing slope/facing
-/// owner. Offsets are shared with Jumpjet54DCC0, not another support model.
-pub(crate) fn ship_locomotor_matrix(slope_type: u8, pose: ShipPose, half_sizes: [f32; 2]) -> Mat4 {
-    let product = |left, right| native::matrix_product(left, right).expect("finite ship pose");
-    let slope = pose.slope_blend.map_or_else(
-        || compute_slope_rotation(if slope_type < 17 { slope_type } else { 0 }),
-        compute_slope_blend_rotation,
-    );
-    let facing = voxel_body_facing(voxel_facing_step(pose.body_facing));
-    if pose.slope_blend.is_none() && !voxel_tilt_applies(pose.angles) {
-        return product(slope, facing);
-    }
-    let (lift, frame) = voxel_tilt_frame(pose.angles, half_sizes);
-    product(product(product(lift, slope), facing), frame)
-}
-
 /// Unit73BA4C..73BC11's uncached body/turret/barrel matrices, each before
 /// HVA and after the shared camera. Secondary facing is relative to the
 /// already tilted hull, and barrel pitch retains the translated pivot.
-pub(crate) fn ship_pose_matrices(
+pub(crate) fn ground_unit_pose_matrices(
     slope_type: u8,
-    pose: ShipPose,
+    pose: GroundPose,
     half_sizes: [f32; 2],
     turret_facing: u8,
     barrel_pitch: i8,
 ) -> [Mat4; 3] {
-    let body = ship_locomotor_matrix(slope_type, pose, half_sizes);
-    let translated = voxel_translate(body, &[turret_offset_units(pose.turret_offset)]);
+    let body = ground_locomotor_matrix(
+        slope_type,
+        pose.slope_blend,
+        voxel_facing_step(pose.body_facing),
+        pose.angles,
+        half_sizes,
+    );
+    let translated = affine::translate(body, &[turret_offset_units(pose.turret_offset)]);
     let relative = i32::from(voxel_facing_step(turret_facing))
         - i32::from(voxel_facing_step(pose.body_facing));
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(relative)
         .expect("relative five-bit facing fits table");
-    let turret = voxel_rotate_z(translated, sin, cos);
+    let turret = affine::rotate_z(translated, sin, cos);
     let pivot = turret.w_axis.truncate();
-    let barrel = voxel_translate(turret, &(-pivot).to_array());
+    let barrel = affine::translate(turret, &(-pivot).to_array());
     let barrel = voxel_barrel_pitch(barrel, barrel_pitch);
-    let barrel = voxel_translate(barrel, &pivot.to_array());
+    let barrel = affine::translate(barrel, &pivot.to_array());
     [body, turret, barrel].map(|matrix| {
-        native::matrix_product(voxel_camera_view(), matrix).expect("finite ship draw matrix")
+        affine::matrix_product(voxel_camera_view(), matrix).expect("finite ground draw matrix")
     })
 }
 
@@ -491,7 +292,7 @@ pub enum BodyTilt {
     Fly([f32; 2]),
     /// `JumpjetLocomotionClass` Draw_Matrix's `TiltCrashJumpjet=` arm
     /// (`0x0054DCC0`): roll and pitch in radians, and the main voxel's half
-    /// sizes ([`voxel_tilt_half_sizes`]).
+    /// sizes ([`crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes`]).
     Jumpjet {
         angles: [f32; 2],
         half_sizes: [f32; 2],
@@ -558,7 +359,7 @@ pub(crate) fn projectile_voxel_matrix(
     let pitch = voxel_facing_step_u16(pitch) as i8 - 8;
     let orientation = voxel_barrel_pitch(voxel_body_facing(heading), pitch);
     // The same original5AF980 affine product used by ordinary voxel bodies.
-    native::matrix_product(voxel_camera_view(), orientation)
+    affine::matrix_product(voxel_camera_view(), orientation)
 }
 
 /// The draw matrix of one body draw: a tilt arm when one is present, else the
@@ -567,12 +368,12 @@ pub(crate) fn projectile_voxel_matrix(
 fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
     match params.body_tilt {
         Some(BodyTilt::Fly(tilt)) => voxel_crash_rotation(step, tilt),
-        Some(BodyTilt::Jumpjet { angles, half_sizes }) => native::matrix_product(
+        Some(BodyTilt::Jumpjet { angles, half_sizes }) => affine::matrix_product(
             voxel_camera_view(),
             voxel_jumpjet_tilt_locomotor_matrix(step, angles, half_sizes),
         )
         .expect("finite tilt matrix"),
-        Some(BodyTilt::Rocket(pitch)) => native::matrix_product(
+        Some(BodyTilt::Rocket(pitch)) => affine::matrix_product(
             voxel_camera_view(),
             voxel_rocket_locomotor_matrix(step, pitch),
         )
@@ -725,7 +526,7 @@ pub fn barrel_pivot_screen_offset(
         || compute_slope_rotation(if slope_type < 17 { slope_type } else { 0 }),
         compute_slope_blend_rotation,
     );
-    let hull = native::matrix_product(slope, voxel_body_facing(voxel_facing_step(body_facing)))
+    let hull = affine::matrix_product(slope, voxel_body_facing(voxel_facing_step(body_facing)))
         .expect("finite voxel rotation");
     let t = hull.transform_vector3(Vec3::new(
         turret_offset_units(turret_offset_leptons),
@@ -777,18 +578,6 @@ const SPRITE_MARGIN: u32 = 2;
 /// Ordinary encoded VXL pixels instead use the native packed 8.8 owner.
 const FP_SHIFT: i32 = 16;
 const FP_SCALE: f32 = (1 << FP_SHIFT) as f32; // 65536.0
-
-/// Render-only blend between two gamemd slope matrix table entries.
-///
-/// gamemd's `VXL_InterpolatedFacing` path interpolates slope orientation through
-/// quaternion SLERP and converts the result back to a matrix before composition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VxlSlopeBlend {
-    pub from_slope: u8,
-    pub to_slope: u8,
-    pub phase_num: i32,
-    pub phase_den: u8,
-}
 
 /// Configuration for rendering a single VXL model frame.
 #[derive(Debug, Clone)]
@@ -1130,55 +919,6 @@ pub fn union_native_voxel_draw_bounds(accumulated: &mut Option<[i32; 4]>, next: 
     *accumulated = Some(current);
 }
 
-/// Original `7559B0` table selection, shared with particle/projectile collision.
-/// Native initialization/executable controls: tools/native_slope.py.
-fn compute_slope_rotation(slope_type: u8) -> Mat4 {
-    slope_matrix_to_mat4(
-        crate::map::voxel_slope::slope_matrix(slope_type)
-            .unwrap_or_else(|| crate::map::voxel_slope::slope_matrix(0).unwrap()),
-    )
-}
-
-fn slope_matrix_to_mat4(rows: [crate::util::native_x87::NativeF32Bits; 12]) -> Mat4 {
-    let r = rows.map(|v| f32::from_bits(v.bits()));
-    Mat4::from_cols(
-        Vec4::new(r[0], r[4], r[8], 0.0),
-        Vec4::new(r[1], r[5], r[9], 0.0),
-        Vec4::new(r[2], r[6], r[10], 0.0),
-        Vec4::new(r[3], r[7], r[11], 1.0),
-    )
-}
-
-fn compute_slope_blend_rotation(blend: VxlSlopeBlend) -> Mat4 {
-    use crate::util::native_x87::X87Chop53 as Fpu;
-    // The locomotor passes a double ratio;755A40 stores it to float before
-    //646590. Preserve the signed extrapolation and the original stores.
-    let phase = Fpu::store_f64(
-        Fpu::div(
-            Fpu::load_i32(blend.phase_num),
-            Fpu::load_i32(i32::from(blend.phase_den.max(1))),
-        )
-        .expect("nonzero slope duration"),
-    )
-    .expect("finite slope fraction");
-    slope_matrix_to_mat4(
-        crate::map::voxel_slope::blend_matrix(
-            if blend.from_slope <= 20 {
-                blend.from_slope
-            } else {
-                0
-            },
-            if blend.to_slope <= 20 {
-                blend.to_slope
-            } else {
-                0
-            },
-            phase,
-        )
-        .expect("finite native slope interpolation"),
-    )
-}
-
 /// Precompute per-limb transforms, voxel grids, lighting pages, and footprints.
 ///
 /// This is Phase 1 of the VXL render pipeline. It builds the combined
@@ -1216,7 +956,7 @@ pub fn prepare_limb_data(
     let draw_matrix = voxel_params_draw_rotation(params, facing_step);
     let draw_rotation = Mat3::from_mat4(draw_matrix);
     let model_rotation =
-        native::matrix_product(slope_mat, body_facing).expect("finite voxel rotation");
+        affine::matrix_product(slope_mat, body_facing).expect("finite voxel rotation");
     let mut limb_data: Vec<LimbRenderData> = Vec::new();
     let mut max_footprint: f32 = 1.0;
 

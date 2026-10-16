@@ -55,11 +55,22 @@ impl TypeHandleTable {
         id: InternedId,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
+        self.handle(interner, id, rules)
+            .map(|handle| rules.object_by_handle(handle))
+    }
+
+    /// The handle of the object `id` names in `rules`, as
+    /// `rules.type_handle(interner.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn handle(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        rules: &RuleSet,
+    ) -> Option<TypeHandle> {
         match self.by_interned.get(id.index() as usize) {
-            Some(handle) if self.rules_serial == rules.serial() => {
-                handle.map(|handle| rules.object_by_handle(handle))
-            }
-            _ => rules.object(interner.resolve(id)),
+            Some(&handle) if self.rules_serial == rules.serial() => handle,
+            _ => rules.type_handle(interner.resolve(id)),
         }
     }
 

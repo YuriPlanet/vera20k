@@ -299,7 +299,11 @@ mod tests {
         );
         assert_eq!(
             rules.object("MTNK").expect("retail MTNK").weight,
-            SimFixed::lit("2")
+            SimFixed::ONE
+        );
+        assert_eq!(
+            rules.object("DEST").expect("retail DEST").weight,
+            SimFixed::lit("3")
         );
         assert_eq!(
             rules.general.direct_rocking_coefficient,

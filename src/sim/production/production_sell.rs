@@ -477,11 +477,12 @@ fn sale_survivors(
     let count = sim.building_survivor_count(rules, id, false);
     let passengers =
         sim.eject_absorbed_passengers(rules, registry, id, &cells, false, frame_effects);
-    let garrison = crate::sim::passenger::garrison_eject::eject_garrison_occupants(
+    let garrison = crate::sim::passenger::garrison_eject::sell_building_occupants(
         sim,
         rules,
         registry,
         id,
+        crate::sim::passenger::garrison_eject::GarrisonEjectMode::PlayerSell,
         frame_effects,
     );
     let crew = sim.spawn_sale_crew(rules, registry, id, count, &cells, frame_effects);

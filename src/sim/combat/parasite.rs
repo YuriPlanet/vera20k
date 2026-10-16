@@ -599,10 +599,50 @@ impl Simulation {
                     log::debug!("parasite bite anim [{name}] did not construct: {error}");
                 }
             }
-            // 0x0062A17F: the rock's lateral sign. TechnoClass::Rock
-            // (vtable +0x3D8) itself belongs to the rocking subsystem, which
-            // has no producer or renderer yet; the Scenario draw is kept.
-            let _ = self.scenario_rng.next_range_i32_inclusive(0, 1);
+            //62A173..62A203: one ranged side after the real constructors,
+            // then a two-lepton impact offset. The wrapping first quarter
+            // turn precedes MOVSX; the shared radians owner subtracts the
+            // second0x3FFF after sign extension. Truncate Y before X.
+            use crate::util::native_x87::{NativeF32Bits, X87Chop53 as X};
+            let lateral = if self.scenario_rng.next_range_i32_inclusive(0, 1) == 0 {
+                2
+            } else {
+                -2
+            };
+            let angle = X::load_f64(crate::sim::projectile::native_math::radians(
+                raw.wrapping_sub(0x3fff),
+            ))
+            .expect("finite parasite bite facing");
+            let trig = crate::map::retail_trig::TrigTable::embedded();
+            let y = X::ftol_i32_low_masked(X::sub(
+                X::load_i32(location.y),
+                X::mul(trig.sin_from_table(angle), X::load_i32(lateral)),
+            ));
+            let x = X::ftol_i32_low_masked(X::add(
+                X::mul(trig.cos_from_table(angle), X::load_i32(lateral)),
+                X::load_i32(location.x),
+            ));
+            //62A21C: the victim's actual ApplyRocker70B280. Its single
+            // owner retains loaded-model admission, Weight and rate stores.
+            let request = self.substrate.entities.get(victim).and_then(|entity| {
+                let handle = self.interner.type_handle(entity.type_ref(), rules)?;
+                let object = rules.object_by_handle(handle);
+                Some(crate::sim::rocking::RockerImpulse {
+                    position: [location.x, location.y, location.z],
+                    origin: [x, y, location.z],
+                    body_facing: raw,
+                    force: NativeF32Bits::from_bits(0x3fc0_0000),
+                    weight: object.weight,
+                    no_dampen: false,
+                    has_loaded_voxel: rules.object_has_loaded_voxel(handle),
+                })
+            });
+            if let Some(request) = request {
+                crate::sim::rocking::apply_rocker_impulse(
+                    &mut self.substrate.entities.get_mut(victim).unwrap().rocking,
+                    request,
+                );
+            }
             (damage, false)
         };
         let event = crate::sim::combat::EntityDamageEvent::direct_receiver(

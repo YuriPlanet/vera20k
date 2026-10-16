@@ -557,7 +557,7 @@ impl TypeFacts {
         if category == EntityCategory::Structure {
             self.building_hidden_occupancy = Some(obj.hidden_occupancy);
             self.base_reservation_spacing = obj.base_reservation_spacing;
-            self.determines_waypoint_edge = obj.factory == Some(FactoryType::BuildingType);
+            self.determines_waypoint_edge = obj.factory_type() == Some(FactoryType::BuildingType);
             self.build_const_eligible = obj.build_const_eligible;
             self.base_plan_type_index = obj.base_plan_type_index;
             self.base_plan_is_defense = obj.is_base_defense;

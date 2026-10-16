@@ -184,12 +184,8 @@ impl From<&AttackerSnapshot> for FireSource {
 /// along world X. The result adds to the same virtual +AC base as GetFLH.
 /// Executed source/ART controls: tools/procedural_drawing_oracle/action_lines.
 ///
-/// The represented basis retains GetFLH's slope/rocking limitations. Stock
-/// MTNK's GTNK art has offset0, and stable Drive slope matrices have zero
-/// translation, so those slopes do not move this pivot. AP has Rocker0;
-/// the ordinary untouched 105mm/AP duel does not create a rocking pose.
-/// Ground rocking producers and their DrawMatrix translation remain a
-/// required separate mechanism for Rocker hits (for example V3WH/Parasite).
+/// Drive/Ship use the same physical-model and locomotor matrix inputs as
+/// GetFLH, including the translation of a rocking hull.
 pub(crate) fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -202,7 +198,15 @@ pub(crate) fn turret_pivot_coordinate(
     let delta = if entity.locomotor.is_some() {
         // Retain the existing transform's representable-coordinate boundary;
         // authored TurretOffset is not clamped by the ART reader.
-        crate::util::flh_transform::native_flh_world_delta(0, 0, 0, offset, base.facings, 0)?
+        crate::util::flh_transform::native_flh_world_delta(
+            0,
+            0,
+            0,
+            offset,
+            base.facings,
+            0,
+            base.locomotor_basis,
+        )?
     } else {
         (offset, 0, 0)
     };
@@ -312,7 +316,7 @@ pub(crate) fn fire_coordinate(
                 lateral: flh.lateral.wrapping_add(base_coords.lateral),
                 height: flh.height.wrapping_add(base_coords.height),
             };
-            flh_world_delta(art, flh, base.facings, burst_index)
+            flh_world_delta(art, flh, base.facings, burst_index, base.locomotor_basis)
         })
         .unwrap_or((0, 0, 0));
     if snap.category == EntityCategory::Structure
@@ -378,6 +382,7 @@ struct FireBase<'r> {
     y: i32,
     z: i32,
     facings: crate::util::flh_transform::FlhFacings,
+    locomotor_basis: Option<glam::Mat4>,
     /// The aim facing, or a building's vt+0x308 ([`building_fire_facings`]).
     fire_facing: u16,
     art: Option<&'r ArtEntry>,
@@ -441,6 +446,56 @@ fn fire_coordinate_base<'r>(
     };
 
     let art = firer_art(rules, obj);
+    // GetFLH6F3B6C..6F3BA3 consumes the actual locomotor Draw_Matrix.
+    // The physical half sizes come from the immutable rules binding, never
+    // the renderer's model cache. Ground pose math has one shared owner.
+    let locomotor_basis = world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .filter(|entity| {
+            entity.locomotor.as_ref().is_some_and(|loco| {
+                matches!(
+                    loco.active_kind(),
+                    crate::rules::locomotor_type::LocomotorKind::Drive
+                        | crate::rules::locomotor_type::LocomotorKind::Ship
+                )
+            })
+        })
+        .and_then(|entity| {
+            use crate::map::voxel_pose::{VxlSlopeBlend, ground_locomotor_matrix};
+            use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+            let half_sizes = rules.object_voxel_half_sizes(&obj.id)?;
+            let (slope, blend) =
+                match state_for_entity(entity).map(|state| state.render_phase(binary_frame)) {
+                    Some(SlopeRenderPhase::Stable(slope)) => (slope, None),
+                    Some(SlopeRenderPhase::Transition {
+                        from_slope,
+                        to_slope,
+                        phase_num,
+                        phase_den,
+                    }) => (
+                        to_slope,
+                        Some(VxlSlopeBlend {
+                            from_slope,
+                            to_slope,
+                            phase_num,
+                            phase_den,
+                        }),
+                    ),
+                    None => (0, None),
+                };
+            Some(ground_locomotor_matrix(
+                slope,
+                blend,
+                crate::util::direction_tables::step32_from_facing16(body_facing16),
+                entity
+                    .rocking
+                    .as_ref()
+                    .map_or([0.; 2], |state| state.angles_native()),
+                half_sizes,
+            ))
+        });
     let (flh_facing16, fire_facing) = if snap.category == EntityCategory::Structure {
         building_fire_facings(world, snap, obj, art, aim_facing16)
     } else {
@@ -456,6 +511,7 @@ fn fire_coordinate_base<'r>(
             body: body_facing16,
             matrix: matrix_facing16,
         },
+        locomotor_basis,
         fire_facing,
         art,
     }
@@ -580,6 +636,7 @@ fn flh_world_delta(
     flh: crate::rules::flh::Flh,
     facings: crate::util::flh_transform::FlhFacings,
     burst_index: u8,
+    locomotor_basis: Option<glam::Mat4>,
 ) -> Option<(i32, i32, i32)> {
     crate::util::flh_transform::native_flh_world_delta(
         flh.forward,
@@ -588,6 +645,7 @@ fn flh_world_delta(
         art.turret_offset,
         facings,
         burst_index,
+        locomotor_basis,
     )
 }
 
@@ -625,7 +683,7 @@ fn open_topped_port_coordinate(
     let burst_index = (transport.weapon_burst.index() & 1) as u8;
     let delta = base
         .art
-        .and_then(|art| flh_world_delta(art, flh, base.facings, burst_index))
+        .and_then(|art| flh_world_delta(art, flh, base.facings, burst_index, base.locomotor_basis))
         .unwrap_or((0, 0, 0));
     let rider_aim = fire_coordinate_base(
         world,

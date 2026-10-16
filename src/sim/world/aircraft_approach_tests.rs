@@ -100,20 +100,12 @@ fn assert_flh(sim: &Simulation, rules: &RuleSet, row: &Value) {
         Default::default(),
     )
     .coord;
-    // Keep the existing deterministic f32 point transform, rather than adding
-    // matrix/x87 emulation for coordinate identity alone. Original Translate
-    // stores with chop rounding; these three supplied poses differ by one
-    // lepton. Pin the exact differences (not a blanket tolerance), and compare
-    // the resulting production steering/facing history exactly below.
-    let delta = match row["input"]["name"].as_str().unwrap() {
-        "flh_0_0_0" | "elite_flh" => [-1, 0, 0],
-        "flh_16384_0_1" => [-1, -1, 0],
-        _ => [0, 0, 0],
-    };
+    // `native_flh_world_delta` runs the original affine rotation and
+    // Translate stores, so every supplied pose's point is the executable's.
     for (axis, actual) in [point.x, point.y, point.z].into_iter().enumerate() {
         assert_eq!(
             i64::from(actual),
-            row["flh"][axis].as_i64().unwrap() + delta[axis],
+            row["flh"][axis].as_i64().unwrap(),
             "{} FLH axis{axis}",
             row["input"]
         );

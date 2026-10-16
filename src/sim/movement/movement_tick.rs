@@ -559,9 +559,12 @@ fn advance_ordinary_mover(
 /// Derived movement inputs that survive across object turns.
 ///
 /// The base contains retained wall/Foot bytes and derived terrain occupation.
-/// Wall/terrain edits rebuild under their epochs. Foot writes replay the owner's
-/// bounded cell-delta journal, rebuilding only if the reader fell behind. The
-/// entity touch log maintains building contributions (and, in fixtures without an overlay grid, mobiles).
+/// Terrain edits rebuild under their epoch. Foot writes replay the owner's
+/// bounded cell-delta journal; after a wall edit, or when the reader fell
+/// behind the journal, the retained bytes' difference from the copy the plane
+/// last took applies instead (the counts wrap, so the sum is exact either
+/// way). The entity touch log maintains building contributions (and, in
+/// fixtures without an overlay grid, mobiles).
 /// Debug checks compare against a fresh sum. No cache data is saved or hashed.
 #[derive(Default)]
 pub(crate) struct MovementPassCache {
@@ -580,13 +583,19 @@ struct BlockerPlaneEntry {
     key: BlockerPlaneKey,
     plane: crate::sim::pathfinding::BlockerNeighborCounts,
     sources: BTreeMap<u64, bump_crush::BlockerPlaneSource>,
+    /// The overlay grid's retained wall/Foot bytes as `plane` holds them,
+    /// with the Foot journal revision and wall epoch they are current at.
+    retained: Vec<u8>,
     foot_revision: u64,
+    wall_epoch: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct BlockerPlaneKey {
     terrain_epoch: Option<u64>,
-    overlay_epoch: Option<u64>,
+    /// Whether an overlay grid retains the wall/Foot bytes: with one, only
+    /// buildings are entity sources.
+    retained_foot: bool,
     width: u16,
     height: u16,
     /// A building's foundation size comes from its type. By address, never
@@ -629,33 +638,40 @@ impl MovementPassCache {
         let blocker = &mut self.blocker;
         let key = BlockerPlaneKey {
             terrain_epoch: resolved_terrain.map(ResolvedTerrainGrid::mutation_epoch),
-            overlay_epoch: overlay_grid.map(|grid| grid.blocker_plane_epoch()),
+            retained_foot: overlay_grid.is_some(),
             width: grid.width(),
             height: grid.height(),
             rules: rules.map(|rules| std::ptr::from_ref(rules) as usize),
         };
-        let retained_foot = overlay_grid.is_some();
+        let retained_foot = key.retained_foot;
         let touched = match entities.take_touched(TouchReader::BlockerPlane) {
             Touched::All => None,
             Touched::Ids(ids) => Some(ids),
         };
-        match blocker.entry.as_mut().filter(|entry| {
-            entry.key == key
-                && touched.is_some()
-                && overlay_grid.is_none_or(|grid| {
-                    grid.foot_neighbor_changes_since(entry.foot_revision)
-                        .is_some()
-                })
-        }) {
+        match blocker
+            .entry
+            .as_mut()
+            .filter(|entry| entry.key == key && touched.is_some())
+        {
             Some(entry) => {
                 if let Some(grid) = overlay_grid {
-                    for (index, delta) in grid
-                        .foot_neighbor_changes_since(entry.foot_revision)
-                        .unwrap()
-                    {
-                        entry.plane.apply_retained_delta(index, delta);
+                    let journal = (entry.wall_epoch == grid.blocker_plane_epoch())
+                        .then(|| grid.foot_neighbor_changes_since(entry.foot_revision))
+                        .flatten();
+                    match journal {
+                        Some(changes) => {
+                            for (index, delta) in changes {
+                                entry.plane.apply_retained_delta(index, delta);
+                                entry.retained[index] = entry.retained[index].wrapping_add(delta);
+                            }
+                        }
+                        None => entry.plane.apply_retained_difference(
+                            &mut entry.retained,
+                            grid.retained_neighbor_counts(),
+                        ),
                     }
                     entry.foot_revision = grid.foot_neighbor_revision();
+                    entry.wall_epoch = grid.blocker_plane_epoch();
                 }
                 for id in touched.into_iter().flatten() {
                     // With the retained Foot bytes only a building is a
@@ -716,7 +732,10 @@ impl MovementPassCache {
                     key,
                     plane,
                     sources,
+                    retained: overlay_grid
+                        .map_or_else(Vec::new, |grid| grid.retained_neighbor_counts().to_vec()),
                     foot_revision: overlay_grid.map_or(0, |grid| grid.foot_neighbor_revision()),
+                    wall_epoch: overlay_grid.map_or(0, |grid| grid.blocker_plane_epoch()),
                 });
                 #[cfg(test)]
                 {
@@ -1066,8 +1085,9 @@ mod pass_cache_tests {
         assert_eq!(current.count_at(1, 1), 0);
         assert_eq!(current.count_at(4, 1), 1);
         assert_eq!(cache.blocker_plane_world_rebuilds(), 1);
-        // A dormant reader can miss the bounded journal; rebuilding must
-        // recover the authoritative wrapping bytes, not inferred occupancy.
+        // A dormant reader can miss the bounded journal; the retained bytes'
+        // difference must recover the authoritative wrapping bytes, not
+        // inferred occupancy, without reading the whole world.
         for _ in 0..260 {
             overlays.adjust_foot_neighbor_source(Some(&terrain), (3, 2), false);
             overlays.adjust_foot_neighbor_source(Some(&terrain), (2, 2), true);
@@ -1092,7 +1112,7 @@ mod pass_cache_tests {
             ),
             &expected
         );
-        assert_eq!(cache.blocker_plane_world_rebuilds(), 2);
+        assert_eq!(cache.blocker_plane_world_rebuilds(), 1);
     }
 
     /// A marked object that starts dying stays on the occupancy grid. Its
@@ -1150,7 +1170,8 @@ mod pass_cache_tests {
 
     /// A grid that retains its wall plane, as every production grid does, is
     /// read for that plane only: an ore write moves the grid's general epoch
-    /// and must not rebuild the blocker plane; a wall-plane write must.
+    /// and must not rebuild the blocker plane; a wall-plane write reaches it
+    /// as the retained bytes' difference, without reading the whole world.
     #[test]
     fn ore_writes_do_not_rebuild_the_kept_blocker_plane() {
         let grid = PathGrid::new(5, 5);
@@ -1175,9 +1196,9 @@ mod pass_cache_tests {
         assert_eq!(plane(&mut cache, &overlays), before);
         assert_eq!(cache.blocker_plane_world_rebuilds(), 1);
 
-        overlays.seed_neighbor_counts_for_tests(0);
-        let _ = plane(&mut cache, &overlays);
-        assert_eq!(cache.blocker_plane_world_rebuilds(), 2);
+        overlays.seed_neighbor_counts_for_tests(3);
+        assert_eq!(plane(&mut cache, &overlays).count_at(2, 2), 3);
+        assert_eq!(cache.blocker_plane_world_rebuilds(), 1);
     }
 
     /// Random edits through the store, the plane brought current after each

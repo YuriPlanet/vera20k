@@ -150,7 +150,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             panic!("a shadow and a body");
         };
         for drawn in [shadow, body] {
-            assert_eq!(drawn.target, ObjectTexture::UnitPose);
+            assert_eq!(drawn.target, ObjectTexture::UnitPosePage(0));
             assert_eq!(drawn.render_z, RenderZPolicy::ReadOnly);
         }
         assert_eq!(shadow.instance.draw_state.fx_flags, FX_SHADOW);
@@ -275,6 +275,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         axis: DepthAxis::NONE,
     };
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
+    assert_eq!(cache.fill_test_page().page, 0);
     let object = voxel_anim_draw_instance(
         id,
         piece,
@@ -290,7 +291,12 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         panic!("shadow then body")
     };
     assert_eq!(shadow.instance.draw_state.fx_flags, FX_SHADOW);
-    assert_eq!(body.target, ObjectTexture::UnitPose);
+    for drawn in [shadow, body] {
+        assert!(
+            matches!(drawn.target, ObjectTexture::UnitPosePage(page) if page > 0),
+            "every actual TIRE part retains its overflow page"
+        );
+    }
     assert_eq!(body.instance.source_palette, 1);
     assert_eq!(body.instance.draw_state.remap_row, 0);
     assert_eq!(body.instance.palette_light, PaletteLight::plain(53, 1000));

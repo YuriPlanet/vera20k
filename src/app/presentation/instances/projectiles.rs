@@ -201,7 +201,7 @@ pub(crate) fn projectile_draw_instance(
         };
         parent.policy = policy;
         let piece = ObjectPieceInstance {
-            target: ObjectTexture::UnitPose,
+            target: ObjectTexture::UnitPosePage(entry.page),
             render_z: policy.render_z,
             instance: SpriteInstance {
                 position: [point[0] + entry.offset_x, point[1] + entry.offset_y],

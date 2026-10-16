@@ -26,9 +26,10 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
+use crate::map::voxel_pose::VxlSlopeBlend;
 use crate::render::atlas_growth::{self, GrowthShelf, SPRITE_PADDING};
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::vxl_raster::{self, VxlRenderParams, VxlSlopeBlend, VxlSprite};
+use crate::render::vxl_raster::{self, VxlRenderParams, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
 /// Edge of a growth page. One byte per texel makes it 64 MB, room for the
@@ -73,8 +74,8 @@ pub enum PoseTilt {
     /// `RocketLocomotionClass::Draw_Matrix` (`0x00663470`): CurrentPitch in
     /// radians above the horizon, never zero here.
     Rocket(f32),
-    /// Ship69F670 dynamic matrix, retained per part by Unit73B470.
-    Ship(vxl_raster::ShipPose),
+    /// Shared Drive4AFF60/Ship69F670 dynamic matrix, retained per Unit part.
+    Ground(vxl_raster::GroundPose),
 }
 
 /// Cache key: unique combination of object type, facing, layer, frame, and slope.
@@ -1214,11 +1215,12 @@ impl UnitModel {
         tilt: PoseTilt,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let body = self.body.as_ref()?;
-        if let PoseTilt::Ship(pose) = tilt {
-            let matrices = vxl_raster::ship_pose_matrices(
+        if let PoseTilt::Ground(pose) = tilt {
+            let matrices = vxl_raster::ground_unit_pose_matrices(
                 key.slope_type,
                 pose,
-                vxl_raster::voxel_tilt_half_sizes(body.vxl()).unwrap_or([0.; 2]),
+                crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes(body.vxl())
+                    .unwrap_or([0.; 2]),
                 key.facing,
                 key.barrel_pitch,
             );
@@ -1247,10 +1249,11 @@ impl UnitModel {
             PoseTilt::Fly(angles) => vxl_raster::BodyTilt::Fly(angles),
             PoseTilt::Jumpjet(angles) => vxl_raster::BodyTilt::Jumpjet {
                 angles,
-                half_sizes: vxl_raster::voxel_tilt_half_sizes(body.vxl()).unwrap_or([0.0; 2]),
+                half_sizes: crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes(body.vxl())
+                    .unwrap_or([0.0; 2]),
             },
             PoseTilt::Rocket(pitch) => vxl_raster::BodyTilt::Rocket(pitch),
-            PoseTilt::Ship(_) => unreachable!("ship parts returned above"),
+            PoseTilt::Ground(_) => unreachable!("ground parts returned above"),
         };
         let params = VxlRenderParams {
             frame: key.frame,

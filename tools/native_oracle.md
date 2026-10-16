@@ -1,5 +1,30 @@
 # Native comparison workflow
 
+### Terror Drone impulse and Drive controls
+
+`tools.spatial_oracle.unit_rocking_update --impulse` adds eight whole original
+`70B280` controls through the existing physical GTNK loader VM. Supplied inputs
+cover opposite sides, 3D distance, actual stock default Weight 1, explicit
+3.5/zero/negative weights, weak/zero-distance gates and replacing two impulses.
+Ordered native field stores and follow-up `70B570` states are retained. One
+60-visit history keeps eight checkpoints, including amplification of a tiny
+nonzero rate and eventual settlement. Native f32 state remains unmodified
+between visits; these are component inputs rather than a whole native scenario.
+
+`tools.spatial_oracle.naval_draw_bounds --drone-tilt` adds eight full original
+Drive `4AFF60` controls using actual GTNK body/turret/barrel files. It reuses
+the loader/postpass, startup slope tables, camera, gun-arm and raster owners.
+Two rows retain all three physical indexed rasters. Set
+`VERA20K_SHRAPNEL_INPUTS` to their extracted physical directory and use
+`PYTHONPATH=.:tools/spatial_oracle`. Both opt-ins use `--check` by default and
+`--write` only for deliberate new-corpus regeneration. Historical update,
+Ship, slope and voxel corpora remain separate.
+
+The related two-bite original RNG/coordinate comparison is
+`parasite_water_gate --drone`; its supplied model-binding and direct-Limbo
+boundaries are recorded with the
+[shared runtime](spatial_oracle/building_death_anims_joined.md#terror-drone-numeric-component).
+
 ### Squid-grapple Ship presentation controls
 
 `tools.spatial_oracle.naval_draw_bounds --squid-tilt` adds eight original

@@ -214,6 +214,7 @@ use crate::sim::mission::authority::queue_entity_mission_deferred;
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose::object_world_z_leptons;
+#[cfg(test)]
 use crate::sim::overlay_grid::OverlayGrid;
 #[cfg(test)]
 use crate::sim::overlay_grid::WallMutation;

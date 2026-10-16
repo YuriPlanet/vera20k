@@ -1,0 +1,4767 @@
+{
+  "action9": {
+    "all_three_rng_states_unchanged": true,
+    "code_unchanged": true,
+    "controls": [
+      {
+        "changed_house_byte_offsets": [
+          [
+            592,
+            593,
+            594,
+            595
+          ],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 0,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          4,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "retail_country19_first",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,19,0,0,0,0,A",
+          "read": "1,9,0,19,0,0,0,0,A",
+          "value": 19,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 19,
+        "selector_calls": [
+          {
+            "argument": 19,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 19,
+            "entry": "00502D30"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          [
+            592
+          ]
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          2,
+          1,
+          0
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 2,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          -7,
+          3,
+          4
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "duplicate_country_reversed",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,19,0,0,0,0,A",
+          "read": "1,9,0,19,0,0,0,0,A",
+          "value": 19,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 19,
+        "selector_calls": [
+          {
+            "argument": 19,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 19,
+            "entry": "00502D30"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [
+            592
+          ],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 1,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          -7,
+          4,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "country7_not_incoming_or_trigger_house",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,7,0,0,0,0,A",
+          "read": "1,9,0,7,0,0,0,0,A",
+          "value": 7,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 7,
+        "selector_calls": [
+          {
+            "argument": 7,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 7,
+            "entry": "00502D30"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          [
+            592
+          ]
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 2,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          -7,
+          3,
+          4
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "retained_trigger_house_8997",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,8997,0,0,0,0,A",
+          "read": "1,9,0,8997,0,0,0,0,A",
+          "value": 8997,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 8997,
+        "selector_calls": [
+          {
+            "argument": "live_trigger",
+            "entry": "00726910"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [],
+        "modes_after": [
+          -7,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "retained_trigger_house_null",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,8997,0,0,0,0,A",
+          "read": "1,9,0,8997,0,0,0,0,A",
+          "value": 8997,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 0,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 8997,
+        "selector_calls": [
+          {
+            "argument": "live_trigger",
+            "entry": "00726910"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": null
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": false,
+        "mode_writes": [],
+        "modes_after": [
+          -7,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "null_live_trigger_valid_country",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,19,0,0,0,0,A",
+          "read": "1,9,0,19,0,0,0,0,A",
+          "value": 19,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 0,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 19,
+        "selector_calls": [],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [],
+        "modes_after": [
+          -7,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "missing_country999",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,999,0,0,0,0,A",
+          "read": "1,9,0,999,0,0,0,0,A",
+          "value": 999,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 0,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 999,
+        "selector_calls": [
+          {
+            "argument": 999,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 999,
+            "entry": "00502D30"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [],
+        "modes_after": [
+          -7,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "minus_one",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,-1,0,0,0,0,A",
+          "read": "1,9,0,-1,0,0,0,0,A",
+          "value": -1,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 0,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": -1,
+        "selector_calls": [],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [
+            592
+          ],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 1,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          -7,
+          4,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "player_at_first_slot",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,4475,0,0,0,0,A",
+          "read": "1,9,0,4475,0,0,0,0,A",
+          "value": 4475,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 4475,
+        "selector_calls": [
+          {
+            "argument": 4475,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 4475,
+            "entry": "00510ED0"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [],
+        "modes_after": [
+          -7,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "player_at_unmapped_slot",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,4475,0,0,0,0,A",
+          "read": "1,9,0,4475,0,0,0,0,A",
+          "value": 4475,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 0,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 4475,
+        "selector_calls": [
+          {
+            "argument": 4475,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 4475,
+            "entry": "00510ED0"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [
+            592,
+            593,
+            594,
+            595
+          ],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": null,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 0,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          4,
+          3,
+          5
+        ],
+        "modes_before": [
+          -7,
+          3,
+          5
+        ],
+        "name": "null_incoming_valid_country",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,19,0,0,0,0,A",
+          "read": "1,9,0,19,0,0,0,0,A",
+          "value": 19,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 19,
+        "selector_calls": [
+          {
+            "argument": 19,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 19,
+            "entry": "00502D30"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      },
+      {
+        "changed_house_byte_offsets": [
+          [],
+          [],
+          []
+        ],
+        "country_indices": [
+          19,
+          7,
+          19
+        ],
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "incoming_house": 1,
+        "live_trigger": true,
+        "mode_writes": [
+          {
+            "house": 0,
+            "offset": "0x250",
+            "pc": "0x6deaff",
+            "size": 4,
+            "value": 4
+          }
+        ],
+        "modes_after": [
+          4,
+          3,
+          5
+        ],
+        "modes_before": [
+          4,
+          3,
+          5
+        ],
+        "name": "already_mode4_still_writes",
+        "native_read": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,19,0,0,0,0,A",
+          "read": "1,9,0,19,0,0,0,0,A",
+          "value": 19,
+          "waypoint": 0
+        },
+        "player_at_slots": [
+          1,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "result": 1,
+        "rng_after": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "rng_before": {
+          "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+        },
+        "selector": 19,
+        "selector_calls": [
+          {
+            "argument": 19,
+            "entry": "00510F60"
+          },
+          {
+            "argument": 19,
+            "entry": "00502D30"
+          }
+        ],
+        "strategy_timers_after": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "strategy_timers_before": [
+          [
+            41,
+            777,
+            108
+          ],
+          [
+            42,
+            778,
+            109
+          ],
+          [
+            43,
+            779,
+            110
+          ]
+        ],
+        "trigger_owner": 2
+      }
+    ]
+  },
+  "factory": {
+    "code_unchanged": true,
+    "constructor_defaults": {
+      "GAPILE": 0,
+      "GAPILL": 0
+    },
+    "controls": [
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryType"
+          }
+        ],
+        "after": 16,
+        "before": 0,
+        "name": "RULESMD.INI",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "InfantryType"
+          }
+        },
+        "supplied_prior": null,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryType"
+          }
+        ],
+        "after": 16,
+        "before": 16,
+        "name": "SOV02SMD.MAP",
+        "raw_cache": {},
+        "supplied_prior": null,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILL"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILL"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "<none>"
+          }
+        ],
+        "after": 0,
+        "before": 0,
+        "name": "RULESMD.INI",
+        "raw_cache": {},
+        "supplied_prior": null,
+        "type": "GAPILL"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILL"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILL"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "<none>"
+          }
+        ],
+        "after": 0,
+        "before": 0,
+        "name": "SOV02SMD.MAP",
+        "raw_cache": {},
+        "supplied_prior": null,
+        "type": "GAPILL"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryType"
+          }
+        ],
+        "after": 16,
+        "before": 16,
+        "name": "absent_retains_prior",
+        "raw_cache": {},
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryType"
+          }
+        ],
+        "after": 16,
+        "before": 16,
+        "name": "wrong_case_key",
+        "raw_cache": {
+          "GAPILE": {
+            "factory": "UnitType"
+          }
+        },
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryType"
+          }
+        ],
+        "after": 16,
+        "before": 16,
+        "name": "wrong_case_section",
+        "raw_cache": {
+          "gapile": {
+            "Factory": "UnitType"
+          }
+        },
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "iNfAnTrYtYpE"
+          }
+        ],
+        "after": 16,
+        "before": 0,
+        "name": "case_insensitive_enum",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "iNfAnTrYtYpE"
+          }
+        },
+        "supplied_prior": 0,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "Unit"
+          }
+        ],
+        "after": 1,
+        "before": 0,
+        "name": "object_class_unit",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "Unit"
+          }
+        },
+        "supplied_prior": 0,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 1,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "Unit",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "Unit"
+          }
+        ],
+        "after": 1,
+        "before": 1,
+        "name": "absent_retains_object_class_unit",
+        "raw_cache": {},
+        "supplied_prior": null,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "Infantry"
+          }
+        ],
+        "after": 15,
+        "before": 0,
+        "name": "object_class_infantry",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "Infantry"
+          }
+        },
+        "supplied_prior": 0,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 15,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "Infantry",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "Infantry"
+          }
+        ],
+        "after": 15,
+        "before": 15,
+        "name": "absent_retains_object_class_infantry",
+        "raw_cache": {},
+        "supplied_prior": null,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "NoSuchClass"
+          }
+        ],
+        "after": 0,
+        "before": 16,
+        "name": "unknown_enum",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "NoSuchClass"
+          }
+        },
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "<none>"
+          }
+        ],
+        "after": 0,
+        "before": 16,
+        "name": "explicit_none",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "<none>"
+          }
+        },
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": ""
+          }
+        ],
+        "after": 0,
+        "before": 16,
+        "name": "stored_empty_value",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": ""
+          }
+        },
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 0,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "<none>",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryType"
+          }
+        ],
+        "after": 16,
+        "before": 0,
+        "name": "enum_spaces",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": " InfantryType "
+          }
+        },
+        "supplied_prior": 0,
+        "type": "GAPILE"
+      },
+      {
+        "actual_read_calls": [
+          {
+            "default": 16,
+            "entry": "0x474ff0",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "capacity": 32,
+            "default_string": "InfantryType",
+            "entry": "0x528a10",
+            "key": "Factory",
+            "section": "GAPILE"
+          },
+          {
+            "entry": "0x40dce0",
+            "enum_input": "InfantryTypexxxxxxxxxxxxxxxxxxx"
+          }
+        ],
+        "after": 0,
+        "before": 16,
+        "name": "enum_over_32bytes",
+        "raw_cache": {
+          "GAPILE": {
+            "Factory": "InfantryTypexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        },
+        "supplied_prior": 16,
+        "type": "GAPILE"
+      }
+    ],
+    "counter_dispatch": [
+      {
+        "aliases": [
+          {
+            "entry": 5241510,
+            "role": "vehicle_or_naval",
+            "rtti": 1,
+            "slot_offsets_by_naval": [
+              21376,
+              21384
+            ]
+          },
+          {
+            "entry": 5241530,
+            "role": "aircraft",
+            "rtti": 2,
+            "slot_offsets_by_naval": [
+              21368,
+              21368
+            ]
+          },
+          {
+            "entry": 5241530,
+            "role": "aircraft",
+            "rtti": 3,
+            "slot_offsets_by_naval": [
+              21368,
+              21368
+            ]
+          },
+          {
+            "entry": 5241546,
+            "role": "building",
+            "rtti": 6,
+            "slot_offsets_by_naval": [
+              21380,
+              21380
+            ]
+          },
+          {
+            "entry": 5241546,
+            "role": "building",
+            "rtti": 7,
+            "slot_offsets_by_naval": [
+              21380,
+              21380
+            ]
+          },
+          {
+            "entry": 5241538,
+            "role": "infantry",
+            "rtti": 15,
+            "slot_offsets_by_naval": [
+              21372,
+              21372
+            ]
+          },
+          {
+            "entry": 5241538,
+            "role": "infantry",
+            "rtti": 16,
+            "slot_offsets_by_naval": [
+              21372,
+              21372
+            ]
+          },
+          {
+            "entry": 5241510,
+            "role": "vehicle_or_naval",
+            "rtti": 40,
+            "slot_offsets_by_naval": [
+              21376,
+              21384
+            ]
+          }
+        ],
+        "default_entry": 5241558,
+        "entry": 5241424,
+        "jump_address": 5241564,
+        "jump_bytes_hex": "a6fa4f00bafa4f00cafa4f00c2fa4f00d6fa4f00",
+        "jump_targets": [
+          5241510,
+          5241530,
+          5241546,
+          5241538,
+          5241558
+        ],
+        "name": "increment",
+        "selector_address": 5241584,
+        "selector_bytes_hex": "00010104040202040404040404040303040404040404040404040404040404040404040404040400",
+        "slot_lea_instructions": [
+          {
+            "address": 5241514,
+            "hex": "8d8788530000"
+          },
+          {
+            "address": 5241522,
+            "hex": "8d8780530000"
+          },
+          {
+            "address": 5241530,
+            "hex": "8d8778530000"
+          },
+          {
+            "address": 5241538,
+            "hex": "8d877c530000"
+          },
+          {
+            "address": 5241546,
+            "hex": "8d8784530000"
+          }
+        ]
+      },
+      {
+        "aliases": [
+          {
+            "entry": 5241302,
+            "role": "vehicle_or_naval",
+            "rtti": 1,
+            "slot_offsets_by_naval": [
+              21376,
+              21384
+            ]
+          },
+          {
+            "entry": 5241322,
+            "role": "aircraft",
+            "rtti": 2,
+            "slot_offsets_by_naval": [
+              21368,
+              21368
+            ]
+          },
+          {
+            "entry": 5241322,
+            "role": "aircraft",
+            "rtti": 3,
+            "slot_offsets_by_naval": [
+              21368,
+              21368
+            ]
+          },
+          {
+            "entry": 5241338,
+            "role": "building",
+            "rtti": 6,
+            "slot_offsets_by_naval": [
+              21380,
+              21380
+            ]
+          },
+          {
+            "entry": 5241338,
+            "role": "building",
+            "rtti": 7,
+            "slot_offsets_by_naval": [
+              21380,
+              21380
+            ]
+          },
+          {
+            "entry": 5241330,
+            "role": "infantry",
+            "rtti": 15,
+            "slot_offsets_by_naval": [
+              21372,
+              21372
+            ]
+          },
+          {
+            "entry": 5241330,
+            "role": "infantry",
+            "rtti": 16,
+            "slot_offsets_by_naval": [
+              21372,
+              21372
+            ]
+          },
+          {
+            "entry": 5241302,
+            "role": "vehicle_or_naval",
+            "rtti": 40,
+            "slot_offsets_by_naval": [
+              21376,
+              21384
+            ]
+          }
+        ],
+        "default_entry": 5241350,
+        "entry": 5241216,
+        "jump_address": 5241356,
+        "jump_bytes_hex": "d6f94f00eaf94f00faf94f00f2f94f0006fa4f00",
+        "jump_targets": [
+          5241302,
+          5241322,
+          5241338,
+          5241330,
+          5241350
+        ],
+        "name": "recount",
+        "selector_address": 5241376,
+        "selector_bytes_hex": "00010104040202040404040404040303040404040404040404040404040404040404040404040400",
+        "slot_lea_instructions": [
+          {
+            "address": 5241306,
+            "hex": "8d8788530000"
+          },
+          {
+            "address": 5241314,
+            "hex": "8d8780530000"
+          },
+          {
+            "address": 5241322,
+            "hex": "8d8778530000"
+          },
+          {
+            "address": 5241330,
+            "hex": "8d877c530000"
+          },
+          {
+            "address": 5241338,
+            "hex": "8d8784530000"
+          }
+        ]
+      },
+      {
+        "aliases": [
+          {
+            "entry": 5245225,
+            "role": "vehicle_or_naval",
+            "rtti": 1,
+            "slot_offsets_by_naval": [
+              21376,
+              21384
+            ]
+          },
+          {
+            "entry": 5245249,
+            "role": "aircraft",
+            "rtti": 2,
+            "slot_offsets_by_naval": [
+              21368,
+              21368
+            ]
+          },
+          {
+            "entry": 5245249,
+            "role": "aircraft",
+            "rtti": 3,
+            "slot_offsets_by_naval": [
+              21368,
+              21368
+            ]
+          },
+          {
+            "entry": 5245265,
+            "role": "building",
+            "rtti": 6,
+            "slot_offsets_by_naval": [
+              21380,
+              21380
+            ]
+          },
+          {
+            "entry": 5245265,
+            "role": "building",
+            "rtti": 7,
+            "slot_offsets_by_naval": [
+              21380,
+              21380
+            ]
+          },
+          {
+            "entry": 5245257,
+            "role": "infantry",
+            "rtti": 15,
+            "slot_offsets_by_naval": [
+              21372,
+              21372
+            ]
+          },
+          {
+            "entry": 5245257,
+            "role": "infantry",
+            "rtti": 16,
+            "slot_offsets_by_naval": [
+              21372,
+              21372
+            ]
+          },
+          {
+            "entry": 5245225,
+            "role": "vehicle_or_naval",
+            "rtti": 40,
+            "slot_offsets_by_naval": [
+              21376,
+              21384
+            ]
+          }
+        ],
+        "default_entry": 5245280,
+        "entry": 5245200,
+        "jump_address": 5245288,
+        "jump_bytes_hex": "2909500041095000510950004909500060095000",
+        "jump_targets": [
+          5245225,
+          5245249,
+          5245265,
+          5245257,
+          5245280
+        ],
+        "name": "get_count",
+        "selector_address": 5245308,
+        "selector_bytes_hex": "00010104040202040404040404040303040404040404040404040404040404040404040404040400",
+        "slot_lea_instructions": [
+          {
+            "address": 5245233,
+            "hex": "8d8188530000"
+          },
+          {
+            "address": 5245241,
+            "hex": "8d8180530000"
+          },
+          {
+            "address": 5245249,
+            "hex": "8d8178530000"
+          },
+          {
+            "address": 5245257,
+            "hex": "8d817c530000"
+          },
+          {
+            "address": 5245265,
+            "hex": "8d8184530000"
+          }
+        ]
+      }
+    ],
+    "rtti_name_table": [
+      {
+        "name": "<none>",
+        "value": 0
+      },
+      {
+        "name": "Unit",
+        "value": 1
+      },
+      {
+        "name": "Aircraft",
+        "value": 2
+      },
+      {
+        "name": "AircraftType",
+        "value": 3
+      },
+      {
+        "name": "Anim",
+        "value": 4
+      },
+      {
+        "name": "AnimType",
+        "value": 5
+      },
+      {
+        "name": "Building",
+        "value": 6
+      },
+      {
+        "name": "BuildingType",
+        "value": 7
+      },
+      {
+        "name": "Bullet",
+        "value": 8
+      },
+      {
+        "name": "BulletType",
+        "value": 9
+      },
+      {
+        "name": "Campaign",
+        "value": 10
+      },
+      {
+        "name": "Cell",
+        "value": 11
+      },
+      {
+        "name": "Factory",
+        "value": 12
+      },
+      {
+        "name": "House",
+        "value": 13
+      },
+      {
+        "name": "HouseType",
+        "value": 14
+      },
+      {
+        "name": "Infantry",
+        "value": 15
+      },
+      {
+        "name": "InfantryType",
+        "value": 16
+      },
+      {
+        "name": "Isotile",
+        "value": 17
+      },
+      {
+        "name": "IsotileType",
+        "value": 18
+      },
+      {
+        "name": "Light",
+        "value": 19
+      },
+      {
+        "name": "Overlay",
+        "value": 20
+      },
+      {
+        "name": "OverlayType",
+        "value": 21
+      },
+      {
+        "name": "Particle",
+        "value": 22
+      },
+      {
+        "name": "ParticleType",
+        "value": 23
+      },
+      {
+        "name": "ParticleSystem",
+        "value": 24
+      },
+      {
+        "name": "ParticleSystemType",
+        "value": 25
+      },
+      {
+        "name": "Script",
+        "value": 26
+      },
+      {
+        "name": "ScriptType",
+        "value": 27
+      },
+      {
+        "name": "Side",
+        "value": 28
+      },
+      {
+        "name": "Smudge",
+        "value": 29
+      },
+      {
+        "name": "SmudgeType",
+        "value": 30
+      },
+      {
+        "name": "Special",
+        "value": 31
+      },
+      {
+        "name": "SuperWeaponType",
+        "value": 32
+      },
+      {
+        "name": "TaskForce",
+        "value": 33
+      },
+      {
+        "name": "Team",
+        "value": 34
+      },
+      {
+        "name": "TeamType",
+        "value": 35
+      },
+      {
+        "name": "Terrain",
+        "value": 36
+      },
+      {
+        "name": "TerrainType",
+        "value": 37
+      },
+      {
+        "name": "Trigger",
+        "value": 38
+      },
+      {
+        "name": "TriggerType",
+        "value": 39
+      },
+      {
+        "name": "UnitType",
+        "value": 40
+      },
+      {
+        "name": "VoxelAnim",
+        "value": 41
+      },
+      {
+        "name": "VoxelAnimType",
+        "value": 42
+      },
+      {
+        "name": "Wave",
+        "value": 43
+      },
+      {
+        "name": "Tag",
+        "value": 44
+      },
+      {
+        "name": "TagType",
+        "value": 45
+      },
+      {
+        "name": "Tiberium",
+        "value": 46
+      },
+      {
+        "name": "Action",
+        "value": 47
+      },
+      {
+        "name": "Event",
+        "value": 48
+      },
+      {
+        "name": "WeaponType",
+        "value": 49
+      },
+      {
+        "name": "WarheadType",
+        "value": 50
+      },
+      {
+        "name": "Waypoint",
+        "value": 51
+      },
+      {
+        "name": "Abstract",
+        "value": 52
+      },
+      {
+        "name": "Tube",
+        "value": 53
+      },
+      {
+        "name": "LightSource",
+        "value": 54
+      },
+      {
+        "name": "EMPulse",
+        "value": 55
+      },
+      {
+        "name": "TacticalMap",
+        "value": 56
+      },
+      {
+        "name": "SuperWeapon",
+        "value": 57
+      },
+      {
+        "name": "AITrigger",
+        "value": 58
+      },
+      {
+        "name": "AITriggerType",
+        "value": 59
+      },
+      {
+        "name": "Neuron",
+        "value": 60
+      },
+      {
+        "name": "FoggedObject",
+        "value": 61
+      },
+      {
+        "name": "AlphaShape",
+        "value": 62
+      },
+      {
+        "name": "VeinholeMonster",
+        "value": 63
+      },
+      {
+        "name": "NavyType",
+        "value": 64
+      },
+      {
+        "name": "SpawnManager",
+        "value": 65
+      },
+      {
+        "name": "CaptureManager",
+        "value": 66
+      },
+      {
+        "name": "Parasite",
+        "value": 67
+      },
+      {
+        "name": "Bomb",
+        "value": 68
+      },
+      {
+        "name": "Temporal",
+        "value": 70
+      },
+      {
+        "name": "RadSite",
+        "value": 69
+      },
+      {
+        "name": "Airstrike",
+        "value": 71
+      },
+      {
+        "name": "SlaveManager",
+        "value": 72
+      },
+      {
+        "name": "DiskLaser",
+        "value": 73
+      }
+    ],
+    "suggest_dispatch": {
+      "aliases": [
+        {
+          "entry": 5225903,
+          "rtti": 1
+        },
+        {
+          "entry": 5225881,
+          "rtti": 2
+        },
+        {
+          "entry": 5225881,
+          "rtti": 3
+        },
+        {
+          "entry": 5225948,
+          "rtti": 6
+        },
+        {
+          "entry": 5225948,
+          "rtti": 7
+        },
+        {
+          "entry": 5225926,
+          "rtti": 15
+        },
+        {
+          "entry": 5225926,
+          "rtti": 16
+        },
+        {
+          "entry": 5225903,
+          "rtti": 40
+        }
+      ],
+      "default_entry": 5225971,
+      "jump_targets": [
+        5225903,
+        5225881,
+        5225948,
+        5225926,
+        5225971
+      ],
+      "selector_bytes_hex": "00010104040202040404040404040303040404040404040404040404040404040404040404040400"
+    }
+  },
+  "native_fpcw": "0xE7F",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "predicates": {
+    "classification": {
+      "kind": 17,
+      "state_a": 0,
+      "state_b": 1
+    },
+    "code_unchanged": true,
+    "constructor_defaults": {
+      "kind": 0,
+      "last_house": 0,
+      "value": 0
+    },
+    "controls": [
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "all_houses_zero_tracked_empty_lists",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "active_factory_incoming_not_event_country",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 7
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": true
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "limbo_factory_does_not_block",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              null,
+              {
+                "ai_alive": true,
+                "factory_rtti": 0,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 2,
+            "tracked_buildings": 2
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "null_and_no_factory_do_not_block",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "zero_tracked_skips_present_factory",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": -1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "negative_tracked_skips_present_factory",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": false,
+                "factory_rtti": -1,
+                "health": 0,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "negative_factory_and_zero_health_still_block",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": 0,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 0,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 1,
+        "initial_persistence": 1,
+        "kind": 17,
+        "name": "incoming_not_country_actor_raised_or_buildup",
+        "persistence": 1,
+        "raised": 99,
+        "result": 1,
+        "scenario_init": true,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": null,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "null_incoming_generic_success",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "positive_tracked_empty_list",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": -1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "negative_vector_count",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 0,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "normal_factory_health0",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": false,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "normal_factory_ai_alive_false",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": -1,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "normal_factory_health_negative",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [
+          "0x00502D30"
+        ],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": -2147483648
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "intmin_tracked_with_factory",
+        "persistence": 0,
+        "raised": 8,
+        "result": 1,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 2147483647
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "intmax_tracked_with_factory",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 0,
+                "health": 100,
+                "limbo": false
+              },
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": true
+              },
+              {
+                "ai_alive": true,
+                "factory_rtti": 16,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 3,
+            "tracked_buildings": 3
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "last_list_entry_factory",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 1,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "object_class_unit_is_nonzero_factory",
+        "persistence": 0,
+        "raised": 99,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      },
+      {
+        "actor_owner": null,
+        "calls": [],
+        "event54": -1412623820,
+        "house_order": [
+          0,
+          1,
+          2
+        ],
+        "house_priors": [
+          {
+            "buildings": [
+              {
+                "ai_alive": true,
+                "factory_rtti": 15,
+                "health": 100,
+                "limbo": false
+              }
+            ],
+            "list_count": 1,
+            "tracked_buildings": 1
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          },
+          {
+            "buildings": [],
+            "list_count": 0,
+            "tracked_buildings": 0
+          }
+        ],
+        "incoming_house": 0,
+        "initial_persistence": 0,
+        "kind": 17,
+        "name": "object_class_infantry_is_nonzero_factory",
+        "persistence": 0,
+        "raised": 8,
+        "result": 0,
+        "scenario_init": false,
+        "timer_after": [
+          0,
+          0,
+          30
+        ],
+        "timer_before": [
+          0,
+          0,
+          30
+        ],
+        "value": 0
+      }
+    ],
+    "country_indices": [
+      0,
+      7,
+      0
+    ],
+    "reader_rows": {
+      "1,17,0,0": {
+        "kind": 17,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 0
+      },
+      "1,17,0,7": {
+        "kind": 17,
+        "name": "",
+        "results": [],
+        "team_present": false,
+        "value": 7
+      }
+    },
+    "rng_after": {
+      "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    },
+    "rng_before": {
+      "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    }
+  },
+  "retail": {
+    "archive": "mapsmd03.mix",
+    "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+    "code_unchanged": true,
+    "country_registration": [
+      {
+        "entries": [
+          {
+            "index": 0,
+            "name": "Americans"
+          },
+          {
+            "index": 1,
+            "name": "Alliance"
+          },
+          {
+            "index": 2,
+            "name": "French"
+          },
+          {
+            "index": 3,
+            "name": "Germans"
+          },
+          {
+            "index": 4,
+            "name": "British"
+          },
+          {
+            "index": 5,
+            "name": "Africans"
+          },
+          {
+            "index": 6,
+            "name": "Arabs"
+          },
+          {
+            "index": 7,
+            "name": "Confederation"
+          },
+          {
+            "index": 8,
+            "name": "Russians"
+          },
+          {
+            "index": 9,
+            "name": "YuriCountry"
+          },
+          {
+            "index": 10,
+            "name": "GDI"
+          },
+          {
+            "index": 11,
+            "name": "Nod"
+          },
+          {
+            "index": 12,
+            "name": "Neutral"
+          },
+          {
+            "index": 13,
+            "name": "Special"
+          }
+        ],
+        "layer": "RULESMD.INI",
+        "raw_countries": {
+          "0": "Americans",
+          "1": "Alliance",
+          "10": "GDI",
+          "11": "Nod",
+          "12": "Neutral",
+          "13": "Special",
+          "2": "French",
+          "3": "Germans",
+          "4": "British",
+          "5": "Africans",
+          "6": "Arabs",
+          "7": "Confederation",
+          "8": "Russians",
+          "9": "YuriCountry"
+        }
+      },
+      {
+        "entries": [
+          {
+            "index": 0,
+            "name": "Americans"
+          },
+          {
+            "index": 1,
+            "name": "Alliance"
+          },
+          {
+            "index": 2,
+            "name": "French"
+          },
+          {
+            "index": 3,
+            "name": "Germans"
+          },
+          {
+            "index": 4,
+            "name": "British"
+          },
+          {
+            "index": 5,
+            "name": "Africans"
+          },
+          {
+            "index": 6,
+            "name": "Arabs"
+          },
+          {
+            "index": 7,
+            "name": "Confederation"
+          },
+          {
+            "index": 8,
+            "name": "Russians"
+          },
+          {
+            "index": 9,
+            "name": "YuriCountry"
+          },
+          {
+            "index": 10,
+            "name": "GDI"
+          },
+          {
+            "index": 11,
+            "name": "Nod"
+          },
+          {
+            "index": 12,
+            "name": "Neutral"
+          },
+          {
+            "index": 13,
+            "name": "Special"
+          },
+          {
+            "index": 14,
+            "name": "Einstein"
+          },
+          {
+            "index": 15,
+            "name": "Player"
+          },
+          {
+            "index": 16,
+            "name": "BadGuy1"
+          },
+          {
+            "index": 17,
+            "name": "BadGuy2"
+          },
+          {
+            "index": 18,
+            "name": "BadGuy3"
+          },
+          {
+            "index": 19,
+            "name": "Germany1"
+          },
+          {
+            "index": 20,
+            "name": "Germany2"
+          },
+          {
+            "index": 21,
+            "name": "Germany3"
+          },
+          {
+            "index": 22,
+            "name": "Temp"
+          }
+        ],
+        "layer": "SOV02SMD.MAP",
+        "raw_countries": {
+          "0": "Einstein",
+          "1": "Player",
+          "2": "BadGuy1",
+          "3": "BadGuy2",
+          "4": "BadGuy3",
+          "5": "Germany1",
+          "6": "Germany2",
+          "7": "Germany3",
+          "8": "Temp"
+        }
+      }
+    ],
+    "country_trigger_rng_unchanged": true,
+    "house": {
+      "Allies": "BadGuy1 House,BadGuy2 House,German1 House,Civilian House,Einstein House,BadGuy3 House,German2 House,German3 House,Temp House",
+      "Color": "LightBlue",
+      "Country": "Germany1",
+      "Credits": "50",
+      "Edge": "South",
+      "IQ": "5",
+      "NodeCount": "0",
+      "PercentBuilt": "0",
+      "PlayerControl": "no",
+      "TechLevel": "10"
+    },
+    "house_name": "German1 House",
+    "initial_infantry": {
+      "0": "German1 House,E1,256,79,52,3,Guard,0,None,0,0,0,1,1",
+      "1": "German1 House,E1,256,81,52,3,Guard,0,None,0,0,0,1,1",
+      "2": "German1 House,E1,256,78,63,4,Guard,128,None,0,0,0,1,1",
+      "3": "German1 House,E1,256,82,63,3,Guard,128,None,0,0,0,1,1",
+      "4": "German1 House,CTECH,256,76,59,3,Guard,0,None,0,0,0,1,1",
+      "5": "German1 House,CTECH,256,83,57,3,Guard,0,None,0,0,0,1,1"
+    },
+    "initial_structures": {
+      "1036281": "German1 House,GAPILL,256,82,52,0,None,1,0,1,0,0,None,None,None,0,0",
+      "1036282": "German1 House,GAPILL,256,78,52,0,None,1,0,1,0,0,None,None,None,0,0",
+      "1036283": "German1 House,GAPILE,256,76,56,0,078C6E7C,1,0,1,0,0,None,None,None,1,0"
+    },
+    "map": "SOV02SMD.MAP",
+    "map_sha256": "139a7f17a17cefc20d12c21e9221d94ff6e1e8894ac09ab716fc9f6975d5a665",
+    "native_house_country": 19,
+    "raw_map_iq": null,
+    "raw_rules_iq": {
+      "Aircraft": "3",
+      "AutoCrush": "2",
+      "ContentScan": "3",
+      "GuardArea": "2",
+      "Harvester": "2",
+      "MaxIQLevels": "5",
+      "Production": "5",
+      "RepairSell": "1",
+      "Scatter": "2",
+      "SellBack": "2",
+      "SuperWeapons": "4"
+    },
+    "routes": [
+      {
+        "country_read_calls": [
+          {
+            "buffer": "Germany1,<none>,Germany1 Sell KIA_01,0,1,1,1,0",
+            "caller": "00727279",
+            "capacity": 512,
+            "default": "",
+            "key": "043B06CC",
+            "returned_count": 46,
+            "section": "Triggers"
+          }
+        ],
+        "native_action": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 53,
+          "raw": "53,2,043A9BBC,0,0,0,0,A",
+          "read": "1,53,2,043A9BBC,0,0,0,0,A",
+          "value": 0,
+          "waypoint": 0
+        },
+        "native_action_trigger_reference": "043A9BBC",
+        "native_event": {
+          "kind": 17,
+          "name": "",
+          "results": [],
+          "team_present": false,
+          "value": 0
+        },
+        "native_flags": {
+          "applied": true,
+          "output": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "prior": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "raw": "Germany1,<none>,Germany1 Sell KIA_01,0,1,1,1,0",
+          "read": "Germany1,<none>,Germany1 Sell KIA_01,0,1,1,1,0"
+        },
+        "native_owner_country": 19,
+        "raw_actions": "1,53,2,043A9BBC,0,0,0,0,A",
+        "raw_event": "1,17,0,0",
+        "tags": {
+          "043A9CAC": "0,Germany1 Sell KIA_01,043B06CC"
+        },
+        "trigger": "Germany1,<none>,Germany1 Sell KIA_01,0,1,1,1,0",
+        "trigger_id": "043B06CC"
+      },
+      {
+        "country_read_calls": [
+          {
+            "buffer": "Germany1,<none>,Germany1 Sell KIA_02,1,1,1,1,0",
+            "caller": "00727279",
+            "capacity": 512,
+            "default": "",
+            "key": "043A9BBC",
+            "returned_count": 46,
+            "section": "Triggers"
+          }
+        ],
+        "native_action": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 9,
+          "raw": "9,0,19,0,0,0,0,A",
+          "read": "1,9,0,19,0,0,0,0,A",
+          "value": 19,
+          "waypoint": 0
+        },
+        "native_action_trigger_reference": null,
+        "native_event": {
+          "kind": 13,
+          "name": "",
+          "results": [
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            0,
+            0
+          ],
+          "team_present": false,
+          "value": 45
+        },
+        "native_flags": {
+          "applied": true,
+          "output": [
+            1,
+            1,
+            1,
+            0,
+            0
+          ],
+          "prior": [
+            1,
+            1,
+            1,
+            1,
+            0
+          ],
+          "raw": "Germany1,<none>,Germany1 Sell KIA_02,1,1,1,1,0",
+          "read": "Germany1,<none>,Germany1 Sell KIA_02,1,1,1,1,0"
+        },
+        "native_owner_country": 19,
+        "raw_actions": "1,9,0,19,0,0,0,0,A",
+        "raw_event": "1,13,0,45",
+        "tags": {
+          "043A999C": "0,Germany1 Sell KIA_02,043A9BBC"
+        },
+        "trigger": "Germany1,<none>,Germany1 Sell KIA_02,1,1,1,1,0",
+        "trigger_id": "043A9BBC"
+      }
+    ],
+    "rulesmd_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+  },
+  "schema_version": 1,
+  "strategy": {
+    "existing_payload_replays": [
+      {
+        "actual": {
+          "alternate": [
+            0,
+            0
+          ],
+          "anger_after": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "attack_frame": -5000,
+          "buildings": [
+            {
+              "alive": true,
+              "factory": false,
+              "limbo": false
+            },
+            {
+              "alive": true,
+              "factory": false,
+              "limbo": false
+            }
+          ],
+          "centre": [
+            40,
+            40
+          ],
+          "delay": 109,
+          "enemy": -1,
+          "enemy_after": -1,
+          "events": [
+            [
+              "fire_sale"
+            ],
+            [
+              "all_to_hunt"
+            ],
+            [
+              "draw",
+              536,
+              1,
+              7,
+              4
+            ]
+          ],
+          "frame": 1000,
+          "game_mode": 0,
+          "iq": 0,
+          "iq_superweapons": 3,
+          "label": "urgency_plain_only_mode4_game0",
+          "mode": 4,
+          "mode_after": 4,
+          "money": 5000,
+          "need": 0,
+          "peers": [
+            {
+              "ally": false,
+              "alternate": [
+                0,
+                0
+              ],
+              "anger": 0,
+              "centre": [
+                20,
+                20
+              ],
+              "defeated": false,
+              "passive": false
+            },
+            {
+              "ally": false,
+              "alternate": [
+                0,
+                0
+              ],
+              "anger": 0,
+              "centre": [
+                20,
+                20
+              ],
+              "defeated": false,
+              "passive": false
+            },
+            {
+              "ally": false,
+              "alternate": [
+                0,
+                0
+              ],
+              "anger": 0,
+              "centre": [
+                20,
+                20
+              ],
+              "defeated": false,
+              "passive": false
+            },
+            {
+              "ally": false,
+              "alternate": [
+                0,
+                0
+              ],
+              "anger": 0,
+              "centre": [
+                20,
+                20
+              ],
+              "defeated": false,
+              "passive": false
+            }
+          ],
+          "self_index": 0,
+          "self_passive": false
+        },
+        "matched_all_fields": true,
+        "section": "strategy"
+      },
+      {
+        "actual": {
+          "answer": 108,
+          "called": true,
+          "control": false,
+          "delay": 108,
+          "delay_after": 108,
+          "frame": 208,
+          "game_mode": 1,
+          "human": false,
+          "passive": false,
+          "start": 100,
+          "start_after": 208
+        },
+        "matched_all_fields": true,
+        "section": "schedule"
+      },
+      {
+        "actual": {
+          "buildings": [
+            [
+              false,
+              100
+            ],
+            [
+              false,
+              1
+            ],
+            [
+              false,
+              5
+            ]
+          ],
+          "current": 3,
+          "events": [
+            [
+              "sell",
+              0,
+              1
+            ],
+            [
+              "sell",
+              1,
+              1
+            ],
+            [
+              "sell",
+              2,
+              1
+            ]
+          ],
+          "label": "sells_each_live_building",
+          "result": 0
+        },
+        "matched_all_fields": true,
+        "section": "fire_sale"
+      },
+      {
+        "actual": {
+          "c4_warhead": 12895428,
+          "events": [
+            [
+              "damage",
+              10,
+              900,
+              0,
+              12895428,
+              0,
+              1,
+              1,
+              0
+            ],
+            [
+              "mission",
+              9,
+              15,
+              0
+            ],
+            [
+              "damage",
+              8,
+              125,
+              0,
+              12895428,
+              0,
+              1,
+              1,
+              0
+            ],
+            [
+              "release",
+              5,
+              1,
+              0
+            ],
+            [
+              "team_remove",
+              4,
+              -1,
+              0
+            ],
+            [
+              "mission",
+              4,
+              15,
+              0
+            ],
+            [
+              "mission",
+              0,
+              15,
+              0
+            ]
+          ],
+          "human": false,
+          "label": "mixed_computer",
+          "latch": true,
+          "result": 0,
+          "technos": [
+            {
+              "down": true,
+              "foot": true,
+              "insignificant": false,
+              "kind": 1,
+              "limbo": false,
+              "occupants": 0,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": true,
+              "insignificant": false,
+              "kind": 1,
+              "limbo": false,
+              "occupants": 0,
+              "owner": false,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": false,
+              "foot": true,
+              "insignificant": false,
+              "kind": 1,
+              "limbo": false,
+              "occupants": 0,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": true,
+              "insignificant": false,
+              "kind": 1,
+              "limbo": true,
+              "occupants": 0,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": true,
+              "insignificant": false,
+              "kind": 1,
+              "limbo": false,
+              "occupants": 0,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": true
+            },
+            {
+              "down": true,
+              "foot": false,
+              "insignificant": false,
+              "kind": 6,
+              "limbo": false,
+              "occupants": 2,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": false,
+              "insignificant": false,
+              "kind": 6,
+              "limbo": false,
+              "occupants": 0,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": false,
+              "insignificant": false,
+              "kind": 3,
+              "limbo": false,
+              "occupants": 4,
+              "owner": true,
+              "permanent": false,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": true,
+              "insignificant": true,
+              "kind": 1,
+              "limbo": false,
+              "occupants": 0,
+              "owner": true,
+              "permanent": true,
+              "strength": 125,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": true,
+              "insignificant": false,
+              "kind": 1,
+              "limbo": false,
+              "occupants": 0,
+              "owner": true,
+              "permanent": true,
+              "strength": 300,
+              "team": false
+            },
+            {
+              "down": true,
+              "foot": false,
+              "insignificant": true,
+              "kind": 6,
+              "limbo": false,
+              "occupants": 1,
+              "owner": true,
+              "permanent": true,
+              "strength": 900,
+              "team": false
+            }
+          ]
+        },
+        "matched_all_fields": true,
+        "section": "all_to_hunt"
+      },
+      {
+        "actual": {
+          "control": false,
+          "defense": [
+            0,
+            0
+          ],
+          "defense_frame": -100,
+          "defense_frames": 50,
+          "enemy_index": 1,
+          "events": [],
+          "frame": 1000,
+          "game_mode": 1,
+          "human": false,
+          "kinds": [
+            [
+              0,
+              false
+            ],
+            [
+              1,
+              false
+            ],
+            [
+              2,
+              false
+            ],
+            [
+              3,
+              false
+            ],
+            [
+              4,
+              false
+            ],
+            [
+              5,
+              false
+            ],
+            [
+              6,
+              false
+            ],
+            [
+              7,
+              false
+            ],
+            [
+              8,
+              false
+            ],
+            [
+              9,
+              false
+            ],
+            [
+              10,
+              false
+            ],
+            [
+              11,
+              false
+            ]
+          ],
+          "rally": [
+            30,
+            31
+          ],
+          "storm": false
+        },
+        "matched_all_fields": true,
+        "section": "uncharged_superweapons"
+      }
+    ],
+    "genuine_rng_strategy": {
+      "alternate": [
+        0,
+        0
+      ],
+      "anger_after": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "attack_frame": -5000,
+      "buildings": [
+        {
+          "alive": true,
+          "factory": false,
+          "limbo": false
+        },
+        {
+          "alive": true,
+          "factory": false,
+          "limbo": false
+        }
+      ],
+      "centre": [
+        40,
+        40
+      ],
+      "delay": 109,
+      "enemy": -1,
+      "enemy_after": -1,
+      "events": [
+        [
+          "try_fire_sw"
+        ],
+        [
+          "fire_sale"
+        ],
+        [
+          "all_to_hunt"
+        ],
+        [
+          "draw",
+          536,
+          1,
+          7,
+          4
+        ]
+      ],
+      "frame": 1000,
+      "game_mode": 0,
+      "iq": 5,
+      "iq_superweapons": 4,
+      "label": "campaign_mode4_original_rng",
+      "mode": 4,
+      "mode_after": 4,
+      "money": 5000,
+      "native_rng": {
+        "after": {
+          "main": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+          "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+          "scenario": "0000000001000000680000005379c37874572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+        },
+        "before": {
+          "main": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+          "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+          "scenario": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+        },
+        "calls": [
+          {
+            "high": 7,
+            "kind": "ranged",
+            "low": 1,
+            "result": 4,
+            "return_pc": 5232935,
+            "stream": "scenario"
+          }
+        ],
+        "code_unchanged": true,
+        "raw_draw_count": 1,
+        "raw_draws": [
+          2026076499
+        ],
+        "seed": 31
+      },
+      "need": 0,
+      "peers": [
+        {
+          "ally": false,
+          "alternate": [
+            0,
+            0
+          ],
+          "anger": 0,
+          "centre": [
+            20,
+            20
+          ],
+          "defeated": false,
+          "passive": false
+        },
+        {
+          "ally": false,
+          "alternate": [
+            0,
+            0
+          ],
+          "anger": 0,
+          "centre": [
+            20,
+            20
+          ],
+          "defeated": false,
+          "passive": false
+        },
+        {
+          "ally": false,
+          "alternate": [
+            0,
+            0
+          ],
+          "anger": 0,
+          "centre": [
+            20,
+            20
+          ],
+          "defeated": false,
+          "passive": false
+        },
+        {
+          "ally": false,
+          "alternate": [
+            0,
+            0
+          ],
+          "anger": 0,
+          "centre": [
+            20,
+            20
+          ],
+          "defeated": false,
+          "passive": false
+        }
+      ],
+      "self_index": 0,
+      "self_passive": false
+    },
+    "ordinary_foot_hunt": {
+      "c4_warhead": 12895428,
+      "events": [
+        [
+          "team_remove",
+          1,
+          -1,
+          0
+        ],
+        [
+          "mission",
+          1,
+          15,
+          0
+        ],
+        [
+          "mission",
+          0,
+          15,
+          0
+        ]
+      ],
+      "human": false,
+      "label": "ordinary_foot_no_garrison",
+      "latch": true,
+      "result": 0,
+      "technos": [
+        {
+          "down": true,
+          "foot": true,
+          "insignificant": false,
+          "kind": 1,
+          "limbo": false,
+          "occupants": 0,
+          "owner": true,
+          "permanent": false,
+          "strength": 300,
+          "team": false
+        },
+        {
+          "down": true,
+          "foot": true,
+          "insignificant": false,
+          "kind": 1,
+          "limbo": false,
+          "occupants": 0,
+          "owner": true,
+          "permanent": false,
+          "strength": 300,
+          "team": true
+        },
+        {
+          "down": true,
+          "foot": true,
+          "insignificant": false,
+          "kind": 1,
+          "limbo": false,
+          "occupants": 0,
+          "owner": false,
+          "permanent": false,
+          "strength": 300,
+          "team": false
+        },
+        {
+          "down": false,
+          "foot": true,
+          "insignificant": false,
+          "kind": 1,
+          "limbo": false,
+          "occupants": 0,
+          "owner": true,
+          "permanent": false,
+          "strength": 300,
+          "team": false
+        },
+        {
+          "down": true,
+          "foot": true,
+          "insignificant": false,
+          "kind": 1,
+          "limbo": true,
+          "occupants": 0,
+          "owner": true,
+          "permanent": false,
+          "strength": 300,
+          "team": false
+        }
+      ]
+    },
+    "retained_strategy_sidecar_native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+    "update_cadence_cases_are_independent": true,
+    "update_cadence_from_native_delay": [
+      {
+        "answer": 109,
+        "called": false,
+        "control": false,
+        "delay": 109,
+        "delay_after": 109,
+        "frame": 1108,
+        "game_mode": 0,
+        "human": false,
+        "passive": false,
+        "start": 1000,
+        "start_after": 1000
+      },
+      {
+        "answer": 109,
+        "called": true,
+        "control": false,
+        "delay": 109,
+        "delay_after": 109,
+        "frame": 1109,
+        "game_mode": 0,
+        "human": false,
+        "passive": false,
+        "start": 1000,
+        "start_after": 1109
+      },
+      {
+        "answer": 109,
+        "called": true,
+        "control": false,
+        "delay": 109,
+        "delay_after": 109,
+        "frame": 1110,
+        "game_mode": 0,
+        "human": false,
+        "passive": false,
+        "start": 1000,
+        "start_after": 1110
+      }
+    ]
+  }
+}

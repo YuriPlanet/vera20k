@@ -16,8 +16,9 @@
 use std::collections::BTreeMap;
 
 use super::{EntityDamageEvent, TerrainDamageEvent, cell_spread};
+use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::warhead_type::WarheadType;
@@ -43,16 +44,9 @@ use crate::util::native_x87::distance_3d_leptons;
 
 const BUILDING_CENTER_HEIGHT_ALLOWANCE_LEPTONS: i32 = 2 * LEPTONS_PER_LEVEL as i32;
 
-// GATE A1/A2 CUTOVER (authoritative): the bridge-AoE deck height is now the single
-// gamemd-verified value sourced from `bridge_topology` — the full deck offset is
-// `4 × per_level` (416 leptons = 4 Level units), so the half-deck term used by the
-// object-layer selector is `4 / 2 = 2`. The layer
-// boundary math lives in `CellBridgeView::aoe_object_layer` (strict `>` against
-// `ground_z + half_deck`); this module routes through it so there is ONE source of
-// truth for the deck height. This replaces the old `BRIDGE_AOE_SELECTOR_HEIGHT_LEVELS
-// = 4` const and its per-cell `(deck_level - level).max(4)` floor.
-// (Source: GATE_BRIDGE_DECK_HEIGHT_RESOLUTION_GHIDRA_REPORT.md §3/§5;
-//  GATE_BRIDGE_ONBRIDGE_OCCUPANCY_RESOLUTION_GHIDRA_REPORT.md §a.)
+// AreaDamage48955E..48958D freezes its ground/deck list before any
+// per-cell callback. Bridge topology owns the strict exact-lepton selector;
+// Map578080's existing ground query owns floor sampling and Dummy identity.
 
 /// Optional map context for gamemd bridge object-list selection.
 #[derive(Default)]
@@ -62,9 +56,9 @@ pub(crate) struct AoELayerContext<'a> {
     pub overlay_grid: Option<&'a mut OverlayGrid>,
     pub overlay_registry: Option<&'a OverlayTypeRegistry>,
     pub scenario_rng: Option<&'a mut SimRng>,
-    /// Exact detonation coordinate used by Apply_area_damage receiver-distance
-    /// collection. `impact_z` remains in the established whole-Level domain
-    /// for ground-vs-bridge object-list selection.
+    /// Exact detonation coordinate for receiver distance and object-list
+    /// selection. Only callers without this coordinate use the whole-Level
+    /// `impact_z` adapter below.
     pub air_impact: Option<AoEAirImpact>,
     pub impact_z: i32,
 }
@@ -159,6 +153,18 @@ pub(crate) struct AoEAirImpact {
     pub z_leptons: i32,
 }
 
+impl AoEAirImpact {
+    /// Reconstruct the exact absolute world point from its packed cell and
+    /// subcell fields. Packed negative cell coordinates remain signed.
+    fn world_point(self, impact_rx: u16, impact_ry: u16) -> crate::sim::components::DriveCoord {
+        crate::sim::components::DriveCoord {
+            x: crate::util::lepton::absolute_lepton_axis(impact_rx, self.sub_x),
+            y: crate::util::lepton::absolute_lepton_axis(impact_ry, self.sub_y),
+            z: self.z_leptons,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AoEDamageOrigin {
     pub source_id: u64,
@@ -219,21 +225,22 @@ fn air_impact_from_layer_z(
     sub_y: SimFixed,
     impact_z: i32,
 ) -> Option<AoEAirImpact> {
-    let terrain = terrain?;
-    let cell = terrain.cell(impact_rx, impact_ry)?;
-    let world_x = i32::from(impact_rx)
-        .wrapping_mul(256)
-        .wrapping_add(sub_x.to_num::<i32>());
-    let world_y = i32::from(impact_ry)
-        .wrapping_mul(256)
-        .wrapping_add(sub_y.to_num::<i32>());
-    let ground_z = ground_height_leptons(cell.level, cell.slope_type, world_x, world_y).ok()?;
-    let level_delta = impact_z.wrapping_sub(i32::from(cell.level));
-    Some(AoEAirImpact {
+    let cells = NativeCellQuery::canonical(terrain?);
+    let cell = cells.lookup((impact_rx as i16, impact_ry as i16));
+    let level = cells.ground_fields(cell).0;
+    let mut impact = AoEAirImpact {
         sub_x,
         sub_y,
-        z_leptons: ground_z.wrapping_add(level_delta.wrapping_mul(LEPTONS_PER_LEVEL as i32)),
-    })
+        z_leptons: 0,
+    };
+    let ground_z = crate::sim::movement::ground_pose::query_ground_height(
+        &cells,
+        impact.world_point(impact_rx, impact_ry),
+    )
+    .ok()?;
+    let level_delta = impact_z.wrapping_sub(i32::from(level as i8));
+    impact.z_leptons = ground_z.wrapping_add(level_delta.wrapping_mul(LEPTONS_PER_LEVEL as i32));
+    Some(impact)
 }
 
 #[cfg(test)]
@@ -246,6 +253,9 @@ pub(crate) struct CellTargetDetach {
 
 #[derive(Debug, Default)]
 pub(crate) struct AoEDamageResult {
+    /// Original489357/48955E..48958D local, frozen before cell callbacks and
+    /// reused after receiver dispatch by the area-rocker continuation.
+    pub object_list_layer: ListLayer,
     pub receivers: Vec<AreaDamageReceiver>,
     /// Compatibility-only projection for existing unit tests. Production
     /// callers consume `receivers`, which is the sole ordered authority.
@@ -436,18 +446,21 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
                 .wrapping_mul(LEPTONS_PER_LEVEL as i32),
         });
 
-    if layer_context.occupancy.is_some() && layer_context.terrain.is_some() {
-        let occupancy = layer_context
-            .occupancy
-            .expect("checked occupied Apply_area_damage context");
-        let selected_layer = {
-            let terrain = layer_context
-                .terrain
-                .as_deref()
-                .expect("checked terrain Apply_area_damage context");
-            select_object_damage_layer(terrain, impact_rx, impact_ry, layer_context.impact_z)
-        };
+    result.object_list_layer = layer_context
+        .terrain
+        .as_deref()
+        .map_or(ListLayer::Ground, |terrain| {
+            select_object_damage_layer(terrain, impact_rx, impact_ry, exact_impact)
+        });
 
+    let native_occupancy = layer_context
+        .occupancy
+        .filter(|_| layer_context.terrain.is_some());
+    let selected_layer = match result.object_list_layer {
+        ListLayer::Ground => MovementLayer::Ground,
+        ListLayer::Bridge => MovementLayer::Bridge,
+    };
+    if native_occupancy.is_some() {
         // Native enters the entire airborne query only when the exact impact
         // coordinate is strictly above GetGroundHeight at that same XY. Keep
         // this gate outside bucket materialization: equality observes no air
@@ -497,109 +510,34 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
                 );
             }
         }
-
-        // gamemd cell sweep: count_table[ftol(CellSpread + 0.99)] entries, exact order.
-        for &(dx, dy) in cell_spread::splash_cells(cell_spread) {
-            let Some(rx) = offset_cell_coord(impact_rx, dx) else {
-                continue;
-            };
-            let Some(ry) = offset_cell_coord(impact_ry, dy) else {
-                continue;
-            };
-            if let Some(prelude) = cell_prelude.as_deref_mut() {
-                prelude.before_cell(
-                    rx,
-                    ry,
-                    layer_context.overlay_grid.as_deref_mut(),
-                    layer_context.overlay_registry,
-                    layer_context.terrain.as_deref_mut(),
-                    layer_context.scenario_rng.as_deref_mut(),
-                    layer_context.occupancy,
-                );
-            }
-            route_wall_before_cell_objects(
-                entities,
-                rx,
-                ry,
-                base_damage,
-                warhead,
-                &mut layer_context,
-                &mut cell_prelude,
-                &mut result,
-            );
-            let mut terrain_inserted = selected_layer != MovementLayer::Ground;
-            if let Some(cell_occ) = occupancy.get(rx, ry) {
-                for occupant in cell_occ.iter_layer(selected_layer) {
-                    // TerrainClass was revealed before map technos. Native
-                    // AddContent prepends later nonbuildings and appends
-                    // Buildings, so the captured Terrain record sits at this
-                    // exact represented boundary.
-                    if !terrain_inserted && occupant.is_building {
-                        push_terrain_aoe_damage(
-                            &mut result,
-                            terrain_objects,
-                            rx,
-                            ry,
-                            impact_rx,
-                            impact_ry,
-                            exact_impact,
-                            spread_leptons,
-                            base_damage,
-                            origin.warhead_ref,
-                        );
-                        terrain_inserted = true;
-                    }
-                    push_entity_aoe_damage(
-                        &mut result,
-                        entities,
-                        occupant.entity_id,
-                        impact_rx,
-                        impact_ry,
-                        rx,
-                        ry,
-                        dx == 0 && dy == 0,
-                        exact_impact,
-                        layer_context.terrain.as_deref(),
-                        spread_leptons,
-                        base_damage,
-                        origin.source_id,
-                        origin.source_house,
-                        ground_source_admitted,
-                        origin.warhead_ref,
-                    );
-                }
-            }
-            if !terrain_inserted {
-                // A tree-only cell has no OccupancyGrid entry. Terrain lookup
-                // must remain outside that optional Techno cache.
-                push_terrain_aoe_damage(
-                    &mut result,
-                    terrain_objects,
-                    rx,
-                    ry,
-                    impact_rx,
-                    impact_ry,
-                    exact_impact,
-                    spread_leptons,
-                    base_damage,
-                    origin.warhead_ref,
-                );
-            }
-        }
-
-        return finalize_receiver_isolation_metadata(result, warhead);
     }
 
-    // Even headless/no-occupancy callers still route the center-first wall
-    // sweep when mutable overlay authority was supplied.
+    // AreaDamage4895C7..489603 adds packed WORD offsets, then performs one
+    // Map5657A0 lookup. Retain that allocation identity across synchronous
+    // tiberium/wall callbacks; an inner lookup may restamp only the Dummy.
+    // Both native-list and legacy headless callers share this ordered sweep.
     for &(dx, dy) in cell_spread::splash_cells(cell_spread) {
-        let Some(rx) = offset_cell_coord(impact_rx, dx) else {
-            continue;
+        let requested = (
+            (impact_rx as i16).wrapping_add(dx),
+            (impact_ry as i16).wrapping_add(dy),
+        );
+        let cell = layer_context
+            .terrain
+            .as_deref()
+            .map(|terrain| NativeCellQuery::canonical(terrain).lookup(requested));
+        let real_coord = match cell {
+            Some(real @ NativeCellIdentity::Real(_)) => {
+                let cells = NativeCellQuery::canonical(layer_context.terrain.as_deref().unwrap());
+                let coord = cells.coord(real);
+                Some((coord.0 as u16, coord.1 as u16))
+            }
+            Some(NativeCellIdentity::Dummy) => None,
+            // No CellClass authority exists in legacy headless fixtures.
+            None => Some((requested.0 as u16, requested.1 as u16)),
         };
-        let Some(ry) = offset_cell_coord(impact_ry, dy) else {
-            continue;
-        };
-        if let Some(prelude) = cell_prelude.as_deref_mut() {
+        if let Some((rx, ry)) = real_coord
+            && let Some(prelude) = cell_prelude.as_deref_mut()
+        {
             prelude.before_cell(
                 rx,
                 ry,
@@ -610,16 +548,92 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
                 layer_context.occupancy,
             );
         }
+        // Ordinary resource placement rejects Dummy (admit_new_tiberium_target),
+        // whose constructor47BC21 overlay is-1. Do not invent grid-backed
+        // tiberium there. Existing modeled nonempty Dummy walls still execute
+        // their retained-pointer recursive owner, including RNG and expiry.
+        let wall_target = real_coord.map_or(WallPointerTarget::SharedDummy, |(rx, ry)| {
+            WallPointerTarget::Real(rx, ry)
+        });
         route_wall_before_cell_objects(
             entities,
-            rx,
-            ry,
+            wall_target,
             base_damage,
             warhead,
             &mut layer_context,
             &mut cell_prelude,
             &mut result,
         );
+        let Some(occupancy) = native_occupancy else {
+            continue;
+        };
+        // Dummy E4/E8 heads are null (47BC82/88). Its mutable coordinates must
+        // never turn unrelated rectangular-grid entries into native residents.
+        if cell == Some(NativeCellIdentity::Dummy) {
+            continue;
+        }
+        let (rx, ry) = real_coord.expect("native real cell has its canonical coordinate");
+        let mut terrain_inserted = selected_layer != MovementLayer::Ground;
+        if let Some(cell_occ) = occupancy.get(rx, ry) {
+            for occupant in cell_occ.iter_layer(selected_layer) {
+                // TerrainClass was revealed before map technos. Native
+                // AddContent prepends later nonbuildings and appends
+                // Buildings, so the captured Terrain record sits at this
+                // exact represented boundary.
+                if !terrain_inserted && occupant.is_building {
+                    push_terrain_aoe_damage(
+                        &mut result,
+                        terrain_objects,
+                        rx,
+                        ry,
+                        impact_rx,
+                        impact_ry,
+                        exact_impact,
+                        spread_leptons,
+                        base_damage,
+                        origin.warhead_ref,
+                    );
+                    terrain_inserted = true;
+                }
+                push_entity_aoe_damage(
+                    &mut result,
+                    entities,
+                    occupant.entity_id,
+                    impact_rx,
+                    impact_ry,
+                    rx,
+                    ry,
+                    dx == 0 && dy == 0,
+                    exact_impact,
+                    layer_context.terrain.as_deref(),
+                    spread_leptons,
+                    base_damage,
+                    origin.source_id,
+                    origin.source_house,
+                    ground_source_admitted,
+                    origin.warhead_ref,
+                );
+            }
+        }
+        if !terrain_inserted {
+            // A tree-only cell has no OccupancyGrid entry. Terrain lookup
+            // must remain outside that optional Techno cache.
+            push_terrain_aoe_damage(
+                &mut result,
+                terrain_objects,
+                rx,
+                ry,
+                impact_rx,
+                impact_ry,
+                exact_impact,
+                spread_leptons,
+                base_damage,
+                origin.warhead_ref,
+            );
+        }
+    }
+    if native_occupancy.is_some() {
+        return finalize_receiver_isolation_metadata(result, warhead);
     }
 
     for entity in entities.values() {
@@ -664,8 +678,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
 
 fn route_wall_before_cell_objects(
     entities: &mut EntityStore,
-    rx: u16,
-    ry: u16,
+    target: WallPointerTarget,
     raw_damage: i32,
     warhead: &WarheadType,
     context: &mut AoELayerContext<'_>,
@@ -679,7 +692,13 @@ fn route_wall_before_cell_objects(
     ) else {
         return;
     };
-    let Some(overlay_id) = grid.cell(rx, ry).overlay_id else {
+    let overlay_id = match target {
+        WallPointerTarget::Real(rx, ry) => grid.cell(rx, ry).overlay_id,
+        WallPointerTarget::SharedDummy => context.terrain.as_deref().and_then(|terrain| {
+            u8::try_from(terrain.shared_cell_dummy().overlay_identity_state().0).ok()
+        }),
+    };
+    let Some(overlay_id) = overlay_id else {
         return;
     };
     let Some(flags) = registry.flags(overlay_id) else {
@@ -710,8 +729,7 @@ fn route_wall_before_cell_objects(
             grid,
             registry,
             context.terrain.as_deref_mut(),
-            rx,
-            ry,
+            target,
             routed_damage,
             rng,
             Some(&mut host),
@@ -766,32 +784,23 @@ fn select_object_damage_layer(
     terrain: &ResolvedTerrainGrid,
     impact_rx: u16,
     impact_ry: u16,
-    impact_z: i32,
-) -> MovementLayer {
-    let Some(cell) = terrain.cell(impact_rx, impact_ry) else {
-        return MovementLayer::Ground;
-    };
-
-    // Authoritative: delegate the ground-vs-deck choice to the single verified
-    // selector in bridge_topology. It applies the strict-`>` half-deck boundary
-    // (`impact_z > ground_z + DECK/2`, half = 2 levels) on the structural-bridge gate.
-    // `ground_z` is `cell.level` in the same Level domain as `impact_z` (P0b: the
-    // generic cell-center callers add the fixed deck offset, never a routed
-    // GetGroundHeight, so both operands are cell-Level units here).
-    let view = CellBridgeView::from_resolved(cell);
-    match view.aoe_object_layer(impact_z, cell.level as i32) {
-        ListLayer::Bridge => MovementLayer::Bridge,
-        ListLayer::Ground => MovementLayer::Ground,
-    }
-}
-
-fn offset_cell_coord(origin: u16, delta: i16) -> Option<u16> {
-    let value = origin as i32 + delta as i32;
-    if (0..=u16::MAX as i32).contains(&value) {
-        Some(value as u16)
+    impact: AoEAirImpact,
+) -> ListLayer {
+    let cells = NativeCellQuery::canonical(terrain);
+    let cell = cells.lookup((impact_rx as i16, impact_ry as i16));
+    let view = CellBridgeView::from_query(&cells, cell);
+    // Original48955E gates the Map578080 floor call on the retained cell's
+    // structural flag. Keep its lookup/Dummy side effects conditional too.
+    let floor = if view.is_bridge_cell() {
+        crate::sim::movement::ground_pose::query_ground_height(
+            &cells,
+            impact.world_point(impact_rx, impact_ry),
+        )
+        .expect("AreaDamage floor requires a supported native Cell slope")
     } else {
-        None
-    }
+        0 // Unread by the topology selector on the non-bridge arm.
+    };
+    view.aoe_object_layer(impact.z_leptons, floor)
 }
 
 fn impact_is_above_ground(
@@ -800,17 +809,12 @@ fn impact_is_above_ground(
     impact_ry: u16,
     impact: AoEAirImpact,
 ) -> bool {
-    let Some(cell) = terrain.cell(impact_rx, impact_ry) else {
-        return false;
-    };
-    let world_x = i32::from(impact_rx)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_x.to_num::<i32>());
-    let world_y = i32::from(impact_ry)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_y.to_num::<i32>());
-    ground_height_leptons(cell.level, cell.slope_type, world_x, world_y)
-        .is_ok_and(|ground_z| ground_z < impact.z_leptons)
+    let cells = NativeCellQuery::canonical(terrain);
+    crate::sim::movement::ground_pose::query_ground_height(
+        &cells,
+        impact.world_point(impact_rx, impact_ry),
+    )
+    .is_ok_and(|floor| floor < impact.z_leptons)
 }
 
 fn push_airborne_aoe_damage(
@@ -844,12 +848,8 @@ fn push_airborne_aoe_damage(
         return;
     }
     let target_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain));
-    let impact_x = i32::from(impact_rx)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_x.to_num::<i32>());
-    let impact_y = i32::from(impact_ry)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_y.to_num::<i32>());
+    let impact_point = impact.world_point(impact_rx, impact_ry);
+    let (impact_x, impact_y) = (impact_point.x, impact_point.y);
     let target_x = i32::from(entity.position.rx())
         .wrapping_mul(256)
         .wrapping_add(entity.position.sub_x().to_num::<i32>());
@@ -934,12 +934,8 @@ fn push_entity_aoe_damage(
         return;
     }
 
-    let impact_x = i32::from(impact_rx)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_x.to_num::<i32>());
-    let impact_y = i32::from(impact_ry)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_y.to_num::<i32>());
+    let impact_point = impact.world_point(impact_rx, impact_ry);
+    let (impact_x, impact_y) = (impact_point.x, impact_point.y);
 
     // Building receiver records are keyed to the selected CellClass entry.
     // Both center and adjacent foundation cells use that cell's center
@@ -1023,12 +1019,8 @@ fn push_terrain_aoe_damage(
         return;
     }
 
-    let impact_x = i32::from(impact_rx)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_x.to_num::<i32>());
-    let impact_y = i32::from(impact_ry)
-        .wrapping_mul(256)
-        .wrapping_add(impact.sub_y.to_num::<i32>());
+    let impact_point = impact.world_point(impact_rx, impact_ry);
+    let (impact_x, impact_y) = (impact_point.x, impact_point.y);
     let target_coord = object.world_coord();
     let distance_leptons = distance_3d_leptons(
         [impact_x, impact_y, impact.z_leptons],
@@ -1104,6 +1096,260 @@ mod tests {
         let warhead = WarheadType::from_ini_section("WH", ini.section("WH").expect("WH section"));
         let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art));
         (rules, warhead, registry)
+    }
+
+    #[test]
+    fn wrapped_spread_collects_the_real_zero_cell_on_both_axes() {
+        for transpose in [false, true] {
+            let (_, _, _, rules, mut warhead, mut interner) = bridge_layer_test_fixture();
+            warhead.cell_spread_f64 = 2.;
+            let (impact, receiver, sub) = if transpose {
+                (
+                    (20, u16::MAX),
+                    (20, 0),
+                    (CELL_CENTER_LEPTON, SimFixed::from_num(-1)),
+                )
+            } else {
+                (
+                    (u16::MAX, 20),
+                    (0, 20),
+                    (SimFixed::from_num(-1), CELL_CENTER_LEPTON),
+                )
+            };
+            let mut entities = EntityStore::new();
+            entities.insert(GameEntity::test_default(
+                7, "MTNK", "Soviet", receiver.0, receiver.1,
+            ));
+            let mut occupancy = OccupancyGrid::new();
+            occupancy.add(
+                receiver.0,
+                receiver.1,
+                7,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::PrependNonBuilding,
+            );
+            let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, test_terrain_cell);
+            let result = apply_aoe_damage(
+                &mut entities,
+                impact.0,
+                impact.1,
+                100,
+                &warhead,
+                &rules,
+                &mut interner,
+                "Americans",
+                AoELayerContext {
+                    occupancy: Some(&occupancy),
+                    terrain: Some(&mut terrain),
+                    air_impact: Some(AoEAirImpact {
+                        sub_x: sub.0,
+                        sub_y: sub.1,
+                        z_leptons: 0,
+                    }),
+                    ..AoELayerContext::default()
+                },
+            );
+            assert_eq!(
+                hit_ids(&result.hits),
+                vec![7],
+                "native WORD-1+1 reaches the real zero cell, transpose{transpose}"
+            );
+            assert!(result.hits[0].distance_leptons > 0 && result.hits[0].distance_leptons < 512);
+        }
+    }
+
+    #[test]
+    fn one_sweep_routes_alias_callbacks_and_walls_through_retained_real_identity() {
+        struct RestampDummy {
+            visits: Vec<(u16, u16)>,
+        }
+        impl AoECellPrelude for RestampDummy {
+            fn before_cell(
+                &mut self,
+                rx: u16,
+                ry: u16,
+                _: Option<&mut OverlayGrid>,
+                _: Option<&OverlayTypeRegistry>,
+                terrain: Option<&mut ResolvedTerrainGrid>,
+                _: Option<&mut SimRng>,
+                _: Option<&OccupancyGrid>,
+            ) {
+                self.visits.push((rx, ry));
+                if (rx, ry) == (511, 0) {
+                    let cells = NativeCellQuery::canonical(terrain.unwrap());
+                    assert_eq!(cells.lookup((20, 20)), NativeCellIdentity::Dummy);
+                }
+            }
+        }
+        for native_lists in [false, true] {
+            let (rules, warhead, registry) =
+                wall_aoe_fixture(".5", "WallAbsoluteDestroyer=yes\nWall=yes");
+            let interner = test_interner();
+            let mut terrain = crate::map::resolved_terrain::test_grid(512, 2, test_terrain_cell);
+            let occupancy = OccupancyGrid::new();
+            let mut overlays = OverlayGrid::new(512, 2);
+            overlays.place_overlay(511, 0, 0, 0);
+            let mut rng = SimRng::new(0x489603);
+            let mut prelude = RestampDummy { visits: Vec::new() };
+            let result = apply_aoe_damage_with_terrain_and_scenario(
+                &mut EntityStore::new(),
+                0,
+                1,
+                1,
+                &warhead,
+                &rules,
+                &interner,
+                None,
+                "Americans",
+                AoELayerContext {
+                    occupancy: native_lists.then_some(&occupancy),
+                    terrain: Some(&mut terrain),
+                    overlay_grid: Some(&mut overlays),
+                    overlay_registry: Some(&registry),
+                    scenario_rng: Some(&mut rng),
+                    air_impact: Some(AoEAirImpact {
+                        sub_x: CELL_CENTER_LEPTON,
+                        sub_y: CELL_CENTER_LEPTON,
+                        z_leptons: 0,
+                    }),
+                    impact_z: 0,
+                },
+                None,
+                false,
+                Some(&mut prelude),
+            );
+            assert!(
+                prelude.visits.contains(&(511, 0)),
+                "west of0,1 aliases real511,0 for native and headless sweep"
+            );
+            assert!(prelude.visits.iter().all(|&(x, y)| x < 512 && y < 2));
+            assert_eq!(
+                overlays.cell(511, 0).overlay_id,
+                None,
+                "a callback's Dummy stamp cannot redirect the retained real wall"
+            );
+            assert!(result.wall_mutations.iter().any(|m| (m.rx, m.ry, m.kind)
+                == (
+                    511,
+                    0,
+                    crate::sim::overlay_grid::WallMutationKind::DirectRemoved
+                )));
+        }
+    }
+
+    #[test]
+    fn dummy_sweep_keeps_shared_overlay_but_never_fabricates_grid_residents() {
+        #[derive(Default)]
+        struct ObserveDummy {
+            grid_preludes: usize,
+            dirty_steps: usize,
+        }
+        impl AoECellPrelude for ObserveDummy {
+            fn before_cell(
+                &mut self,
+                _: u16,
+                _: u16,
+                _: Option<&mut OverlayGrid>,
+                _: Option<&OverlayTypeRegistry>,
+                _: Option<&mut ResolvedTerrainGrid>,
+                _: Option<&mut SimRng>,
+                _: Option<&OccupancyGrid>,
+            ) {
+                self.grid_preludes += 1;
+            }
+            fn wall_dirty_step(&mut self, _: WallDirtyStep, _: (u16, u16)) {
+                self.dirty_steps += 1;
+            }
+        }
+        for dummy_wall in [false, true] {
+            let (rules, warhead, registry) =
+                wall_aoe_fixture("0", "WallAbsoluteDestroyer=yes\nWall=yes");
+            let mut interner = test_interner();
+            let tree_ref = interner.intern("TREE01");
+            let mut entities = EntityStore::new();
+            entities.insert(GameEntity::test_default(7, "MTNK", "Soviet", 20, 20));
+            let mut occupancy = OccupancyGrid::new();
+            occupancy.add(
+                20,
+                20,
+                7,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::PrependNonBuilding,
+            );
+            let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, test_terrain_cell);
+            terrain.test_set_native_allocated_cells(&[(1, 1)]);
+            let dummy = terrain.shared_cell_dummy();
+            if dummy_wall {
+                dummy.write_overlay_identity_state(0, 0);
+            }
+            let mut overlays = OverlayGrid::new(32, 32);
+            overlays.place_overlay(20, 20, 0, 0);
+            let mut objects = BTreeMap::new();
+            objects.insert(8, TerrainObjectState::for_test(8, tree_ref, 20, 20));
+            let mut object_cells = BTreeMap::new();
+            object_cells.insert((20, 20), 8);
+            let mut rng = SimRng::new(0x489608);
+            let mut prelude = ObserveDummy::default();
+            let result = apply_aoe_damage_with_terrain_and_scenario(
+                &mut entities,
+                20,
+                20,
+                1,
+                &warhead,
+                &rules,
+                &interner,
+                None,
+                "Americans",
+                AoELayerContext {
+                    occupancy: Some(&occupancy),
+                    terrain: Some(&mut terrain),
+                    overlay_grid: Some(&mut overlays),
+                    overlay_registry: Some(&registry),
+                    scenario_rng: Some(&mut rng),
+                    air_impact: Some(AoEAirImpact {
+                        sub_x: CELL_CENTER_LEPTON,
+                        sub_y: CELL_CENTER_LEPTON,
+                        z_leptons: 0,
+                    }),
+                    impact_z: 0,
+                },
+                Some(TerrainCollectionView {
+                    objects: &objects,
+                    cells: &object_cells,
+                }),
+                false,
+                Some(&mut prelude),
+            );
+            assert!(
+                result.receivers.is_empty(),
+                "Dummy nullE4/E8 cannot acquire grid-backed Techno/Terrain from its coordinate"
+            );
+            assert_eq!(
+                overlays.cell(20, 20).overlay_id,
+                Some(0),
+                "a missing Cell does not target a fake rectangular-grid overlay"
+            );
+            assert_eq!(
+                dummy.overlay_identity_state().0,
+                -1,
+                "modeled nonempty Dummy wall still executes the existing wall owner"
+            );
+            assert!(
+                result.wall_mutations.is_empty(),
+                "Dummy never exports a fake real-cell render mutation"
+            );
+            assert_eq!(
+                prelude.grid_preludes, 0,
+                "Dummy does not fabricate a grid-backed resource prelude"
+            );
+            assert_eq!(
+                prelude.dirty_steps > 0,
+                dummy_wall,
+                "a nonempty Dummy wall keeps its existing native dirty transaction"
+            );
+        }
     }
 
     #[test]
@@ -2511,6 +2757,217 @@ mod tests {
         .hits;
 
         assert_eq!(hit_ids(&hits), vec![1]);
+    }
+
+    #[test]
+    fn bridge_object_layer_keeps_the_exact_impact_lepton_remainder() {
+        // Apply_area_damage48955E..48958D compares the exact impact against
+        // Map578080's floor plus half of the original416-lepton deck. The
+        // production caller supplies both the coordinate and its whole-Level
+        // fallback;209 must not be rounded down to the208 boundary.
+        for (z_leptons, expected) in [(208, 1), (209, 2)] {
+            let (mut entities, occupancy, mut terrain, rules, warhead, mut interner) =
+                bridge_layer_test_fixture();
+            let hits = apply_aoe_damage(
+                &mut entities,
+                5,
+                5,
+                100,
+                &warhead,
+                &rules,
+                &mut interner,
+                "Americans",
+                AoELayerContext {
+                    occupancy: Some(&occupancy),
+                    terrain: Some(&mut terrain),
+                    air_impact: Some(AoEAirImpact {
+                        sub_x: CELL_CENTER_LEPTON,
+                        sub_y: CELL_CENTER_LEPTON,
+                        z_leptons,
+                    }),
+                    impact_z: z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32),
+                    ..AoELayerContext::default()
+                },
+            )
+            .hits;
+            assert_eq!(hit_ids(&hits), vec![expected], "impact Z {z_leptons}");
+        }
+    }
+
+    #[test]
+    fn bridge_object_layer_uses_signed_slope_floor_at_exact_subcell_xy() {
+        // Reuse the established Cell47B3A0 controls from util::lepton: level2
+        // ramp1 at(64,192) gives234; signed levelFF ramp1 at(1,0) gives-102.
+        for (level, sub_x, sub_y, floor) in [(2, 64, 192, 234), (0xff, 1, 0, -102)] {
+            for (above, expected) in [(208, ListLayer::Ground), (209, ListLayer::Bridge)] {
+                let (mut entities, occupancy, mut terrain, rules, warhead, mut interner) =
+                    bridge_layer_test_fixture();
+                let cell = terrain.cell_mut(5, 5).unwrap();
+                cell.level = level;
+                cell.slope_type = 1;
+                let z = floor + above;
+                let result = apply_aoe_damage(
+                    &mut entities,
+                    5,
+                    5,
+                    100,
+                    &warhead,
+                    &rules,
+                    &mut interner,
+                    "Americans",
+                    AoELayerContext {
+                        occupancy: Some(&occupancy),
+                        terrain: Some(&mut terrain),
+                        air_impact: Some(AoEAirImpact {
+                            sub_x: SimFixed::from_num(sub_x),
+                            sub_y: SimFixed::from_num(sub_y),
+                            z_leptons: z,
+                        }),
+                        impact_z: z.div_euclid(LEPTONS_PER_LEVEL as i32),
+                        ..AoELayerContext::default()
+                    },
+                );
+                assert_eq!(
+                    result.object_list_layer, expected,
+                    "level{level} sub{sub_x},{sub_y} Z{z}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_object_layer_is_frozen_before_any_cell_prelude() {
+        struct ChangeBridge {
+            flags: u32,
+            visited: bool,
+        }
+        impl AoECellPrelude for ChangeBridge {
+            fn before_cell(
+                &mut self,
+                rx: u16,
+                ry: u16,
+                _: Option<&mut OverlayGrid>,
+                _: Option<&OverlayTypeRegistry>,
+                terrain: Option<&mut ResolvedTerrainGrid>,
+                _: Option<&mut SimRng>,
+                _: Option<&OccupancyGrid>,
+            ) {
+                if (rx, ry) == (5, 5) {
+                    self.visited = true;
+                    terrain
+                        .unwrap()
+                        .cell_mut(5, 5)
+                        .unwrap()
+                        .bridge_facts
+                        .raw_flags = self.flags;
+                }
+            }
+        }
+        for initial_bridge in [false, true] {
+            let (mut entities, occupancy, mut terrain, rules, warhead, interner) =
+                bridge_layer_test_fixture();
+            terrain.cell_mut(5, 5).unwrap().bridge_facts.raw_flags = if initial_bridge {
+                BRIDGE_FLAG_STRUCTURAL
+            } else {
+                0
+            };
+            let mut prelude = ChangeBridge {
+                flags: if initial_bridge {
+                    0
+                } else {
+                    BRIDGE_FLAG_STRUCTURAL
+                },
+                visited: false,
+            };
+            let result = apply_aoe_damage_with_terrain_and_scenario(
+                &mut entities,
+                5,
+                5,
+                100,
+                &warhead,
+                &rules,
+                &interner,
+                None,
+                "Americans",
+                AoELayerContext {
+                    occupancy: Some(&occupancy),
+                    terrain: Some(&mut terrain),
+                    air_impact: Some(AoEAirImpact {
+                        sub_x: CELL_CENTER_LEPTON,
+                        sub_y: CELL_CENTER_LEPTON,
+                        z_leptons: 209,
+                    }),
+                    impact_z: 2,
+                    ..AoELayerContext::default()
+                },
+                None,
+                false,
+                Some(&mut prelude),
+            );
+            assert!(prelude.visited);
+            assert_eq!(
+                result.object_list_layer,
+                if initial_bridge {
+                    ListLayer::Bridge
+                } else {
+                    ListLayer::Ground
+                }
+            );
+            assert_eq!(
+                hit_ids(&result.hits),
+                vec![if initial_bridge { 2 } else { 1 }],
+                "callbacks cannot reselect this call's list"
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_object_layer_keeps_fixed_stride_alias_and_live_dummy_floor() {
+        let (_, _, terrain, _, _, _) = bridge_layer_test_fixture();
+        let impact = AoEAirImpact {
+            sub_x: CELL_CENTER_LEPTON,
+            sub_y: CELL_CENTER_LEPTON,
+            z_leptons: 209,
+        };
+        // (517,4) aliases the allocated native512-stride slot(5,5).
+        assert_eq!(
+            select_object_damage_layer(&terrain, 517, 4, impact),
+            ListLayer::Bridge
+        );
+        let dummy = terrain.shared_cell_dummy();
+        dummy.test_set_retained_bridge_flags(BRIDGE_FLAG_STRUCTURAL);
+        terrain.test_set_dummy_cell_level_slope(-1, 1);
+        terrain.stamp_dummy_cell_requested_coord(77, 88);
+        for (z_leptons, expected) in [(106, ListLayer::Ground), (107, ListLayer::Bridge)] {
+            // Native signed levelFF ramp1 at local(1,0) is-102; Map578080
+            // stamps this same retained Dummy and adds no deck to its floor.
+            let impact = AoEAirImpact {
+                sub_x: SimFixed::from_num(1),
+                sub_y: SimFixed::ZERO,
+                z_leptons,
+            };
+            assert_eq!(
+                select_object_damage_layer(&terrain, 20, 20, impact),
+                expected
+            );
+            assert_eq!(dummy.snapshot().coord, (20, 20));
+        }
+        assert_eq!(terrain.dummy_cell_level_slope(), (-1, 1));
+        // Whole-Level compatibility uses the same canonical lookup/floor arm.
+        let legacy = air_impact_from_layer_z(
+            Some(&terrain),
+            20,
+            20,
+            SimFixed::from_num(1),
+            SimFixed::ZERO,
+            1,
+        )
+        .unwrap();
+        assert_eq!(legacy.z_leptons, 106);
+        assert_eq!(
+            select_object_damage_layer(&terrain, 20, 20, legacy),
+            ListLayer::Ground
+        );
     }
 
     #[test]

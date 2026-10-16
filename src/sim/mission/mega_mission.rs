@@ -314,43 +314,21 @@ impl Simulation {
         rules: &RuleSet,
         ctx: ObjectAiCtx<'_>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(ArrivalStep::Scan {
+            drop_tarcom,
+            fallback,
+        }) = self.foot_arrival_step(id, rules, ctx.overlay_registry)
+        else {
             return;
         };
-        let mega = entity.mega_mission;
-        let tarcom = entity.attack_target.target();
-        let in_reach = |sim: &Self, target| {
-            sim.foot_in_auxiliary_search_range(id, target, rules, ctx.overlay_registry)
-        };
-        let fallback = if mega.destination.is_some() {
-            if mega.have_attack_move_target {
-                if in_reach(self, tarcom) {
-                    return;
-                }
-                // `0x004DF3D3`.
-                self.substrate
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .attack_target
-                    .set(None);
-            }
-            None
-        } else {
-            if mega.target.is_some() && in_reach(self, mega.target)
-                || mega.have_attack_move_target && in_reach(self, tarcom)
-            {
-                return;
-            }
-            // `0x004DF46A`.
+        if drop_tarcom {
             self.substrate
                 .entities
                 .get_mut(id)
                 .unwrap()
                 .attack_target
                 .set(None);
-            Some(mega.target)
-        };
+        }
         let found = crate::sim::world::retaliate_and_scan(
             self,
             id,
@@ -372,6 +350,41 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.mega_mission.have_attack_move_target = true;
         }
+    }
+
+    /// What [`Self::foot_arrival_target_handler`] does with `id` as it
+    /// stands, before any of its writes; `None` without the object.
+    pub(crate) fn foot_arrival_step(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> Option<ArrivalStep> {
+        let entity = self.substrate.entities.get(id)?;
+        let mega = entity.mega_mission;
+        let tarcom = entity.attack_target.target();
+        let in_reach = |target| self.foot_in_auxiliary_search_range(id, target, rules, registry);
+        Some(if mega.destination.is_some() {
+            if mega.have_attack_move_target && in_reach(tarcom) {
+                ArrivalStep::Hold
+            } else {
+                // `0x004DF3D3`.
+                ArrivalStep::Scan {
+                    drop_tarcom: mega.have_attack_move_target,
+                    fallback: None,
+                }
+            }
+        } else if mega.target.is_some() && in_reach(mega.target)
+            || mega.have_attack_move_target && in_reach(tarcom)
+        {
+            ArrivalStep::Hold
+        } else {
+            // `0x004DF46A`.
+            ArrivalStep::Scan {
+                drop_tarcom: true,
+                fallback: Some(mega.target),
+            }
+        })
     }
 
     /// `Queue_Mission(mission, 1)` (vt+0x1E8): queued, and committed at once
@@ -411,6 +424,21 @@ impl Simulation {
         }
         self.techno_can_fire_at_target(id, target, rules, registry)
     }
+}
+
+/// What Arrival_Target_Handler (`0x004DF3A0`) does with an attack-mover
+/// ([`Simulation::foot_arrival_step`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArrivalStep {
+    /// A target in reach holds the handler off its scan.
+    Hold,
+    /// The handler scans, first dropping the TarCom without the class setter
+    /// when `drop_tarcom`, and writes `fallback` back as the TarCom when the
+    /// scan finds nothing.
+    Scan {
+        drop_tarcom: bool,
+        fallback: Option<Option<TargetKind>>,
+    },
 }
 
 #[cfg(test)]

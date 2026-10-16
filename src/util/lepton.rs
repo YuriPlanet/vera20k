@@ -5,8 +5,9 @@
 //!
 //! To avoid SimFixed (I16F16, max 32767) overflow on large maps, we store lepton
 //! positions as **cell coordinate + sub-cell offset** rather than absolute leptons.
-//! The sub-cell offset (`sub_x`, `sub_y`) ranges from 0 to 256 within the cell,
-//! with 128 being the cell center.
+//! Map sub-cell offsets use 128 for the cell center. Native signed coordinate
+//! packets truncate toward zero, retaining a negative sub-cell remainder for
+//! negative world positions.
 //!
 //! ## Dependency rules
 //! - util/ has NO dependencies on other game modules.
@@ -138,6 +139,20 @@ pub const fn lepton_to_cell(v: i32) -> i32 {
 /// [`lepton_to_cell`] stored into a 16-bit `CellStruct` field.
 pub const fn lepton_to_cell_packed(v: i32) -> i16 {
     lepton_to_cell(v) as i16
+}
+
+/// Signed native cell word and the remaining integer leptons. AreaDamage
+///489309..489330 and Object41BEA0 use the shared truncating conversion above.
+/// Consumed native query controls: `tools/spatial_oracle/map_queries.json`.
+/// The remainder is signed too: -257 is cell -1 plus -1 lepton, not cell0+255.
+/// The packed word intentionally wraps outside the native signed-cell domain;
+/// callers retaining an arbitrary absolute coordinate must keep that coordinate.
+pub(crate) fn split_lepton_axis(leptons: i32) -> (u16, SimFixed) {
+    let cell = lepton_to_cell(leptons);
+    (
+        cell as i16 as u16,
+        SimFixed::from_num(leptons - cell * LEPTONS_PER_CELL_I32),
+    )
 }
 
 /// Levels a high bridge deck sits above the cell that carries it.
@@ -338,8 +353,12 @@ pub(crate) fn absolute_leptons_to_screen(
     (screen_x as f32, screen_y as f32)
 }
 
-fn absolute_lepton_axis(cell: u16, sub_cell: SimFixed) -> i32 {
-    let absolute_fixed = i64::from(cell) * 256 * SIM_FIXED_SCALE + i64::from(sub_cell.to_bits());
+/// Compose a native signed CellStruct word and subcell offset before chopping
+/// fractional leptons. This is the shared inverse for packed cell packets;
+/// the original absolute coordinate remains authoritative when one is retained.
+pub(crate) fn absolute_lepton_axis(cell: u16, sub_cell: SimFixed) -> i32 {
+    let absolute_fixed =
+        i64::from(cell as i16) * 256 * SIM_FIXED_SCALE + i64::from(sub_cell.to_bits());
     (absolute_fixed / SIM_FIXED_SCALE) as i32
 }
 

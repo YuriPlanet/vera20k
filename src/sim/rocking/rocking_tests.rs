@@ -1,686 +1,280 @@
-//! Tests for the rocking system. Populated incrementally by Tasks 7–10.
+//! Consumers of unmodified original70B280/70B570 execution. Expected
+//! state words are native output, not calculations from the Rust formula.
 
-#![cfg(test)]
-
-use crate::sim::rocking::RockingState;
-use crate::sim::rocking::impulse::apply_rocker_impulse;
-use crate::sim::rocking::rocking_system::{
-    IMPULSE_VEL_CAP, NORMAL_RANGE_PI2, SATURATION_PI4, SATURATION_PI10, TILT_DEADBAND,
-    advance_axis, advance_ship_rocking,
-};
+use super::rocking_system::{RockingUpdateInputs, advance_state};
+use super::{RockerImpulse, RockingState, apply_rocker_impulse};
 use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::NativeF32Bits;
+use serde_json::Value;
 
-const DEFAULT_WEIGHT: SimFixed = SimFixed::lit("2.0");
-
-const FALLBACK: SimFixed = SimFixed::lit("0.1");
-
-#[test]
-fn zero_velocity_force_zeros_angle() {
-    let mut a = SimFixed::lit("0.5");
-    let mut v = SimFixed::ZERO;
-    advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    assert_eq!(a, SimFixed::ZERO);
+fn word(value: &Value) -> NativeF32Bits {
+    NativeF32Bits::from_bits(u32::from_str_radix(value.as_str().unwrap(), 16).unwrap())
 }
 
-#[test]
-fn integrate_simple() {
-    let mut a = SimFixed::lit("0.1");
-    let mut v = SimFixed::lit("0.01");
-    advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    // Integrate: a = 0.1 + 0.01 = 0.11; below cap, unlinked + in-range so
-    // saturation skipped. Dampen by BASE_DECAY_RATE: v = 0.01 - 0.002 = 0.008.
-    let eps = SimFixed::lit("0.0001");
-    assert!((a - SimFixed::lit("0.11")).abs() < eps);
-    assert!((v - SimFixed::lit("0.008")).abs() < eps);
-}
-
-#[test]
-fn saturation_clamps_when_unlinked_and_crossing() {
-    let mut a = SimFixed::lit("0.78"); // just below π/4 ≈ 0.7854
-    let mut v = SimFixed::lit("0.05");
-    advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    // new = 0.83; crosses π/4 from below; unlinked + in_range → clamp.
-    assert_eq!(a, SATURATION_PI4);
-    assert_eq!(v, SimFixed::ZERO);
-}
-
-#[test]
-fn saturation_does_not_clamp_when_direct_rocker_linked() {
-    let mut a = SimFixed::lit("0.78");
-    let mut v = SimFixed::lit("0.05");
-    advance_axis(
-        &mut a,
-        &mut v,
-        SATURATION_PI4,
-        true, /* DirectRocker-linked */
-        FALLBACK,
-    );
-    // Linked → saturation skipped; angle drifts past π/4.
-    assert!(a > SATURATION_PI4);
-}
-
-#[test]
-fn pi10_cap_is_supported_via_parameter() {
-    // ±π/10 cap is the L8 forwards-during-crush path. The crush gate is
-    // currently DEFERRED at the caller; this test pins that the math itself
-    // still clamps correctly when a tighter cap is supplied. Re-enabling L8
-    // later then becomes a one-line change at the caller.
-    let mut a = SimFixed::lit("0.30"); // just below π/10 ≈ 0.3142
-    let mut v = SimFixed::lit("0.05");
-    advance_axis(&mut a, &mut v, SATURATION_PI10, false, FALLBACK);
-    assert_eq!(a, SATURATION_PI10);
-    assert_eq!(v, SimFixed::ZERO);
-}
-
-#[test]
-fn deadband_snaps_to_zero() {
-    // For the deadband branch to fire, the integrated angle must stay inside
-    // TILT_DEADBAND after the integrate step. Start a=0 with the tiniest
-    // possible nonzero velocity so v != 0 (L10 doesn't fire) but angle stays
-    // <= deadband after integrate.
-    let mut a = SimFixed::ZERO;
-    let mut v = SimFixed::DELTA;
-    advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    assert_eq!(a, SimFixed::ZERO);
-    assert_eq!(v, SimFixed::ZERO);
-}
-
-#[test]
-fn convergence_decays_to_zero_over_time() {
-    let mut a = SimFixed::ZERO;
-    // 0.01 is a clean multiple of BASE_DECAY_RATE in I16F16 fixed-point, so
-    // velocity decays to exactly ZERO in 5 dampening ticks; the L10
-    // short-circuit then forces angle to 0 on the next tick. Larger seed
-    // values that aren't clean multiples leave a few DELTA units of residual
-    // velocity that oscillates around 0 forever and takes hundreds of ticks
-    // to drain through the integrate-step toward deadband.
-    let mut v = SimFixed::lit("0.01");
-    for _ in 0..100 {
-        advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    }
-    assert!(a.abs() <= TILT_DEADBAND);
-    assert!(v.abs() <= TILT_DEADBAND);
-}
-
-#[test]
-fn direct_rocker_link_dampens_more_slowly() {
-    // FALLBACK = 0.1 → linked decay is 0.1 * BASE_DECAY_RATE = 0.0002/tick,
-    // 10× slower than the unlinked 0.002/tick. After 50 ticks a linked rocker
-    // should still be carrying noticeably more velocity than an unlinked one.
-    let mut a_linked = SimFixed::lit("0.1");
-    let mut v_linked = SimFixed::lit("0.04");
-    let mut a_unlinked = SimFixed::lit("0.1");
-    let mut v_unlinked = SimFixed::lit("0.04");
-    for _ in 0..50 {
-        advance_axis(&mut a_linked, &mut v_linked, SATURATION_PI4, true, FALLBACK);
-        advance_axis(
-            &mut a_unlinked,
-            &mut v_unlinked,
-            SATURATION_PI4,
-            false,
-            FALLBACK,
-        );
-    }
-    assert!(
-        v_linked.abs() > v_unlinked.abs(),
-        "linked v={:?} should retain more velocity than unlinked v={:?}",
-        v_linked,
-        v_unlinked
-    );
-}
-
-#[test]
-fn ship_rocking_integrates_without_damping() {
-    let mut r = RockingState {
-        vel_sideways: SimFixed::lit("0.01"),
-        ..Default::default()
-    };
-    advance_ship_rocking(&mut r, true);
-    assert_eq!(r.angle_sideways, SimFixed::lit("0.01"));
-    // Velocity is unchanged — no damping in this path.
-    assert_eq!(r.vel_sideways, SimFixed::lit("0.01"));
-}
-
-#[test]
-fn ship_rocking_clamps_upper_sideways() {
-    let mut r = RockingState {
-        angle_sideways: SATURATION_PI4,
-        vel_sideways: SimFixed::lit("0.1"),
-        ..Default::default()
-    };
-    advance_ship_rocking(&mut r, true);
-    assert_eq!(r.angle_sideways, SATURATION_PI4);
-}
-
-#[test]
-fn ship_rocking_clamps_lower_both_axes() {
-    let mut r = RockingState {
-        angle_forwards: -SATURATION_PI4 + SimFixed::lit("0.001"),
-        vel_forwards: SimFixed::lit("-0.01"),
-        angle_sideways: -SATURATION_PI4 + SimFixed::lit("0.001"),
-        vel_sideways: SimFixed::lit("-0.01"),
-        ..Default::default()
-    };
-    advance_ship_rocking(&mut r, true);
-    assert_eq!(r.angle_forwards, -SATURATION_PI4);
-    assert_eq!(r.angle_sideways, -SATURATION_PI4);
-}
-
-#[test]
-fn ship_rocking_forwards_upper_is_unclamped() {
-    // Asymmetric: forwards upper is NOT clamped (only sideways upper).
-    let mut r = RockingState {
-        angle_forwards: SATURATION_PI4,
-        vel_forwards: SimFixed::lit("0.1"),
-        ..Default::default()
-    };
-    advance_ship_rocking(&mut r, true);
-    assert!(
-        r.angle_forwards > SATURATION_PI4,
-        "forwards should drift past +π/4 unclamped, got {:?}",
-        r.angle_forwards,
-    );
-}
-
-#[test]
-fn ship_rocking_no_clamp_when_type_doesnt_support() {
-    let mut r = RockingState {
-        angle_sideways: SATURATION_PI4 + SimFixed::lit("0.5"),
-        vel_sideways: SimFixed::lit("0.01"),
-        ..Default::default()
-    };
-    advance_ship_rocking(&mut r, false);
-    assert!(r.angle_sideways > SATURATION_PI4);
-}
-
-#[test]
-fn impulse_caps_at_005_per_axis() {
-    let mut r = RockingState::default();
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::from_num(100),
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    assert!(r.vel_sideways.abs() <= IMPULSE_VEL_CAP);
-    assert!(r.vel_forwards.abs() <= IMPULSE_VEL_CAP);
-}
-
-#[test]
-fn impulse_direction_from_x_axis_writes_sideways_only() {
-    let mut r = RockingState::default();
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::lit("4.0"),
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    // Force=4, Weight=2 → force_scaled = 0.04 × 4 / 2 = 0.08 → clamps to 0.05.
-    // nx = +1 → vel_side = -0.05; ny = 0 → vel_fwd = 0.
-    assert!(r.vel_sideways < SimFixed::ZERO);
-    assert_eq!(r.vel_forwards, SimFixed::ZERO);
-}
-
-#[test]
-fn impulse_zero_distance_does_nothing() {
-    let mut r = RockingState::default();
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::ONE,
-        DEFAULT_WEIGHT,
-        SimFixed::ZERO,
-        SimFixed::ZERO,
-    );
-    assert_eq!(r.vel_sideways, SimFixed::ZERO);
-    assert_eq!(r.vel_forwards, SimFixed::ZERO);
-}
-
-#[test]
-fn impulse_stacks_additively_until_cap() {
-    let mut r = RockingState::default();
-    // force=1.0, weight=2 → force_scaled = 0.04 × 1 / 2 = 0.02 (passes 0.01 floor).
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::lit("1.0"),
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    let v1 = r.vel_sideways;
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::lit("1.0"),
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    let v2 = r.vel_sideways;
-    assert!(v2.abs() > v1.abs() || v2.abs() == IMPULSE_VEL_CAP);
-}
-
-#[test]
-fn impulse_too_weak_dropped_by_floor_gate() {
-    let mut r = RockingState::default();
-    // force=0.1, weight=2 → force_scaled = 0.04 × 0.1 / 2 = 0.002 < 0.01 gate.
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::lit("0.1"),
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    assert_eq!(r.vel_sideways, SimFixed::ZERO);
-    assert_eq!(r.vel_forwards, SimFixed::ZERO);
-}
-
-#[test]
-fn impulse_heavier_unit_rocks_less_per_equal_force() {
-    // L12c: Weight=5 (Aircraft Carrier) rocks 2.5× less than Weight=2 default.
-    // Pick a force in the linear regime (below the 0.05 cap):
-    //   light: 0.04 × 1.5 / 2.0 = 0.03
-    //   heavy: 0.04 × 1.5 / 5.0 = 0.012
-    //   ratio: 0.03 / 0.012 = 2.5
-    let force = SimFixed::lit("1.5");
-    let mut light = RockingState::default();
-    apply_rocker_impulse(
-        &mut light,
-        force,
-        SimFixed::lit("2.0"),
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    let mut heavy = RockingState::default();
-    apply_rocker_impulse(
-        &mut heavy,
-        force,
-        SimFixed::lit("5.0"),
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    let ratio = light.vel_sideways.abs() / heavy.vel_sideways.abs();
-    assert!(
-        ratio > SimFixed::lit("2.4") && ratio < SimFixed::lit("2.6"),
-        "expected ~2.5× ratio (light/heavy), got {:?}",
-        ratio
-    );
-}
-
-#[test]
-fn impulse_zero_weight_falls_back_to_default() {
-    // Defensive: malformed INI section with Weight=0 must not panic or
-    // produce inf — should behave identically to Weight=2.0.
-    let mut r = RockingState::default();
-    apply_rocker_impulse(
-        &mut r,
-        SimFixed::lit("4.0"),
-        SimFixed::ZERO,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    let mut reference = RockingState::default();
-    apply_rocker_impulse(
-        &mut reference,
-        SimFixed::lit("4.0"),
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    assert_eq!(r.vel_sideways, reference.vel_sideways);
-}
-
-#[test]
-fn impulse_forwards_axis_halved_relative_to_sideways() {
-    // L12b asymmetry: pure +Y direction → vel_fwd = +ny × force_scaled × 0.5;
-    // pure +X direction → vel_side = -nx × force_scaled (no halving). Same
-    // force magnitude → forwards-axis impulse is exactly half the sideways one.
-    let force = SimFixed::lit("4.0");
-    let mut y_only = RockingState::default();
-    apply_rocker_impulse(
-        &mut y_only,
-        force,
-        DEFAULT_WEIGHT,
-        SimFixed::ZERO,
-        SimFixed::ONE,
-    );
-    let mut x_only = RockingState::default();
-    apply_rocker_impulse(
-        &mut x_only,
-        force,
-        DEFAULT_WEIGHT,
-        SimFixed::ONE,
-        SimFixed::ZERO,
-    );
-    // Sideways component (from +X impulse) is the full force-scaled
-    // value (clamped at 0.05); forwards component (from +Y) is half.
-    assert!(
-        (x_only.vel_sideways.abs() - SimFixed::lit("0.05")).abs() < SimFixed::lit("0.001"),
-        "x-only sideways should be ≈0.05, got {:?}",
-        x_only.vel_sideways,
-    );
-    assert!(
-        (y_only.vel_forwards.abs() - SimFixed::lit("0.025")).abs() < SimFixed::lit("0.001"),
-        "y-only forwards should be ≈0.025 (halved), got {:?}",
-        y_only.vel_forwards,
-    );
-}
-
-#[test]
-fn out_of_range_velocity_runs_away_not_inward() {
-    // Out of normal range (|angle| > π/2), dampening sign flips so velocity
-    // grows in its own direction — this is the runaway path the L30
-    // self-destruct catches at ±π.
-    let mut a = NORMAL_RANGE_PI2 + SimFixed::lit("0.1");
-    let mut v = SimFixed::lit("0.01");
-    let v_initial = v;
-    advance_axis(&mut a, &mut v, SATURATION_PI4, false, FALLBACK);
-    // Integrate pushed angle further past π/2; out-of-range branch adds
-    // BASE_DECAY_RATE to a positive velocity → grows.
-    assert!(
-        v > v_initial,
-        "out-of-range velocity should grow, was {:?} now {:?}",
-        v_initial,
-        v
-    );
-}
-
-// ---- Integration tests (Task 12) -----------------------------------------
-//
-// End-to-end exercises of the full `Simulation::advance_tick` pipeline with
-// one vehicle that has rocking enabled. Validates:
-//   1. A finite impulse decays back to neutral over O(60) ticks.
-//   2. Two seeded runs given identical impulses produce bit-identical
-//      `state_hash()` outputs every tick (lockstep / replay invariant).
-//
-// The helper builds the minimum scaffolding `advance_tick` needs: a flat
-// 10×10 terrain, a path grid, a `RuleSet` with one vehicle type, and the
-// spawned MTNK with `rocking = Some(_)` set (production-side spawn doesn't
-// yet initialize that field; see plan §"Open Questions" — vehicles will get
-// it by default once combat lands).
-
-use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
-use crate::rules::ini_parser::IniFile;
-use crate::rules::ruleset::RuleSet;
-use crate::sim::pathfinding::PathGrid;
-use crate::sim::world::Simulation;
-
-const GRID_W: u16 = 10;
-const GRID_H: u16 = 10;
-const TICK_MS: u32 = 33;
-
-fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
-    crate::map::resolved_terrain::test_grid(width, height, |x, y| ResolvedTerrainCell {
-        filled_clear: true,
-        speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
-        base_speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
-        ..crate::map::resolved_terrain::test_flat_cell(x, y)
-    })
-}
-
-fn minimal_rules() -> RuleSet {
-    let ini = IniFile::from_str(
-        "[InfantryTypes]\n\n\
-         [VehicleTypes]\n0=MTNK\n\n\
-         [AircraftTypes]\n\n\
-         [BuildingTypes]\n\n\
-         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\n",
-    );
-    RuleSet::from_ini(&ini).expect("minimal rules should parse")
-}
-
-/// Build a simulation with a single MTNK at (5, 5), flat terrain, and the
-/// entity's `RockingState` initialized to default. Returns `(sim, rules,
-/// path_grid)` so each test can drive `advance_tick` directly.
-fn make_test_simulation_with_one_vehicle() -> (Simulation, RuleSet, PathGrid) {
-    let mut rules = minimal_rules();
-    rules.supply_loaded_voxel_for_test("MTNK");
-    let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
-        base: 0,
-        off_fc: -10,
-        off_100: -1,
-        off_104: 20,
-        off_108: 11,
-    });
-    sim.resolved_terrain = Some(flat_terrain(GRID_W, GRID_H));
-    let path_grid = PathGrid::new(GRID_W, GRID_H);
-
-    let id = sim
-        .spawn_object("MTNK", "Americans", 5, 5, 64, &rules)
-        .expect("spawn MTNK");
-    // Production-side spawn doesn't initialize `rocking` yet (sim-side only
-    // path lands with combat in Task 19); flip it on here so the rocking
-    // pipeline actually runs against this entity.
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .expect("spawned entity present")
-        .rocking = Some(RockingState::default());
-    (sim, rules, path_grid)
-}
-
-fn advance(sim: &mut Simulation, rules: &RuleSet, path_grid: &PathGrid) {
-    let _ = sim.advance_tick(&[], Some(rules), Some(path_grid), None, TICK_MS);
-}
-
-#[test]
-fn integration_impulse_decays_to_neutral_over_60_ticks() {
-    let (mut sim, rules, path_grid) = make_test_simulation_with_one_vehicle();
-
-    // Apply a finite sideways impulse; default Weight=2.0 gives a scaled
-    // velocity of 0.04 * 1.0 / 2.0 = 0.02 rad/tick — well within the
-    // ±IMPULSE_VEL_CAP envelope, and large enough to actually settle visibly.
-    let weight = SimFixed::lit("2.0");
-    {
-        let e = sim
-            .substrate
-            .entities
-            .values_mut()
-            .next()
-            .expect("one entity");
-        let r = e.rocking.as_mut().expect("rocking present");
-        apply_rocker_impulse(r, SimFixed::ONE, weight, SimFixed::ONE, SimFixed::ZERO);
-        assert!(
-            r.vel_sideways.abs() > SimFixed::ZERO,
-            "impulse should set nonzero sideways velocity, got {:?}",
-            r.vel_sideways,
-        );
-    }
-
-    // 60 ticks ≈ 1 second of sim time. Base decay 0.002 rad/tick against an
-    // initial 0.02 rad/tick velocity zeroes out well before this horizon.
-    for _ in 0..60 {
-        advance(&mut sim, &rules, &path_grid);
-    }
-
-    let e = sim.substrate.entities.values().next().expect("one entity");
-    let r = e.rocking.as_ref().expect("rocking present");
-    assert!(
-        r.is_neutral(),
-        "rocking should have decayed to neutral after 60 ticks; \
-         angles=({:?},{:?}) vels=({:?},{:?})",
-        r.angle_sideways,
-        r.angle_forwards,
-        r.vel_sideways,
-        r.vel_forwards,
-    );
-}
-
-#[test]
-fn integration_determinism_same_impulse_same_hash() {
-    let (mut a, rules_a, grid_a) = make_test_simulation_with_one_vehicle();
-    let (mut b, rules_b, grid_b) = make_test_simulation_with_one_vehicle();
-
-    // Identical impulses on both sims, applied before any tick advances.
-    let weight = SimFixed::lit("2.0");
-    {
-        let ea = a.substrate.entities.values_mut().next().unwrap();
-        apply_rocker_impulse(
-            ea.rocking.as_mut().unwrap(),
-            SimFixed::lit("0.5"),
-            weight,
-            SimFixed::ONE,
-            SimFixed::ZERO,
-        );
-        let eb = b.substrate.entities.values_mut().next().unwrap();
-        apply_rocker_impulse(
-            eb.rocking.as_mut().unwrap(),
-            SimFixed::lit("0.5"),
-            weight,
-            SimFixed::ONE,
-            SimFixed::ZERO,
-        );
-    }
-
-    // Hashes must agree at every tick boundary, not just at the end. Catching
-    // the divergence tick is what makes this useful for replay debugging.
-    assert_eq!(a.state_hash(), b.state_hash(), "pre-tick hashes diverge");
-    for tick in 0..200 {
-        advance(&mut a, &rules_a, &grid_a);
-        advance(&mut b, &rules_b, &grid_b);
-        assert_eq!(
-            a.state_hash(),
-            b.state_hash(),
-            "state hash diverged at tick {}",
-            tick + 1,
-        );
+fn state(bits: [u32; 4]) -> RockingState {
+    RockingState {
+        angle_sideways: NativeF32Bits::from_bits(bits[0]),
+        angle_forwards: NativeF32Bits::from_bits(bits[1]),
+        vel_sideways: NativeF32Bits::from_bits(bits[2]),
+        vel_forwards: NativeF32Bits::from_bits(bits[3]),
     }
 }
 
-/// `RockingUpdate`'s crashing branch against the executable: 40-frame spins of
-/// both signs, a `BalloonHover=` clamp and a start from nonzero angles
-/// (`tools/spatial_oracle/aircraft_crash.json`, `rocking`). Native keeps f32;
-/// each SimFixed step may differ by one quantum, so the tolerance grows with
-/// the frame count.
+fn bits(value: &Value) -> [u32; 4] {
+    std::array::from_fn(|i| value[i].as_u64().unwrap() as u32)
+}
+
+fn normal_inputs() -> RockingUpdateInputs {
+    RockingUpdateInputs {
+        direct_rocker_linked: false,
+        is_foot: true,
+        crushing_building: false,
+        sinking: false,
+        crashing: false,
+        balloon_hover: false,
+        body_facing: 0,
+        fallback: NativeF32Bits::ONE,
+    }
+}
+
 #[test]
-fn crash_spin_matches_native_rocking_update() {
-    use crate::sim::rocking::rocking_system::advance_crash_spin;
-    let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/aircraft_crash.json",
+fn complete_rocking_update_matches_native_normal_sinking_and_crash_controls() {
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_rocking_update.json",
     ))
     .unwrap();
-    let rows = oracle["rocking"].as_array().unwrap();
-    assert_eq!(rows.len(), 4);
-    let native = |hex: &serde_json::Value| {
-        f64::from(f32::from_bits(
-            u32::from_str_radix(hex.as_str().unwrap(), 16).unwrap(),
-        ))
-    };
-    for row in rows {
+    let mut counts = [0; 3];
+    for row in rows.as_array().unwrap() {
         let input = &row["input"];
-        let rates = input["rates"].as_array().unwrap();
-        let angles = input["angles"].as_array();
-        // The fixture writes the rates and angles as f32; start from those
-        // exact values.
-        let f32_of = |v: &serde_json::Value| f64::from(v.as_f64().unwrap() as f32);
-        let mut state = RockingState {
-            vel_sideways: SimFixed::from_num(f32_of(&rates[0])),
-            vel_forwards: SimFixed::from_num(f32_of(&rates[1])),
-            angle_sideways: angles.map_or(SimFixed::ZERO, |a| SimFixed::from_num(f32_of(&a[0]))),
-            angle_forwards: angles.map_or(SimFixed::ZERO, |a| SimFixed::from_num(f32_of(&a[1]))),
-            is_ship_rocking: false,
+        let expected = &row["output"];
+        let mut state = state([
+            word(&input["side_angle_bits"]).bits(),
+            word(&input["forward_angle_bits"]).bits(),
+            word(&input["side_velocity_bits"]).bits(),
+            word(&input["forward_velocity_bits"]).bits(),
+        ]);
+        let inputs = RockingUpdateInputs {
+            direct_rocker_linked: input["direct_rocker_link"].as_bool().unwrap(),
+            is_foot: input["abstract_flags"].as_u64().unwrap() & 4 != 0,
+            crushing_building: input["crush_flag"].as_i64().unwrap() != 0,
+            sinking: input["sinking"].as_i64().unwrap() != 0,
+            crashing: input["crash"].as_i64().unwrap() != 0,
+            balloon_hover: input["balloon_hover"].as_i64().unwrap() != 0,
+            body_facing: input["facing_raw"].as_u64().unwrap() as u16,
+            fallback: word(&input["fallback_bits"]),
         };
-        let balloon = input["balloon_hover"].as_i64() == Some(1);
-        for (frame, expected) in row["history"].as_array().unwrap().iter().enumerate() {
-            advance_crash_spin(&mut state, balloon);
-            let tolerance = (frame as f64 + 3.0) / 65536.0;
-            for (actual, index) in [(state.angle_sideways, 0), (state.angle_forwards, 1)] {
-                let expected = native(&expected[index]);
-                assert!(
-                    (actual.to_num::<f64>() - expected).abs() <= tolerance,
-                    "{} frame {frame} axis {index}: {actual} vs {expected}",
+        let damage = advance_state(&mut state, inputs);
+        assert_eq!(
+            state.native_bits(),
+            [
+                word(&expected["side_angle_bits"]).bits(),
+                word(&expected["forward_angle_bits"]).bits(),
+                word(&expected["side_velocity_bits"]).bits(),
+                word(&expected["forward_velocity_bits"]).bits()
+            ],
+            "{}",
+            input["name"]
+        );
+        assert_eq!(
+            damage,
+            expected["damage_called"].as_bool().unwrap(),
+            "{}",
+            input["name"]
+        );
+        counts[match expected["mode"].as_str().unwrap() {
+            "normal" => 0,
+            "sinking" => 1,
+            "crash" => 2,
+            _ => unreachable!(),
+        }] += 1;
+    }
+    assert_eq!(counts, [723, 170, 135]);
+}
+
+#[test]
+fn rocker_impulses_and_monotonic_update_history_match_native() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_rocker_impulse.json",
+    ))
+    .unwrap();
+    assert_eq!(corpus["model"]["is_voxel"], true);
+    for row in corpus["cases"].as_array().unwrap() {
+        let input = &row["input"];
+        let initial = [
+            input["angle_bits"][0].as_u64().unwrap() as u32,
+            input["angle_bits"][1].as_u64().unwrap() as u32,
+            input["velocity_bits"][0].as_u64().unwrap() as u32,
+            input["velocity_bits"][1].as_u64().unwrap() as u32,
+        ];
+        let mut owned = Some(state(initial));
+        for impulse in row["impulses"].as_array().unwrap() {
+            assert_eq!(
+                owned.unwrap().native_bits(),
+                bits(&impulse["before_bits"]),
+                "{} before",
+                input["name"]
+            );
+            let request = &impulse["input"];
+            let weight = f64::from_bits(
+                u64::from_str_radix(input["weight_bits"].as_str().unwrap(), 16).unwrap(),
+            );
+            let assigned = apply_rocker_impulse(
+                &mut owned,
+                RockerImpulse {
+                    position: std::array::from_fn(|i| {
+                        input["position"][i].as_i64().unwrap() as i32
+                    }),
+                    origin: std::array::from_fn(|i| request["origin"][i].as_i64().unwrap() as i32),
+                    body_facing: input["facing"].as_u64().unwrap() as u16,
+                    force: NativeF32Bits::from_bits(request["force_bits"].as_u64().unwrap() as u32),
+                    weight: SimFixed::from_num(weight),
+                    no_dampen: request["no_dampen"].as_u64().unwrap() != 0,
+                    has_loaded_voxel: true,
+                },
+            );
+            assert_eq!(assigned, !impulse["stores"].as_array().unwrap().is_empty());
+            assert_eq!(
+                owned.unwrap().native_bits(),
+                bits(&impulse["after_bits"]),
+                "{} impulse",
+                input["name"]
+            );
+        }
+        // Preserve every intermediate native-float state, including visits
+        // between the compact retained checkpoints. No reseeding or rewinding.
+        for visit in 1..=input["update_steps"].as_u64().unwrap() {
+            let expected = row["updates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|sample| sample["visit"].as_u64() == Some(visit));
+            if let Some(expected) = expected {
+                assert_eq!(
+                    owned.unwrap().native_bits(),
+                    bits(&expected["before_bits"]),
+                    "{} visit{visit} before",
+                    input["name"]
+                );
+            }
+            assert!(!advance_state(owned.as_mut().unwrap(), normal_inputs()));
+            if let Some(expected) = expected {
+                assert_eq!(
+                    owned.unwrap().native_bits(),
+                    bits(&expected["after_bits"]),
+                    "{} visit{visit} after",
                     input["name"]
                 );
             }
         }
     }
+    assert_eq!(corpus["cases"].as_array().unwrap().len(), 8);
 }
 
-/// `RockingUpdate`'s crashing branch on a Unit owner, through the real
-/// `UnitClass` type getters (`tools/spatial_oracle/unit_rocking_update.json`,
-/// `crash` mode): one step from the clamp boundaries (±π/4 and its
-/// neighbouring f32s, ±4) with rates of both signs, for `BalloonHover=` off,
-/// on, and a raw 255. The rates are kept; within one quantum of native f32.
 #[test]
-fn unit_crash_spin_matches_native_rocking_update() {
-    use crate::sim::rocking::rocking_system::advance_crash_spin;
-    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+fn rejected_loaded_model_gate_preserves_sparse_state_and_existing_rates() {
+    //70B29E is a plain early return; neither allocation nor state writes.
+    let request = RockerImpulse {
+        position: [2432, 2176, 0],
+        origin: [2432, 2178, 0],
+        body_facing: 0,
+        force: NativeF32Bits::from_bits(0x3fc0_0000),
+        weight: SimFixed::ONE,
+        no_dampen: false,
+        has_loaded_voxel: false,
+    };
+    let mut absent = None;
+    assert!(!apply_rocker_impulse(&mut absent, request));
+    assert!(absent.is_none());
+    let mut present = Some(state([0, 0, 0x3ca3_d70a, 0xbca3_d70a]));
+    let before = present.unwrap().native_bits();
+    assert!(!apply_rocker_impulse(&mut present, request));
+    assert_eq!(present.unwrap().native_bits(), before);
+}
+
+#[test]
+fn native_small_rate_survives_compatibility_reads_and_serialization() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_rocker_impulse.json",
+    ))
+    .unwrap();
+    let original = state(bits(&corpus["cases"][0]["impulses"][0]["after_bits"]));
+    assert_eq!(original.vel_sideways(), SimFixed::ZERO);
+    assert_ne!(original.native_bits()[2] & 0x7fff_ffff, 0);
+    let decoded: RockingState =
+        serde_json::from_str(&serde_json::to_string(&original).unwrap()).unwrap();
+    assert_eq!(decoded.native_bits(), original.native_bits());
+    let mut next = decoded;
+    assert!(!advance_state(&mut next, normal_inputs()));
+    assert_eq!(
+        next.native_bits(),
+        bits(&corpus["cases"][0]["updates"][0]["after_bits"])
+    );
+}
+
+#[test]
+fn production_update_materializes_zero_state_for_a_newly_sinking_ship_only() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = fixture.rules;
+    let mut sim = crate::sim::arena_fixture::rival_water_arena(&rules, 7, 32);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let ship = sim
+        .spawn_object("DEST", "Americans", 10, 10, 0, &rules)
+        .expect("ordinary stock ship admission");
+    let object = rules.object("DEST").unwrap();
+    let frame = sim.session.binary_frame;
+    let entity = sim.substrate.entities.get_mut(ship).unwrap();
+    assert!(entity.rocking.is_none());
+    assert!(!super::update(
+        entity,
+        object,
+        rules.general.fallback_coefficient,
+        frame
+    ));
+    assert!(
+        entity.rocking.is_none(),
+        "ordinary zero state remains sparse"
+    );
+
+    // Explicit shared sinking-owner boundary, not a fatal-receiver claim.
+    sim.begin_ship_sinking(ship, &rules, crate::sim::world::FrameEffects::default());
+    let entity = sim.substrate.entities.get_mut(ship).unwrap();
+    assert!(entity.sinking.is_active());
+    assert!(entity.rocking.is_none());
+    assert_eq!(entity.body_facing_current(frame), 0);
+    assert!(!super::update(
+        entity,
+        object,
+        rules.general.fallback_coefficient,
+        frame
+    ));
+    let actual = entity
+        .rocking
+        .as_ref()
+        .expect("sinking is a native angle producer")
+        .native_bits();
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/unit_rocking_update.json",
     ))
     .unwrap();
-    let native = |hex: &serde_json::Value| {
-        f64::from(f32::from_bits(
-            u32::from_str_radix(hex.as_str().unwrap(), 16).unwrap(),
-        ))
-    };
-    let mut crashing = 0;
-    for row in rows.as_array().unwrap() {
-        if row["output"]["mode"] != "crash" {
-            continue;
-        }
-        crashing += 1;
-        let input = &row["input"];
-        let fixed = |key: &str| SimFixed::from_num(native(&input[key]));
-        let mut state = RockingState {
-            vel_sideways: fixed("side_velocity_bits"),
-            vel_forwards: fixed("forward_velocity_bits"),
-            angle_sideways: fixed("side_angle_bits"),
-            angle_forwards: fixed("forward_angle_bits"),
-            is_ship_rocking: false,
-        };
-        let rates = (state.vel_sideways, state.vel_forwards);
-        advance_crash_spin(&mut state, input["balloon_hover"].as_i64() != Some(0));
-        let output = &row["output"];
-        for (actual, key) in [
-            (state.angle_sideways, "side_angle_bits"),
-            (state.angle_forwards, "forward_angle_bits"),
-        ] {
-            let expected = native(&output[key]);
-            assert!(
-                (actual.to_num::<f64>() - expected).abs() <= 2.0 / 65536.0,
-                "{} {key}: {actual} vs {expected}",
-                input["name"]
-            );
-        }
-        assert_eq!((state.vel_sideways, state.vel_forwards), rates);
-        assert!(!output["damage_called"].as_bool().unwrap());
-    }
-    assert_eq!(crashing, 135);
-}
-
-#[test]
-fn rocking_default_is_neutral() {
-    let r = RockingState::default();
-    assert!(r.is_neutral());
-}
-
-#[test]
-fn rocking_active_angle_is_not_neutral() {
-    let r = RockingState {
-        angle_sideways: SimFixed::lit("0.01"),
-        ..Default::default()
-    };
-    assert!(!r.is_neutral());
-}
-
-#[test]
-fn rocking_within_deadband_is_neutral() {
-    // SimFixed precision is ~1.5e-5, so 1e-5 rounds to 0; pick a value
-    // strictly between the smallest representable nonzero and DEADBAND.
-    // DEADBAND is 2e-5; SIM_EPSILON is ~1.5e-5 — exactly one delta below.
-    let r = RockingState {
-        angle_sideways: SimFixed::DELTA,
-        ..Default::default()
-    };
-    assert!(r.is_neutral());
-}
-
-#[test]
-fn rocking_ship_rocking_is_not_neutral() {
-    let r = RockingState {
-        is_ship_rocking: true,
-        ..Default::default()
-    };
-    assert!(!r.is_neutral());
+    let native = corpus
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["output"]["mode"] == "sinking"
+                && row["input"]["facing_raw"] == 0
+                && row["input"]["forward_angle_bits"] == "00000000"
+        })
+        .unwrap();
+    //70B5AE only reads/writes the forward angle in this branch. Side angle
+    // and rates are untouched; the native control's other supplied words
+    // therefore do not become priors for this newly admitted Rust actor.
+    assert_eq!(
+        actual[1],
+        word(&native["output"]["forward_angle_bits"]).bits()
+    );
+    assert_eq!([actual[0], actual[2], actual[3]], [0; 3]);
 }

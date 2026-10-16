@@ -44,14 +44,10 @@
 //! kill's random draws, anims and detach run as for any other damage.
 //!
 //! RESIDUALS:
-//! - All_To_Hunt's release of an occupied building with Hunt
-//!   (`0x00457DE0(1, 0)`, whose occupants also leave their teams at
-//!   `0x0045812B`) is not ported: no VERA computer house garrisons a
-//!   building, as no garrison script action is ported.
-//! - State four's writers (TriggerAction::Execute `0x006DEAFF`, a team
-//!   script at `0x006E99E5`) have no VERA producer, and the All-To-Hunt
-//!   latch's reader (`TechnoClass::Evaluate_Candidate @ 0x006F8765`, the
-//!   test-only `all_to_hunt_score_override`) is not ported.
+//! - Team script30 (`0x006E99E5`) does not yet write state four. Trigger
+//!   Action9 (`0x006DEAFF`) uses the existing state owner. The All-To-Hunt
+//!   latch is consumed by the shared greatest_threat candidate scoring
+//!   (`TechnoClass::Evaluate_Candidate @ 0x006F8765`).
 //! - The own-coordinate test against the empty coordinate
 //!   (`0x004FD5B9..0x004FD5E5`) is dormant: no cell's coordinate is zero.
 
@@ -261,7 +257,7 @@ fn has_live_factory(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> boo
                     && !building.lifecycle.in_limbo()
                     && sim
                         .object_type(building.type_ref(), rules)
-                        .is_some_and(|ty| ty.factory.is_some())
+                        .is_some_and(|ty| ty.has_factory())
             })
         })
     })
@@ -317,8 +313,9 @@ pub(crate) fn fire_sale(
 ///   0x005014D4`, with its idle order) and queues Hunt (vt+0x1E8,
 ///   `Queue_Mission(Hunt, 0)`).
 ///
-/// Then the All-To-Hunt latch (`+0x249`) is set. The garrison arm is a
-/// residual (module doc).
+/// An occupied building calls the shared SellBuilding457DE0(1,0) owner;
+/// its occupants Scatter, leave their teams and queue Hunt in that order.
+/// Then the All-To-Hunt latch (`+0x249`) is set.
 pub(crate) fn all_to_hunt(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -326,15 +323,16 @@ pub(crate) fn all_to_hunt(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    let technos: Vec<u64> = sim
-        .substrate
-        .entities
-        .values()
-        .map(|techno| techno.stable_id())
-        .collect();
+    // Steam3e81a617..08600:501400 captures count once;50141D/501423
+    // re-read the array and its indexed object after callbacks. Storage
+    // snapshots hide intervening removals from this existing registry.
+    let count = sim.substrate.entities.techno_registry_len();
     let human = sim.houses.get(&owner).is_some_and(|house| house.is_human);
     let hunt = MissionId::from_known(MissionType::Hunt);
-    for id in technos.into_iter().rev() {
+    for index in (0..count).rev() {
+        let Some(id) = sim.substrate.entities.techno_registry_at(index) else {
+            continue;
+        };
         let Some(techno) = sim.substrate.entities.get(id) else {
             continue;
         };
@@ -364,6 +362,14 @@ pub(crate) fn all_to_hunt(
             continue;
         }
         if techno.category() == EntityCategory::Structure {
+            crate::sim::passenger::garrison_eject::sell_building_occupants(
+                sim,
+                rules,
+                registry,
+                id,
+                crate::sim::passenger::garrison_eject::GarrisonEjectMode::Hunt,
+                frame_effects,
+            );
             continue;
         }
         sim.leave_team(id, false, Some(rules), frame_effects);

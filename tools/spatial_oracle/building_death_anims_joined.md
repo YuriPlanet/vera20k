@@ -1,5 +1,42 @@
 # Ordinary GAPOWR fatal lifecycle: joined native comparison
 
+## Terror Drone numeric component
+
+`parasite_water_gate --drone` reuses the same configured reader and runtime for
+stock DRON/MTNK, DroneJump/JUMP/Parasite and DefaultSparkSystem. Actual original
+Unit constructors/Unlimbo run on recalculated physical Clear tile 0, followed
+by direct source Limbo and real CanInfect/AttachTo. Full FireAt/Bullet production
+is a separate production test boundary. Initial records include native type
+Weight/Strength, weapon Damage/ROF/Paralyzes, both measured facings, House slots,
+game speed, lighting, timers, identities and complete RNG state.
+
+The existing native VXL loader independently produces GTNK header bytes and
+half-sizes. Those actual bytes are explicit component inputs to the joined
+Type; original IsVoxel and ApplyRocker gates execute. This does not close the
+joined Type's whole VXL file-binding path or promise usable internal model
+pointers beyond the reached predicate. The separate Drive corpus executes its
+full physical loader and raster. Existing `electric_bolt.read_spark_types`
+provides native SparkSys/Spark reader fields on the same Reader VM, and its
+runtime-state owner observes complete original ParticleSystem construction.
+
+Each monotonic visit executes whole victim `70B570` before whole manager
+`629FD0`. The small `parasite_drone_rng.json` records two nonlethal bites,
+upstream random sides, actual impact coordinates, impulse assignments,
+constructor/ID/RNG interleaving, native f32 rocking state and readonly full
+GetFLH through the existing `ifv_fire_coord` owner. Other actor/effect AI,
+whole Logic and release/death/expiry are excluded. No per-bite reseed, supplied
+gameplay result or Rust-derived expected value is used.
+
+```sh
+PYTHONPATH=.:tools/spatial_oracle PYTHONDONTWRITEBYTECODE=1 \
+python -m tools.spatial_oracle.parasite_water_gate --drone --check
+```
+
+Set `VERA20K_BUILDING_DEATH_ASSETS` to the shared physical input directory with
+GTNK.VXL/HVA and VOXELS.VPL. `--write` changes only the new drone corpus and its
+binary/command sidecar. Historical Squid and default water-gate outputs remain
+unchanged.
+
 ## Squid grapple numeric component
 
 The additive `parasite_water_gate --grapple` comparison reuses this physical
