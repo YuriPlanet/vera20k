@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original133/134 Read/Execute, Super clear6CC290 and shared Reset6CE0B0 on declared selected-House/Super priors; two132->134->133->134 histories.",
+  "assumptions": [
+    "Each fresh process calls existing superweapon_state_native_inputs: original SuperWeaponTypes6725F0, NukeSpecial6CEA20 and provider readers run on physical RULESMD, optional LANGRULE/ALL03 campaign INI and ALL03 map; fixed ARTMD is not layered. No serialized machine-local native cache is required. Physical source identities, registry and reader-layer states are retained in retail_inputs. Full Rules/Scenario startup is outside scope.",
+    "Original action constructor6DD000, ReadString512/tokenizer/read6DD5B0 and Execute6DD8B0 run. Execute1336DFBD5->6E4360->6CC290 clears custom+24 only;1346DFC02->6E43A0->6CE0B0 reaches the same Reset as spy infiltration. The outer Trigger.Spring7265C0 incoming-House resolver remains an instruction-established caller, not an executed full Trigger/Tag world here.",
+    "SuperChargeFixture executes original concrete constructor suffix6CAF99..6CB011 after excluded Abstract/House allocation. The selected native Type layout supplies recharge9000; supplied current timer7000/custom4500 distinguish the owners. One-time, ready-tick77, drain5, charge-stage12, preferred cells and grant/ready/held/timer combinations are explicit played-state priors, not certified whole-world construction or ordinary retail reachability for every combination.",
+    "All73 dispatch observations execute original instructions, including signed custom0/-1/-2/i32 limits, independent grant/ready/held/running/stopped combinations and current-frame0/-1/i32 limits. Only custom==-1 falls back to Type. Reset preserves override and the old stopped/running condition; held is independent. Numeric values are native outputs, not a Python timer implementation.",
+    "Animation prior supplies loops+195 and a small native notification vector containing the selected and another Super. Original Find525400/Remove45ADD0 and Reset writes execute; the duplicate-notification control is a declared boundary prior. There is no full registered Anim constructor, future Anim.AI expiration, destructor/detach or rendered-disappearance claim. No detach call or RNG draw is reached by these admitted dispatches.",
+    "Original65C6D0 initializes three complete RNG streams; raw incoming states, per-case hashes and observed native Random entries bound the comparison. Opaque timer clock-padding+34 and detailed ABI receipts are excluded from canonical gameplay data. Unknown notification identities fail instead of being silently aliased.",
+    "Null incoming House, negative index and index>Count execute real false returns. Native133/134 reject only index>Count; index==Count and a null selected pointer can access invalid memory and are deliberately not executed. Safe Rust collection refusal does not claim parity for those unsafe native inputs. No authored133/134 retail campaign occurrence or full Super/House AI/fire chronology is certified."
+  ],
+  "substitutions": [
+    "Reuse the existing ActionFixture/SuperChargeFixture image, allocator, physical Type input reader, ordered lexical INI caches, CRT TLS and OS imports. No selected action, clear, Reset, timer or vector instruction is patched or replaced. State/animation/vector capacity priors are supplied as declared inputs.",
+    "Selected native Type scalar bytes cross into isolated VMs; unrelated heap pointers in that layout are not dereferenced. The other Super/House are unchanged sentinels. Canonical controls retain semantic state, native callee order and owner writes; raw ABI/opaque-padding receipts are optional external output only."
+  ],
+  "entry_points": {
+    "action_ctor": "0x006DD000",
+    "action_read": "0x006DD5B0",
+    "execute": "0x006DD8B0",
+    "action132": "0x006E4320",
+    "set_override": "0x006CC280",
+    "action133": "0x006E4360",
+    "clear_override": "0x006CC290",
+    "action134": "0x006E43A0",
+    "reset": "0x006CE0B0",
+    "effective_recharge": "0x006CC260",
+    "notification_find": "0x00525400",
+    "notification_remove": "0x0045ADD0",
+    "registry_read": "0x006725F0",
+    "super_type_read": "0x006CEA20",
+    "rng_seed": "0x0065C6D0"
+  },
+  "retail_sources": [
+    {
+      "file": "RULESMD.INI",
+      "source": "expandmd01.mix",
+      "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "file": "ALL03UMD.MAP",
+      "source": "mapsmd03.mix",
+      "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+      "sha256": "b84a2e689cc00f0be064ecbfcd385635ac037f28bf8f72c02b426a0e52ff1547"
+    },
+    {
+      "file": "ARTMD.INI",
+      "source": "ra2md.mix -> localmd.mix",
+      "archive_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+      "member_archive_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    }
+  ],
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --superweapon-reset",
+  "payload_sha256": "cddb1eade996bd7e715968a2832a27d9fb07fe1ffe1065a75816e47d9f90809e"
+}

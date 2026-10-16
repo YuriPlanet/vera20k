@@ -1,5 +1,6 @@
 //! Original Execute132/135/136 controls and the authored ALL03 nuke chain.
-//! Goldens are emitted by trigger_action_values --superweapon-state.
+//! Goldens are emitted by trigger_action_values --superweapon-state;
+//! child reset tests consume its --superweapon-reset history.
 
 use super::*;
 use crate::map::map_file::MapFile;
@@ -76,8 +77,8 @@ fn all03_inputs() -> Option<(RuleSet, MapFile)> {
     Some((rules, map))
 }
 
-fn seeded_rngs(sim: &mut Simulation) {
-    let seeds = &corpus()["rng_seed_states"];
+fn seeded_rngs(sim: &mut Simulation, data: &Value) {
+    let seeds = &data["rng_seed_states"];
     sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
@@ -172,7 +173,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         let tag = sim.shared_trigger_tag(tag_type);
         let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
         let typ = sim.trigger_runtime.trigger(live).unwrap().type_index;
-        seeded_rngs(&mut sim);
+        seeded_rngs(&mut sim, data);
         assert_eq!(rng_hashes(&sim), sequence["rng_before"]);
         let initial = state(&sim, owner, id);
         for (key, expected) in sequence["initial_state"].as_object().unwrap() {
@@ -340,7 +341,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
             incoming_house: input["owner_present"].as_bool().unwrap().then_some(owner),
             input: TagEventInput::default(),
         };
-        seeded_rngs(&mut sim);
+        seeded_rngs(&mut sim, data);
         assert_eq!(rng_hashes(&sim), row["rng_before"], "{}", row["name"]);
         let mut effects = Vec::new();
         let (returned, draws) = crate::sim::rng::trace_draws(|| {
@@ -421,3 +422,6 @@ fn retained_recharge_and_target_survive_snapshot_and_affect_future_state_hash() 
         .set_recharge_time(-1);
     assert_eq!(restored.state_hash(), original);
 }
+
+#[path = "trigger_runtime_superweapon_reset_tests.rs"]
+mod reset_tests;

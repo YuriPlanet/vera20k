@@ -3678,14 +3678,16 @@ impl Simulation {
                     frame_effects,
                 );
             }
-            ACTION_SET_SUPER_CHARGE_PERCENTAGE | 132 => {
-                // Execute1296E42D0 and1326E4320 select the incoming House's
-                // stock Super-array ordinal (+90), using +48 as the value.
-                // Only129 has the Super owner's grant/percentage gates;
-                //132 writes its signed recharge override without a timer reset.
+            ACTION_SET_SUPER_CHARGE_PERCENTAGE | 132..=134 => {
+                // Execute1296E42D0,1326E4320,1336E4360 and1346E43A0 select
+                // the incoming House's Super-array ordinal (+90). Only129
+                // has grant/percentage gates.132 writes +48 as the override;
+                //133 clears it without restarting the current countdown;
+                //134 calls the same Reset owner as spy infiltration.
                 // Original Steam identity and executed admissions/numerics:
                 // tools/spatial_oracle/trigger_super_charge_percent.meta.json
-                // and trigger_superweapon_state.meta.json.
+                // trigger_superweapon_state.meta.json and
+                // trigger_superweapon_reset.meta.json.
                 let Some(rules) = rules else {
                     return false;
                 };
@@ -3710,17 +3712,20 @@ impl Simulation {
                 else {
                     return false;
                 };
-                if action.kind == 132 {
-                    instance.set_recharge_time(action.auxiliary_value());
-                } else {
-                    let Some(sw) = rules.super_weapon(name) else {
-                        return false;
-                    };
-                    return instance.set_charge_percentage(
-                        action.auxiliary_value(),
-                        sw,
-                        self.session.binary_frame,
-                    );
+                match action.kind {
+                    132 => instance.set_recharge_time(action.auxiliary_value()),
+                    133 => instance.reset_recharge_time(),
+                    134 => crate::sim::superweapon::reset_super(self, rules, owner, name),
+                    _ => {
+                        let Some(sw) = rules.super_weapon(name) else {
+                            return false;
+                        };
+                        return instance.set_charge_percentage(
+                            action.auxiliary_value(),
+                            sw,
+                            self.session.binary_frame,
+                        );
+                    }
                 }
             }
             135 | 136 => {

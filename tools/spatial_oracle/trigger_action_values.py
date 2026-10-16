@@ -87,6 +87,11 @@ ALL03 NPC NukeSpecial sequence, real recharge/Reset and preferred-cell
 consumers. Physical MD bytes come from the configured original installation.
 Detailed ABI receipts may be retained externally with
 ``VERA20K_TRIGGER_SUPER_STATE_RECEIPTS`` when writing the new corpus.
+
+``--superweapon-reset`` uses the same physical Type reader and Super VM for
+133/134 dispatch, current-timer preservation/restart and animation-notification
+release. Its optional ``VERA20K_TRIGGER_SUPER_RESET_RECEIPTS`` output remains
+external; canonical controls exclude ABI, heap addresses and clock padding.
 """
 from pathlib import Path
 import hashlib
@@ -3939,6 +3944,230 @@ def superweapon_state_metadata():
         retail_sources=superweapon_state_native_inputs().receipt['sources'])
 
 
+class SuperResetFixture(SuperChargeFixture):
+    """Explicit played-state priors; existing image/allocator/reader own execution.
+
+    Execute6DD8B0's133/134 arms call6E4360/6E43A0, then clear6CC290 or
+    the shared Reset6CE0B0. No Python implementation of either leaf is used.
+    Notification Find525400/Remove45ADD0 execute on a small native vector;
+    the animation prior exposes only the Reset-written loops byte+195.
+    """
+
+    def __init__(self, inputs, **options):
+        super().__init__(inputs)
+        u = self.u
+        self.notification_items = self.allocate(64)
+        u.mem_write(0xB0F5B8, dwords(0x7EB6D4, self.notification_items, 16, 1, 0, 10))
+        self.initialize_concrete_super(0)
+        self.constructor_state = self.state()
+        state = dict(frame=500, recharge=inputs.state['recharge_frames'],
+            custom_recharge=4500, granted=True, ready=True, held=False,
+            start=123, duration=7000)
+        state.update({key: value for key, value in options.items() if key in state})
+        self.set_state(**state)
+        u.mem_write(self.house + 0x54F0, struct.pack('<2h', 31, 32))
+        u.mem_write(self.super + 0x6E, b'\1')
+        u.mem_write(self.super + 0x74, dwords(77, 12, 5))
+        self.animation = self.allocate(0x200)
+        u.mem_write(self.animation, bytes(0x200))
+        u.mem_write(self.animation + 0x195, b'\3')
+        animation, invalid = options.get('animation', True), options.get('animation_invalid', True)
+        u.mem_write(self.super + 0x68, dwords(self.animation if animation else 0))
+        u.mem_write(self.super + 0x6C, bytes((invalid,)))
+        self.other_house, self.other_super = self.allocate(0x6000), self.allocate(0x100)
+        u.mem_write(self.other_house, bytes(0x6000))
+        u.mem_write(self.other_super, bytes(0x100))
+        u.mem_write(self.other_house + 0x54F0, struct.pack('<2h', 45, 46))
+        u.mem_write(self.other_super + 0x24, dwords(73, self.super_type, self.other_house))
+        entries = [self.super, self.other_super] if animation or invalid else [self.other_super]
+        if options.get('duplicate_notification'):
+            entries.insert(0, self.super)
+        u.mem_write(self.notification_items, dwords(*entries))
+        u.mem_write(0xB0F5C8, dwords(len(entries)))
+        for begin, end in ((0x6CC260, 0x6CC2A0), (0x6CE0B0, 0x6CE1A0), (0x45ADD0, 0x45AE01)):
+            self.ranges.append((begin, end))
+            self.original.append(bytes(u.mem_read(begin, end - begin)))
+        self.capture = False
+        self.reset_calls, self.reset_writes = [], []
+        self.opaque_writes = []
+        find = self.read32(self.read32(0xB0F5B8) + 0x10)
+        entries = {0x6DD8B0: ('execute', 4),
+            0x6E4320: ('action132', 4), 0x6CC280: ('set_override', 1),
+            0x6E4360: ('action133', 4), 0x6CC290: ('clear_override', 0),
+            0x6E43A0: ('action134', 4), 0x6CE0B0: ('reset', 0),
+            0x45ADD0: ('notification_remove', 1), find: ('notification_find', 1)}
+
+        def observe(vm, pc, _size, _data):
+            if not self.capture or pc not in entries:
+                return
+            name, count = entries[pc]
+            sp = vm.reg_read(UC_X86_REG_ESP)
+            self.call_receipts.entered(pc, sp, (name, count, count * 4))
+            caller = self.read32(sp)
+            self.reset_calls.append(dict(stage=self.stage, call=name, callee=f'{pc:08X}',
+                caller='fixture' if caller == RET_MAGIC else f'{caller:08X}'))
+
+        def wrote(vm, _access, address, size, value, _data):
+            if not self.capture:
+                return
+            if self.super <= address < self.super + 0x100:
+                owner, offset = 'selected_super', address - self.super
+            elif self.animation <= address < self.animation + 0x200:
+                owner, offset = 'animation', address - self.animation
+            elif 0xB0F5B8 <= address < 0xB0F5D0:
+                owner, offset = 'notification_vector', address - 0xB0F5B8
+            elif self.notification_items <= address < self.notification_items + 64:
+                owner, offset = 'notification_items', address - self.notification_items
+            else:
+                return
+            raw = (value & ((1 << (8 * size)) - 1)).to_bytes(size, 'little')
+            row = dict(pc=f'{vm.reg_read(UC_X86_REG_EIP):08X}', owner=owner,
+                offset=f'{offset:02X}', size=size,
+                value=self.reference(value) if owner == 'notification_items' else int.from_bytes(raw, 'little', signed=size == 4))
+            if owner == 'selected_super' and offset == 0x34:
+                self.opaque_writes.append(row)  # Stack padding has no gameplay golden.
+            else:
+                self.reset_writes.append(row)
+        u.hook_add(UC_HOOK_CODE, observe)
+        u.hook_add(UC_HOOK_MEM_WRITE, wrote)
+
+    def reference(self, pointer):
+        if pointer == self.super:
+            return 'selected_super'
+        if pointer == self.other_super:
+            return 'other_super'
+        raise ValueError(f'Unexpected notification identity {pointer:08X}')
+
+    def reset_state(self):
+        u, s = self.u, self.super
+        effective = self.invoke(0x6CC260, s)
+        count = self.integer(0xB0F5C8)
+        return dict(self.state(), effective_recharge=struct.unpack('<i', dwords(effective))[0],
+            charge_stage=self.integer(s + 0x78), ready_tick=self.integer(s + 0x74),
+            charge_drain_state=self.integer(s + 0x7C),
+            one_time=bool(u.mem_read(s + 0x6E, 1)[0]),
+            animation_present=bool(self.read32(s + 0x68)),
+            animation_invalid=bool(u.mem_read(s + 0x6C, 1)[0]),
+            animation_loops=u.mem_read(self.animation + 0x195, 1)[0],
+            notification_count=count,
+            notifications=[self.reference(self.read32(self.notification_items + index * 4)) for index in range(count)],
+            preferred=list(struct.unpack('<2h', u.mem_read(self.house + 0x54F0, 4))))
+
+    def dispatch(self, inputs, name, raw, *, owner_present=True):
+        read = self.read_action(raw, ini_capacity=512)
+        read['auxiliary'] = self.integer(ACTION + 0x48)
+        # Native accepts index==Count then dereferences a spare/null pointer.
+        # That UB remains a declared residual, never an admitted control.
+        assert read['value'] != inputs.count
+        incoming, before = self.reset_state(), self.rng_hashes()
+        other = bytes(self.u.mem_read(self.other_super, 0x100))
+        self.reset_calls, self.reset_writes, self.opaque_writes = [], [], []
+        call_start, rng_start = len(self.call_receipts.calls), len(self.rng_calls)
+        self.stage, self.capture = name, True
+        try:
+            returned = self.invoke(0x6DD8B0, ACTION, (self.house if owner_present else 0, 0, 0, 0)) & 255
+        finally:
+            self.capture = False
+        output = self.reset_state()
+        self.check_code()
+        return dict(name=name, read=read, returned=returned,
+            input=dict(incoming, owner_present=owner_present, count=inputs.count,
+                frame=self.integer(0xA8ED84), other_preferred=[45, 46], other_custom_recharge=73),
+            output=dict(output,
+                other_preferred=list(struct.unpack('<2h', self.u.mem_read(self.other_house + 0x54F0, 4))),
+                other_custom_recharge=struct.unpack('<i', dwords(self.invoke(0x6CC260, self.other_super)))[0],
+                other_super_unchanged=other == bytes(self.u.mem_read(self.other_super, 0x100))),
+            calls=self.reset_calls, writes=self.reset_writes,
+            rng_before=before, rng_after=self.rng_hashes(), rng_calls=self.rng_calls[rng_start:],
+            native_call_receipts=self.call_receipts.calls[call_start:], opaque_timer_writes=self.opaque_writes)
+
+
+def superweapon_reset_generate(*, receipt_path=None):
+    """Fresh physical Type input, then actual133/134 dispatch on declared states."""
+    from itertools import product
+    inputs = superweapon_state_native_inputs()
+    index = inputs.state['registry_index']
+    raw = lambda kind: f'{kind},11,{index},0,0,0,0,NA'
+    controls = []
+
+    def record(name, kind, **options):
+        owner_present = options.pop('owner_present', True)
+        action = options.pop('raw_action', raw(kind))
+        controls.append(SuperResetFixture(inputs, **options).dispatch(inputs, name, action,
+            owner_present=owner_present))
+
+    for kind in (133, 134):
+        for granted, ready, held, stopped in product((False, True), repeat=4):
+            record(f'{kind}_g{int(granted)}_r{int(ready)}_h{int(held)}_stopped{int(stopped)}', kind,
+                granted=granted, ready=ready, held=held, start=-1 if stopped else 123)
+    for custom in (-1, 0, -2, 2147483647, -2147483648):
+        for stopped in (False, True):
+            record(f'134_custom_{custom}_stopped{int(stopped)}', 134,
+                custom_recharge=custom, start=-1 if stopped else 123)
+        record(f'133_custom_{custom}_preserves_negative_timer', 133,
+            custom_recharge=custom, duration=-79, start=-1)
+    for frame in (0, -1, 2147483647, -2147483648):
+        for stopped in (False, True):
+            record(f'134_frame_{frame}_stopped{int(stopped)}', 134,
+                frame=frame, custom_recharge=-2, start=-1 if stopped else 123)
+    for animation, invalid in ((False, False), (False, True), (True, False)):
+        record(f'134_animation{int(animation)}_invalid{int(invalid)}', 134,
+            animation=animation, animation_invalid=invalid)
+    record('134_duplicate_notifications_declared_prior', 134, duplicate_notification=True)
+    for kind in (133, 134):
+        record(f'{kind}_null_owner', kind, owner_present=False)
+        record(f'{kind}_negative_index', kind, raw_action=f'{kind},11,-1,0,0,0,0,NA')
+        record(f'{kind}_above_count', kind, raw_action=f'{kind},11,{inputs.count + 1},0,0,0,0,NA')
+
+    sequences = []
+    for stopped in (False, True):
+        f = SuperResetFixture(inputs, custom_recharge=-1, start=-1 if stopped else 123, held=not stopped)
+        sequence = dict(name='stopped' if stopped else 'running', initial_frame=f.integer(0xA8ED84),
+            constructor_state=f.constructor_state, initial_state=f.reset_state(), rng_before=f.rng_hashes(), rows=[])
+        for name, action in (('set132', f'132,11,{index},0,0,0,0,4500'),
+                ('reset134_custom', raw(134)), ('clear133', raw(133)), ('reset134_type_fallback', raw(134))):
+            sequence['rows'].append(f.dispatch(inputs, name, action))
+        sequence['rng_after'] = f.rng_hashes()
+        sequences.append(sequence)
+    f = SuperChargeFixture(inputs)
+    data = dict(schema_version=1, retail_inputs=inputs.receipt,
+        rng_seed_states=CampaignReader.rng_state(SimpleNamespace(u=f.u, scenario=SCENARIO)),
+        dispatch_controls=controls, sequence_controls=sequences)
+    cases = controls + [case for sequence in sequences for case in sequence['rows']]
+    if receipt_path is not None:
+        path = Path(receipt_path).resolve()
+        if path.is_relative_to(Path(__file__).parents[2].resolve()):
+            raise ValueError('Detailed native receipts must remain outside the repository')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    for case in cases:
+        del case['native_call_receipts']
+        del case['opaque_timer_writes']
+    return data
+
+
+def superweapon_reset_metadata():
+    return dict(provenance(
+        scope='Original133/134 Read/Execute, Super clear6CC290 and shared Reset6CE0B0 on declared selected-House/Super priors; two132->134->133->134 histories.',
+        assumptions=[
+            'Each fresh process calls existing superweapon_state_native_inputs: original SuperWeaponTypes6725F0, NukeSpecial6CEA20 and provider readers run on physical RULESMD, optional LANGRULE/ALL03 campaign INI and ALL03 map; fixed ARTMD is not layered. No serialized machine-local native cache is required. Physical source identities, registry and reader-layer states are retained in retail_inputs. Full Rules/Scenario startup is outside scope.',
+            'Original action constructor6DD000, ReadString512/tokenizer/read6DD5B0 and Execute6DD8B0 run. Execute1336DFBD5->6E4360->6CC290 clears custom+24 only;1346DFC02->6E43A0->6CE0B0 reaches the same Reset as spy infiltration. The outer Trigger.Spring7265C0 incoming-House resolver remains an instruction-established caller, not an executed full Trigger/Tag world here.',
+            'SuperChargeFixture executes original concrete constructor suffix6CAF99..6CB011 after excluded Abstract/House allocation. The selected native Type layout supplies recharge9000; supplied current timer7000/custom4500 distinguish the owners. One-time, ready-tick77, drain5, charge-stage12, preferred cells and grant/ready/held/timer combinations are explicit played-state priors, not certified whole-world construction or ordinary retail reachability for every combination.',
+            'All73 dispatch observations execute original instructions, including signed custom0/-1/-2/i32 limits, independent grant/ready/held/running/stopped combinations and current-frame0/-1/i32 limits. Only custom==-1 falls back to Type. Reset preserves override and the old stopped/running condition; held is independent. Numeric values are native outputs, not a Python timer implementation.',
+            'Animation prior supplies loops+195 and a small native notification vector containing the selected and another Super. Original Find525400/Remove45ADD0 and Reset writes execute; the duplicate-notification control is a declared boundary prior. There is no full registered Anim constructor, future Anim.AI expiration, destructor/detach or rendered-disappearance claim. No detach call or RNG draw is reached by these admitted dispatches.',
+            'Original65C6D0 initializes three complete RNG streams; raw incoming states, per-case hashes and observed native Random entries bound the comparison. Opaque timer clock-padding+34 and detailed ABI receipts are excluded from canonical gameplay data. Unknown notification identities fail instead of being silently aliased.',
+            'Null incoming House, negative index and index>Count execute real false returns. Native133/134 reject only index>Count; index==Count and a null selected pointer can access invalid memory and are deliberately not executed. Safe Rust collection refusal does not claim parity for those unsafe native inputs. No authored133/134 retail campaign occurrence or full Super/House AI/fire chronology is certified.'],
+        substitutions=[
+            'Reuse the existing ActionFixture/SuperChargeFixture image, allocator, physical Type input reader, ordered lexical INI caches, CRT TLS and OS imports. No selected action, clear, Reset, timer or vector instruction is patched or replaced. State/animation/vector capacity priors are supplied as declared inputs.',
+            'Selected native Type scalar bytes cross into isolated VMs; unrelated heap pointers in that layout are not dereferenced. The other Super/House are unchanged sentinels. Canonical controls retain semantic state, native callee order and owner writes; raw ABI/opaque-padding receipts are optional external output only.'],
+        entry_points=dict(action_ctor=0x6DD000, action_read=0x6DD5B0, execute=0x6DD8B0,
+            action132=0x6E4320, set_override=0x6CC280, action133=0x6E4360, clear_override=0x6CC290,
+            action134=0x6E43A0, reset=0x6CE0B0, effective_recharge=0x6CC260,
+            notification_find=0x525400, notification_remove=0x45ADD0,
+            registry_read=0x6725F0, super_type_read=0x6CEA20, rng_seed=0x65C6D0)),
+        retail_sources=superweapon_state_native_inputs().receipt['sources'])
+
+
 def inline_type_generate():
     """Original constructor/read, independent of the older action corpora."""
     rows = []
@@ -6663,6 +6892,7 @@ if __name__=='__main__':
     selected_modes.add_argument('--click-shroud', action='store_true')
     selected_modes.add_argument('--super-charge', action='store_true')
     selected_modes.add_argument('--superweapon-state', action='store_true')
+    selected_modes.add_argument('--superweapon-reset', action='store_true')
     selected_modes.add_argument('--reveal-zone', action='store_true')
     selected_modes.add_argument('--forced-map', action='store_true')
     selected_modes.add_argument('--inline-type', action='store_true')
@@ -6680,7 +6910,14 @@ if __name__=='__main__':
     selected_modes.add_argument('--chrono-reinforcement', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.superweapon_state:
+    if selected.superweapon_reset:
+        if selected.inputs is not None:
+            selector.error('--superweapon-reset reads configured physical MD assets, not --inputs')
+        receipt_path = os.environ.get('VERA20K_TRIGGER_SUPER_RESET_RECEIPTS') if '--write' in remaining else None
+        finish_vectors(lambda: superweapon_reset_generate(receipt_path=receipt_path),
+            Path(__file__).with_name('trigger_superweapon_reset.json'),
+            provenance=superweapon_reset_metadata, argv=remaining, source_paths=SOURCE_PATHS)
+    elif selected.superweapon_state:
         if selected.inputs is not None:
             selector.error('--superweapon-state reads configured physical MD assets, not --inputs')
         receipt_path = os.environ.get('VERA20K_TRIGGER_SUPER_STATE_RECEIPTS') if '--write' in remaining else None

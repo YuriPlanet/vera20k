@@ -287,6 +287,14 @@ impl SuperWeaponInstance {
         self.custom_recharge_time = frames;
     }
 
+    /// SuperClass::ResetRechargeTime @ 0x006CC290, reached by Action133
+    /// through6E4360: restore Type inheritance without changing the current
+    /// timer, grant, ready/held state or animation. No RNG/timer/detach calls.
+    /// Original Steam execution: trigger_superweapon_reset.meta.json.
+    pub(crate) fn reset_recharge_time(&mut self) {
+        self.custom_recharge_time = -1;
+    }
+
     /// This newly retained state affects future grants/recharges even when
     /// it currently equals the type value. Preserve the inherited-time fold.
     pub(crate) fn hash_recharge_time(&self, hasher: &mut impl std::hash::Hasher) {
@@ -556,8 +564,10 @@ impl SuperWeaponInstance {
 /// anim release ([`Simulation::release_super_anim`],
 /// `0x006CE0B6..0x006CE121`), then [`SuperWeaponInstance::reset`]. Its
 /// callers are `BuildingClass::Infiltrate` (`0x00457388`,
-/// `sim::spy_infiltration`) and the trigger action ResetSW, which is not
-/// ported. A Super the house never received does nothing.
+/// `sim::spy_infiltration`) and Action134 (`0x006E43A0`). Both use this owner
+/// without grant, ready or hold admission. A missing constructed instance
+/// cannot be reset. Executed dispatch controls and signed timer boundaries:
+/// `tools/spatial_oracle/trigger_superweapon_reset.meta.json`.
 pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw_type: &str) {
     let (Some(type_id), Some(sw)) = (sim.interner.get(sw_type), rules.super_weapon(sw_type)) else {
         return;
