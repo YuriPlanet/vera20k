@@ -2069,11 +2069,11 @@ mod retail_construction_tests {
         let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
         let soviet = house_of(sim, "Russians");
         let standing = yards(sim, soviet);
-        sim.houses
-            .get_mut(&soviet)
-            .expect("the Soviet house")
-            .ai_activation
-            .auto_base_building = false;
+        let house = sim.houses.get_mut(&soviet).expect("the Soviet house");
+        house.set_ai_activation_for_test(crate::sim::house_state::HouseAiActivationLatches {
+            auto_base_building: false,
+            ..house.ai_activation()
+        });
         // The first cell near the base where a yard can stand from every
         // origin within a cell of it: the MCV's own cell (action 9's test),
         // Deploy's (-1, -1), and a cell of drift.

@@ -156,9 +156,9 @@ fn hash_house_ai_activation_fields(
     house: &crate::sim::house_state::HouseState,
     hasher: &mut impl Hasher,
 ) {
-    house.ai_activation.production.hash(hasher);
-    house.ai_activation.autocreate_allowed.hash(hasher);
-    house.ai_activation.ai_triggers_active.hash(hasher);
+    house.ai_activation().production.hash(hasher);
+    house.ai_activation().autocreate_allowed.hash(hasher);
+    house.ai_activation().ai_triggers_active.hash(hasher);
     house.current_iq.hash(hasher);
 }
 
@@ -3457,7 +3457,7 @@ mod state_hash_field_tests {
             let mut sim = Simulation::new();
             let owner = sim.interner.intern("Computer1");
             let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-            house.ai_activation = latches;
+            house.set_ai_activation_for_test(latches);
             sim.houses.insert(owner, house);
             sim
         }

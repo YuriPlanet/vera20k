@@ -466,7 +466,10 @@ fn deploy_mcv_waits_for_target_building_deploy_facing() {
     let mut sim = deploy_sim(&rules);
     add_house(&mut sim, "Americans", false);
     let owner = sim.interner.get("Americans").unwrap();
-    sim.houses.get_mut(&owner).unwrap().ai_activation = SPLIT_AI_ACTIVATION;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
 
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 64, &rules)
@@ -494,7 +497,7 @@ fn deploy_mcv_waits_for_target_building_deploy_facing() {
             .any(|e| e.type_ref() == yard)),
         "facing gate must run before ConYard creation"
     );
-    assert_eq!(sim.houses[&owner].ai_activation, SPLIT_AI_ACTIVATION);
+    assert_eq!(sim.houses[&owner].ai_activation(), SPLIT_AI_ACTIVATION);
 }
 
 #[test]
@@ -703,7 +706,7 @@ fn base_plan_recalc_deploy_generates_and_anchors_nonhuman_conyard() {
     let house = &sim.houses[&owner];
     assert_eq!(house.base_center, Some((19, 21)));
     assert_eq!(house.base_plan_center, (19, 21));
-    assert_eq!(house.ai_activation, ENABLED_AI_ACTIVATION);
+    assert_eq!(house.ai_activation(), ENABLED_AI_ACTIVATION);
     assert!(!house.base_plan.nodes.is_empty());
     assert_eq!(
         house.base_plan.nodes[0].packed_cell,
@@ -784,7 +787,10 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
         let mut sim = deploy_sim(&rules);
         add_house(&mut sim, "Americans", is_human);
         let owner = sim.interner.get("Americans").unwrap();
-        sim.houses.get_mut(&owner).unwrap().ai_activation = SPLIT_AI_ACTIVATION;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
         sim.session.game_mode_nonzero = game_mode_nonzero;
         sim.scenario_rng = crate::sim::rng::SimRng::new(0x5566_7788);
         let mcv = sim
@@ -810,7 +816,7 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
         assert_eq!(house.base_center, None);
         assert_eq!(house.base_plan_center, (0, 0));
         assert!(house.base_plan.nodes.is_empty());
-        assert_eq!(house.ai_activation, SPLIT_AI_ACTIVATION);
+        assert_eq!(house.ai_activation(), SPLIT_AI_ACTIVATION);
         assert_eq!(
             sim.scenario_rng.logical_state(),
             expected_rng.logical_state()
@@ -822,7 +828,10 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
     let mut sim = deploy_sim(&rules);
     add_house(&mut sim, "Americans", false);
     let owner = sim.interner.get("Americans").unwrap();
-    sim.houses.get_mut(&owner).unwrap().ai_activation = SPLIT_AI_ACTIVATION;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
     sim.session.game_mode_nonzero = true;
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x99AA_BBCC);
     let miner = sim
@@ -841,7 +850,7 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
     assert_eq!(sim.houses[&owner].base_center, None);
     assert_eq!(sim.houses[&owner].base_plan_center, (0, 0));
     assert!(sim.houses[&owner].base_plan.nodes.is_empty());
-    assert_eq!(sim.houses[&owner].ai_activation, SPLIT_AI_ACTIVATION);
+    assert_eq!(sim.houses[&owner].ai_activation(), SPLIT_AI_ACTIVATION);
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state()
@@ -860,7 +869,7 @@ fn base_plan_recalc_deploy_countryless_nonempty_plan_only_reanchors_node_zero() 
     let owner = sim.interner.get("Americans").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
     house.country = None;
-    house.ai_activation = SPLIT_AI_ACTIVATION;
+    house.set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
     house.base_plan.nodes = vec![BasePlanNode {
         type_or_control: 4,
         packed_cell: 0xAABB_CCDD,
@@ -883,7 +892,7 @@ fn base_plan_recalc_deploy_countryless_nonempty_plan_only_reanchors_node_zero() 
     let house = &sim.houses[&owner];
     assert_eq!(house.base_center, Some((19, 21)));
     assert_eq!(house.base_plan_center, (19, 21));
-    assert_eq!(house.ai_activation, ENABLED_AI_ACTIVATION);
+    assert_eq!(house.ai_activation(), ENABLED_AI_ACTIVATION);
     assert_eq!(house.base_plan.nodes.len(), 1);
     assert_eq!(house.base_plan.nodes[0].type_or_control, 4);
     assert_eq!(
@@ -910,7 +919,7 @@ fn base_plan_recalc_deploy_countryless_empty_plan_fails_before_removal() {
     let owner = sim.interner.get("Americans").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
     house.country = None;
-    house.ai_activation = SPLIT_AI_ACTIVATION;
+    house.set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
@@ -928,7 +937,7 @@ fn base_plan_recalc_deploy_countryless_empty_plan_fails_before_removal() {
     assert_eq!(house.base_center, None);
     assert_eq!(house.base_plan_center, (0, 0));
     assert!(house.base_plan.nodes.is_empty());
-    assert_eq!(house.ai_activation, SPLIT_AI_ACTIVATION);
+    assert_eq!(house.ai_activation(), SPLIT_AI_ACTIVATION);
     assert_eq!(sim.scenario_rng.state(), rng_before);
 }
 
@@ -941,7 +950,10 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
         let mut sim = deploy_sim(rules);
         add_house(&mut sim, "Americans", false);
         let owner = sim.interner.get("Americans").unwrap();
-        sim.houses.get_mut(&owner).unwrap().ai_activation = SPLIT_AI_ACTIVATION;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
         sim.session.game_mode_nonzero = true;
         sim.scenario_rng = crate::sim::rng::SimRng::new(0xDEAD_BEEF);
         let mcv = sim
@@ -959,7 +971,7 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
         assert_eq!(house.base_center, None);
         assert_eq!(house.base_plan_center, (0, 0));
         assert!(house.base_plan.nodes.is_empty());
-        assert_eq!(house.ai_activation, SPLIT_AI_ACTIVATION);
+        assert_eq!(house.ai_activation(), SPLIT_AI_ACTIVATION);
         assert_eq!(sim.scenario_rng.state(), rng_before);
     }
 }

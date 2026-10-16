@@ -37,7 +37,7 @@
 //!   (`0x00509610`'s scan of `0x008B3DC4` with `0x006F1E20`). VERA skips the
 //!   difficulty gate and refuses such a trigger. Trigger: campaign AI trigger
 //!   selection after startup; effects include missing recruitment and a
-//!   different eligible/weighted trigger set. Required live chain: issue1308.
+//!   different eligible/weighted trigger set. Required live chain: campaign AI eligibility under issue1508.
 //! - The trigger actions that write RatioAITriggerTeam (`0x006DF364`,
 //!   `0x006E330E`) are not ported; the map reader now initializes this owner.
 //! - Conditions 5 and 6 compare a super weapon's charge against its type's
@@ -208,7 +208,7 @@ pub(crate) fn select_team_types_with(
     };
     let enemy = house.enemy_house;
     let ratio = house.team_creation.ratio;
-    let triggers_active = house.ai_activation.ai_triggers_active;
+    let triggers_active = house.ai_activation().ai_triggers_active;
     let team_cap = house.difficulty_value(&rules.general.total_ai_team_cap);
     let max_defensive = house.difficulty_value(&rules.general.maximum_ai_defensive_teams);
     let mut picked = Vec::new();

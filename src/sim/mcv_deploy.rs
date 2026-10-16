@@ -115,7 +115,7 @@ fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleS
 /// controls it (`IsControlledByHuman 0x0050B730`).
 fn owner_builds_its_own_base(sim: &Simulation, entity: &GameEntity) -> bool {
     sim.houses.get(&entity.owner()).is_some_and(|house| {
-        house.ai_activation.auto_base_building
+        house.ai_activation().auto_base_building
             && !house.is_controlled_by_human(sim.session.game_mode_nonzero)
     })
 }

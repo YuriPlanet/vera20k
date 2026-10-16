@@ -49,7 +49,7 @@ fn fixture_with(rules: RuleSet, credits: i32) -> (Simulation, RuleSet, InternedI
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(country), false, credits, 10);
-    house.ai_activation.production = true;
+    house.enable_scripted_production();
     sim.houses.insert(owner, house);
     sim.session.house_order.push(owner);
     (sim, rules, owner)

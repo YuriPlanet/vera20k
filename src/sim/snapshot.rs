@@ -5109,7 +5109,7 @@ mod tests {
                 auto_base_building: bits & 8 != 0,
             };
             let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-            house.ai_activation = latches;
+            house.set_ai_activation_for_test(latches);
             sim.houses.insert(owner, house);
             sim.session.house_order.push(owner);
 
@@ -5122,7 +5122,7 @@ mod tests {
             let restored = GameSnapshot::load(&bytes)
                 .expect("current v115 snapshot")
                 .sim;
-            assert_eq!(restored.houses[&owner].ai_activation, latches);
+            assert_eq!(restored.houses[&owner].ai_activation(), latches);
         }
     }
 

@@ -696,7 +696,10 @@ fn house_fixture(human: bool, land: &str) -> (Simulation, RuleSet, u64) {
     sim.session.game_mode_nonzero = true;
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, human, 5000, 10);
-    house.ai_activation.auto_base_building = true;
+    house.set_ai_activation_for_test(crate::sim::house_state::HouseAiActivationLatches {
+        auto_base_building: true,
+        ..house.ai_activation()
+    });
     house.base_plan.nodes = vec![crate::sim::base_plan::BasePlanNode {
         type_or_control: 0,
         packed_cell: 0,
@@ -955,7 +958,7 @@ fn retail_dustbowl_a_computer_mcv_deploys_where_it_stands() {
     let (mut scenario, owner, mcv, (x, y)) = retail_dustbowl_computer_mcv();
     retail_frame(&mut scenario);
     let sim = scenario.sim();
-    assert!(sim.houses[&owner].ai_activation.auto_base_building);
+    assert!(sim.houses[&owner].ai_activation().auto_base_building);
     let mut frames = 1;
     while retail_yard_at(&scenario).is_none() && frames < 600 {
         retail_frame(&mut scenario);

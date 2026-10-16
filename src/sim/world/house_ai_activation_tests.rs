@@ -27,7 +27,15 @@ fn insert_house(
 
 fn advance(sim: &mut Simulation, rules: Option<&RuleSet>, lane: TickLane) {
     let result = sim
-        .advance_master_frame(&[], rules, None, 67, lane, None, crate::sim::world::FrameEffects::default())
+        .advance_master_frame(
+            &[],
+            rules,
+            None,
+            67,
+            lane,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("fixture frame must complete")
         .into_tick();
     assert!(result.frame_committed);
@@ -54,12 +62,12 @@ fn house_ai_activation_forward_house_order_reaches_computer_and_passive_houses()
     advance(&mut sim, Some(&rules), TickLane::Ordinary);
 
     assert_eq!(
-        sim.houses[&human].ai_activation,
+        sim.houses[&human].ai_activation(),
         Default::default(),
         "CurrentPlayer is the only neighboring state that gates this fixture"
     );
     for owner in [computer, neutral] {
-        let latches = sim.houses[&owner].ai_activation;
+        let latches = sim.houses[&owner].ai_activation();
         assert!(latches.production);
         assert!(latches.autocreate_allowed);
         assert!(!latches.ai_triggers_active);
@@ -100,20 +108,27 @@ fn house_ai_activation_empty_network_modal_runs_full_tail_but_rulesless_skips() 
 
     advance(&mut modal, Some(&rules), TickLane::NetworkModal);
 
-    assert!(modal.houses[&modal_owner].ai_activation.production);
-    assert!(modal.houses[&modal_owner].ai_activation.autocreate_allowed);
-    assert!(modal.houses[&modal_owner].ai_activation.auto_base_building);
+    assert!(modal.houses[&modal_owner].ai_activation().production);
+    assert!(
+        modal.houses[&modal_owner]
+            .ai_activation()
+            .autocreate_allowed
+    );
+    assert!(
+        modal.houses[&modal_owner]
+            .ai_activation()
+            .auto_base_building
+    );
 
     let mut rulesless = Simulation::new();
     rulesless.session.game_mode_nonzero = true;
     let rulesless_owner = insert_house(&mut rulesless, "Computer1", false, i32::MAX);
     let rulesless_peer = insert_house(&mut rulesless, "Computer2", false, i32::MAX);
-    rulesless
-        .houses
-        .get_mut(&rulesless_owner)
-        .unwrap()
-        .ai_activation
-        .auto_base_building = true;
+    let house = rulesless.houses.get_mut(&rulesless_owner).unwrap();
+    house.set_ai_activation_for_test(crate::sim::house_state::HouseAiActivationLatches {
+        auto_base_building: true,
+        ..house.ai_activation()
+    });
     rulesless
         .houses
         .get_mut(&rulesless_owner)
@@ -127,7 +142,7 @@ fn house_ai_activation_empty_network_modal_runs_full_tail_but_rulesless_skips() 
 
     advance(&mut rulesless, None, TickLane::Ordinary);
 
-    let latches = rulesless.houses[&rulesless_owner].ai_activation;
+    let latches = rulesless.houses[&rulesless_owner].ai_activation();
     assert!(!latches.production);
     assert!(!latches.autocreate_allowed);
     assert!(!latches.ai_triggers_active);

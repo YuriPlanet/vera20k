@@ -144,7 +144,7 @@ fn selector_fixture(row: &Value) -> SelectorFixture {
     let house = sim.houses.get_mut(&owner).unwrap();
     house.difficulty = HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap();
     house.team_creation.ratio = dword(&row["ratio"]);
-    house.ai_activation.ai_triggers_active = flag(&row["active"]);
+    house.set_ai_triggers_active(flag(&row["active"]));
     house.enemy_house = flag(&row["enemy"]).then_some(enemy);
     let script = sim.interner.intern("SCRIPT");
     let task_force = sim.interner.intern("TASKFORCE");

@@ -68,6 +68,11 @@ with declared catalog/stream priors and recorded device transports.
 
 ``--wakeup`` executes Actions81..83 and their real effective-Mission/Tag/
 deferred-Queue receivers on declared ordered object lists.
+
+``--ai-activation`` executes Actions74/75 and the ordinary House team-timer
+block with the real selector, eligibility and seeded RNG in the same image.
+Actual ALL05 records bind the stop route; Team creation remains an observed
+boundary, and the positive path has explicit minimal skirmish priors.
 """
 from pathlib import Path
 import hashlib
@@ -5248,6 +5253,356 @@ def wakeup_metadata():
         ])
 
 
+class AiActivationFixture(ActionFixture):
+    """Compose the existing action and AI fixtures on one original image."""
+
+    def __init__(self, *, seed=31):
+        from tools import ai_team_oracle as ai
+        from tools.native_oracle import NativeCallTrace
+        super().__init__()
+        self.ai_module = ai
+        self.ai = ai.TeamEmu(image_owner=self)
+        self.houses = [ai.HOUSE, ai.ENEMY, ai.FAKE + 0x40000]
+        self.house_types = [ai.HOUSE_TYPES + i * 0x300 for i in range(3)]
+        self.house_array, self.live = self.allocate(12), self.allocate(0x48)
+        self.phase = 'setup'
+        self.events, self.writes, self.raw_draws = [], [], []
+        self.native_calls = []
+        self.trace = NativeCallTrace(self.u, self.read32, self.native_calls)
+        for i, (house, typ, country) in enumerate(zip(self.houses, self.house_types, (0, 7, 0))):
+            self.u.mem_write(house, bytes(0x8000))
+            self.u.mem_write(typ, bytes(0x200))
+            self.u.mem_write(house + 0x24, dwords(ai.IHOUSE_VTABLE))
+            self.u.mem_write(house + 0x30, dwords(i))
+            self.u.mem_write(house + 0x34, dwords(typ))
+            self.u.mem_write(typ + 0xB8, dwords(country))
+        self.type_objects = ai.prepare_selector(self.ai, team_types=[False, True],
+            teams=[dict(type=1, created=7, formed=True)], triggers=[(0, None, 100.0)])
+        # Exactly the existing eligibility_row's unconditional multiplayer
+        # path: no side, TechLevel0, <all> owner, no zone relation, no Max,
+        # empty TaskForce, one enabled trigger admitting every difficulty.
+        self.ai.write32(ai.GAME_MODE, 1)
+        self.ai.write32(ai.HOUSE + 0x1D4, 10)
+        self.ai.rules_vector(0x1394, [9, 2, 9])
+        self.ai.write32(ai.TASK_FORCE + 0x9C, 0)
+        for typ in self.type_objects:
+            self.ai.write32(typ + 0xE4, ai.TASK_FORCE)
+            self.ai.write32(typ + 0xB8, -1)
+        trigger = ai.TRIGGERS
+        self.ai.write32(trigger + 0x98, -1)
+        self.ai.write32(trigger + 0xA0, 2)
+        self.u.mem_write(trigger + 0xA4, b'\x01')
+        self.u.mem_write(trigger + 0xD0, b'\x01')
+        self.u.mem_write(trigger + 0xD2, b'\x01\x01\x01')
+        self.ai.rules_vector(0x115C, [300, 600, 900])
+        self.configure_selection({})
+        for pointer in (SCENARIO + 0x218, 0x886B88, 0xABE890):
+            self.call(0x65C6D0, [seed], ecx=pointer)
+        for begin, end in ((0x6E45E0, 0x6E462B), (0x502D30, 0x502D60),
+                           (0x510ED0, 0x510FA6), (0x726910, 0x726914),
+                           (ai.BLOCK_START, ai.BLOCK_END), (0x6F0AB0, 0x6F0FB0),
+                           (0x41E720, 0x41F000), (0x65C6D0, 0x65C88D)):
+            self.ranges.append((begin, end))
+            self.original.append(bytes(self.u.mem_read(begin, end - begin)))
+        self.u.hook_add(UC_HOOK_CODE, self.observe_ai)
+        self.u.hook_add(UC_HOOK_MEM_WRITE, self.observe_ai_write)
+
+    def house_index(self, pointer):
+        return self.houses.index(pointer) if pointer in self.houses else None
+
+    def configure_selection(self, case):
+        self.u.mem_write(0xA8022C, dwords(self.house_array))
+        self.u.mem_write(0xA80238, dwords(3))
+        self.u.mem_write(self.house_array, dwords(*(self.houses[i] for i in case.get('order', [0, 1, 2]))))
+        self.u.mem_write(SCENARIO + 0x1180, dwords(*case.get('slots', [1, 0, -1, -1, -1, -1, -1, -1])))
+        self.u.mem_write(self.live, bytes(0x48))
+        retained = case.get('trigger_owner', 2)
+        self.u.mem_write(self.live + 0x2C, dwords(self.houses[retained] if retained is not None else 0))
+        for typ, country in zip(self.house_types, case.get('countries', [0, 7, 0])):
+            self.u.mem_write(typ + 0xB8, dwords(country))
+
+    def rng_full(self):
+        return CampaignReader.rng_state(SimpleNamespace(u=self.u, scenario=SCENARIO))
+
+    def observe_ai(self, u, pc, _size, _data):
+        if self.phase == 'setup':
+            return
+        sp, ecx = u.reg_read(UC_X86_REG_ESP), u.reg_read(UC_X86_REG_ECX)
+        self.trace.returned(pc, sp)
+        if pc in (0x65C780, 0x65C7E0, 0x41E720):
+            spec = {0x65C780: ('rng_next', 0, 0), 0x65C7E0: ('rng_ranged', 2, 8),
+                    0x41E720: ('native_eligibility', 3, 12)}[pc]
+            self.trace.entered(pc, sp, spec)
+        if pc in (0x65C79D, 0x65C84B):
+            self.raw_draws.append(u.reg_read(UC_X86_REG_ESI) & 0xFFFFFFFF)
+        if pc == 0x6E45E0:
+            self.events.append(dict(call='live_house_selector', selector=self.integer(sp + 8),
+                live_trigger=bool(self.read32(sp + 4))))
+        elif pc in (0x502D30, 0x510F60, 0x510ED0, 0x726910):
+            self.events.append(dict(call='house_selector_leaf', entry=f'{pc:08X}',
+                argument=self.integer_reg(UC_X86_REG_ECX) if pc != 0x726910 else 'live_trigger'))
+        elif pc == 0x6F0AB0:
+            house = u.reg_read(UC_X86_REG_EDX)
+            self.events.append(dict(call='native_team_selector', house=self.house_index(house),
+                active=bool(u.mem_read(house + 0x1F2, 1)[0])))
+        elif pc == 0x6F09C0:
+            self.events.append(dict(call='create_team_boundary', team_type=self.type_objects.index(ecx),
+                house=self.house_index(self.read32(sp + 4))))
+            # Existing AI oracle's TeamType::Create_Team boundary. Its body,
+            # object allocation, member admission and later missions are excluded.
+            return_from_sink(u, 4, 0)
+
+    def observe_ai_write(self, u, _access, address, size, value, _data):
+        if self.phase == 'setup':
+            return
+        for i, house in enumerate(self.houses):
+            if house <= address < house + 0x8000:
+                self.writes.append(dict(house=i, offset=address - house, size=size,
+                    value=value, pc=f'{u.reg_read(UC_X86_REG_EIP):08X}'))
+
+    def clear_observations(self):
+        assert not self.trace.pending
+        self.events.clear(); self.writes.clear(); self.raw_draws.clear()
+        self.native_calls.clear(); self.ai.events.clear()
+
+    def house_summary(self, index):
+        pointer = self.houses[index]
+        return dict(latches=[self.u.mem_read(pointer + off, 1)[0] for off in (0x1EE, 0x1EF, 0x1F2, 0x1F3)],
+            team_timer=list(struct.unpack('<iii', self.u.mem_read(pointer + 0x5798, 12))))
+
+    def action(self, kind, case):
+        assert kind in (74, 75)
+        self.phase = 'setup'
+        self.configure_selection(case)
+        read = self.read_action(f"{kind},0,{case.get('selector', 0)},0,0,0,0,A", ini_capacity=512)
+        before = [bytes(self.u.mem_read(p, 0x8000)) for p in self.houses]
+        summaries = [self.house_summary(i) for i in range(3)]
+        old_team = bytes(self.u.mem_read(self.ai_module.TEAMS, 0x100))
+        team_count = self.read32(self.ai_module.TEAM_ARRAY[1])
+        rng_before = self.rng_hashes()
+        self.clear_observations(); self.phase = 'action'
+        incoming = case.get('incoming', 1)
+        result = self.call(0x6DD8B0, [self.houses[incoming] if incoming is not None else 0,
+            0, 0 if case.get('null_trigger') else self.live, 0], ecx=ACTION) & 255
+        self.phase = 'setup'
+        after = [bytes(self.u.mem_read(p, 0x8000)) for p in self.houses]
+        assert self.rng_hashes() == rng_before and not self.native_calls
+        assert old_team == bytes(self.u.mem_read(self.ai_module.TEAMS, 0x100))
+        assert team_count == self.read32(self.ai_module.TEAM_ARRAY[1]) and not self.ai.events
+        assert all(row['offset'] == 0x1F2 and row['size'] == 1 and row['value'] == (kind == 74)
+                   for row in self.writes)
+        assert all(all(j == 0x1F2 for j, (a, b) in enumerate(zip(left, right)) if a != b)
+                   for left, right in zip(before, after))
+        return dict(kind=kind, input=case, native_read=read, result=result,
+            houses_before=summaries, houses_after=[self.house_summary(i) for i in range(3)],
+            events=list(self.events), writes=list(self.writes), rng_unchanged=True,
+            rng_hashes=rng_before, existing_team_unchanged=True)
+
+    def team_update(self, frame, *, house=0):
+        ai = self.ai_module
+        pointer = self.houses[house]
+        self.u.mem_write(ai.FRAME, dwords(frame))
+        self.u.mem_write(ai.BLOCK_STACK, bytes(0x1000))
+        self.u.reg_write(UC_X86_REG_ESP, ai.BLOCK_STACK + 0x800)
+        self.u.reg_write(UC_X86_REG_ESI, pointer)
+        self.u.reg_write(UC_X86_REG_EBP, 0)
+        before = self.house_summary(house)
+        old_team = bytes(self.u.mem_read(ai.TEAMS, 0x100))
+        team_count = self.read32(ai.TEAM_ARRAY[1])
+        rng_before = self.rng_hashes()
+        self.clear_observations(); self.phase = 'consumer'
+        run_checked(self.u, ai.BLOCK_START, ai.BLOCK_END)
+        self.phase = 'setup'
+        assert not self.trace.pending
+        assert old_team == bytes(self.u.mem_read(ai.TEAMS, 0x100))
+        assert self.read32(ai.TEAM_ARRAY[1]) == team_count and not self.ai.events
+        assert before['latches'] == self.house_summary(house)['latches']
+        self.check_code()
+        return dict(frame=frame, house=house, before=before, after=self.house_summary(house),
+            events=list(self.events), native_calls=list(self.native_calls),
+            raw_rng_words=list(self.raw_draws), writes=list(self.writes),
+            existing_team_unchanged=True, rng_before=rng_before, rng_after=self.rng_hashes(),
+            scenario_rng_after_full=self.rng_full()['scenario'],
+            autocreate_after=[self.u.mem_read(p + 0xA9, 1)[0] for p in self.type_objects])
+
+
+def ai_activation_action_controls():
+    fixture = AiActivationFixture()
+    cases = [dict(name='country0_not_incoming_or_retained'), dict(name='country7', selector=7),
+        dict(name='duplicate_country_reversed', order=[2, 1, 0]),
+        dict(name='player_at4475', selector=4475),
+        dict(name='player_at4477_unmapped', selector=4477),
+        dict(name='retained_house8997', selector=8997),
+        dict(name='retained_house_null', selector=8997, trigger_owner=None),
+        dict(name='null_trigger_valid_country', null_trigger=True),
+        dict(name='minus_one', selector=-1), dict(name='missing_country999', selector=999),
+        dict(name='9001_is_not_retained', selector=9001),
+        dict(name='null_incoming_valid_country', incoming=None),
+        dict(name='idempotent_store', same_prior=True)]
+    controls = []
+    for kind in (74, 75):
+        for case in cases:
+            for i, house in enumerate(fixture.houses):
+                for off, value in ((0x1EE, i & 1), (0x1EF, (i + 1) & 1),
+                                   (0x1F2, (kind == 74) if case.get('same_prior') else (kind == 75)),
+                                   (0x1F3, i & 1)):
+                    fixture.u.mem_write(house + off, bytes([value]))
+                fixture.u.mem_write(house + 0x5798, dwords(41 + i, 777 + i, 108 + i))
+            controls.append(fixture.action(kind, case))
+    fixture.check_code()
+    return dict(country_priors=[0, 7, 0], controls=controls,
+        rng_full_seed31=fixture.rng_full(), code_unchanged=True)
+
+
+def ai_activation_histories():
+    ai_cases = [
+        dict(name='stop_campaign_due_repeats', game_mode=0,
+             steps=[dict(action=75), dict(frame=10), dict(frame=609), dict(frame=610), dict(frame=1210)]),
+        dict(name='inverse74_minimal_skirmish', initial_active=False,
+             steps=[dict(action=74), dict(frame=10)]),
+        dict(name='stop_restart_stop_same_house', steps=[dict(action=75), dict(frame=10),
+             dict(action=74), dict(frame=610), dict(action=75), dict(frame=1210)]),
+        dict(name='stop_at_cap_preserves_old_defense_team', cap=1,
+             steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_seed0_ranged_rejects_one_raw_word', seed=0,
+             steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_before_expiry', steps=[dict(action=75), dict(frame=9)]),
+        dict(name='stop_human_outer_gate', human=True, steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_campaign_control_outer_gate', game_mode=0, control=True,
+             steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_multiplayer_control_is_not_human', control=True,
+             steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_passive_outer_gate', passive=True, steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_paused_zero_timer', timer=[-1, 123, 0], steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_paused_positive_timer', timer=[-1, 123, 3], steps=[dict(action=75), dict(frame=10)]),
+        dict(name='stop_wrapped_timer', timer=[0x7FFFFFF0, 123, 0x20],
+             steps=[dict(action=75), dict(frame=-0x7FFFFFF0)]),
+        dict(name='retail_country16_and17_stop_campaign', game_mode=0, countries=[16, 17, 0],
+             steps=[dict(action=75, selector=16), dict(action=75, selector=17),
+                    dict(frame=10), dict(frame=10, house=1)]),
+    ]
+    rows = []
+    for case in ai_cases:
+        fixture = AiActivationFixture(seed=case.get('seed', 31))
+        ai = fixture.ai_module
+        fixture.u.mem_write(ai.GAME_MODE, dwords(case.get('game_mode', 1)))
+        fixture.ai.rules_vector(0x13CC, [case.get('cap', 8)] * 3)
+        for house, typ in zip(fixture.houses, fixture.house_types):
+            fixture.u.mem_write(house + 0x1EC, bytes([case.get('human', False), case.get('control', False)]))
+            fixture.u.mem_write(house + 0x1EE, b'\x00\x01')
+            fixture.u.mem_write(house + 0x1F2, bytes([case.get('initial_active', True), 0]))
+            fixture.u.mem_write(house + 0x184, dwords(1))
+            fixture.u.mem_write(house + 0x565C, dwords(100))
+            fixture.u.mem_write(house + 0x5798, dwords(*case.get('timer', [0, 123, 10])))
+            fixture.u.mem_write(typ + 0x1A6, bytes([case.get('passive', False)]))
+        fixture.configure_selection(case)
+        initial_rng = fixture.rng_full()
+        steps = []
+        for step in case['steps']:
+            if 'action' in step:
+                steps.append(dict(action=fixture.action(step['action'], dict(case,
+                    selector=step.get('selector', 0)))))
+            else:
+                steps.append(dict(update=fixture.team_update(step['frame'], house=step.get('house', 0))))
+        final_rng = fixture.rng_full()
+        assert all(initial_rng[key] == final_rng[key] for key in ('main', 'mapgen'))
+        rows.append(dict(input=case, initial_rng_full=initial_rng, steps=steps,
+            final_rng_full=final_rng, other_rng_streams_unchanged=True, code_unchanged=True))
+    return rows
+
+
+def ai_activation_retail():
+    from tools.input_oracle.campaign_start import prepare_house_rules
+    from tools.spatial_oracle.tag_lifecycle import PowerEventControls
+    archive = (configured_gamemd().parent / 'mapsmd03.mix').read_bytes()
+    raw_map = mix(archive)[mix_hash('ALL05UMD.MAP')]
+    rules_path = Path(__file__).parents[2] / 'ini' / 'rulesmd.ini'
+    raw_rules = rules_path.read_bytes()
+    values, rule_values = sections(raw_map), sections(raw_rules)
+    reader = CampaignReader()
+    reader.invoke(0x6832C0, reader.scenario)
+    rules = prepare_house_rules(reader, rule_values)
+    registrations = []
+    for label, entries in (('RULESMD.INI', rule_values), ('ALL05UMD.MAP', values)):
+        reader.ordered_ini({'Countries': entries.get('Countries', {})})
+        reader.u.reg_write(UC_X86_REG_ESI, INI); reader.u.reg_write(UC_X86_REG_EDI, rules)
+        reader.region(0x668C8B, 0x668CDB)
+        registrations.append(dict(layer=label, entries=[dict(index=i,
+            name=reader.string(reader.read32(reader.read32(0xA83C9C) + i * 4) + 0x24))
+            for i in range(reader.read32(0xA83CA8))]))
+    houses = []
+    for name in values['Houses'].values():
+        reader.ordered_ini({name: values[name]})
+        country = reader.invoke(0x475540, INI,
+            (reader.cstring(name), reader.cstring('Country'), 0xFFFFFFFF))
+        if country in (16, 17):
+            houses.append(dict(name=name, raw=values[name], native_country=country))
+    identity = '092A219C'
+    raw_actions = values['Actions'][identity]
+    action = ActionFixture()
+    reads = [action.read_action(body, ini_capacity=512) for body in
+             ('75,0,16,0,0,0,0,A', '75,0,17,0,0,0,0,A')]
+    assert all(body['raw'] in raw_actions for body in reads)
+    flags = FlagsFixture()
+    begin = '0778A83C'
+    enable_begin = '0E5FA1BC'
+    related_routes = {}
+    for route in (begin, enable_begin):
+        related_routes[route] = dict(raw_trigger=values['Triggers'][route],
+            raw_event=values['Events'][route], raw_actions=values['Actions'][route],
+            native_event=PowerEventControls.read_event(values['Events'][route]),
+            native_flags=flags.execute(values['Triggers'][route], [1, 1, 1, 1, 0]),
+            tags={key: body for key, body in values['Tags'].items() if body.endswith(',' + route)})
+    begin_reads = [action.read_action(body, ini_capacity=512) for body in
+                   ('74,0,16,0,0,0,0,A', '74,0,17,0,0,0,0,A')]
+    assert all(body['raw'] in values['Actions'][begin] for body in begin_reads)
+    result = dict(map='ALL05UMD.MAP', archive='mapsmd03.mix',
+        archive_sha256=hashlib.sha256(archive).hexdigest(), map_bytes=len(raw_map),
+        map_sha256=hashlib.sha256(raw_map).hexdigest(),
+        rules_file='ini/rulesmd.ini', rules_sha256=hashlib.sha256(raw_rules).hexdigest(),
+        trigger_id=identity, raw_trigger=values['Triggers'][identity],
+        raw_event=values['Events'][identity], raw_actions=raw_actions,
+        tags={key: body for key, body in values['Tags'].items() if body.endswith(',' + identity)},
+        native_flags=flags.execute(values['Triggers'][identity], [1, 1, 1, 1, 0]),
+        native_event=PowerEventControls.read_event(values['Events'][identity]),
+        native_action75_reads=reads, country_registration=registrations, target_houses=houses,
+        native_action74_reads=begin_reads, conditional_begin_routes=related_routes,
+        rules_team_delays=[reader.read32(reader.read32(rules + 0x115C) + i * 4) for i in range(3)],
+        explicit_team=dict(id='08AE9CBC', raw=values['08AE9CBC']),
+        limits='Physical mapsmd03 member and original selected scalar/Country readers only. Production AssetManager resolution must independently match this map hash. Full layering, elapsed scheduling, explicit Team admission, world placement and whole campaign outcome are excluded. The preceding Action4 and both Action53 references are retained raw, not executed here.0778A83C supplies real74 Country16/17 records but starts disabled;0E5FA1BC contains its53 enable behind Event55 value17. That prerequisite and its timing relative to the elapsed240 stop are not executed or assumed satisfied.')
+    reader.check_code(); action.check_code()
+    return result
+
+
+def ai_activation_generate():
+    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    return dict(schema_version=1, native_sha256=image_sha256(), native_fpcw=f'0x{NATIVE_FPCW:X}',
+        actions=ai_activation_action_controls(), histories=ai_activation_histories(), retail=ai_activation_retail())
+
+
+def ai_activation_metadata():
+    return provenance(
+        scope='Original74/75 constructor/read/dispatch and shared House selector; connected ordinary House team-timer/selector/native RNG/eligibility on explicit state; physical ALL05 Country16/17 elapsed240 binding. No complete campaign AI, new-Team lifecycle or whole-map outcome claim.',
+        assumptions=[
+            'The existing ActionFixture image owns constructor6DD000, reader6DD5B0, Execute6DD8B0, CRT/TLS/heap/INI and Scenario. TeamEmu attaches its existing storage/selector preparation to that same image; no result flag is transferred between VMs.',
+            'Three supplied0x8000-byte House windows, Country0/7/0 (or explicit16/17/0), registered order, live retained House, Player@ slots, four independent latches and team-timer priors are explicit. Action controls compare every supplied House byte and all three complete RNG streams; successful Execute writes only+1F2, including idempotent stores. Neither null Trigger nor -1 selects a House; incoming House does not choose the target.',
+            'House Update4F8A00..4F8B08 executes as a contiguous original block, ESI=House, EBP=0, zero incoming local stack and declared frame/start/unused-word/duration, game-mode, human/control, passive and difficulty1 priors. Other House Update phases and scheduling are excluded. The unused timer+4 becomes the actual zero local at4F8AE3, not a duration field.',
+            'The native selector6F0AB0 and actual65C7E0 execute with three seed31 streams, except the explicitly named seed0 rejection control. Full initial/final states and each update Scenario state, ranged args/returns and every raw XOR word are retained. Main/MapGen remain byte-identical. A ranged request can consume multiple raw words; no supplied draw answers or reduction model is used.',
+            'Existing selector preparation supplies one formed base-defense Team of a different type, cap8 (or explicit1), one nondefense trigger weight100 and one empty TaskForce. Positive74 runs real41E720 with multiplayer mode, enabled all-difficulty trigger, <all> owner, condition-1, no side/zone relation/Max and TechLevel0. This bounded skirmish control does not resolve campaign/factory/recruitment eligibility tracked under issue1508.',
+            'Inactive selection still reaches the original cancellation traversal with an empty pick vector. No eligibility, weighted draw, eviction or Team creation request occurs; old Team bytes/count and independent House latches are checked unchanged. Timer rearm and its native ranged request remain live when ordinary outer gates pass.',
+            'ALL05 evidence reads the physical mapsmd03.mix member and checkout retail RULESMD.INI with hashes, executes original Country registration/read, counted Event13, flags and scalar75 readers. Production AssetManager must separately match its source identity. No original whole map loading or complete layering is certified.',
+            'VERA20K_CAMPAIGN_START_ASSETS must name an existing empty directory for the reused CampaignReader; no file in that directory is requested by the selected prefixes.'],
+        substitutions=[
+            'Inherited action/AI CRT, heap, cached INI, platform and fixture-memory transports. All selected original gameplay instructions remain unchanged.',
+            'TeamType Create_Team6F09C0 is a recorded RET4 boundary returning0 after the actual original selector asks for it; no Team allocation/admission/member/mission result is supplied as parity. Existing AI team deletion callback remains the shared oracle boundary; covered rows assert it is never reached.'],
+        entry_points=dict(action_constructor=0x6DD000, action_reader=0x6DD5B0,
+            action_execute=0x6DD8B0, action74=0x6DF2D1, action75=0x6DF310,
+            house_selector=0x6E45E0, house_team_block=0x4F8A00,
+            team_selector=0x6F0AB0, eligibility=0x41E720,
+            create_team_boundary=0x6F09C0, random_seed=0x65C6D0,
+            random_ranged=0x65C7E0, country_registration=0x668C8B))
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -5268,9 +5623,19 @@ if __name__=='__main__':
     selected_modes.add_argument('--music-theme', action='store_true')
     selected_modes.add_argument('--all-to-hunt', action='store_true')
     selected_modes.add_argument('--wakeup', action='store_true')
+    selected_modes.add_argument('--ai-activation', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.wakeup:
+    if selected.ai_activation:
+        if selected.inputs is not None:
+            selector.error('--ai-activation reads configured retail ALL05, not --inputs')
+        finish_vectors(ai_activation_generate,
+            Path(__file__).with_name('trigger_ai_activation.json'),
+            provenance=ai_activation_metadata, argv=remaining,
+            source_paths=dict(SOURCE_PATHS,
+                ai_team=Path(__file__).parents[1] / 'ai_team_oracle.py',
+                rng_owner=Path(__file__).parents[1] / 'rmg_oracle' / 'gen_rng_vectors.py'))
+    elif selected.wakeup:
         if selected.inputs is not None:
             selector.error('--wakeup uses declared object/Tag/Mission priors, not --inputs')
         finish_vectors(wakeup_generate,

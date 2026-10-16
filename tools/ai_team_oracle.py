@@ -28,7 +28,7 @@ from unicorn.x86_const import (UC_X86_REG_EBP, UC_X86_REG_ECX, UC_X86_REG_EDI,
                                UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI,
                                UC_X86_REG_ESP, UC_X86_REG_FPCW)
 
-from tools.ai_base_building_oracle import Emu
+from tools.ai_base_building_oracle import Emu, FAKE_SIZE
 from tools.native_oracle import (NATIVE_FPCW, OracleError, finish_vectors, provenance,
                                  run_checked)
 
@@ -92,8 +92,19 @@ def f64(value):
 class TeamEmu(Emu):
     """An Emu with the fixture objects of this oracle."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *, image_owner=None):
+        if image_owner is None:
+            super().__init__()
+        else:
+            # Compose an existing ActionFixture image: constructor/read/dispatch
+            # and the selector must consume the very same House byte. The
+            # caller retains its CRT, allocation, Scenario and stack transports.
+            self.uc = image_owner.u
+            self.uc.mem_map(FAKE, FAKE_SIZE)
+            self.uc.mem_map(STUBS, 0x1000)
+            self.uc.mem_write(STUBS, b'\xcc' * 0x1000)
+            self.events = []
+            self.write32(0x8871E0, RULES)
         self.rtti = {}
         self.cost = {}
         self.index = {}
@@ -383,13 +394,16 @@ def harvester():
 
 # ---------------------------------------------------------------- selector
 
-def selector_row(*, ratio=100, active=True, difficulty=1, enemy=True, cap=(8, 8, 8),
-                 max_defense=(2, 2, 2), team_types, teams=(), triggers, eligible,
-                 answers, name=''):
+def prepare_selector(emu, *, ratio=100, active=True, difficulty=1, enemy=True,
+                     cap=(8, 8, 8), max_defense=(2, 2, 2), team_types, teams=(),
+                     triggers, eligible=None):
     """`team_types`: base-defense flags; `teams`: dicts with type, created,
     ours, formed; `triggers`: (first type, second type or None, weight);
-    `eligible`: the eligibility answer per trigger."""
-    emu = TeamEmu()
+    `eligible`: answers per trigger, or None to execute original eligibility.
+
+    Shared fixture storage only; no draw or selector body runs here. Existing
+    scalar controls and connected TAction controls use this same preparation.
+    """
     emu.write32(HOUSE + 0x184, difficulty)
     emu.write32(HOUSE + 0x565C, ratio)
     emu.uc.mem_write(HOUSE + 0x1F2, bytes([int(active)]))
@@ -420,7 +434,7 @@ def selector_row(*, ratio=100, active=True, difficulty=1, enemy=True, cap=(8, 8,
         emu.uc.mem_write(address + 0xB8, f64(weight))
         trigger_objects.append(address)
     emu.array(TRIGGER_ARRAY, trigger_objects)
-    answers_by_trigger = dict(zip(trigger_objects, eligible))
+    answers_by_trigger = dict(zip(trigger_objects, eligible or ()))
 
     def eligibility(e):
         trigger = e.uc.reg_read(UC_X86_REG_ECX)
@@ -429,7 +443,8 @@ def selector_row(*, ratio=100, active=True, difficulty=1, enemy=True, cap=(8, 8,
             raise OracleError('eligibility asked for another house')
         e.events.append(['eligible', trigger_objects.index(trigger), flag])
         return int(answers_by_trigger[trigger])
-    emu.hook(0x41E720, eligibility, 12)
+    if eligible is not None:
+        emu.hook(0x41E720, eligibility, 12)
 
     def delete_team(e):
         team = e.uc.reg_read(UC_X86_REG_ECX)
@@ -442,6 +457,16 @@ def selector_row(*, ratio=100, active=True, difficulty=1, enemy=True, cap=(8, 8,
             e.write32(items + 4 * slot, value)
         e.write32(TEAM_ARRAY[1], len(live))
     emu.hook(STUB_TEAM_DELETE, delete_team, 4)
+    return type_objects
+
+
+def selector_row(*, ratio=100, active=True, difficulty=1, enemy=True, cap=(8, 8, 8),
+                 max_defense=(2, 2, 2), team_types, teams=(), triggers, eligible,
+                 answers, name=''):
+    emu = TeamEmu()
+    type_objects = prepare_selector(emu, ratio=ratio, active=active,
+        difficulty=difficulty, enemy=enemy, cap=cap, max_defense=max_defense,
+        team_types=team_types, teams=teams, triggers=triggers, eligible=eligible)
     emu.draws(answers)
     out = FAKE + 0x230000
     emu.invoke(0x6F0AB0, ecx=out, edx=HOUSE, args=[0])

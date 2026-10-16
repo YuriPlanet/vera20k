@@ -2772,6 +2772,23 @@ impl Simulation {
                     frame_effects,
                 );
             }
+            74 | 75 => {
+                // Steam3e81a617:6DF2D1/6DF310 -> existing6E45E0 selector,
+                // then only House+1F2=1/0 at6DF2FA/6DF339. No immediate
+                // timer, Team, sibling-latch or RNG change belongs here.
+                // Native actions/consumer streams: --ai-activation corpus.
+                let (Some(live), Some(value), Some(rules)) = (context.live_index, value, rules)
+                else {
+                    return false;
+                };
+                let Some(house) = self
+                    .live_action_house(live, value, rules)
+                    .and_then(|owner| self.houses.get_mut(&owner))
+                else {
+                    return false;
+                };
+                house.set_ai_triggers_active(action.kind == 74);
+            }
             9 => {
                 // Execute6DEAD6 -> shared House selector6E45E0;6DEAFF
                 // writes only House+250=4. No immediate FireSale/Hunt and
@@ -3817,6 +3834,10 @@ mod damage_event_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_reveal_zone_tests.rs"]
 mod reveal_zone_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_ai_activation_tests.rs"]
+mod ai_activation_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_build_type_tests.rs"]

@@ -1794,8 +1794,8 @@ fn entered_cell_retains_the_actual_duplicate_country_house_for_8997_actions() {
         sim.substrate.entities.get(other).unwrap().owner(),
         houses[2]
     );
-    assert!(sim.houses[&houses[2]].ai_activation.production);
-    assert!(!sim.houses[&houses[0]].ai_activation.production);
+    assert!(sim.houses[&houses[2]].ai_activation().production);
+    assert!(!sim.houses[&houses[0]].ai_activation().production);
     let tag = sim.trigger_runtime.attachments[&TagAttachment::Object(actor)];
     let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
     assert_eq!(

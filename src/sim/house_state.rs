@@ -664,7 +664,7 @@ pub struct HouseState {
     /// persist, while Production, AutocreateAllowed, and AITriggersActive
     /// directly enter House CRC.
     #[serde(default)]
-    pub ai_activation: HouseAiActivationLatches,
+    ai_activation: HouseAiActivationLatches,
     /// The computer's production mode, building choice and naval latch
     /// (`HouseClass+0x1E4`, `+0x564C`, `+0x1F0`), owned by
     /// `sim::ai_base_building`. Persisted and hashed (schema v232).
@@ -1370,6 +1370,24 @@ impl HouseState {
         if self.repair_start_latch && self.repair_latch_timer.expired(frame as i32) {
             self.repair_start_latch = false;
         }
+    }
+
+    /// Read-only snapshot of the four independent activation bytes. HouseState
+    /// owns all runtime writes; consumers cannot replace the retained block.
+    pub(crate) const fn ai_activation(&self) -> HouseAiActivationLatches {
+        self.ai_activation
+    }
+
+    /// Active TAction74/75 stores only House+1F2 at6DF2FA/6DF339.
+    /// The House team timer, selector RNG and existing Teams remain with
+    /// ai_team_creation. Steam3e81a617; trigger_action_values --ai-activation.
+    pub(crate) fn set_ai_triggers_active(&mut self, active: bool) {
+        self.ai_activation.ai_triggers_active = active;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_ai_activation_for_test(&mut self, latches: HouseAiActivationLatches) {
+        self.ai_activation = latches;
     }
 
     /// Co-enable the three successful AI base-unit deploy latches.

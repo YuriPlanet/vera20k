@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original74/75 constructor/read/dispatch and shared House selector; connected ordinary House team-timer/selector/native RNG/eligibility on explicit state; physical ALL05 Country16/17 elapsed240 binding. No complete campaign AI, new-Team lifecycle or whole-map outcome claim.",
+  "assumptions": [
+    "The existing ActionFixture image owns constructor6DD000, reader6DD5B0, Execute6DD8B0, CRT/TLS/heap/INI and Scenario. TeamEmu attaches its existing storage/selector preparation to that same image; no result flag is transferred between VMs.",
+    "Three supplied0x8000-byte House windows, Country0/7/0 (or explicit16/17/0), registered order, live retained House, Player@ slots, four independent latches and team-timer priors are explicit. Action controls compare every supplied House byte and all three complete RNG streams; successful Execute writes only+1F2, including idempotent stores. Neither null Trigger nor -1 selects a House; incoming House does not choose the target.",
+    "House Update4F8A00..4F8B08 executes as a contiguous original block, ESI=House, EBP=0, zero incoming local stack and declared frame/start/unused-word/duration, game-mode, human/control, passive and difficulty1 priors. Other House Update phases and scheduling are excluded. The unused timer+4 becomes the actual zero local at4F8AE3, not a duration field.",
+    "The native selector6F0AB0 and actual65C7E0 execute with three seed31 streams, except the explicitly named seed0 rejection control. Full initial/final states and each update Scenario state, ranged args/returns and every raw XOR word are retained. Main/MapGen remain byte-identical. A ranged request can consume multiple raw words; no supplied draw answers or reduction model is used.",
+    "Existing selector preparation supplies one formed base-defense Team of a different type, cap8 (or explicit1), one nondefense trigger weight100 and one empty TaskForce. Positive74 runs real41E720 with multiplayer mode, enabled all-difficulty trigger, <all> owner, condition-1, no side/zone relation/Max and TechLevel0. This bounded skirmish control does not resolve campaign/factory/recruitment eligibility tracked under issue1508.",
+    "Inactive selection still reaches the original cancellation traversal with an empty pick vector. No eligibility, weighted draw, eviction or Team creation request occurs; old Team bytes/count and independent House latches are checked unchanged. Timer rearm and its native ranged request remain live when ordinary outer gates pass.",
+    "ALL05 evidence reads the physical mapsmd03.mix member and checkout retail RULESMD.INI with hashes, executes original Country registration/read, counted Event13, flags and scalar75 readers. Production AssetManager must separately match its source identity. No original whole map loading or complete layering is certified.",
+    "VERA20K_CAMPAIGN_START_ASSETS must name an existing empty directory for the reused CampaignReader; no file in that directory is requested by the selected prefixes."
+  ],
+  "substitutions": [
+    "Inherited action/AI CRT, heap, cached INI, platform and fixture-memory transports. All selected original gameplay instructions remain unchanged.",
+    "TeamType Create_Team6F09C0 is a recorded RET4 boundary returning0 after the actual original selector asks for it; no Team allocation/admission/member/mission result is supplied as parity. Existing AI team deletion callback remains the shared oracle boundary; covered rows assert it is never reached."
+  ],
+  "entry_points": {
+    "action_constructor": "0x006DD000",
+    "action_reader": "0x006DD5B0",
+    "action_execute": "0x006DD8B0",
+    "action74": "0x006DF2D1",
+    "action75": "0x006DF310",
+    "house_selector": "0x006E45E0",
+    "house_team_block": "0x004F8A00",
+    "team_selector": "0x006F0AB0",
+    "eligibility": "0x0041E720",
+    "create_team_boundary": "0x006F09C0",
+    "random_seed": "0x0065C6D0",
+    "random_ranged": "0x0065C7E0",
+    "country_registration": "0x00668C8B"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --ai-activation",
+  "payload_sha256": "279e76525f646d55d4303321b8abeab2218dd9fb744434ffdb589b7280dc242f"
+}
