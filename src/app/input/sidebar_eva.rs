@@ -46,8 +46,9 @@ pub(crate) enum CameoOrder {
     Suspend,
     /// ABANDON (event 16), or ABANDON_ALL (event 46) with Shift.
     Abandon { all: bool },
-    /// A finished building: `HouseClass::Manual_Place @ 0x004FB840` enters
-    /// placement mode (`0x006AB3CF`).
+    /// A finished product: Select6AB31A queries its builder. A building enters
+    /// ManualPlace4FB840; a mobile queues PLACE11. No builder queues indexed
+    /// ABANDON16 and EVA_UnableToComply instead.
     Place,
 }
 
@@ -77,9 +78,9 @@ pub(crate) struct CameoClick {
 ///   (`0x006AAE4A..0x006AAE68`). No own factory but a copy queued behind the
 ///   category's build: the sound and the abandon, no line
 ///   (`0x006AB1A0..0x006AB22A`).
-/// * Left, own factory stopped: finished — the sound and, for a building,
-///   placement (`0x006AB2BD..0x006AB3FC`; a unit's PLACE retry is VERA's
-///   automatic delivery); held — the sound, the start line and PRODUCE, which
+/// * Left, own factory stopped: finished — the sound and a builder lookup,
+///   followed by building placement, mobile PLACE, or ABANDON plus refusal
+///   (`0x006AB2BD..0x006AB3FC`); held — the sound, the start line and PRODUCE, which
 ///   resumes it with no limit check (`0x006AB463..0x006AB511`).
 /// * Left otherwise (`0x006AB602..`): the category is busy when it has any
 ///   build, running, held, finished or queued (`0x006AB663..0x006AB67D`). A
@@ -131,15 +132,7 @@ pub(crate) fn cameo_click(
                 CameoClick::default()
             }
         }
-        (CameoPress::Left, Some(BuildQueueState::Done)) => {
-            let structure = is_structure_strip(category);
-            CameoClick {
-                clear_building_placement: false,
-                sound: true,
-                eva: None,
-                order: structure.then_some(CameoOrder::Place),
-            }
-        }
+        (CameoPress::Left, Some(BuildQueueState::Done)) => click(None, CameoOrder::Place),
         (CameoPress::Left, Some(BuildQueueState::Paused)) => {
             click(Some(start_line_for(category)), CameoOrder::Produce)
         }
@@ -470,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn left_click_resumes_a_held_build_and_places_a_finished_building() {
+    fn left_click_resumes_a_held_build_and_queries_any_finished_product() {
         let a = InternedId::from_index(1);
         let held = [item(
             a,
@@ -510,13 +503,8 @@ mod tests {
                 LEFT,
                 false
             ),
-            CameoClick {
-                clear_building_placement: false,
-                sound: true,
-                eva: None,
-                order: None
-            },
-            "a finished unit's PLACE retry is VERA's automatic delivery"
+            order(true, None, CameoOrder::Place),
+            "Select6AB31A also queries a finished mobile's builder"
         );
     }
 

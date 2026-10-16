@@ -606,7 +606,8 @@ class ReadyBuildingFixture:
     CPU context and transport state. It is not a scenario replacement producer.
     """
 
-    def __init__(self, inputs, root, *, unit_startup=False):
+    def __init__(self, inputs, root, *, unit_startup=False,
+                 producer_types=('GACNST', 'GAPILE')):
         from tools.spatial_oracle import building_construction as bc
         from tools.spatial_oracle import building_death_anims as death
         from tools.spatial_oracle import engineer_repair_admission as er
@@ -695,8 +696,8 @@ class ReadyBuildingFixture:
             for x in range(1, 32):
                 u.mem_write(cell(x, y) + 0x38, dwords(0))
                 self.invoke(0x47D2B0, cell(x, y), 0xFFFFFFFF)
-        for name, pointer, coord in (('GACNST', self.yard, (14, 14)),
-                                      ('GAPILE', self.bar, (18, 14))):
+        for name, pointer, coord in ((producer_types[0], self.yard, (14, 14)),
+                                      (producer_types[1], self.bar, (18, 14))):
             self.f.building(name, pointer, self.f.allocate(0x100), coord=coord)
             u.mem_write(pointer + 0x74, b'\0')
             self.invoke(0x43F180, pointer, 3)
@@ -780,7 +781,13 @@ class ReadyBuildingFixture:
         # Original native event/UI code calls the opaque WinMM import. The
         # existing VM owns its narrower646F20 arm; extend that SAME raw OS
         # transport convention to reached callsites, never a gameplay body.
-        if u.reg_read(UC_X86_REG_EIP) == pc and bytes(u.mem_read(pc, size)) == b'\xFF\x15\x30\x15\x7E\x00':
+        instruction = bytes(u.mem_read(pc, size))
+        direct_clock = instruction == b'\xFF\x15\x30\x15\x7E\x00'
+        indirect_clock = (pc == 0x6A8F18 and instruction == b'\xFF\xD3'
+                          and u.reg_read(UC_X86_REG_EBX) == self.get(0x7E1530))
+        # StripAI's automatic mobile PLACE issuer loads this same import into
+        # EBX at6A8DC0 and CALLs it at6A8F18; WinMM takes no stack arguments.
+        if u.reg_read(UC_X86_REG_EIP) == pc and (direct_clock or indirect_clock):
             self.transport.append(dict(kind='OS_timeGetTime', pc=hex(pc), wall_ms=0))
             u.reg_write(UC_X86_REG_EAX, 0)
             u.reg_write(UC_X86_REG_EIP, pc + size)
@@ -928,12 +935,13 @@ class ReadyBuildingFixture:
         self.identities[product] = name + '_product'
         return result
 
-    def click(self, name, *, right=False):
-        tab = 1 if name == 'GAPILL' else 0
+    def click(self, name, *, right=False, kind=6, tab=None):
+        if tab is None:
+            tab = 1 if name == 'GAPILL' else 0
         index = self.get(self.f.types[name] + 0xDF8)
         slots = [slot for slot in range(self.get(STRIPS[tab] + 0x54))
                  if self.get(STRIPS[tab] + 0x58 + slot * 52) == index
-                 and self.get(STRIPS[tab] + 0x5C + slot * 52) == 6]
+                 and self.get(STRIPS[tab] + 0x5C + slot * 52) == kind]
         assert len(slots) == 1, (name, slots)
         visible_slot = slots[0] - 2 * self.get(STRIPS[tab] + 0x44)
         assert 0 <= visible_slot < 60

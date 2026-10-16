@@ -136,7 +136,7 @@ def theater_tile_files(m, raw, selected_tile, extension):
     return tiles, mapping
 
 
-def prepare():
+def prepare(*, tmp_names=(), hills=False):
     m, _types, inputs = prepare_shared(body=True)
     u = m.u
     # Actual WinMain6BDF5F ->5355D0 ->4E6190 calls both original CPU probes.
@@ -148,7 +148,7 @@ def prepare():
     cpu = list(u.mem_read(0x84E860, 5))
     assert cpu[2] == 1, 'This RGB565/MMX corpus requires an MMX-capable emulated CPU'
     assert u.mem_read(0xABC55C, 1) == b'\0'
-    assets, sources = physical_assets(tile=True)
+    assets, sources = physical_assets(tile=True, tmp_names=tmp_names, hills=hills)
     files = {source['name']: assets[source['name'].upper()] for source in sources}
     m.assets.update(assets)
     inputs = dict(sources=sources, cell_convert_startup=inputs['cell_convert'],
@@ -186,6 +186,9 @@ def prepare():
     inputs['tmp_loader'] = dict(names=names, next_absent='clear01h.tem', constructor='005447C0', lazy='00547020',
         file_io=file_io,
         boundary='Original constructors and full lazy loaders; chain/filename/count metadata supplied from physical contiguous filenames, not full tile-set loader.')
+    if tmp_names:
+        inputs['tmp_loader']['next_absent'] = None
+        inputs['tmp_loader']['boundary'] = 'Original constructor and full lazy loader; explicitly selected physical file registration, not full tile-set loader or alternate-name search.'
     for entry in (0x6D1830, 0x6D18C0, 0x6D1BB0):
         m.invoke(entry, 0)
     profile(m)
@@ -227,7 +230,7 @@ def cell_transport(m, pc, cells, *, admission=True):
 
 
 def execute(m, case, *, current_cell=None, current_tactical=None, preserve_alpha=False,
-            current_cells=None):
+            current_cells=None, allow_empty=False):
     """Draw either the legacy prepared Cell or an already-produced live Cell.
 
     A composed caller supplies its own Cell/Tactical and leaves the native A
@@ -316,8 +319,12 @@ def execute(m, case, *, current_cell=None, current_tactical=None, preserve_alpha
         run_checked(u, 0x6D7560 if tactical is not None else 0x480350, RET_MAGIC,
                     count=12000000, timeout_us=120000000)
     u.hook_del(hook)
-    assert len(cell_points) == case['repeat'] * (len(current_cells) if current_cells is not None else 1) and draws
-    case['cell_point'] = cell_points[0]
+    if allow_empty and not draws:
+        assert not cell_points
+        case['cell_point'] = None
+    else:
+        assert len(cell_points) == case['repeat'] * (len(current_cells) if current_cells is not None else 1) and draws
+        case['cell_point'] = cell_points[0]
     assert bytes(u.mem_read(LOAD_MAIN, STRUCT_LEN)) == before
     if preserve_alpha:
         assert bytes(u.mem_read(A, COUNT * 2)) == alpha_before
@@ -325,7 +332,7 @@ def execute(m, case, *, current_cell=None, current_tactical=None, preserve_alpha
     assert ints(u, convert + 0x188, 2) == [0xABBED0, 0x885780]
     return dict(name=case['name'], input=case, draws=draws, reached=[f'{pc:08X}' for pc in sorted(reached)],
         output=dict(snapshot(u, case['background'], case['old_z']),
-                    selected_file_index=draws[0]['file_index'],
+                    selected_file_index=draws[0]['file_index'] if draws else None,
                     cell_normalized_rgb=list(struct.unpack('<3h', u.mem_read(cell + 0x110, 6))),
                     convert_rgb_key=ints(u, convert + 0x198, 3),
                     top_scalar=struct.unpack('<h', u.mem_read(cell + 0x10A, 2))[0],

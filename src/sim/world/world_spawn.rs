@@ -551,6 +551,19 @@ impl Simulation {
                 }
                 sim.commit_map_placement_mission(stable_id, map_ent.mission);
                 if let Some(rules) = rules {
+                    // ReadINI44FCFC's explicit factory callback follows
+                    // successful Unlimbo/online initialization, before the
+                    // powered-down/NeedsEngineer suffix. The latter's
+                    // independent GoOffline+660 path remains unported.
+                    if map_ent.category == EntityCategory::Structure
+                        && let Some((owner, category)) = sim.substrate.entities.get(stable_id)
+                            .and_then(|entity| {
+                                let object = sim.object_type(entity.type_ref(), rules)?;
+                                Some((entity.owner(), crate::sim::production::factory_category_for_building(object)?))
+                            })
+                    {
+                        crate::sim::production::update_factory_queue(sim, rules, owner, category, FrameEffects::default());
+                    }
                     sim.finish_authored_building_enable(stable_id, rules);
                 }
                 count += 1;

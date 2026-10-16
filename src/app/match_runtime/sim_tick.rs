@@ -1088,7 +1088,7 @@ fn advance_one_simulation_frame(
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .apply_factory_output(&output, local_house)
+                .apply_lifecycle_output(&output, local_house)
             {
                 state
                     .match_state
@@ -1117,7 +1117,8 @@ fn advance_one_simulation_frame(
                         },
                     );
                 }
-                LifecycleOutput::ProductionFactoryLinked { .. }
+                LifecycleOutput::SidebarRecalculated { .. }
+                | LifecycleOutput::ProductionFactoryLinked { .. }
                 | LifecycleOutput::ProductionFactoryAbandoning { .. }
                 | LifecycleOutput::ProductionFactoryUnlinked { .. }
                 | LifecycleOutput::BuildingPlacementRetry { .. }

@@ -360,6 +360,14 @@ fn cameo_status_text<'a>(
     }
 }
 
+fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem) -> bool {
+    !matches!(
+        item.queue_category,
+        crate::sim::production::ProductionCategory::Building
+            | crate::sim::production::ProductionCategory::Defense
+    ) && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_building_this_type))
+}
+
 /// Whether a cameo draws the build clock. gamemd's strip draw sets its clock
 /// flag whenever the cameo's factory exists (`StripClass::Draw`,
 /// `0x006A9812..0x006A981D`) and draws frame `progress + 1`, so a build shows
@@ -411,13 +419,11 @@ pub(crate) fn build_gclock_instance(
 ) -> Option<SpriteInstance> {
     let last_frame = gclock_frames.len().checked_sub(1)?;
     let progress = progress.clamp(0.0, 1.0);
-    // gamemd draws frame = Production_Value + 1 (range 1-55), skipping
-    // frame 0. Map our 0.0-1.0 progress to frames 1..last.
-    let frame_index = if last_frame >= 2 {
-        ((progress * (last_frame - 1) as f32).round() as usize + 1).min(last_frame)
-    } else {
-        last_frame.min(1)
-    };
+    // StripDraw6A9E97 uses actual Factory stage +1: unfinished stages0..53
+    // select frames1..54. Atlas length is not the production stage scale.
+    // A custom short atlas retains the existing final-frame clamp residual.
+    let stage = (progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round() as usize;
+    let frame_index = (stage + 1).min(last_frame);
     let gclock_entry = &gclock_frames[frame_index];
     let gclock_rect = place_canvas_crop_in_slot(
         slot,
@@ -435,43 +441,77 @@ pub(crate) fn build_gclock_instance(
         depth: 0.00043,
         tint: [1.0, 1.0, 1.0],
         alpha: 1.0,
+        draw_state: crate::render::draw_state::DrawState::from_native_selector(0, 4),
         ..Default::default()
     })
 }
 
-/// Returns (cameo_instances, gclock_instances, overlay_instances).
-/// Cameo instances use the cameo atlas texture.
-/// Gclock instances use the GCLOCK2 atlas texture (progress overlay).
-/// Overlay instances are dark strip quads drawn with the darken_texture.
+#[derive(Default)]
+pub(crate) struct SidebarCameoInstances {
+    pub cameo: Vec<SpriteInstance>,
+    pub unavailable: Vec<SpriteInstance>,
+    pub flash: Vec<SpriteInstance>,
+    pub gclock: Vec<SpriteInstance>,
+    pub queue_overlay: Vec<SpriteInstance>,
+    pub overlay: Vec<SpriteInstance>,
+}
+
+/// Original shape point is the cameo top-left; the caller clips at +60/+48
+/// (StripDraw6A99C3..6A99E0). Do not fit the stock75x52 DARKEN canvas into
+/// the cameo. Preserve frame origin, zero indices and the unscaled source UV.
+pub(crate) fn build_darken_instance(
+    mask: &crate::render::sidebar_chrome::SidebarDarkenMask,
+    slot: Rect,
+    camera_offset: [f32; 2],
+    selector: u8,
+) -> Option<SpriteInstance> {
+    let [x, y] = mask.frame_origin;
+    let width = mask.texture.width as f32;
+    let height = mask.texture.height as f32;
+    let size = [width.min(slot.w - x), height.min(slot.h - y)];
+    if size[0] <= 0.0 || size[1] <= 0.0 {
+        return None;
+    }
+    Some(SpriteInstance {
+        position: [slot.x + x + camera_offset[0], slot.y + y + camera_offset[1]],
+        size,
+        uv_size: [size[0] / width, size[1] / height],
+        tint: [1.0; 3],
+        alpha: 1.0,
+        draw_state: crate::render::draw_state::DrawState::from_native_selector(0, selector),
+        ..Default::default()
+    })
+}
+
+/// Base icons, native unavailable/flash/clock destination edits, then status
+/// strip quads. Native status/badge text strips retain their separate owner.
 pub(crate) fn build_sidebar_cameo_instances(
     state: &AppState,
     view: &SidebarView,
     ready_text: &str,
     hold_text: &str,
-) -> (
-    Vec<SpriteInstance>,
-    Vec<SpriteInstance>,
-    Vec<SpriteInstance>,
-) {
+) -> SidebarCameoInstances {
     let Some(atlas) = state
         .match_state
         .match_presentation
         .sidebar_cameo_atlas
         .as_ref()
     else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return SidebarCameoInstances::default();
     };
     let mut instances = Vec::new();
     let mut gclock_instances = Vec::new();
     let mut overlay_instances = Vec::new();
+    let mut queue_overlay = Vec::new();
+    let mut unavailable = Vec::new();
+    let mut flash = Vec::new();
     let co = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
+    let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
     let gclock_frames: &[SidebarChromeEntry] =
-        crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-            .map(|a| a.gclock_frames.as_slice())
-            .unwrap_or(&[]);
+        chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
     for item in &view.items {
         let Some(entry) = atlas.cameo(&item.type_id, item.alt_cameo) else {
             continue;
@@ -486,65 +526,38 @@ pub(crate) fn build_sidebar_cameo_instances(
         ) else {
             continue;
         };
-        let is_building = shows_build_clock(item);
+        instances.push(SpriteInstance {
+            position: [cameo_rect.x, cameo_rect.y],
+            size: [cameo_rect.w, cameo_rect.h],
+            uv_origin: entry.uv_origin,
+            uv_size: entry.uv_size,
+            depth: 0.00044,
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..Default::default()
+        });
+        if shows_build_clock(item)
+            && let Some(instance) = build_gclock_instance(gclock_frames, item.progress, slot, co)
+        {
+            gclock_instances.push(instance);
+        }
 
-        if is_building {
-            // Full cameo quad (normal tint — GCLOCK2 overlay handles darkening).
-            instances.push(SpriteInstance {
-                position: [cameo_rect.x, cameo_rect.y],
-                size: [cameo_rect.w, cameo_rect.h],
-                uv_origin: entry.uv_origin,
-                uv_size: entry.uv_size,
-                depth: 0.00044,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-
-            if let Some(gclock_instance) =
-                build_gclock_instance(gclock_frames, item.progress, slot, co)
+        if let Some(mask) = chrome.and_then(|atlas| atlas.darken.as_ref()) {
+            // View owns admission: linked E2 clears BL even when its last
+            // producer is Selling, while unlinked FLAKT can remain shaded.
+            if !item.enabled
+                && let Some(instance) = build_darken_instance(mask, slot, co, 1)
             {
-                gclock_instances.push(gclock_instance);
+                unavailable.push(instance);
             }
-        } else {
-            // Flash darkening is a separate retained-entry overlay below.
-            instances.push(SpriteInstance {
-                position: [cameo_rect.x, cameo_rect.y],
-                size: [cameo_rect.w, cameo_rect.h],
-                uv_origin: entry.uv_origin,
-                uv_size: entry.uv_size,
-                depth: 0.00044,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
+            if item.flash_darkened
+                && let Some(instance) = build_darken_instance(mask, slot, co, 4)
+            {
+                flash.push(instance);
+            }
         }
 
-        // Native6A9BC0 overlays DARKEN.SHP during the retained entry's flash
-        // phase. Reuse the existing darken lane; numerical phase is pinned by
-        // trigger_cameos.json, while exact retail SHP raster parity is bounded.
-        if item.flash_darkened && state.renderer.bit_font.darken_texture().is_some() {
-            overlay_instances.push(SpriteInstance {
-                position: [slot.x + co[0], slot.y + co[1]],
-                size: [slot.w, slot.h],
-                uv_origin: [0.0, 0.0],
-                uv_size: [1.0, 1.0],
-                depth: 0.00043,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-        }
-
-        // Queue badge only for unit categories — buildings are one-at-a-time.
-        let is_unit_category = !matches!(
-            item.queue_category,
-            crate::sim::production::ProductionCategory::Building
-                | crate::sim::production::ProductionCategory::Defense
-        );
-        // Original badge condition: count > 1 OR (count > 0 AND active object is different type).
-        let has_queue_badge = is_unit_category
-            && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_building_this_type));
+        let has_queue_badge = shows_queue_badge(item);
 
         // Dark strip overlay behind the cameo status text (alpha 0xAF).
         // When a queue badge is also present, the status strip shifts left.
@@ -587,7 +600,7 @@ pub(crate) fn build_sidebar_cameo_instances(
             let strip_h = (state.renderer.bit_font.cell_height() + QUEUE_COUNT_PAD_Y * 2.0) * ts;
             // Right-align anchor at cameo right edge; strip extends x_pad past it.
             let strip_x = slot.x + slot.w - text_w - QUEUE_COUNT_PAD_X * ts;
-            overlay_instances.push(SpriteInstance {
+            queue_overlay.push(SpriteInstance {
                 position: [strip_x + co[0], slot.y + co[1]],
                 size: [strip_w, strip_h.min(slot.h)],
                 uv_origin: [0.0, 0.0],
@@ -599,12 +612,25 @@ pub(crate) fn build_sidebar_cameo_instances(
             });
         }
     }
-    (instances, gclock_instances, overlay_instances)
+    SidebarCameoInstances {
+        cameo: instances,
+        unavailable,
+        flash,
+        gclock: gclock_instances,
+        queue_overlay,
+        overlay: overlay_instances,
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Text label instances
 // ---------------------------------------------------------------------------
+
+#[derive(Default)]
+pub(crate) struct SidebarTextInstances {
+    pub status: Vec<SpriteInstance>,
+    pub queue: Vec<SpriteInstance>,
+}
 
 pub(crate) fn build_sidebar_text_instances(
     state: &AppState,
@@ -612,10 +638,10 @@ pub(crate) fn build_sidebar_text_instances(
     ready_text: &str,
     hold_text: &str,
     ready_tint: [f32; 3],
-) -> Vec<SpriteInstance> {
+) -> SidebarTextInstances {
     if state.renderer.bit_font.darken_texture().is_none() {
         // No retail FNT loaded; the native sidebar text path is unavailable.
-        return Vec::new();
+        return SidebarTextInstances::default();
     }
     let s = state.match_state.match_presentation.ui_scale;
     let ts = ready_text_scale(s);
@@ -624,18 +650,12 @@ pub(crate) fn build_sidebar_text_instances(
         state.match_state.input.camera_y,
     ];
     let mut instances = Vec::new();
+    let mut queue = Vec::new();
 
     for item in &view.items {
         let slot = item.rect;
 
-        // Queue badge only for unit categories — buildings are one-at-a-time.
-        let is_unit_category = !matches!(
-            item.queue_category,
-            crate::sim::production::ProductionCategory::Building
-                | crate::sim::production::ProductionCategory::Defense
-        );
-        let has_queue_badge = is_unit_category
-            && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_building_this_type));
+        let has_queue_badge = shows_queue_badge(item);
 
         // Cameo status text ("Ready" / "On Hold") — at the top of the cameo.
         // When a queue badge is also shown, the status text shifts left to
@@ -671,7 +691,7 @@ pub(crate) fn build_sidebar_text_instances(
             // Right-align: text right edge at cameo right edge (anchor = cameo_x + 60).
             let text_x = slot.x + slot.w - text_w;
             let text_y = slot.y + QUEUE_COUNT_PAD_Y * ts;
-            instances.extend(
+            queue.extend(
                 state
                     .renderer
                     .bit_font
@@ -679,7 +699,10 @@ pub(crate) fn build_sidebar_text_instances(
             );
         }
     }
-    instances
+    SidebarTextInstances {
+        status: instances,
+        queue,
+    }
 }
 
 #[cfg(test)]
@@ -774,7 +797,7 @@ mod tests {
 
         let instance = build_gclock_instance(&frames, 0.5, slot, [13.25, -7.5]).unwrap();
 
-        // Current mapping for 55 stored frames selects index 28 at 50% progress.
+        // Native stage27 selects frame28 (the stock atlas has55 frames).
         assert_eq!(instance.uv_origin, frames[28].uv_origin);
         assert_eq!(instance.uv_size, frames[28].uv_size);
         assert_eq!(instance.position, [113.25, 42.5]);
@@ -782,6 +805,53 @@ mod tests {
         assert_eq!(instance.depth, 0.00043);
         assert_eq!(instance.tint, [1.0, 1.0, 1.0]);
         assert_eq!(instance.alpha, 1.0);
+    }
+
+    #[test]
+    fn gclock_selects_executed_native_frames_and_short_art_clamps() {
+        let frames: Vec<_> = (0..55)
+            .map(|frame| SidebarChromeEntry {
+                uv_origin: [frame as f32, 0.0],
+                uv_size: [1.0; 2],
+                pixel_size: [60.0, 48.0],
+            })
+            .collect();
+        let slot = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/factory_sale_sidebar.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for control in native["controls"].as_array().unwrap() {
+            for command in control["draw_commands"].as_array().into_iter().flatten() {
+                if command["kind"] != "clock" {
+                    continue;
+                }
+                let stage = control["prepared"]["factory"]["stage"].as_u64().unwrap() as u16;
+                let progress =
+                    f32::from(stage) / f32::from(crate::sim::production::PRODUCTION_STEPS);
+                let instance = build_gclock_instance(&frames, progress, slot, [0.0; 2]).unwrap();
+                let frame = command["frame"].as_u64().unwrap() as usize;
+                assert_eq!(
+                    instance.uv_origin, frames[frame].uv_origin,
+                    "{}",
+                    control["name"]
+                );
+                assert_eq!(
+                    0x400 | instance.draw_state.native_selector_bits(),
+                    command["flags"].as_u64().unwrap() as u32,
+                );
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 4);
+        let instance = build_gclock_instance(&frames[..3], 53.0 / 54.0, slot, [0.0; 2]).unwrap();
+        assert_eq!(instance.uv_origin, frames[2].uv_origin);
     }
 
     /// The cameo status slot carries `TXT_HOLD` for suspended production, the
@@ -806,6 +876,7 @@ mod tests {
             flash_darkened: false,
             queue_category: crate::sim::production::ProductionCategory::Building,
             enabled: true,
+            at_build_limit: false,
             progress: 0.5,
             queued_count: 1,
             is_building_this_type: false,
@@ -849,6 +920,7 @@ mod tests {
             flash_darkened: false,
             queue_category: crate::sim::production::ProductionCategory::Vehicle,
             enabled: true,
+            at_build_limit: false,
             progress: 0.0,
             queued_count: 1,
             is_building_this_type: false,

@@ -1,4 +1,4 @@
-//! Physical ClearTile TMP through the production decoder, atlas, live cell
+//! Physical TMP through the production decoder, atlas, live cell
 //! selection, common lighting, A binding, upload and ordinary terrain draw.
 //! Expected RGB565 and stored Z are captured by original Cell480350/TMP547CF0.
 use super::draw_pooled_zdepth;
@@ -16,7 +16,7 @@ use crate::render::terrain_draw_gpu_tests::{
 };
 use crate::render::tile_atlas::TileAtlas;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 fn profile(input: &Value) -> LightingProfileUnits {
@@ -435,15 +435,82 @@ fn retail_clear_tmp_matches_original_cell_raster() {
         full_view_rows[0]["input"]["coords"],
         serde_json::json!([64, 31])
     );
+    assert_retail_tmp_rasters(&packet, "clear01.tem", 0);
+}
+
+#[test]
+#[ignore = "requires retail assets and GPU; original Cell480350 cliff diamond and extra face through production terrain owners"]
+fn retail_cliff_extra_matches_original_cell_raster() {
+    let packet: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/cliff_render.json",
+    ))
+    .unwrap();
+    let retail = &packet["rows"][0];
+    assert_eq!(retail["input"]["coords"], serde_json::json!([18, 69]));
+    assert_eq!(retail["input"]["level"], 4);
+    assert!(retail["input"].get("full_view").is_some());
+    let hills = packet["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["scene_map"] == "Hills.mmx")
+        .expect("the normal App-visible Hills cliff has original coverage");
+    assert_eq!(hills["input"]["coords"], serde_json::json!([103, 64]));
+    assert_eq!(hills["input"]["level"], 2);
+    assert!(hills["input"].get("full_view").is_some());
+    assert_retail_tmp_rasters(&packet, "cliff01.tem", 2);
+}
+
+/// Keep the original TMP controls on one production decoder/atlas/light/pool
+/// path. Only the selected physical file and subtile differ between fixtures.
+fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
     let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
     let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
     let theater = load_theater(&mut assets, "TEMPERATE").unwrap();
-    assert_eq!(theater.rmg_tiles.clear_tile, Some(0));
-    assert_eq!(theater.lookup.total_file_count(0), 8);
+    let tile_id = (0..theater.lookup.len())
+        .find(|index| {
+            theater
+                .lookup
+                .filename(*index as i32)
+                .is_some_and(|name| name.eq_ignore_ascii_case(filename))
+        })
+        .expect("stock theater must resolve the selected physical TMP") as u16;
+    if filename == "clear01.tem" {
+        assert_eq!(theater.rmg_tiles.clear_tile, Some(tile_id));
+        assert_eq!(tile_id, 0);
+        assert_eq!(theater.lookup.total_file_count(tile_id), 8);
+    }
+    if let Some(binding) = packet["inputs"].get("binding") {
+        assert_eq!(u64::from(tile_id), binding["mapping"]["tile_id"]);
+        assert_eq!(filename, binding["name"]);
+        assert_eq!(
+            u64::from(theater.lookup.total_file_count(tile_id)),
+            binding["file_count"]
+        );
+    }
     for source in packet["inputs"]["sources"].as_array().unwrap() {
         let name = source["name"].as_str().unwrap();
+        if let Some(outer) = source["outer"]
+            .as_str()
+            .filter(|name| name.ends_with(".mmx"))
+        {
+            // The normal Hills source is a physical MIX wrapper. Its inner
+            // map is not a directly registered AssetManager file.
+            let bytes = std::fs::read(root.join(outer)).unwrap();
+            assert_eq!(
+                crate::util::sha256::sha256_hex(&bytes),
+                source["outer_sha256"]
+            );
+            let wrapper = crate::assets::mix_archive::MixArchive::from_bytes(bytes).unwrap();
+            assert_eq!(
+                crate::util::sha256::sha256_hex(wrapper.get_by_name(name).unwrap()),
+                source["sha256"],
+                "physical map entry {name}"
+            );
+            continue;
+        }
         let lower = name.to_ascii_lowercase();
-        if !((lower.starts_with("clear01") && lower.ends_with(".tem"))
+        if !(lower.ends_with(".tem")
             || matches!(
                 lower.as_str(),
                 "isotem.pal" | "temperatmd.ini" | "xmp03t4.map" | "shroud.shp"
@@ -462,26 +529,54 @@ fn retail_clear_tmp_matches_original_cell_raster() {
         &theater.lookup,
         &theater.iso_palette,
         &HashSet::from([TileKey {
-            tile_id: 0,
-            sub_tile: 0,
+            tile_id,
+            sub_tile,
             variant: 0,
         }]),
     );
-    assert_eq!(tiles.len(), 8);
-    // The same physical map also crosses the normal bound scenario loader,
-    // then the app's live first-frame lighting publication owner.
-    let scene = crate::headless_scenario::load(&root, "XMP03T4.MAP", 0).unwrap();
-    let mut match_lighting = crate::app::presentation::lighting::MatchLighting::default();
-    match_lighting.install(
-        crate::map::lighting::CellLightGrid::new(),
-        crate::map::lighting::parse_lighting(&scene.map.ini),
-        2,
-        Some((
-            scene.sim().resolved_terrain.as_ref().unwrap(),
-            scene.sim(),
-            &scene.runtime.resources.rules,
-        )),
+    assert_eq!(
+        tiles.len(),
+        usize::from(theater.lookup.total_file_count(tile_id))
     );
+    if let Some(planes) = packet["rows"][0]["output"].get("plane_writes") {
+        // The original two passes have no shared written destination in this
+        // physical subtile. Compare their actual union with decoded coverage;
+        // arbitrary overlapping Extra/diamond data remains a separate path.
+        assert_eq!(planes["overlap_pixels"], 0);
+        let tile = &tiles[&TileKey {
+            tile_id,
+            sub_tile,
+            variant: 0,
+        }];
+        let opaque = tile.rgba.chunks_exact(4).filter(|p| p[3] != 0).count();
+        assert_eq!(
+            opaque as u64,
+            planes["diamond_pixels"].as_u64().unwrap() + planes["extra_pixels"].as_u64().unwrap()
+        );
+    }
+    // Each physical map crosses the normal bound scenario loader once, then
+    // the App's live first-frame lighting publication owner. Component rows
+    // remain explicitly separate from these immutable normal-map witnesses.
+    let mut scenes = BTreeMap::new();
+    for row in packet["rows"].as_array().unwrap() {
+        let name = row["input"]["scene_map"].as_str().unwrap_or("XMP03T4.MAP");
+        scenes.entry(name.to_owned()).or_insert_with(|| {
+            let scene = crate::headless_scenario::load(&root, name, 0).unwrap();
+            let hash = scene.sim().state_hash();
+            let mut lighting = crate::app::presentation::lighting::MatchLighting::default();
+            lighting.install(
+                crate::map::lighting::CellLightGrid::new(),
+                crate::map::lighting::parse_lighting(&scene.map.ini),
+                2,
+                Some((
+                    scene.sim().resolved_terrain.as_ref().unwrap(),
+                    scene.sim(),
+                    &scene.runtime.resources.rules,
+                )),
+            );
+            (scene, lighting, hash)
+        });
+    }
     let gpu = Gpu::new();
     let size: [u32; 2] = std::array::from_fn(|i| {
         packet["surface"][if i == 0 { "width" } else { "height" }]
@@ -497,61 +592,68 @@ fn retail_clear_tmp_matches_original_cell_raster() {
         let mut pool = InstanceBufferPool::new();
         for row in packet["rows"].as_array().unwrap() {
             let input = &row["input"];
+            let scene_name = input["scene_map"].as_str().unwrap_or("XMP03T4.MAP");
+            let (scene, match_lighting, _) = &scenes[scene_name];
             let coords: [u16; 2] =
                 std::array::from_fn(|i| input["coords"][i].as_u64().unwrap() as u16);
             let level = input["level"].as_i64().unwrap() as u8;
-            // A deliberately admitted flat-cell component. It uses the real
-            // theater/metadata/selector owners; it is not a native map-loader claim.
-            let mut map = MapFile::from_bytes(assets.get_ref("XMP03T4.MAP").unwrap()).unwrap();
-            // An admitted component cell needs a containing allocation;
-            // unrelated authored cells and gameplay objects are not enrolled.
-            map.header.width = u32::from(coords[0].max(coords[1]));
-            map.header.height = map.header.width;
-            map.cells = vec![MapCell {
-                rx: coords[0],
-                ry: coords[1],
-                tile_index: 0,
-                sub_tile: 0,
-                z: level,
-            }];
-            map.iso_map_pack_lookups.clear();
-            map.overlays.clear();
-            map.terrain_objects.clear();
-            let table = input
-                .get("selector_table")
-                .unwrap_or(&packet["inputs"]["selector_table"]);
-            let table: [u8; 64] = std::array::from_fn(|i| table[i].as_u64().unwrap() as u8);
-            let mut cache = TileVariantSelectorCache::initialized_for_test(table);
-            let mut unexpected_main_draw =
-                || panic!("warm process selector must not consume Main RNG");
-            let mut selector = cache.begin_load(&mut unexpected_main_draw);
-            let mut scenario_fill = |_low, _high| 0;
-            let component_terrain = ResolvedTerrainGrid::build_with_variant_selector(
-                &map,
-                Some(&theater),
-                Some(&assets),
-                None,
-                None,
-                None,
-                false,
-                0,
-                &mut scenario_fill,
-                &mut selector,
-            );
             let actual_map = input.get("full_view").is_some();
+            let component_terrain = (!actual_map).then(|| {
+                // A declared one-cell component uses real metadata/selector
+                // owners, separately from the normal loaded-map witness.
+                let mut map = MapFile::from_bytes(assets.get_ref("XMP03T4.MAP").unwrap()).unwrap();
+                map.header.width = u32::from(coords[0].max(coords[1]));
+                map.header.height = map.header.width;
+                map.cells = vec![MapCell {
+                    rx: coords[0],
+                    ry: coords[1],
+                    tile_index: i32::from(tile_id),
+                    sub_tile,
+                    z: level,
+                }];
+                map.iso_map_pack_lookups.clear();
+                map.overlays.clear();
+                map.terrain_objects.clear();
+                let table = input
+                    .get("selector_table")
+                    .unwrap_or(&packet["inputs"]["selector_table"]);
+                let table: [u8; 64] = std::array::from_fn(|i| table[i].as_u64().unwrap() as u8);
+                let mut cache = TileVariantSelectorCache::initialized_for_test(table);
+                let mut unexpected_main_draw =
+                    || panic!("warm process selector must not consume Main RNG");
+                let mut selector = cache.begin_load(&mut unexpected_main_draw);
+                let mut scenario_fill = |_low, _high| 0;
+                ResolvedTerrainGrid::build_with_variant_selector(
+                    &map,
+                    Some(&theater),
+                    Some(&assets),
+                    None,
+                    None,
+                    None,
+                    false,
+                    0,
+                    &mut scenario_fill,
+                    &mut selector,
+                )
+            });
             let terrain = if actual_map {
                 assert_eq!(scene.map.header.theater, "TEMPERATE");
                 assert_eq!(profile(input), scene.sim().session.lighting.normal.into());
                 scene.sim().resolved_terrain.as_ref().unwrap()
             } else {
-                &component_terrain
+                component_terrain.as_ref().unwrap()
             };
             let live = terrain.cell(coords[0], coords[1]).unwrap();
-            assert_eq!(terrain.presentation_tile(live), (0, 0));
-            assert_eq!(
-                live.variant as u64,
-                row["output"]["selected_file_index"].as_u64().unwrap()
-            );
+            assert_eq!(terrain.presentation_tile(live), (tile_id, sub_tile));
+            if let Some(selected) = row["output"]["selected_file_index"].as_u64() {
+                assert_eq!(u64::from(live.variant), selected);
+            } else {
+                // The original full-view away control never calls this Cell.
+                // It supplies no invented image selection or projected point.
+                assert!(input.get("full_view").is_some());
+                assert!(row["draws"].as_array().unwrap().is_empty());
+                assert!(row["output"]["runs"].as_array().unwrap().is_empty());
+            }
             assert_eq!(live.level, level);
             let mut grid = build_terrain_grid_from_resolved(terrain, None, None);
             grid.cells.retain(|cell| [cell.rx, cell.ry] == coords);
@@ -583,12 +685,6 @@ fn retail_clear_tmp_matches_original_cell_raster() {
             );
             let point = iso_to_screen(coords[0], coords[1], 0);
             let mut camera = camera(size);
-            camera.camera_pos = [
-                point.0 - input["cell_point"][0].as_i64().unwrap() as f32,
-                point.1
-                    - input["cell_point"][1].as_i64().unwrap() as f32
-                    - input["viewport_y"].as_i64().unwrap() as f32,
-            ];
             if let Some(view) = input.get("full_view") {
                 // Native Tactical pixels and VERA's world pixels differ only
                 // by the documented +15 Y bias at zoom1. Use the independent
@@ -597,17 +693,26 @@ fn retail_clear_tmp_matches_original_cell_raster() {
                     view["view_origin"][0].as_i64().unwrap() as f32,
                     view["view_origin"][1].as_i64().unwrap() as f32 + 15.0,
                 ];
-                assert_eq!(
-                    [
-                        point.0 - camera.camera_pos[0],
-                        point.1 - camera.camera_pos[1]
-                    ],
-                    [
-                        input["cell_point"][0].as_i64().unwrap() as f32,
-                        input["cell_point"][1].as_i64().unwrap() as f32
-                    ],
-                    "original full-view projection reaches the same tile point"
-                );
+                if input["cell_point"].is_array() {
+                    assert_eq!(
+                        [
+                            point.0 - camera.camera_pos[0],
+                            point.1 - camera.camera_pos[1]
+                        ],
+                        [
+                            input["cell_point"][0].as_i64().unwrap() as f32,
+                            input["cell_point"][1].as_i64().unwrap() as f32
+                        ],
+                        "original full-view projection reaches the same tile point"
+                    );
+                }
+            } else {
+                camera.camera_pos = [
+                    point.0 - input["cell_point"][0].as_i64().unwrap() as f32,
+                    point.1
+                        - input["cell_point"][1].as_i64().unwrap() as f32
+                        - input["viewport_y"].as_i64().unwrap() as f32,
+                ];
             }
             let lookup = |tile_id, sub_tile, variant| {
                 atlas
@@ -633,7 +738,9 @@ fn retail_clear_tmp_matches_original_cell_raster() {
                 Some(&lookup),
                 Some(terrain),
             );
-            assert_eq!(instances.normal.len(), 1);
+            if row["output"]["selected_file_index"].as_u64().is_some() {
+                assert_eq!(instances.normal.len(), 1);
+            }
             pool.upload_on_device(
                 &gpu.device,
                 &gpu.queue,
@@ -651,5 +758,8 @@ fn retail_clear_tmp_matches_original_cell_raster() {
                 &gpu, &mut batch, &pool, &atlas, &a, camera, row, format, size,
             );
         }
+    }
+    for (scene, _, hash) in scenes.values() {
+        assert_eq!(scene.sim().state_hash(), *hash);
     }
 }

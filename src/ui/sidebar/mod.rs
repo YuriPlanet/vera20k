@@ -154,7 +154,9 @@ pub struct SidebarItem {
     /// Native retained-entry flash phase (StripDraw6A9B59).
     pub flash_darkened: bool,
     pub queue_category: ProductionCategory,
+    /// Draw's unavailable overlay; it is not an input admission gate.
     pub enabled: bool,
+    pub at_build_limit: bool,
     pub progress: f32,
     pub queued_count: usize,
     /// True when this cameo's linked Factory is actively producing.
@@ -338,7 +340,7 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
             type_id: item.type_id.clone(),
             right: right_click,
             shift,
-            at_build_limit: !item.enabled,
+            at_build_limit: item.at_build_limit,
         };
     }
     // SW cameos have no queue → right-click does nothing.
@@ -385,6 +387,7 @@ mod tests {
             flash_darkened: false,
             queue_category: ProductionCategory::Defense,
             enabled: true,
+            at_build_limit: false,
             progress: if is_ready { 1.0 } else { 0.5 },
             queued_count: 0,
             is_building_this_type: !is_ready,
@@ -426,6 +429,7 @@ mod tests {
         item.is_superweapon = false;
         item.type_id = "TANY".to_string();
         item.enabled = false;
+        item.at_build_limit = true;
         assert_eq!(
             super::hit_test_item(&item, true, true),
             SidebarAction::CameoPress {
@@ -433,6 +437,23 @@ mod tests {
                 right: true,
                 shift: true,
                 at_build_limit: true,
+            }
+        );
+    }
+
+    #[test]
+    fn unavailable_paint_does_not_supply_selects_build_limit_guard() {
+        let mut item = make_sw_item(false, false);
+        item.is_superweapon = false;
+        item.type_id = "FLAKT".to_string();
+        item.enabled = false;
+        assert_eq!(
+            super::hit_test_item(&item, false, false),
+            SidebarAction::CameoPress {
+                type_id: "FLAKT".to_string(),
+                right: false,
+                shift: false,
+                at_build_limit: false,
             }
         );
     }

@@ -41,6 +41,23 @@ RANDOM_RETURNS = (0x471B95, 0x471BCE, 0x471C67)
 C4_WARHEAD, OVERLOAD_SOUND, SPARK_TYPE = 0x0C4C4C40, 0x123, 0x5A5A0000
 STOCK = dict(count=[3, 6, 10, 50], damage=[0, 50, 100, 500], frames=[30, 60, 60, 60])
 LOCATION = (12928, 25728, 480)
+# Additive Techno AI bracket controls reuse Fixture's image, constructor and
+# manager owner. These scratch callback addresses never replace original code.
+TECHNO_AI_ORDER = (0x6FA646, 0x6FA95B)
+TECHNO_AI_DEAD = 0x6FAFFD
+ORDER_TYPE, ORDER_BOMB, ORDER_SLAVE, ORDER_SPAWN = [
+    SCRATCH + n * 0x4000 for n in range(8, 12)]
+ORDER_CALLBACKS = {name: CALLBACKS + 0x100 * (i + 1) for i, name in enumerate(
+    ('type', 'passive_gate', 'passive_acquire', 'slave', 'selfheal',
+     'kind', 'height', 'cloak', 'spawn'))}
+TECHNO_ORDER_MILESTONES = {
+    0x6FA646: 'mission_control', 0x6FA65A: 'passive_admission',
+    0x6FA6F5: 'bomb_admission', 0x6FA717: 'slave_admission',
+    0x6FA726: 'capture_admission', UPDATE: 'capture_update',
+    0x6FA735: 'alive_gate', 0x6FA743: 'selfheal_admission',
+    0x6FA793: 'house_selfheal_admission',
+    0x6FA941: 'cloak_admission', 0x6FA94C: 'spawn_admission',
+}
 
 
 class Fixture:
@@ -53,6 +70,7 @@ class Fixture:
         self.events = []
         self.kill = False
         self.allocated = 0
+        self.order_case = None
         self.u.hook_add(UC_HOOK_CODE, self.observe)
 
     def word(self, address):
@@ -73,11 +91,15 @@ class Fixture:
 
     def observe(self, u, pc, _size, _data):
         sp = u.reg_read(UC_X86_REG_ESP)
+        if self.order_case is not None and self.observe_techno_order(pc):
+            return
         if pc == RECEIVE_DAMAGE:
             args = [self.word(sp + 4 * n) for n in range(1, 8)]
             self.events.append(dict(damage=self.signed(args[0]), args=args[1:]))
             if self.kill:
                 u.mem_write(OWNER + 0x90, b"\x00")
+            if self.order_case is not None:
+                u.mem_write(OWNER + 0x6C, dwords(max(0, self.word(OWNER + 0x6C) - self.signed(args[0]))))
             self.ret(0, 0x1C)
         elif pc == PLAY_AT:
             self.events.append(dict(sound=u.reg_read(UC_X86_REG_ECX),
@@ -159,6 +181,146 @@ class Fixture:
         return dict(countdown=self.signed(MGR + 0x4C), flash=self.signed(MGR + 0x44),
                     latch=self.u.mem_read(MGR + 0x41, 1)[0], max=self.signed(MGR + 0x3C),
                     infinite=self.u.mem_read(MGR + 0x40, 1)[0])
+
+    def order_snapshot(self):
+        u = self.u
+        return dict(health=self.signed(OWNER + 0x6C), alive=u.mem_read(OWNER + 0x90, 1)[0],
+                    manager_present=self.word(OWNER + 0x2BC) != 0,
+                    manager_count=self.signed(MGR + 0x34),
+                    countdown=self.signed(MGR + 0x4C), flash=self.signed(MGR + 0x44))
+
+    def observe_techno_order(self, pc):
+        """Declared callback boundaries around the original AI instructions.
+
+        CaptureManager Update/RNG execute normally. Mission, acquisition,
+        bomb, slave, self-heal admission, house heal gate and presentation
+        callbacks are isolated here; they do not establish those mechanisms.
+        """
+        u, case = self.u, self.order_case
+        if pc in TECHNO_ORDER_MILESTONES:
+            self.order_trace.append(dict(event=TECHNO_ORDER_MILESTONES[pc], **self.order_snapshot()))
+        callbacks = {value: name for name, value in ORDER_CALLBACKS.items()}
+        if pc in callbacks:
+            name = callbacks[pc]
+            if name not in ('type', 'kind', 'height'):
+                self.order_trace.append(dict(event=name, **self.order_snapshot()))
+            values = dict(type=ORDER_TYPE, passive_gate=1, passive_acquire=0,
+                          slave=0, selfheal=int(case['selfheal']), kind=1,
+                          height=0, cloak=0, spawn=0)
+            self.ret(values[name], 4 if name == 'cloak' else 0)
+            return True
+        if pc == 0x5B3060:
+            self.order_trace.append(dict(event='mission_dispatch', **self.order_snapshot()))
+            self.ret(0, 0)
+            return True
+        if pc == 0x438A70:
+            self.order_trace.append(dict(event='bomb_ready', **self.order_snapshot()))
+            self.ret(1, 0)
+            return True
+        if pc == 0x438720:
+            self.order_trace.append(dict(event='bomb_update', **self.order_snapshot()))
+            if case.get('bomb_kills'):
+                # Explicit destructive callback, not an emulated Bomb owner.
+                # Production regressions own actual detonation and detach.
+                u.mem_write(OWNER + 0x6C, dwords(0))
+                u.mem_write(OWNER + 0x90, b'\x00')
+                if case.get('bomb_frees_captures'):
+                    u.mem_write(MGR + 0x34, dwords(0))
+                else:
+                    u.mem_write(OWNER + 0x2BC, dwords(0))
+            self.ret(0, 0)
+            return True
+        if pc == 0x50D9D0:
+            # The separate House repair bonus is excluded from these controls.
+            self.ret(0, 0)
+            return True
+        return False
+
+    def execute_techno_order(self, case):
+        # Reuse the default owner's complete initializers and original manager
+        # constructor, without a preceding manager visit or a second VM.
+        self.execute(dict(name=case['name'], seed=1, captives=4, calls=0,
+                          kill=case.get('capture_kills', False)))
+        u = self.u
+        u.mem_write(ORDER_TYPE + 0xA0, dwords(500))
+        for offset, name in ((0x84, 'type'), (0x88, 'type'), (0x4C4, 'passive_gate'),
+                             (0x4CC, 'passive_acquire'), (0x294, 'selfheal'),
+                             (0x2C, 'kind'), (0x1C8, 'height'), (0x410, 'cloak')):
+            u.mem_write(OVT + offset, dwords(ORDER_CALLBACKS[name]))
+        for pointer, name in ((ORDER_SLAVE, 'slave'), (ORDER_SPAWN, 'spawn')):
+            vtable = pointer + 0x100
+            u.mem_write(pointer, dwords(vtable))
+            u.mem_write(vtable + 0x5C, dwords(ORDER_CALLBACKS[name]))
+        u.mem_write(OWNER + 0x6C, dwords(case['health']))
+        u.mem_write(OWNER + 0xAC, dwords(5))
+        u.mem_write(OWNER + 0x180, dwords(-1, 0, 0))
+        u.mem_write(OWNER + 0x38, dwords(ORDER_BOMB if case.get('bomb') else 0))
+        u.mem_write(OWNER + 0x2D8, dwords(ORDER_SLAVE if case.get('slave') else 0))
+        u.mem_write(OWNER + 0x2D0, dwords(ORDER_SPAWN if case.get('spawn') else 0))
+        u.mem_write(OWNER + 0x2BC, dwords(MGR))
+        u.mem_write(MGR + 0x4C, dwords(case.get('countdown', 0)))
+        u.mem_write(0xA8ED84, dwords(30))
+        u.mem_write(RULES + 0x38, dwords(1))
+        self.call(SEED, SCENARIO + 0x218, [1])
+        self.events, self.order_trace = [], []
+        self.order_case = case
+        before = self.order_snapshot()
+        # The actual AI prologue creates a 0x78-byte frame, EBP=0 and ESI=this.
+        # Earlier AI and later continuation are explicit component boundaries.
+        u.mem_write(SP, dwords(RET_MAGIC))
+        u.reg_write(UC_X86_REG_ESP, SP - 0x78)
+        from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EBP
+        u.reg_write(UC_X86_REG_ESI, OWNER)
+        u.reg_write(UC_X86_REG_EBP, 0)
+        end = run_checked(u, TECHNO_AI_ORDER[0], (TECHNO_AI_ORDER[1], TECHNO_AI_DEAD),
+                          count=400000, context=dict(case=case))
+        self.order_case = None
+        return dict(input=case, before=before, trace=self.order_trace,
+                    after=self.order_snapshot(), stopped_at=f'0x{end:08X}',
+                    manager_events=self.events)
+
+
+def techno_order_generate():
+    """Small original-instruction bracket with explicitly isolated callees."""
+    cases = [
+        dict(name='surviving_overload_then_heal', health=500, selfheal=True,
+             bomb=True, slave=True, spawn=True),
+        dict(name='killing_overload_stops_before_heal', health=50, selfheal=True,
+             capture_kills=True, bomb=True, slave=True, spawn=True),
+        dict(name='killing_bomb_detaches_capture_before_visit', health=500,
+             selfheal=True, bomb=True, bomb_kills=True, slave=False, spawn=True),
+        dict(name='killing_bomb_frees_captures_before_visit', health=500,
+             selfheal=True, bomb=True, bomb_kills=True, bomb_frees_captures=True,
+             slave=False, spawn=True),
+        dict(name='countdown_return_still_reaches_heal', health=499,
+             selfheal=True, countdown=1, bomb=False, slave=False, spawn=False),
+    ]
+    rows = [Fixture().execute_techno_order(case) for case in cases]
+    import os
+    inputs = joined_inputs(Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS']))
+    joined = joined_case(inputs, dict(name='stock_mind_original_ai_bracket', seed=1,
+        captives=4, visits=1, techno_order=True, frame=30, countdown=0))
+    return dict(schema=1, rows=rows, joined_inputs=inputs.overload_input, joined=joined)
+
+
+def techno_order_metadata():
+    return provenance(
+        scope='Original TechnoClass AI 6FA646..6FA95B mission/passive/bomb/slave/capture/alive/selfheal/cloak/spawn ordering component',
+        assumptions=[
+            'Reuses the historical Fixture VM, image loader, original CaptureManager constructor4717D0, static target initializer4716F0, stock overload tables and original Scenario seed/RNG. There is no new runtime, duplicate joined bootstrap or altered original instruction.',
+            'Entry6FA646 supplies the actual AI prologue frame shape ESP=entryESP-78, ESI=owner and EBP=0. Earlier Techno AI and continuation after6FA95B are excluded. Dead controls stop before the original epilogue6FAFFD. Guard mission5, expired passive timer, MIND-strength500/type-kind1 and due count4 are supplied control priors, not native scenario admission.',
+            'Whole original CaptureManager Update471A50 executes if the owner still has its manager. Surviving controls retain original damage/voice/spark coordinate/RNG/countdown order and actual Techno health increment6FA756. The countdown1 control returns from Update without a hit and reaches subsequent heal in the same original bracket.',
+            'Bomb, slave and spawn presence are synthetic independent control inputs. Ordinary retail MIND has neither slave nor spawn manager; those callback controls establish the shared AI slot order only. The separate joined overload corpus and production regression own stock MIND inputs and connected gameplay.',
+            'One additional joined control reuses joined_inputs/joined_case and their original physical retail readers, whole MIND constructor and successful Unlimbo. It supplies count4/countdown0 at frame30, then runs the same full original6FA646..6FA95B bracket with no additional gameplay substitutions: real mission, passive timer gates, CaptureManager471A50, Unit737C90/Techno701900 receiver, selfheal gates and cloak execute. Constructor passive delay45 is not expired at frame30. No native captive nodes, captures, whole death, Unit outer AI or world tick is claimed.',
+        ],
+        substitutions=[
+            'Inherited ReceiveDamage callback subtracts the actual original requested amount from supplied health and clears IsAlive for the killing-capture control; fatal native damage/FreeAll/detach are excluded. Existing PlayAt, allocation and ParticleSystem callbacks remain recorded and returned at entry.',
+            'MissionClass5B3060, passive admission/acquisition owner slots4C4/4CC, Bomb438A70/438720, Slave and Spawn manager slot5C, selfheal admission294, type84/88, runtime kind2C, height1C8, house repair eligibility50D9D0 and cloak410 are declared returned callbacks. House repair cadence is supplied1 with eligibility false. These mechanisms and passive acquisition RNG are not reproduced by this component.',
+            'Killing-bomb callbacks explicitly write health0/IsAlive0. The pointer-reload control also sets CaptureManager=NULL; the retained-manager control instead sets its captive count0 and lets original471A50 execute. Native fatal cleanup calls FreeAll702112/4DE5DD and defers ObjectUnInit5F65F0, so the latter is the representative count-zero/no-overload boundary. Neither callback implements native Bomb, FreeAll or detach; the NULL-pointer variant does not establish that retail fatal Bomb skips Update.',
+        ], entry_points=dict(begin=TECHNO_AI_ORDER[0], continuation=TECHNO_AI_ORDER[1],
+            dead_epilogue=TECHNO_AI_DEAD, capture_update=UPDATE,
+            mission=0x5B3060, bomb_ready=0x438A70, bomb_update=0x438720,
+            selfheal_increment=0x6FA756, cloak_call=0x6FA946, spawn_call=0x6FA958))
 
 
 def inputs():
@@ -340,7 +502,7 @@ def joined_case(inputs, case):
     rng.u, rng.streams = u, {'main': 0x886B88, 'scenario': scenario + 0x218, 'mapgen': 0xABE890}
     rng.requests, rng.pending = [], []
     u.hook_add(UC_HOOK_CODE, rng.observe)
-    systems, constructed, pending, events, audio_path = [], [], [], [], []
+    systems, constructed, pending, events, audio_path, ai_order = [], [], [], [], [], []
 
     def xyz(pointer):
         return list(struct.unpack('<3i', u.mem_read(pointer, 12)))
@@ -354,6 +516,8 @@ def joined_case(inputs, case):
 
     def observe(u, pc, size, data):
         sp = u.reg_read(UC_X86_REG_ESP)
+        if case.get('techno_order') and pc in TECHNO_ORDER_MILESTONES:
+            ai_order.append(dict(event=TECHNO_ORDER_MILESTONES[pc], **snapshot()))
         if pc in (PLAY_AT, 0x750A38, 0x750A53, 0x750A75, 0x750A7E, 0x750AA5):
             row = dict(pc=f'0x{pc:08X}', rng_request=len(rng.requests))
             if pc == PLAY_AT:
@@ -394,20 +558,36 @@ def joined_case(inputs, case):
         manager_max=read(manager + 0x3C), manager_infinite=u.mem_read(manager + 0x40, 1)[0],
         owner_native_id=read(read(actor + 0x21C) + 0x10),
         audio_global_8464ac=u.mem_read(0x8464AC, 1)[0], unlimbo_al=answer)
-    for frame in range(case['visits']):
-        u.mem_write(bc.FRAME, dwords(frame))
-        bc.invoke(u, UPDATE, manager)
+    if case.get('techno_order'):
+        from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EBP
+        context['passive_timer'] = list(struct.unpack('<3i', u.mem_read(actor + 0x180, 12)))
+        context['mission'] = struct.unpack('<i', u.mem_read(actor + 0xAC, 4))[0]
+        u.mem_write(manager + 0x4C, dwords(case['countdown']))
+        u.mem_write(bc.FRAME, dwords(case['frame']))
+        prior = snapshot()
+        u.mem_write(bc.SP, dwords(RET_MAGIC))
+        u.reg_write(UC_X86_REG_ESP, bc.SP - 0x78)
+        u.reg_write(UC_X86_REG_ESI, actor)
+        u.reg_write(UC_X86_REG_EBP, 0)
+        run_checked(u, TECHNO_AI_ORDER[0], TECHNO_AI_ORDER[1], count=2_000_000)
+    else:
+        for frame in range(case['visits']):
+            u.mem_write(bc.FRAME, dwords(frame))
+            bc.invoke(u, UPDATE, manager)
     assert not pending and not rng.pending and f.code_unchanged()
     after = snapshot()
     expected_damage = 0 if case['captives'] <= 3 else (50 if case['captives'] <= 6 else 100)
     assert prior['health'] == 500 and after['health'] == 500 - expected_damage
     assert after['alive'] == 1 and after['limbo'] == 0
     assert len(constructed) == (0 if expected_damage == 0 else 5)
-    return dict(input=case, context=context, before=prior, after=after,
+    result = dict(input=case, context=context, before=prior, after=after,
         rng_before=before, rng_after=rng.states(), rng_requests=rng.requests,
         raw_draw_count=sum(len(request['raw_draws']) for request in rng.requests),
         native_cursor_before=cursor, native_cursor_after=read(scenario + 0x214),
         events=events, particle_systems=constructed, audio_path=audio_path)
+    if case.get('techno_order'):
+        result['techno_ai_order'] = ai_order
+    return result
 
 
 def joined_generate():
@@ -444,7 +624,12 @@ def joined_metadata():
 
 if __name__ == "__main__":
     import sys
-    if '--joined' in sys.argv:
+    if '--techno-order' in sys.argv:
+        if '--joined' in sys.argv:
+            raise SystemExit('--techno-order and --joined are separate corpus modes')
+        finish_vectors(techno_order_generate, Path(__file__).with_name('capture_overload_techno_order.json'),
+            provenance=techno_order_metadata, argv=[arg for arg in sys.argv[1:] if arg != '--techno-order'])
+    elif '--joined' in sys.argv:
         finish_vectors(joined_generate, Path(__file__).with_name('capture_overload_joined.json'),
             provenance=joined_metadata, argv=[arg for arg in sys.argv[1:] if arg != '--joined'])
     else:

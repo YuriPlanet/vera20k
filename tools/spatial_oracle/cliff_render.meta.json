@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ordinary TEMPERATE Cell480350 diamond and TMP extra face for physical cliff01.tem sub2 at authored XMP03T4 cell18,69/level4 and Hills103,64/level2, with exact native RGB565/Z output. No whole map bootstrap or native whole-frame claim.",
+  "assumptions": [
+    "Existing PaletteReader VM, archive extraction, RGB565/MMX startup, original TMP constructor5447C0/GetImage544CB0/full lazy547020, CellConvert and A/Z/color surfaces are reused. File IO runs during preparation; subsequent Cell getters use that resident original resource. No host TMP decoder, palette kernel, drawing loop or expected pixels are introduced.",
+    "Original General545535..545C3F/ordinal545CEF..545FA3 and selected scalar/string reads establish TileSet0010/Cliff/base49/count40. Sparse selected primary838-entry registry publication, pristine one-file chain metadata and native Cell initialization from authored XMP03T4 packs are explicit fixture boundaries, not full theater registration, Map bootstrap, LAT or Recalc.",
+    "Original Scenario defaults and full normal Lighting reader68A817..68A98A provide the physical XMP03T4 and Hills profiles. Original cold483E30/484180/544E70 selects the actual ISO-source CellConvert; each cold row records normalized RGB, quantized Convert key and native top/common/bottom scalars. Warm camera-away/return retains this same original Cell/cache.",
+    "Original full6D7560 traversal,47FF80 extra-aware bounds,480350 and547CF0 run on the same VM. Surface clip/redraw/camera, destination/Z and uniform A are supplied controls. A physical SHROUD frame15 executes original47EFE0 in this same A plane and demonstrably changes selected face colors; natural reveal scheduling is outside scope.",
+    "Original diamond and extra pixel-store observation on the first row records900 diamond and906 extra pixels with zero destination overlap; physical sub2 has no covered self-overlap for a conditional old-Z control. Native extra source0 skips546 pixels. Real extra raster output supplies the near/equal/far candidate; no synthetic TMP or Rust-derived depth is used.",
+    "The shared preparation initializes the historical64-entry process table through original4814F0/Main seed0 (128 original draws), preserving its legacy controls. This selected single-file cliff bypasses the variant selector. Every selected draw leaves Main bytes unchanged; repeated calls retain A/Z/color until completion. No timer or detach body is passed by the selected local drawing chain. General resource retirement outside the prepared original file IO and CellConvert cache boundary remains open."
+  ],
+  "substitutions": [
+    "Existing allocator/CRT/RawFile and bounded Map lookup/admission transports. No drawing instructions or native pixel results are replaced."
+  ],
+  "entry_points": {
+    "full_view": "0x006D7560",
+    "cell": "0x00480350",
+    "bounds": "0x0047FF80",
+    "tmp": "0x00547CF0",
+    "tmp_ctor": "0x005447C0",
+    "tmp_get_image": "0x00544CB0",
+    "tmp_lazy": "0x00547020",
+    "cell_light": "0x00483E30",
+    "gather": "0x00484180",
+    "convert_select": "0x00544E70",
+    "extra_admission": "0x00549133",
+    "extra_color": "0x005492EC",
+    "extra_depth": "0x00549323",
+    "extra_scalar_loop": "0x0054953F",
+    "extra_color_store": "0x00549577",
+    "extra_depth_store": "0x00549592",
+    "wrapped_extra_loop": "0x00549397",
+    "shroud_leaf": "0x0047EFE0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --cliff",
+  "payload_sha256": "e82e34cbe79706d111228823dfe87d8fbd19ce0112439ec7a88adc613f2a692a"
+}

@@ -99,8 +99,12 @@ pub(super) struct SidebarInstances {
     /// The bottom command bar's surface layer, in layout space too.
     pub command_bar: Vec<SpriteInstance>,
     pub cameo: Vec<SpriteInstance>,
+    pub unavailable: Vec<SpriteInstance>,
+    pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub cameo_overlay: Vec<SpriteInstance>,
+    pub queue_overlay: Vec<SpriteInstance>,
+    pub queue_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
     pub minimap: Vec<SpriteInstance>,
     pub viewport_rect: Vec<SpriteInstance>,
@@ -116,7 +120,7 @@ impl SidebarInstances {
             self.minimap.len(),
             self.viewport_rect.len(),
             self.radar_anim.len(),
-            self.text.len(),
+            self.text.len() + self.queue_text.len(),
         )
     }
 }
@@ -833,11 +837,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
         crate::render::sidebar_text::side_highlight_color(theme)
     };
-    let (cameo, gclock, cameo_overlay) = view
+    let cameo_layers = view
         .as_ref()
         .map(|v| build_sidebar_cameo_instances(state, v, ready_text.as_ref(), hold_text.as_ref()))
         .unwrap_or_default();
-    let mut text = view
+    let mut text_layers = view
         .as_ref()
         .map(|v| {
             build_sidebar_text_instances(
@@ -854,7 +858,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // text colour as the cameo labels.
     if let Some(v) = view.as_ref() {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        text.extend(
+        text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
                 &state.renderer.bit_font,
                 v,
@@ -893,10 +897,14 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     SidebarInstances {
         chrome,
         command_bar,
-        cameo,
-        gclock,
-        cameo_overlay,
-        text,
+        cameo: cameo_layers.cameo,
+        unavailable: cameo_layers.unavailable,
+        flash: cameo_layers.flash,
+        gclock: cameo_layers.gclock,
+        cameo_overlay: cameo_layers.overlay,
+        queue_overlay: cameo_layers.queue_overlay,
+        queue_text: text_layers.queue,
+        text: text_layers.status,
         minimap,
         viewport_rect,
         content_boundary,

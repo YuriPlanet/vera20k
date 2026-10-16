@@ -510,8 +510,9 @@ class JoinedFixture:
             dict(seed=seed, linked=False, refinery_flag=False, dock_unload=False, human=True))
         u = self.u
         assert u.reg_read(UC_X86_REG_FPCW) == 0x0E7F
-        u.mem_map(HEAP, 0x400000)
-        u.mem_write(HEAP, bytes(inputs.u.mem_read(HEAP, 0x400000)))
+        input_arena_size = getattr(inputs, 'arena_size', 0x400000)
+        u.mem_map(HEAP, input_arena_size)
+        u.mem_write(HEAP, bytes(inputs.u.mem_read(HEAP, input_arena_size)))
         for address, size in ((0x8B4150, 24), (0xB1D378, 24), (0x87E180, 0x12C),
                               (0xA8E3A8, 32 * 32)):
             u.mem_write(address, bytes(inputs.u.mem_read(address, size)))

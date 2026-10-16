@@ -328,7 +328,7 @@ fn queue_advances_only_after_delivery() {
     // The queue does NOT advance on completion alone (the cost is inert when the
     // object is still held — the guard fires before the seed).
     assert_eq!(
-        f.start_next_queued(0),
+        f.start_next_queued(),
         None,
         "C7: held object blocks the advance"
     );
@@ -341,14 +341,13 @@ fn queue_advances_only_after_delivery() {
     f.object = None;
     f.suspended = false;
     assert_eq!(
-        f.start_next_queued(0),
+        f.start_next_queued(),
         Some(next),
         "after delivery the front pops"
     );
-    assert_eq!(
-        f.object.as_ref().map(|o| o.type_id),
-        Some(next),
-        "active = FV"
+    assert!(
+        f.object.is_none(),
+        "forced Begin owns construction after the pop"
     );
     assert!(f.queue.is_empty(), "tail consumed");
 
@@ -489,7 +488,8 @@ fn single_wallet_charged_once_no_double_debit() {
         &rules,
         "Americans",
         "GRIZZLY",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let full_cost = sim
         .object_type(ty, &rules)
@@ -537,7 +537,8 @@ fn stall_on_no_funds_holds() {
         &rules,
         "Americans",
         "GRIZZLY",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     for _ in 0..200 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
@@ -571,7 +572,8 @@ fn cancel_one_partial_refund_to_house_credits() {
         &rules,
         "Americans",
         "GRIZZLY",
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        false,
     ));
     let full_cost = sim
         .object_type(ty, &rules)
@@ -587,11 +589,14 @@ fn cancel_one_partial_refund_to_house_credits() {
         "mid-build: some but not all of the cost is spent"
     );
     let credits_before = sim.houses[&owner].economy.credits();
-    let ok = crate::sim::production::cancel_by_type_for_owner(
+    let ok = crate::sim::production::cancel_production_for_owner(
         &mut sim,
         &rules,
         "Americans",
-        "GRIZZLY",
+        crate::sim::production::ProductionCancellation::Type {
+            type_id: "GRIZZLY",
+            naval: false,
+        },
         false,
         crate::sim::world::FrameEffects::default(),
     );
@@ -640,11 +645,14 @@ fn factory_flip_determinism_over_scripted_commands() {
             .map(|i| {
                 if i == 10 {
                     // Cancel one of A's builds (the Aircraft) partway through.
-                    let _ = crate::sim::production::cancel_by_type_for_owner(
+                    let _ = crate::sim::production::cancel_production_for_owner(
                         &mut sim,
                         &rules,
                         "Americans",
-                        "BEAG",
+                        crate::sim::production::ProductionCancellation::Type {
+                            type_id: "BEAG",
+                            naval: false,
+                        },
                         false,
                         crate::sim::world::FrameEffects::default(),
                     );

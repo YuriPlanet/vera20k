@@ -39,6 +39,10 @@ pub(super) fn build_option_for_owner(
         object_category: obj.category,
         queue_category: production_category_for_object(obj),
         enabled: reason.is_none(),
+        at_build_limit: sim
+            .interner
+            .get(owner)
+            .is_some_and(|owner| check_build_limit(sim, rules, owner, obj)),
         reason,
     })
 }
@@ -75,17 +79,19 @@ fn strip_refusal(
 }
 
 /// Whether the sidebar lists `obj` for `owner` ([`strip_keeps`]), and, if it
-/// does, why its cameo is darkened: `StripClass::Draw @ 0x006A9540`
+/// does, the unlinked cameo's unavailable drawing input: `StripClass::Draw @ 0x006A9540`
 /// (`0x006A97A8..0x006A97F9`) darkens it while no online factory may build
 /// it (`FindFactory(1, 1, 1)`), or while it is at its limit
-/// (`CanBuild(type, 0, 0)` answers -1, or [`check_build_limit`]).
+/// (`CanBuild(type, 0, 0)` answers -1, or [`check_build_limit`]). A retained
+/// Factory link clears that overlay at6A98D3; the sidebar owner applies it.
 ///
 /// Residual: the strip adds cameos only when the house's tech tree is
-/// rechecked (House `+0x1FC`, `HouseClass::Update @ 0x004F926C`), and
-/// `UpdateConstructionOptions` then asks only powered, discovered factories
-/// of the type's kind; VERA lists a type as soon as it qualifies. Trigger:
-/// a new option while every factory of its kind is unpowered. Effect: VERA
-/// shows the cameo before gamemd does. Rare.
+/// rechecked (House `+0x1FC`, `HouseClass::Update @ 0x004F926C`). The retained
+/// app owner now follows that boundary. `UpdateConstructionOptions` additionally
+/// asks only eligible discovered/online factories of the type's kind; this
+/// query still combines addition and retention admission. Trigger: a new
+/// option on a recheck without an eligible adding factory. Effect: VERA can
+/// insert it early. Admission/discovery and alternate add routes remain open.
 fn sidebar_state(
     sim: &Simulation,
     rules: &RuleSet,
@@ -154,6 +160,20 @@ pub(super) fn production_category_for_object(
     }
 }
 
+/// House GetPrimaryFactory500510 category projection for a building's
+/// Factory RTTI/Naval and the lifecycle callbacks' literal BuildCat=0.
+/// Defense is a separate House slot selected only by an explicit Combat
+/// category; a yard's ordinary state callback therefore selects Building.
+pub(crate) fn factory_category_for_building(object: &ObjectType) -> Option<ProductionCategory> {
+    Some(match object.factory_type()? {
+        FactoryType::BuildingType => ProductionCategory::Building,
+        FactoryType::InfantryType => ProductionCategory::Infantry,
+        FactoryType::UnitType if object.naval => ProductionCategory::Ship,
+        FactoryType::UnitType => ProductionCategory::Vehicle,
+        FactoryType::AircraftType => ProductionCategory::Aircraft,
+    })
+}
+
 /// Check if a structure is a production factory for the given category.
 ///
 /// Uses the data-driven Factory= key from rules.ini via RuleSet.factory_map.
@@ -164,28 +184,15 @@ pub(super) fn is_production_factory(
     structure_id: &str,
     category: ProductionCategory,
 ) -> bool {
-    let Some(factory_type) = rules.factory_type(structure_id) else {
+    let Some(factory_category) = rules
+        .object(structure_id)
+        .and_then(factory_category_for_building)
+    else {
         return false;
     };
-    match category {
-        ProductionCategory::Infantry => factory_type == FactoryType::InfantryType,
-        ProductionCategory::Vehicle => {
-            factory_type == FactoryType::UnitType
-                && rules
-                    .object(structure_id)
-                    .is_some_and(|object| !object.naval)
-        }
-        ProductionCategory::Ship => {
-            factory_type == FactoryType::UnitType
-                && rules
-                    .object(structure_id)
-                    .is_some_and(|object| object.naval)
-        }
-        ProductionCategory::Aircraft => factory_type == FactoryType::AircraftType,
-        ProductionCategory::Building | ProductionCategory::Defense => {
-            factory_type == FactoryType::BuildingType
-        }
-    }
+    factory_category == category
+        || (category == ProductionCategory::Defense
+            && factory_category == ProductionCategory::Building)
 }
 
 /// VERA-only: the producer-focus list (the sidebar's view and `CycleProducerFocus`): the owner's

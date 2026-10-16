@@ -331,14 +331,22 @@ pub(crate) fn detach_all(
             effects,
         ),
         None => {
+            let holder = FactoryHolder::Building(building);
             let object = sim
                 .production
                 .factories
-                .abandon_factory(FactoryHolder::Building(building))
+                .pending_abandonment(holder)
                 .and_then(|abandoned| abandoned.entity_id);
-            if let Some(object) = object {
-                let _ = sim.discard_constructed_limbo(object, rules, effects);
-            }
+            sim.production
+                .factories
+                .reset_for_abandon(holder, sim.session.binary_frame);
+            sim.with_object_placement_scope(|sim| {
+                if let Some(object) = object {
+                    let _ = sim.discard_constructed_limbo(object, rules, effects);
+                }
+                sim.production.factories.finish_abandon(holder);
+            });
+            sim.production.factories.remove_factory(holder);
         }
     }
 }

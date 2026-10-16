@@ -349,11 +349,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
                     );
                 }
                 "actual_global_factory_then_house_prefix" => {
-                    production::revalidate_and_step_factories(
-                        &mut sim,
-                        &rules,
-                        crate::sim::world::FrameEffects::default(),
-                    );
+                    production::step_factories(&mut sim);
                     sim.assess_house_derived_state(owner, &rules);
                 }
                 "later_local_house_advice" => house_eva::update_house_eva(&mut sim, &rules, owner),

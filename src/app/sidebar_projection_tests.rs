@@ -12,7 +12,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::production::{BuildOption, all_build_options_for_owner};
-use crate::sim::world::Simulation;
+use crate::sim::world::{LifecycleOutput, Simulation};
 use crate::ui::sidebar::cameo_order::CameoId;
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
 use crate::ui::sidebar::{
@@ -218,7 +218,9 @@ fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
         .find(|item| item.id == CameoId::Object(sim.interner.get("ORCA").unwrap()))
         .unwrap()
         .available = false;
+    loaded.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
     loaded.reconcile_cameos(owner, &removed, 3);
+    loaded.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
     loaded.reconcile_cameos(owner, &candidates, 3);
     assert!(
         !view(&sim, &options, &loaded, SidebarTab::Vehicle, 600.)
@@ -276,6 +278,7 @@ fn original_post_removal_scroll_reaches_view_and_hit_test() {
             .iter()
             .any(|name| name.as_str().unwrap() == sim.interner.resolve(id));
     }
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
     projection.reconcile_cameos(owner, &candidates, 3);
     let view = view(&sim, &options, &projection, SidebarTab::Vehicle, 430.);
     assert_eq!(view.layout.side2_tile_count, 3);
@@ -362,11 +365,15 @@ fn native_order_reaches_localized_views_scrolling_and_click_identity() {
     let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
     let mut projection = SidebarProjectionState::default();
     assert!(
-        !projection.reconcile_cameos(owner, &candidates, 3).build_inserted(),
+        !projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted(),
         "scenario seeding is silent"
     );
     assert!(
-        !projection.reconcile_cameos(owner, &candidates, 3).build_inserted(),
+        !projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted(),
         "retained identities are not insertions"
     );
 
@@ -402,7 +409,7 @@ fn native_order_reaches_localized_views_scrolling_and_click_identity() {
                         type_id: item.type_id.clone(),
                         right: false,
                         shift: false,
-                        at_build_limit: !item.enabled,
+                        at_build_limit: item.at_build_limit,
                     },
                 );
                 let option = options
@@ -435,20 +442,47 @@ fn only_an_accepted_new_object_in_the_same_house_announces_construction_options(
         .unwrap()
         .available = false;
     let mut projection = SidebarProjectionState::default();
-    assert!(!projection.reconcile_cameos(owner, &initial, 3).build_inserted());
-    assert!(projection.reconcile_cameos(owner, &candidates, 3).build_inserted());
-    assert!(!projection.reconcile_cameos(owner, &candidates, 3).build_inserted());
     assert!(
-        !projection.reconcile_cameos(owner, &initial, 3).build_inserted(),
-        "removal is silent"
+        !projection
+            .reconcile_cameos(owner, &initial, 3)
+            .build_inserted()
     );
     assert!(
-        projection.reconcile_cameos(owner, &candidates, 3).build_inserted(),
+        !projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted(),
+        "a refresh does not add ordinary entries without a House pass"
+    );
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    assert!(
+        projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted()
+    );
+    assert!(
+        !projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted()
+    );
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    assert!(
+        !projection
+            .reconcile_cameos(owner, &initial, 3)
+            .build_inserted(),
+        "removal is silent"
+    );
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    assert!(
+        projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted(),
         "a later accepted reinsertion announces again"
     );
     let other = sim.interner.get("TESTBUILD").unwrap();
     assert!(
-        !projection.reconcile_cameos(other, &candidates, 3).build_inserted(),
+        !projection
+            .reconcile_cameos(other, &candidates, 3)
+            .build_inserted(),
         "local-house replacement seeds silently"
     );
 }
@@ -475,7 +509,11 @@ fn retail_rules_admission_and_csf_names_keep_the_same_identity_in_every_view() {
     });
     let candidates = cameo_candidates(&sim, &rules, csf.as_ref(), owner, &options, &[], &[]);
     let mut projection = SidebarProjectionState::default();
-    assert!(!projection.reconcile_cameos(owner, &candidates, 3).build_inserted());
+    assert!(
+        !projection
+            .reconcile_cameos(owner, &candidates, 3)
+            .build_inserted()
+    );
     let visible: HashSet<_> = options
         .iter()
         .filter(|item| item.visible_in_sidebar())

@@ -42,7 +42,7 @@ def ints(u, address, count):
 
 
 def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar=False,
-                    frontier=False, tmp_names=(), smudge=False):
+                    frontier=False, tmp_names=(), smudge=False, hills=False):
     root = configured_gamemd().parent
     sources, assets = [], {}
     containers = (
@@ -65,7 +65,7 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
         )
     if tile:
         containers = (
-            ('ra2.mix', {'isotemp.mix': tuple(f'clear01{s}.tem' for s in ('', 'a', 'b', 'c', 'd', 'e', 'f', 'g')),
+            ('ra2.mix', {'isotemp.mix': tuple(tmp_names) or tuple(f'clear01{s}.tem' for s in ('', 'a', 'b', 'c', 'd', 'e', 'f', 'g')),
                          'cache.mix': ('isotem.pal', 'temperat.pal'),
                          'conquer.mix': ('SHROUD.SHP',)}),
             ('ra2md.mix', {'localmd.mix': ('temperatmd.ini',)}),
@@ -94,6 +94,8 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
         containers = (('ra2.mix', {'temperat.mix': ('CRATER11.TEM',)}),
                       ('ra2md.mix', {'localmd.mix': ('ARTMD.INI', 'MPBattleMD.ini')}),
                       ('Hills.mmx', {None: ('Hills.map',)}))
+    if hills:
+        containers += (('Hills.mmx', {None: ('Hills.map',)}),)
     for outer_name, children in containers:
         outer_raw = (root / outer_name).read_bytes()
         outer = mix(outer_raw)
@@ -874,7 +876,13 @@ if __name__ == '__main__':
     modes.add_argument('--tile', action='store_true')
     modes.add_argument('--placement', action='store_true')
     modes.add_argument('--smudge', action='store_true')
+    modes.add_argument('--cliff', action='store_true')
     selected, remaining = parser.parse_known_args()
+    if selected.cliff:
+        from tools.spatial_oracle.cliff_render import generate as generate_cliff, metadata as cliff_metadata
+        finish_vectors(generate_cliff, Path(__file__).with_name('cliff_render.json'),
+                       provenance=cliff_metadata, argv=remaining)
+        raise SystemExit(0)
     if selected.smudge:
         from tools.spatial_oracle.smudge_render import generate as generate_smudge, metadata as smudge_metadata
         finish_vectors(generate_smudge, Path(__file__).with_name('smudge_render.json'),

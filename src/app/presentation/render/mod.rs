@@ -21,10 +21,10 @@
 
 #[cfg(test)]
 mod bridge_shadow_gpu_tests;
-#[cfg(test)]
-mod placement_gpu_tests;
 mod build_instances;
 mod draw_passes;
+#[cfg(test)]
+mod placement_gpu_tests;
 #[cfg(test)]
 pub(crate) use draw_passes::draw_pooled_overlay_bodies;
 pub(crate) mod draw_plan_lowering;
@@ -228,6 +228,7 @@ pub(crate) fn render_game(
         )
     });
     surface.write_cameras(&gpu.queue, renderer.batch_renderer.ui_camera_uniform());
+    surface.prepare_packed(&gpu.device, &renderer.terrain_draw_renderer);
     state.renderer.terrain_draw_renderer.prepare(
         &state.renderer.gpu.device,
         state.renderer.combat_light_renderer.composition_texture(),
@@ -333,6 +334,9 @@ pub(crate) fn render_game(
             overlay_render_z: &world.overlay_render_z,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
+            sidebar_unavailable: &sidebar.unavailable,
+            sidebar_flash: &sidebar.flash,
+            sidebar_gclock: &sidebar.gclock,
         },
     );
     Ok(GameRenderOutput {
@@ -494,7 +498,23 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "command_bar", &sidebar.command_bar);
     pool.upload(&state.renderer.gpu, "radar_anim", &sidebar.radar_anim);
     pool.upload(&state.renderer.gpu, "sidebar_cameo", &sidebar.cameo);
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_unavailable",
+        &sidebar.unavailable,
+    );
+    pool.upload(&state.renderer.gpu, "sidebar_flash", &sidebar.flash);
     pool.upload(&state.renderer.gpu, "sidebar_gclock", &sidebar.gclock);
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_queue_overlay",
+        &sidebar.queue_overlay,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_queue_text",
+        &sidebar.queue_text,
+    );
     pool.upload(
         &state.renderer.gpu,
         "sidebar_cameo_overlay",
@@ -521,9 +541,13 @@ mod tests {
             chrome: Vec::new(),
             command_bar: Vec::new(),
             cameo: Vec::new(),
+            unavailable: Vec::new(),
+            flash: Vec::new(),
             gclock: Vec::new(),
             cameo_overlay: Vec::new(),
-            text: vec![sprite; 5],
+            queue_overlay: Vec::new(),
+            queue_text: vec![sprite; 2],
+            text: vec![sprite; 3],
             minimap: vec![sprite],
             viewport_rect: vec![sprite; 4],
             content_boundary: vec![sprite; 4],

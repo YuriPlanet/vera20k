@@ -27,9 +27,14 @@ fn admitted(p: vec2u) -> bool {
 }
 fn blend(source: u32, destination: u32) -> u32 {
     let selector = params.selector & 6u;
-    if selector == 0u { return source; } // Original opaque copy494B60.
+    // Convert490E50 tests translucency before bit1. The no-Z compressed
+    // shadow496250 ignores source colour and halves the old destination.
+    if selector == 0u {
+        if (params.selector & 1u) != 0u { return native_half_word(destination); }
+        return source; // Original opaque copy494B60.
+    }
     if selector == 4u {
-        return (((source >> 1u) & 0x7befu) + ((destination >> 1u) & 0x7befu)) & 0xffffu;
+        return (native_half_word(source) + native_half_word(destination)) & 0xffffu;
     }
     let s = (source >> 2u) & 0x39e7u;
     let d = (destination >> 2u) & 0x39e7u;

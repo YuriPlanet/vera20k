@@ -1,4 +1,4 @@
-//! Stock Techno cloak producer at the Techno AI head.
+//! Stock Techno cloak producer after the Techno AI's managers and healing.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::Ability;
@@ -584,8 +584,8 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
 
 /// Produce the world-dependent virtual results consumed by
 /// `TechnoClass::CloakingTick @ 0x006FB740`. Stock cloakable objects are Units;
-/// the caller keeps this at the Unit Techno bracket head to preserve Scenario
-/// RNG ordering relative to the rest of that object's AI visit.
+/// the shared caller runs this after mission/targeting, Bomb, SlaveManager,
+/// CaptureManager, IsAlive and healing (Techno6FA941..6FA946), before Spawn.
 pub(super) fn tick_stock_cloak_producer(
     sim: &mut Simulation,
     id: u64,

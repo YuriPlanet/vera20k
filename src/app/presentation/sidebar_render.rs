@@ -13,7 +13,6 @@
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
-use crate::render::batch::BatchTexture;
 use crate::sim::production;
 use crate::ui::sidebar::{self, SidebarView};
 
@@ -535,14 +534,6 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 // Chrome / theme helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn current_sidebar_chrome_texture(state: &AppState) -> Option<&BatchTexture> {
-    current_sidebar_chrome(state).map(|atlas| &atlas.texture)
-}
-
-pub(crate) fn current_sidebar_gclock_texture(state: &AppState) -> Option<&BatchTexture> {
-    current_sidebar_chrome(state).and_then(|atlas| atlas.gclock_texture.as_ref())
-}
-
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {
@@ -813,7 +804,7 @@ mod tests {
                          candidates: &[Cameo],
                          active: &mut SidebarTab,
                          gadgets: &mut SidebarGadgetState| {
-            let reconciled = strips.reconcile(candidates, 3);
+            let reconciled = strips.reconcile(candidates, 3, true);
             super::apply_cameo_transitions(reconciled.transitions(), active, gadgets);
         };
 
@@ -897,7 +888,7 @@ mod tests {
             },
         ];
         let mut strips = CameoStrips::default();
-        let reconciled = strips.reconcile(&candidates, 3);
+        let reconciled = strips.reconcile(&candidates, 3, true);
         let mut active = SidebarTab::Building;
         let mut gadgets = SidebarGadgetState::default();
 

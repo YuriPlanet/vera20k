@@ -370,8 +370,10 @@ impl CameoStrips {
     }
 
     /// House4F927C..4F92FD adds ordinary cameos before recalculating the
-    /// strips, then grants Supers. Visibility still comes from the existing
-    /// production admission owner; this projection does not invent CanBuild.
+    /// strips, then grants Supers. Ordinary membership changes only on that
+    /// House pass (or initial seed). StripAI6A8B30 and Draw6A9540 refresh
+    /// decoration without pruning when FindFactory starts rejecting Selling.
+    /// Visibility still comes from the existing production admission owner.
     ///
     /// The reported transitions follow the same pass: the ordinary additions
     /// run first, `retain` prunes (Recalculate 6AA600), and only then do newly
@@ -381,16 +383,16 @@ impl CameoStrips {
         &mut self,
         candidates: &[Cameo],
         visible_rows: usize,
+        recalculate_builds: bool,
     ) -> CameoReconcile {
         self.refresh_keys(candidates);
         let mut build_entered = [false; 4];
         let mut build_inserted = false;
         let empty_before_builds = self.sidebar_empty();
         let mut active_tab_destination = None;
-        for candidate in candidates
-            .iter()
-            .filter(|item| item.available && matches!(item.id, CameoId::Object(_)))
-        {
+        for candidate in candidates.iter().filter(|item| {
+            recalculate_builds && item.available && matches!(item.id, CameoId::Object(_))
+        }) {
             let accepted = self.insert(candidate);
             build_entered[candidate.tab.tab_index()] |= accepted;
             build_inserted |= accepted;
@@ -407,7 +409,11 @@ impl CameoStrips {
             .filter(|item| item.available)
             .map(|item| item.id)
             .collect();
-        self.retain(visible_rows, |id| available.contains(&id));
+        // Super grant/revoke already has its own current projection. Preserve
+        // that route; an ordinary presentation refresh may not prune builds.
+        self.retain(visible_rows, |id| {
+            (!recalculate_builds && matches!(id, CameoId::Object(_))) || available.contains(&id)
+        });
         let emptied =
             std::array::from_fn(|index| counted[index] > 0 && self.strips[index].is_empty());
         if emptied.iter().any(|was_emptied| *was_emptied)

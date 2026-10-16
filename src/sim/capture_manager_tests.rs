@@ -1207,8 +1207,9 @@ fn native_overload_update_corpus() {
 
 /// Full native471A50 with physical stock MIND/Spark rules, actual nonlethal
 /// Unit damage and five ParticleSystem constructors. Captive count alone is
-/// an explicit supplied component prior on both sides; no real capture,
-/// fatal FreeAll, Techno/Rocking or particle AI visit is claimed here.
+/// an explicit supplied component prior on both sides. The additive Techno
+/// bracket executes Mission/targeting before overload; other rows visit only
+/// the manager. No real capture, fatal FreeAll or particle AI is claimed here.
 /// The ordinary world witness owns legal shots/real nodes/next-frame lurch.
 #[test]
 fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
@@ -1223,7 +1224,16 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
         "tools/spatial_oracle/capture_overload_joined.json",
     ))
     .unwrap();
+    let techno_order: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/capture_overload_techno_order.json",
+    ))
+    .unwrap();
     let initial = &corpus["initial"];
+    // Independent physical map copies can have different payload identities;
+    // their selected type, overload and Spark reader outputs must agree.
+    for key in ["type", "rules", "spark_types", "fixed_sources"] {
+        assert_eq!(initial[key], techno_order["joined_inputs"][key]);
+    }
     let object = rules.object("MIND").unwrap();
     let weapon = rules.weapon(object.primary().unwrap()).unwrap();
     assert_eq!(json!(object.strength), initial["type"]["strength"]);
@@ -1293,10 +1303,11 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
     let rows = corpus["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 5);
     let mut signs = std::collections::BTreeMap::<u64, std::collections::BTreeSet<u32>>::new();
-    for row in rows {
+    for row in rows.iter().chain(std::iter::once(&techno_order["joined"])) {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let count = input["captives"].as_u64().unwrap();
+        let through_techno = input["techno_order"].as_bool() == Some(true);
         let mut world = crate::sim::arena_fixture::rival_arena_with_size(&rules, 1, 64);
         world.intern_rule_type_ids(&rules);
         world.resolve_type_handles(&rules);
@@ -1322,6 +1333,22 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
                 original_owner: InternedId::default(),
             })
             .collect();
+        if through_techno {
+            manager.overload_countdown = input["countdown"].as_i64().unwrap() as i32;
+            world.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+            let actor = world.substrate.entities.get(mind).unwrap();
+            assert_eq!(
+                json!(actor.mission.current().raw()),
+                row["context"]["mission"]
+            );
+            assert_eq!(
+                actor.passive_scan.timer(),
+                crate::sim::mission::MissionTimer::armed(
+                    row["context"]["passive_timer"][0].as_u64().unwrap() as u32,
+                    row["context"]["passive_timer"][2].as_u64().unwrap() as u32,
+                )
+            );
+        }
         world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
@@ -1337,9 +1364,17 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
         let previous: std::collections::BTreeSet<_> =
             world.particle_systems().iter().map(|(&id, _)| id).collect();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
-            for frame in 0..input["visits"].as_u64().unwrap() as u32 {
-                world.session.binary_frame = frame;
-                world.capture_manager_update(mind, &rules, None, FrameEffects::default());
+            if through_techno {
+                world.object_ai_visit_one(
+                    mind,
+                    Some(&rules),
+                    crate::sim::world::ObjectAiCtx::default(),
+                );
+            } else {
+                for frame in 0..input["visits"].as_u64().unwrap() as u32 {
+                    world.session.binary_frame = frame;
+                    world.capture_manager_update(mind, &rules, None, FrameEffects::default());
+                }
             }
         });
         let words: Vec<_> = draws.iter().map(|draw| draw["value"].clone()).collect();
@@ -2291,4 +2326,129 @@ fn a_killing_overload_frees_the_captives_before_the_sparks() {
             .get(mind)
             .is_none_or(|entity| !entity.lifecycle.object_alive())
     );
+}
+
+/// Techno6FA6F5 checks a carried bomb before CaptureManager471A50. A
+/// naturally due fatal Ivan fuse must free the captives before the manager
+/// can emit another overload pulse. Stock rules, four actual capture shots and all
+/// intervening ordinary object/particle turns use their production owners.
+#[test]
+fn a_due_ivan_bomb_precedes_the_same_turn_mastermind_overload() {
+    use crate::sim::arena_fixture::mastermind::{MindScene, spark_ids};
+
+    let Some(mut scene) = MindScene::retail() else {
+        return;
+    };
+    scene.capture_four_through_real_attacks();
+    let rules = scene.rules().clone();
+    let mind = scene.mind();
+    // The native timer uses Frame > end (Bomb438A70), while the original
+    // manager's countdown returns after decrementing a positive value.
+    // Pick an attach frame that makes these existing clocks expire together;
+    // do not replace either retained clock or supply a damage/ownership result.
+    let fuse_visits = rules.combat_damage.ivan_timed_delay + 1;
+    let cycle = rules.mind_control.overload_frames[1] + 1;
+    let attach_countdown = fuse_visits % cycle;
+    for _ in 0..=cycle {
+        let controller = scene.simulation().entities().get(mind).unwrap();
+        if controller
+            .capture_manager
+            .as_ref()
+            .unwrap()
+            .overload_countdown
+            == attach_countdown
+        {
+            break;
+        }
+        scene.step();
+    }
+    let controller = scene.simulation().entities().get(mind).unwrap();
+    assert_eq!(
+        controller
+            .capture_manager
+            .as_ref()
+            .unwrap()
+            .overload_countdown,
+        attach_countdown
+    );
+    let ivan = scene
+        .simulation_mut()
+        .spawn_object("IVAN", "Russians", 48, 48, 0, &rules)
+        .expect("retail Ivan supplied at the existing Attach entry");
+    scene.simulation_mut().bomb_attach(ivan, Some(mind), &rules);
+    assert!(
+        scene
+            .simulation()
+            .entities()
+            .get(mind)
+            .unwrap()
+            .bomb
+            .is_some()
+    );
+
+    for _ in 0..=fuse_visits {
+        let sim = scene.simulation();
+        let controller = sim.entities().get(mind).unwrap();
+        assert!(controller.lifecycle.object_alive());
+        let expired = controller
+            .bomb
+            .unwrap()
+            .expired(sim.session.binary_frame as i32);
+        if expired {
+            assert_eq!(
+                controller
+                    .capture_manager
+                    .as_ref()
+                    .unwrap()
+                    .overload_countdown,
+                0
+            );
+            assert!(controller.health.current() <= rules.combat_damage.ivan_damage);
+            let before = spark_ids(&scene);
+            scene.step();
+            assert!(
+                scene
+                    .simulation()
+                    .entities()
+                    .get(mind)
+                    .is_none_or(|actor| !actor.lifecycle.object_alive()),
+                "the real Ivan blast must kill the controller"
+            );
+            let original_owner = scene.simulation().interner.get("Russians").unwrap();
+            for victim in scene.targets() {
+                let actor = scene.simulation().entities().get(victim).unwrap();
+                assert_eq!(
+                    actor.owner(),
+                    original_owner,
+                    "death must restore each captive"
+                );
+                assert!(!actor.mind_control.is_mind_controlled());
+            }
+            assert!(!scene.simulation().bomb_carriers().contains(&mind));
+            let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+                "tools/spatial_oracle/capture_overload_techno_order.json",
+            ))
+            .unwrap();
+            let native = native["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["input"]["name"] == "killing_bomb_frees_captures_before_visit")
+                .unwrap();
+            let expected_sparks = native["manager_events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|event| event.get("spark").is_some())
+                .count();
+            assert_eq!(
+                spark_ids(&scene).difference(&before).count(),
+                expected_sparks,
+                "the fatal fuse must run before a due overload can create five SparkSys objects"
+            );
+            return;
+        }
+        scene.step();
+    }
+    panic!("the ordinary retained Ivan fuse never expired");
 }

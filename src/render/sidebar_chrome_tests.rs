@@ -204,6 +204,29 @@ fn retail_yuri_generic_route_uses_side_two_and_builds_production_clock() {
     assert!(!atlas_cell_has_alpha(&atlas, 0, 60, 48));
     assert!(atlas_cell_has_alpha(&atlas, 1, 60, 48));
     assert!(atlas_cell_has_alpha(&atlas, 54, 60, 48));
+    assert_eq!(atlas.indices.len(), (atlas.width * atlas.height) as usize);
+    let (_, clock) = resolved_shp(yuri, "GCLOCK2.SHP");
+    for (i, frame) in clock.frames.iter().enumerate() {
+        let left = (i as u32 % 8) * 60;
+        let top = (i as u32 / 8) * 48;
+        for y in 0..48 {
+            for x in 0..60 {
+                let in_frame = x >= u32::from(frame.frame_x)
+                    && y >= u32::from(frame.frame_y)
+                    && x < u32::from(frame.frame_x + frame.frame_width)
+                    && y < u32::from(frame.frame_y + frame.frame_height);
+                let expected = if in_frame {
+                    frame.pixels[((y - u32::from(frame.frame_y)) * u32::from(frame.frame_width) + x
+                        - u32::from(frame.frame_x)) as usize]
+                } else {
+                    0
+                };
+                let at = ((top + y) * atlas.width + left + x) as usize;
+                assert_eq!(atlas.indices[at], expected, "frame{i} ({x},{y})");
+                assert_eq!(atlas.rgba[at * 4 + 3], if expected == 0 { 0 } else { 255 });
+            }
+        }
+    }
 
     let instance = build_gclock_instance(
         &atlas.frames,

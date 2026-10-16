@@ -140,6 +140,7 @@ fn create_color_target(
     format: wgpu::TextureFormat,
     (width, height): (u32, u32),
 ) -> (wgpu::Texture, wgpu::TextureView) {
+    let encoded_view_formats = [format.remove_srgb_suffix()];
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(&format!("{label} Color RT")),
         size: wgpu::Extent3d {
@@ -154,7 +155,13 @@ fn create_color_target(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
+        // Destination-dependent native drawing snapshots encoded channel
+        // bytes through the compatible linear view, before RGB565 packing.
+        view_formats: if format.is_srgb() {
+            &encoded_view_formats
+        } else {
+            &[]
+        },
     });
     let view = texture.create_view(&Default::default());
     (texture, view)

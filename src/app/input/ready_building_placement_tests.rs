@@ -44,14 +44,23 @@ struct Fixture {
     projection: SidebarProjectionState,
 }
 
-fn paid_ready_fixture() -> Option<Fixture> {
+fn stock_base_fixture(
+    owner_name: &str,
+    buildings: &[(&str, u16)],
+    bind_buildup: bool,
+) -> Option<Fixture> {
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
     let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
-    let rules = retail.rules;
+    let mut rules = retail.rules;
+    if bind_buildup {
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE");
+        rules.bind_building_buildup_assets(&assets, "TEMPERATE");
+    }
     let mut sim = Simulation::with_seed(0x4FB8_4000);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    let owner = sim.intern("Americans");
+    let owner = sim.intern(owner_name);
     let mut house = HouseState::new(owner, 0, Some(owner), true, 50_000, 10);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.insert(owner, house);
@@ -62,10 +71,33 @@ fn paid_ready_fixture() -> Option<Fixture> {
     // fixture prerequisite. This fixture does not execute map reveal startup.
     sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.fog.reveal_all_for_owner(owner);
-    for (name, rx) in [("GACNST", 4), ("GAPOWR", 11), ("GAPILE", 18)] {
-        sim.spawn_object(name, "Americans", rx, 4, 0, &rules)
+    for &(name, rx) in buildings {
+        sim.spawn_object(name, owner_name, rx, 4, 0, &rules)
             .unwrap_or_else(|| panic!("healthy retail placement prerequisite {name}"));
     }
+    Some(Fixture {
+        sim,
+        rules,
+        overlays,
+        owner,
+        input: MatchInputState::new(HotkeyBindings::default()),
+        projection: SidebarProjectionState::default(),
+    })
+}
+
+fn paid_ready_fixture() -> Option<Fixture> {
+    let Fixture {
+        mut sim,
+        rules,
+        overlays,
+        owner,
+        input,
+        projection,
+    } = stock_base_fixture(
+        "Americans",
+        &[("GACNST", 4), ("GAPOWR", 11), ("GAPILE", 18)],
+        false,
+    )?;
 
     let starting_credits = production::credits_for_owner(&sim, "Americans");
     let total_cost: i32 = ["GAPOWR", "GAPILL"]
@@ -78,6 +110,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
         "Americans",
         "GAPOWR",
         FrameEffects::default(),
+        false,
     ));
     assert!(production::enqueue_by_type(
         &mut sim,
@@ -85,6 +118,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
         "Americans",
         "GAPILL",
         FrameEffects::default(),
+        false,
     ));
     // A fixture timeout, not an expected native completion frame. Both strips
     // run their real timers and charge the same House economy during these frames.
@@ -118,21 +152,20 @@ fn paid_ready_fixture() -> Option<Fixture> {
         rules,
         overlays,
         owner,
-        input: MatchInputState::new(HotkeyBindings::default()),
-        projection: SidebarProjectionState::default(),
+        input,
+        projection,
     })
 }
 
-fn press_cameo(
+fn refresh_fixture_sidebar(
     fixture: &mut Fixture,
-    name: &str,
     tab: SidebarTab,
-    press: CameoPress,
-) -> CameoClick {
-    let queue = production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Americans");
-    let ready = production::ready_buildings_for_owner(&fixture.sim, &fixture.rules, "Americans");
+) -> crate::ui::sidebar::SidebarView {
+    let owner_name = fixture.sim.resolve(fixture.owner).to_owned();
+    let queue = production::queue_view_for_owner(&fixture.sim, &fixture.rules, &owner_name);
+    let ready = production::ready_buildings_for_owner(&fixture.sim, &fixture.rules, &owner_name);
     let options =
-        production::all_build_options_for_owner(&fixture.sim, &fixture.rules, "Americans");
+        production::all_build_options_for_owner(&fixture.sim, &fixture.rules, &owner_name);
     let candidates = cameo_candidates(
         &fixture.sim,
         &fixture.rules,
@@ -158,16 +191,16 @@ fn press_cameo(
         .and_then(TargetingMode::as_building_placement)
         .map(|name| ArmedSidebarEntry::BuildingPlacement(name.to_owned()));
     let (power_produced, power_drained) =
-        production::power_balance_for_owner(&fixture.sim, &fixture.rules, "Americans");
+        production::power_balance_for_owner(&fixture.sim, &fixture.rules, &owner_name);
     let factory_statuses = fixture
         .projection
         .factory_statuses(&fixture.sim, fixture.owner);
-    let view = build_sidebar_view_with_spec(
+    build_sidebar_view_with_spec(
         layout_spec,
         800.0,
         1200.0,
         tab,
-        production::credits_for_owner(&fixture.sim, "Americans"),
+        production::credits_for_owner(&fixture.sim, &owner_name),
         power_produced,
         power_drained,
         None,
@@ -186,7 +219,19 @@ fn press_cameo(
         None,
         [None; 2],
         fixture.projection.cameo_strips(),
-    );
+    )
+}
+
+fn press_cameo(
+    fixture: &mut Fixture,
+    name: &str,
+    tab: SidebarTab,
+    press: CameoPress,
+) -> CameoClick {
+    let view = refresh_fixture_sidebar(fixture, tab);
+    let owner_name = fixture.sim.resolve(fixture.owner);
+    let queue = production::queue_view_for_owner(&fixture.sim, &fixture.rules, owner_name);
+    let ready = production::ready_buildings_for_owner(&fixture.sim, &fixture.rules, owner_name);
     let slot = view
         .items
         .iter()
@@ -517,7 +562,10 @@ fn consume_lifecycle_output(
     output: &LifecycleOutput,
     local_house: Option<InternedId>,
 ) -> bool {
-    if let Some(cursor_clear) = fixture.projection.apply_factory_output(output, local_house) {
+    if let Some(cursor_clear) = fixture
+        .projection
+        .apply_lifecycle_output(output, local_house)
+    {
         fixture
             .input
             .apply_building_placement_output(&cursor_clear, local_house);
@@ -555,6 +603,197 @@ fn start_mixed_infantry_queue(fixture: &mut Fixture) -> (u64, u64) {
         factory.construction_order(),
         factory.object.unwrap().entity_id.unwrap(),
     )
+}
+
+/// House4F92E2 alone recalculates membership. Draw6A98D3 clears DARKEN
+/// for the linked paid head; queued Select6AB656 checks its build limit
+/// independently of Draw's unavailable producer. This follows the ordinary
+/// command/frame spine through physical retail reverse buildup and Limbo.
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn selling_barracks_retains_paid_clock_and_queued_dark_cameo_until_house_recheck() {
+    let Some(mut fixture) = stock_base_fixture(
+        "Russians",
+        &[
+            ("NACNST", 4),
+            ("NAPOWR", 11),
+            ("NAHAND", 18),
+            ("NARADR", 25),
+        ],
+        true,
+    ) else {
+        return;
+    };
+    assert!(fixture.rules.has_buildup("NAHAND"));
+    let owner = fixture.owner;
+    let barracks = fixture
+        .sim
+        .entities()
+        .values()
+        .find(|entity| fixture.sim.resolve(entity.type_ref()) == "NAHAND")
+        .unwrap()
+        .stable_id();
+    for _ in 0..8 {
+        let frame = advance_commands(&mut fixture, &[]);
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+    }
+    let initial = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+    assert!(
+        initial
+            .items
+            .iter()
+            .any(|item| item.type_id == "E2" && item.enabled)
+    );
+    assert!(
+        initial
+            .items
+            .iter()
+            .any(|item| item.type_id == "FLAKT" && item.enabled)
+    );
+    let commands = ["E2", "E2", "FLAKT"].map(|name| {
+        CommandEnvelope::new(
+            owner,
+            fixture.sim.session.tick + 1,
+            Command::QueueProduction {
+                type_id: fixture.sim.interner.get(name).unwrap(),
+            },
+        )
+    });
+    let frame = advance_commands(&mut fixture, &commands);
+    consume_frame_outputs(&mut fixture, &frame, Some(owner));
+    for _ in 0..8 {
+        let frame = advance_commands(&mut fixture, &[]);
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+    }
+    let before = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+    let head = before
+        .items
+        .iter()
+        .find(|item| item.type_id == "E2")
+        .unwrap();
+    assert!(head.progress > 0.0 && head.progress < 1.0);
+    assert_eq!(head.queued_count, 2);
+    assert!(fixture.sim.houses[&owner].economy.spent_credits() > 0);
+    let identities = fixture.projection.cameo_strips().saved_identities();
+    let sale = CommandEnvelope::new(
+        owner,
+        fixture.sim.session.tick + 1,
+        Command::SellBuilding {
+            entity_id: barracks,
+        },
+    );
+    let mut frame = advance_commands(&mut fixture, &[sale]);
+    let mut live_sale_frames = 0;
+    let mut saw_clock = false;
+    let mut saw_ready = false;
+    loop {
+        let on_map = fixture
+            .sim
+            .entities()
+            .get(barracks)
+            .is_some_and(|entity| !entity.in_limbo());
+        if !on_map {
+            break;
+        }
+        assert!(frame.lifecycle_outputs.iter().all(|output| {
+            !matches!(output, LifecycleOutput::SidebarRecalculated { owner: reached } if *reached == owner)
+        }), "settled sale does not itself request a House pass before map exit");
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        let view = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+        assert_eq!(
+            fixture.projection.cameo_strips().saved_identities(),
+            identities
+        );
+        let head = view.items.iter().find(|item| item.type_id == "E2").unwrap();
+        let tail = view
+            .items
+            .iter()
+            .find(|item| item.type_id == "FLAKT")
+            .unwrap();
+        assert!(head.enabled && !head.is_on_hold);
+        if head.is_ready {
+            // IsComplete6A9822/READY6A983B wins over the stopped rate/Hold
+            // tail. A complete product may wait while FindFactory rejects
+            // Selling, without losing its retained Factory link.
+            assert!(!head.is_building_this_type);
+            assert_eq!(head.progress, 1.0);
+            if !saw_ready {
+                assert_eq!(
+                    press_cameo(&mut fixture, "E2", SidebarTab::Infantry, CameoPress::Left).order,
+                    Some(CameoOrder::Place),
+                    "a stopped complete mobile reaches Select's producer query/event path"
+                );
+            }
+            saw_ready = true;
+        } else {
+            assert!(head.is_building_this_type);
+            saw_clock = true;
+        }
+        assert!(head.progress > 0.0);
+        assert_eq!(head.queued_count, 2);
+        assert!(!tail.enabled && !tail.at_build_limit && !tail.is_building_this_type);
+        assert_eq!(tail.queued_count, 1);
+        live_sale_frames += 1;
+        if live_sale_frames == 1 {
+            assert_eq!(
+                press_cameo(
+                    &mut fixture,
+                    "E2",
+                    SidebarTab::Infantry,
+                    CameoPress::Right { shift: false }
+                )
+                .order,
+                Some(CameoOrder::Suspend)
+            );
+            assert_eq!(
+                press_cameo(
+                    &mut fixture,
+                    "FLAKT",
+                    SidebarTab::Infantry,
+                    CameoPress::Right { shift: false }
+                )
+                .order,
+                Some(CameoOrder::Abandon { all: false })
+            );
+            assert_eq!(
+                press_cameo(
+                    &mut fixture,
+                    "FLAKT",
+                    SidebarTab::Infantry,
+                    CameoPress::Left
+                )
+                .order,
+                Some(CameoOrder::Produce)
+            );
+        }
+        assert!(
+            live_sale_frames < 256,
+            "fixture sale must reach ordinary Limbo"
+        );
+        frame = advance_commands(&mut fixture, &[]);
+    }
+    consume_frame_outputs(&mut fixture, &frame, Some(owner));
+    assert!(
+        live_sale_frames > 1,
+        "physical buildup keeps the paid Factory live during sale"
+    );
+    assert!(
+        saw_clock && saw_ready,
+        "fixture exercises both native linked drawing arms"
+    );
+    for _ in 0..8 {
+        let view = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+        if view.items.is_empty() {
+            assert!(
+                production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Russians")
+                    .is_empty()
+            );
+            return;
+        }
+        let frame = advance_commands(&mut fixture, &[]);
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+    }
+    panic!("terminal sale's House +1FC pass must prune the retained Infantry entries");
 }
 
 fn assert_old_infantry_cameo_released(fixture: &mut Fixture, order: u64) {
@@ -1091,6 +1330,7 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
                 "Americans",
                 name,
                 FrameEffects::default(),
+                false,
             ));
         }
         let engineer = fixture.sim.interner.get("ENGINEER").unwrap();
@@ -1602,7 +1842,7 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
     // links, an independent Defense link, and the real completed product
     // still current. This is not whole UI/scenario reset coverage. Other
     // regressions cover actual gadget Select through the same input owner.
-    let _ = fixture.projection.apply_factory_output(
+    let _ = fixture.projection.apply_lifecycle_output(
         &LifecycleOutput::ProductionFactoryLinked {
             owner,
             type_id: pill_type,
@@ -1651,7 +1891,10 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         .unwrap();
     let mut clears = 0;
     for (index, output) in frame.lifecycle_outputs.iter().enumerate() {
-        if let Some(cursor_clear) = fixture.projection.apply_factory_output(output, Some(owner)) {
+        if let Some(cursor_clear) = fixture
+            .projection
+            .apply_lifecycle_output(output, Some(owner))
+        {
             clears += 1;
             fixture
                 .input
@@ -2113,6 +2356,7 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
         "Americans",
         "GAPILE",
         FrameEffects::default(),
+        false,
     ));
     let type_id = fixture.sim.interner.get("GAPILE").unwrap();
     for _ in 0..4096 {

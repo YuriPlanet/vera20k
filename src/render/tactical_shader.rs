@@ -1,7 +1,12 @@
 //! Assembly of shared tactical palette and stored-depth shader mechanisms.
 
 pub(crate) fn source(body: &str) -> String {
-    super::palette_light::shader_source(&format!("{}\n{}", include_str!("native_z.wgsl"), body))
+    super::palette_light::shader_source(&format!(
+        "{}\n{}\n{}",
+        include_str!("native_z.wgsl"),
+        include_str!("native_packed.wgsl"),
+        body
+    ))
 }
 
 /// World source blitters use the shared Camera + A binding. Packed destination

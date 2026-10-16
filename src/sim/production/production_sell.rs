@@ -26,15 +26,13 @@
 //! RESIDUALS:
 //! - `RegisterDestruction(null)` at the sale (`vt+0xE0`, `0x0044A1F9`, after
 //!   `+0x53C = -1` keeps the house's buildings-lost count unchanged): a
-//!   tagged building's "destroyed" trigger events 48 and 29 (VERA has no
-//!   per-object tags) and a radar refresh. Trigger: selling a map-tagged
-//!   building. Effect: its trigger does not fire.
-//! - House `+0x1FC`, set at the completing visit, makes the owner's next
-//!   House AI recheck its tech tree (`0x004F926C..0x004F92FD`); VERA
-//!   refreshes the owner's super weapon grants at the sale instead.
+//!   tagged building's "destroyed" trigger events 48 and 29 and a radar
+//!   refresh. TriggerRuntime owns object tags, but this sale path does not
+//!   dispatch those events. Trigger: selling a map-tagged building. Effect:
+//!   its sale destruction events do not fire.
 //! - Presentation: stage 1 re-selects a building selected at its entry
-//!   (`vt+0x14C`, `0x0044A8C9`; VERA's selection never lapses; its tag event
-//!   0x21 has no tags to reach), the `PackupSound=` handle (`+0x6A0`, stopped
+//!   (`vt+0x14C`, `0x0044A8C9`; VERA's selection never lapses, and this path
+//!   does not dispatch tag event 0x21), the `PackupSound=` handle (`+0x6A0`, stopped
 //!   at a conversion `0x0044A1C8`) and stage 2's looping sound update
 //!   (`0x00750D40`).
 //! - Dormant in retail data: stage 0's upgrade sale (`+0x702`; no type sets
@@ -46,10 +44,10 @@
 //!   building sets either key).
 //! - Stage 2's ore payout (`0x0044A232..0x0044A285`: the building's
 //!   StorageClass `+0x33C`, through `HouseClass::GiveTiberium 0x004F9610`)
-//!   pays nothing in retail play: the storage adders (`0x006C9690`,
-//!   `0x006C9740`) fill a harvester's, a slave's, the house's and a `Full=`
-//!   team member's storage (`0x0065DE7B`), and no retail TaskForce holds a
-//!   building (reading level: the adders' callers).
+//!   has no payout for the selected fresh-building control: its store starts
+//!   empty (`0x006C95E0`), and the inspected storage writers do not fill it.
+//!   `Full=` admits Foot team members, not Buildings (`0x0065DE7B`). Native
+//!   saved games can retain nonempty stores; their sale payout remains open.
 //! - Stage 0's Slave Miner arm (`0x0044AA3D..0x0044AA9F`: HandleReturnedSlaves
 //!   for an archived ore cell) needs the retail undeploy click's cell, which
 //!   VERA's undeploy order does not carry.
@@ -544,13 +542,15 @@ pub(crate) fn sell_complete(
         sim.uninit_with_context(id, UninitContext::default().with_effects(frame_effects));
         return false;
     };
-    let _ = sim.assign_target_represented(id, None, Some(rules), registry, frame_effects);
     let Some((owner, undeploys)) = sim.substrate.entities.get(id).and_then(|entity| {
         let object = sim.object_type(entity.type_ref(), rules)?;
         Some((entity.owner(), undeploys(rules, object)))
     }) else {
         return false;
     };
+    //449CB1 requests the House strip recheck before target/audio/conversion.
+    sim.request_house_tech_tree_recheck(owner);
+    let _ = sim.assign_target_represented(id, None, Some(rules), registry, frame_effects);
     if !undeploys {
         sim.sound_events
             .push(SimSoundEvent::StructureSold { owner });
@@ -565,10 +565,12 @@ pub(crate) fn sell_complete(
         // Add_Credits (`0x0044A222`).
         crate::sim::credit_income::add_credits(sim, owner, refund);
     }
-    sim.uninit_with_context(
-        id,
-        UninitContext::new(Some(rules), registry).with_effects(frame_effects),
-    );
+    let context = UninitContext::new(Some(rules), registry).with_effects(frame_effects);
+    //44A22C explicitly enters BuildingLimbo before44A28C UnInit. Its
+    // Detach/HouseAbandon and post-Limbo queue callback must observe this
+    // phase, before UnInit's earlier PointerExpired/Alive cleanup.
+    sim.techno_limbo_with_context(id, context);
+    sim.uninit_with_context(id, context);
     false
 }
 

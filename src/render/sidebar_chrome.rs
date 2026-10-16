@@ -24,12 +24,18 @@ mod in_game_shell;
 pub use in_game_shell::InGameShellArt;
 
 #[cfg(test)]
-pub(crate) fn packed_command_bar_fixture(assets: &AssetManager, theme: SidebarTheme) -> (CommandBarArt<SidebarChromeEntry>, Vec<u8>, [u32; 2]) {
+pub(crate) fn packed_command_bar_fixture(
+    assets: &AssetManager,
+    theme: SidebarTheme,
+) -> (CommandBarArt<SidebarChromeEntry>, Vec<u8>, [u32; 2]) {
     let route = SidebarSideRoute::for_theme(assets, theme);
     let palette = decode_sidebar_palette(route.resolve("SIDEBAR.PAL").unwrap().bytes).unwrap();
     let rendered = command_bar::load(route, &palette);
     let width = rendered.entries().map(|entry| entry.width).max().unwrap();
-    let height = rendered.entries().map(|entry| entry.height + CHROME_PADDING).sum();
+    let height = rendered
+        .entries()
+        .map(|entry| entry.height + CHROME_PADDING)
+        .sum();
     let mut rgba = vec![0; (width * height * 4) as usize];
     let mut y = 0;
     let packed = rendered.map(|entry| {
@@ -202,6 +208,56 @@ pub struct SidebarChromeExtraEntry {
     pub entry: SidebarChromeEntry,
 }
 
+pub(crate) struct SidebarDarkenMask {
+    pub texture: BatchTexture,
+    pub frame_origin: [f32; 2],
+}
+
+impl SidebarDarkenMask {
+    pub(crate) fn from_bytes(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        bytes: &[u8],
+        palette: &Palette,
+    ) -> Option<Self> {
+        let shp = ShpFile::from_bytes(bytes).ok()?;
+        let frame = shp.frames.first()?;
+        let width = u32::from(frame.frame_width);
+        let height = u32::from(frame.frame_height);
+        if width == 0 || height == 0 {
+            return None;
+        }
+        // Unavailable496250 uses indices alone; flash4963F0 uses this same
+        // frame with the sidebar's ordinary N=1 palette conversion.
+        let rgba = shp.frame_to_rgba_ui(0, palette).ok()?;
+        Some(Self {
+            texture: batch.create_texture_on_device(
+                device,
+                queue,
+                &rgba,
+                width,
+                height,
+                Some(&frame.pixels),
+            ),
+            frame_origin: [f32::from(frame.frame_x), f32::from(frame.frame_y)],
+        })
+    }
+
+    pub(crate) fn load(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        palette: &Palette,
+    ) -> Option<Self> {
+        // Original6A500B..6A5018: literal DARKEN.SHP through LoadFileFromMIX,
+        // not the side-only generic chrome resolver.
+        let source = assets.load_file_from_mix("DARKEN.SHP")?;
+        log::info!("Sidebar DARKEN.SHP resolved from {}", source.source_archive);
+        Self::from_bytes(&gpu.device, &gpu.queue, batch, &source.bytes, palette)
+    }
+}
+
 /// All sidebar chrome art for one faction theme, packed into a single texture.
 pub struct SidebarChromeAtlas {
     source_identity: SidebarChromeAtlasIdentity,
@@ -256,6 +312,9 @@ pub struct SidebarChromeAtlas {
     /// Each entry maps a frame index to UV coordinates in gclock_texture.
     pub gclock_texture: Option<BatchTexture>,
     pub gclock_frames: Vec<SidebarChromeEntry>,
+    /// Global DARKEN.SHP source, converted with this side's ordinary N=1
+    /// palette (SidebarLoadSHPs6A588C). Its resolver is LoadFileFromMIX.
+    pub(crate) darken: Option<SidebarDarkenMask>,
 }
 
 impl SidebarChromeAtlas {
@@ -362,6 +421,7 @@ pub fn build_sidebar_chrome_set(
 
 struct CpuGclockAtlas {
     rgba: Vec<u8>,
+    indices: Vec<u8>,
     width: u32,
     height: u32,
     frames: Vec<SidebarChromeEntry>,
@@ -391,18 +451,13 @@ fn build_gclock_cpu_atlas_from_bytes(
 
     let frame_w = shp.width as u32;
     let frame_h = shp.height as u32;
-    let mut rendered_frames: Vec<Vec<u8>> = Vec::with_capacity(frame_count);
+    let mut rendered_frames: Vec<RenderedChromeEntry> = Vec::with_capacity(frame_count);
     for i in 0..frame_count {
         // Use render_shp() to composite onto the full canvas, handling frame_x/frame_y
         // offsets and sub-canvas frame sizes correctly.
-        let mut entry = render_shp(&shp, palette, i)?;
-        // Set alpha = 128 for non-transparent pixels (gamemd flag 0x004 = 50% translucent).
-        for pixel in entry.rgba.as_chunks_mut::<4>().0 {
-            if pixel[3] > 0 {
-                pixel[3] = 128;
-            }
-        }
-        rendered_frames.push(entry.rgba);
+        // Retain original indices: compressed 4963F0 skips source zero,
+        // including when its palette colour would otherwise be opaque black.
+        rendered_frames.push(render_shp(&shp, palette, i)?);
     }
 
     // Pack into a grid texture. 8 columns keeps it roughly square for typical 54-frame SHPs.
@@ -411,9 +466,10 @@ fn build_gclock_cpu_atlas_from_bytes(
     let tex_w = cols * frame_w;
     let tex_h = rows * frame_h;
     let mut atlas_rgba = vec![0u8; (tex_w * tex_h * 4) as usize];
+    let mut atlas_indices = vec![0u8; (tex_w * tex_h) as usize];
 
     let mut entries = Vec::with_capacity(frame_count);
-    for (i, frame_rgba) in rendered_frames.iter().enumerate() {
+    for (i, frame) in rendered_frames.iter().enumerate() {
         let col = (i as u32) % cols;
         let row = (i as u32) / cols;
         let dst_x = col * frame_w;
@@ -423,9 +479,11 @@ fn build_gclock_cpu_atlas_from_bytes(
             let src_start = (y * frame_w * 4) as usize;
             let dst_start = (((dst_y + y) * tex_w + dst_x) * 4) as usize;
             let len = (frame_w * 4) as usize;
-            if src_start + len <= frame_rgba.len() && dst_start + len <= atlas_rgba.len() {
+            if src_start + len <= frame.rgba.len() && dst_start + len <= atlas_rgba.len() {
                 atlas_rgba[dst_start..dst_start + len]
-                    .copy_from_slice(&frame_rgba[src_start..src_start + len]);
+                    .copy_from_slice(&frame.rgba[src_start..src_start + len]);
+                atlas_indices[dst_start / 4..(dst_start + len) / 4]
+                    .copy_from_slice(&frame.indices[src_start / 4..(src_start + len) / 4]);
             }
         }
 
@@ -448,6 +506,7 @@ fn build_gclock_cpu_atlas_from_bytes(
 
     Some(CpuGclockAtlas {
         rgba: atlas_rgba,
+        indices: atlas_indices,
         width: tex_w,
         height: tex_h,
         frames: entries,
@@ -469,7 +528,13 @@ fn build_gclock_texture(
         atlas.width,
         atlas.height
     );
-    let texture = batch.create_texture(gpu, &atlas.rgba, atlas.width, atlas.height);
+    let texture = batch.create_texture_with_indices(
+        gpu,
+        &atlas.rgba,
+        atlas.width,
+        atlas.height,
+        Some(&atlas.indices),
+    );
     Some((texture, atlas.frames))
 }
 
@@ -973,11 +1038,13 @@ fn build_theme_atlas(
         extra_entries,
         gclock_texture,
         gclock_frames,
+        darken: SidebarDarkenMask::load(gpu, batch, asset_manager, &generic_palette),
     })
 }
 
 struct RenderedChromeEntry {
     rgba: Vec<u8>,
+    indices: Vec<u8>,
     width: u32,
     height: u32,
 }
@@ -1109,21 +1176,26 @@ fn render_shp(shp: &ShpFile, palette: &Palette, frame_index: usize) -> Option<Re
     if canvas_w == fw && canvas_h == fh && fx == 0 && fy == 0 {
         return Some(RenderedChromeEntry {
             rgba: frame_rgba,
+            indices: frame.pixels.clone(),
             width: canvas_w,
             height: canvas_h,
         });
     }
     let mut canvas = vec![0u8; (canvas_w * canvas_h * 4) as usize];
+    let mut indices = vec![0u8; (canvas_w * canvas_h) as usize];
     for row in 0..fh {
         let src_off = (row * fw * 4) as usize;
         let dst_off = (((fy + row) * canvas_w + fx) * 4) as usize;
         let len = (fw * 4) as usize;
         if src_off + len <= frame_rgba.len() && dst_off + len <= canvas.len() {
             canvas[dst_off..dst_off + len].copy_from_slice(&frame_rgba[src_off..src_off + len]);
+            indices[dst_off / 4..(dst_off + len) / 4]
+                .copy_from_slice(&frame.pixels[src_off / 4..(src_off + len) / 4]);
         }
     }
     Some(RenderedChromeEntry {
         rgba: canvas,
+        indices,
         width: canvas_w,
         height: canvas_h,
     })

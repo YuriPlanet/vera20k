@@ -740,16 +740,9 @@ fn techno_ai_shell(
                 outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
             }
             passive_acquire_step(sim, id, rules, ctx);
-            bomb_fuse_slot(
-                sim,
-                id,
-                rules,
-                ctx.overlay_registry,
-                &mut outcome.bridge_state_changed,
-                ctx.effects,
-            );
-            slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
-            spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
+            if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
+                return;
+            }
             if let Some(rules) = rules {
                 target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
             }
@@ -809,18 +802,9 @@ fn techno_ai_shell(
                 return;
             }
             passive_acquire_step(sim, id, rules, ctx);
-            if !bomb_fuse_slot(
-                sim,
-                id,
-                rules,
-                ctx.overlay_registry,
-                &mut outcome.bridge_state_changed,
-                ctx.effects,
-            ) {
+            if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
                 return;
             }
-            slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
-            spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
             flash_step(sim, id);
             if let Some(rules) = rules {
@@ -996,16 +980,9 @@ fn techno_ai_shell(
                 sim.fire_requests.aircraft.insert(id);
             }
             passive_acquire_step(sim, id, rules, ctx);
-            bomb_fuse_slot(
-                sim,
-                id,
-                rules,
-                ctx.overlay_registry,
-                &mut outcome.bridge_state_changed,
-                ctx.effects,
-            );
-            slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
-            spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
+            if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
+                return;
+            }
             techno_common_post(sim, id, rules);
         }
     }
@@ -1335,23 +1312,11 @@ fn mission_handlers_run(sim: &Simulation, id: u64) -> bool {
 /// `TechnoClass::AI_Update`'s leading common steps, in native order: the
 /// Iron Curtain tint stage (`0x006F9EAF`, [`iron_tint_step`]), the berserk
 /// countdown (`0x006F9F0D`, [`berserk_step`]), the
-/// promotion sample (`0x006FA054`), the drain blocks (`0x006FA14B..
-/// 0x006FA224`, directly after the rank-cache write at `0x006FA145`), the
-/// CaptureManager update (`0x006FA730`), then the IsAlive gate (`0x006FA735`)
-/// before the self-heal pulse. Returns false when the object died in them (an
-/// overloaded Mastermind), which ends its AI body. The bomb fuse, which
-/// natively sits between passive acquisition and the CaptureManager
-/// (`0x006FA6F5`), runs from each category's arm after its passive step
-/// ([`bomb_fuse_slot`]).
-///
-/// RESIDUAL: natively the CaptureManager follows the mission step, passive
-/// acquisition and the bomb fuse, which VERA runs after this block. Trigger: a
-/// Yuri or Mastermind whose capture update draws or kills in the frame it would
-/// also acquire, advance its mission or set off a bomb it carries. Effect: the
-/// Scenario draws of those steps come in a different order, and a controller
-/// the overload kills skips them. Frequency: rare; the bomb case needs a
-/// bombed controller at its fuse's end. Downstream: later Scenario draws in
-/// that frame shift.
+/// promotion sample (`0x006FA054`) and drain blocks (`0x006FA14B..0x006FA224`),
+/// followed by rocking, target validity, charge turret and the Door clock.
+/// Returns false when rocking destroyed the object. Managers, self-healing
+/// and cloak belong to [`techno_after_acquisition`], after mission dispatch
+/// and passive targeting, rather than this pre-mission block.
 fn techno_common_steps(
     sim: &mut Simulation,
     id: u64,
@@ -1421,15 +1386,6 @@ fn techno_common_steps(
         entity.update_voxel_recoil(); // Techno6FA4D1, before ChargeTurret.
     }
     charge_turret_step(sim, id, rules);
-    sim.capture_manager_update(id, rules, overlay_registry, effects);
-    if !ai_alive(sim, id) {
-        return false;
-    }
-    self_heal_step(sim, id, rules);
-    // Techno6FA8D2..6FA93E: the house self-heal pulse follows the per-object
-    // one and precedes the door advance and the cloak tick (0x006FA946), so a
-    // same-frame house heal is visible to the cloak's health branch.
-    house_self_heal_step(sim, id, rules);
     //Techno6FA5BE..6FA5D6, before Mission AI: every Techno finishes its own
     //due Door transition here. Gate/Factory mission work observes this change
     //inside the same LogicVector visit; no global phase advances Door clocks.
@@ -1782,75 +1738,55 @@ pub(super) fn dying_infantry_techno_ai(
     }
 }
 
-/// `TechnoClass::AI`'s slave manager call (`0x006FA717`), after the passive
-/// block and the bomb and before the CaptureManager: a master runs
-/// `SlaveManagerClass::AI` (`sim::slave_manager`).
-fn slave_manager_slot(
+/// The shared post-acquisition sequence of `TechnoClass::AI_Update`:
+/// Bomb6FA6F5, Slave6FA717, Capture6FA726, IsAlive6FA735, self-heal6FA743,
+/// House healing6FA79A, Cloak6FA941 and Spawn6FA94C. Original instructions
+/// and executable controls: `tools/spatial_oracle/capture_overload_update.py
+/// --techno-order` and its documented callback/stock-MIND boundaries.
+///
+/// Re-read every owner after the previous callback: a fatal bomb frees the
+/// captives before CaptureManager is queried, so the stock manager emits no
+/// overload pulse. An overload still constructs its sparks, but a dead
+/// controller never heals, cloaks or spawns. Mission and scan draws precede
+/// overload draws on the same Scenario stream. Unit,
+/// Infantry, Building and Aircraft use this one sequence in their Logic visit.
+fn techno_after_acquisition(
     sim: &mut Simulation,
     id: u64,
     rules: Option<&RuleSet>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
-) {
-    if let Some(rules) = rules {
-        sim.slave_manager_ai(id, rules, overlay_registry, effects);
-    }
-}
-
-/// `TechnoClass::AI`'s SpawnManager call (`0x006FA94C..0x006FA958`): past the
-/// IsAlive gate (`0x006FA735`), the self-heal and the cloak (`vt+0x410`,
-/// `0x006FA946`), a spawner runs `SpawnManagerClass::AI`
-/// (`sim::spawn_manager`). A Unit's own Fire_At_Target comes after its
-/// `FootClass::AI` (`0x0073647B`, `0x007365E1`), so a target its fire hands
-/// the manager waits for the next pass.
-fn spawn_manager_slot(
-    sim: &mut Simulation,
-    id: u64,
-    rules: Option<&RuleSet>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
-) {
-    if let Some(rules) = rules
-        && ai_alive(sim, id)
-    {
-        crate::sim::spawn_manager::spawn_manager_ai(sim, rules, id, overlay_registry, effects);
-    }
-}
-
-/// The bomb fuse's slot in `TechnoClass::AI_Update` (`0x006FA6F5..
-/// 0x006FA717`): after the mission step and passive acquisition, before the
-/// SlaveManager and CaptureManager. A carrier its own blast kills runs no
-/// further AI this frame (the IsAlive gate at `0x006FA735`). A bridge the
-/// blast changes is reported through `bridge_state_changed`.
-fn bomb_fuse_slot(
-    sim: &mut Simulation,
-    id: u64,
-    rules: Option<&RuleSet>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    bridge_state_changed: &mut bool,
-    effects: FrameEffects<'_>,
+    ctx: ObjectAiCtx<'_>,
+    outcome: &mut ObjectAiOutcome,
 ) -> bool {
     if let Some(rules) = rules {
-        *bridge_state_changed |= sim.bomb_fuse_step(id, rules, overlay_registry, effects);
+        outcome.bridge_state_changed |=
+            sim.bomb_fuse_step(id, rules, ctx.overlay_registry, ctx.effects);
+        sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects);
+        sim.capture_manager_update(id, rules, ctx.overlay_registry, ctx.effects);
     }
-    ai_alive(sim, id)
-}
-
-fn techno_common_pre(
-    sim: &mut Simulation,
-    id: u64,
-    rules: Option<&RuleSet>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
-) {
-    let Some(rules) = rules else { return };
-    // `AI_Update` order: the promotion sample and the self-heal pulse both
-    // precede the cloak tick (`vtable+0x410` at `0x006FA946`), so a same-frame
-    // heal is visible to the cloak's health branch.
-    if !techno_common_steps(sim, id, rules, overlay_registry, effects, None) {
-        return;
+    if !ai_alive(sim, id) {
+        return false;
     }
-    super::techno_ai_cloak::tick_stock_cloak_producer(sim, id, rules, overlay_registry, effects);
+    if let Some(rules) = rules {
+        self_heal_step(sim, id, rules);
+        house_self_heal_step(sim, id, rules);
+        super::techno_ai_cloak::tick_stock_cloak_producer(
+            sim,
+            id,
+            rules,
+            ctx.overlay_registry,
+            ctx.effects,
+        );
+        // A target the Unit's later Fire_At_Target hands its manager waits
+        // until the next visit (Unit73647B/7365E1).
+        crate::sim::spawn_manager::spawn_manager_ai(
+            sim,
+            rules,
+            id,
+            ctx.overlay_registry,
+            ctx.effects,
+        );
+    }
+    true
 }
 
 /// Sim-side model of gamemd's TechnoClass `+0x308` (`DamageSparkSystem`): the
@@ -2057,7 +1993,11 @@ fn unit_techno_bracket(
     ctx: ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> BracketReach {
-    techno_common_pre(sim, id, rules, ctx.overlay_registry, ctx.effects);
+    if let Some(rules) = rules
+        && !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None)
+    {
+        return BracketReach::DiedInPre;
+    }
     // Guard B (IsAlive, `0x006FA23C`). A crashing wreck is alive at Health 0,
     // so it runs on: the counter, the passive block (on Move,
     // Guard or Harvest the gate and the scan with its Scenario draws, which
@@ -2087,22 +2027,12 @@ fn unit_techno_bracket(
     // Passive / opportunity target acquisition sits between mission dispatch
     // and the second IsAlive guard, before the object's own locomotion.
     passive_acquire_step(sim, id, rules, ctx);
-    bomb_fuse_slot(
-        sim,
-        id,
-        rules,
-        ctx.overlay_registry,
-        &mut outcome.bridge_state_changed,
-        ctx.effects,
-    );
-    slave_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
     // Guard E (IsAlive, `0x006FA735`): the dispatched handler, or the bomb it
     // carried, may have destroyed the Unit; a dead Unit runs no post-mission
     // block.
-    if !ai_alive(sim, id) {
+    if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
         return BracketReach::Dispatched;
     }
-    spawn_manager_slot(sim, id, rules, ctx.overlay_registry, ctx.effects);
     if let Some(rules) = rules {
         target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
     }

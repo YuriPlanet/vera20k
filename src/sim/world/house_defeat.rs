@@ -207,6 +207,10 @@ impl Simulation {
                     .get_mut(&owner)
                     .is_some_and(|house| house.take_tech_recheck())
                 {
+                    if self.session.current_house == Some(owner) {
+                        self.lifecycle_outputs
+                            .push(super::LifecycleOutput::SidebarRecalculated { owner });
+                    }
                     // Strip recalculation precedes4F92F6/4F92FD's Super
                     // revoke/grant passes. Carry generated ABANDON events
                     // to MainTick's post-Logic647260 dispatcher.

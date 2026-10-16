@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoClass AI 6FA646..6FA95B mission/passive/bomb/slave/capture/alive/selfheal/cloak/spawn ordering component",
+  "assumptions": [
+    "Reuses the historical Fixture VM, image loader, original CaptureManager constructor4717D0, static target initializer4716F0, stock overload tables and original Scenario seed/RNG. There is no new runtime, duplicate joined bootstrap or altered original instruction.",
+    "Entry6FA646 supplies the actual AI prologue frame shape ESP=entryESP-78, ESI=owner and EBP=0. Earlier Techno AI and continuation after6FA95B are excluded. Dead controls stop before the original epilogue6FAFFD. Guard mission5, expired passive timer, MIND-strength500/type-kind1 and due count4 are supplied control priors, not native scenario admission.",
+    "Whole original CaptureManager Update471A50 executes if the owner still has its manager. Surviving controls retain original damage/voice/spark coordinate/RNG/countdown order and actual Techno health increment6FA756. The countdown1 control returns from Update without a hit and reaches subsequent heal in the same original bracket.",
+    "Bomb, slave and spawn presence are synthetic independent control inputs. Ordinary retail MIND has neither slave nor spawn manager; those callback controls establish the shared AI slot order only. The separate joined overload corpus and production regression own stock MIND inputs and connected gameplay.",
+    "One additional joined control reuses joined_inputs/joined_case and their original physical retail readers, whole MIND constructor and successful Unlimbo. It supplies count4/countdown0 at frame30, then runs the same full original6FA646..6FA95B bracket with no additional gameplay substitutions: real mission, passive timer gates, CaptureManager471A50, Unit737C90/Techno701900 receiver, selfheal gates and cloak execute. Constructor passive delay45 is not expired at frame30. No native captive nodes, captures, whole death, Unit outer AI or world tick is claimed."
+  ],
+  "substitutions": [
+    "Inherited ReceiveDamage callback subtracts the actual original requested amount from supplied health and clears IsAlive for the killing-capture control; fatal native damage/FreeAll/detach are excluded. Existing PlayAt, allocation and ParticleSystem callbacks remain recorded and returned at entry.",
+    "MissionClass5B3060, passive admission/acquisition owner slots4C4/4CC, Bomb438A70/438720, Slave and Spawn manager slot5C, selfheal admission294, type84/88, runtime kind2C, height1C8, house repair eligibility50D9D0 and cloak410 are declared returned callbacks. House repair cadence is supplied1 with eligibility false. These mechanisms and passive acquisition RNG are not reproduced by this component.",
+    "Killing-bomb callbacks explicitly write health0/IsAlive0. The pointer-reload control also sets CaptureManager=NULL; the retained-manager control instead sets its captive count0 and lets original471A50 execute. Native fatal cleanup calls FreeAll702112/4DE5DD and defers ObjectUnInit5F65F0, so the latter is the representative count-zero/no-overload boundary. Neither callback implements native Bomb, FreeAll or detach; the NULL-pointer variant does not establish that retail fatal Bomb skips Update."
+  ],
+  "entry_points": {
+    "begin": "0x006FA646",
+    "continuation": "0x006FA95B",
+    "dead_epilogue": "0x006FAFFD",
+    "capture_update": "0x00471A50",
+    "mission": "0x005B3060",
+    "bomb_ready": "0x00438A70",
+    "bomb_update": "0x00438720",
+    "selfheal_increment": "0x006FA756",
+    "cloak_call": "0x006FA946",
+    "spawn_call": "0x006FA958"
+  },
+  "replay_command": "python -m tools.spatial_oracle.capture_overload_update --techno-order",
+  "payload_sha256": "01ff177bc7081cc099461800e3bf9a55cf34a837108c076665903760f0b00741"
+}

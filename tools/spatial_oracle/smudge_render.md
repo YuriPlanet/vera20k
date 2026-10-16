@@ -3,7 +3,6 @@
 Run from the checkout with the configured active retail game and Python environment:
 
 ```sh
-source /Users/halvor/Documents/vera20k-dev/env.sh
 python -B -m tools.spatial_oracle.bridge_shadow_render --smudge --check
 ```
 

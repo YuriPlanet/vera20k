@@ -27,6 +27,9 @@ pub(crate) struct SidebarProjectionState {
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
+    /// Pending local House4F92E2 handoff. Rendering refreshes comparison and
+    /// drawing inputs every frame, but does not manufacture a House +1FC pass.
+    pending_cameo_recheck: Option<InternedId>,
     /// Foreign Factory references belonging to retained strip entries. The
     /// simulation registry owns Factory lifetime/state; only original local
     /// Begin/House abandonment facts and initial projection seed write these
@@ -51,6 +54,7 @@ impl SidebarProjectionState {
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
         if view.is_none() {
             self.cameos = None;
+            self.pending_cameo_recheck = None;
             self.factory_links.clear();
         }
         self.current_view = view;
@@ -62,6 +66,7 @@ impl SidebarProjectionState {
     /// different pre-placed base never reads as freshly inserted cameos.
     pub(crate) fn reset_cameo_seed(&mut self) {
         self.cameos = None;
+        self.pending_cameo_recheck = None;
         self.factory_links.clear();
     }
 
@@ -89,12 +94,14 @@ impl SidebarProjectionState {
             }
             self.cameos = Some((owner, CameoStrips::default()));
         }
+        let recalculate_builds = !initialized || self.pending_cameo_recheck == Some(owner);
+        self.pending_cameo_recheck = None;
         let reconciled = self
             .cameos
             .as_mut()
             .expect("cameos initialized")
             .1
-            .reconcile(current, visible_rows);
+            .reconcile(current, visible_rows, recalculate_builds);
         if initialized {
             reconciled
         } else {
@@ -118,22 +125,28 @@ impl SidebarProjectionState {
 
     pub(crate) fn restore_order(&mut self, saved: Option<(InternedId, CameoStrips)>) {
         self.cameos = saved;
+        self.pending_cameo_recheck = None;
         self.factory_links.clear();
     }
 
-    /// Sidebar6A6140 links the reached cameo; admitted HouseAbandon's
+    /// House4F92E2 schedules the retained membership pass. Sidebar6A6140
+    /// links the reached cameo; admitted HouseAbandon's
     /// Strip6ABBDF unlinks every entry to that Factory before successor Begin.
     /// Product expiry/rearm alone retain old associations. Both Select and
     /// Draw consume these same private handles in lifecycle emission order.
     /// Return the House building-cursor prefix once: before settlement when
     /// Strip has no matching link, or after linked product expiry/unlink.
     /// Source: tools/sidebar_oracle/cameo_order.md, executed abandon orders.
-    pub(crate) fn apply_factory_output(
+    pub(crate) fn apply_lifecycle_output(
         &mut self,
         output: &LifecycleOutput,
         local_house: Option<InternedId>,
     ) -> Option<LifecycleOutput> {
         match *output {
+            LifecycleOutput::SidebarRecalculated { owner } if local_house == Some(owner) => {
+                self.pending_cameo_recheck = Some(owner);
+                None
+            }
             LifecycleOutput::ProductionFactoryLinked {
                 owner,
                 type_id,
@@ -633,7 +646,7 @@ mod tests {
                     .iter()
                     .position(|factory| factory["id"] == entry["factory"])
                     .unwrap();
-                let _ = projection.apply_factory_output(
+                let _ = projection.apply_lifecycle_output(
                     &LifecycleOutput::ProductionFactoryLinked {
                         owner,
                         type_id: crate::sim::intern::test_intern(entry["type"].as_str().unwrap()),
@@ -648,7 +661,7 @@ mod tests {
             .iter()
             .position(|factory| factory["id"] == step["inputs"]["factory"])
             .unwrap();
-        let _ = projection.apply_factory_output(
+        let _ = projection.apply_lifecycle_output(
             &LifecycleOutput::ProductionFactoryUnlinked {
                 owner,
                 category: ProductionCategory::Building,
@@ -729,6 +742,62 @@ mod tests {
     }
 
     #[test]
+    fn selling_producer_does_not_recalculate_retained_cameos() {
+        let owner = InternedId::from_index(3);
+        let ids = [InternedId::from_index(1), InternedId::from_index(2)];
+        let candidates = |available| {
+            ids.map(|id| Cameo {
+                id: CameoId::Object(id),
+                tab: SidebarTab::Infantry,
+                available,
+                key: CameoKey::Techno {
+                    own_side: true,
+                    considered_aircraft: false,
+                    naval: false,
+                    tech_level: 0,
+                    cost: 100,
+                    name: String::new(),
+                },
+            })
+        };
+        let mut projection = SidebarProjectionState::default();
+        projection.reconcile_cameos(owner, &candidates(true), 3);
+        let before = projection.cameo_strips().saved_identities();
+
+        // FindFactory rejects a Selling producer immediately, but the local
+        // House +1FC pass has not run. Strip AI/Draw retain their entries.
+        // Native caller/Draw evidence: House 4F927C/4F92E2, Strip 6A8B30/6A9540.
+        let refreshed = projection.reconcile_cameos(owner, &candidates(false), 3);
+        assert_eq!(projection.cameo_strips().saved_identities(), before);
+        assert_eq!(refreshed.transitions(), Default::default());
+
+        // A foreign House's output does not schedule the local pass.
+        let foreign = InternedId::from_index(4);
+        projection.apply_lifecycle_output(
+            &LifecycleOutput::SidebarRecalculated { owner: foreign },
+            Some(owner),
+        );
+        projection.reconcile_cameos(owner, &candidates(false), 3);
+        assert_eq!(projection.cameo_strips().saved_identities(), before);
+
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+        let recalculated = projection.reconcile_cameos(owner, &candidates(false), 3);
+        assert!(
+            projection
+                .cameo_strips()
+                .items(SidebarTab::Infantry)
+                .is_empty()
+        );
+        assert_eq!(
+            recalculated
+                .transitions()
+                .tab_button_disabled(SidebarTab::Infantry),
+            Some(true)
+        );
+    }
+
+    #[test]
     fn installing_another_sim_reseeds_the_cameo_strip_silently() {
         let a = InternedId::from_index(1);
         let b = InternedId::from_index(2);
@@ -758,16 +827,22 @@ mod tests {
                 .reconcile_cameos(owner, &[candidate(a)], 3)
                 .build_inserted()
         );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
         assert!(
             projection
                 .reconcile_cameos(owner, &[candidate(a), candidate(b)], 3)
                 .build_inserted()
         );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
         assert!(
             !projection
                 .reconcile_cameos(owner, &[candidate(a)], 3)
                 .build_inserted()
         );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
         assert!(
             projection
                 .reconcile_cameos(owner, &[candidate(a), candidate(b)], 3)
@@ -782,6 +857,8 @@ mod tests {
                 .build_inserted(),
             "the first refresh after a sim install is the init window"
         );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
         assert!(
             projection
                 .reconcile_cameos(owner, &[candidate(a), candidate(b)], 3)
