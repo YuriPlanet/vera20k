@@ -898,3 +898,211 @@ prefixes, placement/selection/House, health and retained node states are supplie
 inputs. Full Display/body, paid naval exit/placement, spawn flight/combat/audio
 and removal, arbitrary types/PipScales and whole function/class coverage remain
 OPEN/PARTIAL.
+
+## Ordinary Bio-Reactor absorber passenger pips
+
+`--absorber-pips` extends the same status/Building/TMP/reader/palette/Surface
+owner. It adds no VM, cargo implementation, palette expansion or rasterizer.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.shroud --absorber-pips --check
+```
+
+`absorber_pips.json` retains the shared `readers`, `physical_inputs`, `palette`,
+`raster_controls` and `composition_controls` schema. Its original BuildingType
+constructor45DD90 and full reader45FE50 consume physical RULESMD, optional
+LANGRULE, Battle and XMP03T4. Fixed ARTMD supplies Foundation/Height and image
+metadata. The stock result is YAPOWR Strength700, Foundation2x2, Height4,
+Passengers5, PipScalePassengers, InfantryAbsorbtrue, UnitAbsorbfalse,
+Gunnerfalse, PipsDrawForAllfalse, MaxNumberOccupants0 and ShowOccupantPipstrue.
+Selected original INIT/YENGINEER/MTNK constructors and type scalar/Pip reads
+share that VM. INIT uses Pipwhite3; the Yuri Engineer uses Pipblue5. OccupyPip
+is a different field and is not substituted for absorber cargo.
+
+The new `reader_controls` object contains an original probe `constructor` and
+eight linked `controls`, each with `input.sections`, native `admitted`, `before`
+and `after`. Original section admission and scalar read/store blocks execute;
+no expected bool, enum or integer is computed by a second parser. Defaults are
+PipScale0/PipsDrawForAllfalse/Passengers0/UnitAbsorbfalse/InfantryAbsorbfalse/
+CanBeOccupiedfalse/ShowOccupantPipstrue/MaxNumberOccupants0. Every read uses its
+current field as the next default. Histories cover explicit yes/no, absent
+section, admitted missing keys, unknown and mixed-case scale, and an explicit
+cached empty string. PipScale474940 maps the original table; Infantry4748A0
+and its default-table-index trap stay with the existing passenger corpus and
+retained `InfantryPips` production reader.
+
+Selected raster controls enter6F64A0 after the separately established selected
+dispatch. Hover/unselected/sinking controls execute complete6F5190. Building
+health6F659E derives the Z=0 foundation-corner projection;6F682C adds it to
+the caller point and invokes709A90. Its Building policy admits the ordinary
+relationship/+210 arm, CanBeOccupied or **PipsDrawForAll**. This exact key
+and Type+3D8 are separate from PixelSelectionBracketDelta. The mobile caller
+6F6A58..6F6AB0 does not read3D8; the authored bypass is not a general mobile
+visibility rule. Ctor-zero210 and supplied nonallied House/index priors do not
+establish a nonallied display-mask producer.
+
+For Buildings the row uses physical **PIPS.SHP**, `(input.x+6,input.y-1)` and
+step`(4,2)`. Only mobiles replace this with PIPS2 and stepY0. Positive
+Passengers invokes canonical GetPipMax716290. Native4598A0 tests UnitAbsorb
+OR InfantryAbsorb. Its absorber arm709DD4..9E43 walks the Cargo head forward,
+writes one slot per passenger using InfantryType+DFC Pip, and creates no Size
+fillers. A Unit gets frame4 and another non-Infantry class frame1. The ordinary
+nonabsorber path instead reverses into high slots and uses Unitframe5 plus
+Size−1 frame3 fillers. All allocated slots draw, including empty0 outlines.
+
+`input.actors[].passengers` is additive and lists **boarding order**; historical
+singular `passenger` remains unchanged. Existing native4733A0 performs the
+actual prepend, and473430 performs removal. `actor_results[].cargo_types`
+records the native linked head order, alongside count, GetPipMax and the actual
+4598A0 query result. INIT then YENGINEER becomes YENGINEER then INIT, drawing
+5/3/0/0/0. Full loading uses distinct prefix-constructed native actors rather
+than linking one actor repeatedly. Their constructor boundaries, RNG requests
+and passive timers are retained separately; this is not original movement,
+radio, admission or placement execution.
+
+The18 raster controls cover empty/one/mixed/full cargo and actual head removal;
+selected/hover/unselected/sinking/nonallied; authored Building bypasses;
+Tiberium's whole-tail suppression; Unit4 versus ordinary Unit5/Size fillers;
+independent empty garrison and passenger origins; ShowOccupantPipsfalse;
+partial caller clip, A0/Z0, A63 and positive parent overlap. Both native
+containers in the authored dual-row control are empty: garrison6/6 and
+passenger0×5 restart at the same origin. Distinct occupied dual-list lifecycle
+is outside the current shared Cargo representation and is not claimed here.
+`draws[].pip_tail` is observed from original709A90 entry/return, distinguishing
+those PIPS calls from health PIPS without deriving frames in the oracle.
+
+Two composition controls execute original first Extras, the physical
+temperate **YGPOWR.SHP** base body and late Extras, with an optional earlier
+neighbor. `body_asset` names that actual loaded shape; its bytes are checked
+against the normal ra2md.mix/genermd.mix payload. Existing TMP ground/Z and
+palette setup are reused. The input actor retains the same actual Cargo
+construction. Only status-addressed pixels are retained; full body planes are
+hashed. `body_overwritten_absorber_pixels` distinguishes the new row from
+health and reports the actual composition witness, including empty outcomes.
+Slot animations and a full native Display/device frame remain separate bounds.
+
+Every shape center, clip, picker, row walker and packed pixel executes original
+4AED70/4912B0. Tail flags600 use THEATER_PAL at1000 and bypass A/Z; no generic
+alpha or depth material is substituted. Raster actor bytes/A/Z and executable
+code/vtables stay unchanged. Drawing/query intervals draw no RNG, write no
+timers and call no detach. Constructor requests/passive timers are separate
+from entry/unload/animation/audio/removal RNG, clocks and pointer expiry under
+their existing owners. The corpus does not reproduce those whole lifecycles,
+custom independent dual lists, malformed/overfull links, arbitrary types or
+whole functions/classes.
+
+## Selected Gap Generator radial indicator
+
+`--radial-indicator` reuses the existing native reader VM/cache and shared
+`bridge_render_shape.prepare_surface` storage. It adds no INI parser, numeric
+kernel or rasterizer that computes an expected result.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.shroud --radial-indicator --check
+PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.shroud --radial-indicator --write
+```
+
+`radial_indicator.json` has `reader_inputs`, `transport`, `cubic_lut`,
+`tangent`, `scenes` and `ray_controls`. Each scene retains its complete supplied
+actor/selection/camera/frame/clip and plane inputs, native range/coordinate/
+projection results, ordered ellipse/ray commands, actually addressed final
+pixels, crop hash and bounded original overwrite witnesses. `first_stores`
+records native address order, including stores that restore the background.
+The crop is160×160 RGB565 with pitch320 bytes. Existing original BSurface
+virtual bounds/lock/pitch/unlock replace DirectDraw storage; only the copied
+vtable's +3C selects the real DSurface4BC750 body, following `LaserPixels`.
+Original BSurface+3C7BAB70 is a no-op and supplies no ray proof. Surface fields,
+RGB565 globals, circular planes and projection factor are explicit inputs.
+
+The complete original45DD90 BuildingType constructor establishes retained
+defaults. Original45FE50→712170→5F92D0 executes up to exclusive5F954F, immediately
+after the HasRadialIndicator store5F9549; its actual supplied rules-pass INI
+remains separate from the fixed ART singleton887180. Selected scalar ranges
+then execute713F92..713FE2,460BDD..460C4C and461030..46104A. Their order is
+HasRadialIndicator; GapGenerator, GapRadiusInCells, SuperGapRadiusInCells;
+CloakGenerator, SensorArray, CloakRadiusInCells, PsychicDetectionRadius;
+ConcentricRadialIndicator. Fixed ART Foundation executes461225..46125D.
+These exclusive-end cuts do not claim the full type/Scenario/resource reader.
+
+Constructor HasRadialIndicator+238, GapGenerator+CD1, both gap radii+CD2/+CD3,
+CloakGenerator+16C7, SensorArray+16C8, Concentric+1708 and Psychic+170C default
+to false/zero. CloakRadius+1707 defaults20. Radius byte reads sign-extend the
+current field into ReadInt5276D0's default and store AL without a clamp;
+Psychic is a signed dword. Every pass uses current fields as defaults. Physical
+RULESMD, optional loose LANGRULE, Battle MPBattleMD and XMP03T4 execute in that
+order, with fixed ARTMD separate. GAGAP retains radial=true, concentric=false,
+GapGenerator=true and signed normal/super radius10/10. NAPSIS retains
+radial=true, concentric=true and PsychicDetectionRadius15. Retained
+controls distinguish absent sections, admitted missing keys, unknown bool,
+exact-case keys, signed-byte wrapping, psychic priority and the constructor
+SensorArray radius20.
+
+The selected-list caller6DBE20 invokes the actual Building+130456750. Its
+4566B0 range, current-House50B6F0 gate, online+660 gate, original447AC0
+coordinates,6D2140 projection,456980 geometry/color/frame and7BB350 ellipse
+stores execute. Stock radius10 produces outer445×222 and inner444×221;
+radius1/3 controls exercise small geometry. Frame0/314/628 controls distinguish
+the four adjacent rotating rays from fixed quadrants. Empty selection,
+deselected, other-owner, offline and no-indicator controls retain empty output.
+Partial arcs/clips, A0/63, oldZ0 and reversed selected actor order preserve
+original command/store order. Positive overlap witnesses come from actual
+cross-actor stores and changed native crop hashes.
+
+Six NAPSIS shared-consumer scenes execute complete456750 with supplied
+timeGetTime milliseconds0/102/104/512/1024/1536, giving phases0/51/52/256/512/768.
+The first records original white89C800 lazy initialization and phase0's
+RGB254/254/254 outer contour657×328/656×327. Phase51 retains only the outer
+contour, while phase52 emits it followed by pixel-radius33×16/32×15. These
+bound the native expansion's `<=32` rejection. Phase256 emits outer then
+164×82/163×81; phases512/768 suppress outer and emit328×164/327×163 and
+492×246/491×245 respectively. Original color adjustment6612C0 and456980 retain
+the actual RGB/packed colors and no-ray command order. Each declared camera
+crops the outer or expanding contour; this is not a whole-screen comparison.
+The existing Reader return transport supplies only WINMM timeGetTime at
+IAT7E1530 and CRT atexit7C978A's process-exit registration result. No color,
+phase, radius, branch or drawing return is supplied.
+
+The entire original4BC750 lazy initializer executes to exclusive4BC7C2,
+including its original Power/MathFTOL calls. `cubic_lut` retains all257 signed
+entries at8A0980, the original binary constants, guard prior and FPCW0E7F
+before/after. Its signed-dword bytes hash to
+`c5e88231f605a69d7a266d34cd198ab12a85a2b648a740470f36b35d11b2709c`.
+The original truncation is asymmetric: entry1=2 while entry255=253, so deriving
+one half by reflection changes native output. `tangent.u32_bits` retains all
+4096 original float words at85D0A4; their bytes hash to
+`36c92eefb4d81528a3d74255adef0a848a8f527f555918ffaffbf96f3ae58b6d`.
+Thirteen signed binary64 controls execute4CAD50 under FPCW0E7F and record the
+actual index and returned bits. The existing `native.call` six-byte FSTP64
+observation stub lies outside original executable memory; it captures the
+promoted original float return without replacing lookup or arithmetic.
+
+Every direct4BC750 control uses the selected caller's Z=-500/-500,
+writeZ=false and all RGB channels. Horizontal/vertical, both slope signs,
+reversed endpoints, clipping, zero length and four native strengths exercise
+that material only. `pair_baseline` records the actual primary/secondary
+stores; `pair_secondary_blocked` changes the secondary A/Z to zero and still
+stores both pixels. `pair_primary_blocked` blocks the primary Z and stores
+neither. This is one shared primary admission, with no independent secondary
+gate. A/Z remain unchanged; outlines bypass this ray gate. Varying-Z,
+channel-disabled, WriteZ and explicit-color Laser callers remain separate
+coverage.
+
+Drawing/query records no reached RNG65C780/65C7E0 or detach70D4A0, preserves
+both RNG states, actor bytes, A/Z planes, crop guards and original code.
+Selected bodies contain no timer write/call; constructor initialization is
+outside that drawing interval. Prepared online/owner/selection/location/frame
+are consumer priors. Techno+268 initializes false6F2DA2; Mission_Unload
+44E29D..44E36B toggles the gap state through removal/recreation and the
+operational-off path454B91..454BEB clears it. That action/gap lifecycle is
+outside this corpus; stock GAGAP's equal10/10 radii make its selected range
+invariant. Whole tactical composition, game-world lifecycle, OS wall-clock
+scheduling and production GPU output require their own validation.
+
+The selected4BC750 path is asymmetric: X-major loads primary565 at4BD646
+and secondary565 at4BD68F before either store, then blends primary output
+from the secondary oldRGB (store4BD85B), and secondary output from primary
+oldRGB (4BD8C0). Y-major4BDAFD/4BDB46 uses each output's own oldRGB
+(stores4BDD25/4BDD8F). The retained overlapping selected rays distinguish
+this cross-pixel dependency. A GPU port must snapshot an entire pair before
+its stores, include prior dependent writes, and preserve native ray order;
+independent per-pixel operation lists alone cannot reproduce the X-major arm.

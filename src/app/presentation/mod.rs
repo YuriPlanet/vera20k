@@ -14,6 +14,7 @@ pub(crate) mod line_trails;
 pub(crate) mod outcome_banner;
 pub(crate) mod overlay_index;
 pub(crate) mod render;
+pub(crate) mod radial_indicators;
 pub(crate) mod selection_brackets;
 pub(crate) mod sidebar_build;
 pub(crate) mod sidebar_gadgets;
@@ -33,6 +34,9 @@ mod ammo_pip_tests;
 
 #[cfg(test)]
 mod spawn_pip_tests;
+
+#[cfg(test)]
+mod absorber_pip_tests;
 
 pub(crate) mod lighting;
 

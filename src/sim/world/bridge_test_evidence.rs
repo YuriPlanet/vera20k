@@ -185,6 +185,12 @@ pub fn visit_starting_mtnk_concrete_attack(
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Normal play's frame loop hashes every PLAY_HASH_INTERVAL frames; a
+    // headless launch would hash every frame, which no visitor reads.
+    scene
+        .runtime
+        .simulation
+        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
     let owner = scene.sim().session.current_house.unwrap();
     let orders: Vec<_> = profile["commands"]
         .as_array()

@@ -1,11 +1,13 @@
 //! Bracket, LaserDraw, EBolt and LineTrail edits on the existing snapshot/Z.
-//! Different pixels are independent; every repeated operation for one pixel
-//! retains the original registry/segment/raster order. One snapshot and resolve
-//! per bounded chunk avoid a render pass per line or pixel.
+//! Per-pixel operations retain registry/segment/raster order. Cross-pixel
+//!4BC750 pairs begin a dependency chunk when their inputs have prior writes;
+//!independent pairs share a snapshot/resolve, never a pass per pixel.
 
 use super::TerrainDrawRenderer;
 use crate::render::line_trail::{LineTrailSegment, rasterize};
-use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend, SurfaceLineViewport};
+use crate::render::surface_line::{
+    SurfaceDraw, SurfaceLine, SurfaceLineBlend, SurfaceLineViewport,
+};
 
 /// A frame-local range in the shared line upload. Display parents and the
 /// later Tactical effects pass replay their own ranges against the live Z.
@@ -16,13 +18,141 @@ pub(crate) struct SurfaceLineBatch {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct Operation {
     z: u32,
     strength: i32,
     rgb: u32,
     alpha: u32,
     mode: u32,
+    destination_weight: i32,
+    gate_x: i32,
+    gate_y: i32,
+    source_x: i32,
+    source_y: i32,
+}
+
+// Ten scalars:40-byte storage-array stride in Rust and WGSL, without hidden
+// vec2 padding. https://www.w3.org/TR/WGSL/#alignment-and-size
+const _: () = assert!(std::mem::size_of::<Operation>() == 40);
+
+fn packed_rgb(rgb: [u8; 3]) -> u32 {
+    u32::from(rgb[0]) | (u32::from(rgb[1]) << 8) | (u32::from(rgb[2]) << 16)
+}
+
+fn raster_draw(
+    draw: SurfaceDraw,
+    viewport: SurfaceLineViewport,
+    size: [u32; 2],
+    alpha: &mut impl FnMut([i32; 2]) -> u16,
+    emit: &mut impl FnMut(&[([i32; 2], Operation)]),
+) {
+    use crate::render::surface_line::{antialiased_line, ellipse, rasterize_z_clipped};
+    let line = match draw {
+        SurfaceDraw::Ellipse {
+            center,
+            radius,
+            word,
+        } => {
+            ellipse(center, radius, viewport.clip, |point| {
+                emit(&[(
+                    point,
+                    Operation {
+                        rgb: u32::from(word),
+                        mode: 4,
+                        ..Default::default()
+                    },
+                )]);
+            });
+            return;
+        }
+        SurfaceDraw::Line(line) => line,
+    };
+    if let SurfaceLineBlend::Antialiased { rgb, intensity } = line.blend {
+        // Selected456DD8 always passes equal -500 adjustments. Other native
+        // parameter branches remain explicit residuals until a caller ports them.
+        assert_eq!(line.z_adjust[0], line.z_adjust[1]);
+        antialiased_line(
+            line.from,
+            line.to,
+            line.z_adjust[0],
+            intensity,
+            viewport.clip,
+            size.map(|v| (v as f32 / viewport.zoom).ceil() as i32),
+            viewport.z_origin_y,
+            |pair| {
+                let a = alpha(pair[0].primary);
+                if a == 0 {
+                    return;
+                }
+                // A pair must use the SAME primary depth sample. Sample the
+                // logical primary's center after presentation zoom, never the
+                // secondary output's depth. Native parity is zoom1.
+                let gate = pair[0]
+                    .primary
+                    .map(|v| ((v as f32 + 0.5) * viewport.zoom).floor() as i32);
+                let operations = pair.map(|pixel| {
+                    let source = pixel
+                        .destination_source
+                        .map(|v| ((v as f32 + 0.5) * viewport.zoom).floor() as i32);
+                    (
+                        pixel.point,
+                        Operation {
+                            z: u32::from(pixel.z),
+                            strength: pixel.source_weight,
+                            rgb: packed_rgb(rgb),
+                            alpha: u32::from(a),
+                            mode: if pixel.destination_source == pixel.point {
+                                3
+                            } else {
+                                5
+                            },
+                            destination_weight: pixel.destination_weight,
+                            gate_x: gate[0],
+                            gate_y: gate[1],
+                            source_x: source[0],
+                            source_y: source[1],
+                        },
+                    )
+                });
+                emit(&operations);
+            },
+        );
+        return;
+    }
+    let (rgb, mode) = match line.blend {
+        SurfaceLineBlend::Add(rgb) => (packed_rgb(rgb), 1),
+        SurfaceLineBlend::Replace(word) => (u32::from(word), 2),
+        SurfaceLineBlend::Antialiased { .. } => unreachable!(),
+    };
+    rasterize_z_clipped(
+        line.from,
+        line.to,
+        line.z_adjust,
+        viewport.clip,
+        viewport.z_origin_y,
+        |pixel| {
+            //4BDF00 advances A only with Y; packed4BFD30 advances both axes.
+            let sample = if mode == 1 {
+                [pixel.clipped_start_x, pixel.point[1]]
+            } else {
+                pixel.point
+            };
+            let a = alpha(sample);
+            if a != 0 {
+                emit(&[(
+                    pixel.point,
+                    Operation {
+                        z: u32::from(pixel.z),
+                        rgb,
+                        alpha: u32::from(a),
+                        mode,
+                        ..Default::default()
+                    },
+                )]);
+            }
+        },
+    );
 }
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -48,6 +178,9 @@ pub(super) struct SurfaceLineGpu {
     #[cfg(test)]
     test_operation_limit: Option<usize>,
     work: Vec<([i32; 2], Operation)>,
+    /// Derived solely from work's output points; clear on every upload,
+    ///prepare and begin. Bounds cross-pixel dependencies, not display state.
+    written: std::collections::HashSet<[i32; 2]>,
     operations: Vec<Operation>,
     instances: Vec<PixelInstance>,
 }
@@ -121,6 +254,7 @@ impl SurfaceLineGpu {
             #[cfg(test)]
             test_operation_limit: None,
             work: Vec::new(),
+            written: Default::default(),
             operations: Vec::new(),
             instances: Vec::new(),
         }
@@ -162,6 +296,16 @@ impl SurfaceLineGpu {
             top = top.min(y.floor().max(0.) as u32);
             right = right.max((x + zoom).ceil().max(0.) as u32);
             bottom = bottom.max((y + zoom).ceil().max(0.) as u32);
+            // Snapshot the shared primary gate as well as output coverage.
+            //Cross-source pairs remain atomic across every chunk boundary.
+            for (_, operation) in &self.work[start..end] {
+                if operation.mode == 3 || operation.mode == 5 {
+                    left = left.min(operation.gate_x.max(0) as u32);
+                    top = top.min(operation.gate_y.max(0) as u32);
+                    right = right.max(operation.gate_x.saturating_add(1).max(0) as u32);
+                    bottom = bottom.max(operation.gate_y.saturating_add(1).max(0) as u32);
+                }
+            }
             start = end;
         }
         let index = self.active;
@@ -223,6 +367,7 @@ impl SurfaceLineGpu {
         ];
         self.active += 1;
         self.work.clear();
+        self.written.clear();
     }
 }
 
@@ -231,6 +376,7 @@ impl TerrainDrawRenderer {
     pub(crate) fn begin_surface_lines(&mut self) {
         self.surface_lines.active = 0;
         self.surface_lines.work.clear();
+        self.surface_lines.written.clear();
     }
 
     /// Prepare only actual raster operations; empty frames allocate/upload nothing.
@@ -242,12 +388,14 @@ impl TerrainDrawRenderer {
         lasers: impl IntoIterator<Item = crate::render::laser::LaserDraw>,
         lines: &[SurfaceLine],
         segments: &[LineTrailSegment],
+        radials: &[crate::render::radial_indicator::RadialIndicatorDraw],
         viewport: SurfaceLineViewport,
         mut high_detail: impl FnMut() -> bool,
         mut alpha: impl FnMut([i32; 2]) -> u16,
     ) -> SurfaceLineBatch {
         let start = self.surface_lines.active;
         self.surface_lines.work.clear();
+        self.surface_lines.written.clear();
         let Some(targets) = &self.targets else {
             return SurfaceLineBatch::default();
         };
@@ -255,93 +403,97 @@ impl TerrainDrawRenderer {
         let limit = (device.limits().max_storage_buffer_binding_size as usize
             / std::mem::size_of::<Operation>())
         .min(1_048_576);
+        assert!(limit >= 2, "the native pair must fit one storage binding");
         #[cfg(test)]
         let limit = self
             .surface_lines
             .test_operation_limit
             .unwrap_or(limit)
             .clamp(1, limit);
-        assert!(limit > 0);
+        // Only4BC750 pairs can read a neighboring output. Ordinary object
+        // extras and Laser/EBolt/Trail calls need no prior-write index. When
+        // rays are possible, index every earlier write in this same batch.
+        let track_dependencies = radials.iter().any(|draw| draw.rays)
+            || lines
+                .iter()
+                .any(|line| matches!(line.blend, SurfaceLineBlend::Antialiased { .. }));
         // Tactical6D4669..6D4673 draws LaserDraw, EBolt, then LineTrail.
         // They read the same immutable Z and completed destination. Bolt
         // subdivision has already consumed Main once for this composite;
         // rasterization, upload chunks and readback cannot request more draws.
-        let mut surface_line = |line: SurfaceLine| {
-            let (rgb, mode) = match line.blend {
-                SurfaceLineBlend::Add(rgb) => (
-                    u32::from(rgb[0]) | (u32::from(rgb[1]) << 8) | (u32::from(rgb[2]) << 16),
-                    1,
-                ),
-                SurfaceLineBlend::Replace(word) => (u32::from(word), 2),
-            };
-            crate::render::surface_line::rasterize_z_clipped(
-                line.from,
-                line.to,
-                line.z_adjust,
-                viewport.clip,
-                viewport.z_origin_y,
-                |pixel| {
-                    // Original additive4BDF00 advances the A pointer
-                    // only on Y changes (4BE6FA), never on X (4BE769).
-                    // Packed4BFD30 advances both axes like LineTrail.
-                    let sample = if mode == 1 {
-                        [pixel.clipped_start_x, pixel.point[1]]
-                    } else {
-                        pixel.point
-                    };
-                    let a = alpha(sample);
-                    if a == 0 {
-                        return;
-                    }
-                    self.surface_lines.work.push((
-                        pixel.point,
-                        Operation {
-                            z: u32::from(pixel.z),
-                            strength: 0,
-                            rgb,
-                            alpha: u32::from(a),
-                            mode,
-                        },
-                    ));
-                    if self.surface_lines.work.len() == limit {
-                        self.surface_lines
-                            .upload(device, queue, viewport.zoom, size);
-                    }
-                },
-            );
+        let mut store = |operations: &[([i32; 2], Operation)]| {
+            //4BD646/68F read BOTH old words before4BD85B/8C0 write either.
+            //A cross-source pair cannot read another operation's in-chunk
+            //result. Flush only its prior-write dependency or the size limit;
+            //all independent pairs/ordinary operations share the upload.
+            let dependency = track_dependencies
+                && operations
+                    .iter()
+                    .any(|(point, op)| op.mode == 5 && self.surface_lines.written.contains(point));
+            if dependency
+                || self.surface_lines.work.len() + operations.len() > limit.max(operations.len())
+            {
+                self.surface_lines
+                    .upload(device, queue, viewport.zoom, size);
+            }
+            for &(point, operation) in operations {
+                self.surface_lines.work.push((point, operation));
+                if track_dependencies {
+                    self.surface_lines.written.insert(point);
+                }
+            }
         };
         for laser in lasers {
             if laser.duration > 0 {
-                laser.lines(viewport.camera, high_detail(), &mut surface_line);
+                laser.lines(viewport.camera, high_detail(), |line| {
+                    raster_draw(
+                        SurfaceDraw::Line(line),
+                        viewport,
+                        size,
+                        &mut alpha,
+                        &mut store,
+                    );
+                });
             }
         }
         for &line in lines {
-            surface_line(line);
+            raster_draw(
+                SurfaceDraw::Line(line),
+                viewport,
+                size,
+                &mut alpha,
+                &mut store,
+            );
         }
         for &segment in segments {
-            let projected = segment.project(viewport.camera);
-            let rgb = u32::from(segment.color[0])
-                | (u32::from(segment.color[1]) << 8)
-                | (u32::from(segment.color[2]) << 16);
-            rasterize(projected, viewport.clip, viewport.z_origin_y, |pixel| {
-                let a = alpha(pixel.point);
-                if a == 0 {
-                    return;
-                }
-                self.surface_lines.work.push((
-                    pixel.point,
-                    Operation {
-                        z: u32::from(pixel.z),
-                        strength: segment.strength,
-                        rgb,
-                        alpha: u32::from(a),
-                        mode: 0,
-                    },
-                ));
-                if self.surface_lines.work.len() == limit {
-                    self.surface_lines
-                        .upload(device, queue, viewport.zoom, size);
-                }
+            rasterize(
+                segment.project(viewport.camera),
+                viewport.clip,
+                viewport.z_origin_y,
+                |pixel| {
+                    let a = alpha(pixel.point);
+                    if a != 0 {
+                        store(&[(
+                            pixel.point,
+                            Operation {
+                                z: u32::from(pixel.z),
+                                strength: segment.strength,
+                                rgb: packed_rgb(segment.color),
+                                alpha: u32::from(a),
+                                mode: 0,
+                                ..Default::default()
+                            },
+                        )]);
+                    }
+                },
+            );
+        }
+        //Tactical6D467F follows Laser/EBolt/LineTrail, before the bandbox,
+        //second rally and selected Foot action. Keep each object's ellipse/ray
+        //stores interleaved in CurrentObjects encounter order.
+        for &radial in radials {
+            radial.draws(viewport.clip, |draw| {
+                raster_draw(draw, viewport, size, &mut alpha, &mut store)
             });
         }
         self.surface_lines
@@ -425,3 +577,7 @@ mod laser_tests;
 #[cfg(test)]
 #[path = "electric_bolt_tests.rs"]
 mod electric_bolt_tests;
+
+#[cfg(test)]
+#[path = "radial_indicator_gpu_tests.rs"]
+mod radial_indicator_tests;

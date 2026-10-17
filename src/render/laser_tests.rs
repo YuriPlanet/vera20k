@@ -175,6 +175,7 @@ fn production_laser_pixels_match_original_software_surface() {
                     draws(row),
                     &[],
                     &[],
+                    &[],
                     viewport(input),
                     || high_detail(input),
                     |[x, y]| match input["alpha"].as_str() {

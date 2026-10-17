@@ -80,5 +80,20 @@ num-bigint = "0.4"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Not used by core's own code. `cargo test --workspace` resolves these shared
+# crates with the client's features; listing those features here gives
+# `cargo test -p vera20k-core` (with core's dev-overlays and test-support,
+# which tools.cargo_run adds) the same dependency graph, so both commands build
+# and reuse one core test executable instead of compiling it twice.
+# unicode-ident is a normal dependency there too, which keeps the proc-macro
+# crates' build profile the same. tools/tests/test_cargo_run.py checks the
+# features still match.
+[dev-dependencies]
+bytemuck = { version = "1", default-features = false, features = ["derive", "extern_crate_alloc", "min_const_generics"] }
+half = { version = "2", default-features = false, features = ["num-traits"] }
+hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
+num-traits = { version = "0.2", features = ["libm"] }
+unicode-ident = "1"
+
 [lints]
 workspace = true

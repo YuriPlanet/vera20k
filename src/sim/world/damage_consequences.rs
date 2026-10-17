@@ -166,6 +166,7 @@ impl DamageConsequences {
             world.radiation.apply_detonation(
                 detonation,
                 world.session.binary_frame,
+                &world.session.theater,
                 &rules.radiation,
                 world.resolved_terrain.as_ref(),
                 &mut world.lighting_sources.pending,

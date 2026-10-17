@@ -150,7 +150,29 @@ def cargo_args(args: list[str], label: str | None) -> list[str]:
         raise ValueError('Repository tests must select --lib')
     if label and not (args[0] == 'build' or (args[0] == 'test' and '--no-run' in options)):
         raise ValueError('--label requires build or test --lib --no-run')
-    return [args[0], '--message-format=json-render-diagnostics', *args[1:]]
+    return [args[0], '--message-format=json-render-diagnostics', *args[1:], *core_test_features(args[0], options)]
+
+
+# `cargo test --workspace` builds core's tests with the features the client
+# enables on core. A core-only test run gets the same ones, so both reuse one
+# core test executable and its incremental cache; src/Cargo.toml's
+# dev-dependencies align the dependency features the same way.
+WORKSPACE_CORE_FEATURES = ('dev-overlays', 'test-support')
+
+
+def core_test_features(command: str, options: list[str]) -> list[str]:
+    packages, feature_options = [], False
+    for i, option in enumerate(options):
+        name, _, value = option.partition('=')
+        if name in {'-p', '--package'}:
+            packages.append(value or (options[i + 1] if i + 1 < len(options) else ''))
+        elif option.startswith('-p') and len(option) > 2:
+            packages.append(option[2:])
+        feature_options |= name in {'-F', '--features', '--all-features', '--no-default-features'} or (
+            option.startswith('-F') and len(option) > 2)
+    if command != 'test' or packages != ['vera20k-core'] or feature_options:
+        return []
+    return ['--features', ','.join(WORKSPACE_CORE_FEATURES)]
 
 
 def build_store(root: Path) -> tuple[Path, str]:
@@ -343,26 +365,38 @@ def test_runner_config(record: Path) -> str:
     return 'target."cfg(all())".runner=' + json.dumps(runner, ensure_ascii=False)
 
 
-def run_recorded_tests(record: Path, keep_going: bool) -> int:
-    """Start the recorded test executables in Cargo's order, as Cargo would have.
+def run_recorded_tests(record: Path) -> int:
+    """Start the recorded test executables together; report them in Cargo's order.
 
     Each gets the arguments, environment and working directory Cargo gave the
-    recorder. Like Cargo, stop at the first failure unless --no-fail-fast and
-    report any failure as status 101. No record means another configured runner
-    took precedence and Cargo already ran the tests.
+    recorder. They run at once: the core suite ends waiting on a few long tests
+    while other cores idle, and the client suite fills them. The first streams
+    its output; each later one's is held and printed once those before it end.
+    Every executable runs to its end, so a failure no longer skips the others,
+    and any failure reports status 101 as Cargo does. No record means another
+    configured runner took precedence and Cargo already ran the tests.
     """
     calls = [json.loads(line) for line in record.read_text(encoding='utf-8').splitlines()] if record.exists() else []
     record.unlink(missing_ok=True)  # It holds the environment; keep it no longer than needed.
     failed = 0
-    for call in calls:
-        executable = call['command'][0]
-        print(f'Running {executable} (build lock released)', file=sys.stderr, flush=True)
-        status = subprocess.run(call['command'], cwd=call['cwd'], env=call['env']).returncode
-        if status:
-            print(f'error: test failed: {executable} exited with status {status}', file=sys.stderr, flush=True)
-            failed = 101
-            if not keep_going:
-                break
+    with ExitStack() as outputs:
+        children = []
+        for i, call in enumerate(calls):
+            print(f'Running {call["command"][0]} (build lock released)', file=sys.stderr, flush=True)
+            output = outputs.enter_context(tempfile.TemporaryFile()) if i else None
+            children.append((call['command'][0], output, subprocess.Popen(
+                call['command'], cwd=call['cwd'], env=call['env'], stdout=output,
+                stderr=subprocess.STDOUT if output else None)))
+        for executable, output, child in children:
+            status = child.wait()
+            if output:
+                sys.stdout.flush()
+                output.seek(0)
+                shutil.copyfileobj(output, sys.stdout.buffer)
+                sys.stdout.buffer.flush()
+            if status:
+                print(f'error: test failed: {executable} exited with status {status}', file=sys.stderr, flush=True)
+                failed = 101
     return failed
 
 
@@ -483,7 +517,7 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
                 automatic_locked(root, store, policy)
         shared.close()
         if record:
-            if failed := run_recorded_tests(record, '--no-fail-fast' in options):
+            if failed := run_recorded_tests(record):
                 return failed
             if source_identity(root, hashes) != before:
                 raise ValueError('Source changed during the tests; result is not a validation')

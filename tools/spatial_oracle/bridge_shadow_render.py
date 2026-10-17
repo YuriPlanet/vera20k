@@ -36,6 +36,12 @@ BODY_LEAVES = {0x4990E0: 'rle_body'}
 BRIDGE_TYPES = ('BRIDGE1', 'BRIDGE2', 'BRIDGEB1', 'BRIDGEB2')
 ORE_TYPES = tuple(f'TIB{index:02}' for index in range(1, 13))
 WALL_TYPES = ('CAFNCB', 'CAFNCW', 'CAKRMW')
+# Explicit Snow radiation component resource selection. Original theater1
+# record7E1BE8 plus formats8295E8/8295F4/827D3C supplies these theater names;
+# the selected archived map is a fixture input, not a gameplay decision.
+RADIATION_SNOW_SOURCES = dict(map='XXmas.MAP', theater=1, name='SNOW',
+    ini='SNOWMD.INI', extension='sno', archive='isosnow.mix',
+    source_palette='ISOSNO.PAL', destination_palette='SNOW.PAL')
 
 
 def ints(u, address, count):
@@ -44,9 +50,10 @@ def ints(u, address, count):
 
 def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar=False,
                     frontier=False, tmp_names=(), smudge=False, hills=False, ore_natural=False, wall=False,
-                    wall_materials=(), radiation=False, tmp_families=()):
+                    wall_materials=(), radiation=False, tmp_families=(), snow=False):
     assert wall or not wall_materials
     assert tile or not tmp_families
+    assert not snow or tile or radiation
     root = configured_gamemd().parent
     sources, assets = [], {}
     containers = (
@@ -81,12 +88,14 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
         assert ore
         containers += (('multimd.mix', {None: ('XMP03T4.MAP',)}),)
     if tile:
+        extension = RADIATION_SNOW_SOURCES['extension'] if snow else 'tem'
+        archive = RADIATION_SNOW_SOURCES['archive'] if snow else 'isotemp.mix'
         containers = (
-            ('ra2.mix', {'isotemp.mix': tuple(tmp_names) or tuple(f'clear01{s}.tem' for s in ('', 'a', 'b', 'c', 'd', 'e', 'f', 'g')),
-                         'cache.mix': ('isotem.pal', 'temperat.pal'),
+            ('ra2.mix', {archive: tuple(tmp_names) or tuple(f'clear01{s}.{extension}' for s in ('', 'a', 'b', 'c', 'd', 'e', 'f', 'g')),
+                         'cache.mix': ('isosno.pal', 'snow.pal') if snow else ('isotem.pal', 'temperat.pal'),
                          'conquer.mix': ('SHROUD.SHP',)}),
-            ('ra2md.mix', {'localmd.mix': ('temperatmd.ini',)}),
-            ('multimd.mix', {None: ('XMP03T4.MAP',)}),
+            ('ra2md.mix', {'localmd.mix': (RADIATION_SNOW_SOURCES['ini'],) if snow else ('temperatmd.ini',)}),
+            ('multimd.mix', {None: (RADIATION_SNOW_SOURCES['map'],) if snow else ('XMP03T4.MAP',)}),
         )
     if placement:
         containers = (
@@ -117,9 +126,11 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
         # The radiation component uses this archive/cache owner and the same
         # palette/TMP runtime; it enrolls no unrelated overlay material/type.
         containers = (
-            ('ra2.mix', {'cache.mix': ('palette.pal', 'anim.pal', 'isotem.pal', 'temperat.pal')}),
-            ('ra2md.mix', {'localmd.mix': ('ARTMD.INI', 'MPBattleMD.ini', 'TEMPERATMD.INI')}),
-            ('multimd.mix', {None: ('XMP03T4.MAP',)}),
+            ('ra2.mix', {'cache.mix': ('palette.pal', 'anim.pal', 'isosno.pal', 'snow.pal') if snow
+                         else ('palette.pal', 'anim.pal', 'isotem.pal', 'temperat.pal')}),
+            ('ra2md.mix', {'localmd.mix': ('ARTMD.INI', 'MPBattleMD.ini', RADIATION_SNOW_SOURCES['ini']) if snow
+                           else ('ARTMD.INI', 'MPBattleMD.ini', 'TEMPERATMD.INI')}),
+            ('multimd.mix', {None: (RADIATION_SNOW_SOURCES['map'],) if snow else ('XMP03T4.MAP',)}),
         )
     for outer_name, children in containers:
         outer_raw = (root / outer_name).read_bytes()
@@ -128,21 +139,21 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
             inner_raw = outer[mix_hash(inner_name)] if inner_name is not None else outer_raw
             inner = mix(inner_raw)
             families = {}
-            if tile and inner_name == 'isotemp.mix' and tmp_families:
+            if tile and inner_name == archive and tmp_families:
                 names = list(names)
                 for base in tmp_families:
-                    assert base in names and base.endswith('.tem'), base
+                    assert base in names and base.endswith('.' + extension), base
                     family = [base]
                     for suffix in 'abcdefghijklmnopqrstuvwxyz':
-                        name = base[:-4] + suffix + '.tem'
+                        name = base[:-4] + suffix + '.' + extension
                         if mix_hash(name) not in inner: break
                         family.append(name)
                     else:
                         raise AssertionError('Selected TMP family has no bounded absent suffix')
                     families[base] = dict(names=family, next_absent=name)
                     names.extend(name for name in family if name not in names)
-            if tile and inner_name == 'isotemp.mix':
-                assert mix_hash('clear01h.tem') not in inner
+            if tile and inner_name == archive:
+                assert mix_hash('clear01h.' + extension) not in inner
             if frontier and inner_name == 'isourb.mix':
                 assert mix_hash('clear01h.urb') not in inner
             for name in names:
@@ -171,11 +182,12 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
 
 
 def prepare(*, body=False, ore=False, placement=False, ore_natural=False, wall=False,
-            wall_types=(), wall_materials=(), radiation=False):
+            wall_types=(), wall_materials=(), radiation=False, snow=False):
     assert sum((body, ore, placement, wall, radiation)) <= 1
     assert wall or not (wall_types or wall_materials)
+    assert not snow or radiation
     assets, sources = physical_assets(body=body, ore=ore, placement=placement,
-        ore_natural=ore_natural, wall=wall, wall_materials=wall_materials, radiation=radiation)
+        ore_natural=ore_natural, wall=wall, wall_materials=wall_materials, radiation=radiation, snow=snow)
     map_filename = 'XMP03T4.MAP' if ore_natural or wall else 'GoldSt.mmx'
     shadow_bytes, shape_aliases = {}, []
     for name, raw in assets.items():
@@ -274,7 +286,17 @@ def prepare(*, body=False, ore=False, placement=False, ore_natural=False, wall=F
     if wall:inputs.update(overlay_theater=inputs_theater,theater=wall_theater)
     if wall_types or wall_materials:inputs['wall_images']=image_states
     if body or wall or radiation:
-        inputs['cell_convert'] = initialize_cell_convert(m)
+        if snow:
+            from tools.spatial_oracle.anytown_damage.navigation_inputs import Inputs
+            theater = Inputs.read_map_theater(m, assets[RADIATION_SNOW_SOURCES['map'].upper()])
+            assert theater['source_value'] == RADIATION_SNOW_SOURCES['name']
+            assert theater['value'] == RADIATION_SNOW_SOURCES['theater']
+            inputs['theater'] = theater
+            inputs['cell_convert'] = initialize_cell_convert(m,
+                source_palette=RADIATION_SNOW_SOURCES['source_palette'],
+                destination_palette=RADIATION_SNOW_SOURCES['destination_palette'])
+        else:
+            inputs['cell_convert'] = initialize_cell_convert(m)
     if ore:
         inputs['ordinary_convert'] = ordinary_convert_state(m)
         inputs['tiberium'] = prepare_tiberium(m, assets, map_filename=map_filename)
@@ -933,26 +955,29 @@ def generate_ore():
                 rows=rows, controls=controls, lifecycle=sequence, radar=generate_radar(m, types))
 
 
-def prepare_selected_tiles(m, assets, inputs, selected, *, variant_tile=None):
+def prepare_selected_tiles(m, assets, inputs, selected, *, variant_tile=None, snow=False):
     """One selected-theater/TMP/lighting owner for Cell raster components."""
     from tools.spatial_oracle import tmp_clear_render as tile
     u = m.u
     initial = selected[0][1]
+    theater_ini = RADIATION_SNOW_SOURCES['ini'] if snow else 'TEMPERATMD.INI'
+    extension = RADIATION_SNOW_SOURCES['extension'] if snow else 'tem'
+    map_name = RADIATION_SNOW_SOURCES['map'] if snow else 'XMP03T4.MAP'
     # Same original theater reader and TMP loader, with one sparse registry
     # entry per actual selected tile. Different wall cells need not share TMP.
-    tiles, mapping = tile.theater_tile_files(m, assets['TEMPERATMD.INI'], initial['tile'], 'tem')
+    tiles, mapping = tile.theater_tile_files(m, assets[theater_ini], initial['tile'], extension)
     tile_ids = list(dict.fromkeys(cell['tile'] for _,cell in selected))
     mappings = [mapping]
     for tile_id in tile_ids:
         if tile_id != initial['tile']:
-            other_tiles, other_mapping = tile.theater_tile_files(m, assets['TEMPERATMD.INI'],tile_id,'tem')
+            other_tiles, other_mapping = tile.theater_tile_files(m, assets[theater_ini],tile_id,extension)
             assert other_tiles == tiles
             mappings.append(other_mapping)
     filenames = tuple(dict.fromkeys(tiles[tile_id] for tile_id in tile_ids))
     filename = tiles[initial['tile']]
     assert variant_tile is None or variant_tile in tile_ids
     families = () if variant_tile is None else (tiles[variant_tile],)
-    extra, extra_sources = physical_assets(tile=True, tmp_names=filenames, tmp_families=families)
+    extra, extra_sources = physical_assets(tile=True, tmp_names=filenames, tmp_families=families, snow=snow)
     variant_families = {row['name']: row['variant_family']['names'] for row in extra_sources
                         if 'variant_family' in row}
     if variant_families:
@@ -972,7 +997,7 @@ def prepare_selected_tiles(m, assets, inputs, selected, *, variant_tile=None):
     for tile_id in tile_ids:u.mem_write(registry+tile_id*4,dwords(heads[tiles[tile_id]]))
     u.mem_write(0xA8ED2C,dwords(registry));u.mem_write(0xA8ED38,dwords(len(tiles)))
     for entry in (0x6D1830,0x6D18C0,0x6D1BB0):m.invoke(entry,0)
-    lighting = tile.profile(m,assets['XMP03T4.MAP'])
+    lighting = tile.profile(m,assets[map_name.upper()])
     return tiles, mapping, mappings, filenames, filename, heads, file_io, lighting
 
 

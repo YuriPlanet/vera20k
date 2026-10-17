@@ -1083,8 +1083,8 @@ pub(crate) fn process_boarding_passenger(
                     .and_then(|object| {
                         (transport.category() == EntityCategory::Structure
                             && object.extra_power > 0
-                            && (object.infantry_absorb || object.unit_absorb))
-                            .then_some(transport.owner())
+                            && object.absorbs_passengers())
+                        .then_some(transport.owner())
                     })
             })
         {

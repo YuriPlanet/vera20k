@@ -17,7 +17,6 @@ use crate::sim::cell_rect::canonical_cell_coord;
 use crate::sim::combat;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_aoe::CellTargetDetach;
-use crate::sim::combat::combat_aoe::expire_cell_target_references;
 use crate::sim::command::{
     COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, ExitRecord, MegaMissionOrder,
     MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
@@ -507,6 +506,7 @@ impl Simulation {
         y: i16,
         rules: &RuleSet,
         overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
     ) -> bool {
         // EventClass rejects only the exact packed null CellStruct. Every
         // other signed pair is resolved by MapClass' fixed 512-wide linear
@@ -660,13 +660,9 @@ impl Simulation {
         }
         self.mark_radar_terrain_dirty_cells([(rx, ry)]);
 
-        expire_cell_target_references(
-            &mut self.substrate.entities,
-            rx,
-            ry,
-            #[cfg(any(test, feature = "test-support"))]
-            &mut detach_trace,
-        );
+        // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
+        // before the conditional target clear, then Team targets detach.
+        self.stop_all_targeting_cell(rx, ry, Some(rules), Some(overlays), effects);
 
         if let Some(tail_grid) = tail_grid {
             if self.zone_grid.is_some() {
@@ -1261,7 +1257,7 @@ impl Simulation {
                 let (Some(rules), Some(overlays)) = (rules, overlay_registry) else {
                     return false;
                 };
-                self.sell_wall_at_cell(command_owner, *x, *y, rules, overlays)
+                self.sell_wall_at_cell(command_owner, *x, *y, rules, overlays, frame_effects)
             }
             // Offline game-speed transitions are consumed at master-frame
             // ingress so early authoritative animation work sees the new rate.

@@ -8241,6 +8241,7 @@ fn irradiate(
             spread,
         },
         0,
+        &sim.session.theater,
         &rules.radiation,
         sim.resolved_terrain.as_ref(),
         &mut sim.lighting_sources.pending,

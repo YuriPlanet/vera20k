@@ -12,6 +12,84 @@ use crate::sim::team_script_vm::{
 };
 
 #[test]
+fn wall_sale_detach_clears_only_matching_team_target_fields() {
+    use crate::sim::command::Command;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::world::tests::{gsi_04_07_wall_sell_rules, gsi_04_07_wall_sell_seed_houses};
+
+    let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
+    let mut sim = Simulation::with_seed(77);
+    let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
+    let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
+    grid.place_owned_wall(4, 4, 2, 0, wall_owner);
+    sim.overlay_grid = Some(grid);
+    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    let script = sim.interner.intern("DETACH");
+    let sold = Some(TeamTarget::Cell { x: 4, y: 4 });
+    let other = Some(TeamTarget::Cell { x: 6, y: 6 });
+    let mut teams = Vec::new();
+    for (id, target, focus, expected_target, expected_focus) in [
+        (10, sold, sold, None, None),
+        (20, sold, other, None, other),
+        (30, other, sold, other, None),
+    ] {
+        let mut actor = GameEntity::test_default(id, "MTNK", "Receiver", 2, 2);
+        actor.set_owner_for_test(receiver);
+        actor
+            .navigation
+            .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 4, ry: 4 }));
+        sim.substrate.entities.insert(actor);
+        let team = sim
+            .team_script_vm
+            .create_team(receiver, script, vec![id], 0);
+        sim.team_assign_mission_target(team, target, &rules, None, FrameEffects::default());
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.focus = focus;
+        state.zone = sold;
+        teams.push((team, expected_target, expected_focus, id));
+    }
+    assert!(sim.apply_command_with_overlays(
+        "Receiver",
+        &Command::SellWallAtCell { x: 4, y: 4 },
+        Some(&rules),
+        Some(&overlays),
+        FrameEffects::default(),
+    ));
+    for (team, expected_target, expected_focus, id) in teams {
+        let state = sim.team_script_vm.team(team).unwrap();
+        assert_eq!(state.mission_target, expected_target);
+        assert_eq!(state.focus, expected_focus);
+        assert_eq!(state.zone, sold, "detach does not broadcast pointer expiry");
+        assert_eq!(state.members().collect::<Vec<_>>(), [id]);
+        let actor = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(
+            actor.navigation.nav_com(),
+            Some(NavTargetRef::Cell { rx: 4, ry: 4 }),
+            "70D562..57A clears Team pointers directly, without AssignMissionTarget member orders"
+        );
+    }
+}
+
+#[test]
+fn object_detach_clears_team_targets_without_expiring_zone_or_members() {
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Owner");
+    let script = sim.interner.intern("DETACH");
+    let team = sim.team_script_vm.create_team(owner, script, vec![44], 0);
+    let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+    state.mission_target = Some(TeamTarget::Object(44));
+    state.focus = Some(TeamTarget::Cell { x: 4, y: 4 });
+    state.zone = state.mission_target;
+    sim.stop_all_targeting_on_detach(44, None, None, FrameEffects::default());
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(state.mission_target, None);
+    assert_eq!(state.focus, Some(TeamTarget::Cell { x: 4, y: 4 }));
+    assert_eq!(state.zone, Some(TeamTarget::Object(44)));
+    assert_eq!(state.members().collect::<Vec<_>>(), [44]);
+}
+
+#[test]
 fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

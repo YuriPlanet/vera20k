@@ -115,8 +115,10 @@ worktrees; independent repository clones do not share the lock.
 
 `cargo test` holds that lock only while Cargo compiles. Cargo hands each test
 executable to a recorder, and the runner starts them after releasing the lock, with
-the arguments, environment and working directory Cargo gave them. As with Cargo, a
-failure exits 101 and skips later executables unless `--no-fail-fast` is given. A
+the arguments, environment and working directory Cargo gave them. They run at the
+same time (the client suite fills the cores the core suite leaves idle near its
+end); the first streams its output and each later one prints when those before it
+end. Every executable runs to its end, and any failure exits 101. A
 second lock per checkout stays held until the tests finish, so another run from the
 same checkout waits instead of relinking a running test. A runner configured for the
 host target in Cargo configuration takes precedence; the tests then run under the lock.
@@ -160,8 +162,8 @@ worktree, so the runner starts one only when it can matter:
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
 
 Between passes the cache can exceed its budgets; the free-space reserve is still
-measured on every invocation. Defaults are **32 GiB total compiler
-cache**, **4 GiB incremental cache**, and **16 GiB minimum free space** per cache
+measured on every invocation. Defaults are **40 GiB total compiler
+cache**, **16 GiB incremental cache**, and **16 GiB minimum free space** per cache
 volume. Set `VERA20K_CACHE_GIB`, `VERA20K_INCREMENTAL_GIB`, and
 `VERA20K_MIN_FREE_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
 `--min-free-gib` before `--`; they set the policy the next pass applies. Sizes

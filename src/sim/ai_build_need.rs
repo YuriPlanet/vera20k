@@ -418,7 +418,7 @@ fn sell_node(
     if let Some(overlays) = registry {
         let (x, y) = unpack_base_plan_cell(node.packed_cell);
         let house = sim.interner.resolve(owner).to_string();
-        sim.sell_wall_at_cell(&house, x, y, rules, overlays);
+        sim.sell_wall_at_cell(&house, x, y, rules, overlays, effects);
     }
     remove_node(sim, owner, index, sale);
 }

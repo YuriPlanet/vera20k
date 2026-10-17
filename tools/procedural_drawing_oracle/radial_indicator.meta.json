@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Selected stock GAGAP radial indicator, bounded NAPSIS concentric drawing and shared DSurface cubic-line controls",
+  "assumptions": [
+    "Original BuildingType45DD90 constructors and Building45FE50->Techno712170->Object5F92D0 prefix execute to5F954F, after current-default HasRadialIndicator read/store. Later named original scalar/read-store cuts and fixed ART Foundation execute. Physical archive/INI lexical cache transport is supplied; whole type/Scenario/resource loading is excluded.",
+    "Actual selected-list6DBE20 traverses prepared CurrentObjects and real Building+130=456750;4566B0, House50B6F0, Building447AC0 and Tactical6D2140 execute. Location, online660, owner/current-house, alternate268, camera, frame, House56F9 RGB and selected vector are declared consumer priors, not their gameplay lifecycle.",
+    "Existing bridge_render_shape.prepare_surface owns160x160 RGB565 BSurface/circular A/Z storage. A copied original memory-surface vtable changes only+3C to original DSurface4BC750, matching the established LaserPixels platform-lock transport. Original ellipse7BB350 and complete4BC750 execute, including original257-entry cubic initialization under FPCW0E7F; BSurface no-op7BAB70 supplies no ray evidence.",
+    "Sparse final pixels include every actually stored address, including overwritten/background-valued stores. Geometry/commands, clipping, primary-gated paired writes, A/Z invariance and Main/Mapgen RNG snapshots are original outputs on supplied planes. Reached RNG65C780/65C7E0 and detach70D4A0 are observed; drawing actor bytes stay identical, with no timer write/call in the selected bodies. Constructor timers are not a lifecycle claim. Component crops are not whole native frames or production GPU comparisons; no positive overlap claim is inferred without an actual store witness.",
+    "Original tangent4096 float bytes at85D0A4 are retained in full. Thirteen signed input-bit controls execute4CAD50/MathFTOL and the real index/lookup. Existing native.call captures ST0 with its declared six-byte FSTP64 return observation outside original memory; it does not replace the lookup or supply a tangent result.",
+    "Every direct ray uses the selected caller constant Z=-500/-500, all three RGB channels and no Z write. Octant/clipping/strength/paired-gate controls do not prove varying-Z, channel-disabled, WriteZ or explicit-color Laser callers. NAPSIS scenes execute actual456750 concentric color/radius/order at declared timeGetTime milliseconds0/102/104/512/1024/1536, cropping outer/expanding contours. This supplies bounded shared-consumer coverage, without world lifecycle or native wall-clock scheduling. Placement remains separate.",
+    "Techno+268 defaults false at6F2DA2; original Mission_Unload44E29D..44E36B toggles it with gap removal/recreation, operational state and House dirty flag, and operational-off454B91..454BEB clears it. That gap/action lifecycle is not executed here. GAGAP physical normal/super radii10/10 make the selected radius invariant; controls declare the retained selector instead of inventing its lifecycle."
+  ],
+  "substitutions": [
+    "Existing HutTypeReader supplies allocator/delete/CRT TLS and native INI cache objects. Shared BSurface virtual memory locks/pitch/unlock replace DirectDraw OS storage; original drawing bodies, type predicates, projection, table lookups, conversions and pixel stores are unchanged.",
+    "Only imported timeGetTime IAT7E1530 returns each declared u32 millisecond input through the existing Reader return transport. Original456750 consumes it. CRT atexit7C978A returns0 for original white-color lazy initialization process-exit registration; no color or branch result is supplied."
+  ],
+  "entry_points": {
+    "type_ctor": "0x0045DD90",
+    "type_prefix": "0x0045FE50",
+    "has_radial": "0x005F9521",
+    "selected_caller": "0x006DBE20",
+    "building_ring": "0x00456750",
+    "range": "0x004566B0",
+    "ring": "0x00456980",
+    "coords": "0x00447AC0",
+    "projection": "0x006D2140",
+    "ellipse": "0x007BB350",
+    "cubic_line": "0x004BC750",
+    "cubic_end": "0x004BC7C2",
+    "tangent": "0x004CAD50"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --radial-indicator",
+  "payload_sha256": "238df918c2312eb916e82e6d04e6823d7af3edfdd6257e6d9b5e62bb64607c5a"
+}

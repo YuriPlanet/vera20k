@@ -228,3 +228,55 @@ area publication. Both kinds of numeric control save and restore CPU/stack and
 assert unchanged live registries, native runtime-ID cursor, final Cell/source
 state, callback counts and all three RNG streams. They add small separate
 top-level control arrays without altering the two histories or their surfaces.
+
+## Snow light lifecycle
+
+The additive `--snow-light-lifecycle` mode uses archived `multimd.mix/XXmas.MAP`
+(entryA813FA32), default center37,86, and writes the separate
+`radiation_snow_light_lifecycle.json`/`.meta.json`. The existing TEMP command and
+corpus are unchanged. The same two histories, sparse six actual physical Cells,
+source/timer owners, five numeric controls and central runtime are reused.
+
+Before the Cell palette setup, the original Map/Theater reader
+687631..68764F→475870→48DBE0 stores Scenario+1258=SNOW1. Native theater record
+7E1BE8 and its filename formats bind SNOWMD.INI, `.sno`, ISOSNO.PAL and SNOW.PAL.
+The existing original palette expansion/default CellConvert owner consumes the
+physical Snow source/destination bytes. The original SNOWMD General/TileSet
+reader and XXmas Lighting reader run; expansionRULESMD, optional LANGRULE,
+Battle and XXmas re-read the selected radiation/weapon/warheads in that order.
+No held Reader or NativeAudioPlatform implementation is replaced.
+
+Full65B580 reads the actual native theater field. Its Snow1 branch
+65B5F2..65B602 sets working red and blue to signedFFFFFF80 while retaining the
+Rules green byte. The signed integer normalization sequences65B604..65B684,
+tint-factor double multiplication, upper1000 bound and original ftol execute;
+no lower-zero clamp or guessed channel result is supplied. The corpus records
+actual working channel bits at65B604 before those conversions and retains
+actual produced source/Cell/RGB565 values. Same-center refresh remains supplied
+before AI45; remaining lifetime and independent light timer, native registry
+order, full three RNG states/requests, two-receiver7258D0 expiry and actual source
+delete operands are recorded through the shared lifecycle owner.
+
+The selected physical tile0 family is all eight `clear01.sno`, `a` through`g`
+files from `ra2.mix/isosnow.mix`; `clear01h.sno` is absent. Actual native
+descriptor construction, lazy loading, metadata and chain/count operate on one
+transport. Count8 uses original4814F0's Main-generated64 table. The same value
+rotations0..7 used by the existing Clear oracle are explicit component inputs;
+original selection and547CF0 traversal determine the observed effective file.
+Each phase requires all eight physical descriptors, preserving raw versus
+effective identity and restoring both tables/flag/profile/live RNG. Every file
+must show changed activation pixels and exact baseline color/Z at expiry.
+These controls do not certify full World Main/table startup or native map
+construction. Normal paid DESO/command/audio/fog/GPU integration is separate.
+
+After source/input freeze and the explicit native execution gate:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.radiation_damage_boundary --snow-light-lifecycle --light-cell 37,86 --write
+PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.radiation_damage_boundary --snow-light-lifecycle --light-cell 37,86 --check
+```
+
+Source authoring does not establish these native results. The existing TEMP
+`--light-lifecycle --check`, Clear `bridge_shadow_render --tile --check`, and
+default selected-tile/low-bridge comparison protect the affected historical
+branches; execute them under the same coordinated source guards.

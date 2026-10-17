@@ -2450,6 +2450,7 @@ pub(crate) fn tick_combat(
             world.radiation.apply_detonation(
                 det,
                 binary_frame,
+                &world.session.theater,
                 &rules.radiation,
                 world.resolved_terrain.as_ref(),
                 &mut Vec::new(),

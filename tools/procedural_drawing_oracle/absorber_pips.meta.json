@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock YAPOWR ordered INIT/YENGINEER absorber pips through original Building health,709A90 and packed PIPS stores",
+  "assumptions": [
+    "An opt-in mode extends generate_unit_health, the existing Building/TMP runtime, _HealthRecorder, PaletteReader/native INI caches and packed Surface/shape owner in one VM. Original Rules665650/BuildingType45DD90 and full BuildingType45FE50 consume physical RULESMD, absent optional LANGRULE, Battle and XMP03T4; fixed ART is unlayered. No duplicate runtime, cargo model, reader/parser, palette or rasterizer supplies expected values.",
+    "Original current-default PipScale714111..12B, PipsDrawForAll71412B..145, Passengers714B35..56, UnitAbsorb/InfantryAbsorb460988..9D6, CanBeOccupied4600CB..E5, ShowOccupantPips4600FF..119 and MaxNumberOccupants460119..133 are retained. Constructor defaults are0/false/0/false/false/false/true/0. Selected native INIT/YENGINEER/MTNK scalar blocks and Infantry Pip5240D1/OccupyPip5240EE reader4748A0 run on admitted physical sections; constructor1/7 and its table-index default trap remain the shared Infantry reader owner. A fresh original probe constructor plus8 linked scalar-reader histories test explicit, absent-section, admitted-missing, unknown scale, mixed case and empty-string retention; no scalar result is supplied.",
+    "Stock physical output is YAPOWR Strength700/Foundation2x2/Height4/Passengers5/PipScalePassengers/InfantryAbsorbtrue/UnitAbsorbfalse/Gunnerfalse/PipsDrawForAllfalse/MaxNumberOccupants0/ShowOccupantPipstrue/SizeLimit15, INIT Pipwhite3 and Yuri Engineer Pipblue5. Physical PIPS/PALETTE and YGPOWR from normal ra2md/genermd winners enter the existing original palette and full type/file owner. Native Body shape bytes are checked against that loaded physical asset; archive lookup/platform file storage remain the inherited transport boundary.",
+    "Full original Building43B740 constructor and44D6A0 idle initializer run with supplied placement/House linkage. Existing Infantry517A50..517AE6/Walk and Unit7353C0..7354CE/Drive prefixes create genuine typed Cargo participants; whole Foot COM construction/Unlimbo/boarding are excluded. Distinct prefix objects are used for repeated full-load INIT entries. Native4733A0 prepends and473430 removes the actual head; actor_results.cargo_types records resulting linked order through actual type queries. These are Cargo/drawing consumer controls, not native radio/movement/entry/unload/House-power/animation/death lifecycle replay.",
+    "Ordinary selected controls enter full6F64A0 after the separately established selected Extras dispatch; hover/unselected/sinking execute complete6F5190. Original Building health6F659E corner projection and6F682C tail caller execute.709A90 retains PIPS/origin(input.x+6,input.y-1)/step(4,2); mobile PIPS2 is not substituted.709DCB invokes actual4598A0 UnitAbsorb OR InfantryAbsorb. The absorber walks Cargo head order with raw Infantry Pip, Unitframe4/other1, no Size fillers; false takes ordinary Unitframe5/Size fillers. Every GetPipMax716290 slot draws, including empty0.",
+    "Building-only PipsDrawForAll and CanBeOccupied bypass controls use actual original readers and nonallied House/index plus ctor-zero210 priors; no nonallied mask producer is invented. Tiberium suppresses the entire Building tail. Empty authored MaxNumberOccupants2 garrison emits6,6 then independent five-slot passenger row0,0,0,0,0 restarts at the same origin; ShowOccupantPipsfalse suppresses only garrison. Both native containers are explicitly empty: custom distinct dual-list lifecycle is not represented or claimed.",
+    "Original4AED70 frame origins/centering/clip/pickers/row walkers/4912B0 stores execute unchanged with flags600/THEATER_PAL/intensity1000 and no A/Z accesses. Empty A0/Z0, A63 partial caller clip and positive parent overlap are finite controls. Two first-Extras/body/late-Extras controls reuse the physical YAPOWR base body and existing TMP planes; only status-addressed pixels cross the comparison boundary. Slot animations, full Display/shroud/device scenes and arbitrary body states remain outside this component evidence.",
+    "Original code/vtables and raster actor bytes/A/Z remain unchanged. Drawing/query intervals draw no RNG, write no timers and call no detach. Building and Foot prefix constructor RNG requests/passive timers are recorded separately; the reused setup does not establish one joined world RNG continuation. Existing cargo, radio, HouseTracking, power, animation, unload/placement and removal owners retain their production lifecycle authority. Whole functions/classes, custom dual-list state and malformed/overfull links remain open."
+  ],
+  "substitutions": [
+    "Inherited allocation/delete/CRT TLS and immutable physical archive/file/native-cache transports replace platform services. Existing RGB565 BSurface/circular A/Z storage replaces DirectDraw. Actor health/selection/owner/country-index/placement and viewport are explicit consumer priors. No reached Cargo/query/reader/admission/projection/palette/shape/pixel result or executable instruction is replaced."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "building_type_ctor": "0x0045DD90",
+    "building_type_reader": "0x0045FE50",
+    "building_ctor": "0x0043B740",
+    "building_idle": "0x0044D6A0",
+    "pips_for_all_begin": "0x0071412B",
+    "pips_for_all_end": "0x00714145",
+    "absorb_begin": "0x00460988",
+    "absorb_end": "0x004609D6",
+    "is_absorb_allowed": "0x004598A0",
+    "cargo_add": "0x004733A0",
+    "cargo_remove": "0x00473430",
+    "cargo_first": "0x00473450",
+    "cargo_size": "0x00473460",
+    "pip_max": "0x00716290",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "building_pip_caller": "0x006F682C",
+    "pips": "0x00709A90",
+    "absorber_begin": "0x00709DD4",
+    "absorber_end": "0x00709E48",
+    "projection": "0x006D2140",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "leaf": "0x004912B0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --absorber-pips",
+  "payload_sha256": "dca148a7b68d74223c66e9f6dd42473e711f3ac7e07d561d79bf7879ed545c6f"
+}

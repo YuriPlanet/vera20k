@@ -370,7 +370,7 @@ fn recalculate_power_for_owner(
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).
         let mut output_contribution: i32 = obj.power.max(0);
-        if (obj.infantry_absorb || obj.unit_absorb) && obj.extra_power > 0 {
+        if obj.absorbs_passengers() && obj.extra_power > 0 {
             let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =

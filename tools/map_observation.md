@@ -2291,6 +2291,15 @@ no ready product, overlay state, damage stage or random result. The defense
 tab samples retain the normal queue view. Numeric command handles belong to
 this launch; rediscover bindings with v3 named commands after changing it.
 
+The [wall-sale profile](map_observation.wall-sale.example.json) reuses that
+paid opening, attacks `(33,89)`, then enters Sell, clicks the actual wall and
+exits with RMB. These three gestures share one step because observation draws
+require a static cursor. Receipts retain sticky Sell mode after the left click
+and the queued signed Cell-sale command; subsequent frames observe removal,
+path reopening, attacker release and no refund. The audio recorder observes
+the ordinary SellBuilding player. This unsuspended tank route does not prove
+the distinct native Drive obstruction/Override prerequisite or native audio.
+
 The original-executable [wall component](spatial_oracle/anytown_damage/navigation.md)
 separately establishes three-stage AP damage, inline cardinal damage200,
 connectivity and removal. Its decoded Overlay construction inputs and
@@ -2749,6 +2758,14 @@ production event receiver alone does not repeat that prerequisite decision.
 The unit exits the barracks and moves to
 (33,88); selection and two command-bar Deploy gestures start and stop its
 normal self-fire. The resulting field fades after undeployment.
+
+[map_observation.radiation-snow.example.json](map_observation.radiation-snow.example.json)
+uses the archived two-player XXmas.MAP in Battle mode. Its natural SMCV1207
+builds the same paid prerequisites before DESO1374 exits the barracks and moves
+to (37,86). The two ordinary command-bar gestures deploy and undeploy it.
+The selected flat Snow cell uses the complete eight-file Clear01.sno family;
+the source's Snow color branch is compared through the same lifecycle, lighting
+and TMP owners as the Temperate case.
 
 The cursor rests on the sidebar at (700,500), so selection does not leave an
 animated world-order cursor in the final frame. The profile records ordinary

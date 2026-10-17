@@ -559,9 +559,7 @@ impl Simulation {
     /// `0x004FBC1C`). Each list therefore sees the same appends and
     /// removals, and House+0xB0 is House+68 filtered by the gate, in order.
     pub(crate) fn house_absorbers(&self, owner: InternedId, rules: &RuleSet) -> Vec<u64> {
-        self.house_buildings_where(owner, rules, |object| {
-            object.unit_absorb || object.infantry_absorb
-        })
+        self.house_buildings_where(owner, rules, |object| object.absorbs_passengers())
     }
 
     /// House+0xC8, the tank bunkers (Items `+0xCC`, Count `+0xD8`), in

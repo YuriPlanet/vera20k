@@ -621,7 +621,8 @@ pub(super) fn dispatch_draw_passes(
         .combat_light_renderer
         .draw(encoder, [tac_x, tac_y, tac_w, tac_h]);
 
-    // Tactical LaserDraw550240 then LineTrail556D40 edit the destination and
+    // Tactical LaserDraw550240, EBolt, LineTrail556D40, then selected
+    // radial indicators6D467F edit the destination and
     // samples the same native Z authority as bridge/object rendering. End the
     // attachment pass while the ordered RGB565 stores execute, then load it.
     state
@@ -663,15 +664,6 @@ pub(super) fn dispatch_draw_passes(
         pool,
         bracket_tex,
         "target_lines",
-    );
-    // Selected sensor/gap radius rings retain their action-visual pass;
-    // their native producer/raster belongs to the subsequent range chain.
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        bracket_tex,
-        "building_radius_rings",
     );
     // Cell47EC90 flags20600 -> plain Convert/RLE4960A0: opaque stores,
     // world camera, neither A nor Z reads/writes. The shared neutral-A surface

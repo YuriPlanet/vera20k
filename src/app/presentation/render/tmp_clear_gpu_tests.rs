@@ -48,15 +48,31 @@ fn a_pixels(input: &Value, size: [u32; 2]) -> Vec<u8> {
 /// visitor. MatchLighting consumes every ordinary frame publication, without
 /// reconstructing sources after installation. Native source/Cell/TMP evidence:
 /// RadSite65B580/65B800 -> LightSource554AF0 -> Cell483E30 -> TMP547CF0.
-/// Native selector-input controls cover each physical GLAT06 file; comparison
+/// Native selector-input controls cover each physical material; comparison
 /// follows the ordinary World's variant without overriding its selector.
 #[test]
 #[ignore = "requires retail assets and GPU; paid DESO lifecycle through ordered lighting events and native TMP pixels"]
 fn paid_deso_light_lifecycle_reaches_native_cell_and_tmp_pixels() {
+    assert_paid_deso_light_lifecycle(
+        "tools/spatial_oracle/radiation_light_lifecycle.json",
+        "tools/map_observation.radiation-light.example.json",
+    );
+}
+
+#[test]
+#[ignore = "requires retail assets and GPU; paid Snow DESO lifecycle through ordered lighting events and native TMP pixels"]
+fn paid_snow_deso_light_lifecycle_reaches_native_cell_and_tmp_pixels() {
+    assert_paid_deso_light_lifecycle(
+        "tools/spatial_oracle/radiation_snow_light_lifecycle.json",
+        "tools/map_observation.radiation-snow.example.json",
+    );
+}
+
+fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'static str) {
     use crate::app::presentation::lighting::MatchLighting;
     use crate::headless_scenario::radiation_test_evidence::visit_paid_deso_light_lifecycle;
 
-    let packet = crate::test_fixture::json("tools/spatial_oracle/radiation_light_lifecycle.json");
+    let packet = crate::test_fixture::json(packet_path);
     let history = packet["histories"]
         .as_array()
         .unwrap()
@@ -76,7 +92,9 @@ fn paid_deso_light_lifecycle_reaches_native_cell_and_tmp_pixels() {
     let sub_tile = physical["subtile"].as_u64().unwrap() as u8;
     let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
     let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    let theater = load_theater(&mut assets, "TEMPERATE").unwrap();
+    let theater_name = setup["theater"]["source_value"].as_str().unwrap();
+    let theater = load_theater(&mut assets, theater_name).unwrap();
+    let extension = theater.extension;
     let mapping = setup["tmp"]["mappings"]
         .as_array()
         .unwrap()
@@ -84,7 +102,7 @@ fn paid_deso_light_lifecycle_reaches_native_cell_and_tmp_pixels() {
         .find(|mapping| mapping["tile_id"].as_u64() == Some(u64::from(tile_id)))
         .unwrap();
     let native_filename = format!(
-        "{}{:02}.tem",
+        "{}{:02}.{extension}",
         mapping["file_name"].as_str().unwrap(),
         u64::from(tile_id) - mapping["base"].as_u64().unwrap() + 1
     );
@@ -151,9 +169,10 @@ fn paid_deso_light_lifecycle_reaches_native_cell_and_tmp_pixels() {
     let mut lighting = MatchLighting::default();
     let mut a = None;
     let mut compared = Vec::new();
-    visit_paid_deso_light_lifecycle(|phase, scene, output| {
+    visit_paid_deso_light_lifecycle(profile_path, |phase, scene, output| {
         if output.is_none() {
             assert_eq!(phase, Some("loaded"));
+            assert_eq!(scene.sim().session.theater, theater_name);
             assert!(scene.sim().radiation.is_empty());
             lighting.install(
                 crate::map::lighting::CellLightGrid::new(),

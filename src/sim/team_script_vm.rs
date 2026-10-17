@@ -1131,6 +1131,20 @@ impl TeamScriptVm {
         Some(member)
     }
 
+    /// gamemd.exe Detach70D554..70D57B walks the live Team roster after the Techno
+    /// sweep, clearing only matching +3C/+40. Unlike AssignMissionTarget
+    /// 6E9050, it issues no member orders and preserves zone/membership.
+    pub(crate) fn detach_target(&mut self, target: TeamTarget) {
+        for team in self.teams.values_mut().rev() {
+            if team.mission_target == Some(target) {
+                team.mission_target = None;
+            }
+            if team.focus == Some(target) {
+                team.focus = None;
+            }
+        }
+    }
+
     /// `TeamClass::PointerExpired @ 0x006EAE60` for every team, as the
     /// pointer-expired broadcast (`0x007258D0`) reaches each through its
     /// listener vector: a team forgets `expired` as its centre, closest

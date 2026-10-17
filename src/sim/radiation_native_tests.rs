@@ -19,18 +19,37 @@ fn cell(value: &serde_json::Value) -> (u16, u16) {
 /// paid opening's Bullet phase. Neither history imports Rust expected values.
 #[test]
 fn light_lifecycle_matches_original_site_and_cell_boundaries() {
+    assert_light_lifecycle(
+        "XMP03T4.MAP",
+        "tools/spatial_oracle/radiation_light_lifecycle.json",
+    );
+}
+
+#[test]
+fn snow_light_lifecycle_matches_original_site_and_cell_boundaries() {
+    assert_light_lifecycle(
+        "XXmas.MAP",
+        "tools/spatial_oracle/radiation_snow_light_lifecycle.json",
+    );
+}
+
+fn assert_light_lifecycle(map: &str, packet: &'static str) {
     use crate::sim::light_sources::LightingEvent;
 
     let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
-    let scene = crate::headless_scenario::load(&root, "XMP03T4.MAP", 0).unwrap();
+    let scene = crate::headless_scenario::load(&root, map, 0).unwrap();
     let rules = &scene.runtime.resources.rules;
     let terrain = scene.sim().resolved_terrain.as_ref();
-    let native = crate::test_fixture::json("tools/spatial_oracle/radiation_light_lifecycle.json");
+    let native = crate::test_fixture::json(packet);
     for history in native["histories"].as_array().unwrap() {
         let name = history["name"].as_str().unwrap();
         let input = &history["input"];
+        assert_eq!(
+            scene.sim().session.theater,
+            input["setup"]["theater"]["source_value"].as_str().unwrap()
+        );
         let center = cell(&input["center"]);
         let weapon = rules
             .weapon(input["source"]["weapon"].as_str().unwrap())
@@ -73,7 +92,14 @@ fn light_lifecycle_matches_original_site_and_cell_boundaries() {
             }
             source.clone()
         };
-        state.apply_detonation(detonation, 0, &rules.radiation, terrain, &mut events);
+        state.apply_detonation(
+            detonation,
+            0,
+            &scene.sim().session.theater,
+            &rules.radiation,
+            terrain,
+            &mut events,
+        );
         let mut current_source = publish(&mut events);
         let mut frame = 0;
         let refresh = input["refresh_frame"].as_u64().map(|frame| frame as u32);
@@ -86,6 +112,7 @@ fn light_lifecycle_matches_original_site_and_cell_boundaries() {
                     state.apply_detonation(
                         detonation,
                         frame,
+                        &scene.sim().session.theater,
                         &rules.radiation,
                         terrain,
                         &mut events,
@@ -170,6 +197,7 @@ fn light_lifecycle_matches_original_site_and_cell_boundaries() {
                 // envelope is a snapshot control, not a paid-game bootstrap.
                 let mut world = crate::sim::world::Simulation::with_seed(0);
                 world.session.binary_frame = frame;
+                world.session.theater = scene.sim().session.theater.clone();
                 world.radiation = state.clone();
                 let before = world.state_hash();
                 let bytes = crate::sim::snapshot::GameSnapshot::save(
@@ -304,6 +332,7 @@ fn field_operations_match_native_overlap_controls() {
                             spread: integer(&row["source_inputs"]["spread"]),
                         },
                         frame,
+                        &scene.session.theater,
                         &rules,
                         terrain,
                         &mut lights,
@@ -394,6 +423,7 @@ fn restore_rejects_missing_or_duplicate_radiation_update_slots() {
             spread: 2,
         },
         0,
+        &sim.session.theater,
         &RadiationRules::default(),
         None,
         &mut Vec::new(),
@@ -432,6 +462,7 @@ fn equal_current_fields_with_different_update_order_hash_differently() {
                     spread: 10,
                 },
                 0,
+                &world.session.theater,
                 &RadiationRules::default(),
                 None,
                 &mut Vec::new(),
@@ -463,6 +494,7 @@ fn serialized_radius_that_changes_future_decay_is_hash_relevant() {
             spread: 10,
         },
         0,
+        &original.session.theater,
         &RadiationRules::default(),
         None,
         &mut Vec::new(),

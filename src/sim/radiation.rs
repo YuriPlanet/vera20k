@@ -82,7 +82,7 @@ impl RadSite {
         self.light.source.clone()
     }
 
-    fn activate_light(&mut self, frame: u32, rules: &RadiationRules) -> bool {
+    fn activate_light(&mut self, frame: u32, theater: &str, rules: &RadiationRules) -> bool {
         let light = &mut self.light;
         light.timer = CdTimer::started(frame as i32, rules.light_delay);
         if self.duration < 1 {
@@ -97,8 +97,18 @@ impl RadSite {
                 .clamp(i64::from(i32::MIN), i64::from(LIGHT_CLAMP_MAX)) as i32
         };
         let intensity = scaled(self.level, rules.light_factor);
-        light.base_tint = [rules.color.0, rules.color.1, rules.color.2]
-            .map(|channel| scaled(i32::from(channel) * LIGHT_UNIT / 255, rules.tint_factor));
+        // RadSite65B5EA..65B684: Scenario+1258 == SNOW1 substitutes signed
+        // -128 for red/blue before the signed channel normalization. Theater
+        // comes from ScenarioSession; Rules still owns the configured bytes.
+        // Original activation/refresh/decay and Snow Cell/TMP controls:
+        // tools/spatial_oracle/radiation_snow_light_lifecycle.json.
+        let channels = if theater.eq_ignore_ascii_case("SNOW") {
+            [-128, i32::from(rules.color.1), -128]
+        } else {
+            [rules.color.0, rules.color.1, rules.color.2].map(i32::from)
+        };
+        light.base_tint =
+            channels.map(|channel| scaled(channel * LIGHT_UNIT / 255, rules.tint_factor));
         // The selected retail levels have at least one light step. Preserve
         // the previous defensive handling of shorter custom lifetimes; this
         // does not claim native divide-fault equivalence for that domain.
@@ -472,11 +482,17 @@ impl RadiationState {
     }
 
     /// (Re)arm the decay countdown and derive the per-lifetime step count.
-    fn activate_site(&mut self, center: (u16, u16), frame: u32, rules: &RadiationRules) -> bool {
+    fn activate_site(
+        &mut self,
+        center: (u16, u16),
+        frame: u32,
+        theater: &str,
+        rules: &RadiationRules,
+    ) -> bool {
         if let Some(site) = self.sites.get_mut(&center) {
             site.level_steps = site.duration / rules.level_delay;
             site.level_timer = CdTimer::started(frame as i32, rules.level_delay);
-            site.activate_light(frame, rules)
+            site.activate_light(frame, theater, rules)
         } else {
             false
         }
@@ -512,6 +528,7 @@ impl RadiationState {
         &mut self,
         det: RadDetonation,
         frame: u32,
+        theater: &str,
         rules: &RadiationRules,
         terrain: Option<&ResolvedTerrainGrid>,
         lights: &mut Vec<LightingEvent>,
@@ -558,7 +575,7 @@ impl RadiationState {
                 site.remaining = duration;
             }
         }
-        let light_changed = self.activate_site(center, frame, rules);
+        let light_changed = self.activate_site(center, frame, theater, rules);
         self.spread_site(center, terrain);
         // RadSite activation65B7CA/65B7E8 publishes source changes in this
         // interval, even if another change later returns to the same inputs.
@@ -756,10 +773,24 @@ mod tests {
     fn same_center_redetonation_merges_not_stacks() {
         let rules = stock_rules();
         let mut rad = RadiationState::default();
-        rad.apply_detonation(desolator_det(50, 50), 0, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(50, 50),
+            0,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         // Immediately re-detonate: effective is still the full 500 (no frames
         // elapsed), so the merged level is exactly 500 + 500.
-        rad.apply_detonation(desolator_det(50, 50), 0, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(50, 50),
+            0,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         let site = rad.site_at((50, 50)).expect("merged site survives");
         assert_eq!(site.level, 1000);
         assert_eq!(site.duration, 1000);
@@ -778,7 +809,14 @@ mod tests {
     fn site_self_deletes_and_clears_center_ptr() {
         let rules = stock_rules();
         let mut rad = RadiationState::default();
-        rad.apply_detonation(desolator_det(10, 10), 0, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(10, 10),
+            0,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         let full = rad.cell_level((10, 10));
         // duration 500, level_steps = 500/90 = 5, step every 90 frames.
         for frame in 1..=89 {
@@ -824,7 +862,14 @@ mod tests {
     fn decay_countdown_is_activation_anchored() {
         let rules = stock_rules();
         let mut rad = RadiationState::default();
-        rad.apply_detonation(desolator_det(10, 10), 37, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(10, 10),
+            37,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         let full = rad.cell_level((10, 10));
         for frame in 38..=126 {
             rad.tick_decay(frame, &rules, None, &mut Vec::new());
@@ -840,7 +885,14 @@ mod tests {
     fn midlife_merge_resets_to_effective_plus_added() {
         let rules = stock_rules();
         let mut rad = RadiationState::default();
-        rad.apply_detonation(desolator_det(10, 10), 0, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(10, 10),
+            0,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         // Advance 180 frames: two decay steps, remaining 500→320.
         for frame in 1..=180 {
             rad.tick_decay(frame, &rules, None, &mut Vec::new());
@@ -848,7 +900,14 @@ mod tests {
         let site = rad.site_at((10, 10)).unwrap();
         assert_eq!(site.remaining, 320);
         // Effective = 320×500/500 = 320; merge adds 500 → 820.
-        rad.apply_detonation(desolator_det(10, 10), 180, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(10, 10),
+            180,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         let site = rad.site_at((10, 10)).unwrap();
         assert_eq!(site.level, 820);
         assert_eq!(site.duration, 820);
@@ -865,7 +924,14 @@ mod tests {
     fn detonation_near_origin_clamps_square() {
         let rules = stock_rules();
         let mut rad = RadiationState::default();
-        rad.apply_detonation(desolator_det(2, 2), 0, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(2, 2),
+            0,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         assert_eq!(rad.cell_level((2, 2)), 500.0);
         assert!(rad.cell_level((0, 0)) > 0.0);
     }
@@ -875,7 +941,14 @@ mod tests {
     fn radiation_state_serde_round_trip() {
         let rules = stock_rules();
         let mut rad = RadiationState::default();
-        rad.apply_detonation(desolator_det(10, 10), 5, &rules, None, &mut Vec::new());
+        rad.apply_detonation(
+            desolator_det(10, 10),
+            5,
+            "TEMPERATE",
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
         for frame in 6..=130 {
             rad.tick_decay(frame, &rules, None, &mut Vec::new());
         }

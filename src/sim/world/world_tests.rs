@@ -1401,6 +1401,93 @@ pub(crate) fn gsi_04_07_wall_sell_seed_houses(
 }
 
 #[test]
+fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::mission::MissionDispatchTimer;
+    use crate::sim::mission::state::MissionTestFixture;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 77);
+    let wall_owner = sim.interner.get("Americans").unwrap();
+    let mut grid = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
+    grid.place_owned_wall(4, 4, overlays.id_for_name("GAWALL").unwrap(), 0, wall_owner);
+    sim.overlay_grid = Some(grid);
+    let mut actors = Vec::new();
+    for x in [2, 3] {
+        let id = sim
+            .spawn_object("MTNK", "Americans", x, 2, 0, &rules)
+            .unwrap();
+        actors.push(id);
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor
+            .attack_target
+            .set_for_test(Some(TargetKind::Cell(6, 6)));
+        actor
+            .navigation
+            .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 7, ry: 7 }));
+        actor.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(MissionType::Move),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::at_frame(0),
+        });
+        // Use the actual archive producer, not a supplied suspended target.
+        assert!(sim.mission_override_movement_blocker(
+            id,
+            TargetKind::Cell(4, 4),
+            &rules,
+            FrameEffects::default(),
+        ));
+        // Nonzero burst is an explicit component prior. Native6FCF5B resets
+        // it only if the changed-to-NULL setter actually runs; stock MTNK's
+        // single-shot burst does not by itself expose that difference.
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .weapon_burst
+            .complete_shot(2);
+    }
+    assert!(sim.apply_command_with_overlays(
+        "Americans",
+        &Command::SellWallAtCell { x: 4, y: 4 },
+        Some(&rules),
+        Some(&overlays),
+        FrameEffects::default(),
+    ));
+    for id in actors {
+        let actor = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(actor.attack_target.target(), Some(TargetKind::Cell(6, 6)));
+        assert_eq!(
+            actor.navigation.nav_com(),
+            Some(NavTargetRef::Cell { rx: 7, ry: 7 })
+        );
+        assert_eq!(
+            actor.mission.current(),
+            MissionId::from_known(MissionType::Move)
+        );
+        assert_eq!(actor.mission.suspended(), MissionId::NONE);
+        assert_eq!(
+            actor.weapon_burst.index(),
+            1,
+            "4FD018 calls70D4A0: Restore replaces the wall target before the conditional NULL setter"
+        );
+    }
+}
+
+#[test]
 fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     let (rules, overlays) = gsi_04_07_wall_sell_rules(false, true);
     assert!(!rules.object("FIRSTWALL").unwrap().click_repairable);

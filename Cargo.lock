@@ -3582,18 +3582,23 @@ dependencies = [
  "anyhow",
  "bincode",
  "blowfish",
+ "bytemuck",
  "env_logger",
  "fixed",
  "glam",
+ "half",
+ "hashbrown 0.16.1",
  "libc",
  "log",
  "memmap2",
  "num-bigint",
+ "num-traits",
  "rayon",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "toml",
+ "unicode-ident",
 ]
 
 [[package]]

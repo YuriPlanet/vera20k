@@ -502,7 +502,7 @@ impl Simulation {
             .entities
             .get(building_id)
             .and_then(|entity| self.object_type(entity.type_ref(), rules))
-            .is_some_and(|object| object.infantry_absorb || object.unit_absorb);
+            .is_some_and(|object| object.absorbs_passengers());
         let mut cursor = 0;
         if !absorbs {
             return cursor;

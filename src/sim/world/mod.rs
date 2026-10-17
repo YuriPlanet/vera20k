@@ -103,6 +103,7 @@ mod substrate;
 mod techno_ai;
 mod trigger_camera;
 mod trigger_explosion;
+mod trigger_nuke;
 #[cfg(test)]
 mod trigger_camera_tests;
 pub(crate) use techno_ai::DamageSpark;
@@ -1977,7 +1978,7 @@ impl Simulation {
                     .is_some_and(|entity| {
                         self.interner
                             .object_type(entity.type_ref(), rules)
-                            .is_some_and(|object| object.infantry_absorb || object.unit_absorb)
+                            .is_some_and(|object| object.absorbs_passengers())
                     });
                 if let Some(event) = garrison {
                     passenger::garrison_eject::eject_destruction_garrison_with_context(

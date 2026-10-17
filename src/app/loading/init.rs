@@ -790,6 +790,7 @@ mod map_wall_owner_candidate_tests {
                 spread: 1,
             },
             0,
+            &sim.session.theater,
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1111,6 +1112,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             radiation,
             0,
+            &sim.session.theater,
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1121,6 +1123,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             radiation,
             0,
+            &sim.session.theater,
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1400,6 +1403,7 @@ mod map_wall_owner_candidate_tests {
                 spread: 10,
             },
             0,
+            &sim.session.theater,
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1449,6 +1453,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             detonation,
             0,
+            &sim.session.theater,
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1459,6 +1464,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             detonation,
             0,
+            &sim.session.theater,
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,

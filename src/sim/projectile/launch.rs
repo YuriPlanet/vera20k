@@ -421,10 +421,11 @@ fn scatter_delta(
 /// (`0x0044CB4E`, `0x0046B43B`): a hair under pi/2.
 const MISSILE_PITCH: NativeF64Bits = NativeF64Bits::from_bits(0x3ff9_21c9_0fe8_fbda);
 
-/// The velocity of both nuclear missiles: the silo's
+/// The velocity of nuclear missiles: the silo's
 /// (`BuildingClass::Mission_Missile`, `0x0044CB4E..0x0044CC30`, `scale` 10.0
 /// at `0x007E44A8`) and the warhead NukeMaker drops (`0x0046B43B..
-/// 0x0046B529`, `scale` -1.0 at `0x007E4900`). With the sine and cosine of
+/// 0x0046B529`, `scale` -1.0 at `0x007E4900`), or TAction95's direct drop
+/// (`0x006E3511..0x006E35D0`, `scale` -100 at `0x007EDA88`). With the sine and cosine of
 /// the one pitch from the table (`0x004CACB0`, `0x004CAD00`): X = cos·cos,
 /// Y = cos·sin, Z = sin, each times `scale` and stored as a double.
 pub(crate) fn missile_launch_velocity(scale: NativeF64Bits) -> ProjectileVelocity {

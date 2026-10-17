@@ -4124,9 +4124,8 @@ impl Simulation {
     ///
     /// 1. **Descending stable-ID iteration.** The native walk runs the global
     ///    techno vector from its last entry down to its first. When two objects
-    ///    share the detaching target, the higher ID restores first, so its
-    ///    restored mission dispatches first and draws from the scenario RNG
-    ///    first. An ascending walk would reorder the global draw sequence.
+    ///    share the detaching target, the higher ID's class target/destination
+    ///    setters run first. Restore does not itself dispatch mission AI.
     /// 2. **Restore runs first, with no suspended-mission pre-check.** The
     ///    expiry sweep asks whether a mission is suspended and clears the target
     ///    before restoring; this one restores unconditionally and clears after.
@@ -4136,17 +4135,13 @@ impl Simulation {
     ///
     /// The native sweep has callers in area damage, building sale, owner change,
     /// building placement and teleportation. The represented owner-change,
-    /// bridge-damage and teleport (`0x007193C7`) callers share this owner; the
-    /// other caller chains remain separate migration work.
+    /// bridge-damage, wall-sale and teleport (`0x007193C7`) callers share this
+    /// owner; the other caller chains remain separate migration work.
     ///
     /// RESIDUALS, recorded rather than guessed:
     /// - The aircraft-Patrol arm, which clears two patrol-cursor fields on an
     ///   aircraft whose committed mission is Patrol. Neither field is
     ///   represented; the arm is a no-op for every ground object.
-    /// - The second sweep is TeamClass (0x0070D554..0x0070D57B), clearing
-    ///   matching pointers at +0x3C/+0x40. The represented Team owner does not
-    ///   yet retain both native pointers. Bridge damage needs that lifecycle
-    ///   when those Team states are implemented.
     pub(crate) fn stop_all_targeting_on_detach(
         &mut self,
         detach_id: u64,
@@ -4157,9 +4152,9 @@ impl Simulation {
         self.stop_all_targeting_target(TargetKind::Entity(detach_id), rules, registry, effects);
     }
 
-    /// Apply_area_damage bridge success calls the same 0x0070D4A0 sweep with a
-    /// CellClass pointer. This is not CellClass PointerExpired: Restore must
-    /// precede the conditional target clear, in descending Techno order.
+    /// Bridge success, foundation clearing and House wall sale call the same
+    /// 0x0070D4A0 sweep with a CellClass pointer. This is not PointerExpired:
+    /// Restore precedes the conditional target clear, in descending Techno order.
     pub(crate) fn stop_all_targeting_cell(
         &mut self,
         rx: u16,
@@ -4217,6 +4212,7 @@ impl Simulation {
                 });
             }
         }
+        self.team_script_vm.detach_target(target.into());
     }
 
     /// Match the retained target identity, preserving Cell/Techno distinction.

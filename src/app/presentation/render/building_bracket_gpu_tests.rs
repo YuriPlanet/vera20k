@@ -77,6 +77,7 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
                     std::iter::empty(),
                     lines,
                     &[],
+                    &[],
                     viewport,
                     || false,
                     |[x, y]| {

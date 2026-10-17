@@ -69,6 +69,16 @@ fn native_carrier_spawn_pips_preserve_color_a_z_and_parent_order() {
 }
 
 #[test]
+#[ignore = "requires retail assets and GPU; original Bio Reactor PIPS cargo-head order and Building pip rows"]
+fn native_bio_reactor_pips_preserve_color_a_z_and_parent_order() {
+    native_status_controls(
+        "tools/procedural_drawing_oracle/absorber_pips.json",
+        "YAPOWR",
+        EntityCategory::Structure,
+    );
+}
+
+#[test]
 #[ignore = "requires retail assets and GPU; original ORCA ammo pips and native Aircraft projection"]
 fn native_aircraft_ammo_pips_preserve_color_a_z_and_parent_order() {
     native_status_controls(
@@ -1127,41 +1137,79 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
-                    let capacity = if actor_category == EntityCategory::Structure {
+                    let capacity = if actor_category == EntityCategory::Structure
+                        && object.can_be_occupied
+                        && !object.absorbs_passengers()
+                    {
                         object.max_number_occupants
                     } else {
                         object.passengers as u32
                     };
                     let mut cargo = PassengerCargo::new(capacity, object.size_limit);
-                    if !actor["unload"].as_bool().unwrap_or(false) {
-                        if let Some(name) = actor["passenger"].as_str() {
-                            let passenger_type = rules.object(name).unwrap();
-                            if let Some(native) = actor["occupy_pip_override"].as_u64() {
-                                assert_eq!(
-                                    passenger_type.occupy_pip(),
-                                    native as u32,
-                                    "admitted native reader state reaches the garrison consumer",
-                                );
-                            }
-                            let passenger_ref = sim.interner.intern(name);
-                            let passenger_id = 1_000 + index as u64;
-                            let passenger = GameEntity::new_at_frame_zero_for_test(
-                                passenger_id,
-                                0,
-                                0,
-                                0,
-                                0,
-                                owner,
-                                Health::new(passenger_type.strength),
-                                passenger_ref,
-                                EntityCategory::from(passenger_type.category),
-                                0,
-                                5,
-                                false,
+                    let names: Vec<_> = actor["passengers"].as_array().map_or_else(
+                        || actor["passenger"].as_str().into_iter().collect(),
+                        |names| names.iter().map(|name| name.as_str().unwrap()).collect(),
+                    );
+                    for (passenger_index, name) in names.into_iter().enumerate() {
+                        let passenger_type = rules.object(name).unwrap();
+                        if let Some(native) = actor["occupy_pip_override"].as_u64() {
+                            assert_eq!(
+                                passenger_type.occupy_pip(),
+                                native as u32,
+                                "admitted native reader state reaches the garrison consumer",
                             );
-                            sim.entities_mut().insert(passenger);
-                            assert!(cargo.board(passenger_id, passenger_type.size));
                         }
+                        let passenger_ref = sim.interner.intern(name);
+                        let passenger_id = 1_000 + index as u64 * 100 + passenger_index as u64;
+                        let passenger = GameEntity::new_at_frame_zero_for_test(
+                            passenger_id,
+                            0,
+                            0,
+                            0,
+                            0,
+                            owner,
+                            Health::new(passenger_type.strength),
+                            passenger_ref,
+                            EntityCategory::from(passenger_type.category),
+                            0,
+                            5,
+                            false,
+                        );
+                        sim.entities_mut().insert(passenger);
+                        assert!(
+                            cargo.board(passenger_id, passenger_type.size),
+                            "{} cargo prior for {name}",
+                            row["name"]
+                        );
+                    }
+                    if actor["unload"].as_bool().unwrap_or(false)
+                        && let Some(head) = cargo.passengers().first().copied()
+                    {
+                        // Realize the oracle's after-removal hold through the
+                        // public cargo owner. The production unload mission
+                        // exercises its private RemoveFirst path separately.
+                        assert!(cargo.disembark(head));
+                    }
+                    if let Some(native_types) =
+                        row["actor_results"][index]["cargo_types"].as_array()
+                    {
+                        let cargo_types: Vec<_> = cargo
+                            .passengers()
+                            .iter()
+                            .map(|id| {
+                                sim.interner
+                                    .resolve(sim.entities().get(*id).unwrap().type_ref())
+                            })
+                            .collect();
+                        assert_eq!(
+                            cargo_types,
+                            native_types
+                                .iter()
+                                .map(|name| name.as_str().unwrap())
+                                .collect::<Vec<_>>(),
+                            "{} original cargo-head order",
+                            row["name"]
+                        );
                     }
                     // Explicit drawing-consumer hold prior. Actual command,
                     // Limbo and departure lifecycle has separate production tests.
@@ -1702,6 +1750,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             std::iter::empty(),
                             lines,
                             &[],
+                            &[],
                             viewport,
                             || false,
                             |_| input["a_value"].as_u64().unwrap() as u16,
@@ -1718,6 +1767,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             &gpu.queue,
                             std::iter::empty(),
                             &layer.extras_lines[lines.clone()],
+                            &[],
                             &[],
                             viewport,
                             || false,

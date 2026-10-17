@@ -214,7 +214,7 @@ pub(crate) fn render_game(
 
     // Phase 4: Update minimap + build UI instances (selection, health, placement).
     build_instances::update_minimap(state, &local_owner);
-    let ui = build_instances::build_ui_instances(state, vsw, vsh);
+    let ui = build_instances::build_ui_instances(state);
 
     // Phase 5: Build sidebar instances.
     let sidebar = build_instances::build_sidebar_instances(state);
@@ -294,6 +294,20 @@ pub(crate) fn render_game(
     let palette = surface_palette
         .as_ref()
         .map(crate::render::electric_bolt::ElectricBoltPalette::from_palette);
+    let radial_selection = crate::app::input::dispatch::selected_stable_ids_in_order(
+        state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    );
+    let radials = crate::app::presentation::radial_indicators::build(
+        state.match_state.sim_runtime.as_ref().map(|rt| &rt.simulation),
+        state.rules(),
+        &radial_selection,
+        &state.match_state.match_presentation.house_color_map,
+        viewport,
+        times.radar_ms,
+    );
     let presentation = &mut state.match_state.match_presentation;
     // Tactical6D466E executes once, before6D4673 trails, even when this
     // composite ran no Logic. GPU uploads never consume the process cursor.
@@ -342,6 +356,7 @@ pub(crate) fn render_game(
         presentation.lasers.draws(),
         bolt_lines,
         segments,
+        &radials,
         viewport,
         || {
             let mut detail = presentation.detail.borrow_mut();
@@ -361,6 +376,7 @@ pub(crate) fn render_game(
                     std::iter::empty(),
                     lines,
                     &[],
+                    &[],
                     viewport,
                     || false,
                     &mut alpha,
@@ -376,6 +392,7 @@ pub(crate) fn render_game(
                     &gpu.queue,
                     std::iter::empty(),
                     &layer.extras_lines[lines.clone()],
+                    &[],
                     &[],
                     viewport,
                     || false,
@@ -506,11 +523,6 @@ fn upload_to_gpu(
 
     // UI overlays
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);
-    pool.upload(
-        &state.renderer.gpu,
-        "building_radius_rings",
-        &ui.radius_ring,
-    );
     pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
     pool.upload(&state.renderer.gpu, "placement", &ui.placement);
     pool.upload(

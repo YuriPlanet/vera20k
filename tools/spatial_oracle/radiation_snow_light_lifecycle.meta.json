@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two original single-site SNOW radiation light lifecycles through real Cell gathering and selected eight-file TMP pixels",
+  "assumptions": [
+    "Each independent history uses the existing PaletteReader/TMP runtime, actual expansionRULESMD/fixedART/Battle/archivedXXmas and native per-layer Radiation/selected weapon/Warhead readers. Six allocated physical sample tuples/native Cell and Dummy constructors/ground getters precede original RadSite activation; full physical crop is separately labeled provenance only. No VERA values initialize source fields or expected pixels.",
+    "Original65B580/65B800 execute completely, including both native timers, registered LightSource constructors/updates, actual Cell483E30/484180/Convert and real expiry/deleting virtual slots. Actual native source registry order drives each supplied elapsed-frame visit. Same-center refresh at declared45 is an independent component input, not normal DESO ROF or whole-world scheduling.",
+    "Main/Scenario/MapGen are originally seeded0 at the declared post-setup entry. Complete states, actual requests/raw calls, source callbacks, both expiry receivers and native frees are retained. Real selected TMP rasters run on that same source/Cell runtime; surfaces/projection/detail/A127 are explicit component priors.",
+    "Only full outer activation65B580/refresh65B530/AI65B800 use the existing invocation owner with20M instructions/120s limits for native area publication and27/53-shade Convert work. Every other lifecycle invocation retains the historical2M/10s default; completion at actualRET_MAGIC remains mandatory.",
+    "After both histories clean up, the last central runtime executes three explicit numeric priors through original65B871..65B89E: normal, low32 multiplication overflow and signed operands. Native pushed red/green/blue words and actual IMUL/IDIV visits are observed with a200-instruction bound, stopping before LightSource access. Two further numeric controls execute full554AA0 on inactive zeroed operand storage with supplied current/proposed parameters; actual memory records its comparison gate and writes. These are not constructed RadSite/LightSource objects or additional scenario histories. CPU/stack, all three RNG streams, live registries, final Cell/source state and callback counts are restored or asserted unchanged; no host arithmetic or lifecycle result supplies an output.",
+    "The selected Snow center enrolls its complete physical Clear01.sno eight-file suffix family through the same original descriptor/lazy-loader owner. Actual native metadata validates every file. Four phases each retain one native row per physical file; count>4 uses original Main-generated64 table89E620 rotations as explicit component inputs while original4814F0/547CF0 select and follow the descriptor observed at547F49. Both selector tables/flag, live RNG and lighting profile are restored. Raw selector argument and effective physical descriptor identity are distinct observations. No whole-world selector or Main bootstrap equivalence.",
+    "The historical isolated palette-table assertion VM and lexical-index native CRC probes remain in shared setup; this is not a literal single-VM process. RadSite/LightSource/Cell/raster lifecycle never crosses into another VM.",
+    "Original Map/Theater687631..68764F reads archivedXXmas.MAP and stores Scenario+1258=SNOW1 before the selected ISOSNO.PAL/SNOW.PAL CellConvert setup. Full65B580 executes its signed Snow red/blue override and signed normalization/ftol; actual working channel bits are observed at65B604 before conversion, without calculated expected tint. Native SNOWMD General/TileSet and XXmas Lighting readers execute. The before-AI45 refresh, separate remaining/light timers, full3RNG and real two-receiver expiry/delete histories retain their existing component bounds."
+  ],
+  "substitutions": [
+    "Existing shared lexical/MIX/file transports, bounded PaletteReader allocator, operator-delete storage seam, CRT/TLS, RGB565 surfaces and empty Windows SEH/checkedIsBadReadPtr. No source/Cell/timer/lifecycle/native drawing result is supplied.",
+    "LightPublication existing Map4F42F0 redraw sink returns after observing its argument; original Cell light sink is disabled, so real483E30/484180 run. Sparse six-Cell fixed512 map enrollment and empty live listeners are component priors. Original5657E0 skips missing light targets, while original5657A0 stamps missing field targets into shared Dummy; actual Dummy doubles/coords/registration and alias-call counts are retained without resets. No full physical-circle publication/cache/ID, native scenario, paid DESO, deploy/shot/audio or whole-frame parity."
+  ],
+  "entry_points": {
+    "activate": "0x0065B580",
+    "ai": "0x0065B800",
+    "site_ctor": "0x0065B1E0",
+    "site_destructor": "0x0065B2F0",
+    "site_delete": "0x0065BED0",
+    "light_ctor": "0x00554760",
+    "light_update": "0x00554AA0",
+    "light_delete": "0x00555150",
+    "area": "0x00554AF0",
+    "cell_light": "0x00483E30",
+    "cell_gather": "0x00484180",
+    "cell_site": "0x00487C70",
+    "expiry": "0x007258D0",
+    "cell_draw": "0x00480350",
+    "tmp_draw": "0x00547CF0",
+    "tint_integer_begin": "0x0065B871",
+    "tint_integer_end": "0x0065B89E",
+    "snow_activation_channels": "0x0065B604"
+  },
+  "replay_command": "python -m tools.spatial_oracle.radiation_damage_boundary --snow-light-lifecycle --light-cell 37,86",
+  "payload_sha256": "d51013fa28ebcb1d3835bb34f6657c2b5ce91504223e0761defcf310b7b50560"
+}

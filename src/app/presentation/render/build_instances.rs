@@ -16,8 +16,8 @@ use crate::app::presentation::sidebar_render::{
     build_sidebar_chrome_instances, build_sidebar_text_instances, current_sidebar_view,
 };
 use crate::app::presentation::ui_overlays::{
-    build_building_radius_ring_instances, build_building_status_instances,
-    build_control_group_status_instances, build_software_cursor_instances,
+    build_building_status_instances, build_control_group_status_instances,
+    build_software_cursor_instances,
 };
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
@@ -68,7 +68,6 @@ pub(super) struct DebugInstances {
 
 /// In-game UI overlays: health bars, placement preview, cursor.
 pub(super) struct UiInstances {
-    pub radius_ring: Vec<SpriteInstance>,
     pub software_cursor: Vec<SpriteInstance>,
     pub drag: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
@@ -643,8 +642,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 
 /// Build in-game UI overlay instances: health bars,
 /// drag rectangle, building placement preview, and software cursor.
-pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstances {
-    let radius_ring: Vec<SpriteInstance> = build_building_radius_ring_instances(state, sw, sh);
+pub(super) fn build_ui_instances(state: &AppState) -> UiInstances {
     let software_cursor = build_software_cursor_instances(state);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
@@ -735,7 +733,6 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
         );
 
     UiInstances {
-        radius_ring,
         software_cursor,
         drag,
         placement,

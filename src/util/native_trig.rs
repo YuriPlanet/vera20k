@@ -14,6 +14,24 @@
 // angle input. Walk uses a full signed direction and must not quantize to 32 steps.
 pub const RETAIL_SINE_TABLE: &[u8; 10241 * 4] = include_bytes!("native_trig_table.bin");
 
+/// Original85D0A4, consumed by Math__TanFromTable4096 @4CAD50. This is
+/// a separate retail table, not a ratio of the sine/cosine approximations.
+/// Original execution/whole-table controls: procedural_drawing_oracle/radial_indicator.
+pub const RETAIL_TANGENT_TABLE: &[u8; 4096 * 4] = include_bytes!("native_tangent_table.bin");
+
+pub fn native_tan_from_table(
+    radians: crate::util::native_x87::X87Value,
+) -> crate::util::native_x87::X87Value {
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X};
+    //4CAD54's binary64 scale, ftol then signed remainder corrected into0..4095.
+    let scale = X::load_f64(NativeF64Bits::from_bits(651.8986469044033_f64.to_bits()))
+        .expect("finite native tangent scale");
+    let index = X::ftol_i32_low_masked(X::mul(radians, scale)).rem_euclid(4096) as usize;
+    let offset = index * 4;
+    let bits = u32::from_le_bytes(RETAIL_TANGENT_TABLE[offset..offset + 4].try_into().unwrap());
+    X::load_f32(NativeF32Bits::from_bits(bits)).expect("finite retail tangent entry")
+}
+
 fn sine_table_bits(index: usize) -> u32 {
     let offset = index * 4;
     u32::from_le_bytes(RETAIL_SINE_TABLE[offset..offset + 4].try_into().unwrap())

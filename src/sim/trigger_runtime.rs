@@ -3642,6 +3642,12 @@ impl Simulation {
                     effects.push(TriggerEffect::BridgeStateChanged);
                 }
             }
+            95 => {
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                return self.trigger_nuke_strike(rules, waypoint as i32);
+            }
             46 | 47 => {
                 let locked = action.kind == 46;
                 let was_locked = self.session.input_locked();
@@ -4087,3 +4093,7 @@ mod explosion_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_nuke_tests.rs"]
+mod nuke_tests;

@@ -379,6 +379,7 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                         laser(row),
                         &lines,
                         &trails,
+                        &[],
                         viewport(input),
                         || true,
                         |[x, y]| match input["alpha"].as_str() {

@@ -305,6 +305,12 @@ fn assert_retail_wall_fire_profile(
     // first Logic turn. Headless load deliberately defaults to serial mode.
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Normal play's frame loop hashes every PLAY_HASH_INTERVAL frames; a
+    // headless launch would hash every frame, which nothing here reads.
+    scene
+        .runtime
+        .simulation
+        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
     let initial_hash = scene.sim().state_hash();
     let owner = scene.sim().session.current_house.unwrap();
     let orders: Vec<_> = profile["commands"]
@@ -1236,6 +1242,10 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    scene
+        .runtime
+        .simulation
+        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
     let owner = scene.sim().session.current_house.unwrap();
     let command: Command =
         serde_json::from_value(profile["commands"][0]["payload"].clone()).unwrap();

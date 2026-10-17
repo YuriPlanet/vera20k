@@ -154,6 +154,42 @@ class CargoRunTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Label'):
             cargo_run.run(self.root, ['build'], '../escape', 0)
 
+    def test_core_only_tests_build_with_the_workspace_core_features(self):
+        features = ['--features', 'dev-overlays,test-support']
+        cases = (
+            (['test', '-p', 'vera20k-core', '--lib', 'sim::'], features),
+            (['test', '--package=vera20k-core', '--lib'], features),
+            (['test', '-pvera20k-core', '--lib', '--', '--ignored'], features),
+            (['test', '-p', 'vera20k', '--lib'], []),
+            (['test', '--workspace', '--lib'], []),
+            (['test', '-p', 'vera20k-core', '-p', 'vera20k', '--lib'], []),
+            (['test', '-p', 'vera20k-core', '--features', 'dev-ui', '--lib'], []),
+            (['test', '-p', 'vera20k-core', '--no-default-features', '--lib'], []),
+            (['build', '-p', 'vera20k-core', '--release'], []),
+        )
+        for args, added in cases:
+            with self.subTest(args=args):
+                rendered = cargo_run.cargo_args(args, None)
+                self.assertEqual(rendered, [args[0], '--message-format=json-render-diagnostics', *args[1:], *added])
+
+    def test_core_only_and_workspace_tests_resolve_core_dependencies_alike(self):
+        # Any feature difference gives `-p vera20k-core` its own core test
+        # executable; src/Cargo.toml's dev-dependencies must then gain it.
+        def tree(*selection):
+            listing = subprocess.run(
+                ['cargo', 'tree', '--locked', '--offline', *selection, '-e', 'normal,build,dev',
+                 '--prefix', 'none', '--no-dedupe', '-f', '{p} {f}'],
+                cwd=REPOSITORY, check=True, capture_output=True, text=True).stdout
+            features = {}
+            for line in filter(None, listing.splitlines()):
+                package, version, *rest = line.replace(' (*)', '').split(' ')
+                if package != 'vera20k' and not rest[:1] == ['(proc-macro)']:
+                    features[package, version] = rest[-1] if rest and not rest[-1].startswith('(') else ''
+            return features
+        core = tree('-p', 'vera20k-core', '--features', ','.join(cargo_run.WORKSPACE_CORE_FEATURES))
+        workspace = tree('--workspace')
+        self.assertEqual({key: value for key, value in workspace.items() if key in core}, core)
+
     def fake_cargo(self, *, code=0, mutate=False, artifact=True, host_profile=None):
         # Emulates Cargo's *public JSON output*, including a misleading stale
         # conventional target path. The runner must use the emitted path.
@@ -377,11 +413,13 @@ class CargoRunTests(unittest.TestCase):
         self.assertEqual((result, reports), (0, []))
         self.assertNotIn('--config', commands[0])
 
-    def test_failing_test_stops_later_ones_unless_no_fail_fast(self):
-        result, _, reports = self.run_tests([(3, ''), (0, '')])
-        self.assertEqual((result, len(reports)), (101, 1))
-        result, _, reports = self.run_tests([(3, ''), (0, '')], '--no-fail-fast')
-        self.assertEqual((result, len(reports)), (101, 2))
+    def test_failing_test_fails_the_run_after_every_executable_ends(self):
+        for options in ((), ('--no-fail-fast',)):
+            with self.subTest(options=options):
+                result, _, reports = self.run_tests([(3, ''), (0, '')], *options)
+                self.assertEqual((result, len(reports)), (101, 2))
+                result, _, reports = self.run_tests([(0, ''), (3, '')], *options)
+                self.assertEqual((result, len(reports)), (101, 2))
 
     def test_source_edit_during_the_tests_fails_validation(self):
         with self.assertRaisesRegex(ValueError, 'Source changed during the tests'):

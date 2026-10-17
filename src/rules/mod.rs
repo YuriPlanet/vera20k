@@ -144,6 +144,8 @@ pub mod prerequisite;
 pub mod process_owner;
 pub mod projectile_type;
 pub mod radar_event_config;
+#[cfg(test)]
+mod radial_indicator_tests;
 pub mod recoil;
 pub mod secret_lab;
 pub mod retail_sources;

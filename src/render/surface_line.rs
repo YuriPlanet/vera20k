@@ -23,6 +23,12 @@ pub(crate) enum SurfaceLineBlend {
     Add([u8; 3]),
     /// 4BFD30 receives an already packed surface word.
     Replace(u16),
+    /// DSurface4BC750's paired antialiased stores; callers represented here
+    /// set all RGB channels and never write Z (Game456DD8, Laser550655/880).
+    Antialiased {
+        rgb: [u8; 3],
+        intensity: crate::util::native_x87::NativeF32Bits,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +37,91 @@ pub(crate) struct SurfaceLine {
     pub to: [i32; 2],
     pub z_adjust: [i32; 2],
     pub blend: SurfaceLineBlend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurfaceDraw {
+    Line(SurfaceLine),
+    /// XSurface7BB350: packed opaque stores, without A/Z admission.
+    Ellipse {
+        center: [i32; 2],
+        radius: [i32; 2],
+        word: u16,
+    },
+}
+
+#[path = "surface_line_aa.rs"]
+mod antialiased;
+#[cfg(test)]
+pub(crate) use antialiased::CUBIC_TABLE;
+pub(crate) use antialiased::antialiased_line;
+
+/// Original XSurface::DrawEllipse7BB350. Two midpoint walks start at the
+/// vertical and horizontal axes independently; each updates before storing.
+/// Stores are opaque, including pixels in shroud or behind existing objects.
+pub(crate) fn ellipse(
+    center: [i32; 2],
+    radius: [i32; 2],
+    clip: [i32; 4],
+    mut emit: impl FnMut([i32; 2]),
+) {
+    let mut pixel = |[x, y]: [i32; 2]| {
+        if x >= clip[0] && x < clip[0] + clip[2] && y >= clip[1] && y < clip[1] + clip[3] {
+            emit([x, y]);
+        }
+    };
+    let [cx, cy] = center;
+    let [rx, ry] = radius;
+    let rx2 = rx.wrapping_mul(rx);
+    let ry2 = ry.wrapping_mul(ry);
+    pixel([cx, cy.wrapping_add(ry)]);
+    pixel([cx, cy.wrapping_sub(ry)]);
+    let mut x: i32 = 0;
+    let mut y = ry;
+    let mut dx: i32 = 0;
+    let mut dy = rx2.wrapping_mul(ry).wrapping_mul(2);
+    let mut decision = (rx2 / 4).wrapping_sub(rx2.wrapping_mul(ry));
+    loop {
+        decision = decision.wrapping_add(dx).wrapping_add(ry2);
+        if decision >= 0 {
+            dy = dy.wrapping_sub(rx2.wrapping_mul(2));
+            decision = decision.wrapping_sub(dy);
+            y = y.wrapping_sub(1);
+        }
+        dx = dx.wrapping_add(ry2.wrapping_mul(2));
+        x = x.wrapping_add(1);
+        if dx >= dy {
+            break;
+        }
+        pixel([cx.wrapping_add(x), cy.wrapping_add(y)]);
+        pixel([cx.wrapping_sub(x), cy.wrapping_sub(y)]);
+        pixel([cx.wrapping_add(x), cy.wrapping_sub(y)]);
+        pixel([cx.wrapping_sub(x), cy.wrapping_add(y)]);
+    }
+    pixel([cx.wrapping_add(rx), cy]);
+    pixel([cx.wrapping_sub(rx), cy]);
+    x = rx;
+    y = 0;
+    dx = ry2.wrapping_mul(rx).wrapping_mul(2);
+    dy = 0;
+    decision = (ry2 / 4).wrapping_sub(ry2.wrapping_mul(rx));
+    loop {
+        decision = decision.wrapping_add(dy).wrapping_add(rx2);
+        if decision >= 0 {
+            dx = dx.wrapping_sub(ry2.wrapping_mul(2));
+            decision = decision.wrapping_sub(dx);
+            x = x.wrapping_sub(1);
+        }
+        dy = dy.wrapping_add(rx2.wrapping_mul(2));
+        y = y.wrapping_add(1);
+        if dy > dx {
+            break;
+        }
+        pixel([cx.wrapping_add(x), cy.wrapping_add(y)]);
+        pixel([cx.wrapping_sub(x), cy.wrapping_sub(y)]);
+        pixel([cx.wrapping_add(x), cy.wrapping_sub(y)]);
+        pixel([cx.wrapping_sub(x), cy.wrapping_add(y)]);
+    }
 }
 
 /// Original7BC2B0 mutates endpoints only on success. Callers such as rally
@@ -201,16 +292,16 @@ pub(crate) struct LinePixel {
 /// Each consumer keeps its own admission/color operation. Z is sampled as an
 /// unsigned16 word and never mutated by these consumers. Executed original
 /// pixels: projectile_oracle/line_trail and spatial_oracle/building_prism.
-pub(crate) fn rasterize_z_clipped(
+/// Common endpoint ordering, clipping and clipped-Z interpolation of
+/// DSurface4BEAC0/4BC750/4BDF00/4BFD30. No raster or material decisions here.
+fn clipped_z_line(
     from: [i32; 2],
     to: [i32; 2],
     z_adjust: [i32; 2],
     clip: [i32; 4],
-    z_origin_y: i32,
-    mut emit: impl FnMut(LinePixel),
-) {
+) -> Option<([i32; 2], [i32; 2], i32, i32)> {
     if clip[2] <= 0 || clip[3] <= 0 {
-        return;
+        return None;
     }
     let mut a = [from[0].wrapping_add(clip[0]), from[1].wrapping_add(clip[1])];
     let mut b = [to[0].wrapping_add(clip[0]), to[1].wrapping_add(clip[1])];
@@ -223,7 +314,7 @@ pub(crate) fn rasterize_z_clipped(
     let original_a = a;
     let original_b = b;
     if !clip_line(&mut a, &mut b, clip) {
-        return;
+        return None;
     }
     // Original4C1B50 stores x²+y² then uses the existing retail table owner,
     // not host sqrt. Its two-coordinate scalar equals the zero-Z helper.
@@ -260,6 +351,20 @@ pub(crate) fn rasterize_z_clipped(
             original_zb.wrapping_add(delta.wrapping_abs())
         };
     }
+    Some((a, b, za, zb))
+}
+
+pub(crate) fn rasterize_z_clipped(
+    from: [i32; 2],
+    to: [i32; 2],
+    z_adjust: [i32; 2],
+    clip: [i32; 4],
+    z_origin_y: i32,
+    mut emit: impl FnMut(LinePixel),
+) {
+    let Some((a, b, za, zb)) = clipped_z_line(from, to, z_adjust, clip) else {
+        return;
+    };
     let dx = b[0] - a[0];
     let dy = (b[1] - a[1]).abs();
     let dz = zb.wrapping_sub(za).wrapping_abs();

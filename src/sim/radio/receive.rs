@@ -259,7 +259,7 @@ pub(crate) fn can_load(
     ) {
         return CanLoad::Answer(RadioResponse::None);
     }
-    let absorbs = building_type.unit_absorb || building_type.infantry_absorb;
+    let absorbs = building_type.absorbs_passengers();
     if matches!(
         building.mission.effective().known(),
         Some(MissionType::Construction | MissionType::Selling)
@@ -642,7 +642,7 @@ fn building_dock_now(
         return RadioResponse::None;
     };
     // 0x0043C710..0x0043C72C: UnitAbsorb/InfantryAbsorb answer ROGER.
-    if object.unit_absorb || object.infantry_absorb {
+    if object.absorbs_passengers() {
         return RadioResponse::Roger;
     }
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue

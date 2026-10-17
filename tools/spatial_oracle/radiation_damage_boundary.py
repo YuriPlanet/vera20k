@@ -314,7 +314,7 @@ class LightLifecycle:
     MAP, DUMMY = 0x87F7E8, 0xABDC50
     SAMPLE_OFFSETS = ((0, 0), (1, 0), (0, 1), (5, 0), (10, 0), (11, 0))
 
-    def __init__(self, center):
+    def __init__(self, center, *, snow=False):
         from tools.spatial_oracle import bridge_shadow_render as render
         from tools.spatial_oracle import tmp_clear_render as tile
         from tools.spatial_oracle.shrapnel_repair.map_facts import decode_cells
@@ -323,19 +323,24 @@ class LightLifecycle:
         from tools.native_oracle import initialize_empty_windows_seh
 
         self.render, self.tile, self.center = render, tile, tuple(center)
+        self.snow = snow
+        self.map_name = render.RADIATION_SNOW_SOURCES['map'] if snow else 'XMP03T4.MAP'
         binary_before = self.binary_sources()
-        self.m, _types, self.inputs = render.prepare(radiation=True)
+        self.m, _types, self.inputs = render.prepare(radiation=True, snow=snow)
         m, u = self.m, self.m.u
         self.u, self.phase, self.frame = u, 'setup', 0
         self.events, self.publication_cells, self.redraws, self.platform = [], [], [], []
         self.ai_visits, self.gather_visits, self.recalc_visits = 0, 0, 0
         self.site = self.light = 0
+        self.activation_colors = []
         self.inputs['central_runtime'] = 'existing bridge_shadow_render.prepare(radiation=True)/PaletteReader'
+        if snow:
+            self.inputs['central_runtime'] = 'existing bridge_shadow_render.prepare(radiation=True,snow=True)/PaletteReader'
         self.inputs['palette_assertion_boundary'] = (
             'initialize_cell_convert retains its historical isolated palette_table validation VM; '
             'the existing lexical index transport also retains isolated native CRC probes. '
             'All RadSite/LightSource/Cell/TMP lifecycle instructions execute in this central VM.')
-        parsed, physical = decode_cells(m.assets['XMP03T4.MAP'])
+        parsed, physical = decode_cells(m.assets[self.map_name.upper()])
         assert self.center in physical, self.center
         # Physical provenance is distinct from this deliberately sparse map.
         # All native area/field loops still run; original5657E0/5657A0 own
@@ -349,15 +354,16 @@ class LightLifecycle:
         selected = [(f'cell_{x}_{y}', dict(cell=[x, y], **value))
                     for (x, y), value in sorted(self.physical.items(), key=lambda row: (row[0][1], row[0][0]))]
         self.assets = m.assets
-        theater = Inputs.read_map_theater(m, self.assets['XMP03T4.MAP'])
-        assert theater['source_value'] == 'TEMPERATE' and theater['value'] == 0, theater
+        theater = self.inputs['theater'] if snow else Inputs.read_map_theater(m, self.assets[self.map_name.upper()])
+        assert theater['source_value'] == ('SNOW' if snow else 'TEMPERATE') and theater['value'] == int(snow), theater
         self.inputs['theater'] = theater
         (self.tiles, mapping, mappings, filenames, _filename, self.heads,
          file_io, self.lighting) = render.prepare_selected_tiles(m, self.assets, self.inputs, selected,
-                                                               variant_tile=physical[self.center]['tile'])
+                                                               variant_tile=physical[self.center]['tile'], snow=snow)
         self.inputs['tmp'] = dict(mappings=mappings, names=list(filenames), file_io=file_io)
         self.variant_names = self.inputs['tmp_families'][self.tiles[physical[self.center]['tile']]]['names']
-        assert 1 < len(self.variant_names) <= 4, 'selected component covers the native fixed16 family branch'
+        assert 1 < len(self.variant_names) <= (8 if snow else 4), 'unsupported selected component family'
+        if snow: assert len(self.variant_names) == 8, 'Snow component requires the complete physical Clear01 family'
         self.variant_by_head = {self.heads[name]: (index, name) for index, name in enumerate(self.variant_names)}
         self.inputs['lighting'] = self.lighting
         self.scenario = m.read32(0xA8B230)
@@ -417,7 +423,7 @@ class LightLifecycle:
             self.cell_inputs.append(dict(cell=list(xy), **authored, slope=slope, land=land,
                                          flags=m.read32(pointer + 0x140)))
         m.invoke(0x47BBF0, self.DUMMY)
-        self.inputs['geometry'] = dict(map='XMP03T4.MAP', selected_cell=list(self.center),
+        self.inputs['geometry'] = dict(map=self.map_name, selected_cell=list(self.center),
             map_fields=parsed['Map'], allocated=self.cell_inputs,
             physical_crop=[dict(cell=list(xy), **authored) for xy, authored in
                            sorted(physical_crop.items(), key=lambda row: (row[0][1], row[0][0]))],
@@ -442,6 +448,12 @@ class LightLifecycle:
         self.inputs['selector']['coverage'] = dict(fixed_address='0081CCA8', fixed_table=self.selector_fixed,
             generated_address=f'{SELECTOR_TABLE:08X}', generated_table=self.selector_generated,
             boundary='Native4814F0 uses fixed16 for count<=4; per-phase rotations are explicit component selector inputs. Both tables/flag/live RNG are restored. No whole-world Main/table bootstrap claim.')
+        if snow:
+            self.inputs['selector']['coverage']['boundary'] = (
+                'Native4814F0 count>4 uses its original Main-generated64 table; '
+                'per-phase rotations are explicit component selector inputs. Both tables/flag/live RNG '
+                'are restored. No whole-world Main/table bootstrap claim.')
+            assert self.signed(self.scenario + 0x1258) == 1
         self.rngs = dict(main=0x886B88, scenario=self.scenario + 0x218, mapgen=0xABE890)
         self.inputs['setup_rng'] = self.rng()
         for pointer in self.rngs.values():
@@ -474,7 +486,7 @@ class LightLifecycle:
         inputs = [('RULESMD.INI', self.assets['RULESMD.INI']),
                   ('LANGRULE.INI', lang.read_bytes() if lang.exists() else None),
                   ('MPBattleMD.ini', self.assets['MPBATTLEMD.INI']),
-                  ('XMP03T4.MAP', self.assets['XMP03T4.MAP'])]
+                  (self.map_name, self.assets[self.map_name.upper()])]
         for label, raw in inputs:
             if raw is None:
                 layers.append(dict(file=label, absent=True))
@@ -554,6 +566,7 @@ class LightLifecycle:
         watched_pcs = set(specs) | {0x7CAA5E, 0x65B800, 0x484180, 0x483E30,
             0x65C780, 0x65C7E0, 0x65C79D, 0x65C84B, 0x65BEE0, 0x5551E2,
             0x5657CF, 0x487CE0, 0x487D00}
+        if self.snow: watched_pcs.add(0x65B604)
         def observe(uc, pc, _size, _data):
             # The palette hot loop needs no source observation. Retain every
             # watched entry and every actual pending return PC before reading
@@ -562,6 +575,15 @@ class LightLifecycle:
             sp = uc.reg_read(UC_X86_REG_ESP)
             if checked_is_bad_read_ptr_transport(u, pc, sp, self.platform): return
             if self.phase != 'live': return
+            if self.snow and pc == 0x65B604:
+                # Observe actual working channels AFTER the original SNOW1
+                # branch, BEFORE signed integer normalization/ftol. No host
+                # tint calculation or supplied native return is involved.
+                self.activation_colors.append(dict(frame=self.frame, pc='0065B604',
+                    theater=self.signed(self.scenario + 0x1258),
+                    red_bits=f'{uc.reg_read(UC_X86_REG_EAX):08X}',
+                    green_bits=f'{uc.reg_read(UC_X86_REG_EBP):08X}',
+                    blue_bits=f'{uc.reg_read(UC_X86_REG_EBX):08X}'))
             if self.trace.returned(pc, sp): self.refresh_return_pcs()
             if pc in specs:
                 index = self.trace.entered(pc, sp, specs[pc])
@@ -616,7 +638,9 @@ class LightLifecycle:
         # historical2M/10s default for every other invocation/caller.
         limits = (dict(instruction_limit=20_000_000, timeout_us=120_000_000)
                   if entry in (0x65B580, 0x65B530, 0x65B800) else {})
+        if self.snow: assert self.signed(self.scenario + 0x1258) == 1
         result = self.m.invoke(entry, pointer, args, **limits)
+        if self.snow: assert self.signed(self.scenario + 0x1258) == 1
         assert self.u.reg_read(UC_X86_REG_EIP) == RET_MAGIC
         self.trace.returned(RET_MAGIC, self.u.reg_read(UC_X86_REG_ESP))
         self.refresh_return_pcs()
@@ -677,12 +701,20 @@ class LightLifecycle:
         assert generated_before == dwords(*self.selector_generated)
         rows, covered = [], set()
         try:
-            for shift in range(4):
+            generated = len(self.variant_names) > 4
+            for shift in range(8 if generated else 4):
                 # Original count<=4 uses the fixed16 table, not generated64.
                 # Rotate its original0..3 values as declared selector inputs;
                 # original4814F0 and547CF0 still select/follow the descriptor.
-                rotated = [(value + shift) % 4 for value in self.selector_fixed]
-                self.u.mem_write(0x81CCA8, dwords(*rotated))
+                if generated:
+                    # Same original-generated64 value rotations as the
+                    # existing Clear oracle; native4814F0 still selects.
+                    rotated = [(value + shift) % 8 for value in self.selector_generated]
+                    selector_input = dict(selector_table=rotated)
+                else:
+                    rotated = [(value + shift) % 4 for value in self.selector_fixed]
+                    self.u.mem_write(0x81CCA8, dwords(*rotated))
+                    selector_input = dict(fixed_selector_input=dict(address='0081CCA8', shift=shift, table=rotated))
                 self.u.mem_write(SELECTOR_FLAG, b'\1')
                 descriptors = []
                 hook = self.u.hook_add(UC_HOOK_CODE, lambda uc, pc, size, data:
@@ -690,7 +722,7 @@ class LightLifecycle:
                 try:
                     row = self.tile.execute(self.m, dict(name=name, coords=list(self.center),
                         level=self.physical[self.center]['level'], cell_point=[96, 120], scene_lighting=self.lighting,
-                        fixed_selector_input=dict(address='0081CCA8', shift=shift, table=rotated)),
+                        **selector_input),
                         current_cell=self.cells[self.center])
                 finally:
                     self.u.hook_del(hook)
@@ -716,6 +748,7 @@ class LightLifecycle:
         assert fixed_before == bytes(self.u.mem_read(0x81CCA8, 64))
         assert generated_before == bytes(self.u.mem_read(SELECTOR_TABLE, 256))
         assert flag_before == bytes(self.u.mem_read(SELECTOR_FLAG, 1))
+        if self.snow: assert self.signed(self.scenario + 0x1258) == 1
         values = set(struct.unpack('<' + 'H' * self.render.COUNT,
                                    self.u.mem_read(self.render.A, self.render.COUNT * 2)))
         assert len(values) == 1, 'selected raster requires its declared uniform A prior'
@@ -809,13 +842,18 @@ class LightLifecycle:
             assert events[mapped[0]:mapped[1]] == [event for event in self.events[begin:end]
                                                  if event['name'] != 'cell_coords']
             stage['event_range'] = mapped
-        return dict(input=dict(center=list(self.center), refresh_frame=refresh_frame, seed=0,
+        result = dict(input=dict(center=list(self.center), refresh_frame=refresh_frame, seed=0,
             source=self.source_inputs, setup=self.inputs), baseline=baseline, stages=stages,
             events=events, rasters=rasters, publication_cells=self.publication_cells,
             redraws=self.redraws, ai_visits=self.ai_visits, recalc_visits=self.recalc_visits,
             gather_visits=self.gather_visits, frees=self.frees, platform=self.platform,
             rng_before=self.rng_entry, rng_after=self.rng(), requests=self.requests, raw_draws=self.raw_draws,
             final=prior, deferred_count=self.m.read32(0xB0F6A8))
+        if self.snow:
+            assert len(self.activation_colors) == (2 if refresh_frame is not None else 1)
+            assert all(row['theater'] == 1 for row in self.activation_colors)
+            result['activation_colors'] = self.activation_colors
+        return result
 
     def tint_integer_controls(self):
         """Original low32 IMUL/signed IDIV prefix, after actual source cleanup.
@@ -961,11 +999,11 @@ class LightLifecycle:
         return rows
 
 
-def generate_light_lifecycle(center=(33, 88)):
+def generate_light_lifecycle(center=(33, 88), *, snow=False):
     from tools.native_oracle import image_sha256
     histories = []
     for name, refresh in (('single_lifetime', None), ('same_center_refresh', 45)):
-        owner = LightLifecycle(center)
+        owner = LightLifecycle(center, snow=snow)
         before = owner.inputs['binary_sources']
         result = owner.run(refresh_frame=refresh)
         assert owner.binary_sources() == before, 'native binary/material input drift'
@@ -982,8 +1020,8 @@ def generate_light_lifecycle(center=(33, 88)):
                              a_value=alpha.pop(), a_uniform=True, background=65535, old_z=65535))
 
 
-def light_lifecycle_metadata():
-    return provenance(scope='Two original single-site TEMPERATE radiation light lifecycles through real Cell gathering and selected TMP pixels',
+def light_lifecycle_metadata(*, snow=False):
+    result = provenance(scope='Two original single-site TEMPERATE radiation light lifecycles through real Cell gathering and selected TMP pixels',
         assumptions=[
             'Each independent history uses the existing PaletteReader/TMP runtime, actual expansionRULESMD/fixedART/Battle/XMP and native per-layer Radiation/selected weapon/Warhead readers. Six allocated physical sample tuples/native Cell and Dummy constructors/ground getters precede original RadSite activation; full physical crop is separately labeled provenance only. No VERA values initialize source fields or expected pixels.',
             'Original65B580/65B800 execute completely, including both native timers, registered LightSource constructors/updates, actual Cell483E30/484180/Convert and real expiry/deleting virtual slots. Actual native source registry order drives each supplied elapsed-frame visit. Same-center refresh at declared45 is an independent component input, not normal DESO ROF or whole-world scheduling.',
@@ -1001,18 +1039,37 @@ def light_lifecycle_metadata():
             cell_light=0x483E30, cell_gather=0x484180, cell_site=0x487C70,
             expiry=0x7258D0, cell_draw=0x480350, tmp_draw=0x547CF0,
             tint_integer_begin=0x65B871, tint_integer_end=0x65B89E))
+    if snow:
+        result['scope'] = 'Two original single-site SNOW radiation light lifecycles through real Cell gathering and selected eight-file TMP pixels'
+        result['assumptions'][0] = result['assumptions'][0].replace('Battle/XMP', 'Battle/archivedXXmas')
+        result['assumptions'][5] = (
+            'The selected Snow center enrolls its complete physical Clear01.sno eight-file suffix family through the same original descriptor/lazy-loader owner. '
+            'Actual native metadata validates every file. Four phases each retain one native row per physical file; count>4 uses original Main-generated64 '
+            'table89E620 rotations as explicit component inputs while original4814F0/547CF0 select and follow the descriptor observed at547F49. '
+            'Both selector tables/flag, live RNG and lighting profile are restored. Raw selector argument and effective physical descriptor identity '
+            'are distinct observations. No whole-world selector or Main bootstrap equivalence.')
+        result['assumptions'].append(
+            'Original Map/Theater687631..68764F reads archivedXXmas.MAP and stores Scenario+1258=SNOW1 before the selected ISOSNO.PAL/SNOW.PAL '
+            'CellConvert setup. Full65B580 executes its signed Snow red/blue override and signed normalization/ftol; actual working channel bits are '
+            'observed at65B604 before conversion, without calculated expected tint. Native SNOWMD General/TileSet and XXmas Lighting readers execute. '
+            'The before-AI45 refresh, separate remaining/light timers, full3RNG and real two-receiver expiry/delete histories retain their existing component bounds.')
+        result['entry_points']['snow_activation_channels'] = '0x0065B604'
+    return result
 
 if __name__=='__main__':
- if '--light-lifecycle' in sys.argv:
+ if '--light-lifecycle' in sys.argv or '--snow-light-lifecycle' in sys.argv:
   import argparse
   parser=argparse.ArgumentParser(add_help=False)
-  parser.add_argument('--light-lifecycle',action='store_true')
-  parser.add_argument('--light-cell',default='33,88')
+  modes=parser.add_mutually_exclusive_group()
+  modes.add_argument('--light-lifecycle',action='store_true')
+  modes.add_argument('--snow-light-lifecycle',action='store_true')
+  parser.add_argument('--light-cell',default='37,86' if '--snow-light-lifecycle' in sys.argv else '33,88')
   selected,remaining=parser.parse_known_args()
   center=tuple(int(value) for value in selected.light_cell.split(','))
   if len(center)!=2 or any(not 0<=value<512 for value in center):parser.error('--light-cell requires an allocated signed Cell pair in0..511')
-  finish_vectors(lambda:generate_light_lifecycle(center),Path(__file__).with_name('radiation_light_lifecycle.json'),
-   provenance=light_lifecycle_metadata,argv=remaining,source_paths=light_lifecycle_source_paths())
+  output='radiation_snow_light_lifecycle.json' if selected.snow_light_lifecycle else 'radiation_light_lifecycle.json'
+  finish_vectors(lambda:generate_light_lifecycle(center,snow=selected.snow_light_lifecycle),Path(__file__).with_name(output),
+   provenance=lambda:light_lifecycle_metadata(snow=selected.snow_light_lifecycle),argv=remaining,source_paths=light_lifecycle_source_paths())
  elif '--overlap' in sys.argv:
   finish_vectors(generate_overlap,Path(__file__).with_name('radiation_overlap.json'),
    provenance=overlap_metadata,argv=[arg for arg in sys.argv[1:] if arg!='--overlap'])

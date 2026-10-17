@@ -842,7 +842,7 @@ fn retail_building_mission_inputs() {
     assert!(!garrisons.is_empty());
     for obj in garrisons {
         assert!(
-            !(obj.infantry_absorb || obj.unit_absorb || obj.weapons_factory || obj.gap_generator),
+            !(obj.absorbs_passengers() || obj.weapons_factory || obj.gap_generator),
             "{}",
             obj.id
         );

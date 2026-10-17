@@ -22,9 +22,10 @@ use crate::sim::world::{FrameEffects, SimFrameOutput, TickLane};
 /// Mutable scene access permits the existing fog-view preparation consumer,
 /// not gameplay forcing. Loading is the sole scenario construction here.
 pub fn visit_paid_deso_light_lifecycle(
+    profile_path: &'static str,
     mut visit: impl FnMut(Option<&str>, &mut HeadlessScenario, Option<&SimFrameOutput>),
 ) {
-    let profile = crate::test_fixture::json("tools/map_observation.radiation-light.example.json");
+    let profile = crate::test_fixture::json(profile_path);
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     assert_eq!(
@@ -345,9 +346,19 @@ pub fn visit_paid_deso_light_lifecycle(
 #[test]
 #[ignore = "slow; requires physical retail paid Iraqi production through ordinary deploy/undeploy and complete radiation lifetime"]
 fn paid_deso_deploy_undeploy_retires_its_source_through_normal_frames() {
+    assert_paid_deso_lifecycle("tools/map_observation.radiation-light.example.json");
+}
+
+#[test]
+#[ignore = "slow; requires physical retail paid Snow Iraqi production through ordinary deploy/undeploy and complete radiation lifetime"]
+fn paid_snow_deso_deploy_undeploy_retires_its_source_through_normal_frames() {
+    assert_paid_deso_lifecycle("tools/map_observation.radiation-snow.example.json");
+}
+
+fn assert_paid_deso_lifecycle(profile_path: &'static str) {
     let mut phases = Vec::new();
     let mut frames = 0;
-    visit_paid_deso_light_lifecycle(|phase, scene, output| {
+    visit_paid_deso_light_lifecycle(profile_path, |phase, scene, output| {
         if let Some(output) = output {
             frames += 1;
             assert!(output.tick.frame_committed);

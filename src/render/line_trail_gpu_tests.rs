@@ -85,6 +85,7 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 std::iter::empty(),
                 &[],
                 &segments,
+                &[],
                 viewport,
                 || true,
                 |[x, y]| {
@@ -192,6 +193,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     std::iter::empty(),
                     &[],
                     &segments,
+                    &[],
                     ordered_viewport(row),
                     || true,
                     |_| row["input"]["alpha"].as_u64().unwrap() as u16,
@@ -239,7 +241,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
 }
 
 #[test]
-#[ignore = "requires quiet GPU; reports bounded debug preparation + completed submission timing, not FPS"]
+#[ignore = "requires quiet GPU; run in release; bounded preparation/completed submission timing, not FPS"]
 fn line_trail_native_fixture_submission_timings() {
     use std::time::Instant;
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -247,21 +249,25 @@ fn line_trail_native_fixture_submission_timings() {
     ))
     .unwrap();
     let gpu = Gpu::new();
-    let size = [64, 96];
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
-        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-        let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
-        batch.write_camera(&gpu.queue, camera(size));
-        let color = gpu.target(size, format);
-        let cv = color.create_view(&Default::default());
-        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-        let dv = depth.create_view(&Default::default());
-        for row in native["ordered_pixel_cases"].as_array().unwrap() {
-            let segments = overlapping_segments(row);
+        let measure = |name: &str,
+                       size: [u32; 2],
+                       segments: &[LineTrailSegment],
+                       radials: &[crate::render::radial_indicator::RadialIndicatorDraw],
+                       viewport: SurfaceLineViewport,
+                       alpha: u16| {
+            let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+            let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+            batch.write_camera(&gpu.queue, camera(size));
+            let color = gpu.target(size, format);
+            let cv = color.create_view(&Default::default());
+            let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+            let dv = depth.create_view(&Default::default());
             let mut samples = Vec::new();
+            let mut chunks = 0;
             for repetition in 0..22 {
                 let begin = Instant::now();
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
@@ -271,12 +277,14 @@ fn line_trail_native_fixture_submission_timings() {
                     &gpu.queue,
                     std::iter::empty(),
                     &[],
-                    &segments,
-                    ordered_viewport(row),
+                    segments,
+                    radials,
+                    viewport,
                     || true,
-                    |_| row["input"]["alpha"].as_u64().unwrap() as u16,
+                    |_| alpha,
                 );
                 let prepared = begin.elapsed().as_secs_f64() * 1000.;
+                chunks = prepared_lines.end - prepared_lines.start;
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 clear(
                     &mut encoder,
@@ -303,9 +311,51 @@ fn line_trail_native_fixture_submission_timings() {
                 values[values.len() / 2]
             };
             eprintln!(
-                "LINE_TRAIL_TIMING {}",
-                serde_json::json!({"format":format!("{format:?}"),"trails":row["count"],"alpha":row["input"]["alpha"],"size":size,"samples":samples.len(),"prepare_ms_median":median(0),"complete_ms_median":median(1),"complete_ms_min":samples.iter().map(|v|v.1).fold(f64::INFINITY,f64::min),"complete_ms_max":samples.iter().map(|v|v.1).fold(0.,f64::max)})
+                "SURFACE_LINE_TIMING {}",
+                serde_json::json!({"name":name,"format":format!("{format:?}"),"trails":segments.len(),"radials":radials.len(),"alpha":alpha,"size":size,"samples":samples.len(),"chunks":chunks,"prepare_ms_median":median(0),"complete_ms_median":median(1),"complete_ms_min":samples.iter().map(|v|v.1).fold(f64::INFINITY,f64::min),"complete_ms_max":samples.iter().map(|v|v.1).fold(0.,f64::max)})
             );
+        };
+        for row in native["ordered_pixel_cases"].as_array().unwrap() {
+            measure(
+                "native_line_trail",
+                [64, 96],
+                &overlapping_segments(row),
+                &[],
+                ordered_viewport(row),
+                row["input"]["alpha"].as_u64().unwrap() as u16,
+            );
+        }
+        // Stock selected GAGAP, native range10 and house RGB. Full visible
+        // ellipses plus overlapping four-ray fans exercise dependency chunks;
+        // these are preparation/submission samples, not native frame timing.
+        let size = [1280, 720];
+        for frame in [0, 300] {
+            for count in [1, 10] {
+                let radials: Vec<_> = (0..count)
+                    .map(|i| crate::render::radial_indicator::RadialIndicatorDraw {
+                        center: [640 + (i % 5 - 2) * 20, 360 + (i / 5) * 20],
+                        radius: 10,
+                        pixel_radius: false,
+                        rgb: [255, 0, 0],
+                        fade: true,
+                        rays: true,
+                        frame,
+                    })
+                    .collect();
+                measure(
+                    &format!("selected_gagap_frame{frame}"),
+                    size,
+                    &[],
+                    &radials,
+                    SurfaceLineViewport {
+                        camera: [0; 2],
+                        clip: [0, 0, size[0] as i32, size[1] as i32],
+                        z_origin_y: 0,
+                        zoom: 1.,
+                    },
+                    0x100,
+                );
+            }
         }
     }
 }

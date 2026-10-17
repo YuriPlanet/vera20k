@@ -1,0 +1,4348 @@
+{
+  "dispatch_controls": [
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            67,
+            19
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              17280,
+              4992,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          67,
+          19
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 1,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "09EED09C",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            13184,
+            24704,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            51,
+            96
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            13184,
+            24704,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              13184,
+              24704,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          51,
+          96
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 2,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "09EE91FC",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            24704,
+            12928,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            96,
+            50
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            24704,
+            12928,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              24704,
+              12928,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          96,
+          50
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 3,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "09EEC1FC",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            21376,
+            32896,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            83,
+            128
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            21376,
+            32896,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              21376,
+              32896,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          83,
+          128
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 4,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "09EEF12C",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            33152,
+            21120,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            129,
+            82
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            33152,
+            21120,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              33152,
+              21120,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          129,
+          82
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 5,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "09EED6EC",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            5248,
+            17024,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            20,
+            66
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            5248,
+            17024,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              5248,
+              17024,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          20,
+          66
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 0,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "09EEBB6C",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            67,
+            19
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            17280,
+            4992,
+            416
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              17280,
+              4992,
+              20416
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          67,
+          19
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": 416,
+        "incoming_house": false,
+        "waypoint": 1,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "elevated_bridge_0x0",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            67,
+            19
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            17280,
+            4992,
+            832
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              17280,
+              4992,
+              20832
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          67,
+          19
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 256,
+        "ground": 416,
+        "incoming_house": false,
+        "waypoint": 1,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "elevated_bridge_0x100",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            67,
+            19
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            17280,
+            4992,
+            416
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              17280,
+              4992,
+              20416
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          67,
+          19
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 1024,
+        "ground": 416,
+        "incoming_house": false,
+        "waypoint": 1,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "elevated_bridge_0x400",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            67,
+            19
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            17280,
+            4992,
+            832
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              17280,
+              4992,
+              20832
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          67,
+          19
+        ],
+        "damage": 600,
+        "fire_accepts": true,
+        "flags": 1280,
+        "ground": 416,
+        "incoming_house": false,
+        "waypoint": 1,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "elevated_bridge_0x500",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            -384,
+            -8388480,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            -2,
+            -32768
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            -384,
+            -8388480,
+            -104
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": -17,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": true,
+            "origin": [
+              -384,
+              -8388480,
+              19896
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          -2,
+          -32768
+        ],
+        "damage": -17,
+        "fire_accepts": true,
+        "flags": 0,
+        "ground": -104,
+        "incoming_house": true,
+        "waypoint": 17,
+        "weapon_speed": 255
+      },
+      "installed_weapon": true,
+      "name": "signed_cell_negative",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    },
+    {
+      "code_unchanged": true,
+      "events": [
+        [
+          "ground",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "cell_lookup",
+          [
+            67,
+            19
+          ]
+        ],
+        [
+          "weapon_type",
+          "NukePayload"
+        ],
+        [
+          "coord_lookup",
+          [
+            17280,
+            4992,
+            0
+          ]
+        ],
+        [
+          "co_create"
+        ],
+        [
+          "construct",
+          {
+            "bright": 0,
+            "damage": 600,
+            "owner": 0,
+            "projectile": true,
+            "speed": 50,
+            "target_cell": true,
+            "warhead": true
+          }
+        ],
+        [
+          "fire",
+          {
+            "accepts": false,
+            "origin": [
+              17280,
+              4992,
+              20000
+            ],
+            "velocity_bits": [
+              "b9be6aaf04000000",
+              "bd0b936000000000",
+              "c059000000000000"
+            ]
+          }
+        ]
+      ],
+      "input": {
+        "cell": [
+          67,
+          19
+        ],
+        "damage": 600,
+        "fire_accepts": false,
+        "flags": 0,
+        "ground": 0,
+        "incoming_house": false,
+        "waypoint": 1,
+        "weapon_speed": 10
+      },
+      "installed_weapon": true,
+      "name": "fire_refused",
+      "native_visits": [
+        "006DD8B0",
+        "006DD9DA",
+        "006E3410",
+        "0068BCC0",
+        "0046B050",
+        "0046B260"
+      ],
+      "result": 1,
+      "rng_hashes_after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "rng_hashes_before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      }
+    }
+  ],
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "production_flight": {
+    "code_unchanged": true,
+    "frames": [
+      {
+        "frame": 1,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          20524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 2,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          20424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 3,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          20324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 4,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          20224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 5,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          20124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 6,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          20024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 7,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 8,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 9,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 10,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 11,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 12,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 13,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 14,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 15,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 16,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          19024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 17,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 18,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 19,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 20,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 21,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 22,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 23,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 24,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 25,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 26,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          18024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 27,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 28,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 29,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 30,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 31,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 32,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 33,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 34,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 35,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 36,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          17024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 37,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 38,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 39,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 40,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 41,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 42,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 43,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 44,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 45,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 46,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          16024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 47,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 48,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 49,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 50,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 51,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 52,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 53,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 54,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 55,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 56,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          15024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 57,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 58,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 59,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 60,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 61,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 62,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 63,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 64,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 65,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 66,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          14024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 67,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 68,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 69,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 70,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 71,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 72,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 73,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 74,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 75,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 76,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          13024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 77,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 78,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 79,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 80,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 81,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 82,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 83,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 84,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 85,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 86,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          12024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 87,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 88,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 89,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 90,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 91,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 92,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 93,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 94,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 95,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 96,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          11024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 97,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 98,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 99,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 100,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 101,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 102,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 103,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 104,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 105,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 106,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          10024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 107,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 108,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 109,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 110,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 111,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 112,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 113,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 114,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 115,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 116,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          9024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 117,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 118,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 119,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 120,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 121,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 122,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 123,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 124,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 125,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 126,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          8024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 127,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 128,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 129,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 130,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 131,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 132,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 133,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 134,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 135,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 136,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          7024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 137,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 138,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 139,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 140,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 141,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 142,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 143,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 144,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 145,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 146,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          6024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 147,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 148,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 149,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 150,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 151,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 152,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 153,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 154,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 155,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 156,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          5024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 157,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 158,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 159,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 160,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 161,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 162,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 163,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 164,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 165,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 166,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          4024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 167,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 168,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 169,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 170,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 171,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 172,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 173,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 174,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 175,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 176,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          3024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 177,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 178,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 179,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 180,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 181,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 182,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 183,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 184,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 185,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 186,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          2024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 187,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 188,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 189,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 190,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 191,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 192,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1424
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 193,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1324
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 194,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1224
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 195,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1124
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 196,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          1024
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 197,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          924
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 198,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          824
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 199,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          724
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 200,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 201,
+        "impact_entry": false,
+        "position": [
+          4224,
+          5248,
+          524
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      },
+      {
+        "frame": 202,
+        "impact_entry": true,
+        "position": [
+          4224,
+          5248,
+          624
+        ],
+        "velocity_bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ]
+      }
+    ],
+    "input": {
+      "binary_frame": 0,
+      "flat_level": 6,
+      "flat_slope": 0,
+      "map_size": [
+        32,
+        32
+      ],
+      "rng_seed": 31,
+      "target_cell": [
+        16,
+        20
+      ],
+      "waypoint": 1
+    },
+    "launch": {
+      "alive": true,
+      "arm_timer": [
+        0,
+        2
+      ],
+      "damage": 350,
+      "fire_coord": [
+        4224,
+        5248,
+        20624
+      ],
+      "last_cell": [
+        16,
+        20
+      ],
+      "maximum_speed": 50,
+      "native_id_delta": 1,
+      "position": [
+        4224,
+        5248,
+        20624
+      ],
+      "source_is_null": true,
+      "target_coord": [
+        4224,
+        5248,
+        624
+      ],
+      "velocity": {
+        "bits": [
+          "b9be6aaf04000000",
+          "bd0b936000000000",
+          "c059000000000000"
+        ],
+        "value": [
+          -1.4996607218221374e-30,
+          -1.2246063538223773e-14,
+          -100.0
+        ]
+      },
+      "warhead": "NUKE",
+      "weapon": "NukePayload"
+    },
+    "layers": [
+      {
+        "acceleration": 1,
+        "damage": 600,
+        "detonation_altitude": 30000,
+        "file": "RULESMD.INI",
+        "keys": {
+          "GiantNukeDown": {
+            "Acceleration": "1",
+            "Arm": "2",
+            "DetonationAltitude": "30000",
+            "FirersPalette": "yes",
+            "Image": "NKMSLDN",
+            "Shadow": "no",
+            "Vertical": "yes"
+          },
+          "NUKE": {
+            "AnimList": "NUKEANIM",
+            "CellSpread": "10",
+            "InfDeath": "7",
+            "PercentAtMax": ".02",
+            "Sparky": "no",
+            "Tiberium": "yes",
+            "Verses": "100%,100%,100%,200%,100%,100%,60%,100%,8%,100%,100%",
+            "WallAbsoluteDestroyer": "yes",
+            "Wood": "yes"
+          },
+          "NukePayload": {
+            "Damage": "600",
+            "Projectile": "GiantNukeDown",
+            "RadLevel": "500",
+            "Range": "30",
+            "Speed": "10",
+            "Warhead": "NUKE"
+          }
+        },
+        "projectile": "GiantNukeDown",
+        "vertical": true,
+        "warhead": "NUKE",
+        "weapon_speed": 166
+      },
+      {
+        "acceleration": 1,
+        "damage": 600,
+        "detonation_altitude": 30000,
+        "file": "MPBattleMD.ini",
+        "keys": {},
+        "projectile": "GiantNukeDown",
+        "vertical": true,
+        "warhead": "NUKE",
+        "weapon_speed": 166
+      },
+      {
+        "acceleration": 1,
+        "damage": 350,
+        "detonation_altitude": 30000,
+        "file": "HighExpR.map",
+        "keys": {
+          "NukePayload": {
+            "Damage": "350",
+            "Range": "45"
+          }
+        },
+        "projectile": "GiantNukeDown",
+        "vertical": true,
+        "warhead": "NUKE",
+        "weapon_speed": 203
+      }
+    ],
+    "native_visits": [
+      "00466380",
+      "004664C0",
+      "00467E53",
+      "00468670",
+      "0046B050",
+      "006C5090",
+      "006DD9DA",
+      "006E3410"
+    ],
+    "platform_events": [
+      {
+        "call": "CoCreateInstance activation to original registered factory",
+        "clsid_hex": "c92d270e0f9cd111b70900a024ddafd1",
+        "iid_hex": "0000000000000000c000000000000046"
+      },
+      {
+        "call": "KERNEL32.InterlockedIncrement",
+        "com_refcount": 1
+      }
+    ],
+    "result": 1,
+    "rng_hashes_after": {
+      "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    },
+    "rng_hashes_before": {
+      "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    }
+  },
+  "retail": {
+    "actions": [
+      {
+        "event": "1,13,0,10",
+        "materialized": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 95,
+          "raw": "95,0,1,0,0,0,0,B",
+          "read": "1,95,0,1,0,0,0,0,B",
+          "value": 1,
+          "waypoint": 1
+        },
+        "ordinal": 0,
+        "raw": "95,0,1,0,0,0,0,B",
+        "trigger": "Neutral,<none>,Hit B,1,1,1,1,0",
+        "trigger_id": "09EED09C",
+        "waypoint_raw": "19067"
+      },
+      {
+        "event": "1,13,0,10",
+        "materialized": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 95,
+          "raw": "95,0,2,0,0,0,0,C",
+          "read": "1,95,0,2,0,0,0,0,C",
+          "value": 2,
+          "waypoint": 2
+        },
+        "ordinal": 0,
+        "raw": "95,0,2,0,0,0,0,C",
+        "trigger": "Neutral,<none>,Hit C,1,1,1,1,0",
+        "trigger_id": "09EE91FC",
+        "waypoint_raw": "96051"
+      },
+      {
+        "event": "1,13,0,10",
+        "materialized": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 95,
+          "raw": "95,0,3,0,0,0,0,D",
+          "read": "1,95,0,3,0,0,0,0,D",
+          "value": 3,
+          "waypoint": 3
+        },
+        "ordinal": 0,
+        "raw": "95,0,3,0,0,0,0,D",
+        "trigger": "Neutral,<none>,Hit D,1,1,1,1,0",
+        "trigger_id": "09EEC1FC",
+        "waypoint_raw": "50096"
+      },
+      {
+        "event": "1,13,0,10",
+        "materialized": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 95,
+          "raw": "95,0,4,0,0,0,0,E",
+          "read": "1,95,0,4,0,0,0,0,E",
+          "value": 4,
+          "waypoint": 4
+        },
+        "ordinal": 0,
+        "raw": "95,0,4,0,0,0,0,E",
+        "trigger": "Neutral,<none>,Hit E,1,1,1,1,0",
+        "trigger_id": "09EEF12C",
+        "waypoint_raw": "128083"
+      },
+      {
+        "event": "1,13,0,10",
+        "materialized": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 95,
+          "raw": "95,0,5,0,0,0,0,F",
+          "read": "1,95,0,5,0,0,0,0,F",
+          "value": 5,
+          "waypoint": 5
+        },
+        "ordinal": 0,
+        "raw": "95,0,5,0,0,0,0,F",
+        "trigger": "Neutral,<none>,Hit F,1,1,1,1,0",
+        "trigger_id": "09EED6EC",
+        "waypoint_raw": "82129"
+      },
+      {
+        "event": "1,13,0,10",
+        "materialized": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 95,
+          "raw": "95,0,0,0,0,0,0,A",
+          "read": "1,95,0,0,0,0,0,0,A",
+          "value": 0,
+          "waypoint": 0
+        },
+        "ordinal": 0,
+        "raw": "95,0,0,0,0,0,0,A",
+        "trigger": "Neutral,<none>,Hit A,1,1,1,1,0",
+        "trigger_id": "09EEBB6C",
+        "waypoint_raw": "66020"
+      }
+    ],
+    "archive": {
+      "name": "HighExpR.yro",
+      "sha256": "7e91a094d647047bed7bc7c7b1795afb3679de48a3566c915c28611ca52c99de"
+    },
+    "map": {
+      "bytes": 119817,
+      "entry_hash": 2083490790,
+      "sha256": "4bd47d058f8cc870078b2e5190887829a72348dd1f923b5a545482b5682a9640"
+    }
+  },
+  "schema_version": 1,
+  "sources": [
+    {
+      "bytes": 743215,
+      "file": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "bytes": 336535,
+      "file": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    {
+      "bytes": 295,
+      "file": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "bytes": 120088,
+      "file": "HighExpR.yro",
+      "sha256": "7e91a094d647047bed7bc7c7b1795afb3679de48a3566c915c28611ca52c99de"
+    },
+    {
+      "bytes": 119817,
+      "file": "HighExpR.map",
+      "sha256": "4bd47d058f8cc870078b2e5190887829a72348dd1f923b5a545482b5682a9640"
+    },
+    {
+      "bytes": 144458,
+      "file": "Hills.map",
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    },
+    {
+      "bytes": 1384,
+      "file": "DRAGON.SHP",
+      "sha256": "f361b34efa27811f8f8cc5d12aed2e2b62b82e185bb1424f597a54d0682c09c2"
+    },
+    {
+      "bytes": 4584,
+      "file": "NKMSLDN.SHP",
+      "sha256": "9814378c3199574a7e06c420486e55bd56315d5941b36b00535b63eddf299483"
+    },
+    {
+      "absent": true,
+      "file": "LANGRULE.INI"
+    }
+  ]
+}

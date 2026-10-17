@@ -926,6 +926,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                         world.radiation.apply_detonation(
                             detonation,
                             binary_frame,
+                            &world.session.theater,
                             &rules.radiation,
                             world.resolved_terrain.as_ref(),
                             &mut world.lighting_sources.pending,
