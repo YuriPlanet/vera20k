@@ -23,9 +23,11 @@
 //!    the spy's house's later vehicles or infantry start veteran.
 //!
 //! The tech and factory arms also set the house's RecheckTechTree byte
-//! (`+0x1FC`), which VERA does not keep: CanBuild is asked live. The factory
-//! arms' sidebar byte (`0x00884B8E`) and the closing `Mark(2)` (vt+0x124)
-//! only redraw. The local player's radar event and EVA lines are the app's
+//! (`+0x1FC`) through the same gain owner, including repeated gains. The
+//! ordinary House suffix consumes it and emits construction-option admissions
+//! before recalculating the retained sidebar. The factory arms' sidebar byte
+//! (`0x00884B8E`) and the closing `Mark(2)` (vt+0x124) only redraw. The local
+//! player's radar event and EVA lines are the app's
 //! ([`SimSoundEvent::BuildingInfiltrated`]).
 //!
 //! Native execution: `tools/spy_infiltration_oracle.py` runs `0x004571E0`

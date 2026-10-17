@@ -171,7 +171,7 @@ fn rubble_sprite_key(
 /// Resolve the CellClass overlay identity/data used by the tactical overlay
 /// draw. Low-bridge damage and repair mutate the identity in place, so a map
 /// pack entry is only the iteration anchor once live cell authority exists.
-fn overlay_render_identity(
+pub(super) fn overlay_render_identity(
     static_overlay_id: u8,
     static_overlay_data: u8,
     live_cell: Option<&crate::sim::overlay_grid::OverlayCell>,

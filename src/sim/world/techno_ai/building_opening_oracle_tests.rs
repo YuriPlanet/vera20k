@@ -636,11 +636,13 @@ fn place_selects_the_original_house_order_and_primary_factory() {
     {
         let before = sim
             .production
-            .primary_factory(owner, ProductionCategory::Building);
+            .primary_factory_ids(owner, ProductionCategory::Building)
+            .next();
         initialize_factory_primary(&mut sim, ids[index], &rules);
         let after = sim
             .production
-            .primary_factory(owner, ProductionCategory::Building);
+            .primary_factory_ids(owner, ProductionCategory::Building)
+            .next();
         assert_eq!(
             u8::from(before != after),
             row["changed"].as_u64().unwrap() as u8

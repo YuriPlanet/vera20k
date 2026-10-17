@@ -141,6 +141,227 @@ pub(super) fn save_scene(
     )
 }
 
+/// Normal starting MTNK movement and AP fire, with frame publications exposed
+/// to the ordinary Cell overlay/GPU consumer. Native mission/AreaDamage body
+/// authority: anytown_damage/mission.{py,json.gz}, projected mission_test_vectors.
+/// Those isolated native frames/RNG are not normal-opening expectations.
+pub fn visit_starting_mtnk_concrete_attack(
+    mut visit: impl FnMut(
+        Option<&str>,
+        &mut HeadlessScenario,
+        Option<&crate::sim::world::SimFrameOutput>,
+    ),
+) {
+    use crate::sim::world::{FrameEffects, TickLane};
+    let profile =
+        crate::test_fixture::json("tools/map_observation.low-concrete-bridge.example.json");
+    let native =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/mission_test_vectors.json");
+    let native = &native["seed0"];
+    let stages = [
+        native["impacts"][0]["overlay_before"].as_u64().unwrap() as u8,
+        native["impacts"][1]["overlay_after"].as_u64().unwrap() as u8,
+        native["impacts"][2]["overlay_after"].as_u64().unwrap() as u8,
+    ];
+    let retail =
+        std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
+    let launch: crate::skirmish_launch::SkirmishLaunchSession =
+        serde_json::from_value(profile["launch"].clone()).unwrap();
+    let map = launch.selected_map_file.as_deref().unwrap().to_owned();
+    let (_, assets) =
+        crate::rules::retail_ini_fixture::retail_assets().expect("retail scenario inputs");
+    let selected =
+        crate::map::source::load_map_by_name_or_path_with_assets(&retail, &map, &assets).unwrap();
+    assert_eq!(
+        serde_json::to_value(selected.source).unwrap()["source_sha256"],
+        "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+    );
+    let mut scene = crate::headless_scenario::load_session(
+        &retail,
+        &map,
+        profile["seed"].as_u64().unwrap() as u32,
+        launch,
+    )
+    .unwrap();
+    scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
+    let owner = scene.sim().session.current_house.unwrap();
+    let orders: Vec<_> = profile["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|order| {
+            assert_eq!(order["owner"], "VERA-OBSERVER");
+            CommandEnvelope::new(
+                owner,
+                order["issue_after_step"].as_u64().unwrap(),
+                serde_json::from_value::<Command>(order["payload"].clone()).unwrap(),
+            )
+        })
+        .collect();
+    let (source, target) = orders
+        .iter()
+        .find_map(|order| match order.payload {
+            Command::ForceAttackCell {
+                attacker_id,
+                target_rx,
+                target_ry,
+            } => Some((attacker_id, (target_rx, target_ry))),
+            _ => None,
+        })
+        .unwrap();
+    let actor = scene
+        .sim()
+        .entities()
+        .get(source)
+        .expect("normal starting MTNK");
+    assert_eq!(scene.sim().resolve(actor.type_ref()), "MTNK");
+    assert_eq!(actor.owner(), owner);
+    assert_eq!((actor.position.rx(), actor.position.ry()), (88, 35));
+    let weapon = scene.runtime.resources.rules.weapon("105mm").unwrap();
+    assert_eq!(
+        weapon.damage as u64,
+        native["shots"][0]["damage"].as_u64().unwrap()
+    );
+    assert_eq!(weapon.warhead.as_deref(), Some("AP"));
+    let center = |scene: &HeadlessScenario| {
+        scene
+            .sim()
+            .overlay_grid
+            .as_ref()
+            .unwrap()
+            .cell(target.0, target.1)
+            .overlay_id
+    };
+    assert_eq!(center(&scene), Some(stages[0]));
+    visit(Some("loaded"), &mut scene, None);
+    let mut phase = 0;
+    let mut collapsed_at = None;
+    let mut guarding = false;
+    let mut shots = 0;
+    let mut dispatched = 0;
+    for step in 1..=profile["ticks"].as_u64().unwrap() {
+        let due: Vec<_> = orders
+            .iter()
+            .filter(|order| order.execute_tick == step - 1)
+            .cloned()
+            .collect();
+        if due
+            .iter()
+            .any(|order| matches!(order.payload, Command::ForceAttackCell { .. }))
+        {
+            let actor = scene.sim().entities().get(source).unwrap();
+            assert_eq!(
+                (actor.position.rx(), actor.position.ry()),
+                (87, 50),
+                "ordinary Move reaches the bank before firing"
+            );
+        }
+        dispatched += due.len();
+        let output = scene
+            .runtime
+            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+        assert!(output.tick.frame_committed);
+        let fired = output
+            .fire_events
+            .iter()
+            .filter(|shot| shot.attacker_id == source)
+            .count();
+        if collapsed_at.is_some() {
+            assert_eq!(fired, 0, "detached bridge target cannot keep firing");
+        }
+        shots += fired;
+        let next = center(&scene);
+        let changed = next != Some(stages[phase]);
+        let mut label = None;
+        if changed {
+            phase += 1;
+            assert!(
+                phase < stages.len(),
+                "no extra center transition after empty-art collapse"
+            );
+            assert_eq!(next, Some(stages[phase]));
+            for (x, data) in [(86, 0), (87, 1), (88, 2)] {
+                let live = scene.sim().overlay_grid.as_ref().unwrap().cell(x, 54);
+                assert_eq!(
+                    (live.overlay_id, live.overlay_data),
+                    (Some(stages[phase]), data)
+                );
+                // Ordinary bridge publication mirrors identity synchronously
+                // into Terrain and OverlayGrid; it deliberately bypasses the
+                // generic placement dirty/upsert channel. The retained index
+                // remains an anchor whose bridge identity resolves live.
+                let terrain = scene
+                    .sim()
+                    .resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .cell(x, 54)
+                    .unwrap();
+                assert_eq!(
+                    (
+                        terrain.bridge_facts.overlay_id,
+                        terrain.bridge_facts.state_byte
+                    ),
+                    (Some(stages[phase]), data)
+                );
+                assert!(scene.sim().radar_terrain_dirty_cells.contains(&(x, 54)));
+                assert!(
+                    !output.overlay_removals.contains(&(x, 54)),
+                    "collapsed232 is retained empty art"
+                );
+            }
+            if phase == 1 {
+                assert!(
+                    scene
+                        .sim()
+                        .entities()
+                        .get(source)
+                        .unwrap()
+                        .attack_target
+                        .target()
+                        .is_some(),
+                    "first damage leaves a live bridge target"
+                );
+                label = Some("damaged");
+            } else {
+                assert!(shots > 0, "real AP fire reaches the bridge controller");
+                assert!(
+                    scene
+                        .sim()
+                        .entities()
+                        .get(source)
+                        .unwrap()
+                        .attack_target
+                        .target()
+                        .is_none(),
+                    "70D4A0 clears the Cell target synchronously with collapse"
+                );
+                collapsed_at = Some(step);
+                label = Some("collapsed");
+            }
+        }
+        if let Some(collapsed_at) = collapsed_at {
+            let actor = scene.sim().entities().get(source).unwrap();
+            assert!(actor.is_alive());
+            assert!(actor.attack_target.target().is_none());
+            guarding |=
+                actor.mission.current().known() == Some(crate::sim::mission::MissionType::Guard);
+            if step >= collapsed_at + 32 {
+                assert!(guarding, "Attack null-target handling reaches Guard");
+                visit(Some("settled"), &mut scene, Some(&output));
+                assert_eq!(dispatched, orders.len());
+                return;
+            }
+        }
+        visit(label, &mut scene, Some(&output));
+    }
+    panic!(
+        "normal starting MTNK must reach damage, collapse and settled Guard within the profile bound"
+    );
+}
+
 pub(super) fn load_anytown_concrete() -> HeadlessScenario {
     let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
     let map = std::env::var("VERA20K_ANYTOWN_MAP").unwrap_or_else(|_| "XMP03T4.MAP".to_owned());
@@ -422,15 +643,18 @@ fn repair_ordinary_bridge(
                 .then_some(e.stable_id())
         })
         .unwrap();
+    // The bank can carry ordinary ore. Foot's class-entry query needs the
+    // live type table even for Infantry; a registry-less spawn rejects it.
     let engineer = runtime
         .simulation
-        .spawn_object(
+        .spawn_object_with_overlay_registry(
             "ENGINEER",
             &owner_name,
             start.0,
             start.1,
             0,
             &runtime.resources.rules,
+            &runtime.resources.overlay_registry,
         )
         .expect("ordinary Engineer bank placement");
     let orders = producer(&runtime.simulation, &runtime.resources.rules, engineer, hut);

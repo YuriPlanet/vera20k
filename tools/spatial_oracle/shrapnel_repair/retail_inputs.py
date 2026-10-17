@@ -14,7 +14,7 @@ ASSETS=Path(os.environ.get('VERA20K_SHRAPNEL_INPUTS', 'target/shrapnel-native-in
 
 class Rules(Sound):
  hook=Reader.hook
- def __init__(self):
+ def __init__(self,*,full_rules_constructor=False):
   raw=(ASSETS/'RULESMD.INI').read_bytes();sec,_=lexical(raw,{'OverlayTypes'})
   Reader.__init__(self,ASSETS,sec)
   self.u.mem_write(0xA83D80,dwords(0x7EB6D4,self.alloc(256*4),256,1,0,10))
@@ -23,7 +23,8 @@ class Rules(Sound):
   assert len(self.overlay_ptrs)==250
   self.names={i:self.string(p+0x24) for i,p in enumerate(self.overlay_ptrs)}
   self.rules=self.alloc(0x2000)
-  self.block(0x665F3B,0x665F41,{UC_X86_REG_ESI:self.rules,UC_X86_REG_EBX:0})
+  if full_rules_constructor:self.invoke(0x665650,self.rules)
+  else:self.block(0x665F3B,0x665F41,{UC_X86_REG_ESI:self.rules,UC_X86_REG_EBX:0})
   self.ctor_cliff=self.u.mem_read(self.rules+0x664,1)[0]
   self.land_names=[self.string(self.read32(0x839D68+i*4)) for i in range(12)]
   self.layers=[]

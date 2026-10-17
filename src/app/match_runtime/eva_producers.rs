@@ -18,6 +18,9 @@
 //! - `0x004D9911` `TechnoClass::Death_Announcement` → `EVA_UnitLost` (combat).
 //! - `HouseClass::NotifyUnderAttack 0x004F94FB/0x004F95B3`,
 //!   `UnitClass::ReceiveDamage 0x00738530` → under-attack family (combat).
+//! - `TemporalClass::InitiateWarp 0x0071B05F` (harvester) and its building
+//!   call `0x0071B0CA` → the same under-attack family (`sim::temporal` and
+//!   the shared House dispatcher).
 //! - `HouseClass::Update 0x004F8BA0/0x004F8D14` → funds / low power
 //!   (`sim::house_eva`).
 //! - `HouseClass::RobotTanksBackOnline 0x0050E0D0` →
@@ -82,8 +85,6 @@
 //!   (`crates::pickup`) emits them as `HouseEva` for each changed house and
 //!   this side applies the local test. Retail `evamd.ini` defines none of the
 //!   three sections, so they resolve to silence, as natively.
-//! - `TemporalClass::InitiateWarp 0x0071B05F` (`EVA_OreMinerUnderAttack`
-//!   after `CreateRadarEvent(4)`) (no temporal erase).
 //!
 //! Excluded (not reachable from stock-skirmish input):
 //! - `BuildingClass::ReadFromINI 0x0044FD1A`, `GoOnline 0x00452355`,
@@ -511,5 +512,311 @@ mod tests {
         assert!(!rally_point_announces(
             rules.object("GAREFN").expect("GAREFN")
         ));
+    }
+
+    /// Supplied clear terrain, a stock ore patch and an idle healthy Yuri
+    /// base, with actual layered Battle/XMP03T4 rules and fixed retail art.
+    /// No type/weapon or Temporal state is patched; the attack reaches its
+    /// ordinary projectile.
+    fn retail_temporal_warning_runtime(
+        target_type: &str,
+    ) -> Option<(
+        crate::sim::runtime::SimRuntime,
+        crate::sim::intern::InternedId,
+        crate::sim::intern::InternedId,
+        u64,
+        u64,
+    )> {
+        use crate::rules::overlay_types::OverlayTypeRegistry;
+        use crate::sim::house_state::HouseState;
+        use crate::sim::overlay_grid::OverlayGrid;
+        use crate::sim::runtime::{SimResources, SimRuntime};
+        use crate::sim::world::Simulation;
+
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
+        let overlays =
+            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
+        let rules = retail.rules;
+        let mut sim = Simulation::with_seed(0x4F93_E000);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.session.game_mode_nonzero = true;
+        sim.session.game_options.short_game = false;
+        let local = sim.intern("YuriCountry");
+        let enemy = sim.intern("Americans");
+        for owner in [local, enemy] {
+            let side = rules
+                .country_side_index(sim.interner.resolve(owner))
+                .expect("the stock country has a Side")
+                .0;
+            let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
+            house.project_country_mults(&rules, &sim.interner);
+            sim.houses.insert(owner, house);
+            sim.session.house_order.push(owner);
+        }
+        sim.session.current_house = Some(local);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        // A stock deployed Slave Miner packs up when its short scan finds
+        // no ore (SlaveManager6B0062). Supply map-like ore east of the
+        // target's 2x2 foundation, through the shared overlay/recalc owner,
+        // so ordinary slaves work while the real attacker closes in.
+        let ore_id = overlays.id_for_name("TIB01").expect("stock ore overlay");
+        let mut ore = OverlayGrid::new(32, 32);
+        for ry in 19..=21 {
+            for rx in 23..=25 {
+                ore.place_overlay(rx, ry, ore_id, 11);
+                ore.recalculate_runtime_cell(
+                    sim.resolved_terrain.as_mut().expect("arena terrain"),
+                    &overlays,
+                    (rx, ry),
+                );
+            }
+        }
+        sim.overlay_grid = Some(ore);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        sim.fog.reveal_all_for_owner(local);
+        for (kind, rx) in [("YACNST", 4), ("YAPOWR", 12)] {
+            sim.spawn_object_at_height(kind, "YuriCountry", rx, 4, 0, 0, &rules)
+                .unwrap_or_else(|| panic!("healthy stock base prerequisite {kind}"));
+        }
+        let target = sim
+            .spawn_object_at_height(target_type, "YuriCountry", 20, 20, 0, 0, &rules)
+            .unwrap_or_else(|| panic!("healthy stock target {target_type}"));
+        // Outside the supplied base/target's sight during settlement. The
+        // real Attack command must bring this stock Teleport locomotor in.
+        let attacker = sim
+            .spawn_object_at_height("CLEG", "Americans", 6, 20, 0, 0, &rules)
+            .expect("stock hostile Chrono Legionnaire");
+        let mut resources = SimResources::empty();
+        resources.rules = rules;
+        resources.overlay_registry = overlays;
+        Some((
+            SimRuntime {
+                simulation: sim,
+                resources,
+            },
+            local,
+            enemy,
+            target,
+            attacker,
+        ))
+    }
+
+    /// Original Temporal71B0CA -> House4F9491..4F9500 selects a deployed
+    /// Slave Miner's ore-miner line and skips the base siren. The ordinary
+    /// YAPOWR control keeps its base line/siren. This tests real attack/frame
+    /// producers and the existing app dispatcher; native movement cadence,
+    /// radar-array dedupe and physical audio output are separate evidence.
+    #[test]
+    fn retail_temporal_deployed_miner_warning_and_release_use_the_miner_cue() {
+        use crate::app::match_runtime::sound_dispatch::dispatch_sim_sound_events;
+        use crate::audio::events::{GameSoundEvent, SoundEventQueue};
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::radar::{RadarEventRequest, RadarEventType};
+        use crate::sim::world::{FrameEffects, SimSoundEvent, TickLane};
+
+        for (target_type, expected_miner, expected_radar, expected_eva, expected_siren) in [
+            (
+                "YAREFN",
+                true,
+                RadarEventType::HarvesterUnderAttack,
+                "EVA_OreMinerUnderAttack",
+                false,
+            ),
+            (
+                "YAPOWR",
+                false,
+                RadarEventType::BaseUnderAttack,
+                "EVA_OurBaseIsUnderAttack",
+                true,
+            ),
+        ] {
+            let Some((mut runtime, local, enemy, target, attacker)) =
+                retail_temporal_warning_runtime(target_type)
+            else {
+                return;
+            };
+            let health = runtime
+                .simulation
+                .entities()
+                .get(target)
+                .unwrap()
+                .health
+                .current();
+            for _ in 0..8 {
+                let due = runtime.simulation.take_due_commands();
+                let frame = runtime
+                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .expect("settled retail base frame");
+                assert!(
+                    frame
+                        .sound_events
+                        .iter()
+                        .all(|event| { !matches!(event, SimSoundEvent::UnderAttack { .. }) })
+                );
+            }
+            assert!(
+                !runtime
+                    .simulation
+                    .entities()
+                    .get(target)
+                    .unwrap()
+                    .is_warped_out()
+            );
+            let attack = CommandEnvelope::new(
+                enemy,
+                runtime.simulation.session.tick + 1,
+                Command::Attack {
+                    attacker_id: attacker,
+                    target_id: target,
+                },
+            );
+            runtime.simulation.queue_command(attack.clone());
+            let mut attack_dispatched = false;
+            let mut notice_seen = false;
+            for _ in 0..1024 {
+                let due = runtime.simulation.take_due_commands();
+                let mut frame = runtime
+                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .expect("ordinary retail Temporal attack frame");
+                attack_dispatched |= frame
+                    .take_admitted_commands()
+                    .iter()
+                    .any(|command| command.payload == attack.payload);
+                let Some((miner, radar)) = frame.sound_events.iter().find_map(|event| {
+                    if let SimSoundEvent::UnderAttack {
+                        owner,
+                        miner,
+                        radar,
+                        ..
+                    } = event
+                        && *owner == local
+                    {
+                        Some((*miner, *radar))
+                    } else {
+                        None
+                    }
+                }) else {
+                    continue;
+                };
+                assert!(
+                    attack_dispatched,
+                    "the real Attack event must reach its receiver"
+                );
+                let victim = runtime.simulation.entities().get(target).unwrap();
+                assert_eq!(victim.temporal.chain_head(), Some(attacker));
+                assert_eq!(victim.health.current(), health);
+                assert_eq!(victim.owner(), local);
+                assert_eq!(
+                    (miner, radar.event_type),
+                    (expected_miner, expected_radar),
+                    "{target_type}: the actual first-head notice must use HouseNotify's stock subtype"
+                );
+
+                // Use the native control's accepted first-event outcome at
+                // this app boundary. The real requests are recorded below;
+                // this does not substitute another radar/dedupe algorithm.
+                let radar_accepted = true;
+                let mut admitted = Vec::<RadarEventRequest>::new();
+                let mut output = SoundEventQueue::new();
+                dispatch_sim_sound_events(
+                    frame.sound_events.iter().cloned(),
+                    &runtime.simulation,
+                    &runtime.resources.rules,
+                    Some("YuriCountry"),
+                    &mut |request| {
+                        admitted.push(request);
+                        radar_accepted
+                    },
+                    &mut output,
+                );
+                assert_eq!(admitted, [radar], "one real local radar admission request");
+                let sounds = output.drain();
+                assert!(sounds.iter().any(|event| {
+                    matches!(event, GameSoundEvent::Eva { event, .. } if event == expected_eva)
+                }));
+                let wrong_eva = if expected_miner {
+                    "EVA_OurBaseIsUnderAttack"
+                } else {
+                    "EVA_OreMinerUnderAttack"
+                };
+                assert!(!sounds.iter().any(|event| {
+                    matches!(event, GameSoundEvent::Eva { event, .. } if event == wrong_eva)
+                }));
+                assert_eq!(
+                    sounds.iter().any(|event| {
+                        matches!(event, GameSoundEvent::BaseUnderAttackSfx { .. })
+                    }),
+                    expected_siren,
+                    "{target_type}: the ore-miner jump must skip the shared base siren"
+                );
+                notice_seen = true;
+                break;
+            }
+            assert!(
+                notice_seen,
+                "the stock {target_type} must receive the real beam"
+            );
+
+            // A retained first head does not announce again on each warped
+            // object visit. Stop releases through the ordinary Attack idle
+            // transition, before the victim can be erased.
+            for _ in 0..4 {
+                let due = runtime.simulation.take_due_commands();
+                let frame = runtime
+                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .expect("held first-head frame");
+                assert!(
+                    frame
+                        .sound_events
+                        .iter()
+                        .all(|event| { !matches!(event, SimSoundEvent::UnderAttack { .. }) })
+                );
+                assert!(
+                    runtime
+                        .simulation
+                        .entities()
+                        .get(target)
+                        .unwrap()
+                        .is_warped_out()
+                );
+            }
+            runtime.simulation.queue_command(CommandEnvelope::new(
+                enemy,
+                runtime.simulation.session.tick + 1,
+                Command::Stop {
+                    entity_id: attacker,
+                },
+            ));
+            let mut released = false;
+            for _ in 0..128 {
+                let due = runtime.simulation.take_due_commands();
+                let frame = runtime
+                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .expect("ordinary Stop/release frame");
+                assert!(
+                    frame
+                        .sound_events
+                        .iter()
+                        .all(|event| { !matches!(event, SimSoundEvent::UnderAttack { .. }) })
+                );
+                let victim = runtime
+                    .simulation
+                    .entities()
+                    .get(target)
+                    .expect("not erased");
+                assert_eq!(victim.owner(), local);
+                assert_eq!(victim.health.current(), health);
+                if !victim.is_warped_out() {
+                    assert!(victim.building_online());
+                    released = true;
+                    break;
+                }
+            }
+            assert!(
+                released,
+                "Stop must release and preserve the stock {target_type}"
+            );
+        }
     }
 }

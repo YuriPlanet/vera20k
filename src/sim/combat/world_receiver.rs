@@ -1304,8 +1304,7 @@ pub(crate) fn commit_entities(
                         rx: target.position.rx(),
                         ry: target.position.ry(),
                         owner: target.owner(),
-                        miner: true,
-                        structure: false,
+                        victim_type: target.type_ref(),
                     });
                 }
             }

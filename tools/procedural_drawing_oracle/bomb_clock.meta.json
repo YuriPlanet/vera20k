@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary IVAN attached MTNK clock through complete Extras and GAPOWR clock/wrench/health body composition",
+  "assumptions": [
+    "One opt-in bomb mode extends generate_unit_health, _HealthRecorder, existing mobile/Infantry prefixes and _building_health_composition in the same PaletteReader/TMP VM. Original allocation, native INI cache/reader, geometry startup, Surface/circular A/Z, palette, SHP and body owners are shared. No second VM, parser, palette expansion, clock formula, bomb state machine, rasterizer or body mask supplies expected output. Historical modes retain their allocation and startup order.",
+    "Whole Rules665650 yields IvanDamage100, IvanTimedDelay450 and IvanIconFlickerRate8. Original exact CombatDamage HasSection526810 and current-default signed ReadInt5276D0 blocks66C5AE..66C606/66C611..66C631 consume physical RULESMD, absent optional LANGRULE, MPBattleMD and XMP03T4. Actual66C5F4 literalBOMBCURS.SHP lookup5B40B0 publishesRulesFE0. Final physical tuning450/450/8 and MTNKStrength300 are recorded per layer. Raw IVAN/IvanBomber/IvanBomb/IvanWH lexical keys identify the route but are not a claimed full native weapon reader. Full GAPOWR45DD90/45FE50 and fixed ARTMD remain the existing composition owner.",
+    "Physical BOMBCURS/WRENCH/MOUSEPAL archive candidates are recorded independently. Original Init52C136..52C1EA executes literal MOUSEPAL load, copy/expansion and complete N1 Convert48E740/48EBF0 publication87F6C8. The normal STOCK_DIGITAL AssetManager consumer must independently establish archive winner and loose precedence; native archive loading is not executed. Existing PALETTE N53 remains available for health and PIPBRD.",
+    "Actual original Infantry517A50..517AE6 prefix with IVAN type5236A0 and Unit7353C0..7354CE/Drive prefix prepare stable actors; whole typed constructors, COM and Unlimbo are excluded. Original438E70 Attach creates each record from supplied bomb_start_frame and original438BF0 UpdateAll runs twice for visible, once before visibility refresh for false. Kind0, native start/end, BombVisible68, countdown45/0 and clock438A00 results are outputs. Null bomb, sinking, selection/hover, health, House/placement and supplied frame are consumer controls, not a complete bullet/command/damage/reveal lifecycle.",
+    "BombClass/BombList gameplay remains independently consumed by tools/spatial_oracle/bomb_class.json and src/sim/bomb_tests.rs, including actual bullet IvanBomb/BombDisarm arms, attach gates, visibility/detectors, strict Frame>end expiry, detonation/defuse and bookkeeping. The clock fixture retains native constructor soundIDs -1, so audio is deliberately outside its reached path; independent BombClass controls retain those audio boundaries. No death-kind1 or spent-record lifecycle coverage is claimed by this ordinary timed profile.",
+    "Every component row executes complete6F5190, including sinking3CD, BombVisible68/AttachedBomb38 and actual Cell487950/47B3A0/586360 gates, virtual render coordinate5F65A0, Tactical6D2140, original438A00 arithmetic and actual4AED70/picker/rowwalker/493DF0. FlagsE00/remap0/zAdjust0/gradient0/brightness1000 readA and bypassZ. Physical N1 yields the same pixels forA127/63/2/0; oldZ0 does not occlude. Actor/bomb bytes andA/Z remain unchanged, with no drawing RNG, timer write or detach.",
+    "Global tactical clip886FA0 differs from supplied parent bounds in global_clip; nativeclock still draws through the global clip while subsequent status families use their own bounds. Cell bit08-only is admitted. Existing initialize_discovery_geometry executes original CRT startup before native Cell construction; raised level2 yields groundZ208. Elevated_projected_open admits projected cell9,19 despite origin10,20 hidden, while elevated_origin_open rejects origin-only reveal. Terrain flags/levels and placement are declared consumer priors, not a native reveal lifecycle or whole world frame.",
+    "The two-clock overlap records positive native overwritten pixels with each parent clock preceding its own health. Two GAPOWR controls reuse actual flatCells/TMP, full Building43B740/idle44D6A0, BUILDNGZ45E8F0 and43CEA0->455C20/459EF0->43D290->705E00 body/shadow. Whole Behind, complete first Extras, actual admitted body and complete late Extras execute in supplied parent order. Clock precedes repairing wrench and health inside both visits. Sparse ground/before-late packed colors/Z and final status-addressed pixels are consumed, with actual positive body/status overwrite witnesses. Full Display traversal, GPU body parity, arbitrary assets/types and whole functions/classes remain open.",
+    "Attach setup writes original kind0/start/end and list visibility countdown1; UpdateAll decrements to0 then writes45 and carrier68/redraw80. Native actor constructor RNG/passive timers are recorded separately from drawing. Original code and Unit vtables remain unchanged. The measured draw/query intervals make no RNG request, timer write or detach call; no gameplay update order or simulation authority is replaced."
+  ],
+  "substitutions": [
+    "Existing successful allocation/delete/CRT TLS and immutable physical file/archive transports replace platform services. RGB565 BSurface/circular A/Z memory replaces DirectDraw. Cached lexical INI indexes, retained actor/Houses and supplied traversal/terrain are explicit inputs. No reached Attach, visibility, clock, Cell, palette, projection, shape, body or pixel function result or original instruction is substituted."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "combat_reader": "0x0066BBB0",
+    "damage_begin": "0x0066C5AE",
+    "delay_begin": "0x0066C5CE",
+    "flicker_begin": "0x0066C611",
+    "bomb_shape_load": "0x0066C5F4",
+    "unit_ctor_begin": "0x007353C0",
+    "unit_ctor_stop": "0x007354CE",
+    "infantry_ctor_begin": "0x00517A50",
+    "infantry_ctor_stop": "0x00517AE6",
+    "attach": "0x00438E70",
+    "update_all": "0x00438BF0",
+    "clock_frame": "0x00438A00",
+    "extras": "0x006F5190",
+    "clock_end": "0x006F5253",
+    "cell_shrouded": "0x00487950",
+    "cell_ground": "0x0047B3A0",
+    "coord_shrouded": "0x00586360",
+    "unit_render_coords": "0x005F65A0",
+    "building_render_coords": "0x00459EF0",
+    "projection": "0x006D2140",
+    "mouse_palette_begin": "0x0052C136",
+    "mouse_palette_end": "0x0052C1EA",
+    "convert_ctor": "0x0048E740",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "leaf": "0x00493DF0",
+    "first_extras_caller": "0x006D9153",
+    "late_extras_caller": "0x006D9789",
+    "behind": "0x006F60D0",
+    "body_admission": "0x0043CEA0",
+    "body": "0x0043D290"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --bomb-clock",
+  "payload_sha256": "d94f50cbac1a4255f9cfe56ba11861b04d9dd5d4fd0f19845fca7bed899545f4"
+}

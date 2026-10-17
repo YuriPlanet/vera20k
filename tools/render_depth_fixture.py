@@ -6,6 +6,12 @@ Usage:
     python tools/render_depth_fixture.py target/depth-comparison/depth-walls.map --walls-only
     python tools/render_depth_fixture.py target/depth-comparison/depth-cliff-back.map --cliff-back
     python tools/render_depth_fixture.py target/depth-comparison/building-brackets.map --building-brackets
+    python tools/render_depth_fixture.py target/depth-comparison/building-repair.map --building-repair
+    python tools/render_depth_fixture.py target/depth-comparison/attack-voice.map --attack-order-voice unit
+    python tools/render_depth_fixture.py target/depth-comparison/self-heal.map --house-self-heal
+    python tools/render_depth_fixture.py target/stock-e1-feedback-removal.map --damage-feedback removal
+    python tools/render_depth_fixture.py target/move-voice.map --move-order-voice multiple
+    python tools/render_depth_fixture.py target/bomb-clock.map --bomb-clock
 
 This writes only the requested map. It neither edits game configuration nor
 launches either engine. The cliff fixture deliberately focuses on one cliff
@@ -132,12 +138,36 @@ C = 48
 
 
 def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
-                  building_brackets: bool = False) -> str:
+                  building_brackets: bool = False, building_repair: bool = False,
+                  attack_order_voice: str | None = None,
+                  house_self_heal: str | None = None,
+                  damage_feedback: str | None = None,
+                  move_order_voice: str | None = None,
+                  bomb_clock: bool = False) -> str:
     """Keep comparison geometry stable within each selectable scene."""
+    if house_self_heal not in (None, 'recovery', 'removal'):
+        raise ValueError('Unknown House self-heal scene')
+    if damage_feedback not in (None, 'single', 'removal'):
+        raise ValueError('Unknown damage-feedback scene')
+    move_voices = {
+        'stock': None,
+        'multiple': 'GenAllVehicleMove,IFVMove',
+        'unknown-first': 'NOT_A_RETAIL_SOUND,GenAllVehicleMove',
+        'unknown-only': 'NOT_A_RETAIL_SOUND',
+    }
+    if move_order_voice is not None and move_order_voice not in move_voices:
+        raise ValueError('Unknown movement-voice scene')
     cliff_x0, cliff_y0 = C - 8, C - 2   # 2 wide, 3 tall
-    if sum((walls_only, cliff_back, building_brackets)) > 1:
+    if attack_order_voice not in (None, 'unit', 'building'):
+        raise ValueError('Choose a unit or building attack target')
+    if sum((walls_only, cliff_back, building_brackets, building_repair,
+            attack_order_voice is not None, house_self_heal is not None,
+            damage_feedback is not None, move_order_voice is not None, bomb_clock)) > 1:
         raise ValueError('Choose one comparison mode')
-    walls_only = walls_only or building_brackets
+    building_brackets = building_brackets or building_repair
+    command_scene = bomb_clock or any(mode is not None for mode in
+                        (attack_order_voice, house_self_heal, damage_feedback, move_order_voice))
+    walls_only = walls_only or building_brackets or command_scene
 
     def high(x, y):
         return y <= x + 6  # Raised ground north-west of the cliff line.
@@ -236,16 +266,68 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             for i, (x, y) in enumerate(((C, C), (C - 2, C + 1), (C + 2, C - 1)))
         ]
         units = [f'0=Computer1,MTNK,256,{C+12},{C+12},64,Guard,None,0,-1,0,-1,1,1']
+        if building_repair:
+            # A normal local attacker can damage the stock plant before Stop
+            # and a retained Repair-button click. No HP, weapon or rate patch.
+            units.append(f'1=Americans,MTNK,256,{C},{C-4},64,Guard,None,0,-1,0,-1,1,1')
         infantry = []
+        overlay[:] = b'\xff' * len(overlay)
+        overlay_data[:] = bytes(len(overlay_data))
+    if command_scene:
+        # One near damage target and one distant opponent keep ordinary
+        # Attack/Stop observations separate from immediate victory.
+        # Damage scenes use untouched retail types, health, weapons and voices;
+        # movement controls below override only the tested VoiceMove string.
+        # Keep a building's foundation-centre target comfortably in range.
+        unit_target = bomb_clock or move_order_voice is not None or damage_feedback is not None or house_self_heal is not None or attack_order_voice == 'unit'
+        near, far = (C + (4 if unit_target else 3), C), (C + 12, C + 12)
+        unit_cell, plant_cell = (near, far) if unit_target else (far, near)
+        structures = [f'0=Computer1,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
+        if house_self_heal:
+            # Normal map loading opens this stock Tech Machine Shop and grants
+            # its owner the retail UnitsGainSelfHeal ability. A friendly tank
+            # admits bounded ForceAttack/Stop damage followed by recovery;
+            # no health/weapon/heal tuning is overridden.
+            # The removal variant uses the ordinary map health fraction to
+            # let stock damage destroy this native Unsellable=yes building.
+            # Strength and the grant reader remain untouched retail values.
+            shop_health = 32 if house_self_heal == 'removal' else 256
+            structures.append(f'1=Americans,CAMACH,{shop_health},{C - 4},{C + 2},0,None,0,0,1,0,0,None,None,None,0,0')
+        units = [
+            f'0=Americans,MTNK,256,{C},{C},64,Guard,None,0,-1,0,-1,1,1',
+            f'1={"Americans" if house_self_heal else "Computer1"},MTNK,256,{unit_cell[0]},{unit_cell[1]},192,Guard,None,0,-1,0,-1,1,1',
+        ]
+        infantry = []
+        if move_order_voice:
+            units = units[:1]
+        if bomb_clock:
+            # Friendly stock MTNK admits Ivan's normal planting order without
+            # retaliation. No bomb, visibility, weapon or fuse override.
+            units = [f'0=Americans,MTNK,256,{C+1},{C},64,Guard,None,0,-1,0,-1,1,1']
+            infantry = [f'0=Americans,IVAN,256,{C},{C},0,Guard,64,None,0,-1,0,1,1']
+        if damage_feedback:
+            # Full-health stock E1 crosses the real health threshold under
+            # ordinary friendly ForceAttack. Additional stock tanks permit
+            # removal while its unbound GIFear event is still playing.
+            positions = [(C, C)]
+            if damage_feedback == 'removal':
+                positions += [(C, C - 1), (C + 1, C - 1), (C + 1, C + 1), (C + 2, C + 1)]
+            units = [
+                f'{i}=Americans,MTNK,256,{x},{y},64,Guard,None,0,-1,0,-1,1,1'
+                for i, (x, y) in enumerate(positions)
+            ]
+            infantry = [f'0=Americans,E1,256,{near[0]},{near[1]},0,Guard,192,None,0,-1,0,1,1']
         overlay[:] = b'\xff' * len(overlay)
         overlay_data[:] = bytes(len(overlay_data))
     # Stock cliff-back blocking rejects Track/Foot placement in the exact
     # overlap cells. This scenario-only override admits controlled comparison
     # positions in both engines; it does not change ordinary game pathfinding.
     cliff_rules = '\n[General]\nCliffBackImpassability=0\n' if cliff_back else ''
+    move_voice = move_voices.get(move_order_voice)
+    voice_rules = f'\n[MTNK]\nVoiceMove={move_voice}\n' if move_voice is not None else ''
     # Match normal Battle's AI slot, so the distant voxel also prevents an
     # empty-house victory from ending sustained selection captures.
-    bracket_house_slot = '\n2=Computer1' if building_brackets else ''
+    bracket_house_slot = '\n2=Computer1' if building_brackets or command_scene else ''
     bracket_house = '''\n[Computer1]
 Country=YuriCountry
 PlayerControl=no
@@ -255,10 +337,10 @@ Credits=0
 Edge=South
 Allies=Computer1
 Color=DarkRed
-''' if building_brackets else ''
+''' if building_brackets or command_scene else ''
 
     return f'''[Basic]
-Name=Depth Continuation - {'Building Brackets' if building_brackets else 'Cliff Back Edge' if cliff_back else 'Walls and Cliff'}
+Name=Depth Continuation - {'Ivan Bomb Clock' if bomb_clock else 'Move Voice ' + move_order_voice if move_order_voice else 'GI Fear ' + damage_feedback if damage_feedback else 'House Self Heal' if house_self_heal else 'Attack Voice ' + attack_order_voice if attack_order_voice else 'Building Repair' if building_repair else 'Building Brackets' if building_brackets else 'Cliff Back Edge' if cliff_back else 'Walls and Cliff'}
 NewINIFormat=4
 Player=Americans
 HomeCell={(C + 1) * 1000 + (C - 5)}
@@ -273,7 +355,7 @@ Lose=<none>
 Action=<none>
 FreeRadar=yes
 EndOfGame=yes
-{cliff_rules}
+{cliff_rules}{voice_rules}
 [Map]
 Theater=TEMPERATE
 Size=0,0,48,48
@@ -357,9 +439,39 @@ def main() -> None:
         '--building-brackets', action='store_true',
         help='Use stock selected-building and neighboring-body positions on clear ground',
     )
+    modes.add_argument(
+        '--building-repair', action='store_true',
+        help='Add a stock local tank to the building scene for damage, Stop and paid repair',
+    )
+    modes.add_argument(
+        '--attack-order-voice', choices=('unit', 'building'),
+        help='Use a stock local tank, one nearby enemy target and a distant enemy survivor',
+    )
+    modes.add_argument(
+        '--house-self-heal', nargs='?', const='recovery', choices=('recovery', 'removal'),
+        help='Use an owned stock Tech Machine Shop and two friendly tanks; removal starts the shop at authored 32/256 health',
+    )
+    modes.add_argument(
+        '--damage-feedback', choices=('single', 'removal'),
+        help='Use a full-health local GI and stock tanks for damage-fear playback and live removal',
+    )
+    modes.add_argument(
+        '--move-order-voice', choices=('stock', 'multiple', 'unknown-first', 'unknown-only'),
+        help='Use one stock tank and an optional native VoiceMove reader input',
+    )
+    modes.add_argument(
+        '--bomb-clock', action='store_true',
+        help='Use a stock Crazy Ivan and friendly tank for ordinary planting and fuse retirement',
+    )
     args = parser.parse_args()
     mission = build_fixture(walls_only=args.walls_only, cliff_back=args.cliff_back,
-                            building_brackets=args.building_brackets)
+                            building_brackets=args.building_brackets,
+                            building_repair=args.building_repair,
+                            attack_order_voice=args.attack_order_voice,
+                            house_self_heal=args.house_self_heal,
+                            damage_feedback=args.damage_feedback,
+                            move_order_voice=args.move_order_voice,
+                            bomb_clock=args.bomb_clock)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(mission, encoding='ascii')
     print(f'Wrote {args.output} ({len(mission)} characters)')

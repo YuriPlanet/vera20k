@@ -1,6 +1,6 @@
 //! Bridge instance emission — body, shadow, deck-variant overrides.
 //!
-//! Reads live CellClass bridge fields post-tick (NOT `OverlayGrid`) and emits sprite
+//! Reads live CellClass bridge fields and ordinary overlay-grid state, emitting sprite
 //! instances for the bridge body and body shadow passes per the
 //! per-frame draw chain in `BRIDGE_DISPLAY_TABLE_GHIDRA_REPORT.md` §3.3, §3.4.
 //!
@@ -212,6 +212,9 @@ pub(crate) fn build_bridge_shadow_instances_inner(
     terrain: &ResolvedTerrainGrid,
     atlas: &dyn BridgeAtlasLookup,
     overlay_names: &BTreeMap<u8, String>,
+    overlay_entries: &[crate::map::overlay::OverlayEntry],
+    live_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     origin_y: f32,
     world_height: f32,
     cam_x: f32,
@@ -225,21 +228,54 @@ pub(crate) fn build_bridge_shadow_instances_inner(
         .filter_map(|cell| {
             let overlay = cell.bridge_facts.overlay_id?;
             let name = overlay_names.get(&overlay)?;
-            is_high_bridge_body_identity(overlay, name).then_some((cell, name))
+            is_high_bridge_body_identity(overlay, name).then_some((
+                cell,
+                name,
+                cell.bridge_facts.state_byte,
+            ))
         })
         .collect();
+    // Wall damage owns its current identity/data in OverlayGrid. The published
+    // index supplies iteration anchors, including paid construction and erased
+    // tombstones; neither its cached frame nor Terrain bridge facts are live state.
+    // Original 0047F510 has no Wall exclusion (concrete_wall_render.json).
+    for entry in overlay_entries {
+        let live_cell = live_grid.map(|grid| grid.cell(entry.rx, entry.ry));
+        let Some((overlay, frame)) =
+            super::overlays::overlay_render_identity(entry.overlay_id, entry.frame, live_cell)
+        else {
+            continue;
+        };
+        if !registry
+            .and_then(|registry| registry.flags(overlay))
+            .is_some_and(|flags| flags.wall)
+        {
+            continue;
+        }
+        let Some(name) = overlay_names.get(&overlay) else {
+            continue;
+        };
+        // High identities are already emitted above with their retained bridge
+        // geometry, even when layered rules give the same type a Wall flag.
+        if is_high_bridge_body_identity(overlay, name) {
+            continue;
+        }
+        let Some(cell) = terrain.cell(entry.rx, entry.ry) else {
+            continue;
+        };
+        cells.push((cell, name, frame));
+    }
     // The native shadow sweep descends diagonals, advancing X within each.
     // Neither elevation, atlas frame nor the compatibility depth scalar owns
     // the order in which an overlap reads the previous color and Z stores.
-    cells.sort_unstable_by_key(|(cell, _)| {
+    cells.sort_unstable_by_key(|(cell, _, _)| {
         (
             std::cmp::Reverse(u32::from(cell.rx) + u32::from(cell.ry)),
             cell.rx,
         )
     });
-    for (cell, name) in cells {
+    for (cell, name, frame) in cells {
         let (rx, ry) = (cell.rx, cell.ry);
-        let frame = cell.bridge_facts.state_byte;
         let Some(spr) = atlas.shadow_entry(name, frame) else {
             continue;
         };
@@ -320,6 +356,9 @@ pub(crate) fn build_bridge_shadow_instances(
         terrain,
         atlas,
         &state.match_state.match_presentation.overlay_names,
+        state.match_state.match_presentation.overlays.as_slice(),
+        sim.overlay_grid.as_ref(),
+        state.overlay_registry(),
         origin_y,
         world_height,
         cam_x,
@@ -333,6 +372,84 @@ pub(crate) fn build_bridge_shadow_instances(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_walls_and_high_bridges_share_native_shadow_sweep_order() {
+        use crate::map::overlay::OverlayEntry;
+        use crate::render::overlay_atlas::OverlaySpriteEntry;
+        use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry};
+        struct Atlas(std::cell::RefCell<Vec<(String, u8)>>);
+        impl BridgeAtlasLookup for Atlas {
+            fn body_entry(&self, _: &str, _: u8) -> Option<&OverlaySpriteEntry> {
+                None
+            }
+            fn shadow_entry(&self, name: &str, frame: u8) -> Option<&OverlaySpriteEntry> {
+                self.0.borrow_mut().push((name.into(), frame));
+                None
+            }
+        }
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=WALL\n1=OTHER\n[WALL]\nWall=yes\n"),
+            None,
+        );
+        let mut terrain = crate::map::resolved_terrain::test_grid(
+            8,
+            8,
+            crate::map::resolved_terrain::test_flat_cell,
+        );
+        let high = terrain.cell_mut(5, 5).unwrap();
+        high.bridge_facts.overlay_id = Some(0x18);
+        high.bridge_facts.state_byte = 9;
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
+        let mut entries = Vec::new();
+        for (rx, ry, live_id, frame) in [
+            (4, 4, Some(0), 36),
+            (5, 6, Some(0), 20),
+            (6, 6, None, 0),
+            (7, 6, Some(1), 5),
+        ] {
+            entries.push(OverlayEntry {
+                rx,
+                ry,
+                overlay_id: 0,
+                frame: 5,
+            });
+            let cell = grid.cell_mut(rx, ry);
+            cell.overlay_id = live_id;
+            cell.overlay_data = frame;
+        }
+        let atlas = Atlas(Default::default());
+        build_bridge_shadow_instances_inner(
+            &terrain,
+            &atlas,
+            &BTreeMap::from([
+                (0, "WALL".into()),
+                (1, "OTHER".into()),
+                (0x18, "BRIDGE1".into()),
+            ]),
+            &entries,
+            Some(&grid),
+            Some(&registry),
+            0.0,
+            5000.0,
+            -1000.0,
+            -1000.0,
+            4000.0,
+            4000.0,
+            &mut Vec::new(),
+        );
+        // Original Tactical traversal descends diagonals. A Wall cannot be
+        // appended after the high-bridge batch; live damage overrides cached5,
+        // while erased/replaced slots must not query any stale Wall artwork.
+        assert_eq!(
+            *atlas.0.borrow(),
+            vec![
+                ("WALL".into(), 20),
+                ("BRIDGE1".into(), 9),
+                ("WALL".into(), 36),
+            ]
+        );
+    }
 
     #[test]
     fn high_body_live_fields_match_original_caller_controls() {
@@ -493,6 +610,9 @@ mod tests {
             &terrain,
             &atlas,
             &overlay_names,
+            &[],
+            None,
+            None,
             0.0,
             5000.0,
             cam_x,

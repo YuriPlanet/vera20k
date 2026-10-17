@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical XMP03T4 CAFNCB native initial/partial-neighbor/endpoint/removed wall raster components, consuming native AreaDamage states. No whole Tactical/frame/World/GPU claim.",
+  "assumptions": [
+    "Shared physical OverlayType/ART/NewTheater image reader, palette, shape and raster owner. CPU map hash and effective id/Strength/DamageLevels/Wall are compared to native AreaDamage inputs.",
+    "Existing original theater readers and TMP constructor/lazy loader resolve the source tile; supplied sparse registry and native-constructed Cell enroll its physical tuple. Original map Lighting and Cell480350 produce retained top scalar. Floor color/Z are cleared before wall raster, not claimed as a composed frame.",
+    "Existing sole ReadColor owner parses the selected physical Colors entry in its small INI Fixture; its byte result enters the existing raster VM, where physical UNITTEM expansion and original paired1/53 ColorScheme constructors execute. Supplied current Player/House index1 is an explicit component prior; original wall caller reads its Convert. Full House startup/ownership is excluded.",
+    "Local projected point96,120, viewport0, clip192x160, A127, backgroundFFFF and oldZ65535 are supplied component priors; actual native A is read back. Occupied rows execute actual47F6A0/shape/selector/rowwalker/raster; the erased row reuses the actual Tactical -1 admission and observes no draw. No Rust expected pixels or source states."
+  ],
+  "substitutions": [
+    "Existing bounded allocation, TLS, archive/cache and surface transport; sparse TMP/Cell/current Player enrollment and supplied projection/A/Z. Original occupied wall caller, lighting, palette generation, shape and raster are not substituted. Only the erased row reuses the existing traversal map/visibility transports and observes no body/shadow entry."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "cell_lighting": "0x00480350",
+    "wall_branch": "0x0047F96A",
+    "shape": "0x004AED70",
+    "type_reader": "0x005FE770",
+    "tmp_lazy": "0x00544CB0",
+    "empty_caller": "0x006D6E5B"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --authored-fence",
+  "payload_sha256": "a4fc34a741a41df446ed0c73e9bbeb79f17f93caf147621ca3fe25af17988710"
+}

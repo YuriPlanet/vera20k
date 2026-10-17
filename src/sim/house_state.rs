@@ -1071,16 +1071,19 @@ impl HouseState {
         self.tech_recheck
     }
 
-    /// `BuildingClass::Infiltrate`'s tech arm (`0x004573C6..0x004573E4`): the
+    /// `BuildingClass::Infiltrate`'s tech arm (`0x004573C6..0x004573EA`): the
     /// infiltrated BuildTech building's `AIBasePlanningSide=` names the side
     /// whose technology this house now has: 0 the Allies' (`+0x2BE`), 1 the
-    /// Soviets' (`+0x2BD`), any other the third side's (`+0x2BC`).
+    /// Soviets' (`+0x2BD`), any other the third side's (`+0x2BC`). Every
+    /// accepted infiltration then requests House+1FC, even if already gained.
+    /// Native execution: tools/spy_infiltration_oracle.md.
     pub(crate) fn steal_tech(&mut self, planning_side: i32) {
         match planning_side {
             0 => self.spy_gains.allied_tech = true,
             1 => self.spy_gains.soviet_tech = true,
             _ => self.spy_gains.third_tech = true,
         }
+        self.request_tech_recheck();
     }
 
     /// `HouseClass::CanBuild`'s `RequiresStolen*Tech=` gates
@@ -1093,16 +1096,21 @@ impl HouseState {
     }
 
     /// Infiltrate's factory arm on a `Factory=InfantryType` building
-    /// (`0x0045751E`): this house's infantry start veteran from now on.
+    /// (`0x0045751E..0x00457524`): this house's infantry start veteran from
+    /// now on, then House+1FC requests the existing tech/sidebar pass.
+    /// Native execution: tools/spy_infiltration_oracle.md.
     pub fn grant_veteran_infantry(&mut self) {
         self.spy_gains.veteran_infantry = true;
+        self.request_tech_recheck();
     }
 
     /// Infiltrate's factory arm on a `Factory=UnitType` building
-    /// (`0x004574BD`): this house's vehicles (and undeploying buildings)
-    /// start veteran from now on.
+    /// (`0x004574BD..0x004574C3`): this house's vehicles (and undeploying
+    /// buildings) start veteran from now on, then House+1FC requests the
+    /// existing tech/sidebar pass. Native execution: tools/spy_infiltration_oracle.md.
     pub fn grant_veteran_units(&mut self) {
         self.spy_gains.veteran_units = true;
+        self.request_tech_recheck();
     }
 
     /// House `+0x2BF`, read by `InfantryClass::InitFromType` (`0x00517D2A`).

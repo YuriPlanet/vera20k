@@ -1,0 +1,257 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v2",
+  "launch": {
+    "mode": {
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "player_name": "VERA-OBSERVER",
+    "local": {
+      "country": "America",
+      "country_random": false,
+      "color_index": 0,
+      "color_random": false,
+      "start_position": {
+        "Position": 0
+      },
+      "team": {
+        "Team": 0
+      }
+    },
+    "opponents": [
+      {
+        "country": "France",
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": {
+          "Team": 0
+        },
+        "difficulty": "Easy"
+      },
+      {
+        "country": "America",
+        "country_random": false,
+        "color_index": 2,
+        "color_random": false,
+        "start_position": {
+          "Position": 2
+        },
+        "team": {
+          "Team": 1
+        },
+        "difficulty": "Easy"
+      }
+    ],
+    "options": {
+      "starting_credits": 10000,
+      "unit_count": 6,
+      "tech_level": 2,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": true,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": true,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    },
+    "selected_map_file": "XMP03T4.MAP",
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": true
+        },
+        {
+          "slot_index": 1,
+          "valid": true
+        },
+        {
+          "slot_index": 2,
+          "valid": false
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 200,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 300,
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1376,
+          "target_rx": 45,
+          "target_ry": 81
+        }
+      }
+    }
+  ],
+  "observe_owners": [
+    "VERA-OBSERVER"
+  ],
+  "camera_cell": [
+    43,
+    81
+  ],
+  "terrain_cells": [
+    [
+      41,
+      79
+    ],
+    [
+      42,
+      79
+    ],
+    [
+      43,
+      79
+    ],
+    [
+      44,
+      79
+    ],
+    [
+      45,
+      79
+    ],
+    [
+      41,
+      80
+    ],
+    [
+      42,
+      80
+    ],
+    [
+      43,
+      80
+    ],
+    [
+      44,
+      80
+    ],
+    [
+      45,
+      80
+    ],
+    [
+      41,
+      81
+    ],
+    [
+      42,
+      81
+    ],
+    [
+      43,
+      81
+    ],
+    [
+      44,
+      81
+    ],
+    [
+      45,
+      81
+    ],
+    [
+      41,
+      82
+    ],
+    [
+      42,
+      82
+    ],
+    [
+      43,
+      82
+    ],
+    [
+      44,
+      82
+    ],
+    [
+      45,
+      82
+    ],
+    [
+      41,
+      83
+    ],
+    [
+      42,
+      83
+    ],
+    [
+      43,
+      83
+    ],
+    [
+      44,
+      83
+    ],
+    [
+      45,
+      83
+    ]
+  ],
+  "observe_audio": {
+    "sound_ids": [
+      "WallCrushBlack"
+    ],
+    "max_events": 4,
+    "max_samples_per_event": 262144,
+    "completion_tail_ms": 2000
+  },
+  "observe_action_line_inputs": true
+}

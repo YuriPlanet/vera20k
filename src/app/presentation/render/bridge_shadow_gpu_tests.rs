@@ -138,6 +138,89 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+#[test]
+#[ignore = "requires physical retail Wall SHPs and GPU; production shadow atlas material domains"]
+fn retail_wall_shadow_atlas_covers_physical_material_domains() {
+    let packet = native_bridge_packet();
+    let mut fixture = RetailBridgeFixture::load(&packet);
+    fixture.names = crate::render::overlay_assets::render_overlay_names(&fixture.registry);
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let atlas = fixture.atlas(&gpu, &batch);
+    let mut walls = Vec::new();
+    for (&id, name) in &fixture.names {
+        let flags = fixture.registry.flags(id).unwrap();
+        if !flags.wall {
+            continue;
+        }
+        let image = fixture
+            .rules
+            .art()
+            .resolve_overlay_image_id(name, &fixture.rules_ini);
+        // The independent native-loader filename owner admits one primary and
+        // one generic retry, unlike the atlas's compatibility candidate list.
+        let candidates = crate::rules::art_data::native_overlay_shp_names(
+            fixture.rules.art(),
+            &image,
+            fixture.theater.extension,
+            "TEMPERATE",
+        );
+        let (winner, bytes) = candidates
+            .iter()
+            .find_map(|candidate| {
+                fixture
+                    .assets
+                    .get_ref(candidate)
+                    .map(|bytes| (candidate, bytes))
+            })
+            .expect("physical Wall SHP");
+        let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).unwrap();
+        let half = shp.frames.len() / 2;
+        let mut populated = 0;
+        for state in 0..=u8::MAX {
+            let frame = shp.frames.get(half + usize::from(state));
+            let drawable =
+                frame.is_some_and(|frame| frame.frame_width != 0 && frame.frame_height != 0);
+            let entry = atlas.shadow_entry(name, state);
+            assert_eq!(entry.is_some(), drawable, "{name} {winner} state{state}");
+            assert!(
+                atlas.body_entry(name, state).is_none(),
+                "Wall body belongs to OverlayAtlas"
+            );
+            if let Some(entry) = entry {
+                let frame = frame.unwrap();
+                assert_eq!(
+                    entry.pixel_size,
+                    [f32::from(frame.frame_width), f32::from(frame.frame_height)]
+                );
+                populated += 1;
+            }
+        }
+        if name == "CAKRMW" {
+            assert_eq!((flags.damage_levels, half), (2, 48));
+            assert!(atlas.shadow_entry(name, 47).is_some());
+        }
+        if name == "GAFWLL" {
+            assert!(fixture.assets.get_ref(&candidates[0]).is_none());
+            assert_eq!(winner.as_str(), "GGFWLL.SHP");
+        }
+        if name == "CAFNCW" {
+            assert_eq!((half, populated), (32, 31));
+        }
+        walls.push(name.as_str());
+    }
+    assert_eq!(
+        walls,
+        [
+            "GASAND", "GAWALL", "NAWALL", "CAFNCB", "CAFNCW", "CAKRMW", "CAFNCP", "GAFWLL"
+        ]
+    );
+}
+
 struct RetailBridgeFixture {
     assets: AssetManager,
     theater: crate::map::theater::TheaterData,
@@ -260,6 +343,9 @@ impl RetailBridgeFixture {
                 &terrain,
                 atlas,
                 &self.names,
+                &[],
+                None,
+                None,
                 camera.world_origin_y,
                 camera.world_height,
                 camera.camera_pos[0],
@@ -341,6 +427,9 @@ fn assert_native_cell_sweep_order(
         &terrain,
         atlas,
         &fixture.names,
+        &[],
+        None,
+        None,
         -100.0,
         1000.0,
         -600.0,
@@ -809,6 +898,9 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
                 terrain,
                 &atlas,
                 &fixture.names,
+                &[],
+                None,
+                None,
                 view.world_origin_y,
                 view.world_height,
                 view.camera_pos[0],

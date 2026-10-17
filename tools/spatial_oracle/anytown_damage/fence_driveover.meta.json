@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical XMP03T4 CAFNCB Cell480CB0(-1) sequence43,82 then44,82 using the existing authored-fence VM. Direct Cell component; not native UnitPerCell, audio, movement scheduling or whole-World RNG parity.",
+  "assumptions": [
+    "Same physical readers, actual95 authored Wall admissions/data pass, original Map/Cell/TMP/navigation/ScenarioInit/GameActive producers and shared radar storage as --authored-fence. No actor or positive Techno/listener population. Independent seed0 is installed on all3 native streams after setup.",
+    "Source cells43,82 then44,82 are independently declared component inputs. Each real480CB0(-1), its complete reached cleanup/Recalc/navigation/radar/expiry and deferred drain execute in order; second input state is the actual first call output. Direct Unit caller73B056 uses -1; AreaDamage and its70D4A0 detach are not part of this route.",
+    "All3 complete RNG states, request/raw events, Cell/122 changes, return values, callback order, runtime cursor and delete queue are observed. Selected forced branch is asserted draw-free; this says nothing about Unit sound playback Main-stream RNG. Full UnitPerCell timing, captured+1B8 target, sound+48 position and recoil use separate original296 numeric/caller evidence and normal World integration.",
+    "Native constructor default D2B and admitted exact-case TiltsWhenCrushes7153DA..7153FB reads run through the same MTNK reader and physical RULESMD/LANGRULE/Battle/map layers. This does not execute Drive pre-entry+64/-0.05 tilt, Unit+334 recoil, or Unit+6B5 lifetime."
+  ],
+  "substitutions": [
+    "Existing successful bounded allocation/free, CRT/TLS/cache/physical asset transport and Windows SEH/checked pointer service. Empty tactical extents and screen/shroud presentation sinks remain; radar dirty body runs on shared supplied storage. No wall/area/Recalc/navigation/expiry result is supplied."
+  ],
+  "entry_points": {
+    "wall_damage": "0x00480CB0",
+    "cleanup": "0x00480630",
+    "connection": "0x00480510",
+    "map_identity": "0x005FD41A",
+    "map_data": "0x005FD61A",
+    "recalc": "0x0047D2B0",
+    "pointer_expiry": "0x007258D0",
+    "main_counter_zero": "0x0048CDF0",
+    "active_game": "0x0052D9D7",
+    "cell_spread_init": "0x00561910",
+    "unit_forced_caller": "0x0073B056",
+    "physical_cell_query": "0x0041BEA0",
+    "sound_coordinate_query": "0x005F65A0",
+    "tilts_reader": "0x007153DA"
+  },
+  "replay_command": "python -m tools.spatial_oracle.anytown_damage.mtnk_attack --authored-fence-driveover",
+  "payload_sha256": "4e7ae7c66d70cf297f18e294915620d59e045ffc7fca0e29c5fa932b0931c108"
+}

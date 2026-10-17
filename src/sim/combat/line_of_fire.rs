@@ -46,51 +46,6 @@ const LEPTONS_PER_CELL: i32 = 256;
 /// `CMP EAX,0x4` at 0x004CC5A7). Units are terrain Levels, not leptons.
 const CLIFF_STEP_LEVELS: i32 = 4;
 
-/// Overlay array indices that `CellClass::IsWallConnectableInDirection`
-/// 0x00480510 accepts for the "any wall?" query — the form 0x004CC32D uses,
-/// pushing `-1` for both the type and the direction. The three ids are hard
-/// coded in that body.
-///
-/// **These are `[OverlayTypes]` DECLARATION indices, not the INI key text.**
-/// `RulesClass::Process` reads the section by 0-based entry index — `XOR
-/// EBX,EBX` at 0x00668CF3, `PUSH EBX` as the entry selector at 0x00668D0A,
-/// `INC EBX; CMP EBX,EBP; JL` at 0x00668D2F-0x00668D32 — and never parses the
-/// `N=` on the left of the line. Stock `rulesmd.ini` has 250 entries under keys
-/// 1..253 with keys **40, 41 and 183 missing**, so `id == key - 1` holds only
-/// below key 42. Resolved by declaration index the three ids are `GAWALL`
-/// (key 3), `NAWALL` (key 27) and `GAFWLL` (key 247). `CAKRMW`, the Kremlin
-/// wall, is id **240** and is NOT in this set — a wall-breaking shell is
-/// refused by it exactly as it is by sandbags. VERA shares that numbering:
-/// `rules::overlay_types::is_bridge_overlay_index` pins `BRIDGEB1`/`BRIDGEB2`
-/// at 237/238, their declaration indices, against INI keys 241/242.
-///
-/// Id 243 is LIVE, and all three ids fire in ordinary play. `[GAFWLL]` is the
-/// Yuri Citadel Wall: `rulesmd.ini:13561` declares it, `:13571` gives it
-/// `Wall=yes`, and it carries `Name=Yuri Citadel Wall`, `TechLevel=2`,
-/// `Prerequisite=YABRCK`. Its buildable half is `[BuildingTypes] 312`
-/// (`rulesmd.ini:1499`), `artmd.ini:4129`'s `[GAFWLL]` gives it
-/// `Cameo=CITWICON` and `ToOverlay=GAFWLL`, and `[AI] ConcreteWalls`
-/// (`rulesmd.ini:3077`) names exactly `GAWALL,NAWALL,GAFWLL` — this set. Any
-/// Yuri player who walls a base puts overlay 243 on the map.
-///
-/// It is easy to miss because its header carries a trailing comment —
-/// `[GAFWLL];temp wall for yuri[YAWALL]` — which a `^\[NAME\]$` matcher
-/// rejects. Neither real reader does. `INIClass::LoadFromStraw` 0x00525A60
-/// tests `CMP byte ptr [ESP+0x78],0x5B` at 0x00525DC1, calls
-/// `strchr(line, ']')` (`PUSH 0x5D` at 0x00525DCC) and NULs the FIRST `]` at
-/// 0x00525DDB before naming the section from `buffer+1`; VERA's
-/// `rules::ini_parser` takes the same `line.find(']')` prefix. Nor is this a
-/// GAFWLL quirk: 61 stock `rulesmd.ini` sections and 154 in `artmd.ini` have
-/// such headers, `[Controller]`, `[Parasite]`, `[FlakWeapon]` and
-/// `[JumpjetControls]` among them.
-///
-/// Deliberately NOT "every `Wall=yes` overlay": stock authors `Wall=yes` on
-/// eight overlays — `GASAND` (0), `GAWALL` (2), `NAWALL` (26), `CAFNCB` (203),
-/// `CAFNCW` (204), `CAKRMW` (240), `CAFNCP` (241) and `GAFWLL` (243) — of
-/// which only three are re-admitted, so a wall-breaking warhead does not get
-/// waved through a sandbag or a fence line.
-const WALL_CONNECTABLE_OVERLAY_IDS: [u8; 3] = [2, 26, 243];
-
 /// Map state the walk consults beyond the resolved terrain grid.
 ///
 /// `overlay_grid`/`overlay_registry` are `Option` because several sim entry
@@ -403,21 +358,19 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
         .as_deref()
         .and_then(|name| rules.warhead(name))
         .is_some_and(|wh| wh.wall);
-    if warhead_breaks_walls && wall_is_connectable(&hit, los) {
+    if warhead_breaks_walls
+        && matches!(
+            crate::sim::cell_kernel::wall_connection_step(
+                overlay(&hit, los).0.map_or(-1, i32::from),
+                -1,
+            ),
+            crate::sim::cell_kernel::WallConnectionStep::Return(true)
+        )
+    {
         return None;
     }
 
     Some(hit)
-}
-
-/// `CellClass::IsWallConnectableInDirection(cell, -1, -1)` 0x00480510 as
-/// 0x004CC333 calls it: with the type argument `-1` the body reduces to a
-/// membership test on the cell's own overlay index against three hard-coded
-/// ids, and the direction argument is never read.
-fn wall_is_connectable(cell: &CellRef<'_>, los: &LineOfFireInputs<'_>) -> bool {
-    overlay(cell, los)
-        .0
-        .is_some_and(|id| WALL_CONNECTABLE_OVERLAY_IDS.contains(&id))
 }
 
 #[cfg(test)]

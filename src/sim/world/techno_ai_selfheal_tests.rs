@@ -626,41 +626,113 @@ fn the_production_ai_stage_consumes_the_hospital_count() {
     );
 }
 
+/// Rules6656A7..6656B0 initializes both periods1000/amounts1. Missing
+/// General keys retain those fields; they are distinct from authored zero.
 #[test]
-fn an_absent_self_heal_frame_key_cannot_divide_by_zero() {
+fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_building_grants() {
     let (mut sim, _rules, owner) = scene();
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[General]\nRepairRate=.016\n\
-         [InfantryTypes]\n0=E1\n\
-         [BuildingTypes]\n0=CAHOSP\n\
+         [InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n\
+         [BuildingTypes]\n0=CAHOSP\n1=CAMACH\n\
          [E1]\nStrength=125\nSpeed=4\nCost=100\n\
-         [CAHOSP]\nStrength=800\nCost=1000\nFoundation=2x2\nInfantryGainSelfHeal=1\n",
+         [MTNK]\nStrength=300\nSpeed=6\nCost=700\n\
+         [CAHOSP]\nStrength=800\nCost=1000\nFoundation=2x2\nInfantryGainSelfHeal=1\n\
+         [CAMACH]\nStrength=800\nCost=1000\nFoundation=2x2\nUnitsGainSelfHeal=1\n",
     ))
     .expect("rules without the SelfHeal keys");
-    assert_eq!(rules.general.self_heal_infantry_frames, 0);
+    assert_eq!(rules.general.self_heal_infantry_frames, 1000);
+    assert_eq!(rules.general.self_heal_infantry_amount, 1);
+    assert_eq!(rules.general.self_heal_unit_frames, 1000);
+    assert_eq!(rules.general.self_heal_unit_amount, 1);
     let hospital = spawn(&mut sim, &rules, "CAHOSP");
-    sim.grant_house_self_heal(hospital, &rules);
-    sim.houses.get_mut(&owner).unwrap().grant_self_heal(1, 0);
+    let machine_shop = spawn(&mut sim, &rules, "CAMACH");
+    assert_eq!(sim.houses[&owner].self_heal_infantry(), 1);
+    assert_eq!(sim.houses[&owner].self_heal_units(), 1);
     let infantry = spawn(&mut sim, &rules, "E1");
-    sim.substrate
-        .entities
-        .get_mut(infantry)
-        .unwrap()
-        .health
-        .set_for_test(10);
-    sim.session.binary_frame = 0;
-    // The native IDIV would fault on a zero period; the port declines instead of
-    // panicking, which is the documented difference from native.
-    house_self_heal_step(&mut sim, infantry, &rules);
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(infantry)
+    let tank = spawn(&mut sim, &rules, "MTNK");
+    for actor in [infantry, tank] {
+        sim.entities_mut()
+            .get_mut(actor)
             .unwrap()
             .health
-            .current(),
-        10
-    );
+            .set_for_test(10);
+    }
+    for (frame, expected) in [(999, 10), (1000, 11), (1001, 11)] {
+        sim.session.binary_frame = frame;
+        for actor in [infantry, tank] {
+            house_self_heal_step(&mut sim, actor, &rules);
+            assert_eq!(
+                sim.entities().get(actor).unwrap().health.current(),
+                expected
+            );
+        }
+    }
+    // The actual building ownership transition revokes both live grants.
+    let other = sim.interner.intern("Other");
+    sim.houses
+        .insert(other, HouseState::new(other, 1, None, false, 0, 10));
+    for building in [hospital, machine_shop] {
+        sim.change_owner_with_rules(building, other, &rules, None, FrameEffects::empty());
+    }
+    assert_eq!(sim.houses[&owner].self_heal_infantry(), 0);
+    assert_eq!(sim.houses[&owner].self_heal_units(), 0);
+    assert_eq!(sim.houses[&other].self_heal_infantry(), 1);
+    assert_eq!(sim.houses[&other].self_heal_units(), 1);
+    sim.session.binary_frame = 2000;
+    for actor in [infantry, tank] {
+        house_self_heal_step(&mut sim, actor, &rules);
+        assert_eq!(sim.entities().get(actor).unwrap().health.current(), 11);
+    }
+}
+
+/// Native IDIV6FA7EE/6FA8E2 raises interrupt0 before either HasSelfHeal
+/// query, including count0. Missing keys are covered separately above.
+#[test]
+fn authored_house_self_heal_divide_faults_precede_the_house_count() {
+    let native = crate::test_fixture::json("tools/procedural_drawing_oracle/self_heal_status.json");
+    let mut checked = 0;
+    for row in native["divide_controls"].as_array().unwrap() {
+        if row["path"] != "ai" {
+            continue;
+        }
+        let (mut sim, mut rules, owner) = scene();
+        let name = row["type_name"].as_str().unwrap();
+        let infantry = name == "E1";
+        if row["house_count"] == 1 {
+            spawn(&mut sim, &rules, if infantry { "CAHOSP" } else { "CAMACH" });
+        }
+        let actor = spawn(&mut sim, &rules, name);
+        sim.entities_mut()
+            .get_mut(actor)
+            .unwrap()
+            .health
+            .set_for_test(row["health_before"].as_i64().unwrap() as i32);
+        let period = row["period"].as_i64().unwrap() as i32;
+        if infantry {
+            rules.general.self_heal_infantry_frames = period;
+        } else {
+            rules.general.self_heal_unit_frames = period;
+        }
+        sim.session.binary_frame = row["binary_frame"].as_i64().unwrap() as u32;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            house_self_heal_step(&mut sim, actor, &rules);
+        }));
+        assert_eq!(row["fault"]["interrupt"], 0);
+        assert!(result.is_err(), "{row}");
+        assert_eq!(
+            sim.entities().get(actor).unwrap().health.current(),
+            row["health_after"].as_i64().unwrap() as i32,
+        );
+        let count = if infantry {
+            sim.houses[&owner].self_heal_infantry()
+        } else {
+            sim.houses[&owner].self_heal_units()
+        };
+        assert_eq!(i64::from(count), row["house_count"].as_i64().unwrap());
+        checked += 1;
+    }
+    assert_eq!(checked, 6);
 }
 
 /// The same mechanism on a **real retail map**, so the keys come from the

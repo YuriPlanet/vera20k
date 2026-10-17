@@ -12,12 +12,21 @@ building lookups, CreateRadarEvent, the EVA, NotifyUnderAttack, the gattling
 stage and the building offline/online calls.
 
 Rust consumer: src/sim/temporal_tests.rs.
+
+``--house-notice`` keeps a separate small corpus for the first-head building
+notice and ordinary LetGo. It reuses this Fixture, runs original HouseNotify,
+Building GetCoords/precheck and animation-empty pause/resume, and records the
+radar/audio boundaries. See temporal_house_notice.md for its physical inputs.
 """
+import hashlib
 import struct
+import sys
 from pathlib import Path
 
-from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EAX, UC_X86_REG_ESP, UC_X86_REG_EIP, UC_X86_REG_FPCW
+from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
+from unicorn.x86_const import (UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EAX,
+                               UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP,
+                               UC_X86_REG_EIP, UC_X86_REG_FPCW)
 
 from tools.native_oracle import (load_image, run_checked, SCRATCH, STACK_BASE, STACK_SIZE,
                                  RET_MAGIC, NATIVE_FPCW, finish_vectors, provenance)
@@ -148,9 +157,9 @@ class Fixture:
         self.objects[address] = data
         self.names[name] = address
 
-    def call(self, address, ecx, arg):
+    def call(self, address, ecx, arg=None):
         u = self.u
-        u.mem_write(SP, dwords(RET_MAGIC) + dwords(arg))
+        u.mem_write(SP, dwords(RET_MAGIC) + (b"" if arg is None else dwords(arg)))
         u.reg_write(UC_X86_REG_ESP, SP)
         u.reg_write(UC_X86_REG_ECX, ecx)
         run_checked(u, address, RET_MAGIC, count=200_000)
@@ -317,5 +326,307 @@ def metadata():
                       "let_go": 0x71ABC0, "contact_with_whom": 0x65AD30})
 
 
+def house_notice_retail():
+    """Existing physical lexical/native-reader owners establish selected inputs."""
+    from tools.rules_oracle import bridge_child_sound as sound_owner
+    from tools.rules_oracle.ini_token_readers import Reader, KEY, READ_BOOL, READ_INT
+    from tools.spatial_oracle.building_body_rules import INI, TYPE, SP as READER_SP
+    from tools.spatial_oracle.trigger_action_values import (
+        ActionFixture, physical_eva, initialize_eva)
+
+    root = sound_owner.ROOT
+    reader = Reader()
+    fields = dict(strength=0, insignificant=False, resource_gatherer=False,
+                  warpable=True, undeploys_into=None)
+    keys = dict(strength=("Strength", READ_INT), insignificant=("Insignificant", READ_BOOL),
+                resource_gatherer=("ResourceGatherer", READ_BOOL),
+                warpable=("Warpable", READ_BOOL))
+    layers = []
+    for name in ("RULESMD.INI", "LANGRULE.INI", "MPBattleMD.ini", "Hills.map"):
+        path = root / name
+        if not path.exists():
+            assert name == "LANGRULE.INI", path
+            layers.append(dict(file=name, absent=True))
+            continue
+        raw = path.read_bytes()
+        sections = sound_owner.sections(raw)
+        values = sections.get("YAREFN", {})
+        selected = {key: values[key] for key in (*[v[0] for v in keys.values()],
+                                                  "UndeploysInto") if key in values}
+        for field, (key, native) in keys.items():
+            fields[field] = reader.scalar_latin1(values.get(key), int(fields[field]), native)
+        text, length = reader.read_string(values.get("UndeploysInto"), "", 0x80)
+        if length:
+            # This profile's stock SMIN reference exists in the physical catalog.
+            # Actual UnitType allocation/full type construction is a stated seam.
+            fields["undeploys_into"] = text
+        layers.append(dict(file=name, bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
+                           yarefn=selected,
+                           base_under_attack_sound=sections.get("AudioVisual", {}).get(
+                               "BaseUnderAttackSound")))
+
+    art_raw = (root / "ARTMD.INI").read_bytes()
+    art = sound_owner.sections(art_raw)
+    foundation = art["YAREFN"]["Foundation"]
+    reader.entry(foundation)
+    reader.u.mem_write(READER_SP, dwords(RET_MAGIC, TYPE + 0x1F8, KEY, 0))
+    reader.u.reg_write(UC_X86_REG_ESP, READER_SP)
+    reader.u.reg_write(UC_X86_REG_ECX, INI)
+    run_checked(reader.u, 0x474DA0, RET_MAGIC, count=100_000)
+    fields["foundation_id"] = reader.u.reg_read(UC_X86_REG_EAX)
+    fields["foundation"] = foundation
+    fields["width"] = struct.unpack("<I", reader.u.mem_read(
+        0x8192B8 + fields["foundation_id"] * 4, 4))[0]
+    fields["height"] = struct.unpack("<I", reader.u.mem_read(
+        0x819310 + fields["foundation_id"] * 4, 4))[0]
+
+    # Reuse Sound's registry/INI/allocator transport. Its two historical entries
+    # remain resident; the added siren's numeric ID is fixture-relative.
+    sound = sound_owner.Sound.__new__(sound_owner.Sound)
+    sound.sample_ids = {"gexp06a": 0, "gexpshaa": 1, "ubase": 2}
+    sound_owner.Sound.__init__(sound)
+    physical = sound.physical
+    sound.make_ini({"Defaults": physical["Defaults"],
+                    "SoundList": {k: v for k, v in physical["SoundList"].items()
+                                  if v == "BaseUnderAttackSiren"},
+                    "BaseUnderAttackSiren": physical["BaseUnderAttackSiren"]})
+    sound.invoke(0x7510D0, INI)
+    siren_id = sound.invoke(0x7514D0, sound.cstring("BaseUnderAttackSiren"))
+    sound_ptr = sound.read32(sound.read32(0xB1D37C) + siren_id * 4)
+    entry = sound.read32(sound_ptr)
+    rules = sound.alloc(0x2000)
+    sound.invoke(0x665650, rules)
+    ctor_siren = struct.unpack("<i", sound.u.mem_read(rules + 0x184, 4))[0]
+    sound_layers = []
+    for layer in layers:
+        if layer.get("absent"):
+            continue
+        raw = layer["base_under_attack_sound"]
+        sound.make_ini({"AudioVisual": {} if raw is None else {"BaseUnderAttackSound": raw}})
+        sound.u.mem_write(READER_SP, dwords(RET_MAGIC))
+        for reg, value in ((UC_X86_REG_ESP, READER_SP), (UC_X86_REG_ESI, rules),
+                           (UC_X86_REG_EDI, INI), (UC_X86_REG_EAX, 0)):
+            sound.u.reg_write(reg, value)
+        run_checked(sound.u, 0x669C9A, 0x669CE2, count=100_000,
+                    required_addresses=(0x528A10,))
+        sound_layers.append(dict(file=layer["file"], raw=raw,
+                                 resolved_fixture_id=sound.read32(rules + 0x184)))
+    siren = dict(name="BaseUnderAttackSiren", fixture_id=siren_id,
+                 constructor_id=ctor_siren, layers=sound_layers,
+                 physical=physical["BaseUnderAttackSiren"],
+                 sample_names=[name for name, index in sound.sample_ids.items()
+                               if index in [sound.read32(entry + 0xB4 + i * 4)
+                                            for i in range(sound.read32(entry + 0x134))]],
+                 priority=sound.read32(entry + 0x40),
+                 volume_fixed16_raw=sound.read32(entry + 0x1C))
+
+    eva_physical, eva_identity = physical_eva()
+    eva = ActionFixture()
+    initialize_eva(eva, eva_physical)
+    wanted = {"EVA_OreMinerUnderAttack", "EVA_OurBaseIsUnderAttack",
+              "EVA_OurAllyIsUnderAttack"}
+    eva_rows = []
+    for index in range(eva.integer(0xB1D4B0)):
+        pointer = eva.read32(eva.read32(0xB1D4A4) + index * 4)
+        name = eva.string(pointer)
+        if name not in wanted:
+            continue
+        columns = {}
+        for side, label in enumerate(("Allied", "Russian", "Yuri")):
+            eva.call(0x7534E0, [], ecx=side)
+            columns[label] = eva.string(eva.call(0x753380, [], ecx=pointer))
+        eva_rows.append(dict(name=name, native_index=index, type=eva.integer(pointer + 0x4C),
+                             priority=eva.integer(pointer + 0x48), columns=columns))
+    eva.check_code()
+    return dict(layers=layers, yarefn=fields, siren=siren,
+                art=dict(bytes=len(art_raw), sha256=hashlib.sha256(art_raw).hexdigest(),
+                         selected={"YAREFN": art["YAREFN"]}),
+                sound=dict(bytes=len(sound.raw), sha256=hashlib.sha256(sound.raw).hexdigest()),
+                eva=dict(**eva_identity, native_registry_count=eva.integer(0xB1D4B0),
+                         selected=eva_rows))
+
+
+class HouseNoticeFixture(Fixture):
+    """One optional continuation of the existing Temporal VM, no second emulator."""
+
+    def __init__(self):
+        super().__init__()
+        self.u.hook_add(UC_HOOK_MEM_WRITE, self.observe_timer_write)
+
+    def observe_timer_write(self, u, _access, address, size, value, _data):
+        if getattr(self, "phase", "setup") == "setup":
+            return
+        for name, low, high in self.timer_ranges:
+            if address < high and low < address + size:
+                self.timer_writes.append(dict(object=name, offset=address - low,
+                    pc=f"{u.reg_read(UC_X86_REG_EIP):08X}", bytes=size,
+                    value=value & ((1 << (size * 8)) - 1)))
+
+    def observe(self, u, pc, size, data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        this = u.reg_read(UC_X86_REG_ECX)
+        if pc == 0x4F93E0:
+            self.events.append(["notify_under_attack", self.name_of(this),
+                                self.name_of(self.word(sp + 4))])
+            return  # continue the original body instead of the inherited sink
+        if pc in (0x4521C0, 0x452210):
+            self.events.append(["building_offline" if pc == 0x4521C0 else "building_online",
+                                self.name_of(this)])
+            return  # original +660 writer; all21 animation slots are NULL
+        if pc == 0x752700:
+            name = bytes(u.mem_read(this, 128)).split(b"\0", 1)[0].decode("ascii")
+            self.events.append(["eva", name, struct.unpack("<i", dwords(
+                u.reg_read(UC_X86_REG_EDX)))[0], self.signed(sp + 4)])
+            self.ret(0, 4)
+            return
+        if pc == 0x750920:
+            self.events.append(["siren", this, u.reg_read(UC_X86_REG_EDX),
+                                self.word(sp + 4), self.word(sp + 8)])
+            self.ret(0, 8)
+            return
+        if pc in (0x65C780, 0x65C7E0, 0x65C84B):
+            self.events.append(["rng", f"{pc:08X}", self.name_of(this)])
+        if pc == 0x6E53A0:
+            raise AssertionError("The declared empty HouseTag list reached Tag::Spring")
+        super().observe(u, pc, size, data)
+
+    def state(self):
+        return dict(target_head=self.name_of(self.word(TARGET + 0x278)),
+                    target_warped=self.byte(TARGET + 0x270),
+                    target_online=self.byte(TARGET + 0x660),
+                    attackers=[dict(target=self.name_of(self.word(node(n) + 0x28)),
+                                    prev=self.name_of(self.word(node(n) + 0x40)),
+                                    next=self.name_of(self.word(node(n) + 0x44)),
+                                    warp_remaining=self.signed(node(n) + 0x48))
+                               for n in range(len(self.notice_case.get("attackers", [{}])))],
+                    houses={name: dict(power_recheck=self.byte(p + 0x5778),
+                                       tech_recheck=self.byte(p + 0x1FC))
+                            for name, p in (("local_house", LOCAL_HOUSE),
+                                            ("target_house", TARGET_HOUSE))},
+                    timers={name: list(struct.unpack("<3i", self.u.mem_read(low, high - low)))
+                            for name, low, high in self.timer_ranges},
+                    rng={name: bytes(self.u.mem_read(p, 0x3F4)).hex()
+                         for name, p in self.rngs.items()})
+
+    def record_phase(self, label):
+        self.phases.append(dict(name=label, state=self.state(), events=self.events,
+                                timer_writes=self.timer_writes))
+        self.events, self.timer_writes = [], []
+
+    def call(self, address, ecx, arg=None):
+        if address != INITIATE_WARP:
+            return super().call(address, ecx, arg)
+        u = self.u
+        case, fields = self.notice_case, self.fields
+        self.phase = "setup"
+        u.mem_write(0xA8B238, dwords(5))
+        u.mem_write(0xA8ED84, dwords(1000))
+        u.mem_write(TARGET + 0x520, dwords(TARGET_TYPE))
+        u.mem_write(TARGET + 0x660, bytes([case.get("online_before", 1)]))
+        u.mem_write(TARGET_TYPE + 0x408, dwords(FACTORY_TYPE if fields["undeploys_into"] else 0))
+        u.mem_write(TARGET_TYPE + 0x5EC, bytes([int(fields["resource_gatherer"])]))
+        u.mem_write(TARGET_TYPE + 0xEF0, dwords(fields["foundation_id"]))
+        u.mem_write(TARGET_VT + 0x48, dwords(0x447AC0))
+        u.mem_write(TARGET_VT + 0x80, dwords(0x457620))
+        u.mem_write(LOCAL_HOUSE + 0x30, dwords(0))
+        u.mem_write(TARGET_HOUSE + 0x30, dwords(1))
+        house_type, rules, scenario = (SCRATCH + off for off in (0x40000, 0x41000, 0x50000))
+        u.mem_write(TARGET_HOUSE + 0x34, dwords(house_type))
+        u.mem_write(house_type + 0x1A6, bytes([int(case.get("passive", False))]))
+        u.mem_write(TARGET_HOUSE + 0x5788, dwords(int(case.get("allied", False))))
+        u.mem_write(0x8871E0, dwords(rules))
+        u.mem_write(rules + 0x184, dwords(self.siren_id))
+        u.mem_write(0xA8B230, dwords(scenario))
+        self.rngs = dict(scenario=scenario + 0x218, main=0x886B88, mapgen=0xABE890)
+        for rng in self.rngs.values():
+            super().call(0x65C6D0, rng, 3)
+        self.timer_ranges = [("target_dispatch", TARGET + 0xC8, TARGET + 0xD4),
+                             ("firer_dispatch", owner(0) + 0xC8, owner(0) + 0xD4),
+                             ("temporal_unused", node(0) + 0x2C, node(0) + 0x38)]
+        for _name, low, _high in self.timer_ranges:
+            u.mem_write(low, struct.pack("<3i", 990, 0, 16))
+        self.phases, self.timer_writes = [], []
+        self.record_phase("before")
+        self.phase = "start"
+        super().call(address, ecx, arg)
+        self.record_phase("start")
+        self.phase = "release_firer"
+        super().call(0x71ABC0, node(0))
+        self.record_phase("release_firer")
+        if case.get("chain"):
+            self.phase = "release_original_head"
+            super().call(0x71ABC0, node(case["chain"][0]))
+            self.record_phase("release_original_head")
+
+    def execute_notice(self, case, stock, siren_id):
+        self.notice_case = case
+        self.fields = dict(stock, **case.get("type_changes", {}))
+        self.siren_id = siren_id
+        target = dict(rtti=6, coords=[20 * 256 + 128, 20 * 256 + 128, 0],
+                      local=case.get("local", True), strength=self.fields["strength"],
+                      warpable=int(self.fields["warpable"]),
+                      insignificant=int(self.fields["insignificant"]))
+        supplied = dict(case, target=target, target_type=self.fields,
+                        game_mode=5, frame=1000, rng_seed=3,
+                        timer_priors=[990, 0, 16], siren_fixture_id=siren_id,
+                        target_online_before=case.get("online_before", 1), house_tags=0)
+        super().execute(dict(case, target=target))
+        return dict(input=supplied, phases=self.phases)
+
+
+def house_notice_inputs():
+    return [
+        dict(name="stock_yarefn_own"),
+        dict(name="stock_yarefn_deduped", radar_accepts=0),
+        dict(name="ordinary_base", type_changes=dict(undeploys_into=None, resource_gatherer=False)),
+        dict(name="undeployer_not_gatherer", type_changes=dict(resource_gatherer=False)),
+        dict(name="gatherer_not_undeployer", type_changes=dict(undeploys_into=None)),
+        dict(name="allied_yarefn", local=False, allied=True),
+        dict(name="remote_yarefn", local=False),
+        dict(name="passive_allied_yarefn", local=False, allied=True, passive=True),
+        dict(name="second_attacker", chain=[1], attackers=[{}, {}], online_before=0),
+        dict(name="insignificant_yarefn", type_changes=dict(insignificant=True)),
+        dict(name="one_by_one_undeployer", type_changes=dict(foundation_id=0, foundation="1x1",
+                                                             width=1, height=1)),
+    ]
+
+
+def generate_house_notice():
+    retail = house_notice_retail()
+    fixture = HouseNoticeFixture()
+    return dict(schema_version=1, retail=retail,
+                cases=[fixture.execute_notice(case, retail["yarefn"], retail["siren"]["fixture_id"])
+                       for case in house_notice_inputs()])
+
+
+def house_notice_metadata():
+    return provenance(
+        scope="Original first-head Temporal71AF20 -> HouseNotify4F93E0 for stock YAREFN, then original LetGo71ABC0",
+        assumptions=[
+            "Existing Temporal Fixture supplies target/attacker objects and declared house roles; no full object/scenario constructors or shot producer. Houses have explicit indices0/1, mode5, player pointer and empty Tag list. Other-manager/captive slots and all21 animation pointers are NULL.",
+            "Selected physical RULESMD, optional LANGRULE, Battle and Hills use the existing lexical owner and original scalar/name readers. ART Foundation is unlayered and ReadFoundation474DA0 executes. Stock SMIN pointer identity is supplied, excluding UnitType registry allocation/full type reader closure.",
+            "Original House branch, Building GetCoords447AC0, foundation dimensions45EC90/45ECA0, precheck457620/465D40 and animation-empty pause/resume4521C0/452210 execute. First-head and prepared second-attacker/777 priors are explicit. Timer priors990/0/16 and frame1000 are component inputs, not game cadence.",
+            "Each of Scenario/Main/MapGen is originally seeded3 after fixture transport; full1012-byte states are observed uninterrupted through start/release. Temporal+2C timer has no active reader/writer and remains a documented unrepresented Rust field.",
+            "Existing Sound reader retains its two Explosion entries then reads the physical siren, so siren/sample numeric IDs are fixture-relative. Original Rules constructor and selected669C9A..669CE2 sound-reference read execute across actual layers. Whole original EVA753000 reads the fixed470 entries; selected type/priority/side strings are observed through753380/7534E0, excluding playback.",
+        ],
+        substitutions=[
+            "Inherited GetTechnoType/WhatAmI and invulnerability virtuals return declared type/RTTI/flags; Mark and Deselect are observed sinks. No GetCoords or Building precheck result is supplied in this profile.",
+            "CreateRadarEvent65FA70 records type/cell and returns the declared radar_accepts boolean; actual dedup/lifetime/outline remains the existing client owner. EVA752700 and Voc750920 record literal/type/priority or resolved fixture sound ID/pan/volume/handle, returning with native RET4/RET8. No cue/device RNG or audible parity is claimed.",
+            "Existing native INI/allocator/TLS transport replaces physical INI IO. Sound AddSample4015C0 maps physical gexp06a/gexpshaa/ubase to declared fixture ordinals0/1/2; no sample decode/AudioIndex/device output. Fixed EVA reader reuses its existing paused-stream shell and bounded allocator.",
+        ],
+        entry_points={"initiate_warp":0x71AF20, "can_warp_target":0x71AE50,
+                      "let_go":0x71ABC0, "house_notify":0x4F93E0,
+                      "building_coords":0x447AC0, "precheck":0x457620,
+                      "read_foundation":0x474DA0, "pause":0x4521C0,
+                      "resume":0x452210, "seed_rng":0x65C6D0,
+                      "siren_reference":0x669C9A, "eva_read":0x753000})
+
+
 if __name__ == "__main__":
-    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)
+    argv = sys.argv[1:]
+    if "--house-notice" in argv:
+        argv.remove("--house-notice")
+        finish_vectors(generate_house_notice, Path(__file__).with_name("temporal_house_notice.json"),
+                       provenance=house_notice_metadata, argv=argv)
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)

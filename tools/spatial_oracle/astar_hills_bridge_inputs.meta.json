@@ -32,13 +32,5 @@
     "theater_activation_reading": "0x005349C0",
     "map_lookup": "0x005657A0"
   },
-  "source_sha256": {
-    "tools/spatial_oracle/astar_hills_bridge_inputs.py": "fe60545520c613eb8c0f44afc44dc1f3015cb5ebf58b9b2c0706e6e27f9b554e",
-    "tools/spatial_oracle/anytown_damage/navigation.py": "84b123f168898386752dae17ad9dec685b3f98ebe1e873c18d14f68c53abf8e4",
-    "tools/spatial_oracle/anytown_damage/navigation_inputs.py": "a4971d093ed40dac72da16f52a5ddd33a27d9899cc7607c8ec4d01ebd7f5bd5f",
-    "tools/spatial_oracle/bridge_constructor.py": "9a0155e48cb24c11b34dd28be4580a28bf3821e4ef034109dd494921f4d598a6",
-    "tools/spatial_oracle/anytown_damage/next_family_native.py": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-    "tools/spatial_oracle/astar_mtnk_inputs.py": "7e90659dd54d6a9b9fad99a64634b5173d163fe1053066b4d52d833979f83c18"
-  },
   "payload_sha256": "5f443a99c2e541fce7ca30790ecf31214770cd9d442f03a9c91d96e6f2a9fded"
 }

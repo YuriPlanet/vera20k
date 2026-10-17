@@ -50,6 +50,25 @@ pub fn json(path: &'static str) -> &'static serde_json::Value {
     })
 }
 
+/// Serialize declared section/key string inputs into the production INI parser.
+/// This does not tokenize values or resolve any referenced rule/catalog names.
+pub fn ini_sections(sections: &serde_json::Value) -> crate::rules::ini_parser::IniFile {
+    let mut text = String::new();
+    for (name, entries) in sections
+        .as_object()
+        .expect("fixture sections are an object")
+    {
+        text.push_str(&format!("[{name}]\n"));
+        for (key, value) in entries.as_object().expect("fixture section is an object") {
+            text.push_str(&format!(
+                "{key}={}\n",
+                value.as_str().expect("fixture INI values are strings")
+            ));
+        }
+    }
+    crate::rules::ini_parser::IniFile::from_str(&text)
+}
+
 /// Contents of the fixture at `path`, relative to the checkout root.
 pub fn bytes(path: &'static str) -> &'static [u8] {
     fixture(path).bytes.get_or_init(|| {

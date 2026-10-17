@@ -823,7 +823,7 @@ def generate_authored_init(*, natural_context=False):
     tiles, tile_receipt = extract_tiles(theater)
     native_map = Navigation(reader, theater, tiles, create_actor=False,
                             scenario_theater=scenario_theater, terrain_inputs_only=True,
-                            ore_lifecycle=natural_context)
+                            runtime_lifecycle=natural_context)
     u = native_map.uc
     read32 = lambda pointer: sr.u32(u, pointer)
     signed = lambda value: struct.unpack('<i', dwords(value))[0]

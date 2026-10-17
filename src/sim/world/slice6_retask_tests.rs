@@ -352,7 +352,10 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // The exact-zero gate70AF87 replaces frame-produced empty source caches and
 // default fog owner planes. This is a Rust state ratchet; retask behavior,
 // per-frame replay and absolute RNG tripwires remain independent.
-const SLICE6_BASELINE_HASH: u64 = 0x2887_492F_5797_CE91;
+// Snapshot385 retains native Drive+64 in the existing payload hash, including
+// its false value. This Rust ratchet includes that state byte; the fixture
+// keeps its separate replay, gameplay and absolute RNG expectations.
+const SLICE6_BASELINE_HASH: u64 = 0x2E0A_9E18_D6B8_59CD;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

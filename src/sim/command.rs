@@ -768,6 +768,11 @@ pub enum Command {
     /// Event7: Scatter(NULL, forced=true, no_kidding=false). Appended so
     /// existing saved/replayed command variant indices remain unchanged.
     Scatter { entity_id: u64 },
+    /// PRIMARY17: toggle the named live Building's retained primary flag
+    /// (`EventClass4C718C` -> `Building448160`). A normal self-click emits it
+    /// only for a nonprimary factory; a queued duplicate can toggle it off.
+    /// Appended to preserve existing saved/replayed command variant indices.
+    TogglePrimaryFactory { entity_id: u64 },
 }
 
 impl Command {

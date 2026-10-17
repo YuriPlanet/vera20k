@@ -16,7 +16,7 @@ use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::rng::SimRng;
-use crate::sim::world::Simulation;
+use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// The oracle fixture's frame.
 const FRAME: u32 = 200;
@@ -234,9 +234,9 @@ fn the_block_matches_the_original() {
         // next cell (native GetCoords rows in building_fire_facing.json).
         let centre = u16::from(input["foundation"].as_i64().unwrap_or(3) != 0);
         assert_eq!(
-            ping.map(|event| (event.structure, event.owner, event.rx, event.ry)),
+            ping.map(|event| (event.victim_type, event.owner, event.rx, event.ry)),
             (row["ping"] == serde_json::json!([true])).then_some((
-                true,
+                before.type_ref(),
                 before.owner(),
                 BUILDING.0 + centre,
                 BUILDING.1 + centre
@@ -362,7 +362,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usi
         rules,
         None,
     );
-    pings.iter().filter(|ping| ping.structure).count()
+    pings.len()
 }
 
 /// A human's turreted defence hit from out of range pings and turns its
@@ -431,12 +431,16 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
         &rules,
         None,
     );
+    sim.dispatch_under_attack_events(&pings, &rules);
     assert_eq!(
-        pings
+        sim.sound_events
             .iter()
-            .map(|ping| (ping.structure, ping.miner))
+            .filter_map(|event| match event {
+                SimSoundEvent::UnderAttack { miner, .. } => Some(*miner),
+                _ => None,
+            })
             .collect::<Vec<_>>(),
-        [(true, true)]
+        [true]
     );
 }
 

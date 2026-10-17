@@ -2,23 +2,25 @@
 
 Run python -m tools.spy_infiltration_oracle --check (or explicit --write).
 Rust consumers: src/sim/spy_infiltration_tests.rs (house and Super state)
-and src/app/match_runtime/eva_producers.rs (radar event and EVA lines).
+and src/app/match_runtime/sound_dispatch.rs (radar event and EVA lines).
 
 Section, each case executed in a fresh emulator:
 - infiltrate: BuildingClass::Infiltrate 0x4571E0 on a building of house H0
   by a spy of house H1 (or of H0 itself), over each arm and their order:
   Radar=, Power=, [AI] BuildTech=, SuperWeapon=, Storage=, Factory=. The
   local player (PlayerPtr 0xA83D4C, GameMode 1) is H0, H1 or a third house,
-  and the radar event's answer is given per row.
+  and the radar event's answer is given per row. Every supplied House starts
+  with RecheckTechTree (+0x1FC) clear; repeated-gain controls supply an already
+  true stolen-tech/veterancy flag while leaving that request clear.
 
 Native: HouseClass::IsPlayer 0x50B6F0, ReshroudMap 0x50BD10,
 SpyPowerSabotage 0x50BC90, Available_Money 0x4F6990 (through the money
 interface at House+0x24), Spend_Money 0x4F9790, Add_Credits 0x4F9950,
 Math::ftol 0x7C5F00 and SuperClass::Reset 0x6CE0B0 all run. Recorded stubs:
 MapClass::Reset_Shroud 0x577AB0, CreateRadarEvent 0x65FA70, VoxClass::PlayEVA
-0x752700 and the building's vt+0x1B8 (its cell). Not recorded, as VERA keeps
-none of them: vt+0x124 (Mark), the spy house's RecheckTechTree (+0x1FC) and
-the sidebar byte 0x884B8E.
+0x752700 and the building's vt+0x1B8 (its cell). Both House +0x1FC bytes are
+recorded with gains/money; the building's vt+0x124 (Mark) and sidebar byte
+0x884B8E remain outside the Rust state comparison. See spy_infiltration_oracle.md.
 """
 from pathlib import Path
 import struct
@@ -82,6 +84,8 @@ def house(emu, address, balance):
     emu.write32(address + 0x34, HOUSE_TYPE)
     emu.write32(address + 0x30C, balance)
     emu.write32(address + 0x310, 200)
+    # A settled input boundary, not House constructor's initially true latch.
+    write8(emu, address + 0x1FC, 0)
 
 
 def run(row):
@@ -96,6 +100,13 @@ def run(row):
     house(emu, HOUSE, row['owner']['balance'])
     house(emu, INFILTRATOR, row['infiltrator']['balance'])
     house(emu, BYSTANDER, 0)
+    # Declared prior gains use the same five native bytes as the result. No
+    # Infiltrate result or recheck answer is supplied by this initialization.
+    gains = row.get('initial_gains', [0] * 5)
+    if len(gains) != 5 or any(value not in (0, 1) for value in gains):
+        raise OracleError('initial_gains requires five boolean bytes')
+    for offset, value in zip(range(0x2BC, 0x2C1), gains):
+        write8(emu, INFILTRATOR + offset, value)
     write8(emu, HOUSE + 0x577A, row['owner']['spy_sat'])
 
     emu.write32(RULES + 0xD64, row['rules']['blackout'])
@@ -156,11 +167,13 @@ def run(row):
         'owner': {
             'balance': emu.read_i32(HOUSE + 0x30C),
             'spent': emu.read_i32(HOUSE + 0x2DC),
+            'recheck_tech': read8(emu, HOUSE + 0x1FC),
             'recheck_power': read8(emu, HOUSE + 0x5778),
             'blackout': [emu.read_i32(HOUSE + 0x2A4), emu.read_i32(HOUSE + 0x2AC)],
         },
         'infiltrator': {
             'balance': emu.read_i32(INFILTRATOR + 0x30C),
+            'recheck_tech': read8(emu, INFILTRATOR + 0x1FC),
             'stolen': [read8(emu, INFILTRATOR + offset) for offset in (0x2BC, 0x2BD, 0x2BE)],
             'veteran': [read8(emu, INFILTRATOR + 0x2BF), read8(emu, INFILTRATOR + 0x2C0)],
         },
@@ -176,7 +189,7 @@ def run(row):
 def row(name, *, own=False, local='owner', radar_accepted=True, frame=1200, radar=False,
         power=0, side=0, build_tech=False, super_weapon=False, storage=0, factory=None,
         blackout=1000, percent='.5', spy_sat=False, balance=1000, infiltrator_balance=500,
-        super_=None):
+        super_=None, initial_gains=None):
     case = {
         'name': name, 'own': own, 'local': local, 'radar_accepted': radar_accepted,
         'frame': frame,
@@ -187,6 +200,8 @@ def row(name, *, own=False, local='owner', radar_accepted=True, frame=1200, rada
         'infiltrator': {'balance': infiltrator_balance},
         'super': super_,
     }
+    if initial_gains is not None:
+        case['initial_gains'] = list(initial_gains)
     case['expected'] = run(case)
     return case
 
@@ -256,6 +271,17 @@ def infiltrate():
             local='infiltrator'))
     add(row('cash before the factory', storage=100, factory='unit', local='infiltrator'))
     add(row('a negative Power= takes no arm', power=-150, local='infiltrator'))
+    # Requests are unconditional, even if the gain already holds. Earlier
+    # control inputs/order remain unchanged.
+    for side, gains in ((0, [0, 0, 1, 0, 0]), (1, [0, 1, 0, 0, 0]),
+                        (2, [1, 0, 0, 0, 0])):
+        add(row(f'BuildTech side {side}, gain already true and recheck clear',
+                build_tech=True, side=side, initial_gains=gains, local='infiltrator'))
+    for factory, gains in (('unit', [0, 0, 0, 0, 1]), ('infantry', [0, 0, 0, 1, 0])):
+        add(row(f'{factory} factory, gain already true and recheck clear',
+                factory=factory, initial_gains=gains, local='infiltrator'))
+    add(row('own BuildTech: no gain or recheck', own=True, build_tech=True, side=1))
+    add(row('own infantry factory: no gain or recheck', own=True, factory='infantry'))
     return rows
 
 
@@ -271,7 +297,16 @@ if __name__ == '__main__':
                'time (+0x24 = -1).'),
         assumptions=['GameMode 1, so IsPlayer compares each house with PlayerPtr.',
                      'Both houses hold no silo storage (+0x2FC) and a capacity (+0x310) of '
-                     '200, so Spend_Money never drains buildings.'],
+                     '200, so Spend_Money never drains buildings.',
+                     'Each supplied House explicitly starts with RecheckTechTree+1FC=0. '
+                     'Optional initial_gains supplies five2BC..2C0 bytes in native '
+                     'Third/Soviet/Allied/veteranInfantry/veteranUnit order. Whole Infiltrate '
+                     'owns its unconditional gain/recheck writes, including repeat gains.',
+                     'This is isolated4571E0. Real519FF8 caller, Capture mission RNG/timer, '
+                     'Tag48, UnInit/expiry/Limbo/scalar cleanup and later House suffix/'
+                     '4456D0/retained-sidebar insertion are separate production integration '
+                     'responsibilities. The leaf has no direct RNG or detach; Super/blackout '
+                     'timer effects execute in their selected arms.'],
         substitutions=['MapClass::Reset_Shroud 0x577AB0, CreateRadarEvent 0x65FA70 (answered '
                        'per row) and VoxClass::PlayEVA 0x752700 are recorded stubs.',
                        "The building's vt+0x1B8 answers a fixed cell; vt+0x124 (Mark) returns."],

@@ -105,7 +105,7 @@ pub(crate) struct ObjectDrawRun {
 
 /// The second Extras sweep (6D9789), in retained Display parent order.
 /// Lines use live Z; ordinary health stores never read or write it. Native
-///6F5190 submits each parent's rank before its health border and pips.
+///6F5190 submits each parent's clock/wrench/rank before its health and pips.
 pub(crate) enum ObjectExtrasRun {
     Lines {
         #[cfg(test)]
@@ -116,6 +116,8 @@ pub(crate) enum ObjectExtrasRun {
     Status {
         #[cfg(test)]
         parent: DrawId,
+        bomb_clock: Option<u32>,
+        wrench: Option<u32>,
         rank: Option<u32>,
         background: Option<u32>,
         fills: std::ops::Range<u32>,
@@ -313,6 +315,16 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             );
             let lines = brackets.remove(&owner);
             let strip = status.remove(&owner).map(|strip| {
+                let bomb_clock = strip.bomb_clock.map(|instance| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    index
+                });
+                let wrench = strip.wrench.map(|instance| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    index
+                });
                 let rank = strip.rank.map(|instance| {
                     let index = lowered.extras_instances.len() as u32;
                     lowered.extras_instances.push(instance);
@@ -341,6 +353,8 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 ObjectExtrasRun::Status {
                     #[cfg(test)]
                     parent: owner,
+                    bomb_clock,
+                    wrench,
                     rank,
                     background,
                     fills: start..end,
@@ -350,22 +364,27 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     group_text: rectangles_end..text_end,
                 }
             });
-            // Native6F5382 precedes selected Building lines6F5396..5E10;
-            // health6F5E27 follows them. Split only when those lines fence a
-            // rank, retaining a single upload for both native Extras sweeps.
-            let mut split_rank = None;
+            // Clock6F524E, wrench6F5340 and rank6F5382 precede Building lines
+            //6F5396..5E10; health6F5E27 follows. Split that prefix when lines
+            // fence it, retaining one upload for both native Extras visits.
+            let mut split_prefix = None;
             if lines.as_ref().is_some_and(|lines| !lines.extras.is_empty()) {
                 if let Some(ObjectExtrasRun::Status {
-                    rank: Some(rank),
+                    bomb_clock,
+                    wrench,
+                    rank,
                     fills,
                     ..
                 }) = &strip
+                    && (bomb_clock.is_some() || wrench.is_some() || rank.is_some())
                 {
-                    split_rank = Some(lowered.extras_runs.len());
+                    split_prefix = Some(lowered.extras_runs.len());
                     lowered.extras_runs.push(ObjectExtrasRun::Status {
                         #[cfg(test)]
                         parent: owner,
-                        rank: Some(*rank),
+                        bomb_clock: *bomb_clock,
+                        wrench: *wrench,
+                        rank: *rank,
                         background: None,
                         fills: fills.start..fills.start,
                         scale: fills.start..fills.start,
@@ -376,7 +395,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 }
             }
             if let Some(lines) = lines {
-                if let Some(index) = split_rank.filter(|_| is_building) {
+                if let Some(index) = split_prefix.filter(|_| is_building) {
                     push_before_lines(lowered, lines.behind);
                     push_initial_status(lowered, index);
                     push_before_lines(lowered, lines.extras.clone());
@@ -398,6 +417,8 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 }
             }
             if let Some(ObjectExtrasRun::Status {
+                bomb_clock,
+                wrench,
                 rank,
                 background,
                 fills,
@@ -408,8 +429,12 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 ..
             }) = strip
             {
-                let rank = rank.filter(|_| split_rank.is_none());
-                if rank.is_some()
+                let bomb_clock = bomb_clock.filter(|_| split_prefix.is_none());
+                let wrench = wrench.filter(|_| split_prefix.is_none());
+                let rank = rank.filter(|_| split_prefix.is_none());
+                if bomb_clock.is_some()
+                    || wrench.is_some()
+                    || rank.is_some()
                     || background.is_some()
                     || !fills.is_empty()
                     || !scale.is_empty()
@@ -426,6 +451,8 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     lowered.extras_runs.push(ObjectExtrasRun::Status {
                         #[cfg(test)]
                         parent: owner,
+                        bomb_clock,
+                        wrench,
                         rank,
                         background,
                         fills,
@@ -632,6 +659,8 @@ mod tests {
                 extras: vec![],
             });
             parent.status = Some(TechnoExtras {
+                bomb_clock: None,
+                wrench: None,
                 rank: None,
                 background: None,
                 fills: vec![SpriteInstance::default(); 15],
@@ -693,6 +722,8 @@ mod tests {
             extras: vec![line(11)],
         });
         parent.status = Some(TechnoExtras {
+            bomb_clock: None,
+            wrench: None,
             rank: Some(SpriteInstance::default()),
             background: None,
             fills: vec![SpriteInstance::default(); 15],
@@ -742,6 +773,8 @@ mod tests {
         };
         let mut first = parent(901, 0);
         first.status = Some(TechnoExtras {
+            bomb_clock: None,
+            wrench: None,
             rank: Some(SpriteInstance {
                 position: [0.0, 0.0],
                 ..Default::default()
@@ -773,6 +806,8 @@ mod tests {
         });
         let mut last = parent(2, 2);
         last.status = Some(TechnoExtras {
+            bomb_clock: None,
+            wrench: None,
             rank: None,
             background: None,
             fills: vec![SpriteInstance {

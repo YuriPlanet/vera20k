@@ -5,8 +5,9 @@
 //! `0x00456E00`, from a C4 plant); team script action 50 (`0x006E9D0A`);
 //! `TeamClass::Flash_Members` (`0x006EF5FB`); and
 //! `TActionClass::FlashBuildingsOfType` (`0x006E45CB`). Not all are ported
-//! yet: the heal flash, the MegaMission flash (`world_commands`) and the
-//! ToggleRepair flash (`production_repair`) are not. The shared late TechnoAI
+//! yet: the heal flash and the MegaMission flash (`world_commands`) are not.
+//! ToggleRepair447091 reuses the Building Flash owner for a local repair start.
+//! The shared late TechnoAI
 //! slot steps it (`0x004CC770`, called at `0x006FAC4D`). Presentation reads
 //! its phase bit; there is no separate flash clock.
 

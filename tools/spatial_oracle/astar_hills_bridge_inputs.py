@@ -6,7 +6,6 @@ The existing Overlay constructor owner executes original Mark and bridge
 setters. Native archive/map loading, world-object placement, final map passes,
 connectivity/hierarchy, ordinary Move and A* are excluded.
 """
-from pathlib import Path
 import hashlib
 import struct
 
@@ -132,12 +131,7 @@ def establish():
         # Original ReadMapOverlayPacks5FD4F3..5FD502 restores the retained
         # authored frame. Supply only its admitted caller frame and BL byte;
         # original Map lookup and Cell store execute.
-        sp = navigation.STACK_BASE + navigation.STACK_SIZE - 0x1000
-        u.reg_write(UC_X86_REG_ESP, sp)
-        u.reg_write(UC_X86_REG_EBX, physical['frame'])
-        u.mem_write(sp + 0x18, map_queries.packed(*c))
-        run_checked(u, 0x5FD4F3, 0x5FD508, count=1000,
-                    required_addresses=(0x5657A0, 0x5FD502))
+        bridge_constructor.OriginalBridgeConstructor.restore_bridge_data(m,c,physical['frame'])
         stamp_receipts.append(dict(physical=dict(coord=list(c), **physical),
                                    before=old, after=cell(p), events=events[mark:]))
     after = snapshot()
@@ -214,9 +208,4 @@ def metadata():
         substitutions=[
             'Inherited bounded successful allocation/free, CRT TLS and atexit; physical lexical INI preparation and archive IO are host supplied.',
             'Inherited screen/radar/dirty-rectangle sinks and a recorded waterfall animation constructor boundary; native Cell Recalc, bridge stamping, scalar readers, MTNK constructors and CanEnter returns are not replaced.'])
-    owners = [Path(__file__), Path(navigation.__file__), Path(navigation_inputs.__file__),
-              Path(bridge_constructor.__file__), Path(next_family_native.__file__),
-              Path(astar_mtnk_inputs.__file__)]
-    root = Path(__file__).resolve().parents[2]
-    result['source_sha256'] = {str(p.relative_to(root)): sha(p.read_bytes()) for p in owners}
     return result

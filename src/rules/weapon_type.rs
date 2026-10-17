@@ -237,7 +237,8 @@ impl WeaponType {
             // ReadString 0x80 ahead of each type lookup (`0x00772998`,
             // `0x0077295F`).
             projectile: section.read_name("Projectile", 0x80).map(str::to_string),
-            warhead: section.read_name("Warhead", 0x80).map(str::to_string),
+            // 75E3B0 answers null for `none`, which the retained projection writes.
+            warhead: section.read_type_name("Warhead", 0x80).map(str::to_string),
             report: sound_list(section, "Report"),
             burst: section.read_int("Burst", 1),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Retained fixed-catalog MTNK VoiceMove list and required Enter/Capture/Harvest scalar bindings, complete reached voice bodies and native Main/QueueVoice order; bounded input/caller priors.",
+  "assumptions": [
+    "The existing shared order-voice reader bootstrap owns BulletReader, Rules665650 and UnitType7470D0 construction, fixed physical SOUNDMD through Sound/sound_inputs and original lookup. Move vector+468/count+478 defaults empty at710DFD/710E03. Enter+558/Capture+55C/Harvest+57C default-1 at710F19/710F1F/710F4F, with EBP=-1 from710CED.",
+    "Selected original reader blocks execute at712AB3..712B1D,713091..71310F and71363D..7136C1 after original526810 section admission. Adjacent delayed scalar stores retain their actual current values. Whole type/file readers are excluded. Actual RULESMD/LANGRULE/MPBattleMD/XMP03T4 layers come from physical_layers; SOUNDMD is fixed and ART is irrelevant to these decisions.",
+    "Native ReadString capacity128 bounds tokens to127bytes. Missing/empty list reads retain the current vector; a nonempty unresolved/comma-only list can replace it with empty. Order/duplicates and case behavior are original reader outputs. Scalar names resolve through7514D0 and retain the current signed ID for missing/empty/unresolved inputs; they are not raw unbound strings.",
+    "Native reader values transfer by value into the existing run/voice_control action VM, never as transplanted pointers. Full Move708FC0, Enter709020, Capture708DC0, Harvest709060, raw Main65C780 and QueueVoice708D90/House50B6F0 execute unchanged. Capture falls to Enter then Move; Harvest falls to Move. Bound scalars spend no raw draw; every nonempty reached Move list including singleton spends one before QueueVoice admission.",
+    "Ordinary Move controls execute original Foot4D7C76 argument production with declared selected Object/NULL planning Cell, then mission2/NULL attack target through6FFBE0. Stop6FFDA5 precedes event encoding. Fallback and disabled/nonhuman direct controls enter the named voice body explicitly; they do not establish complete Enter/Capture/Harvest gameplay actions or ordinary nonhuman input admission.",
+    "Existing canonical seeded_struct/draws owns seed and native four-word continuation. All3complete RNG states are retained; Scenario/MapGen stay unchanged. There are no measured timer-start or detach calls in the voice continuation. The later ordinary input action-line timer remains outside it."
+  ],
+  "substitutions": [
+    "Historical run owns the sole action VM and its supplied selection/keyboard/map/Cell/height/shroud/playfield/terrain/range/FireError and cursor-sink boundaries. Actor/type/House state, pending777 and initial RNG seed are consumer priors, not whole scenario construction or movement/path/event scheduling.",
+    "Sound owns source-order cache/registry/binding. AudioIndex names map to local selected-subset indices; numeric sound IDs are fixture-relative. No audio service/sample RNG, PCM, hardware or complete playback claim. Native instructions/vtables are unchanged and original text is checked before/after each action continuation."
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "techno_type_ctor": "0x00710AF0",
+    "voice_move_reader": "0x00712AB3",
+    "voice_enter_reader": "0x00713091",
+    "voice_capture_reader": "0x007130D3",
+    "voice_harvest_reader": "0x0071363D",
+    "read_sound_list": "0x00525430",
+    "read_string": "0x00528A10",
+    "sound_types": "0x007510D0",
+    "sound_lookup": "0x007514D0",
+    "move_argument_producer": "0x004D7C76",
+    "accepted_order": "0x006FFBE0",
+    "voice_enable_gate": "0x006FFCBD",
+    "voice_move": "0x00708FC0",
+    "voice_enter": "0x00709020",
+    "voice_capture": "0x00708DC0",
+    "voice_harvest": "0x00709060",
+    "queue_voice": "0x00708D90",
+    "house_admission": "0x0050B6F0",
+    "main_raw": "0x0065C780"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --move-order-voice",
+  "payload_sha256": "b4d447531bdd8107b8545a3e3199dbcf5d82907882f30ff16891b03135a15142"
+}

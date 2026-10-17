@@ -178,9 +178,16 @@ fn refresh_fixture_sidebar(
     let layout_spec = SidebarChromeLayoutSpec::stock();
     let visible_rows = crate::ui::sidebar::compute_layout_with_spec(layout_spec, 800.0, 1200.0, 0)
         .side2_tile_count;
+    // Use the production Sidebar seed/pending-additions boundary. Eligibility
+    // changes cannot admit a new cameo without its real House lifecycle pass.
+    let seed_additions = fixture
+        .projection
+        .needs_cameo_seed(fixture.owner)
+        .then(|| production::initial_construction_options(&fixture.sim, &fixture.rules))
+        .unwrap_or_default();
     fixture
         .projection
-        .reconcile_fixture(fixture.owner, &candidates, visible_rows);
+        .reconcile_cameos(fixture.owner, &candidates, visible_rows, &seed_additions);
     fixture
         .projection
         .reconcile_factory_links(&fixture.sim, fixture.owner);
@@ -603,6 +610,261 @@ fn start_mixed_infantry_queue(fixture: &mut Fixture) -> (u64, u64) {
         factory.construction_order(),
         factory.object.unwrap().entity_id.unwrap(),
     )
+}
+
+/// Stock SPY519FF8 -> NATECH4573DC/4573EA -> the same frame's House4F9280
+/// admission -> retained Infantry strip -> Select/paid Factory -> CIVAN exit.
+/// Native control/data: tools/spy_infiltration_oracle; this test exercises the
+/// connected production route, not native movement or Factory timing goldens.
+#[test]
+fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
+    use crate::sim::spy_infiltration::InfiltrationEffect;
+
+    let Some(mut fixture) = stock_base_fixture(
+        "Americans",
+        &[
+            ("GACNST", 4),
+            ("GAPOWR", 11),
+            ("GAPILE", 18),
+            ("GATECH", 25),
+        ],
+        false,
+    ) else {
+        return;
+    };
+    let owner = fixture.owner;
+    fixture.sim.session.game_mode_nonzero = true;
+    let enemy = fixture.sim.intern("Russians");
+    // The supplied rival base is idle. Both House array entries are human,
+    // so unrelated AI construction cannot manufacture the missing request.
+    let mut house = HouseState::new(enemy, 1, Some(enemy), true, 0, 10);
+    house.project_country_mults(&fixture.rules, &fixture.sim.interner);
+    fixture.sim.houses.insert(enemy, house);
+    fixture.sim.session.house_order.push(enemy);
+    let laboratory = fixture
+        .sim
+        .spawn_object_at_height("NATECH", "Russians", 18, 20, 0, 0, &fixture.rules)
+        .expect("healthy enemy stock Battle Lab");
+    let spy = fixture
+        .sim
+        .spawn_object_at_height("SPY", "Americans", 14, 20, 0, 0, &fixture.rules)
+        .expect("stock Spy starts outside the Battle Lab");
+    let laboratory_health = fixture
+        .sim
+        .entities()
+        .get(laboratory)
+        .unwrap()
+        .health
+        .current();
+    let ivan = fixture.sim.interner.get("CIVAN").unwrap();
+    assert!(fixture.rules.is_build_tech("NATECH"));
+    assert_eq!(
+        fixture
+            .rules
+            .object("NATECH")
+            .unwrap()
+            .ai_base_planning_side,
+        1
+    );
+    assert!(
+        fixture
+            .rules
+            .object("CIVAN")
+            .unwrap()
+            .requires_stolen_soviet_tech
+    );
+    assert!(
+        fixture
+            .sim
+            .infiltrator_building_action(spy, laboratory, &fixture.rules)
+    );
+
+    // Drain constructor/discovery/Super requests before seeding the sidebar.
+    // Waiting for quiet outputs avoids reaching the reward through a stale
+    // initial House+1FC instead of the infiltration's own writer.
+    let mut quiet_frames = 0;
+    for _ in 0..64 {
+        let frame = advance_commands(&mut fixture, &[]);
+        let local_recheck = frame.lifecycle_outputs.iter().any(|output| {
+            matches!(output, LifecycleOutput::SidebarRecalculated { owner: reached } if *reached == owner)
+        });
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        quiet_frames = if local_recheck { 0 } else { quiet_frames + 1 };
+        if quiet_frames == 2 {
+            break;
+        }
+    }
+    assert_eq!(
+        quiet_frames, 2,
+        "the supplied base must settle before infiltration"
+    );
+    assert!(fixture.projection.needs_cameo_seed(owner));
+    let initial = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+    assert!(
+        initial
+            .items
+            .iter()
+            .any(|item| item.type_id == "E1" && item.enabled)
+    );
+    assert!(!initial.items.iter().any(|item| item.type_id == "CIVAN"));
+    assert!(!fixture.projection.needs_cameo_seed(owner));
+    assert!(
+        production::all_build_options_for_owner(&fixture.sim, &fixture.rules, "Americans")
+            .iter()
+            .any(|option| option.type_id == ivan && !option.visible_in_sidebar()),
+        "the stock Soviet stolen-tech gate must be closed before entry"
+    );
+
+    let capture = CommandEnvelope::new(
+        owner,
+        fixture.sim.session.tick + 1,
+        Command::CaptureBuilding {
+            engineer_id: spy,
+            target_building_id: laboratory,
+        },
+    );
+    let mut entered = false;
+    for step in 0..600 {
+        let frame = advance_commands(
+            &mut fixture,
+            if step == 0 {
+                std::slice::from_ref(&capture)
+            } else {
+                &[]
+            },
+        );
+        let tech_entry = frame.sound_events.iter().any(|event| {
+            matches!(event, SimSoundEvent::BuildingInfiltrated {
+                owner: target_owner,
+                infiltrator,
+                effect: InfiltrationEffect::Tech,
+                ..
+            } if *target_owner == enemy && *infiltrator == owner)
+        });
+        let recheck = frame.lifecycle_outputs.iter().position(|output| {
+            matches!(output, LifecycleOutput::SidebarRecalculated { owner: reached } if *reached == owner)
+        });
+        if !tech_entry {
+            assert!(
+                recheck.is_none(),
+                "an unrelated local request would mask the Spy writer"
+            );
+        }
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        let view = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+        if !tech_entry {
+            assert!(!view.items.iter().any(|item| item.type_id == "CIVAN"));
+            continue;
+        }
+        assert!(
+            fixture
+                .sim
+                .entities()
+                .get(spy)
+                .is_none_or(|actor| !actor.lifecycle.object_alive()),
+            "the real entry consumes the Spy before the House suffix"
+        );
+        assert!(
+            production::all_build_options_for_owner(&fixture.sim, &fixture.rules, "Americans")
+                .iter()
+                .any(|option| option.type_id == ivan && option.enabled),
+            "the entry must actually grant Soviet tech before testing sidebar admission"
+        );
+        let addition = frame.lifecycle_outputs.iter().position(|output| {
+            matches!(output, LifecycleOutput::SidebarConstructionOption { owner: reached, type_id } if *reached == owner && *type_id == ivan)
+        });
+        assert!(
+            addition.is_some(),
+            "stock Spy stole Soviet tech, but its entry frame did not admit CIVAN through House+1FC"
+        );
+        assert!(recheck.is_some_and(|recheck| addition.unwrap() < recheck));
+        assert!(
+            view.items
+                .iter()
+                .any(|item| item.type_id == "CIVAN" && item.enabled)
+        );
+        assert!(!fixture.projection.needs_cameo_seed(owner));
+        entered = true;
+        break;
+    }
+    assert!(
+        entered,
+        "the ordinary CaptureBuilding order must reach the Battle Lab"
+    );
+    let target = fixture.sim.entities().get(laboratory).unwrap();
+    assert_eq!(target.owner(), enemy);
+    assert_eq!(target.health.current(), laboratory_health);
+
+    // The exact newly retained entry reaches the ordinary gadget and Select
+    // decision; dispatch its PRODUCE result through the normal command queue.
+    let click = press_cameo(
+        &mut fixture,
+        "CIVAN",
+        SidebarTab::Infantry,
+        CameoPress::Left,
+    );
+    assert_eq!(click.order, Some(CameoOrder::Produce));
+    let credits_before = production::credits_for_owner(&fixture.sim, "Americans");
+    let spent_before = fixture.sim.houses[&owner].economy.spent_credits();
+    let cost = fixture.sim.cost_of(
+        owner,
+        fixture.rules.object("CIVAN").unwrap(),
+        &fixture.rules,
+    );
+    let produce = CommandEnvelope::new(
+        owner,
+        fixture.sim.session.tick + 1,
+        Command::QueueProduction { type_id: ivan },
+    );
+    let mut held = None;
+    let mut delivered = false;
+    for step in 0..4096 {
+        let frame = advance_commands(
+            &mut fixture,
+            if step == 0 {
+                std::slice::from_ref(&produce)
+            } else {
+                &[]
+            },
+        );
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
+        if let Some(product) = fixture
+            .sim
+            .production
+            .factories
+            .view(owner, ProductionCategory::Infantry)
+            .and_then(|factory| factory.object)
+        {
+            assert_eq!(product.type_id, ivan);
+            let id = product
+                .entity_id
+                .expect("the Factory holds its actual CIVAN");
+            assert!(held.is_none_or(|previous| previous == id));
+            held = Some(id);
+        }
+        if held.is_some_and(|id| {
+            fixture.sim.entities().get(id).is_some_and(|product| {
+                product.lifecycle.object_alive() && !product.lifecycle.in_limbo()
+            })
+        }) {
+            delivered = true;
+            break;
+        }
+    }
+    assert!(
+        delivered,
+        "the paid held CIVAN must leave the real barracks"
+    );
+    assert!(production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Americans").is_empty());
+    assert_eq!(
+        production::credits_for_owner(&fixture.sim, "Americans"),
+        credits_before - cost
+    );
+    assert_eq!(
+        fixture.sim.houses[&owner].economy.spent_credits(),
+        spent_before + cost
+    );
 }
 
 /// House4F92E2 alone recalculates membership. Draw6A98D3 clears DARKEN

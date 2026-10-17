@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary selected stock GAWEAP self-action/click -> original TargetEvent17/receiver/manual primary448160 -> original MTNK FindFactory, plus explicit receiver/group/limbo/edge controls",
+  "assumptions": [
+    "Extends the existing JoinedFixture/Reader/Lists/Sound owners, not a new VM or parser. Full original BuildingType constructors execute. GACNST/GAPOWR/GAPILE keep the existing complete readers. GAWEAP executes exact Image5F92F9..5F9340, Strength5F94D3..5F94F3, BuildCat45FE78..45FE97, Factory46051A..46054B, GapGenerator713F92..713FAC, ConstructionYard460A24..460A44, Owner7149E1..7149FB, Naval714A63..714A7D, Passengers714B35..714B56, absorb460988..4609D6 and InvisibleInGame460DEB..460E07 blocks, then fixed ART Foundation461225..46125D/table binding46152C..461547 after original45B1C0 table initialization. UnitAbsorb is+16AE/key81AABC; InfantryAbsorb is+16AF/key81AAAC. The demand-loaded buildup/image/animation lifecycle is excluded.",
+    "Source-order lexical strings from physical RULESMD.INI, absent LANGRULE.INI, MPBattleMD.ini and Hills.map feed original native scalar/enum readers with their retained constructor defaults. Country vector capacity/physical [Countries] name order are supplied; full5113F0 enrolls/indexes each country before original Owner lookup. Country inherited metadata and full Rules/Process are outside this selected catalog.",
+    "MTNK uses its full UnitType constructor7470D0 and original Owner/Naval read blocks. FindFactory(0,0,0,House) executes unchanged with its actual RTTI; CanBuild/online-required/aircraft contact/paid production/delivery are excluded.",
+    "Building/House/map admission and ordered House building vectors are supplied. Existing Mission/stage constructor stores and sound-handle constructors execute; primary byte store6F2F4F and UID producer410230/68BCB0 execute. Runtime ID catalog publication is supplied sorted storage; original token binary search/RTTI and empty-planning cleanup execute. Cached keyboard is supplied settled with one selected actor. No normal input result is answered.",
+    "The ordinary history executes whole447210,443410, native OutList copy,4C65E0 and4C6CB0. The final empty-planning click also runs actual LeftUp4ABF78..4ABF94 compatibility/capacity gates639040/639130 on one selected actor with null+514 and zero House plan count. Earlier Display geometry/picking/selection and full LeftUp/4AE750 scheduling remain supplied. Event transport/scheduling supplies actual issued record pointers immediately to the original receiver. Direct event controls execute original constructor/receiver without claiming their supplied stale/foreign/limbo/zero-health priors arise from normal clicking.",
+    "Separate planning_admission controls retain the six original histories and supply0/127/128 other nonempty paths as House0 counter priors through original639F60 increments. They select one no-path GAWEAP, execute actual639040/639130 and LeftUp4ABF78 branch, and only on actual acceptance continue the original click/event and70D150 timer suffix. They do not construct128 other paths or execute whole Display/PlanMgr ticks. AC4B84 counts nonempty paths: append638470 increments empty-to-nonempty; consume636718..636760 releases the count at zero remaining commands, before an empty executing path is acknowledged. Dispatch6386E0 and ownership-change701585->638840 clear nonempty paths before owner replacement; capture does not transfer an existing count. Delayed old-issuer appends after capture, arbitrary compatibility and counter corruption are outside these three controls.",
+    "Admission sound inputs use the same Sound/Reader owners, with physical Dummy/MenuScold entries and supplied immutable sample identityumenscol=0. Rules ctor666027 suppliesScoldSound=-1; exact66ABCD..66AC18 ReadString128/7514D0 blocks run in physical RULESMD, optional LANGRULE, MPBattleMD and Hills.map order. Unlayered langmd.mix/ra2md.csf bytes are read by existing keyboard_bindings.stock_csf, without another CSF/INI parser. The native refusal itself selects MSG:PlannerMaximum, sets AC4C08, and calls original730A90 duration480 then750920 centered pan8192/volume1/null handle. No decision result is supplied.",
+    "Each actual per-Building primary byte is observed independently from live FindFactory. A supplied alive+Limbo+primary prior is a representability/control bound, not established stock GAWEAP producer reachability. Factory0, liveness, exact raw Factory/Naval grouping, foreign/local EVA and stale duplicate controls retain original body gates only.",
+    "Scenario/Main/MapGen seed31 use original65C6D0 and retain full1012-byte buffers continuously across each case, with original shared request/advance tracing. Building/House mission, stage and House timer bytes are observed. Native constructor/admission before supplied scene priors, whole frame scheduling and downstream audio cue/device RNG are outside this boundary.",
+    "Original BuildingMark(2) entry/switch body and DetermineEdge execute. Mark2 uses existing705D70 presentation-getter transport, reached8 times in the original six histories and once in each admitted capacity control; its palette/tint/attached-Anim outputs are not claimed unsubstituted. The ordinary untethered scene takes redraw/cache propagation, not occupancy/PlaceUp/PlaceDown. Native executable PE sections compare byte-for-byte before/after. No gameplay, Mark entry, timer, random, factory or peer-loop return or instruction is replaced."
+  ],
+  "substitutions": [
+    "Inherited native-input lexical caches, immutable file/image IO, successful shared bump allocation/delete and CRT TLS transports remain. Scene/registry/selection priors are explicit inputs.",
+    "Existing initialize_empty_windows_seh and checked_is_bad_read_ptr_transport supply Windows exception/readability boundaries for original RTTI. timeGetTime IAT7E1530 supplies100000 milliseconds for original OutList transport; no simulation timer result is supplied.",
+    "Only the separate planning_admission controls supply physical localized text at734E60 (RET8), sink the final MessageList5D3BA0 insertion (RET28) after original730A90, and record centered Voc750920 (RET8) before downstream playback/device/RNG. HUD queue layout, pixels and audible playback are not certified. Action-line70D150 executes with zero caller scratch below ESP; its raw middle timer word is unused storage, not a gameplay comparison claim. Existing cases do not install these reached transports.",
+    "Vox752700 records actual literal EVA_PrimaryBuildingSelected, priority/type and returns0 with RET4; audible playback, queue/device state and downstream audio RNG are not certified. Existing JoinedFixture705D70 palette getter returns0 when Mark2 reaches it (8 recorded presentation_boundary entries in the original histories, plus2 in the admission controls). Other inherited UpdateAnimation presentation sinks remain installed but unreached. Common primary toggles change no palette/tint/cloak input; wider cloak/flash/attached-Anim refresh and pixels need their existing presentation owners."
+  ],
+  "entry_points": {
+    "building_what_action": "0x00447210",
+    "techno_what_action": "0x006FFEC0",
+    "building_click": "0x00443410",
+    "target_pack": "0x006E6AB0",
+    "target_event_ctor": "0x004C65E0",
+    "event_execute": "0x004C6CB0",
+    "event17_arm": "0x004C718C",
+    "target_as_building": "0x006E7A80",
+    "clear_planning_tokens": "0x006386E0",
+    "manual_primary": "0x00448160",
+    "automatic_primary": "0x00448070",
+    "find_factory": "0x005F7900",
+    "building_mark": "0x0043F180",
+    "determine_edge": "0x0050DB00",
+    "primary_ctor_store": "0x006F2F4F",
+    "create_id": "0x00410230",
+    "next_id": "0x0068BCB0",
+    "local_house": "0x0050B6F0",
+    "eva_request": "0x00752700",
+    "planning_compatible": "0x00639040",
+    "planning_capacity": "0x00639130",
+    "increment_plan_count": "0x00639F60",
+    "scold_sound_read": "0x0066ABCD",
+    "string_lookup": "0x00734E60",
+    "planning_message": "0x00730A90",
+    "message_list_add": "0x005D3BA0",
+    "centered_scold_sound": "0x00750920",
+    "action_line_timer": "0x0070D150"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_construction --manual-primary",
+  "payload_sha256": "7b753ecdfff66af7bfdc905dcedd803ac0ef36c5201de05303851c78446456f4"
+}

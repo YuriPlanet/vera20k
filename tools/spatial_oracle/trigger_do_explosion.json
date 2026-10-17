@@ -1,0 +1,3711 @@
+{
+  "maps": [
+    {
+      "map": "ALL06UMD.MAP",
+      "raw_action": "42,0,13,0,0,0,0,W",
+      "selected_weapon_index": 13,
+      "trigger_id": "048BB6BC",
+      "weapon_registry": [
+        {
+          "damage": 50,
+          "id": "Vulcan2",
+          "warhead": "SA"
+        },
+        {
+          "damage": 0,
+          "id": "NukeCarrier",
+          "warhead": "NukeMaker"
+        },
+        {
+          "damage": 50,
+          "id": "Vulcan",
+          "warhead": "SA"
+        },
+        {
+          "damage": 75,
+          "id": "RedEye2",
+          "warhead": "SAMWH"
+        },
+        {
+          "damage": 200,
+          "id": "CoilBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 300,
+          "id": "OPCoilBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 120,
+          "id": "PrismShot",
+          "warhead": "PrismWarhead"
+        },
+        {
+          "damage": 200,
+          "id": "PrismSupport",
+          "warhead": "DummyWarhead"
+        },
+        {
+          "damage": 200,
+          "id": "BarrelExplosion",
+          "warhead": "OilExplosionWH"
+        },
+        {
+          "damage": 150,
+          "id": "GrandCannonWeapon",
+          "warhead": "GrandCannonWH"
+        },
+        {
+          "damage": 600,
+          "id": "NukePayload",
+          "warhead": "NUKE"
+        },
+        {
+          "damage": 40,
+          "id": "FlakWeapon",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 25,
+          "id": "HoverMissile",
+          "warhead": "HE"
+        },
+        {
+          "damage": 600,
+          "id": "OilExplosion",
+          "warhead": "OilExplosionWH"
+        },
+        {
+          "damage": 2000,
+          "id": "EiffelBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 1000,
+          "id": "MayanPrism",
+          "warhead": "PrismWarhead"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattlingE",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattCann",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattlingE",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling2",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling2E",
+          "warhead": "SA"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattCann2",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattling2E",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling3",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling3E",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattCann3",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattling3E",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 3,
+          "id": "MultipleMindControlTower",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 250,
+          "id": "BlimpBombEffect",
+          "warhead": "BlimpHEEffect"
+        },
+        {
+          "damage": 30,
+          "id": "20mmRapid",
+          "warhead": "HARVWH"
+        },
+        {
+          "damage": 50,
+          "id": "20mmRapidE",
+          "warhead": "HowitzerWH"
+        },
+        {
+          "damage": 150,
+          "id": "Maverick",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 300,
+          "id": "MaverickE",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 40,
+          "id": "HornetBomb",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 100,
+          "id": "HornetCollision",
+          "warhead": "AP"
+        },
+        {
+          "damage": 80,
+          "id": "HornetBombE",
+          "warhead": "ARTYHE"
+        },
+        {
+          "damage": 50,
+          "id": "ASWBomb",
+          "warhead": "APSplash"
+        },
+        {
+          "damage": 100,
+          "id": "ASWCollision",
+          "warhead": "AP"
+        },
+        {
+          "damage": 60,
+          "id": "ParaDropWeapon",
+          "warhead": "MaverickHE"
+        },
+        {
+          "damage": 200,
+          "id": "Maverick2",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 400,
+          "id": "Maverick2E",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 250,
+          "id": "BlimpBomb",
+          "warhead": "BlimpHE"
+        },
+        {
+          "damage": 750,
+          "id": "Maverick3",
+          "warhead": "MIGWH"
+        },
+        {
+          "damage": 400,
+          "id": "Maverick3E",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 6,
+          "id": "SpyCameraWeapon",
+          "warhead": "DummyWarhead"
+        },
+        {
+          "damage": 100,
+          "id": "120mmx",
+          "warhead": "ApocAP"
+        },
+        {
+          "damage": 50,
+          "id": "MammothTusk",
+          "warhead": "HE"
+        },
+        {
+          "damage": 100,
+          "id": "120mmxE",
+          "warhead": "ApocAPE"
+        },
+        {
+          "damage": 90,
+          "id": "120mm",
+          "warhead": "AP"
+        },
+        {
+          "damage": 90,
+          "id": "120mmE",
+          "warhead": "RHINAPE"
+        },
+        {
+          "damage": 65,
+          "id": "105mm",
+          "warhead": "AP"
+        },
+        {
+          "damage": 65,
+          "id": "105mmE",
+          "warhead": "GRIZAPE"
+        },
+        {
+          "damage": 1,
+          "id": "HornetLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 1,
+          "id": "V3Launcher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 250,
+          "id": "BlimpBombE",
+          "warhead": "KTSTLEXP"
+        },
+        {
+          "damage": 50,
+          "id": "DroneJump",
+          "warhead": "Parasite"
+        },
+        {
+          "damage": 1,
+          "id": "VirtualScanner",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "FlakTrackGun",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 35,
+          "id": "FlakTrackAAGun",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 25,
+          "id": "FlakTrackGunE",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 20,
+          "id": "FlakTrackAAGunE",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 60,
+          "id": "155mm",
+          "warhead": "ARTYHE"
+        },
+        {
+          "damage": 1,
+          "id": "ASWLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 60,
+          "id": "155mmE",
+          "warhead": "ARTYHE"
+        },
+        {
+          "damage": 100,
+          "id": "SubTorpedo",
+          "warhead": "APSplash"
+        },
+        {
+          "damage": 100,
+          "id": "SubTorpedoE",
+          "warhead": "APSplash"
+        },
+        {
+          "damage": 100,
+          "id": "Medusa",
+          "warhead": "SAMWH"
+        },
+        {
+          "damage": 100,
+          "id": "MedusaE",
+          "warhead": "SAMWH"
+        },
+        {
+          "damage": 50,
+          "id": "DredLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 35,
+          "id": "BlackHawkCannon",
+          "warhead": "SA"
+        },
+        {
+          "damage": 40,
+          "id": "BlackHawkCannonE",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 15,
+          "id": "SquidGrab",
+          "warhead": "ParasitePlus"
+        },
+        {
+          "damage": 100,
+          "id": "SquidPunch",
+          "warhead": "HE"
+        },
+        {
+          "damage": 40,
+          "id": "SquidGrabE",
+          "warhead": "ParasitePlus"
+        },
+        {
+          "damage": 200,
+          "id": "SquidPunchE",
+          "warhead": "HE"
+        },
+        {
+          "damage": 4,
+          "id": "SonicZap",
+          "warhead": "SonicWarhead"
+        },
+        {
+          "damage": 8,
+          "id": "SonicZapE",
+          "warhead": "SonicWarhead"
+        },
+        {
+          "damage": 150,
+          "id": "SABOT",
+          "warhead": "UltraAP"
+        },
+        {
+          "damage": 175,
+          "id": "SABOTE",
+          "warhead": "UltraAPE"
+        },
+        {
+          "damage": 75,
+          "id": "HowitzerGun",
+          "warhead": "HowitzerWH"
+        },
+        {
+          "damage": 135,
+          "id": "TankBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 150,
+          "id": "TankBoltE",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 65,
+          "id": "ATGUN",
+          "warhead": "AP"
+        },
+        {
+          "damage": 65,
+          "id": "ATGUNE",
+          "warhead": "RHINAPE"
+        },
+        {
+          "damage": 100,
+          "id": "Comet",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 150,
+          "id": "SuperComet",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 30,
+          "id": "CometFragment",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 30,
+          "id": "TeslaFragment",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 50,
+          "id": "SuperCometFragment",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 35,
+          "id": "FlakWeaponE",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 100,
+          "id": "MirageGun",
+          "warhead": "MirageWH"
+        },
+        {
+          "damage": 150,
+          "id": "MirageGunE",
+          "warhead": "MirageWH"
+        },
+        {
+          "damage": 200,
+          "id": "CRNuke",
+          "warhead": "CRNUKEWH"
+        },
+        {
+          "damage": 80,
+          "id": "HoverMissileE",
+          "warhead": "HE"
+        },
+        {
+          "damage": -50,
+          "id": "RepairBullet",
+          "warhead": "Mechanical"
+        },
+        {
+          "damage": 25,
+          "id": "CRM60",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 30,
+          "id": "CRFlakGuyGun",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 125,
+          "id": "CRMP5",
+          "warhead": "HollowPoint3"
+        },
+        {
+          "damage": 125,
+          "id": "AWPE",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 60,
+          "id": "CRElectricBolt",
+          "warhead": "Shock"
+        },
+        {
+          "damage": 200,
+          "id": "CRMindControl",
+          "warhead": "PsiPulse"
+        },
+        {
+          "damage": 175,
+          "id": "CRRadBeamWeapon",
+          "warhead": "RadBeamWarhead"
+        },
+        {
+          "damage": 5,
+          "id": "CRNeutronRifle",
+          "warhead": "ChronoBeam"
+        },
+        {
+          "damage": 250,
+          "id": "CRTerrorBomb",
+          "warhead": "TerrorBombWH"
+        },
+        {
+          "damage": 300,
+          "id": "CowShot",
+          "warhead": "PrismWarhead"
+        },
+        {
+          "damage": 25,
+          "id": "CRPsychicJab",
+          "warhead": "SAFlame"
+        },
+        {
+          "damage": 125,
+          "id": "CRVirusGun",
+          "warhead": "Virus"
+        },
+        {
+          "damage": 250,
+          "id": "CRSuperMindBlast",
+          "warhead": "SuperPsiPulse"
+        },
+        {
+          "damage": 30,
+          "id": "CRMissileLauncher",
+          "warhead": "GUARDWH"
+        },
+        {
+          "damage": 0,
+          "id": "DefaultDeathWeapon",
+          "warhead": "DeathWH"
+        },
+        {
+          "damage": 300,
+          "id": "Demobomb",
+          "warhead": "DemobombWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattling",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattling2",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 40,
+          "id": "AAGattling3",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 5000,
+          "id": "MagneticBeam",
+          "warhead": "LocomotorBeam"
+        },
+        {
+          "damage": 80,
+          "id": "MagneShake",
+          "warhead": "MagneShakeWH"
+        },
+        {
+          "damage": 10000,
+          "id": "MagneticBeamE",
+          "warhead": "LocomotorBeam"
+        },
+        {
+          "damage": 600,
+          "id": "ChaosAttack",
+          "warhead": "PsychGasCreate"
+        },
+        {
+          "damage": 60,
+          "id": "BoomerTorpedo",
+          "warhead": "APSplash2"
+        },
+        {
+          "damage": 25,
+          "id": "CruiseLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 60,
+          "id": "BoomerTorpedoE",
+          "warhead": "APSplash2"
+        },
+        {
+          "damage": 90,
+          "id": "160mm",
+          "warhead": "SCHOPWH"
+        },
+        {
+          "damage": 90,
+          "id": "160mmE",
+          "warhead": "SCHOPWH"
+        },
+        {
+          "damage": 3,
+          "id": "MultipleMindControlTank",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 90,
+          "id": "DiskLaser",
+          "warhead": "DiskWH"
+        },
+        {
+          "damage": 1,
+          "id": "DiskDrain",
+          "warhead": "AntiB"
+        },
+        {
+          "damage": 90,
+          "id": "DiskLaserE",
+          "warhead": "DiskWH"
+        },
+        {
+          "damage": 65,
+          "id": "Robogun",
+          "warhead": "AP"
+        },
+        {
+          "damage": 15,
+          "id": "M60",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "Para",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 25,
+          "id": "M60E",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "ParaE",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 30,
+          "id": "UCPara",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 40,
+          "id": "UCElitePara",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 15,
+          "id": "M1Carbine",
+          "warhead": "SA"
+        },
+        {
+          "damage": 20,
+          "id": "M1CarbineE",
+          "warhead": "SA"
+        },
+        {
+          "damage": 20,
+          "id": "UCM1Carbine",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 30,
+          "id": "UCEliteM1Carbine",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 50,
+          "id": "ElectricBolt",
+          "warhead": "Shock"
+        },
+        {
+          "damage": 10,
+          "id": "AssaultBolt",
+          "warhead": "ElectricAssault"
+        },
+        {
+          "damage": 50,
+          "id": "ElectricBoltE",
+          "warhead": "Shock"
+        },
+        {
+          "damage": 1,
+          "id": "DefuseKit",
+          "warhead": "BombDisarm"
+        },
+        {
+          "damage": 25,
+          "id": "20mm",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 25,
+          "id": "20mmE",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 125,
+          "id": "MP5",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 2500,
+          "id": "Sapper",
+          "warhead": "Mechanical"
+        },
+        {
+          "damage": 125,
+          "id": "MP5E",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 1,
+          "id": "MindControl",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 250,
+          "id": "PsiWave",
+          "warhead": "PsiPulse"
+        },
+        {
+          "damage": 400,
+          "id": "IvanBomber",
+          "warhead": "IvanBomb"
+        },
+        {
+          "damage": 600,
+          "id": "IvanBomberE",
+          "warhead": "IvanBomb"
+        },
+        {
+          "damage": 125,
+          "id": "RadBeamWeapon",
+          "warhead": "RadBeamWarhead"
+        },
+        {
+          "damage": 1,
+          "id": "RadEruptionWeapon",
+          "warhead": "RadEruptionWarhead"
+        },
+        {
+          "damage": 200,
+          "id": "RadBeamWeaponE",
+          "warhead": "RadBeamWarhead"
+        },
+        {
+          "damage": 30,
+          "id": "BadTeeth",
+          "warhead": "ParasiteDog"
+        },
+        {
+          "damage": 2,
+          "id": "Pistola",
+          "warhead": "SA"
+        },
+        {
+          "damage": 80,
+          "id": "V3Cluster",
+          "warhead": "V3HE"
+        },
+        {
+          "damage": 8,
+          "id": "NeutronRifle",
+          "warhead": "ChronoBeam"
+        },
+        {
+          "damage": 16,
+          "id": "NeutronRifleE",
+          "warhead": "ChronoBeam"
+        },
+        {
+          "damage": 1,
+          "id": "MakeupKit",
+          "warhead": "Snapshot"
+        },
+        {
+          "damage": 125,
+          "id": "ChronoMP5",
+          "warhead": "HollowPointNoBuilding"
+        },
+        {
+          "damage": 5000,
+          "id": "FakeC4",
+          "warhead": "FakeC4WH"
+        },
+        {
+          "damage": 125,
+          "id": "ChronoMP5E",
+          "warhead": "HollowPointNoBuilding"
+        },
+        {
+          "damage": 10,
+          "id": "MindControlE",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 1,
+          "id": "SuperMindControl",
+          "warhead": "ControllerBuilding"
+        },
+        {
+          "damage": 250,
+          "id": "SuperPsiWave",
+          "warhead": "SuperPsiPulse"
+        },
+        {
+          "damage": 125,
+          "id": "AWP",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 30,
+          "id": "AlligatorBite",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 125,
+          "id": "DoublePistols",
+          "warhead": "HollowPoint2"
+        },
+        {
+          "damage": 125,
+          "id": "DoublePistolsE",
+          "warhead": "HollowPoint2"
+        },
+        {
+          "damage": 20,
+          "id": "FlakGuyGun",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 20,
+          "id": "FlakGuyAAGun",
+          "warhead": "FlakGuyWH"
+        },
+        {
+          "damage": 20,
+          "id": "FlakGuyGunE",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 8,
+          "id": "FlakGuyAAGunE",
+          "warhead": "FlakGuyWH"
+        },
+        {
+          "damage": 225,
+          "id": "TerrorBomb",
+          "warhead": "TerrorBombWH"
+        },
+        {
+          "damage": 30,
+          "id": "GoodTeeth",
+          "warhead": "ParasiteDog"
+        },
+        {
+          "damage": 30,
+          "id": "BearBite",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 30,
+          "id": "ChimpBite",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 40,
+          "id": "MissileLauncher",
+          "warhead": "GUARDWH"
+        },
+        {
+          "damage": 50,
+          "id": "MissileLauncherE",
+          "warhead": "GUARDWH"
+        },
+        {
+          "damage": 25,
+          "id": "PsychicJab",
+          "warhead": "SAFlame"
+        },
+        {
+          "damage": 30,
+          "id": "PsychicJabE",
+          "warhead": "SAFlame"
+        },
+        {
+          "damage": 63,
+          "id": "UCPsychicJab",
+          "warhead": "SSABFlame"
+        },
+        {
+          "damage": 73,
+          "id": "UCElitePsychicJab",
+          "warhead": "SSABFlame"
+        },
+        {
+          "damage": 65,
+          "id": "AKM",
+          "warhead": "BORISWH"
+        },
+        {
+          "damage": 1,
+          "id": "Flare",
+          "warhead": "AirstrikeFlare"
+        },
+        {
+          "damage": 90,
+          "id": "AKME",
+          "warhead": "BORISWH"
+        },
+        {
+          "damage": 100,
+          "id": "Punch",
+          "warhead": "Battering"
+        },
+        {
+          "damage": 100,
+          "id": "Smash",
+          "warhead": "Smashing"
+        },
+        {
+          "damage": 100,
+          "id": "PunchE",
+          "warhead": "Battering"
+        },
+        {
+          "damage": 100,
+          "id": "SmashE",
+          "warhead": "Smashing"
+        },
+        {
+          "damage": 125,
+          "id": "Virusgun",
+          "warhead": "Virus"
+        },
+        {
+          "damage": 125,
+          "id": "VirusgunE",
+          "warhead": "Virus"
+        },
+        {
+          "damage": 125,
+          "id": "CLINTGUN",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 125,
+          "id": "TERMIGUN",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 125,
+          "id": "STALGUN",
+          "warhead": "HollowPoint4"
+        },
+        {
+          "damage": 10000,
+          "id": "STALGREN",
+          "warhead": "NukeB"
+        },
+        {
+          "damage": 100,
+          "id": "Mummypunch",
+          "warhead": "Battering"
+        },
+        {
+          "damage": 100,
+          "id": "Mummysmash",
+          "warhead": "Smashing"
+        },
+        {
+          "damage": 25,
+          "id": "Lunarlaser",
+          "warhead": "LUNARWH"
+        },
+        {
+          "damage": 200,
+          "id": "TRexInfBite",
+          "warhead": "TRexInfWH"
+        },
+        {
+          "damage": 200,
+          "id": "TRexBite",
+          "warhead": "TRexWH"
+        },
+        {
+          "damage": 30,
+          "id": "SHOVEL",
+          "warhead": "SA"
+        }
+      ]
+    },
+    {
+      "map": "SOV03UMD.MAP",
+      "raw_action": "42,0,50,0,0,0,0,K",
+      "selected_weapon_index": 50,
+      "trigger_id": "0B3BE93C",
+      "weapon_registry": [
+        {
+          "damage": 50,
+          "id": "Vulcan2",
+          "warhead": "SA"
+        },
+        {
+          "damage": 0,
+          "id": "NukeCarrier",
+          "warhead": "NukeMaker"
+        },
+        {
+          "damage": 50,
+          "id": "Vulcan",
+          "warhead": "SA"
+        },
+        {
+          "damage": 75,
+          "id": "RedEye2",
+          "warhead": "SAMWH"
+        },
+        {
+          "damage": 200,
+          "id": "CoilBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 300,
+          "id": "OPCoilBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 120,
+          "id": "PrismShot",
+          "warhead": "PrismWarhead"
+        },
+        {
+          "damage": 200,
+          "id": "PrismSupport",
+          "warhead": "DummyWarhead"
+        },
+        {
+          "damage": 175,
+          "id": "BarrelExplosion",
+          "warhead": "OilExplosionWH"
+        },
+        {
+          "damage": 150,
+          "id": "GrandCannonWeapon",
+          "warhead": "GrandCannonWH"
+        },
+        {
+          "damage": 600,
+          "id": "NukePayload",
+          "warhead": "NUKE"
+        },
+        {
+          "damage": 40,
+          "id": "FlakWeapon",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 25,
+          "id": "HoverMissile",
+          "warhead": "HE"
+        },
+        {
+          "damage": 600,
+          "id": "OilExplosion",
+          "warhead": "OilExplosionWH"
+        },
+        {
+          "damage": 2000,
+          "id": "EiffelBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 1000,
+          "id": "MayanPrism",
+          "warhead": "PrismWarhead"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattlingE",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattCann",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattlingE",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling2",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling2E",
+          "warhead": "SA"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattCann2",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattling2E",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling3",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 25,
+          "id": "AGGattling3E",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattCann3",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattling3E",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 3,
+          "id": "MultipleMindControlTower",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 250,
+          "id": "BlimpBombEffect",
+          "warhead": "BlimpHEEffect"
+        },
+        {
+          "damage": 30,
+          "id": "20mmRapid",
+          "warhead": "HARVWH"
+        },
+        {
+          "damage": 50,
+          "id": "20mmRapidE",
+          "warhead": "HowitzerWH"
+        },
+        {
+          "damage": 150,
+          "id": "Maverick",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 300,
+          "id": "MaverickE",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 40,
+          "id": "HornetBomb",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 100,
+          "id": "HornetCollision",
+          "warhead": "AP"
+        },
+        {
+          "damage": 80,
+          "id": "HornetBombE",
+          "warhead": "ARTYHE"
+        },
+        {
+          "damage": 50,
+          "id": "ASWBomb",
+          "warhead": "APSplash"
+        },
+        {
+          "damage": 100,
+          "id": "ASWCollision",
+          "warhead": "AP"
+        },
+        {
+          "damage": 60,
+          "id": "ParaDropWeapon",
+          "warhead": "MaverickHE"
+        },
+        {
+          "damage": 200,
+          "id": "Maverick2",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 400,
+          "id": "Maverick2E",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 250,
+          "id": "BlimpBomb",
+          "warhead": "BlimpHE"
+        },
+        {
+          "damage": 750,
+          "id": "Maverick3",
+          "warhead": "MIGWH"
+        },
+        {
+          "damage": 400,
+          "id": "Maverick3E",
+          "warhead": "ORCAAP"
+        },
+        {
+          "damage": 6,
+          "id": "SpyCameraWeapon",
+          "warhead": "DummyWarhead"
+        },
+        {
+          "damage": 100,
+          "id": "120mmx",
+          "warhead": "ApocAP"
+        },
+        {
+          "damage": 50,
+          "id": "MammothTusk",
+          "warhead": "HE"
+        },
+        {
+          "damage": 100,
+          "id": "120mmxE",
+          "warhead": "ApocAPE"
+        },
+        {
+          "damage": 90,
+          "id": "120mm",
+          "warhead": "AP"
+        },
+        {
+          "damage": 90,
+          "id": "120mmE",
+          "warhead": "RHINAPE"
+        },
+        {
+          "damage": 65,
+          "id": "105mm",
+          "warhead": "AP"
+        },
+        {
+          "damage": 65,
+          "id": "105mmE",
+          "warhead": "GRIZAPE"
+        },
+        {
+          "damage": 1,
+          "id": "HornetLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 1,
+          "id": "V3Launcher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 250,
+          "id": "BlimpBombE",
+          "warhead": "KTSTLEXP"
+        },
+        {
+          "damage": 50,
+          "id": "DroneJump",
+          "warhead": "Parasite"
+        },
+        {
+          "damage": 1,
+          "id": "VirtualScanner",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "FlakTrackGun",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 35,
+          "id": "FlakTrackAAGun",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 25,
+          "id": "FlakTrackGunE",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 20,
+          "id": "FlakTrackAAGunE",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 60,
+          "id": "155mm",
+          "warhead": "ARTYHE"
+        },
+        {
+          "damage": 1,
+          "id": "ASWLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 60,
+          "id": "155mmE",
+          "warhead": "ARTYHE"
+        },
+        {
+          "damage": 100,
+          "id": "SubTorpedo",
+          "warhead": "APSplash"
+        },
+        {
+          "damage": 100,
+          "id": "SubTorpedoE",
+          "warhead": "APSplash"
+        },
+        {
+          "damage": 100,
+          "id": "Medusa",
+          "warhead": "SAMWH"
+        },
+        {
+          "damage": 100,
+          "id": "MedusaE",
+          "warhead": "SAMWH"
+        },
+        {
+          "damage": 50,
+          "id": "DredLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 35,
+          "id": "BlackHawkCannon",
+          "warhead": "SA"
+        },
+        {
+          "damage": 40,
+          "id": "BlackHawkCannonE",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 15,
+          "id": "SquidGrab",
+          "warhead": "ParasitePlus"
+        },
+        {
+          "damage": 100,
+          "id": "SquidPunch",
+          "warhead": "HE"
+        },
+        {
+          "damage": 40,
+          "id": "SquidGrabE",
+          "warhead": "ParasitePlus"
+        },
+        {
+          "damage": 200,
+          "id": "SquidPunchE",
+          "warhead": "HE"
+        },
+        {
+          "damage": 4,
+          "id": "SonicZap",
+          "warhead": "SonicWarhead"
+        },
+        {
+          "damage": 8,
+          "id": "SonicZapE",
+          "warhead": "SonicWarhead"
+        },
+        {
+          "damage": 150,
+          "id": "SABOT",
+          "warhead": "UltraAP"
+        },
+        {
+          "damage": 175,
+          "id": "SABOTE",
+          "warhead": "UltraAPE"
+        },
+        {
+          "damage": 75,
+          "id": "HowitzerGun",
+          "warhead": "HowitzerWH"
+        },
+        {
+          "damage": 135,
+          "id": "TankBolt",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 150,
+          "id": "TankBoltE",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 65,
+          "id": "ATGUN",
+          "warhead": "AP"
+        },
+        {
+          "damage": 65,
+          "id": "ATGUNE",
+          "warhead": "RHINAPE"
+        },
+        {
+          "damage": 100,
+          "id": "Comet",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 150,
+          "id": "SuperComet",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 30,
+          "id": "CometFragment",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 30,
+          "id": "TeslaFragment",
+          "warhead": "Electric"
+        },
+        {
+          "damage": 50,
+          "id": "SuperCometFragment",
+          "warhead": "CometWH"
+        },
+        {
+          "damage": 35,
+          "id": "FlakWeaponE",
+          "warhead": "FlakWH"
+        },
+        {
+          "damage": 100,
+          "id": "MirageGun",
+          "warhead": "MirageWH"
+        },
+        {
+          "damage": 150,
+          "id": "MirageGunE",
+          "warhead": "MirageWH"
+        },
+        {
+          "damage": 200,
+          "id": "CRNuke",
+          "warhead": "CRNUKEWH"
+        },
+        {
+          "damage": 80,
+          "id": "HoverMissileE",
+          "warhead": "HE"
+        },
+        {
+          "damage": -50,
+          "id": "RepairBullet",
+          "warhead": "Mechanical"
+        },
+        {
+          "damage": 25,
+          "id": "CRM60",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 30,
+          "id": "CRFlakGuyGun",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 125,
+          "id": "CRMP5",
+          "warhead": "HollowPoint3"
+        },
+        {
+          "damage": 125,
+          "id": "AWPE",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 60,
+          "id": "CRElectricBolt",
+          "warhead": "Shock"
+        },
+        {
+          "damage": 200,
+          "id": "CRMindControl",
+          "warhead": "PsiPulse"
+        },
+        {
+          "damage": 175,
+          "id": "CRRadBeamWeapon",
+          "warhead": "RadBeamWarhead"
+        },
+        {
+          "damage": 5,
+          "id": "CRNeutronRifle",
+          "warhead": "ChronoBeam"
+        },
+        {
+          "damage": 250,
+          "id": "CRTerrorBomb",
+          "warhead": "TerrorBombWH"
+        },
+        {
+          "damage": 300,
+          "id": "CowShot",
+          "warhead": "PrismWarhead"
+        },
+        {
+          "damage": 25,
+          "id": "CRPsychicJab",
+          "warhead": "SAFlame"
+        },
+        {
+          "damage": 125,
+          "id": "CRVirusGun",
+          "warhead": "Virus"
+        },
+        {
+          "damage": 250,
+          "id": "CRSuperMindBlast",
+          "warhead": "SuperPsiPulse"
+        },
+        {
+          "damage": 30,
+          "id": "CRMissileLauncher",
+          "warhead": "GUARDWH"
+        },
+        {
+          "damage": 0,
+          "id": "DefaultDeathWeapon",
+          "warhead": "DeathWH"
+        },
+        {
+          "damage": 300,
+          "id": "Demobomb",
+          "warhead": "DemobombWH"
+        },
+        {
+          "damage": 25,
+          "id": "AAGattling",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 30,
+          "id": "AAGattling2",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 40,
+          "id": "AAGattling3",
+          "warhead": "GattWH"
+        },
+        {
+          "damage": 5000,
+          "id": "MagneticBeam",
+          "warhead": "LocomotorBeam"
+        },
+        {
+          "damage": 80,
+          "id": "MagneShake",
+          "warhead": "MagneShakeWH"
+        },
+        {
+          "damage": 10000,
+          "id": "MagneticBeamE",
+          "warhead": "LocomotorBeam"
+        },
+        {
+          "damage": 600,
+          "id": "ChaosAttack",
+          "warhead": "PsychGasCreate"
+        },
+        {
+          "damage": 60,
+          "id": "BoomerTorpedo",
+          "warhead": "APSplash2"
+        },
+        {
+          "damage": 25,
+          "id": "CruiseLauncher",
+          "warhead": "Special"
+        },
+        {
+          "damage": 60,
+          "id": "BoomerTorpedoE",
+          "warhead": "APSplash2"
+        },
+        {
+          "damage": 90,
+          "id": "160mm",
+          "warhead": "SCHOPWH"
+        },
+        {
+          "damage": 90,
+          "id": "160mmE",
+          "warhead": "SCHOPWH"
+        },
+        {
+          "damage": 3,
+          "id": "MultipleMindControlTank",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 90,
+          "id": "DiskLaser",
+          "warhead": "DiskWH"
+        },
+        {
+          "damage": 1,
+          "id": "DiskDrain",
+          "warhead": "AntiB"
+        },
+        {
+          "damage": 90,
+          "id": "DiskLaserE",
+          "warhead": "DiskWH"
+        },
+        {
+          "damage": 65,
+          "id": "Robogun",
+          "warhead": "AP"
+        },
+        {
+          "damage": 15,
+          "id": "M60",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "Para",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 25,
+          "id": "M60E",
+          "warhead": "SA"
+        },
+        {
+          "damage": 25,
+          "id": "ParaE",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 30,
+          "id": "UCPara",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 40,
+          "id": "UCElitePara",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 15,
+          "id": "M1Carbine",
+          "warhead": "SA"
+        },
+        {
+          "damage": 20,
+          "id": "M1CarbineE",
+          "warhead": "SA"
+        },
+        {
+          "damage": 20,
+          "id": "UCM1Carbine",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 30,
+          "id": "UCEliteM1Carbine",
+          "warhead": "SSAB"
+        },
+        {
+          "damage": 50,
+          "id": "ElectricBolt",
+          "warhead": "Shock"
+        },
+        {
+          "damage": 10,
+          "id": "AssaultBolt",
+          "warhead": "ElectricAssault"
+        },
+        {
+          "damage": 50,
+          "id": "ElectricBoltE",
+          "warhead": "Shock"
+        },
+        {
+          "damage": 1,
+          "id": "DefuseKit",
+          "warhead": "BombDisarm"
+        },
+        {
+          "damage": 25,
+          "id": "20mm",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 25,
+          "id": "20mmE",
+          "warhead": "SSA"
+        },
+        {
+          "damage": 125,
+          "id": "MP5",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 2500,
+          "id": "Sapper",
+          "warhead": "Mechanical"
+        },
+        {
+          "damage": 125,
+          "id": "MP5E",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 1,
+          "id": "MindControl",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 250,
+          "id": "PsiWave",
+          "warhead": "PsiPulse"
+        },
+        {
+          "damage": 400,
+          "id": "IvanBomber",
+          "warhead": "IvanBomb"
+        },
+        {
+          "damage": 600,
+          "id": "IvanBomberE",
+          "warhead": "IvanBomb"
+        },
+        {
+          "damage": 125,
+          "id": "RadBeamWeapon",
+          "warhead": "RadBeamWarhead"
+        },
+        {
+          "damage": 1,
+          "id": "RadEruptionWeapon",
+          "warhead": "RadEruptionWarhead"
+        },
+        {
+          "damage": 200,
+          "id": "RadBeamWeaponE",
+          "warhead": "RadBeamWarhead"
+        },
+        {
+          "damage": 30,
+          "id": "BadTeeth",
+          "warhead": "ParasiteDog"
+        },
+        {
+          "damage": 2,
+          "id": "Pistola",
+          "warhead": "SA"
+        },
+        {
+          "damage": 80,
+          "id": "V3Cluster",
+          "warhead": "V3HE"
+        },
+        {
+          "damage": 8,
+          "id": "NeutronRifle",
+          "warhead": "ChronoBeam"
+        },
+        {
+          "damage": 16,
+          "id": "NeutronRifleE",
+          "warhead": "ChronoBeam"
+        },
+        {
+          "damage": 1,
+          "id": "MakeupKit",
+          "warhead": "Snapshot"
+        },
+        {
+          "damage": 125,
+          "id": "ChronoMP5",
+          "warhead": "HollowPointNoBuilding"
+        },
+        {
+          "damage": 5000,
+          "id": "FakeC4",
+          "warhead": "FakeC4WH"
+        },
+        {
+          "damage": 125,
+          "id": "ChronoMP5E",
+          "warhead": "HollowPointNoBuilding"
+        },
+        {
+          "damage": 10,
+          "id": "MindControlE",
+          "warhead": "Controller"
+        },
+        {
+          "damage": 1,
+          "id": "SuperMindControl",
+          "warhead": "ControllerBuilding"
+        },
+        {
+          "damage": 250,
+          "id": "SuperPsiWave",
+          "warhead": "SuperPsiPulse"
+        },
+        {
+          "damage": 125,
+          "id": "AWP",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 30,
+          "id": "AlligatorBite",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 125,
+          "id": "DoublePistols",
+          "warhead": "HollowPoint2"
+        },
+        {
+          "damage": 125,
+          "id": "DoublePistolsE",
+          "warhead": "HollowPoint2"
+        },
+        {
+          "damage": 20,
+          "id": "FlakGuyGun",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 20,
+          "id": "FlakGuyAAGun",
+          "warhead": "FlakGuyWH"
+        },
+        {
+          "damage": 20,
+          "id": "FlakGuyGunE",
+          "warhead": "FlakTWH"
+        },
+        {
+          "damage": 8,
+          "id": "FlakGuyAAGunE",
+          "warhead": "FlakGuyWH"
+        },
+        {
+          "damage": 225,
+          "id": "TerrorBomb",
+          "warhead": "TerrorBombWH"
+        },
+        {
+          "damage": 30,
+          "id": "GoodTeeth",
+          "warhead": "ParasiteDog"
+        },
+        {
+          "damage": 30,
+          "id": "BearBite",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 30,
+          "id": "ChimpBite",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 40,
+          "id": "MissileLauncher",
+          "warhead": "GUARDWH"
+        },
+        {
+          "damage": 50,
+          "id": "MissileLauncherE",
+          "warhead": "GUARDWH"
+        },
+        {
+          "damage": 25,
+          "id": "PsychicJab",
+          "warhead": "SAFlame"
+        },
+        {
+          "damage": 30,
+          "id": "PsychicJabE",
+          "warhead": "SAFlame"
+        },
+        {
+          "damage": 63,
+          "id": "UCPsychicJab",
+          "warhead": "SSABFlame"
+        },
+        {
+          "damage": 73,
+          "id": "UCElitePsychicJab",
+          "warhead": "SSABFlame"
+        },
+        {
+          "damage": 65,
+          "id": "AKM",
+          "warhead": "BORISWH"
+        },
+        {
+          "damage": 1,
+          "id": "Flare",
+          "warhead": "AirstrikeFlare"
+        },
+        {
+          "damage": 90,
+          "id": "AKME",
+          "warhead": "BORISWH"
+        },
+        {
+          "damage": 100,
+          "id": "Punch",
+          "warhead": "Battering"
+        },
+        {
+          "damage": 100,
+          "id": "Smash",
+          "warhead": "Smashing"
+        },
+        {
+          "damage": 100,
+          "id": "PunchE",
+          "warhead": "Battering"
+        },
+        {
+          "damage": 100,
+          "id": "SmashE",
+          "warhead": "Smashing"
+        },
+        {
+          "damage": 125,
+          "id": "Virusgun",
+          "warhead": "Virus"
+        },
+        {
+          "damage": 125,
+          "id": "VirusgunE",
+          "warhead": "Virus"
+        },
+        {
+          "damage": 125,
+          "id": "CLINTGUN",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 125,
+          "id": "TERMIGUN",
+          "warhead": "HollowPoint"
+        },
+        {
+          "damage": 125,
+          "id": "STALGUN",
+          "warhead": "HollowPoint4"
+        },
+        {
+          "damage": 10000,
+          "id": "STALGREN",
+          "warhead": "NukeB"
+        },
+        {
+          "damage": 100,
+          "id": "Mummypunch",
+          "warhead": "Battering"
+        },
+        {
+          "damage": 100,
+          "id": "Mummysmash",
+          "warhead": "Smashing"
+        },
+        {
+          "damage": 25,
+          "id": "Lunarlaser",
+          "warhead": "LUNARWH"
+        },
+        {
+          "damage": 200,
+          "id": "TRexInfBite",
+          "warhead": "TRexInfWH"
+        },
+        {
+          "damage": 200,
+          "id": "TRexBite",
+          "warhead": "TRexWH"
+        },
+        {
+          "damage": 30,
+          "id": "SHOVEL",
+          "warhead": "SA"
+        }
+      ]
+    }
+  ],
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "schema_version": 1,
+  "sources": {
+    "absent_count": 726,
+    "boundary": "Selected patch/language/cache/local/conquer/generic/NewUrban/side/map sources and loose files; no full archive startup, movies, other theaters, hardware or World loading claim. Absence applies only to this catalog.",
+    "catalog": [
+      {
+        "entries": 33,
+        "sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "source": "expandmd01.mix"
+      },
+      {
+        "entries": 10,
+        "sha256": "ea608dca312cd59373f121d164b3bf4cec0472f460f6bf1d1238500959637c88",
+        "source": "langmd.mix"
+      },
+      {
+        "entries": 70,
+        "sha256": "f1223eb874a91eca59a58d1942b0d35849c4d9682ee580dc65f8864efb4dedfb",
+        "source": "langmd.mix/cameomd.mix"
+      },
+      {
+        "entries": 740,
+        "sha256": "9f4ff97f44032be8681091d4b76ab7332d78418ff591d18423c1ed75f688a598",
+        "source": "langmd.mix/audiomd.mix"
+      },
+      {
+        "entries": 6,
+        "sha256": "30345ccc41ab98d225cb87c8ea8629eb8cb1467ce0d7f15de87fb307424801e6",
+        "source": "language.mix"
+      },
+      {
+        "entries": 203,
+        "sha256": "0219eac60f23f07b8b9f7b8053867af6248eaff37c6f4828d12d21e9ca1a1cec",
+        "source": "language.mix/cameo.mix"
+      },
+      {
+        "entries": 461,
+        "sha256": "a63c9b5d130afecc42e68ad1e2edfb28e702c2ea35e3ce75b98003ad3b56bdd6",
+        "source": "language.mix/audio.mix"
+      },
+      {
+        "entries": 25,
+        "sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "source": "ra2md.mix"
+      },
+      {
+        "entries": 14,
+        "sha256": "3ef1e61f9455b66dd6b663439f53b7b9318ecbde104ccb28ffb8df6eb328e525",
+        "source": "ra2md.mix/cachemd.mix"
+      },
+      {
+        "entries": 187,
+        "sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "source": "ra2md.mix/localmd.mix"
+      },
+      {
+        "entries": 40,
+        "sha256": "068dcf91958fd9e582139cbeecfcb138501f821832c83fcef63cb7cfe27ab812",
+        "source": "ra2md.mix/conqmd.mix"
+      },
+      {
+        "entries": 81,
+        "sha256": "00ec7c6f020f2286533551ba216b653b5a721805e6f7cacfc3d52e05122ccb0e",
+        "source": "ra2md.mix/genermd.mix"
+      },
+      {
+        "entries": 241,
+        "sha256": "ffdd4f49f9e28cb22e707d695d0ecad1689a46fdf30e62d3ed8b205e62ddd5f2",
+        "source": "ra2md.mix/urbann.mix"
+      },
+      {
+        "entries": 3,
+        "sha256": "3c75101deb346ac474c11655f6455e1a5e85f897b8812bab81b3c7074cce7c18",
+        "source": "ra2md.mix/ubn.mix"
+      },
+      {
+        "entries": 111,
+        "sha256": "fc5ce3ba38ce8a7813e09969b4de1c5eb985567db2dc54a587fe7f8104c9f735",
+        "source": "ra2md.mix/isoubnmd.mix"
+      },
+      {
+        "entries": 1412,
+        "sha256": "ee56f86c72be244076b4f3c57a0d0bc9f6528a17605fd6ddc518f2178fcb05db",
+        "source": "ra2md.mix/isoubn.mix"
+      },
+      {
+        "entries": 21,
+        "sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "source": "ra2.mix"
+      },
+      {
+        "entries": 42,
+        "sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "source": "ra2.mix/cache.mix"
+      },
+      {
+        "entries": 607,
+        "sha256": "d748797f59a652a296d3825e1703b8781380f43eba7b3d1825477752a395ba08",
+        "source": "ra2.mix/local.mix"
+      },
+      {
+        "entries": 289,
+        "sha256": "e0e4be2af64ce35da8e9c865b32ab56b342329de24d3d0a75b1c636f6928d714",
+        "source": "ra2.mix/conquer.mix"
+      },
+      {
+        "entries": 139,
+        "sha256": "dbe8d76687c1787e4f17396cdf6c88fe507b916031261492fa6375fe944f2b70",
+        "source": "ra2.mix/generic.mix"
+      },
+      {
+        "entries": 51,
+        "sha256": "0e8c84851854d167b76c9abd5ab0aa7c8c983fa05be5a7e6e6c070f256ab0cae",
+        "source": "ra2.mix/sidec01.mix"
+      },
+      {
+        "entries": 51,
+        "sha256": "03a6a2e7bce725db930fc16e45b03a45229557b56d511ac691922bc87f3fa34c",
+        "source": "ra2.mix/sidec02.mix"
+      },
+      {
+        "entries": 14,
+        "sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+        "source": "mapsmd03.mix"
+      }
+    ],
+    "inis": [
+      {
+        "absent": true,
+        "candidates": [],
+        "file": "all06umd.ini"
+      },
+      {
+        "absent": false,
+        "candidates": [
+          {
+            "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+            "bytes": 192301,
+            "sha256": "cfd2b50c5448fd84ab3647ff3a95f96b45e8dccd6a72b2601c0bb603cddeeb63",
+            "source": "mapsmd03.mix"
+          }
+        ],
+        "file": "all06umd.map"
+      },
+      {
+        "absent": false,
+        "candidates": [
+          {
+            "archive_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+            "bytes": 336535,
+            "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
+            "source": "ra2md.mix/localmd.mix"
+          }
+        ],
+        "file": "artmd.ini"
+      },
+      {
+        "absent": true,
+        "candidates": [],
+        "file": "langrule.ini"
+      },
+      {
+        "absent": false,
+        "candidates": [
+          {
+            "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+            "bytes": 743215,
+            "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+            "source": "expandmd01.mix"
+          },
+          {
+            "archive_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+            "bytes": 742958,
+            "sha256": "06761dd7f714e7d9400216ec3c06109ec5c1461f6a0727be7401eb9d8b0f6d05",
+            "source": "ra2md.mix/localmd.mix"
+          }
+        ],
+        "file": "rulesmd.ini"
+      },
+      {
+        "absent": true,
+        "candidates": [],
+        "file": "sov03umd.ini"
+      },
+      {
+        "absent": false,
+        "candidates": [
+          {
+            "archive_sha256": "6c36a0af05e2e9f86967308c77cf90fae9976d920e320aad8b9e4aa2e99e86a3",
+            "bytes": 189836,
+            "sha256": "df69d0f63f982823bb5818d3d49776028a719a2c20ced2526fab8f5cecb49fe6",
+            "source": "mapsmd03.mix"
+          }
+        ],
+        "file": "sov03umd.map"
+      }
+    ],
+    "request_count": 2113,
+    "requests_sha256": "ff93cb70f129fe5f67c5913936ef12c96441caf9ee6c354e76d588b7599c4fac"
+  },
+  "startup": {
+    "arena_bytes": 201326592,
+    "initialization_depth": [
+      0,
+      1,
+      2
+    ],
+    "initializers": [
+      {
+        "entry": "0040F490",
+        "table": "00812310"
+      },
+      {
+        "entry": "0040FB30",
+        "table": "00812348"
+      },
+      {
+        "entry": "004E6EE0",
+        "table": "00813248"
+      },
+      {
+        "entry": "004E6F60",
+        "table": "0081324C"
+      },
+      {
+        "entry": "004E6FE0",
+        "table": "00813250"
+      },
+      {
+        "entry": "004E7060",
+        "table": "00813254"
+      },
+      {
+        "entry": "004E70E0",
+        "table": "00813258"
+      },
+      {
+        "entry": "004E7160",
+        "table": "0081325C"
+      },
+      {
+        "entry": "004E71E0",
+        "table": "00813260"
+      },
+      {
+        "entry": "004E7260",
+        "table": "00813264"
+      },
+      {
+        "entry": "004E72E0",
+        "table": "00813268"
+      },
+      {
+        "entry": "004E7360",
+        "table": "0081326C"
+      },
+      {
+        "entry": "004E73E0",
+        "table": "00813270"
+      },
+      {
+        "entry": "004E7460",
+        "table": "00813274"
+      },
+      {
+        "entry": "004E74E0",
+        "table": "00813278"
+      },
+      {
+        "entry": "004E7560",
+        "table": "0081327C"
+      },
+      {
+        "entry": "004E75E0",
+        "table": "00813280"
+      },
+      {
+        "entry": "004E7660",
+        "table": "00813284"
+      },
+      {
+        "entry": "004E76E0",
+        "table": "00813288"
+      },
+      {
+        "entry": "004E7760",
+        "table": "0081328C"
+      },
+      {
+        "entry": "004E77E0",
+        "table": "00813290"
+      },
+      {
+        "entry": "004E7860",
+        "table": "00813294"
+      },
+      {
+        "entry": "004E78E0",
+        "table": "00813298"
+      },
+      {
+        "entry": "004E7960",
+        "table": "0081329C"
+      },
+      {
+        "entry": "004E79E0",
+        "table": "008132A0"
+      },
+      {
+        "entry": "004E7A60",
+        "table": "008132A4"
+      },
+      {
+        "entry": "004E7AE0",
+        "table": "008132A8"
+      },
+      {
+        "entry": "004E7B60",
+        "table": "008132AC"
+      },
+      {
+        "entry": "004E7BE0",
+        "table": "008132B0"
+      },
+      {
+        "entry": "004E7C60",
+        "table": "008132B4"
+      },
+      {
+        "entry": "005F6FF0",
+        "table": "00814248"
+      },
+      {
+        "entry": "0068C330",
+        "table": "008148E4"
+      },
+      {
+        "entry": "00725350",
+        "table": "008152D0"
+      },
+      {
+        "entry": "00725750",
+        "table": "008152F0"
+      }
+    ],
+    "optional_pass_guards": [
+      {
+        "exists": false,
+        "file": "LANGRULE.INI",
+        "reader": "00473C50"
+      },
+      {
+        "exists": false,
+        "file": "ALL06UMD.INI",
+        "reader": "00473C50"
+      },
+      {
+        "exists": false,
+        "file": "SOV03UMD.INI",
+        "reader": "00473C50"
+      }
+    ],
+    "physical": {
+      "ALL06UMD.MAP": {
+        "check_digest": 0,
+        "file": "ALL06UMD.MAP",
+        "returned": 1,
+        "section_count": 200
+      },
+      "ARTMD.INI": {
+        "check_digest": 0,
+        "file": "ARTMD.INI",
+        "returned": 1,
+        "section_count": 1570
+      },
+      "RULESMD.INI": {
+        "check_digest": 0,
+        "file": "RULESMD.INI",
+        "returned": 1,
+        "section_count": 1452
+      },
+      "SOV03UMD.MAP": {
+        "check_digest": 0,
+        "file": "SOV03UMD.MAP",
+        "returned": 1,
+        "section_count": 210
+      }
+    },
+    "root_weapons": [
+      {
+        "damage": 50,
+        "id": "Vulcan2",
+        "warhead": "SA"
+      },
+      {
+        "damage": 0,
+        "id": "NukeCarrier",
+        "warhead": "NukeMaker"
+      },
+      {
+        "damage": 50,
+        "id": "Vulcan",
+        "warhead": "SA"
+      },
+      {
+        "damage": 75,
+        "id": "RedEye2",
+        "warhead": "SAMWH"
+      },
+      {
+        "damage": 200,
+        "id": "CoilBolt",
+        "warhead": "Electric"
+      },
+      {
+        "damage": 300,
+        "id": "OPCoilBolt",
+        "warhead": "Electric"
+      },
+      {
+        "damage": 120,
+        "id": "PrismShot",
+        "warhead": "PrismWarhead"
+      },
+      {
+        "damage": 200,
+        "id": "PrismSupport",
+        "warhead": "DummyWarhead"
+      },
+      {
+        "damage": 200,
+        "id": "BarrelExplosion",
+        "warhead": "OilExplosionWH"
+      },
+      {
+        "damage": 150,
+        "id": "GrandCannonWeapon",
+        "warhead": "GrandCannonWH"
+      },
+      {
+        "damage": 600,
+        "id": "NukePayload",
+        "warhead": "NUKE"
+      },
+      {
+        "damage": 40,
+        "id": "FlakWeapon",
+        "warhead": "FlakWH"
+      },
+      {
+        "damage": 25,
+        "id": "HoverMissile",
+        "warhead": "HE"
+      },
+      {
+        "damage": 600,
+        "id": "OilExplosion",
+        "warhead": "OilExplosionWH"
+      },
+      {
+        "damage": 2000,
+        "id": "EiffelBolt",
+        "warhead": "Electric"
+      },
+      {
+        "damage": 1000,
+        "id": "MayanPrism",
+        "warhead": "PrismWarhead"
+      },
+      {
+        "damage": 25,
+        "id": "AGGattling",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 25,
+        "id": "AGGattlingE",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 30,
+        "id": "AAGattCann",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 25,
+        "id": "AAGattlingE",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 25,
+        "id": "AGGattling2",
+        "warhead": "SA"
+      },
+      {
+        "damage": 25,
+        "id": "AGGattling2E",
+        "warhead": "SA"
+      },
+      {
+        "damage": 30,
+        "id": "AAGattCann2",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 25,
+        "id": "AAGattling2E",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 25,
+        "id": "AGGattling3",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 25,
+        "id": "AGGattling3E",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 30,
+        "id": "AAGattCann3",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 25,
+        "id": "AAGattling3E",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 3,
+        "id": "MultipleMindControlTower",
+        "warhead": "Controller"
+      },
+      {
+        "damage": 250,
+        "id": "BlimpBombEffect",
+        "warhead": "BlimpHEEffect"
+      },
+      {
+        "damage": 30,
+        "id": "20mmRapid",
+        "warhead": "HARVWH"
+      },
+      {
+        "damage": 50,
+        "id": "20mmRapidE",
+        "warhead": "HowitzerWH"
+      },
+      {
+        "damage": 150,
+        "id": "Maverick",
+        "warhead": "ORCAAP"
+      },
+      {
+        "damage": 300,
+        "id": "MaverickE",
+        "warhead": "ORCAAP"
+      },
+      {
+        "damage": 40,
+        "id": "HornetBomb",
+        "warhead": "ORCAAP"
+      },
+      {
+        "damage": 100,
+        "id": "HornetCollision",
+        "warhead": "AP"
+      },
+      {
+        "damage": 80,
+        "id": "HornetBombE",
+        "warhead": "ARTYHE"
+      },
+      {
+        "damage": 50,
+        "id": "ASWBomb",
+        "warhead": "APSplash"
+      },
+      {
+        "damage": 100,
+        "id": "ASWCollision",
+        "warhead": "AP"
+      },
+      {
+        "damage": 60,
+        "id": "ParaDropWeapon",
+        "warhead": "MaverickHE"
+      },
+      {
+        "damage": 200,
+        "id": "Maverick2",
+        "warhead": "ORCAAP"
+      },
+      {
+        "damage": 400,
+        "id": "Maverick2E",
+        "warhead": "ORCAAP"
+      },
+      {
+        "damage": 250,
+        "id": "BlimpBomb",
+        "warhead": "BlimpHE"
+      },
+      {
+        "damage": 750,
+        "id": "Maverick3",
+        "warhead": "MIGWH"
+      },
+      {
+        "damage": 400,
+        "id": "Maverick3E",
+        "warhead": "ORCAAP"
+      },
+      {
+        "damage": 6,
+        "id": "SpyCameraWeapon",
+        "warhead": "DummyWarhead"
+      },
+      {
+        "damage": 100,
+        "id": "120mmx",
+        "warhead": "ApocAP"
+      },
+      {
+        "damage": 50,
+        "id": "MammothTusk",
+        "warhead": "HE"
+      },
+      {
+        "damage": 100,
+        "id": "120mmxE",
+        "warhead": "ApocAPE"
+      },
+      {
+        "damage": 90,
+        "id": "120mm",
+        "warhead": "AP"
+      },
+      {
+        "damage": 90,
+        "id": "120mmE",
+        "warhead": "RHINAPE"
+      },
+      {
+        "damage": 65,
+        "id": "105mm",
+        "warhead": "AP"
+      },
+      {
+        "damage": 65,
+        "id": "105mmE",
+        "warhead": "GRIZAPE"
+      },
+      {
+        "damage": 1,
+        "id": "HornetLauncher",
+        "warhead": "Special"
+      },
+      {
+        "damage": 1,
+        "id": "V3Launcher",
+        "warhead": "Special"
+      },
+      {
+        "damage": 250,
+        "id": "BlimpBombE",
+        "warhead": "KTSTLEXP"
+      },
+      {
+        "damage": 50,
+        "id": "DroneJump",
+        "warhead": "Parasite"
+      },
+      {
+        "damage": 1,
+        "id": "VirtualScanner",
+        "warhead": "SA"
+      },
+      {
+        "damage": 25,
+        "id": "FlakTrackGun",
+        "warhead": "FlakTWH"
+      },
+      {
+        "damage": 35,
+        "id": "FlakTrackAAGun",
+        "warhead": "FlakWH"
+      },
+      {
+        "damage": 25,
+        "id": "FlakTrackGunE",
+        "warhead": "FlakTWH"
+      },
+      {
+        "damage": 20,
+        "id": "FlakTrackAAGunE",
+        "warhead": "FlakWH"
+      },
+      {
+        "damage": 60,
+        "id": "155mm",
+        "warhead": "ARTYHE"
+      },
+      {
+        "damage": 1,
+        "id": "ASWLauncher",
+        "warhead": "Special"
+      },
+      {
+        "damage": 60,
+        "id": "155mmE",
+        "warhead": "ARTYHE"
+      },
+      {
+        "damage": 100,
+        "id": "SubTorpedo",
+        "warhead": "APSplash"
+      },
+      {
+        "damage": 100,
+        "id": "SubTorpedoE",
+        "warhead": "APSplash"
+      },
+      {
+        "damage": 100,
+        "id": "Medusa",
+        "warhead": "SAMWH"
+      },
+      {
+        "damage": 100,
+        "id": "MedusaE",
+        "warhead": "SAMWH"
+      },
+      {
+        "damage": 50,
+        "id": "DredLauncher",
+        "warhead": "Special"
+      },
+      {
+        "damage": 35,
+        "id": "BlackHawkCannon",
+        "warhead": "SA"
+      },
+      {
+        "damage": 40,
+        "id": "BlackHawkCannonE",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 15,
+        "id": "SquidGrab",
+        "warhead": "ParasitePlus"
+      },
+      {
+        "damage": 100,
+        "id": "SquidPunch",
+        "warhead": "HE"
+      },
+      {
+        "damage": 40,
+        "id": "SquidGrabE",
+        "warhead": "ParasitePlus"
+      },
+      {
+        "damage": 200,
+        "id": "SquidPunchE",
+        "warhead": "HE"
+      },
+      {
+        "damage": 4,
+        "id": "SonicZap",
+        "warhead": "SonicWarhead"
+      },
+      {
+        "damage": 8,
+        "id": "SonicZapE",
+        "warhead": "SonicWarhead"
+      },
+      {
+        "damage": 150,
+        "id": "SABOT",
+        "warhead": "UltraAP"
+      },
+      {
+        "damage": 175,
+        "id": "SABOTE",
+        "warhead": "UltraAPE"
+      },
+      {
+        "damage": 75,
+        "id": "HowitzerGun",
+        "warhead": "HowitzerWH"
+      },
+      {
+        "damage": 135,
+        "id": "TankBolt",
+        "warhead": "Electric"
+      },
+      {
+        "damage": 150,
+        "id": "TankBoltE",
+        "warhead": "Electric"
+      },
+      {
+        "damage": 65,
+        "id": "ATGUN",
+        "warhead": "AP"
+      },
+      {
+        "damage": 65,
+        "id": "ATGUNE",
+        "warhead": "RHINAPE"
+      },
+      {
+        "damage": 100,
+        "id": "Comet",
+        "warhead": "CometWH"
+      },
+      {
+        "damage": 150,
+        "id": "SuperComet",
+        "warhead": "CometWH"
+      },
+      {
+        "damage": 30,
+        "id": "CometFragment",
+        "warhead": "CometWH"
+      },
+      {
+        "damage": 30,
+        "id": "TeslaFragment",
+        "warhead": "Electric"
+      },
+      {
+        "damage": 50,
+        "id": "SuperCometFragment",
+        "warhead": "CometWH"
+      },
+      {
+        "damage": 35,
+        "id": "FlakWeaponE",
+        "warhead": "FlakWH"
+      },
+      {
+        "damage": 100,
+        "id": "MirageGun",
+        "warhead": "MirageWH"
+      },
+      {
+        "damage": 150,
+        "id": "MirageGunE",
+        "warhead": "MirageWH"
+      },
+      {
+        "damage": 200,
+        "id": "CRNuke",
+        "warhead": "CRNUKEWH"
+      },
+      {
+        "damage": 80,
+        "id": "HoverMissileE",
+        "warhead": "HE"
+      },
+      {
+        "damage": -50,
+        "id": "RepairBullet",
+        "warhead": "Mechanical"
+      },
+      {
+        "damage": 25,
+        "id": "CRM60",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 30,
+        "id": "CRFlakGuyGun",
+        "warhead": "FlakTWH"
+      },
+      {
+        "damage": 125,
+        "id": "CRMP5",
+        "warhead": "HollowPoint3"
+      },
+      {
+        "damage": 125,
+        "id": "AWPE",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 60,
+        "id": "CRElectricBolt",
+        "warhead": "Shock"
+      },
+      {
+        "damage": 200,
+        "id": "CRMindControl",
+        "warhead": "PsiPulse"
+      },
+      {
+        "damage": 175,
+        "id": "CRRadBeamWeapon",
+        "warhead": "RadBeamWarhead"
+      },
+      {
+        "damage": 5,
+        "id": "CRNeutronRifle",
+        "warhead": "ChronoBeam"
+      },
+      {
+        "damage": 250,
+        "id": "CRTerrorBomb",
+        "warhead": "TerrorBombWH"
+      },
+      {
+        "damage": 300,
+        "id": "CowShot",
+        "warhead": "PrismWarhead"
+      },
+      {
+        "damage": 25,
+        "id": "CRPsychicJab",
+        "warhead": "SAFlame"
+      },
+      {
+        "damage": 125,
+        "id": "CRVirusGun",
+        "warhead": "Virus"
+      },
+      {
+        "damage": 250,
+        "id": "CRSuperMindBlast",
+        "warhead": "SuperPsiPulse"
+      },
+      {
+        "damage": 30,
+        "id": "CRMissileLauncher",
+        "warhead": "GUARDWH"
+      },
+      {
+        "damage": 0,
+        "id": "DefaultDeathWeapon",
+        "warhead": "DeathWH"
+      },
+      {
+        "damage": 300,
+        "id": "Demobomb",
+        "warhead": "DemobombWH"
+      },
+      {
+        "damage": 25,
+        "id": "AAGattling",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 30,
+        "id": "AAGattling2",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 40,
+        "id": "AAGattling3",
+        "warhead": "GattWH"
+      },
+      {
+        "damage": 5000,
+        "id": "MagneticBeam",
+        "warhead": "LocomotorBeam"
+      },
+      {
+        "damage": 80,
+        "id": "MagneShake",
+        "warhead": "MagneShakeWH"
+      },
+      {
+        "damage": 10000,
+        "id": "MagneticBeamE",
+        "warhead": "LocomotorBeam"
+      },
+      {
+        "damage": 600,
+        "id": "ChaosAttack",
+        "warhead": "PsychGasCreate"
+      },
+      {
+        "damage": 60,
+        "id": "BoomerTorpedo",
+        "warhead": "APSplash2"
+      },
+      {
+        "damage": 25,
+        "id": "CruiseLauncher",
+        "warhead": "Special"
+      },
+      {
+        "damage": 60,
+        "id": "BoomerTorpedoE",
+        "warhead": "APSplash2"
+      },
+      {
+        "damage": 90,
+        "id": "160mm",
+        "warhead": "SCHOPWH"
+      },
+      {
+        "damage": 90,
+        "id": "160mmE",
+        "warhead": "SCHOPWH"
+      },
+      {
+        "damage": 3,
+        "id": "MultipleMindControlTank",
+        "warhead": "Controller"
+      },
+      {
+        "damage": 90,
+        "id": "DiskLaser",
+        "warhead": "DiskWH"
+      },
+      {
+        "damage": 1,
+        "id": "DiskDrain",
+        "warhead": "AntiB"
+      },
+      {
+        "damage": 90,
+        "id": "DiskLaserE",
+        "warhead": "DiskWH"
+      },
+      {
+        "damage": 65,
+        "id": "Robogun",
+        "warhead": "AP"
+      },
+      {
+        "damage": 15,
+        "id": "M60",
+        "warhead": "SA"
+      },
+      {
+        "damage": 25,
+        "id": "Para",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 25,
+        "id": "M60E",
+        "warhead": "SA"
+      },
+      {
+        "damage": 25,
+        "id": "ParaE",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 30,
+        "id": "UCPara",
+        "warhead": "SSAB"
+      },
+      {
+        "damage": 40,
+        "id": "UCElitePara",
+        "warhead": "SSAB"
+      },
+      {
+        "damage": 15,
+        "id": "M1Carbine",
+        "warhead": "SA"
+      },
+      {
+        "damage": 20,
+        "id": "M1CarbineE",
+        "warhead": "SA"
+      },
+      {
+        "damage": 20,
+        "id": "UCM1Carbine",
+        "warhead": "SSAB"
+      },
+      {
+        "damage": 30,
+        "id": "UCEliteM1Carbine",
+        "warhead": "SSAB"
+      },
+      {
+        "damage": 50,
+        "id": "ElectricBolt",
+        "warhead": "Shock"
+      },
+      {
+        "damage": 10,
+        "id": "AssaultBolt",
+        "warhead": "ElectricAssault"
+      },
+      {
+        "damage": 50,
+        "id": "ElectricBoltE",
+        "warhead": "Shock"
+      },
+      {
+        "damage": 1,
+        "id": "DefuseKit",
+        "warhead": "BombDisarm"
+      },
+      {
+        "damage": 25,
+        "id": "20mm",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 25,
+        "id": "20mmE",
+        "warhead": "SSA"
+      },
+      {
+        "damage": 125,
+        "id": "MP5",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 2500,
+        "id": "Sapper",
+        "warhead": "Mechanical"
+      },
+      {
+        "damage": 125,
+        "id": "MP5E",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 1,
+        "id": "MindControl",
+        "warhead": "Controller"
+      },
+      {
+        "damage": 250,
+        "id": "PsiWave",
+        "warhead": "PsiPulse"
+      },
+      {
+        "damage": 400,
+        "id": "IvanBomber",
+        "warhead": "IvanBomb"
+      },
+      {
+        "damage": 600,
+        "id": "IvanBomberE",
+        "warhead": "IvanBomb"
+      },
+      {
+        "damage": 125,
+        "id": "RadBeamWeapon",
+        "warhead": "RadBeamWarhead"
+      },
+      {
+        "damage": 1,
+        "id": "RadEruptionWeapon",
+        "warhead": "RadEruptionWarhead"
+      },
+      {
+        "damage": 200,
+        "id": "RadBeamWeaponE",
+        "warhead": "RadBeamWarhead"
+      },
+      {
+        "damage": 30,
+        "id": "BadTeeth",
+        "warhead": "ParasiteDog"
+      },
+      {
+        "damage": 2,
+        "id": "Pistola",
+        "warhead": "SA"
+      },
+      {
+        "damage": 80,
+        "id": "V3Cluster",
+        "warhead": "V3HE"
+      },
+      {
+        "damage": 8,
+        "id": "NeutronRifle",
+        "warhead": "ChronoBeam"
+      },
+      {
+        "damage": 16,
+        "id": "NeutronRifleE",
+        "warhead": "ChronoBeam"
+      },
+      {
+        "damage": 1,
+        "id": "MakeupKit",
+        "warhead": "Snapshot"
+      },
+      {
+        "damage": 125,
+        "id": "ChronoMP5",
+        "warhead": "HollowPointNoBuilding"
+      },
+      {
+        "damage": 5000,
+        "id": "FakeC4",
+        "warhead": "FakeC4WH"
+      },
+      {
+        "damage": 125,
+        "id": "ChronoMP5E",
+        "warhead": "HollowPointNoBuilding"
+      },
+      {
+        "damage": 10,
+        "id": "MindControlE",
+        "warhead": "Controller"
+      },
+      {
+        "damage": 1,
+        "id": "SuperMindControl",
+        "warhead": "ControllerBuilding"
+      },
+      {
+        "damage": 250,
+        "id": "SuperPsiWave",
+        "warhead": "SuperPsiPulse"
+      },
+      {
+        "damage": 125,
+        "id": "AWP",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 30,
+        "id": "AlligatorBite",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 125,
+        "id": "DoublePistols",
+        "warhead": "HollowPoint2"
+      },
+      {
+        "damage": 125,
+        "id": "DoublePistolsE",
+        "warhead": "HollowPoint2"
+      },
+      {
+        "damage": 20,
+        "id": "FlakGuyGun",
+        "warhead": "FlakTWH"
+      },
+      {
+        "damage": 20,
+        "id": "FlakGuyAAGun",
+        "warhead": "FlakGuyWH"
+      },
+      {
+        "damage": 20,
+        "id": "FlakGuyGunE",
+        "warhead": "FlakTWH"
+      },
+      {
+        "damage": 8,
+        "id": "FlakGuyAAGunE",
+        "warhead": "FlakGuyWH"
+      },
+      {
+        "damage": 225,
+        "id": "TerrorBomb",
+        "warhead": "TerrorBombWH"
+      },
+      {
+        "damage": 30,
+        "id": "GoodTeeth",
+        "warhead": "ParasiteDog"
+      },
+      {
+        "damage": 30,
+        "id": "BearBite",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 30,
+        "id": "ChimpBite",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 40,
+        "id": "MissileLauncher",
+        "warhead": "GUARDWH"
+      },
+      {
+        "damage": 50,
+        "id": "MissileLauncherE",
+        "warhead": "GUARDWH"
+      },
+      {
+        "damage": 25,
+        "id": "PsychicJab",
+        "warhead": "SAFlame"
+      },
+      {
+        "damage": 30,
+        "id": "PsychicJabE",
+        "warhead": "SAFlame"
+      },
+      {
+        "damage": 63,
+        "id": "UCPsychicJab",
+        "warhead": "SSABFlame"
+      },
+      {
+        "damage": 73,
+        "id": "UCElitePsychicJab",
+        "warhead": "SSABFlame"
+      },
+      {
+        "damage": 65,
+        "id": "AKM",
+        "warhead": "BORISWH"
+      },
+      {
+        "damage": 1,
+        "id": "Flare",
+        "warhead": "AirstrikeFlare"
+      },
+      {
+        "damage": 90,
+        "id": "AKME",
+        "warhead": "BORISWH"
+      },
+      {
+        "damage": 100,
+        "id": "Punch",
+        "warhead": "Battering"
+      },
+      {
+        "damage": 100,
+        "id": "Smash",
+        "warhead": "Smashing"
+      },
+      {
+        "damage": 100,
+        "id": "PunchE",
+        "warhead": "Battering"
+      },
+      {
+        "damage": 100,
+        "id": "SmashE",
+        "warhead": "Smashing"
+      },
+      {
+        "damage": 125,
+        "id": "Virusgun",
+        "warhead": "Virus"
+      },
+      {
+        "damage": 125,
+        "id": "VirusgunE",
+        "warhead": "Virus"
+      },
+      {
+        "damage": 125,
+        "id": "CLINTGUN",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 125,
+        "id": "TERMIGUN",
+        "warhead": "HollowPoint"
+      },
+      {
+        "damage": 125,
+        "id": "STALGUN",
+        "warhead": "HollowPoint4"
+      },
+      {
+        "damage": 10000,
+        "id": "STALGREN",
+        "warhead": "NukeB"
+      },
+      {
+        "damage": 100,
+        "id": "Mummypunch",
+        "warhead": "Battering"
+      },
+      {
+        "damage": 100,
+        "id": "Mummysmash",
+        "warhead": "Smashing"
+      },
+      {
+        "damage": 25,
+        "id": "Lunarlaser",
+        "warhead": "LUNARWH"
+      },
+      {
+        "damage": 200,
+        "id": "TRexInfBite",
+        "warhead": "TRexInfWH"
+      },
+      {
+        "damage": 200,
+        "id": "TRexBite",
+        "warhead": "TRexWH"
+      },
+      {
+        "damage": 30,
+        "id": "SHOVEL",
+        "warhead": "SA"
+      }
+    ],
+    "theater": 4
+  },
+  "weapon_field_controls": {
+    "constructor": {
+      "damage": 0,
+      "warhead": null
+    },
+    "registry_count_before": 204,
+    "rows": [
+      {
+        "after": {
+          "damage": 0,
+          "warhead": null
+        },
+        "before": {
+          "damage": 0,
+          "warhead": null
+        },
+        "keys": null,
+        "name": "missing_section",
+        "reads": [],
+        "returned": 0
+      },
+      {
+        "after": {
+          "damage": 37,
+          "warhead": "AP"
+        },
+        "before": {
+          "damage": 0,
+          "warhead": null
+        },
+        "keys": {
+          "Damage": "37",
+          "Warhead": "AP"
+        },
+        "name": "set_both",
+        "reads": [
+          {
+            "default": 0,
+            "entry": "005276D0",
+            "key": "Damage",
+            "return_pc": "007722E8",
+            "returned": 37,
+            "section": "Action42FieldControl"
+          },
+          {
+            "capacity": 128,
+            "default": "",
+            "entry": "00528A10",
+            "key": "Warhead",
+            "read_string": "AP",
+            "return_pc": "00772964",
+            "returned": 2,
+            "section": "Action42FieldControl"
+          }
+        ],
+        "returned": 1
+      },
+      {
+        "after": {
+          "damage": 37,
+          "warhead": "AP"
+        },
+        "before": {
+          "damage": 37,
+          "warhead": "AP"
+        },
+        "keys": {
+          "Range": "1"
+        },
+        "name": "missing_keys",
+        "reads": [
+          {
+            "default": 37,
+            "entry": "005276D0",
+            "key": "Damage",
+            "return_pc": "007722E8",
+            "returned": 37,
+            "section": "Action42FieldControl"
+          },
+          {
+            "capacity": 128,
+            "default": "",
+            "entry": "00528A10",
+            "key": "Warhead",
+            "read_string": "",
+            "return_pc": "00772964",
+            "returned": 0,
+            "section": "Action42FieldControl"
+          }
+        ],
+        "returned": 1
+      },
+      {
+        "after": {
+          "damage": 0,
+          "warhead": "AP"
+        },
+        "before": {
+          "damage": 37,
+          "warhead": "AP"
+        },
+        "keys": {
+          "Damage": "",
+          "Warhead": ""
+        },
+        "name": "empty_keys",
+        "reads": [
+          {
+            "default": 37,
+            "entry": "005276D0",
+            "key": "Damage",
+            "return_pc": "007722E8",
+            "returned": 0,
+            "section": "Action42FieldControl"
+          },
+          {
+            "capacity": 128,
+            "default": "",
+            "entry": "00528A10",
+            "key": "Warhead",
+            "read_string": "",
+            "return_pc": "00772964",
+            "returned": 0,
+            "section": "Action42FieldControl"
+          }
+        ],
+        "returned": 1
+      },
+      {
+        "after": {
+          "damage": -17,
+          "warhead": null
+        },
+        "before": {
+          "damage": 0,
+          "warhead": "AP"
+        },
+        "keys": {
+          "Damage": "-17",
+          "Warhead": "none"
+        },
+        "name": "signed_and_none",
+        "reads": [
+          {
+            "default": 0,
+            "entry": "005276D0",
+            "key": "Damage",
+            "return_pc": "007722E8",
+            "returned": -17,
+            "section": "Action42FieldControl"
+          },
+          {
+            "capacity": 128,
+            "default": "",
+            "entry": "00528A10",
+            "key": "Warhead",
+            "read_string": "none",
+            "return_pc": "00772964",
+            "returned": 4,
+            "section": "Action42FieldControl"
+          }
+        ],
+        "returned": 1
+      },
+      {
+        "after": {
+          "damage": -17,
+          "warhead": null
+        },
+        "before": {
+          "damage": -17,
+          "warhead": null
+        },
+        "keys": {
+          "Range": "1"
+        },
+        "name": "missing_after_clear",
+        "reads": [
+          {
+            "default": -17,
+            "entry": "005276D0",
+            "key": "Damage",
+            "return_pc": "007722E8",
+            "returned": -17,
+            "section": "Action42FieldControl"
+          },
+          {
+            "capacity": 128,
+            "default": "",
+            "entry": "00528A10",
+            "key": "Warhead",
+            "read_string": "",
+            "return_pc": "00772964",
+            "returned": 0,
+            "section": "Action42FieldControl"
+          }
+        ],
+        "returned": 1
+      },
+      {
+        "after": {
+          "damage": 90,
+          "warhead": "AP"
+        },
+        "before": {
+          "damage": -17,
+          "warhead": null
+        },
+        "keys": {
+          "Damage": "90",
+          "Warhead": "ap"
+        },
+        "name": "case_lookup",
+        "reads": [
+          {
+            "default": -17,
+            "entry": "005276D0",
+            "key": "Damage",
+            "return_pc": "007722E8",
+            "returned": 90,
+            "section": "Action42FieldControl"
+          },
+          {
+            "capacity": 128,
+            "default": "",
+            "entry": "00528A10",
+            "key": "Warhead",
+            "read_string": "ap",
+            "return_pc": "00772964",
+            "returned": 2,
+            "section": "Action42FieldControl"
+          }
+        ],
+        "returned": 1
+      }
+    ],
+    "scope": "One real appended Weapon; complete original771C70/772080 on ordered cache controls. These custom controls exclude physical loading and full Rules Process."
+  }
+}

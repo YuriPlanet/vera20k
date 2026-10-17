@@ -5,6 +5,37 @@ Factory rally and ordinary ground Unit Move drawing are integrated. The whole-sc
 the checkpoint. No unresolved census
 entry is completed by documenting it.
 
+## Damaged House self-heal status controls
+
+`python -m tools.procedural_drawing_oracle.shroud --self-heal-status --check`
+replays the additive `self_heal_status.json` controls. Use `--write` only to
+deliberately regenerate that corpus. `control_group_status.json` retains its
+historical independent inputs and expected bytes.
+
+The existing selected-health/group runtime owns the VM, physical PIPS and
+palette startup, cached INI transport, native mobile prefixes, House queries,
+font and Surface storage. Original `6F5190 -> 6F64A0 -> 709A90` selects600 or601;
+`492670` and `496250` execute the destination-half stencil. Per-parent marker
+stores and final packed pixels include positive twice-darkened overlap.
+The existing all-word packed-half corpus remains the numeric kernel owner.
+
+`readers` records the physical selected layers and all four General fields.
+`reader_controls` records constructor defaults and retained current-default
+reads through `66D530` admission and `66E6E2..66E74B`. Its `input_text` controls
+use the existing lexical owner; empty authored values are omitted. The separate
+`raw_cached_empty_values` row deliberately supplies stored-empty strings to
+the native reader and is not a physical INI-loading claim.
+
+`divide_controls` distinguishes AI division before the House count query from
+drawing division after it. Only actual x86 interrupt0 at the expected IDIV
+counts as a divide fault. Each trapped control restores its prior emulator CPU
+context so the next independent control cannot inherit a pending exception.
+`unit_heal_to_full` executes the original bounded House-heal AI arm before
+rendering and records the resulting Health; whole native tick scheduling,
+natural damage/capture/grant/revoke, smoke cleanup and full-game frames remain
+outside this supplied-state corpus. Binary identity and the replay command
+are in its sidecar; implementation validation belongs in the PR/checkpoint.
+
 ## Selected ground Unit Attack
 
 Foot4DC060 uses the Techno6F3D60 turret pivot and70BCB0's live TarCom aim.

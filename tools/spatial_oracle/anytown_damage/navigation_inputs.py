@@ -116,11 +116,16 @@ def bind_primary_tiles(m, theater, selected_tiles, *, preserve_abstract_registry
     return dict(archive_inputs=receipt, added_rows=rows,
         boundary='Physical primary TMP cache supplied with original constructor heads and native default animation/shadow fields. The original archive loader, all tile INI properties and rendering variants are excluded. Existing crop Cell inputs are unchanged; later original Recalc owns land/slope/zone updates.')
 
+from tools.projectile_oracle.bridge_render_inputs import BulletReader
+
 class Inputs(ri.Rules):
- def __init__(self,t,*,map_file=None,theater_file='TEMPERATMD.INI',damage_overlays=range(205,233),tiberium_timer_readers=False):
+ rules_cache=BulletReader.rules_cache
+ def __init__(self,t,*,map_file=None,theater_file='TEMPERATMD.INI',damage_overlays=range(205,233),tiberium_timer_readers=False,wall_inputs=False,extra_wall_types=(),wall_materials=(),wall_gdi_types=()):
+  assert wall_inputs or not (extra_wall_types or wall_materials or wall_gdi_types)
+  self.extra_wall_types=tuple(extra_wall_types)
   self.tiberium_timer_readers=tiberium_timer_readers;self.tiberium_timer_layers=[]
   self.map_file=Path(map_file or MAPFILE);self.theater_file=theater_file;self.damage_overlays=tuple(damage_overlays)
-  super().__init__();self.receipts=[];raw,sections,cells=map_inputs(self.map_file);self.physical=cells;self.map_sections=sections
+  super().__init__(full_rules_constructor=wall_inputs);self.wall_inputs=wall_inputs;self.receipts=[];raw,sections,cells=map_inputs(self.map_file);self.physical=cells;self.map_sections=sections
   self.invoke(0x71D580,0)
   self.u.mem_write(0xA8B230,ri.dwords(self.alloc(0x1300)))
   self.u.mem_write(0x8871E0,ri.dwords(self.rules))
@@ -129,7 +134,17 @@ class Inputs(ri.Rules):
   self.u.mem_write(0xA8E318,ri.dwords(0x7EB6D4,self.alloc(1024*4),1024,1,0,10))
   for name in names:
    p=self.alloc(0x400);self.invoke(0x71DA80,p,(self.cstring(name),));self.terrain_ptrs[name]=p
-  art,_=lexical((ri.ASSETS/'ARTMD.INI').read_bytes(),set(names));self.make_ini(art);art_ini=bytes(self.u.mem_read(ri.INI,0x40))
+  art_names=set(names)
+  self.wall_sources=[];self.wall_defaults=[];self.wall_layers=[]
+  if wall_inputs:
+   from tools.spatial_oracle.bridge_shadow_render import physical_assets
+   assets,self.wall_sources=physical_assets(wall=True,wall_materials=wall_materials);self.assets.update(assets)
+   extra_ids={i for i,name in self.names.items() if name in self.extra_wall_types}
+   assert {self.names[i] for i in extra_ids}==set(self.extra_wall_types),self.extra_wall_types
+   self.wall_ids=sorted({c['overlay'] for c in cells.values() if c['overlay'] is not None}|extra_ids)
+   art_names|={self.names[i] for i in self.wall_ids}
+   self.wall_defaults=self.wall_type_states()
+  art,_=lexical((ri.ASSETS/'ARTMD.INI').read_bytes(),art_names);self.make_ini(art);art_ini=bytes(self.u.mem_read(ri.INI,0x40))
   self.building_ptrs={}
   for n in sorted({v.split(',')[1] for k,v,line in sections['Structures']}):
    p=self.alloc(0x1800);self.block(0x45E145,0x45E151,{UC_X86_REG_ESI:p,UC_X86_REG_EBX:0});self.building_ptrs[n]=p
@@ -138,15 +153,36 @@ class Inputs(ri.Rules):
   for name in tibsec['Tiberiums'].values():
    p=self.alloc(0x200);self.invoke(0x7216C0,p,(self.cstring(name),));self.tiberium_ptrs[name]=p
   self.u.mem_write(0xA83CE0,ri.dwords(0x7EB6D4,self.alloc(1024),256,1,0,10));self.mtnk=self.alloc(0xF00);self.invoke(0x7470D0,self.mtnk,(self.cstring('MTNK'),))
+  self.wall_gdi_types={};self.wall_gdi_inputs=None
+  if wall_gdi_types:
+   # This selected registry is distinct from the map's partial civilian type
+   # heads. Preserve populated storage; only an empty registry needs capacity.
+   if self.read32(0xA83C78)==0:
+    self.u.mem_write(0xA83C68,ri.dwords(0x7EB6D4,self.alloc(1024*4),1024,1,0,10))
+   self.wall_gdi_types={name:self.invoke(0x4653C0,self.cstring(name)) for name in wall_gdi_types}
+   self.wall_gdi_inputs=dict(types=[dict(name=name,retained_name=self.string(p+0x24),pointer=p)
+    for name,p in self.wall_gdi_types.items()],constructor_defaults=self.wall_gdi_state(),layers=[])
   self.terrain_layers=[]
   for name,path in [('RULESMD.INI',ri.ASSETS/'RULESMD.INI'),('LANGRULE.INI',ri.ASSETS/'LANGRULE.INI'),('MPBattleMD.ini',ri.ASSETS/'MPBattleMD.ini'),(self.map_file.name,self.map_file)]:
-   if not path.exists():assert name=='LANGRULE.INI';self.receipts.append(dict(file=name,absent=True));continue
+   if not path.exists():
+    assert name=='LANGRULE.INI';self.receipts.append(dict(file=name,absent=True))
+    if wall_gdi_types:self.wall_gdi_inputs['layers'].append(dict(file=name,absent=True))
+    continue
    raw=path.read_bytes();lex,_=lexical(raw,set(self.names.values())|set(self.land_names)|{'General'}|set(names)|set(self.tiberium_ptrs)|{'MTNK'}|{v.split(',')[1] for k,v,line in sections['Structures']});self.make_ini(lex)
    rules_ini=self.alloc(0x40);self.u.mem_write(rules_ini,bytes(self.u.mem_read(ri.INI,0x40)));self.u.mem_write(ri.INI,art_ini)
    self.invoke(0x674000,0,(rules_ini,))
    if 'General' in lex:
     self.block(0x66F1CB,0x66F1EC,{UC_X86_REG_ESI:self.rules,UC_X86_REG_EDI:rules_ini})
     self.block(0x671DD2,0x671DF1,{UC_X86_REG_ESI:self.rules,UC_X86_REG_EDI:rules_ini})
+   if wall_gdi_types:
+    before=self.wall_gdi_state()
+    # Original ReadGeneral66D549..558 admits the original General-name
+    # pointer before these reads. ReadString itself defaults to empty; the
+    # caller retains the preceding field pointer when no name is returned.
+    admitted=bool(self.invoke(0x526810,rules_ini,(self.read32(0x7F0C9C),)))
+    if admitted:self.block(0x66F450,0x66F589,{UC_X86_REG_ESI:self.rules,UC_X86_REG_EDI:rules_ini})
+    self.wall_gdi_inputs['layers'].append(dict(file=name,sha256=sha(raw),section_present=admitted,
+     physical_keys={key:lex.get('General',{}).get(key) for key in before},before=before,after=self.wall_gdi_state()))
    overlays=[]
    for n,p in self.building_ptrs.items():
     if n in lex:self.block(0x460AA0,0x460AE0,{UC_X86_REG_EBP:p,UC_X86_REG_ESI:rules_ini,UC_X86_REG_EBX:self.cstring(n),UC_X86_REG_EAX:0})
@@ -171,6 +207,7 @@ class Inputs(ri.Rules):
     if self.invoke(0x71DEA0,p,(rules_ini,))&255:terrain.append(n)
    self.receipts.append(dict(file=name,sha256=sha(raw),bytes=len(raw),overlay_admitted=overlays,terrain_admitted=terrain))
    if tiberium_timer_readers:self.tiberium_timer_layers.append(dict(file=name,sha256=sha(raw),types=self.tiberium_queue_inputs()))
+   if wall_inputs:self.wall_layers.append(dict(file=name,sha256=sha(raw),types=self.wall_type_states()))
   assert all(self.string(p+0x1F8)==n for n,p in self.terrain_ptrs.items()), 'ART alias cache requires expansion'
   self.theater=t
   allnames={f'TileSet{i:04d}' for i in range(300)}
@@ -210,17 +247,30 @@ class Inputs(ri.Rules):
   self.block(0x683848,0x68384F,{UC_X86_REG_EBP:receiver})
   self.block(0x68A571,0x68A58F,{UC_X86_REG_ESI:receiver,UC_X86_REG_EDI:ri.INI})
   return dict(flags=self.read32(receiver),basic_growth_enabled=bool(self.u.mem_read(receiver+0x34A6,1)[0]),prior_flags=0,basic_default_store='00683848',basic_reader='0068A571..0068A58F',special_flags_reader='006B8CA0',map_sha256=sha(raw),basic_value=lex.get('Basic',{}).get('TiberiumGrowthEnabled'),special_values=lex.get('SpecialFlags',{}))
- def read_map_theater(self):
+ def read_map_theater(self,raw=None):
   # Full_Init687631..68764F executes the exact Map/Theater read, original
   # 475870 -> 528A10 -> 48DBE0 lookup and Scenario+1258 store. The surrounding
   # Scenario allocation and lexical INI cache remain declared host boundaries.
-  raw=self.map_file.read_bytes();lex,_=lexical(raw,{'Map'});self.make_ini(lex)
+  raw=self.map_file.read_bytes() if raw is None else raw
+  lex,_=lexical(raw,{'Map'});self.make_ini(lex)
   scenario=self.read32(0xA8B230);before=self.read32(scenario+0x1258)
-  self.block(0x687631,0x68764F,{UC_X86_REG_EBP:ri.INI,UC_X86_REG_EBX:0})
+  ri.Rules.block(self,0x687631,0x68764F,{UC_X86_REG_EBP:ri.INI,UC_X86_REG_EBX:0})
   return dict(map_sha256=sha(raw),section='Map',key='Theater',default=0,
               source_value=lex.get('Map',{}).get('Theater'),before=before,
               value=self.read32(scenario+0x1258),reader='0x475870',
               lookup='0x48DBE0',caller='0x687631..0x68764F',field='Scenario+0x1258')
+ def wall_type_states(self):
+  return [dict(index=i,name=self.names[i],strength=self.read32(p+0x2A4),
+     damage_levels=self.read32(p+0x2A0),wall=self.u.mem_read(p+0x2A8,1)[0],
+     armor=self.read32(p+0x9C),image=self.string(p+0x1F8),
+     image_present=bool(self.read32(p+0xA4)),cell_anim_null=self.read32(p+0x29C)==0,
+     **(dict(theater=self.u.mem_read(p+0x22C,1)[0],new_theater=self.u.mem_read(p+0x237,1)[0],
+       crushable=self.u.mem_read(p+0x22D,1)[0]) if self.extra_wall_types else {}))
+    for i in self.wall_ids for p in (self.overlay_ptrs[i],)]
+ def wall_gdi_state(self):
+  return {name:dict(pointer=p,name=self.string(p+0x24) if p else None)
+   for name,off in (('GDIGateOne',0x86C),('GDIGateTwo',0x870),('NodGateOne',0x874),('NodGateTwo',0x878),('WallTower',0x87C))
+   for p in (self.read32(self.rules+off),)}
  def snapshot(self):
   used=sorted({c['overlay'] for c in self.physical.values() if c['overlay'] is not None}|set(self.damage_overlays))
   terrains={}

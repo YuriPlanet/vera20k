@@ -36,6 +36,43 @@ const INFANTRY_SEQUENCE: [[u8; 4]; 5] = [
 const INFANTRY_ALTERNATE_SEQUENCE: [[u8; 4]; 4] =
     [[1, 2, 3, 4], [2, 3, 4, 1], [3, 4, 1, 2], [4, 1, 2, 3]];
 
+/// Native480510's overlay prefix returns here or continues through the
+/// corresponding Building/Gate object-list arm. Direction is read only by
+/// those continuations; the supported overlay-only queries need no direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WallConnectionStep {
+    Return(bool),
+    GdiBuildings,
+    NodBuildings,
+}
+
+/// `CellClass::IsWallConnectableInDirection @ 0x00480510..0x00480622`.
+/// Source: original caller/body reads in the authored-fence comparison
+/// (`tools/spatial_oracle/anytown_damage/authored_fence.json`). Stored and
+/// requested identities retain native signed width; -1 means no overlay/type.
+///
+/// The literals are OverlayTypes declaration indices, not INI key numbers:
+/// stock2/26/243 are GAWALL/NAWALL/GAFWLL; CAKRMW is240. This is not the
+/// Wall=yes set (sandbags and fences do not pass the negative-type query).
+/// The physical ordered registry readers, rather than key-minus-one, own IDs.
+///
+/// All negative-type LOS/Bullet/bounce/Spark callers and CAFNCB203 cleanup
+/// resolve in this prefix. The distinct Building/Gate continuations stay
+/// explicit rather than pretending this is a whole-function port.
+pub(crate) fn wall_connection_step(stored: i32, requested: i32) -> WallConnectionStep {
+    if stored != -1 && stored == requested {
+        WallConnectionStep::Return(true)
+    } else if requested == -1 {
+        WallConnectionStep::Return(matches!(stored, 2 | 26 | 243))
+    } else {
+        match requested {
+            0 | 2 => WallConnectionStep::GdiBuildings,
+            26 => WallConnectionStep::NodBuildings,
+            _ => WallConnectionStep::Return(false),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorldCoordinate {
     pub x: i32,
@@ -344,6 +381,26 @@ pub fn infantry_subcell_offset(spot: u8) -> (i32, i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wall_overlay_prefix_matches_original_cell_queries() {
+        let native =
+            crate::test_fixture::json("tools/spatial_oracle/anytown_damage/authored_fence.json");
+        for case in native["cases"].as_array().unwrap() {
+            let controls = &case["query_controls"];
+            assert_eq!(controls["rng_before"], controls["rng_after"]);
+            for row in controls["rows"].as_array().unwrap() {
+                let stored = i32::try_from(row["stored"].as_i64().unwrap()).unwrap();
+                let requested = i32::try_from(row["requested"].as_i64().unwrap()).unwrap();
+                assert_eq!(
+                    wall_connection_step(stored, requested),
+                    WallConnectionStep::Return(row["returned_low_byte"].as_u64().unwrap() != 0),
+                    "original480510 query {row}"
+                );
+                assert_eq!(row["rng_unchanged"], true);
+            }
+        }
+    }
 
     #[test]
     fn yr_cell_floor_and_coordinate_vectors() {

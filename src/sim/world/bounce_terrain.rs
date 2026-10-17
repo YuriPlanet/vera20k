@@ -62,7 +62,13 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
         // lookup. Dummy has no native object list; its overlay identity persists.
         let cell = match selected {
             CellRef::Dummy { cell } => {
-                return matches!(cell.overlay_identity_state().0, 2 | 26 | 243);
+                return matches!(
+                    crate::sim::cell_kernel::wall_connection_step(
+                        cell.overlay_identity_state().0,
+                        -1
+                    ),
+                    crate::sim::cell_kernel::WallConnectionStep::Return(true)
+                );
             }
             CellRef::Real(cell) => cell,
         };
@@ -88,7 +94,13 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
             .as_ref()
             .filter(|grid| cell.rx < grid.width() && cell.ry < grid.height())
             .is_some_and(|grid| {
-                matches!(grid.cell(cell.rx, cell.ry).overlay_id, Some(2 | 26 | 243))
+                matches!(
+                    crate::sim::cell_kernel::wall_connection_step(
+                        grid.cell(cell.rx, cell.ry).overlay_id.map_or(-1, i32::from),
+                        -1,
+                    ),
+                    crate::sim::cell_kernel::WallConnectionStep::Return(true)
+                )
             })
     }
 

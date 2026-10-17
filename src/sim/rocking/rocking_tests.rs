@@ -278,3 +278,39 @@ fn production_update_materializes_zero_state_for_a_newly_sinking_ship_only() {
     );
     assert_eq!([actual[0], actual[2], actual[3]], [0; 3]);
 }
+
+/// The retained rate writer itself consumes original Unit73B05B..73B06E
+/// binary32 outputs, including subnormal/rounding-sensitive rates.
+#[test]
+fn overlay_recoil_retains_original_unit_rate_words() {
+    let rows: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_per_cell_overlay.json",
+    ))
+    .unwrap();
+    let mut admitted = 0;
+    for row in rows.as_array().unwrap() {
+        if !row["output"]["applied"].as_bool().unwrap() {
+            continue;
+        }
+        let mut value = state([
+            0x3d00_0000,
+            0xbd00_0000,
+            0x3d80_0000,
+            word(&row["input"]["velocity_bits"]).bits(),
+        ]);
+        value.recoil_after_overlay_crush();
+        assert_eq!(
+            value.native_bits(),
+            [
+                0x3d00_0000,
+                0xbd00_0000,
+                0x3d80_0000,
+                word(&row["output"]["velocity_bits"]).bits()
+            ],
+            "{}",
+            row["input"]["name"]
+        );
+        admitted += 1;
+    }
+    assert_eq!(admitted, 144);
+}

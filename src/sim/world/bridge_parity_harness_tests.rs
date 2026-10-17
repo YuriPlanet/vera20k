@@ -365,7 +365,10 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // pin; all201 observed actors, commands, RNG draws/states, paths and lifecycle
 // outputs agree, and only the fog hash-owner digest differs. Route, replay
 // and absolute RNG tripwires above this Rust ratchet remain unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xFC48_A97D_C0A8_FDAF;
+// Snapshot385 retains native Drive+64 in the existing payload hash, including
+// its false value. This Rust ratchet includes that state byte; the fixture
+// keeps its separate replay, gameplay and absolute RNG expectations.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xA6ED_EE7D_75E1_72D7;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

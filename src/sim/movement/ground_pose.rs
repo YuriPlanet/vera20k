@@ -502,7 +502,7 @@ pub(crate) fn object_ground_z_leptons(
 /// One459EF0 port for ART, damage fires, destruction, muzzle coordinates,
 /// Temporal sparkles, display registration and presentation. YSort stays
 /// separate from the coordinate; neither uses foundation-center coords.
-pub(crate) fn building_render_order_parts(
+pub fn building_render_order_parts(
     mut location: DriveCoord,
     turret_anim_is_voxel: bool,
     gate: bool,

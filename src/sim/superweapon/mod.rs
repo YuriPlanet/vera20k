@@ -29,7 +29,7 @@ pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(test)]
-mod lightning_storm_tests;
+pub(crate) mod lightning_storm_tests;
 pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;

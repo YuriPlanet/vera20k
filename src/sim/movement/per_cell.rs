@@ -168,6 +168,13 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        // 739ED3..739EE2: +1B8 (41BEA0) samples physical packed XY once,
+        // before MCV/arrival callbacks. This is not the navigation/head cell.
+        let entry_cell = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| super::foot_path::coord_cell(position_world_coord(&entity.position)));
         // Unit739EC0 invokes the MCV receiver before normal crush/Foot tail.
         if let Some(rules) = rules {
             crate::sim::mcv_deploy::per_cell_process(self, id, rules, registry, effects);
@@ -228,6 +235,11 @@ impl Simulation {
             && reason == PerCellReason::Arrival
         {
             crate::sim::miner::per_cell_release_dock_contact(self, rules, id, effects);
+        }
+        // 73AFD4..73B06E is common to reasons0/2 and precedes the fresh
+        // +1B8/full-cell crush query73B074 and the Foot continuation.
+        if let (Some(cell), Some(rules), Some(registry)) = (entry_cell, rules, registry) {
+            self.unit_per_cell_overlay_crush(id, cell, rules, registry, effects);
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -313,6 +325,78 @@ impl Simulation {
         // 0x0073B08F tests only IsAlive (`+0x90`) before the Foot body.
         if self.per_cell_owner_alive(id) {
             self.foot_per_cell_process(id, reason, rules, registry, effects);
+        }
+    }
+
+    /// Unit73AFD4..73B06E. The Cell is selected from the entry sample;
+    /// Sound73B04D separately samples the actor's current raw XYZ (+48).
+    /// Controls: unit_per_cell_overlay.json and anytown_damage/fence_driveover.json.
+    fn unit_per_cell_overlay_crush(
+        &mut self,
+        id: u64,
+        entry_cell: (i16, i16),
+        rules: &RuleSet,
+        registry: &OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::rules::locomotor_type::MovementZone;
+        use crate::rules::object_type::Ability;
+        use crate::sim::combat::veterancy::has_weapon_ability;
+        use crate::sim::overlay_grid::WallPointerTarget;
+
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return;
+        };
+        let cell = terrain.native_cell_identity(entry_cell);
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.object_type(actor.type_ref(), rules) else {
+            return;
+        };
+        if !(object.crusher
+            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher))
+        {
+            return;
+        }
+        let Some(flags) = self
+            .cell_overlay(cell)
+            .overlay_id
+            .and_then(|id| registry.flags(id))
+        else {
+            return;
+        };
+        if !(flags.crushable || (flags.wall && object.movement_zone == MovementZone::CrusherAll)) {
+            return;
+        }
+        let target = match cell {
+            NativeCellIdentity::Real(index) => {
+                let c = &terrain.cells()[index];
+                WallPointerTarget::Real(c.rx, c.ry)
+            }
+            NativeCellIdentity::Dummy => WallPointerTarget::SharedDummy,
+        };
+        if let Some(sound) = flags.crush_sound.as_ref() {
+            self.sound_events
+                .push(crate::sim::world::SimSoundEvent::wall_crushed(
+                    sound.clone(),
+                    &actor.position,
+                ));
+            //7509E0 completes before480CB0. The existing process owner may
+            //draw Main RNG during cue admission/playback; queuing alone would
+            //defer it across this native boundary.
+            effects.flush_sound(self, Some(rules));
+        }
+        self.apply_wall_damage(target, -1, registry);
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor
+                .rocking
+                .get_or_insert_with(Default::default)
+                .recoil_after_overlay_crush();
+            // 73B067 clears Foot+6B5. For selected normal MTNK its ctor0
+            // persists: Drive4B1A2F's only positive writer requires Zone12.
+            // CrusherAll building-crush state/consumers remain a separate chain.
         }
     }
 

@@ -1,6 +1,7 @@
-//! VoiceSelect/VoiceSelectEnslaved's fixed-catalog binding and reached passes.
+//! Selection/Attack voice fixed-catalog binding and reached passes.
 //! Reader525430 / TechnoReadINI712B1D..712BF1; empty constructors710D74..710DBD.
 //! Original1cdd1180 controls: input_oracle/selection_navigation.{py,json,meta.json}.
+//! Attack list/four slots/Rules+230: spatial_oracle/attack_order_voice.
 
 use std::sync::Arc;
 
@@ -8,7 +9,352 @@ use super::NativeRulesProcessOwner;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::SoundRegistry;
+use crate::test_fixture::ini_sections;
 use serde_json::{Value, json};
+
+fn attack_voice_native() -> &'static Value {
+    let native = crate::test_fixture::json("tools/spatial_oracle/attack_order_voice.json");
+    assert_eq!(
+        native["native_sha256"],
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+    );
+    native
+}
+
+fn order_voice_catalog(corpus: &Value) -> Arc<SoundRegistry> {
+    Arc::new(SoundRegistry::from_ini(&ini_sections(
+        &corpus["readers"]["sound"]["selected"],
+    )))
+}
+
+/// Native fixture-local Voc IDs map to the independently read fixed names.
+fn order_voice_name(corpus: &'static Value, index: i64) -> Option<&'static str> {
+    if index == -1 {
+        return None;
+    }
+    Some(
+        corpus["readers"]["sound"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["fixture_index"] == index)
+            .expect("native fixed-catalog sound identity")["name"]
+            .as_str()
+            .unwrap(),
+    )
+}
+
+fn assert_attack_voice_fields(rules: &RuleSet, expected: &Value, label: &str) {
+    let object = rules.object("MTNK").unwrap();
+    let names: Vec<String> = expected["voice_attack"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|index| {
+            order_voice_name(attack_voice_native(), index.as_i64().unwrap())
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        object.voice_attack(),
+        names.as_slice(),
+        "{label}: VoiceAttack"
+    );
+    for (slot, (weapon, elite)) in [(0, false), (0, true), (1, false), (1, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let native = order_voice_name(
+            attack_voice_native(),
+            expected["weapon_voice_slots"][slot].as_i64().unwrap(),
+        );
+        assert_eq!(
+            object.voice_attack_override(weapon, elite),
+            native,
+            "{label}: scalar slot{slot}"
+        );
+        if weapon != 0 {
+            // VoiceAttack's TEST index selects secondary for every nonzero
+            // value; this query must not impose GetWeapon's index bounds.
+            for other in [-1, 2, i32::MAX] {
+                assert_eq!(
+                    object.voice_attack_override(other, elite),
+                    native,
+                    "{label}"
+                );
+            }
+        }
+    }
+}
+
+fn bound_voice_rules(
+    layers: &crate::rules::native_processing::RulesLayerStack,
+    sounds: &SoundRegistry,
+) -> RuleSet {
+    let processed = layers.process().unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.bind_type_sound_references(processed.ini(), sounds);
+    rules
+}
+
+/// Original712C5B..712CC5/713679..713775 retained list/four scalar outputs.
+#[test]
+fn attack_voice_constructor_physical_layers_and_retained_reads_match_original() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let native = &attack_voice_native()["readers"];
+    let sounds = order_voice_catalog(attack_voice_native());
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[VehicleTypes]\n0=MTNK\n"));
+    let constructor = bound_voice_rules(&layers, &sounds);
+    assert_attack_voice_fields(&constructor, &native["constructor"], "constructor");
+    assert_eq!(
+        constructor.general.voice_ifv_repair(),
+        order_voice_name(
+            attack_voice_native(),
+            native["voice_ifv_repair"]["constructor"].as_i64().unwrap()
+        )
+    );
+    for row in native["layers"].as_array().unwrap() {
+        if row["absent"] == true {
+            continue;
+        }
+        let label = row["file"].as_str().unwrap();
+        let kind = match label {
+            "RULESMD.INI" => RulesLayerKind::RulesMd,
+            "LANGRULE.INI" => RulesLayerKind::LangRule,
+            "MPBattleMD.ini" => RulesLayerKind::GameMode,
+            "XMP03T4.MAP" => RulesLayerKind::Scenario,
+            _ => panic!("unexpected native Rules source {label}"),
+        };
+        layers.push(kind, ini_sections(&row["selected"]));
+        let rules = bound_voice_rules(&layers, &sounds);
+        assert_attack_voice_fields(&rules, &row["after"], label);
+        assert_eq!(
+            rules.general.voice_ifv_repair(),
+            order_voice_name(
+                attack_voice_native(),
+                row["voice_ifv_repair"].as_i64().unwrap()
+            ),
+            "{label}"
+        );
+    }
+    let controls = native["retained_controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 9);
+    for row in controls {
+        let label = row["name"].as_str().unwrap();
+        assert_attack_voice_fields(&bound_voice_rules(&layers, &sounds), &row["before"], label);
+        layers.push(
+            RulesLayerKind::Scenario,
+            ini_sections(&row["input"]["sections"]),
+        );
+        assert_attack_voice_fields(&bound_voice_rules(&layers, &sounds), &row["after"], label);
+    }
+}
+
+/// Rules+230 ctor665976=-1; original AudioVisual669D63..669DA7 controls.
+#[test]
+fn attack_voice_ifv_repair_preserves_original_current_id_read_history() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let readers = &attack_voice_native()["readers"];
+    let sounds = order_voice_catalog(attack_voice_native());
+    let mut layers = RulesLayerStack::new(ini_sections(&readers["layers"][0]["selected"]));
+    for row in readers["voice_ifv_repair"]["controls"].as_array().unwrap() {
+        let label = row["name"].as_str().unwrap();
+        assert_eq!(
+            bound_voice_rules(&layers, &sounds)
+                .general
+                .voice_ifv_repair(),
+            order_voice_name(attack_voice_native(), row["before"].as_i64().unwrap()),
+            "{label}: before"
+        );
+        layers.push(RulesLayerKind::Scenario, ini_sections(&row["sections"]));
+        assert_eq!(
+            bound_voice_rules(&layers, &sounds)
+                .general
+                .voice_ifv_repair(),
+            order_voice_name(attack_voice_native(), row["after"].as_i64().unwrap()),
+            "{label}: after"
+        );
+    }
+}
+
+#[test]
+fn attack_voice_orphan_body_does_not_precede_type_allocation() {
+    let native = attack_voice_native();
+    let sounds = order_voice_catalog(attack_voice_native());
+    let root = ini_sections(&native["readers"]["retained_controls"][0]["input"]["sections"]);
+    let mut owner =
+        NativeRulesProcessOwner::from_cold_start_sources(root, None, IniFile::empty(), sounds)
+            .unwrap();
+    let mode = IniFile::from_str("[VehicleTypes]\n0=MTNK\n");
+    let rules = owner
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &IniFile::empty(),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    assert_attack_voice_fields(&rules, &native["readers"]["constructor"], "late allocation");
+}
+
+#[test]
+fn move_voice_reader_matches_original_constructor_and_retained_passes() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let native = crate::test_fixture::json("tools/spatial_oracle/move_order_voice.json");
+    assert_eq!(native["schema"], 1);
+    assert_eq!(
+        native["native_sha256"],
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+    );
+    let sounds = order_voice_catalog(native);
+    let assert_fields = |rules: &RuleSet, expected: &Value, label: &str| {
+        let object = rules.object("MTNK").unwrap();
+        let names: Vec<_> = expected["voice_move"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| {
+                order_voice_name(native, index.as_i64().unwrap())
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(object.voice_move(), names, "{label}: full Move vector");
+        for (key, actual) in [
+            ("voice_enter", object.voice_enter()),
+            ("voice_capture", object.voice_capture()),
+            ("voice_harvest", object.voice_harvest()),
+        ] {
+            assert_eq!(
+                actual,
+                order_voice_name(native, expected[key].as_i64().unwrap()),
+                "{label}: {key}"
+            );
+        }
+    };
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[VehicleTypes]\n0=MTNK\n"));
+    assert_fields(
+        &bound_voice_rules(&layers, &sounds),
+        &native["readers"]["constructor"],
+        "original constructor",
+    );
+    for row in native["readers"]["layers"].as_array().unwrap() {
+        if row["absent"] == true {
+            continue;
+        }
+        layers.push(RulesLayerKind::Scenario, ini_sections(&row["selected"]));
+        assert_fields(
+            &bound_voice_rules(&layers, &sounds),
+            &row["after"],
+            row["file"].as_str().unwrap(),
+        );
+    }
+    let controls = native["readers"]["retained_controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 17, "all original reader histories");
+    for row in controls {
+        let label = row["name"].as_str().unwrap();
+        assert_fields(&bound_voice_rules(&layers, &sounds), &row["before"], label);
+        layers.push(
+            RulesLayerKind::Scenario,
+            ini_sections(&row["input"]["sections"]),
+        );
+        assert_fields(&bound_voice_rules(&layers, &sounds), &row["after"], label);
+    }
+}
+
+#[test]
+fn move_voice_orphan_body_does_not_precede_type_allocation() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/move_order_voice.json");
+    let valid = &native["readers"]["retained_controls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "mixed_case_duplicates_and_scalars")
+        .unwrap()["input"]["sections"];
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        ini_sections(valid),
+        None,
+        IniFile::empty(),
+        order_voice_catalog(native),
+    )
+    .unwrap();
+    let mode = IniFile::from_str("[VehicleTypes]\n0=MTNK\n");
+    let rules = owner
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &IniFile::empty(),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    let object = rules.object("MTNK").unwrap();
+    assert!(object.voice_move().is_empty());
+    assert_eq!(object.voice_enter(), None);
+    assert_eq!(object.voice_capture(), None);
+    assert_eq!(object.voice_harvest(), None);
+}
+
+#[test]
+fn order_voice_resolved_catalog_changes_effective_config_for_list_and_each_scalar() {
+    use crate::rules::native_processing::RulesLayerStack;
+
+    let sounds = order_voice_catalog(attack_voice_native());
+    let empty = SoundRegistry::from_ini(&IniFile::empty());
+    for key in [
+        "VoiceMove",
+        "VoiceEnter",
+        "VoiceCapture",
+        "VoiceHarvest",
+        "VoiceAttack",
+        "VoicePrimaryWeaponAttack",
+        "VoicePrimaryEliteWeaponAttack",
+        "VoiceSecondaryWeaponAttack",
+        "VoiceSecondaryEliteWeaponAttack",
+        "VoiceIFVRepair",
+    ] {
+        let section = if key == "VoiceIFVRepair" {
+            "AudioVisual"
+        } else {
+            "MTNK"
+        };
+        let layers = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[{section}]\n{key}=GenAllVehicleAttackCommand\n"
+        )));
+        let resolved = bound_voice_rules(&layers, &sounds);
+        let unresolved = bound_voice_rules(&layers, &empty);
+        assert_eq!(
+            resolved.source_ini_hash(),
+            unresolved.source_ini_hash(),
+            "{key}"
+        );
+        assert_ne!(
+            resolved.simulation_config_hash(),
+            unresolved.simulation_config_hash(),
+            "{key}: effective sound binding, not only source text"
+        );
+    }
+}
+
+#[test]
+fn attack_voice_stock_battle_uses_original_fixed_sound_bindings() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let native = &attack_voice_native()["readers"];
+    assert_attack_voice_fields(&retail.rules, &native["result"], "physical Battle");
+    assert_eq!(
+        retail.rules.general.voice_ifv_repair(),
+        order_voice_name(
+            attack_voice_native(),
+            native["voice_ifv_repair"]["result"].as_i64().unwrap()
+        )
+    );
+}
 
 fn catalog() -> Arc<SoundRegistry> {
     Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
@@ -239,21 +585,8 @@ fn selection_voice_native() -> Value {
     readers.clone()
 }
 
-/// Serialize the declared physical cache into the existing production parser;
-/// this supplies input bytes and does not resolve or tokenize any sound list.
-fn voice_sections_ini(sections: &Value) -> IniFile {
-    let mut text = String::new();
-    for (name, entries) in sections.as_object().unwrap() {
-        text.push_str(&format!("[{name}]\n"));
-        for (key, value) in entries.as_object().unwrap() {
-            text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
-        }
-    }
-    IniFile::from_str(&text)
-}
-
 fn selection_voice_catalog(native: &Value) -> Arc<SoundRegistry> {
-    Arc::new(SoundRegistry::from_ini(&voice_sections_ini(
+    Arc::new(SoundRegistry::from_ini(&ini_sections(
         &native["sound_registry"]["selected"],
     )))
 }
@@ -358,10 +691,7 @@ fn enslaved_selection_voice_readers_match_original_retained_passes_and_fixed_loo
             &row["before"],
             &format!("{label}: before"),
         );
-        layers.push(
-            RulesLayerKind::Scenario,
-            voice_sections_ini(&row["sections"]),
-        );
+        layers.push(RulesLayerKind::Scenario, ini_sections(&row["sections"]));
         assert_selection_voice_bindings(
             &project(&layers),
             "VOICE_CONTROL",
@@ -392,11 +722,11 @@ fn enslaved_selection_voice_reaches_registered_types_and_retains_process_catalog
     let mut root = IniFile::from_str(&format!(
         "[VehicleTypes]\n0=VOICE_CONTROL\n[LATE]\nVoiceSelectEnslaved={raw}\n"
     ));
-    root.merge(&voice_sections_ini(&initial["sections"]));
-    let lang = voice_sections_ini(&row("empty_retains")["sections"]);
+    root.merge(&ini_sections(&initial["sections"]));
+    let lang = ini_sections(&row("empty_retains")["sections"]);
     // Scenario Rules cannot replace the startup-selected SOUNDMD registry.
     let mode = IniFile::from_str("[VehicleTypes]\n1=LATE\n[SoundList]\n0=AbsentEnslavedVoice\n");
-    let map = voice_sections_ini(&row("wrong_key_case_retains")["sections"]);
+    let map = ini_sections(&row("wrong_key_case_retains")["sections"]);
     let sounds = selection_voice_catalog(&native);
     let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
         root,

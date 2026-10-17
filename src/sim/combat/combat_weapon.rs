@@ -907,7 +907,7 @@ pub(crate) fn resolve_weapon_index<'a>(
 /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` reduced to house identity:
 /// same house, or the asker's alliance bit for the other house. Without an
 /// alliance map only the same-house case is knowable.
-pub(crate) fn is_ally_by_object(
+pub fn is_ally_by_object(
     alliances: Option<&HouseAllianceMap>,
     interner: &StringInterner,
     asker: InternedId,
@@ -1063,6 +1063,45 @@ pub fn select_weapon_against_in_query<'a>(
     cells: Option<&NativeCellQuery<'_>>,
     alliances: Option<&HouseAllianceMap>,
 ) -> Option<(i32, Option<SelectedWeapon<'a>>)> {
+    let index = select_weapon_index_against_in_query(
+        rules,
+        attacker_entity,
+        attacker_obj,
+        attacker,
+        target,
+        entities,
+        interner,
+        cells,
+        alliances,
+    )?;
+    Some((
+        index,
+        resolve_weapon_index(
+            rules,
+            attacker_entity,
+            attacker_obj,
+            index,
+            entities,
+            interner,
+        ),
+    ))
+}
+
+/// The same SelectWeapon target adapter, before GetWeapon/warhead resolution.
+/// VoiceAttack7090AD..7090C6 consumes the index and raw WeaponType damage;
+/// unlike firing consumers it must not require a resolved Warhead. Both
+/// consumers enter the single class/Techno selection ladder below.
+pub(crate) fn select_weapon_index_against_in_query(
+    rules: &RuleSet,
+    attacker_entity: &GameEntity,
+    attacker_obj: &ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetKind>,
+    entities: &EntityStore,
+    interner: &StringInterner,
+    cells: Option<&NativeCellQuery<'_>>,
+    alliances: Option<&HouseAllianceMap>,
+) -> Option<i32> {
     let terrain = cells.map(NativeCellQuery::terrain);
     let target_facts = match target.copied() {
         Some(TargetKind::Entity(target_id)) => {
@@ -1091,17 +1130,11 @@ pub fn select_weapon_against_in_query<'a>(
         Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(rx, ry, terrain)),
         None => None,
     };
-    let index = what_weapon_should_i_use(rules, attacker_obj, attacker, target_facts.as_ref());
-    Some((
-        index,
-        resolve_weapon_index(
-            rules,
-            attacker_entity,
-            attacker_obj,
-            index,
-            entities,
-            interner,
-        ),
+    Some(what_weapon_should_i_use(
+        rules,
+        attacker_obj,
+        attacker,
+        target_facts.as_ref(),
     ))
 }
 

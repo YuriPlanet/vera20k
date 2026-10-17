@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary repairing GAPOWR wrench prefix and complete first-Extras/body/late-Extras composition",
+  "assumptions": [
+    "One optional wrench mode extends the existing selected-health generator, _HealthRecorder, Building ground fixture and PaletteReader. Original allocator/INI/file transports, Surface/circular A/Z, TMP ground, native palette and SHP/body/line owners are shared. No second VM, parser, palette table, rasterizer, repair state or body mask produces expected output. Historical modes retain their startup and allocation order.",
+    "Whole Rules665650/BuildingType45DD90 and45FE50 consume physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4; fixed ARTMD remains unlayered. Constructor and each admitted layer retain native Strength/Cost/Repairable/ClickRepairable. Repairable defaults true711454 and current-default5295F0 reads843950 at714A8C; ClickRepairable defaults true45E076 and current-default5295F0 reads81ADCC at4600C0. These fields are repair-command prerequisites; wrench drawing itself reads the authoritative Building repair byte6E8.",
+    "Original45E98D..45E9A3 executes literal WRENCH.SHP lookup5B40B0 and publishes89DDC8. Existing palette owner additionally executes unchanged Init52C136..52C1EA: literal MOUSEPAL.PAL load, copy/byte expansion and full Convert48E740/48EBF0 N1 constructor publish87F6C8. Physical archive candidates and exact hashes are recorded; the production normal STOCK_DIGITAL AssetManager consumer must independently establish winner/loose-override precedence. The oracle does not execute native archive search.",
+    "Component rows enter original6F5190 and stop before6F534E, after the complete wrench branch and before observer/rank/health. Actual sinking returns to the sentinel earlier. Original RTTI6, repair byte, Cell487950/586360, virtual459EF0 and Tactical6D2140 execute. Raw Location, repairing/selection/hover/sinking/owner fields, frame, speed and sparse Cell flags are declared consumer priors, not repair start/payment/Flash/stop or reveal lifecycle. Prepared sinking/other-owner/shrouded controls do not imply ordinary GAPOWR production of those states.",
+    "Native SpeedNormalize5FB2E0 and signed frame arithmetic choose actual frame0 or6. Native4AED70/picker490B90/rowwalker/493DF0 run unchanged with flagsE00, remap0,zAdjust0,gradient0,brightness1000. The real leaf reads A and bypasses Z; N1 table construction yields identical pixels for A127/63/2/0. A2 is the existing stock SHROUD frame15 consumer value. OldZ0 and viewport-edge clipping are actual raster controls, with no substituted frame, projection, admission or pixel result.",
+    "Composition reuses actual flat Cells47BBF0/TMP480350, original Building43B740/idle44D6A0, BUILDNGZ45E8F0, full Behind6F60D0 and full6F5190 in first and late phases, with original43CEA0->455C20/459EF0->43D290->705E00 body/shadow between them. GAPOWR BibShape is NULL. The disjoint two-cell-separated neighbor follows actor0 in both supplied parent traversals. Original Display traversal/admission is an explicit scheduling prior, not a whole Display/Map-load execution.",
+    "Sparse samples retain actual ground and before-late color/Z at status-addressed pixels; original full crop hashes identify intervening body intervals without retaining full planes. body_overwritten_wrench_pixels and overwritten_wrench_pixels are actual store witnesses, including a positive later-neighbor overwrite; health/bracket stores follow wrench inside each complete Extras. No visual regression is inferred merely from an instruction count. Full application/body GPU parity, arbitrary buildings, missing assets, huge foundations, other DrawExtras families, repair lifecycle and whole functions remain OPEN/PARTIAL.",
+    "Drawing preserves original code/vtables, prepared actor bytes and A; component Z is unchanged. No Main/Scenario draw RNG, timer write or detach is reached. Building constructor/state initialization and supplied frame/repair/House/Cell priors are separate from draw effects. Repair command Flash7/payment/stop remains the existing production_repair/flashing evidence owner, not a new oracle state machine."
+  ],
+  "substitutions": [
+    "Inherited successful allocation/delete/CRT TLS and immutable physical file/archive transport replace platform services. Existing RGB565 BSurface/circular A/Z memory replaces DirectDraw. No reached wrench, Cell, frame, palette, body, line, shape or pixel function result or original instruction is substituted."
+  ],
+  "entry_points": {
+    "type_ctor": "0x0045DD90",
+    "type_reader": "0x0045FE50",
+    "extras_begin": "0x006F5190",
+    "component_stop": "0x006F534E",
+    "wrench": "0x006F5253",
+    "render_coords": "0x00459EF0",
+    "projection": "0x006D2140",
+    "cell_shrouded": "0x00487950",
+    "coord_shrouded": "0x00586360",
+    "speed_normalize": "0x005FB2E0",
+    "wrench_load_begin": "0x0045E98D",
+    "wrench_load_end": "0x0045E9A3",
+    "mouse_palette_begin": "0x0052C136",
+    "mouse_palette_end": "0x0052C1EA",
+    "convert_ctor": "0x0048E740",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "leaf": "0x00493DF0",
+    "behind": "0x006F60D0",
+    "body_admission": "0x0043CEA0",
+    "body": "0x0043D290"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --repair-wrench",
+  "payload_sha256": "425292e1d977af8121637efa44e4b9f24d90cc41b9e5232e83730a08a9fb2e5d"
+}

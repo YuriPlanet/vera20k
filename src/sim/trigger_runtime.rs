@@ -3623,6 +3623,25 @@ impl Simulation {
                 };
                 return self.trigger_play_anim_at_waypoint(rules, index, waypoint as i32);
             }
+            42 => {
+                let (Some(rules), Some(index), Some(waypoint)) =
+                    (rules, value, action.waypoint_index)
+                else {
+                    return false;
+                };
+                let Some(changed) = self.trigger_explosion_at_waypoint(
+                    rules,
+                    index,
+                    waypoint as i32,
+                    overlay_registry,
+                    frame_effects,
+                ) else {
+                    return false;
+                };
+                if changed {
+                    effects.push(TriggerEffect::BridgeStateChanged);
+                }
+            }
             46 | 47 => {
                 let locked = action.kind == 46;
                 let was_locked = self.session.input_locked();
@@ -3826,6 +3845,43 @@ impl Simulation {
                     house.clear_preferred_super_weapon_target();
                 }
             }
+            90 => {
+                // Steam3e81a617, Execute6DF51B..6DF537: GetWaypoint68BCC0's
+                // packed cell (an unset slot is (0,0)) goes straight to
+                // LightningStorm::CreateCloudBolt53A140; the action succeeds.
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                let Some(cell) = self.session.waypoint_cell(waypoint as i32) else {
+                    return false;
+                };
+                crate::sim::superweapon::lightning_storm::create_cloud_bolt(self, rules, cell);
+            }
+            102 => {
+                // 6DD9EC..6DDAB8: the waypoint's signed centre/Ground/bridge
+                // coordinate is truncated back to a cell (413A30). A raging
+                // storm (IsActive53A100) fails at 6DDA98 without restarting;
+                // otherwise Start539EB0 takes the same LightningStormDuration
+                // (+179C) / LightningDeferment (+1794) as the Super launch,
+                // the incoming House, and no charge gate.
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                if crate::sim::superweapon::lightning_storm::raging(self) {
+                    return false;
+                }
+                let Some([x, y, _]) = self.trigger_waypoint_coord(waypoint as i32) else {
+                    return false;
+                };
+                crate::sim::superweapon::lightning_storm::start(
+                    self,
+                    rules,
+                    rules.general.lightning_storm_duration,
+                    rules.general.lightning_deferment,
+                    ((x / 256) as i16, (y / 256) as i16),
+                    context.incoming_house,
+                );
+            }
             ACTION_SET_ALTERNATE_BASE => {
                 let Some(house_id) = context.incoming_house else {
                     return false;
@@ -3989,3 +4045,11 @@ mod chrono_reinforcement_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_bridge_event_tests.rs"]
 mod bridge_event_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_lightning_tests.rs"]
+mod lightning_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_explosion_tests.rs"]
+mod explosion_tests;

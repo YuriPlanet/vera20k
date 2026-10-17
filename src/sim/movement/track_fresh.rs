@@ -38,14 +38,11 @@
 //!   class answers 5 there, which A* prices at 20). Effect: it drops its head
 //!   without turning on the tree. Frequency: not measured. Hover shares this
 //!   arm (`override_movement_blocker_at`); Walk's has the same gap (#1517).
-//! - Drive+64 (`0x4B400C`, the straight byte): Process_Drive_Track reads it
-//!   at `0x4B19AA`/`0x4B1A04` for the wall-crush tilt (+334 = -0.05) and the
-//!   CrusherAll Unit flag (+6B5, the speed ramp's crush clamp). Trigger: a
-//!   crusher's head forced straight over a crushable overlay, a CrusherAll
-//!   wall or a Unit. Effect: neither write happens; VERA's crush arm
-//!   (`apply_wall_crush_on_driveover`) runs without the byte and records both
-//!   writes as its own residuals. Frequency: crushers over walls and fences,
-//!   the Battle Fortress over vehicles. Risk: owned by the crush chain (A7).
+//! - Drive's retained +64 now feeds the wall pre-entry tilt in `track_host`.
+//!   The separate CrusherAll/current-Unit arm4B1A04..4B1A58 still lacks its
+//!   Foot+6B5 producer/speed-clamp integration. Selected stock MTNK's zone0
+//!   does not enter it. Ship's distinct +64 constructor/fresh writers and
+//!   reader6A103A are outside that Drive wall-tilt path and remain unported.
 //! - A candidate at a negative cell coordinate publishes no target speed
 //!   (`publish_fresh_speed`); native reads the shared dummy Cell's land row.
 //!   Trigger: a Foot on map row or column 0 heading off the map. Frequency:
@@ -700,6 +697,13 @@ impl Simulation {
             .get_mut(id)
             .and_then(|actor| actor.locomotor.as_mut())
         {
+            if call.family == TrackFamily::Drive {
+                //4B400C/4B4012: retain the actual crush-straight byte,
+                //including false. A straight-looking selector is not this
+                //decision; forced-single normalization alone does not set it.
+                loco.ensure_installed_track_state();
+                loco.store_drive_straight(straight);
+            }
             super::track_head::select_fresh_progress(loco, turn_index);
         }
         let two_node = super::drive_track::turn_track_at(turn_index)

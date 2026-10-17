@@ -3,7 +3,7 @@ use crate::map::map_file::MapHeader;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::overlay_grid::{OverlayGrid, WallDamageEvent};
+use crate::sim::overlay_grid::{OverlayGrid, WallPointerTarget};
 use crate::sim::snapshot::GameSnapshot;
 
 fn stock_tiberium_rules() -> (RuleSet, OverlayTypeRegistry) {
@@ -116,14 +116,7 @@ fn radar_dirty_ack_rearms_same_wall_removal() {
             .unwrap()
             .place_overlay(cell.0, cell.1, 0, 0);
         let _ = sim.overlay_grid.as_mut().unwrap().take_dirty_cells();
-        sim.apply_wall_damage_events(
-            &[WallDamageEvent {
-                rx: cell.0,
-                ry: cell.1,
-                damage: -1,
-            }],
-            &registry,
-        );
+        sim.apply_wall_damage(WallPointerTarget::Real(cell.0, cell.1), -1, &registry);
         assert_eq!(
             sim.radar_terrain_dirty_cells,
             vec![
@@ -158,14 +151,7 @@ fn radar_dirty_wall_partial_damage_marks_nothing() {
     sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
     sim.overlay_grid.as_mut().unwrap().place_overlay(4, 5, 2, 0);
     let _ = sim.overlay_grid.as_mut().unwrap().take_dirty_cells();
-    sim.apply_wall_damage_events(
-        &[WallDamageEvent {
-            rx: 4,
-            ry: 5,
-            damage: 1,
-        }],
-        &registry,
-    );
+    sim.apply_wall_damage(WallPointerTarget::Real(4, 5), 1, &registry);
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(4, 5).overlay_data,
         0x10

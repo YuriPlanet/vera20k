@@ -62,6 +62,11 @@ pub struct DriveLocomotionRuntime {
     end_permitted: bool,
     #[serde(default)]
     track_valid: bool,
+    /// Drive+64: ctor4AF5B8 clears it; fresh selection4B400C/4B4012
+    /// stores the crush-straight decision independently of the selector.
+    /// END/Force_Track and selector retirement do not clear this byte.
+    #[serde(default)]
+    straight: bool,
     /// Native class+62: last eligible Process observation of body rotation.
     /// Do_Turn and track-point facing updates do not write this latch.
     #[serde(default)]
@@ -95,6 +100,7 @@ impl Default for DriveLocomotionRuntime {
             track: TrackProgress::default(),
             end_permitted: true,
             track_valid: false,
+            straight: false,
             turn_latched: false,
             target_speed_fraction: SIM_ZERO,
             occupation_head_to: None,
@@ -138,6 +144,9 @@ impl DriveLocomotionRuntime {
     }
     pub(crate) fn end_permitted(&self) -> bool {
         self.end_permitted
+    }
+    pub(crate) fn straight(&self) -> bool {
+        self.straight
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_destination_for_test(mut self, value: Option<DriveCoord>) -> Self {
@@ -354,6 +363,7 @@ pub(super) enum TrackStateMutation {
     Progress(TrackProgress),
     Valid(bool),
     TurnLatched(bool),
+    DriveStraight(bool),
     TargetFraction(SimFixed),
     Occupation {
         head: Option<DriveOccupationFootprint>,
@@ -434,6 +444,10 @@ impl TrackRetainedMut<'_> {
             TrackStateMutation::TurnLatched(value) => match self {
                 Self::Drive(state) => state.turn_latched = value,
                 Self::Ship(state) => state.turn_latched = value,
+            },
+            TrackStateMutation::DriveStraight(value) => match self {
+                Self::Drive(state) => state.straight = value,
+                Self::Ship(_) => unreachable!("Drive-only track state selected a Ship"),
             },
             TrackStateMutation::TargetFraction(value) => match self {
                 Self::Drive(state) => state.target_speed_fraction = value,
@@ -598,6 +612,14 @@ impl LocomotorState {
         self.selected_track_retained(family)
             .map(|state| state.turn_latched())
     }
+    /// The selected complete Drive keeps this byte while suspended; callers
+    /// still decide whether that class is executing before reading it.
+    pub(crate) fn drive_straight(&self) -> Option<bool> {
+        match self.selected_track_retained(TrackFamily::Drive)? {
+            TrackRetainedRef::Drive(state) => Some(state.straight()),
+            TrackRetainedRef::Ship(_) => None,
+        }
+    }
     pub(crate) fn track_target_fraction(&self, family: TrackFamily) -> Option<SimFixed> {
         self.selected_track_retained(family)
             .map(|state| state.target_speed_fraction())
@@ -660,6 +682,12 @@ impl LocomotorState {
     }
     pub(crate) fn store_track_turn_latched(&mut self, family: TrackFamily, value: bool) -> bool {
         self.apply_track_state_mutation(family, TrackStateMutation::TurnLatched(value))
+    }
+    pub(crate) fn store_drive_straight(&mut self, value: bool) -> bool {
+        self.apply_track_state_mutation(
+            TrackFamily::Drive,
+            TrackStateMutation::DriveStraight(value),
+        )
     }
     pub(crate) fn store_track_target_fraction(
         &mut self,
@@ -960,6 +988,20 @@ mod tests {
             assert!(state.publish_track_occupation(family, Some(mark), None));
             if family == TrackFamily::Drive {
                 assert!(state.store_drive_end_permission(false));
+                assert_eq!(state.drive_straight(), Some(false));
+                let unlatched = state.clone();
+                assert!(state.store_drive_straight(true));
+                let payload_hash = |state: &LocomotorState| {
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::hash::DefaultHasher::new();
+                    state
+                        .selected_drive_runtime()
+                        .unwrap()
+                        .retained()
+                        .hash(&mut hasher);
+                    hasher.finish()
+                };
+                assert_ne!(payload_hash(&state), payload_hash(&unlatched));
             }
             let before = state.clone();
             assert_eq!(
@@ -969,6 +1011,9 @@ mod tests {
             assert_eq!(state.track_destination(family), destination);
             assert_eq!(state.track_head(family), head);
             assert_eq!(state.track_progress(family), Some(progress));
+            if family == TrackFamily::Drive {
+                assert_eq!(state.drive_straight(), Some(true));
+            }
             assert!(!state.ensure_installed_track_state());
             let mut marks = Vec::new();
             state.visit_track_occupation(|mark| marks.push(mark));
@@ -980,6 +1025,15 @@ mod tests {
             let released = piggyback::end(&mut loaded).unwrap();
             assert_eq!(released.active_kind(), LocomotorKind::Teleport);
             assert_eq!(loaded, before);
+            if family == TrackFamily::Drive {
+                assert_eq!(loaded.drive_straight(), Some(true));
+                let mut retired = loaded.clone();
+                let mut selector = retired.track_progress(family).unwrap();
+                selector.clear_selector();
+                retired.store_track_progress(family, selector);
+                retired.store_track_head(family, None);
+                assert_eq!(retired.drive_straight(), Some(true));
+            }
             assert_eq!(
                 loaded.take_track_occupation(family),
                 Some([None, Some(mark)])

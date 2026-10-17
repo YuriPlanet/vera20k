@@ -2300,6 +2300,276 @@ fn native_initiate_warp_corpus() {
     }
 }
 
+/// Original71AF20 -> House4F93E0 -> LetGo71ABC0, including the deployed
+/// miner subtype that the old InitiateWarp corpus's Notify sink cannot see.
+/// The native input packet supplies type fields and a settled component
+/// boundary; the app regression separately fires the stock weapon through
+/// ordinary frames. Compare client radar requests here, including a rejected
+/// request, rather than implementing another radar/EVA admission algorithm.
+/// Native Mark/Deselect sinks and animation-empty pause/resume do not prove
+/// rendering, and native's unused Temporal+2C timer has no Rust counterpart.
+#[test]
+fn native_first_head_building_warning_and_release_corpus() {
+    use crate::sim::power_system::PowerState;
+    use crate::sim::radar::RadarEventRequest;
+    use crate::sim::rng::SimRng;
+    use serde_json::json;
+
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/temporal_house_notice.json",
+    ))
+    .unwrap();
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 11);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let stock = retail.rules.object("YAREFN").unwrap();
+    let stock_native = &corpus["retail"]["yarefn"];
+    assert_eq!(
+        stock.strength,
+        stock_native["strength"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        stock.undeploys_into.as_deref(),
+        stock_native["undeploys_into"].as_str()
+    );
+    assert_eq!(
+        stock.resource_gatherer,
+        stock_native["resource_gatherer"].as_bool().unwrap()
+    );
+    assert_eq!(
+        stock.insignificant,
+        stock_native["insignificant"].as_bool().unwrap()
+    );
+    assert_eq!(stock.warpable, stock_native["warpable"].as_bool().unwrap());
+    assert_eq!(
+        stock.foundation,
+        stock_native["foundation"].as_str().unwrap()
+    );
+
+    let mut phase_count = 0;
+    for case in cases {
+        let input = &case["input"];
+        let name = input["name"].as_str().unwrap();
+        let fields = &input["target_type"];
+        let yes = |key: &str| {
+            if fields[key].as_bool().unwrap() {
+                "yes"
+            } else {
+                "no"
+            }
+        };
+        let mut keys = format!(
+            "Strength={}\nResourceGatherer={}\nInsignificant={}\nWarpable={}\n",
+            fields["strength"].as_i64().unwrap(),
+            yes("resource_gatherer"),
+            yes("insignificant"),
+            yes("warpable"),
+        );
+        if let Some(undeployer) = fields["undeploys_into"].as_str() {
+            keys.push_str(&format!("UndeploysInto={undeployer}\n"));
+        }
+        let mut text = RULES.replace("2=FV\n", "2=FV\n3=SMIN\n");
+        let at = text.find("[GAPOWR]\n").unwrap() + "[GAPOWR]\n".len();
+        text.insert_str(at, &keys);
+        let art = ART.replace(
+            "[GAPOWR]\nFoundation=2x2",
+            &format!(
+                "[GAPOWR]\nFoundation={}",
+                fields["foundation"].as_str().unwrap()
+            ),
+        );
+        let rules = rules_from(&text, &art);
+        let mut sim = sim(input["rng_seed"].as_u64().unwrap());
+        let local = sim.intern("Americans");
+        let remote = sim.intern("Allies2");
+        let owner = if input["target"]["local"].as_bool().unwrap() {
+            local
+        } else {
+            remote
+        };
+        sim.session.current_house = Some(local);
+        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap() != 0;
+        if input["allied"].as_bool() == Some(true) {
+            sim.house_alliances
+                .entry("ALLIES2".into())
+                .or_default()
+                .insert("AMERICANS".into());
+        }
+        sim.houses.get_mut(&owner).unwrap().multiplay_passive =
+            input["passive"].as_bool() == Some(true);
+        let owner_name = sim.interner.resolve(owner).to_owned();
+        // Native Location5248,5248 is cell20's centre; a 2x2 Building's
+        // original GetCoords adds its centre and requests radar at21,21.
+        let target = spawn(&mut sim, &rules, "GAPOWR", &owner_name, 20, 20);
+        let attackers: Vec<_> = (0..input["attackers"].as_array().map_or(1, Vec::len))
+            .map(|n| spawn(&mut sim, &rules, "CLEG", "Russians", 2 + n as u16, 2))
+            .collect();
+        if let Some(order) = input["chain"].as_array() {
+            let order: Vec<_> = order
+                .iter()
+                .map(|n| attackers[n.as_u64().unwrap() as usize])
+                .collect();
+            chain(&mut sim, target, &order, 777);
+        }
+        for house in [local, remote] {
+            sim.houses.get_mut(&house).unwrap().take_tech_recheck();
+            sim.power_states
+                .insert(house, PowerState::settled_for_test());
+        }
+        let timer = &input["timer_priors"];
+        for id in [target, attackers[0]] {
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .mission
+                .write_dispatch_epilogue(
+                    timer[0].as_i64().unwrap() as i32,
+                    timer[2].as_i64().unwrap() as i32,
+                );
+        }
+        // Match native's declared post-construction seed boundary once;
+        // never reset the streams between start and either release.
+        let seed = input["rng_seed"].as_u64().unwrap();
+        sim.scenario_rng = SimRng::new(seed);
+        sim.main_rng = SimRng::new(seed).into();
+        sim.mapgen_rng = SimRng::new(seed);
+        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.sound_events.clear();
+
+        for phase in case["phases"].as_array().unwrap() {
+            let phase_name = phase["name"].as_str().unwrap();
+            match phase_name {
+                "before" => {}
+                "start" => sim.temporal_initiate_warp(
+                    attackers[0],
+                    Some(target),
+                    &rules,
+                    None,
+                    FrameEffects::default(),
+                ),
+                "release_firer" => sim.temporal_let_go(attackers[0]),
+                "release_original_head" => sim.temporal_let_go(attackers[1]),
+                other => panic!("{name}: unknown native phase {other}"),
+            }
+            let state = &phase["state"];
+            let victim = entity(&sim, target);
+            assert_eq!(
+                native_name(head_of(&sim, target), target, &attackers),
+                state["target_head"].as_str().unwrap(),
+                "{name}/{phase_name}: head"
+            );
+            assert_eq!(
+                victim.is_warped_out(),
+                state["target_warped"].as_i64().unwrap() != 0,
+                "{name}/{phase_name}: warped"
+            );
+            assert_eq!(
+                victim.building_online(),
+                state["target_online"].as_i64().unwrap() != 0,
+                "{name}/{phase_name}: online"
+            );
+            for (n, node) in state["attackers"].as_array().unwrap().iter().enumerate() {
+                let link = link(&sim, attackers[n]);
+                for (key, value) in [
+                    ("target", link.target),
+                    ("prev", link.prev),
+                    ("next", link.next),
+                ] {
+                    assert_eq!(
+                        native_name(value, target, &attackers),
+                        node[key].as_str().unwrap(),
+                        "{name}/{phase_name}/temporal{n}: {key}"
+                    );
+                }
+                assert_eq!(
+                    link.warp_remaining,
+                    node["warp_remaining"].as_i64().unwrap() as i32,
+                    "{name}/{phase_name}/temporal{n}: remaining"
+                );
+            }
+            for (alias, house) in [("local_house", local), ("target_house", remote)] {
+                assert_eq!(
+                    json!({
+                        "power_recheck": u8::from(sim.power_states[&house].power_recheck_for_test()),
+                        "tech_recheck": u8::from(sim.houses[&house].tech_recheck_pending()),
+                    }),
+                    state["houses"][alias],
+                    "{name}/{phase_name}: {alias}"
+                );
+            }
+            for (alias, id) in [
+                ("target_dispatch", target),
+                ("firer_dispatch", attackers[0]),
+            ] {
+                let timer = entity(&sim, id).mission.dispatch_timer();
+                assert_eq!(
+                    json!([timer.start_frame(), 0, timer.delay()]),
+                    state["timers"][alias],
+                    "{name}/{phase_name}: {alias}"
+                );
+            }
+            assert!(phase["timer_writes"].as_array().unwrap().is_empty());
+            for (alias, actual) in [
+                ("scenario", sim.scenario_rng.native_state_hex()),
+                ("main", sim.main_rng.native_state_hex()),
+                ("mapgen", sim.mapgen_rng.native_state_hex()),
+            ] {
+                assert_eq!(
+                    actual,
+                    state["rng"][alias].as_str().unwrap(),
+                    "{name}/{phase_name}: full {alias} RNG"
+                );
+            }
+            let events = phase["events"].as_array().unwrap();
+            assert_eq!(
+                sim.sound_events
+                    .iter()
+                    .any(|event| matches!(event, SimSoundEvent::UnderAttack { .. })),
+                events.iter().any(|event| event[0] == "notify_under_attack"),
+                "{name}/{phase_name}: notify admission"
+            );
+            let requests: Vec<RadarEventRequest> = sim
+                .sound_events
+                .drain(..)
+                .filter_map(|event| match event {
+                    SimSoundEvent::UnderAttack { owner, radar, .. }
+                    | SimSoundEvent::AllyUnderAttack { owner, radar }
+                        if owner == local =>
+                    {
+                        Some(radar)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let actual: Vec<_> = requests
+                .iter()
+                .map(|request| {
+                    json!([
+                        "radar_event",
+                        request.event_type as u8,
+                        request.rx,
+                        request.ry
+                    ])
+                })
+                .collect();
+            let expected: Vec<_> = events
+                .iter()
+                .filter(|event| event[0] == "radar_event")
+                .cloned()
+                .collect();
+            assert_eq!(
+                actual, expected,
+                "{name}/{phase_name}: local client requests"
+            );
+            phase_count += 1;
+        }
+    }
+    assert_eq!(phase_count, 34);
+}
+
 /// A flat 32x32 clear map with its playfield, zones and path grid.
 fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::PathGrid) {
     let mut sim = sim(seed);

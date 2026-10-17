@@ -2,6 +2,8 @@
 //! The native fixture supplies entry to that result arm. Rust reaches it through
 //! the existing health receiver with an authored 100->40 hit; the neighboring
 //! combat test retains non-crossing/red/dead/empty-list admission contrasts.
+//! Stock E1 controls additionally execute the complete native Infantry/Foot/
+//! Techno/Object receiver before its separate audio-service boundary.
 
 use super::*;
 use crate::rules::sound_ini::SoundRegistry;
@@ -12,6 +14,214 @@ use serde_json::Value;
 fn boundary<'a>(row: &'a Value, phase: &str, stream: &str) -> &'a str {
     let key = row[phase]["rng"][stream].as_str().unwrap();
     row["complete_rng_states"][key]["bytes"].as_str().unwrap()
+}
+
+/// Actual125-HP E1, original517FA0→4D7330→701900→5F5390 and fixed retail
+/// sound binding. Four supplied direct hits are not a FireAt/Logic schedule.
+#[test]
+#[ignore = "slow; requires retail Battle rules and fixed sound catalog"]
+fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let native = crate::test_fixture::json("tools/input_oracle/stock_e1_feedback.json");
+    let rules = &retail.rules;
+    let e1 = rules.object("E1").unwrap();
+    let mtnk = rules.object("MTNK").unwrap();
+    assert_eq!(i64::from(e1.strength), native["retail"]["e1"]["strength"]);
+    assert_eq!(
+        serde_json::json!(e1.voice_feedback),
+        native["retail"]["e1"]["voice_feedback"]["names"]
+    );
+    assert_eq!(mtnk.primary(), native["retail"]["mtnk"]["primary"].as_str());
+    let weapon = rules.weapon(mtnk.primary().unwrap()).unwrap();
+    assert_eq!(
+        i64::from(weapon.damage),
+        native["retail"]["weapon"]["damage"]
+    );
+    assert_eq!(
+        weapon.warhead.as_deref(),
+        native["retail"]["weapon"]["warhead"].as_str()
+    );
+    let rng_state = |hit: &Value, phase: &str, stream: &str| {
+        let key = hit[phase][stream].as_str().unwrap();
+        native["complete_rng_states"][key]["bytes"]
+            .as_str()
+            .unwrap()
+    };
+    let rows = native["rows"].as_array().unwrap();
+    assert_eq!(
+        rows.len(),
+        3,
+        "admission, rejection and live unbound removal"
+    );
+    for row in rows {
+        let label = row["name"].as_str().unwrap();
+        let hits = row["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 4, "{label}: complete receiver visits");
+        let coordinate: [i32; 3] = std::array::from_fn(|i| {
+            i32::try_from(hits[0]["coordinate"][i].as_i64().unwrap()).unwrap()
+        });
+        let cell = [
+            u16::try_from(coordinate[0] >> 8).unwrap(),
+            u16::try_from(coordinate[1] >> 8).unwrap(),
+        ];
+        let mut sim = Simulation::new();
+        sim.fog.width = 128;
+        sim.fog.height = 128;
+        sim.intern_rule_type_ids(rules);
+        let owner = sim.interner.intern("Americans");
+        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        house.player_control = true;
+        sim.houses.insert(owner, house);
+        sim.session.current_house = Some(owner);
+        let source = sim
+            .spawn_object_at_height("MTNK", "Americans", cell[0] - 1, cell[1], 0, 0, rules)
+            .expect("ordinary stock source");
+        let target = sim
+            .spawn_object_at_height("E1", "Americans", cell[0], cell[1], 0, 0, rules)
+            .expect("ordinary stock receiver");
+        // The comparison supplies native GetCoords, not a fitted screen point.
+        sim.substrate
+            .entities
+            .get_mut(target)
+            .unwrap()
+            .position
+            .put_location(DriveCoord {
+                x: coordinate[0],
+                y: coordinate[1],
+                z: coordinate[2],
+            });
+        let warhead = sim.interner.intern(weapon.warhead.as_deref().unwrap());
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "main"))
+                .into();
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "scenario"));
+        sim.mapgen_rng =
+            SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "mapgen"));
+        for (index, hit) in hits.iter().enumerate() {
+            let phase = format!("{label}/receiver_{index}");
+            for (stream, actual) in [
+                ("main", sim.main_rng.native_state_hex()),
+                ("scenario", sim.scenario_rng.native_state_hex()),
+                ("mapgen", sim.mapgen_rng.native_state_hex()),
+            ] {
+                assert_eq!(
+                    actual,
+                    rng_state(hit, "rng_before", stream),
+                    "{phase}: before {stream}"
+                );
+            }
+            assert_eq!(
+                i64::from(sim.entities().get(target).unwrap().health.current()),
+                hit["health_before"],
+                "{phase}: no authored HP or per-hit reseed"
+            );
+            let ((result, _), draws) = crate::sim::rng::trace_draws(|| {
+                world_receiver::commit_entities(
+                    &mut sim,
+                    &mut world_receiver::ReceiverRun::default(),
+                    &[EntityDamageEvent::area(
+                        target,
+                        weapon.damage,
+                        0,
+                        source,
+                        None,
+                        warhead,
+                    )],
+                    None,
+                    rules,
+                    None,
+                )
+            });
+            assert!(
+                result.despawned_ids.is_empty(),
+                "{phase}: surviving receiver"
+            );
+            let actor = sim.entities().get(target).unwrap();
+            assert_eq!(
+                i64::from(actor.health.current()),
+                hit["health_after"],
+                "{phase}: HP"
+            );
+            assert_eq!(
+                crate::sim::infantry::is_prone_for_damage(actor),
+                hit["prone_after"].as_u64().unwrap() != 0,
+                "{phase}: prone owner"
+            );
+            for (stream, actual) in [
+                ("main", sim.main_rng.native_state_hex()),
+                ("scenario", sim.scenario_rng.native_state_hex()),
+                ("mapgen", sim.mapgen_rng.native_state_hex()),
+            ] {
+                assert_eq!(
+                    actual,
+                    rng_state(hit, "rng_after", stream),
+                    "{phase}: after {stream}"
+                );
+            }
+            let mut expected_draws: Vec<_> = hit["ranged_raw_advances"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|draw| draw["raw"].as_u64().unwrap())
+                .collect();
+            expected_draws.extend(
+                hit["requests"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|request| request["args"].as_array().unwrap().is_empty())
+                    .map(|request| request["result"].as_u64().unwrap()),
+            );
+            assert_eq!(
+                draws
+                    .iter()
+                    .map(|draw| draw["value"].as_u64().unwrap())
+                    .collect::<Vec<_>>(),
+                expected_draws,
+                "{phase}: raw draw count/order"
+            );
+            let expected_calls = hit["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|call| call["kind"] == "PlayAtPosition")
+                .count();
+            let requests: Vec<_> = sim
+                .sound_events
+                .iter()
+                .filter_map(|event| match event {
+                    SimSoundEvent::VocAt {
+                        sound_id,
+                        audible_to: None,
+                        rx,
+                        ry,
+                        sub_x,
+                        sub_y,
+                        world_z_leptons,
+                    } if e1.voice_feedback.iter().any(|name| name == sound_id) => Some((
+                        sound_id,
+                        [
+                            i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
+                            i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
+                            *world_z_leptons,
+                        ],
+                    )),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                requests.len(),
+                expected_calls,
+                "{phase}: unbound feedback admission"
+            );
+            for (_, actual) in requests {
+                assert_eq!(actual, coordinate, "{phase}: native GetCoords");
+            }
+        }
+    }
 }
 
 #[test]

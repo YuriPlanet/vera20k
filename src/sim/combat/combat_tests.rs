@@ -1309,7 +1309,7 @@ fn retail_gassed_infantry_scatters_and_fears() {
             victim.infantry.as_ref().map(|man| man.fear_level()),
             victim.navigation.nav_com().is_some(),
             victim.mission.queued().known(),
-            pings.iter().any(|ping| ping.miner),
+            !pings.is_empty(),
         )
     };
     use MissionType::{Guard, Harmless, Hunt, Move};
@@ -6454,7 +6454,7 @@ fn test_direct_hit_weapon_destroys_center_ore() {
 // ---- Wall damage integration tests ----------------------------------------
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::sim::overlay_grid::{OverlayGrid, WallDamageEvent};
+use crate::sim::overlay_grid::{OverlayGrid, WallPointerTarget};
 use crate::sim::world::Simulation;
 
 /// INI containing GAWALL as both a [BuildingTypes] entry (so it has an
@@ -6501,6 +6501,9 @@ fn vehicle_on_overlay(rules: &RuleSet, veh_type: &str, overlay_id: u8) -> Simula
     let obj = rules.object(veh_type).expect("veh object");
     let veh_type_id = sim.interner.intern(veh_type);
     let mut veh = GameEntity::test_default(2, veh_type, "Test", 5, 5);
+    // PerCell belongs to an on-map live owner. The old global sweep also
+    // inspected ctor-limbo fixtures; the canonical callback must not do so.
+    veh.lifecycle.set_in_limbo_for_test(false);
     veh.set_owner_for_test(owner_id);
     veh.set_type_ref_for_test(veh_type_id);
     veh.mover_facts.set_regular_crusher_for_test(obj.crusher);
@@ -6527,12 +6530,7 @@ fn wall_warhead_damages_and_destroys_wall_overlay() {
     assert_eq!(initial_wall_entities, 0, "wall state is cell-owned");
 
     // Forced destruction (literal -1 bypasses the probabilistic gate).
-    let events = [WallDamageEvent {
-        rx: 5,
-        ry: 5,
-        damage: -1,
-    }];
-    sim.apply_wall_damage_events(&events, &registry);
+    sim.apply_wall_damage(WallPointerTarget::Real(5, 5), -1, &registry);
     // Overlay cleared.
     let grid = sim
         .overlay_grid
@@ -6645,7 +6643,14 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
 
     // Crusher (BFRT): wall destroyed and crusher unharmed.
     let mut sim = build("BFRT");
-    sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    sim.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.flush_pending_delete();
     assert!(
         !wall_present(&sim),
@@ -6680,7 +6685,14 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
 
     // Non-crusher (MTNK): wall stays intact.
     let mut sim = build("MTNK");
-    sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    sim.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.flush_pending_delete();
     assert!(
         wall_present(&sim),
@@ -6699,9 +6711,10 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
          [VehicleTypes]\n0=ROBO\n1=BFRT\n\
          [AircraftTypes]\n\
          [BuildingTypes]\n0=GAWALL\n1=CAFNCB\n\
-         [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n3=CAFNCB\n\
+         [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n3=CAFNCB\n4=CUSTOM\n\
          [GAWALL]\nStrength=400\nArmor=concrete\nWall=yes\nDamageLevels=4\n\
          [CAFNCB]\nStrength=100\nArmor=wood\nWall=yes\nCrushable=yes\nCrushSound=WallCrushBlack\n\
+         [CUSTOM]\nCrushable=yes\nWall=no\nCrushSound=WallCrushBlack\n\
          [ROBO]\nCrusher=yes\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n\
          [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
@@ -6738,7 +6751,14 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
 
     // Hover crusher over a crushable fence: crushed, cue queued.
     let mut sim = build("ROBO", 3);
-    sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    sim.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.flush_pending_delete();
     assert!(
         !wall_present(&sim),
@@ -6748,7 +6768,14 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
 
     // Crusher over a concrete wall WITHOUT MovementZone=CrusherAll: survives.
     let mut sim = build("ROBO", 2);
-    sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    sim.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.flush_pending_delete();
     assert!(
         wall_present(&sim),
@@ -6759,12 +6786,48 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     // CrusherAll vehicle over a concrete wall without a CrushSound: crushed,
     // silent. Exactly one stock vehicle qualifies - BFRT, the Battle Fortress.
     let mut sim = build("BFRT", 2);
-    sim.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    sim.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.flush_pending_delete();
     assert!(!wall_present(&sim));
     assert!(
         crush_sounds(&sim).is_empty(),
         "no CrushSound= means silence"
+    );
+    // The native sound/recoil precede/ignore the Cell damage return. A
+    // Crushable non-Wall is admitted by Unit but rejected by Cell480CB0.
+    let mut sim = build("ROBO", 4);
+    sim.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
+    assert!(wall_present(&sim));
+    assert_eq!(crush_sounds(&sim), vec!["WallCrushBlack".to_string()]);
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_per_cell_overlay.json");
+    let expected = native
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "numeric_00000000_r0_d0")
+        .unwrap();
+    assert_eq!(
+        sim.entities()
+            .get(2)
+            .unwrap()
+            .rocking
+            .unwrap()
+            .native_bits()[3],
+        u32::from_str_radix(expected["output"]["velocity_bits"].as_str().unwrap(), 16).unwrap()
     );
 }
 
@@ -6813,12 +6876,7 @@ fn concrete_wall_chain_reaction_runs_without_panic() {
     // probabilistic check is skipped and the damage applies. Stage advances
     // to 3 → chain triggers 200-damage events on pristine same-type cardinal
     // neighbors. Outcome of those events depends on RNG roll vs strength=400.
-    let events = [WallDamageEvent {
-        rx: 5,
-        ry: 5,
-        damage: 400,
-    }];
-    sim.apply_wall_damage_events(&events, &registry);
+    sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 400, &registry);
 
     // The chain code path ran (no panic). Assert (5,5) is at stage ≥ 3 or
     // gone — either outcome is consistent with the binary's behavior at the
@@ -6851,43 +6909,19 @@ fn build_minimal_sim_with_gawall_seeded(
 #[test]
 fn wall_damage_deterministic_across_replays() {
     let seed: u64 = 0x1234_5678;
-    let events = [
-        WallDamageEvent {
-            rx: 5,
-            ry: 5,
-            damage: 100,
-        },
-        WallDamageEvent {
-            rx: 5,
-            ry: 5,
-            damage: 100,
-        },
-        WallDamageEvent {
-            rx: 5,
-            ry: 5,
-            damage: 100,
-        },
-        WallDamageEvent {
-            rx: 5,
-            ry: 5,
-            damage: 100,
-        },
-        WallDamageEvent {
-            rx: 5,
-            ry: 5,
-            damage: 100,
-        },
-    ];
-
     let snapshot_a: (Option<u8>, u8) = {
         let (mut sim, _rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
-        sim.apply_wall_damage_events(&events, &registry);
+        for _ in 0..5 {
+            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry);
+        }
         let cell = sim.overlay_grid.as_ref().unwrap().cell(5, 5);
         (cell.overlay_id, cell.overlay_data)
     };
     let snapshot_b: (Option<u8>, u8) = {
         let (mut sim, _rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
-        sim.apply_wall_damage_events(&events, &registry);
+        for _ in 0..5 {
+            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry);
+        }
         let cell = sim.overlay_grid.as_ref().unwrap().cell(5, 5);
         (cell.overlay_id, cell.overlay_data)
     };
@@ -8773,8 +8807,7 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
         "structure hit pings"
     );
     let ev = &result.consequences.effects().under_attack_events[0];
-    assert!(!ev.miner);
-    assert!(ev.structure);
+    assert_eq!(ev.victim_type, test_intern("CAGAS"));
     assert_eq!(ev.owner, test_intern("Defender"));
     assert_eq!((ev.rx, ev.ry), (8, 5));
 
@@ -8787,8 +8820,10 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
         1,
         "harvester hit pings"
     );
-    assert!(result.consequences.effects().under_attack_events[0].miner);
-    assert!(!result.consequences.effects().under_attack_events[0].structure);
+    assert_eq!(
+        result.consequences.effects().under_attack_events[0].victim_type,
+        test_intern("HARV")
+    );
 
     // SAME-owner structure damage → still pings: `BuildingClass::
     // ReceiveDamage` never compares the source's house before
@@ -8941,7 +8976,10 @@ fn harvester_killing_blow_announces_unit_lost_without_the_miner_ping() {
         1,
         "survivor hit pings"
     );
-    assert!(result.consequences.effects().under_attack_events[0].miner);
+    assert_eq!(
+        result.consequences.effects().under_attack_events[0].victim_type,
+        test_intern("HARV")
+    );
     assert!(
         result.consequences.effects().unit_lost_events.is_empty(),
         "nothing died"
@@ -11427,7 +11465,14 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
     };
 
     let mut tank = build("HTNK");
-    tank.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    tank.per_cell_process(
+        2,
+        crate::sim::movement::PerCellReason::TurnComplete,
+        Some(&rules),
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     tank.flush_pending_delete();
     assert!(
         wall_present(&tank),
@@ -11435,7 +11480,15 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
     );
 
     let mut fortress = build("BFRT");
-    fortress.apply_wall_crush_on_driveover(Some(&rules), Some(&registry));
+    fortress
+        .per_cell_process(
+            2,
+            crate::sim::movement::PerCellReason::TurnComplete,
+            Some(&rules),
+            Some(&registry),
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
     fortress.flush_pending_delete();
     assert!(
         !wall_present(&fortress),

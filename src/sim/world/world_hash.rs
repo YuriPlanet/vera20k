@@ -1186,13 +1186,7 @@ impl Simulation {
         // `remaining_base_frames` no longer exists (it was a `BuildQueueItem` field);
         // the sidebar ETA derives it from `progress` at view time and it is
         // intentionally NOT hashed (the 18->19 shape change).
-        for (owner, categories) in self.production.primary_factory_entries() {
-            owner.hash(hasher);
-            for (category, sid) in categories {
-                category.hash(hasher);
-                sid.hash(hasher);
-            }
-        }
+        self.production.hash_primary_factories(hasher);
         self.production.next_enqueue_order.hash(hasher);
         self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 

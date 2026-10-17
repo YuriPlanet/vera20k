@@ -98,6 +98,10 @@ retail/scalar readers and the existing reset owner. A bounded ALL05 paid ORCA
 history follows both authored106 actions through House/Strip and local receive.
 It reuses the existing Factory fixture with explicit campaign layers; terrain,
 played-world and OS/service priors do not certify full campaign startup.
+
+``--do-explosion`` always reads fresh physical retail inputs. Its two map
+branches share only an in-memory snapshot from that invocation; serialized
+native-state caches are unsupported.
 """
 from pathlib import Path
 import hashlib
@@ -7165,6 +7169,113 @@ def tech_level_metadata(root):
         assert not (root/name).exists(),name
     return record
 
+def explosion_weapon_fields(m):
+    """Real constructor/current-default read controls, in the retained registry."""
+    name='Action42FieldControl'
+    count=len(m.weapon_registry())
+    pointer=m.invoke(0x772FA0,m.cstring(name));assert pointer
+    rows=[];pending={};active=[]
+    def state():
+        wh=m.read32(pointer+0xAC)
+        return dict(damage=struct.unpack('<i',m.u.mem_read(pointer+0xA4,4))[0],
+                    warhead=m.string(wh+0x24) if wh else None)
+    def observe(u,pc,size,data):
+        sp=u.reg_read(UC_X86_REG_ESP)
+        if (pc,sp) in pending:
+            row=pending.pop((pc,sp));row['returned']=struct.unpack('<i',dwords(u.reg_read(UC_X86_REG_EAX)))[0]
+            if row['key']=='Warhead':row['read_string']=m.string(row['output_address'])
+        if pc not in (0x5276D0,0x528A10):return
+        section,key=m.string(m.read32(sp+4)),m.string(m.read32(sp+8))
+        if section!=name or key not in ('Damage','Warhead') or (key=='Damage')!=(pc==0x5276D0):return
+        row=dict(entry=f'{pc:08X}',return_pc=f'{m.read32(sp):08X}',section=section,key=key)
+        if key=='Damage':row['default']=struct.unpack('<i',dwords(m.read32(sp+12)))[0];cleanup=16
+        else:
+            row.update(default=m.string(m.read32(sp+12)),capacity=m.read32(sp+20),output_address=m.read32(sp+16));cleanup=24
+        active.append(row);pending[m.read32(sp),sp+cleanup]=row
+    hook=m.u.hook_add(UC_HOOK_CODE,observe);before_rng=m.rng_state();constructor=state()
+    try:
+        for label,keys in (
+            ('missing_section',None),('set_both',{'Damage':'37','Warhead':'AP'}),
+            ('missing_keys',{'Range':'1'}),('empty_keys',{'Damage':'','Warhead':''}),
+            ('signed_and_none',{'Damage':'-17','Warhead':'none'}),
+            ('missing_after_clear',{'Range':'1'}),('case_lookup',{'Damage':'90','Warhead':'ap'})):
+            m.ordered_ini({name:keys} if keys is not None else {'Unrelated':{'Marker':'1'}})
+            active.clear();before=state();returned=m.invoke(0x772080,pointer,(INI,))&255
+            assert not pending,pending
+            rows.append(dict(name=label,keys=keys,before=before,returned=returned,after=state(),
+                reads=[{k:v for k,v in row.items() if k!='output_address'} for row in active]))
+    finally:m.u.hook_del(hook)
+    m.check_code()
+    return dict(constructor=constructor,rows=rows,registry_count_before=count,
+        rng_before=before_rng,rng_after=m.rng_state(),
+        scope='One real appended Weapon; complete original771C70/772080 on ordered cache controls. These custom controls exclude physical loading and full Rules Process.')
+
+
+def do_explosion_generate(*,receipt_path=None):
+    """Two independent physical map Process branches from one full root state."""
+    from tools.rules_oracle.weapon_speed_order import RetailRulesInputs,retail_history
+    from tools.native_oracle import image_sha256
+    inputs=RetailRulesInputs(configured_gamemd().parent);m=retail_history(inputs);failure=None
+    try:
+        root=m.campaign_root(('ALL06UMD.MAP','SOV03UMD.MAP'))
+        common=m.snapshot();maps=[]
+        for name,trigger in (('ALL06UMD.MAP','048BB6BC'),('SOV03UMD.MAP','0B3BE93C')):
+            m.restore(common);registry=m.map_process(root['pointers'][name],name)
+            raw,_=m.string_read(root['pointers'][name],'Actions',trigger)
+            # The authored Action42 record, from the physical map INI bytes.
+            tokens=raw.split(',');records=[tokens[1+i*8:9+i*8] for i in range(int(tokens[0]))]
+            selected=[r for r in records if r[0]=='42'];assert len(selected)==1
+            maps.append(dict(map=name,weapon_registry=registry,trigger_id=trigger,
+                raw_action=','.join(selected[0]),selected_weapon_index=int(selected[0][2])))
+        fields=explosion_weapon_fields(m)
+        for key in ('rng_before','rng_after'):fields.pop(key)
+        # Keep the consumed INI/map identities; every other physical request
+        # (art SHPs, absent theater variants) is pinned by count and digest.
+        receipt=inputs.receipt();requests=receipt.pop('requests')
+        receipt.update(inis=[row for row in requests if row['file'].upper().endswith(('.INI','.MAP'))],
+            request_count=len(requests),absent_count=sum(row['absent'] for row in requests),
+            requests_sha256=hashlib.sha256(json.dumps(requests,sort_keys=True).encode()).hexdigest())
+        return dict(schema_version=1,native_sha256=image_sha256(),sources=receipt,
+            startup=dict(arena_bytes=0xC000000,physical=root['physical'],initializers=root['initializers'],
+                optional_pass_guards=root['optional'],initialization_depth=root['initialization_depth'],
+                theater=root['theater'],root_weapons=root['weapons']),
+            maps=maps,weapon_field_controls=fields)
+    except Exception as error:
+        failure=dict(type=type(error).__name__,message=str(error),phase=m.phase,
+            pc=f'{m.u.reg_read(UC_X86_REG_EIP):08X}',sp=f'{m.u.reg_read(UC_X86_REG_ESP):08X}')
+        raise
+    finally:
+        if receipt_path:
+            receipt=dict(status='stopped' if failure else 'returned',failure=failure,
+                registry_events=m.registry_events,phase_visits=m.phase_visits,
+                budgets=m.budgets,phase_seconds=m.phase_seconds,native_events=m.native_events,
+                arena_used=m.cursor-0x24000000,arena_bytes=0xC000000)
+            Path(receipt_path).write_text(json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
+        m.close()
+
+
+def do_explosion_source_paths():
+    return dict(SOURCE_PATHS,**{name:Path(__file__).parents[2]/path for name,path in {
+        'native_full_registry':'tools/rules_oracle/weapon_speed_order.py',
+        'single_arena':'tools/rules_oracle/bridge_anim_lists.py',
+        'bullet_reader':'tools/projectile_oracle/bridge_render_inputs.py',
+        'native_platform':'tools/spatial_oracle/engineer_repair_admission.py',
+        'palette_platform':'tools/projectile_oracle/bridge_render_inputs_palette.py',
+    }.items()})
+
+
+def do_explosion_metadata():
+    return provenance(scope='Physical RULESMD/ARTMD plus independent ALL06/SOV03 full native type histories: the retained WeaponType array order, Damage and Warhead that TAction42 (6E2390) indexes, and Weapon constructor/ReadINI Damage/Warhead controls.',
+        assumptions=[
+            '535B30/4739F0/4741F0/525A60 parse actual source-selected bytes. Physical maps are loaded before a common full original Rules root history, then each original687744..687754 map Process runs from an in-memory CPU/RAM/transport snapshot. Optional LANGRULE and campaign basename INI guards execute473C50 and must report absent; a present file stops until its real pass is supported.',
+            'Original constructors/static type initializers, cold readers, init-depth kernels, media-2 (6BD7CB passes ECX), palette/Convert bodies, map Theater read and InitTheater5349C0, and destructive Reset6686C0/full Process668BF0 execute. The 192MiB successful heap is one existing Lists allocator, not native malloc-failure equivalence. Physical INI checkDigest0 is explicit; whole campaign digest/UI startup and theater tile/World loading are excluded.',
+            'The authored 42 record is read from each physical map [Actions] entry; its third field is the Weapon ordinal Execute42 passes to 6E2390. Action42 body behavior (coordinate, SelectAnim/Anim, Flash, AreaDamage) is outside this corpus and rests on instruction reading.',
+            'Weapon constructor771C9D/771CA9 initializes Damage0/WarheadNULL. Original772080 reads exact Damage at7722D4..7722E8 using5276D0 with CURRENT Damage; Warhead at77294C..772981 uses528A10/current binding, nonempty75E3B0. Missing and empty controls are executable, not inferred: empty Damage reads0; empty Warhead retains; none clears; case-insensitive lookup preserves stored identity.',
+        ],substitutions=[
+            'Existing CampaignReader/Reader/Lists owns unchanged PE, INI caches, CRT/heap/GUID/clock/atomic transport. Existing NativeAudioPlatform owns RawFile bytes/Win32 and wsprintfA ASCII one-%s/%d formatting for InitTheater and direct CALL [7E14B0] sites. RetailRulesInputs selects actual archive bytes, records absent 8.3 names, and rejects unproven byte conflicts; it supplies only IO bytes/absence, not gameplay read/constructor/parser results. Existing RGB565 opaque surface/getter and palette transport remain explicit. No instruction patches, native RNG/timer calculations or gameplay-return stubs.',
+        ],entry_points=dict(physical_ini_ctor=0x535B30,file_ctor=0x4739F0,physical_load=0x4741F0,physical_parse=0x525A60,
+            init_theater=0x5349C0,rules_reset=0x6686C0,rules_process=0x668BF0,weapon_ctor=0x771C70,weapon_read=0x772080,
+            weapon_find_or_allocate=0x772FA0,map_process=0x687744,action42=0x6E2390))
 
 if __name__=='__main__':
     import argparse
@@ -7192,9 +7303,19 @@ if __name__=='__main__':
     selected_modes.add_argument('--ai-activation', action='store_true')
     selected_modes.add_argument('--chrono-reinforcement', action='store_true')
     selected_modes.add_argument('--tech-level', action='store_true')
+    selected_modes.add_argument('--do-explosion', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.superweapon_reset:
+    if selected.do_explosion:
+        if os.environ.get('VERA20K_NATIVE_STATE_CACHE'):
+            selector.error('VERA20K_NATIVE_STATE_CACHE is no longer supported; unset it to read fresh retail inputs')
+        if selected.inputs is not None:
+            selector.error('--do-explosion reads configured physical MD assets, not --inputs')
+        receipt_path=os.environ.get('VERA20K_TRIGGER_EXPLOSION_RECEIPTS') if '--write' in remaining else None
+        finish_vectors(lambda:do_explosion_generate(receipt_path=receipt_path),
+            Path(__file__).with_name('trigger_do_explosion.json'),provenance=do_explosion_metadata,
+            argv=remaining,source_paths=do_explosion_source_paths())
+    elif selected.superweapon_reset:
         if selected.inputs is not None:
             selector.error('--superweapon-reset reads configured physical MD assets, not --inputs')
         receipt_path = os.environ.get('VERA20K_TRIGGER_SUPER_RESET_RECEIPTS') if '--write' in remaining else None

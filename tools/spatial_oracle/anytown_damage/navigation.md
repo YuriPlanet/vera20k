@@ -79,3 +79,110 @@ Each stream begins with the complete original seed-0 state. The Unit constructor
 * This packet does not execute the whole scenario/file loader, general building/mobile world lifecycle, high bridges, visibility/AI, full projectile admission, renderer, or full gameplay load RNG. Its claim is the listed physical inputs, original Cell class derivation, native graph builders/updates and bounded MTNK admissions.
 
 `initial` and `stages[*].state` contain `navigation`, three `graphs`, `cells`, `dummy`, `movement_admissions` and complete `rng`. Stage records add the original return byte, ordered trace, RNG before/after and per-stage reached counters. Production export comparisons must check all planes/rows and complete ordered graph records, with padding retained, rather than treating the record counts as sufficient.
+
+### Authored CAFNCB / AP wall component
+
+`python -m tools.spatial_oracle.anytown_damage.mtnk_attack --authored-fence --write`
+(and `--check`) adds the consumed `authored_fence.json` comparison. The normal
+mtnk_attack corpus and all Navigation defaults remain independent and unchanged.
+The opt-in uses the same physical XMP03T4 Cell/TMP/Terrain runtime and reader,
+full native Rules constructor, physical Overlay ART and stock MTNK/105mm/AP
+readers. Actual decoded OverlayPack admission `5FD41A..5FD508`, constructor/Mark,
+then second data pass `5FD61A..5FD646` establish wall identity and retained +122
+before Terrain. The shared bridge saved-byte restoration `5FD4F3..5FD508` remains
+a distinct bridge-only operation. Original nested ScenarioInit writers bracket
+this setup; original Main zero/active-game stores precede live damage.
+
+Each independently seeded history calls full original AreaDamage `489280` at
+physical Cell43,81 center with its native-read stock damage. Every reached wall,
+real `480CB0/480630/480510`, Recalc, connectivity/hierarchy edits, radar dirty
+writer, pointer expiry/detach and deferred drain execute. The compact output
+retains native admissions, changed cells/owner/data/+122/material/zone, all three
+full RNG states and draw/callback order. The explicit null attacker and empty
+Techno/listener registry do not prove ordinary MTNK target clearance; the normal
+World shot/Cell-target regression is a separate integration consumer. Full native
+Scenario bootstrap, authored buildings/Technos and whole-World RNG are excluded.
+An uncovered live animation fails closed rather than supplying a gameplay result.
+
+`python -m tools.spatial_oracle.bridge_shadow_render --authored-fence --write`
+(and `--check`) consumes those native states into `wall_render.json`. It uses the
+existing physical image/ColorScheme/TMP Lighting/native raster owners, with actual
+map/type identity checks and observed A readback. Native initial source, partial
+neighbor, changed endpoint and removed source states select the wall frames. The
+existing sole ReadColor helper uses its small INI Fixture; selected ColorScheme
+constructors, material conversion and raster execute in the existing raster VM. Sparse TMP/Cell registration,
+current Player/House scheme index, local projection/clip/background/A/Z are explicit
+component priors. Actual Cell lighting produces the top scalar; its floor pixels
+are cleared before the separate wall raster. The erased row reuses the existing
+Tactical loop's actual `-1` admission and observes no body/shadow calls; its map
+and visibility transport boundaries remain explicit. This does not claim a whole
+Tactical frame or GPU composition. Sidecars record the binary and reproduction command;
+validation receipts remain external.
+
+`python -m tools.spatial_oracle.anytown_damage.mtnk_attack --authored-fence-driveover --write`
+(and `--check`) writes the separate `fence_driveover.json` component corpus.
+It reuses the authored-fence VM, actual physical wall/type/map initialization,
+entry observers and deferred-delete owner. Independent seed0 is installed on all
+three streams after setup. Original `480CB0(-1)` executes first on authored
+`43,82`, then `44,82`; the second call uses the actual first call's resulting
+grid. Each `steps` row retains the existing `before/events/changed/before_drain/
+after/source` fields and adds `source_cell`. Full RNG states, draw requests,
+ordered callbacks, current radar storage, runtime cursor and queue drain remain
+observed. The selected forced path must remove both receivers without RNG draws.
+It still executes the accepted-hit dirty/data-increment prefix before removal.
+This direct Unit route has no AreaDamage `70D4A0` detach.
+
+The same MTNK reader additionally executes admitted layered
+`TiltsWhenCrushes` reads at `7153DA..7153FB`, using the retained constructor
+default at type `D2B`. The corpus records physical layer identities, source
+lines, admission and before/after values under `input.mtnk_tilts`. No Rust value
+or inferred stock default supplies that byte. Historical AP/default modes do
+not execute these extra reads and retain their existing corpus.
+
+This is a Cell component, composed with the existing 296
+`unit_per_cell_overlay` caller/numeric controls and ordinary World integration.
+Those caller controls replace map/damage/audio queries and explicitly exclude
+sound playback RNG. The direct Cell mode creates no Unit and does not execute
+UnitPerCell `739EC0`, its retained physical `+1B8` query, live sound `+48`
+sample, Drive `+64` pre-tilt, `+334` recoil or `+6B5` lifetime. Selected physical
+`WallCrushBlack` has random samples/pitch/volume, so draw-free forced Cell damage
+does not establish draw-free Unit/audio behavior. Empty native listeners do not
+prove positive target expiry, and no absolute normal movement frame is claimed.
+
+`python -m tools.spatial_oracle.anytown_damage.mtnk_attack --concrete-wall --write`
+(or `--check`) uses that same runtime and writes `concrete_wall.json`.
+The opt-in `Inputs` selection additionally enrolls GAWALL's fixed ART section
+and physical `GTWALL.SHP` through `bridge_shadow_render.physical_assets`' existing
+archive/cache loop. Native constructor/current-default and layered full
+`5FE770` outputs retain Strength, Wall, Image, fixed ART DamageLevels and theater
+flags; original `5FE620` and lazy GetSHP must admit the actual image.
+Historical selections use empty extra-type/material arguments.
+
+Four component constructor inputs use physical flat cells `33,88`, `33,87`,
+`33,89`, `33,90`. Each executes the existing decoded-construction caller
+`5FD41A..5FD508`, real Overlay constructor/Unlimbo/Object Mark/Overlay Mark,
+connectivity/navigation/122 writes and deferred drain. The corpus retains
+construction events and both construction/independent entry-seed boundaries.
+These cells are a separate ordinary paid witness's legal coordinates; GAWALL
+is not map-authored there, and this component does not execute paid factories,
+autofill or ordinary Building/Foot population. It supplies no damage nibble,
+overlay identity store, Mark answer or favorable random word.
+
+Independent seeds0/1 then execute stock MTNK/105mm/AP65 through complete
+`489280`, repeating until the source wall clears under a bounded impact count.
+Coverage requires actual accepted/rejected65 and original stage2 inline200
+caller `480EB4`, including an admitted child. Complete three-stream RNG states,
+request/raw order, inline calls, changed cells, dirty/navigation/radar, retained
+122, expiry/detach and drain remain in the shared history schema.
+
+The selected ordinary GDI-negative query controls use original BuildingType
+FindOrAllocate/full constructors for GAPILE/GAPOWR and original layered General
+gate/WallTower readers `66F450..66F589`. Original `526810` admits the General
+section first; each name uses ReadString's empty default, then retains the
+current field pointer when no name is returned. Separate
+query-only positive-health Building shells supply unchanged native vtables,
+constructed type pointers and linked-list priors. Complete original `480510`
+traverses them; it supplies no RTTI or predicate answer. The temporary Cell
+head is restored. This does not place or construct Buildings in the damage
+history, prove a positive gate/Nod branch, or establish whole native paid-scene
+owner/122/RNG equivalence. Production integration must preserve those contexts.

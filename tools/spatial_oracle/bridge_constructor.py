@@ -46,6 +46,78 @@ class OriginalBridgeConstructor:
         return self
 
     @staticmethod
+    def restore_bridge_data(native_map, coordinate, data):
+        """Original bridge-only saved-byte restoration in the identity pass."""
+        u = native_map.uc
+        sp = STACK_BASE + STACK_SIZE - 0x1000
+        u.reg_write(UC_X86_REG_ESP, sp)
+        from unicorn.x86_const import UC_X86_REG_EBX
+        u.reg_write(UC_X86_REG_EBX, data)
+        u.mem_write(sp + 0x18, packed(*coordinate))
+        run_checked(u, 0x5FD4F3, 0x5FD508, count=1000,
+                    required_addresses=(0x5657A0, 0x5FD502))
+
+    @staticmethod
+    def construct_authored(native_map, coordinate, overlay_id):
+        """Execute the original decoded OverlayPack admission/constructor slice.
+
+        Only decoded id/coordinate caller locals are supplied. Image/CellAnim,
+        mode/crate, native allocation, operator new and full constructor/Mark
+        all execute, including rejected membership.
+        """
+        from unicorn.x86_const import UC_X86_REG_EBP
+        u = native_map.uc
+        sp = STACK_BASE + STACK_SIZE - 0x1000
+        u.reg_write(UC_X86_REG_ESP, sp)
+        u.reg_write(UC_X86_REG_EBP, 0)
+        u.mem_write(sp + 0x14, dwords(overlay_id))
+        u.mem_write(sp + 0x18, packed(*coordinate))
+        receipt = dict(image=None, allocated=None, constructor=False, unlimbo=False, marks=[], hierarchy=[])
+        mark_return = []
+        def observe(_u, pc, _n, _d):
+            if mark_return and pc == mark_return[-1][0]:
+                _,pointer,row=mark_return.pop()
+                row.update(returned_low_byte=u.reg_read(UC_X86_REG_EAX)&255,marked_after=u.mem_read(pointer+0x74,1)[0])
+            if pc == 0x584550:
+                receiver=u.reg_read(UC_X86_REG_ECX)
+                roots=struct.unpack('<3I',u.mem_read(receiver+0x80,12))
+                counts=[struct.unpack('<I',u.mem_read(root+8,4))[0] for root in roots]
+                assert receiver==0x87F7E8 and counts==[256]*3,(coordinate,hex(receiver),counts)
+                receipt['hierarchy'].append(dict(receiver=f'{receiver:08X}',root_bucket_counts=counts))
+            if pc == 0x5FD44C:receipt['image'] = bool(u.reg_read(UC_X86_REG_EAX))
+            if pc == 0x5FD491:receipt['allocated'] = u.reg_read(UC_X86_REG_EAX) & 255
+            if pc == 0x5FC380:receipt['constructor'] = True
+            if pc == 0x5F4EC0:
+                receipt['unlimbo'] = True
+                pointer=u.reg_read(UC_X86_REG_ECX)
+                receipt['unlimbo_prior']=dict(game_active=u.mem_read(0xA8E9A0,1)[0],limbo=u.mem_read(pointer+0x81,1)[0],marked=u.mem_read(pointer+0x74,1)[0])
+            if pc == 0x5FC4A5:receipt['building_present'] = bool(u.reg_read(UC_X86_REG_EAX))
+            if pc == 0x5F5850:
+                pointer = u.reg_read(UC_X86_REG_ECX)
+                row=dict(limbo=u.mem_read(pointer+0x81,1)[0],marked=u.mem_read(pointer+0x74,1)[0])
+                receipt['marks'].append(row)
+                destination=struct.unpack('<I',u.mem_read(u.reg_read(UC_X86_REG_ESP),4))[0]
+                mark_return.append((destination,pointer,row))
+        hook = u.hook_add(UC_HOOK_CODE, observe)
+        # Full physical-map wall Mark can synchronously rebuild several
+        # hierarchy blocks. Retain the instruction bound and verify real
+        # receiver/root invariants before allowing this larger map budget.
+        run_checked(u, 0x5FD41A, 0x5FD508, count=10000000,timeout_us=120000000)
+        u.hook_del(hook)
+        return receipt
+
+    @staticmethod
+    def apply_authored_data(native_map, coordinate, data):
+        """Original unconditional second OverlayDataPack pass after identities."""
+        u = native_map.uc
+        sp = STACK_BASE + STACK_SIZE - 0x1000
+        u.reg_write(UC_X86_REG_ESP, sp)
+        u.mem_write(sp + 0x18, packed(*coordinate))
+        u.mem_write(sp + 0x13, bytes([data]))
+        run_checked(u, 0x5FD61A, 0x5FD646, count=1000,
+                    required_addresses=(0x568300, 0x5657A0, 0x5FD640))
+
+    @staticmethod
     def empty_registries(u, allocate, capacity=1024, *, preserve=()):
         """Original startup vector vtables with supplied spare storage.
 
