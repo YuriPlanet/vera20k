@@ -107,7 +107,7 @@ cargo run --release --bin vera20k
 
 تُرخَّص المساهمات بموجب GPLv3 مثل بقية المشروع؛ ولا توجد اتفاقية CLA.
 
-## الدعم <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/PayPal-Donate-0070BA?style=flat&amp;logo=paypal&amp;logoColor=white" alt="ادعم VERA20k عبر PayPal" height="20" align="middle"></a>
+## الدعم <a href="https://paypal.me/vera20k"><img src="docs/images/paypal-support.svg" alt="ادعم VERA20k عبر PayPal" height="40" align="middle"></a>
 
 [ادعم VERA20k عبر PayPal](https://paypal.me/vera20k). تُوزَّع جميع التبرعات المستلمة على
 المساهمين وفقًا [لسجل مساهمات TIBTRE](https://github.com/YuriPlanet/tibtre-ledger).

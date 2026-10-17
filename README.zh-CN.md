@@ -104,7 +104,7 @@ VERA20k 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 贡献内容与项目其余部分一样采用 GPLv3 许可证；无需签署 CLA。
 
-## 支持项目 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/PayPal-Donate-0070BA?style=flat&amp;logo=paypal&amp;logoColor=white" alt="通过 PayPal 支持 VERA20k" height="20" align="middle"></a>
+## 支持项目 <a href="https://paypal.me/vera20k"><img src="docs/images/paypal-support.svg" alt="通过 PayPal 支持 VERA20k" height="40" align="middle"></a>
 
 [通过 PayPal 支持 VERA20k](https://paypal.me/vera20k)。所有收到的捐款都将根据
 [TIBTRE 贡献账本](https://github.com/YuriPlanet/tibtre-ledger)分配给贡献者。
