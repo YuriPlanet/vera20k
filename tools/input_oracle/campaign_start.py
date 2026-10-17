@@ -46,7 +46,7 @@ def assets_root():
 class CampaignReader(BulletReader):
     """Campaign fixture on the shared original reader/allocation owner."""
 
-    def __init__(self, root=None):
+    def __init__(self, root=None, *, arena_size=0x400000):
         self.entropy = None
         self.entropy_events = []
         self.native_events = []
@@ -57,7 +57,7 @@ class CampaignReader(BulletReader):
         self.pending_side_string = None
         self.trigger_read_events = []
         self.pending_trigger_string = None
-        super().__init__({}, root if root is not None else assets_root())
+        super().__init__({}, root if root is not None else assets_root(), arena_size=arena_size)
         self.original_code = selected_ranges(image_bytes(), None, None, code_only=True)
         self.scenario = self.read32(0xA8B230)
         self.u.mem_write(0x889F64, b"\0")  # supplied runtime empty-default buffer
@@ -224,7 +224,7 @@ class CampaignReader(BulletReader):
             else:
                 begin = stopped
 
-    def begin_scenario_init(self):
+    def begin_scenario_init(self, source_ini=INI):
         # StartScenario -> ReadScenario -> ReadScenarioINI -> Full_Init.
         # Preserve the actual nested initialization prior before any House
         # admission. These two original kernels increment the process counter;
@@ -235,7 +235,7 @@ class CampaignReader(BulletReader):
         values.append(self.read32(0xA8E7AC))
         self.u.reg_write(UC_X86_REG_EBX, 0)
         self.u.reg_write(UC_X86_REG_ESI, 0)
-        self.u.reg_write(UC_X86_REG_ECX, INI)
+        self.u.reg_write(UC_X86_REG_ECX, source_ini)
         self.region(0x686B35, 0x686B55)
         values.append(self.read32(0xA8E7AC))
         assert values == [0, 1, 2]

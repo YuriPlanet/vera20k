@@ -3563,6 +3563,25 @@ impl Simulation {
                 };
                 return self.trigger_play_anim_at_waypoint(rules, index, waypoint as i32);
             }
+            42 => {
+                let (Some(rules), Some(index), Some(waypoint)) =
+                    (rules, value, action.waypoint_index)
+                else {
+                    return false;
+                };
+                let Some(changed) = self.trigger_explosion_at_waypoint(
+                    rules,
+                    index,
+                    waypoint as i32,
+                    overlay_registry,
+                    frame_effects,
+                ) else {
+                    return false;
+                };
+                if changed {
+                    effects.push(TriggerEffect::BridgeStateChanged);
+                }
+            }
             46 | 47 => {
                 let locked = action.kind == 46;
                 let was_locked = self.session.input_locked();
@@ -3925,3 +3944,7 @@ mod wakeup_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_chrono_reinforcement_tests.rs"]
 mod chrono_reinforcement_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_explosion_tests.rs"]
+mod explosion_tests;

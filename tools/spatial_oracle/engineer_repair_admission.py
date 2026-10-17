@@ -194,10 +194,11 @@ class NativeAudioPlatform:
         self.critical_calls = frozenset()
         self.clock_calls, self.file_io, self.device_io = [], [], []
         self.device_stop_updates_status = False
+        self.wsprintf_formatting = False
 
     def configure_transport(self, *, prepared_files=None, clock=None,
                             device=None, buffer_devices=None, new_buffer_device=None,
-                            critical_calls=None):
+                            critical_calls=None, wsprintf_formatting=None):
         """Admit raw OS inputs; native readers, clocks and consumers still run.
 
         Files are immutable bytes selected/pinned by the caller; an explicit
@@ -210,6 +211,9 @@ class NativeAudioPlatform:
         and unsupported-clock defaults unless these inputs are configured.
         An optional new-buffer template admits explicit status/cursors at each
         returned identity and records it; native Stop is the sole status0 transition.
+        Optional wsprintfA formatting admits one ASCII %s or signed %d per
+        call from InitTheater5349C0 or a direct CALL [7E14B0]; other unresolved
+        imports and templates remain unsupported.
         """
         if prepared_files is not None:
             values = {str(name).lower(): None if raw is None else bytes(raw)
@@ -237,6 +241,8 @@ class NativeAudioPlatform:
                 self.os_buffer_devices = {}
         if critical_calls is not None:
             self.critical_calls = frozenset(critical_calls)
+        if wsprintf_formatting is not None:
+            self.wsprintf_formatting = bool(wsprintf_formatting)
 
     def string(self, pointer):
         raw = bytearray()
@@ -280,6 +286,34 @@ class NativeAudioPlatform:
 
     def hook(self, u, pc, size):
         sp, read = u.reg_read(UC_X86_REG_ESP), self.owner.read32
+        if pc == 0x40FFF0 and self.wsprintf_formatting:
+            # The unresolved wsprintfA IAT (7E14B0) is an OS formatting
+            # boundary. InitTheater5349C0 calls it through EBP; other callers
+            # (e.g. BuildingType art AddOccupy%d at 461442) use CALL [7E14B0].
+            # Only one ASCII %s or signed %d conversion is admitted; anything
+            # else, and every other unresolved import, stops unanswered.
+            caller = read(sp)
+            through_ebp = (0x5349C0 < caller < 0x534DCA
+                           and bytes(u.mem_read(caller - 2, 2)) == bytes.fromhex('ffd5'))
+            direct = bytes(u.mem_read(caller - 6, 6)) == bytes.fromhex('ff15b0147e00')
+            if read(0x7E14B0) != pc or not (through_ebp or direct):
+                raise ValueError(f'Unadmitted unresolved IAT caller {caller:08X}')
+            destination, template_pointer, argument = struct.unpack('<3I', u.mem_read(sp + 4, 12))
+            template = self.string(template_pointer)
+            assert template.count('%') == 1, template
+            if '%s' in template:
+                value = self.string(argument)
+            elif '%d' in template:
+                value = str(struct.unpack('<i', struct.pack('<I', argument))[0])
+            else:
+                raise ValueError(f'Unadmitted wsprintfA template {template!r} at {caller:08X}')
+            raw = template.replace('%s' if '%s' in template else '%d', value).encode('ascii')
+            assert len(raw) < 1024  # wsprintfA's documented output limit
+            u.mem_write(destination, raw + b'\0')
+            self.calls.append(dict(kind='Windows_wsprintfA', caller=f'{caller:08X}',
+                template=template, input=value, output=raw.decode('ascii'), returned_length=len(raw)))
+            self.owner.ret(len(raw))  # cdecl: the original caller pops arguments.
+            return True
         if self.os_clock is not None and pc in (0x409368, 0x4093C8):
             pointer = read(sp)
             value = self.os_clock['frequency' if pc == 0x409368 else 'counter']

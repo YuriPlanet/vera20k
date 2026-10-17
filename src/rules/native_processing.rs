@@ -413,6 +413,7 @@ impl ProcessedRulesLayers {
         let projectile_count = families
             .get(&RulesTypeFamily::Projectile)
             .map_or(0, Vec::len);
+        let warhead_count = families.get(&RulesTypeFamily::Warhead).map_or(0, Vec::len);
         if families.values().flatten().any(|member| {
             usize::from(member.building_foundation)
                 >= crate::rules::foundation::FOUNDATION_TABLE.len()
@@ -420,6 +421,10 @@ impl ProcessedRulesLayers {
                     .weapon
                     .projectile
                     .is_some_and(|index| index >= projectile_count)
+                || member
+                    .weapon
+                    .warhead
+                    .is_some_and(|index| index >= warhead_count)
         }) {
             return Err(RulesError::InvalidSavedState(
                 "type reference is outside its registry",
@@ -631,10 +636,12 @@ impl ProcessedRulesLayers {
             })
     }
 
-    /// Retained +A8 speed and +A0 projectile after the last Weapon sweep.
-    pub(crate) fn weapon_speeds_and_projectiles(
+    /// Retained +A8 speed, +A0 projectile, +A4 Damage and +AC Warhead after
+    /// the last Weapon sweep, in the actual WeaponType array order.
+    /// References remain native family indices until this read-only projection.
+    pub(crate) fn weapon_states(
         &self,
-    ) -> impl Iterator<Item = (&str, i32, Option<&str>)> {
+    ) -> impl Iterator<Item = (&str, i32, Option<&str>, i32, Option<&str>)> {
         let families = &self
             .native_type_construction_trace
             .registry_state()
@@ -649,10 +656,17 @@ impl ProcessedRulesLayers {
                         .native_stored_id
                         .as_str()
                 });
+                let warhead = member.weapon.warhead.map(|index| {
+                    families[&RulesTypeFamily::Warhead][index]
+                        .native_stored_id
+                        .as_str()
+                });
                 (
                     member.native_stored_id.as_str(),
                     member.weapon.speed,
                     projectile,
+                    member.weapon.damage,
+                    warhead,
                 )
             })
     }
@@ -1435,6 +1449,12 @@ struct WeaponReadState {
     speed: i32,
     range_leptons: i32,
     projectile: Option<usize>,
+    /// Weapon771C70 initializes +A4/+AC to zero/null. ReadINI7722D4..7722E8
+    /// reads Damage with its current signed value;77294C..772981 only replaces
+    /// the Warhead pointer after a nonempty ReadString128. Executed controls:
+    /// spatial_oracle/trigger_do_explosion.json (Steam3e81a617..08600).
+    damage: i32,
+    warhead: Option<usize>,
 }
 
 impl ProcessedType {
@@ -2578,6 +2598,12 @@ impl RulesPassProcessor {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::Weapon, index, pass)
             {
+                // 7722D4..772350: these scalar reads precede the later
+                // constructor-capable animation and type-reference reads.
+                let state = &mut self.family_mut(RulesTypeFamily::Weapon)[index].weapon;
+                state.damage = raw.read_int("Damage", state.damage);
+                state.speed = raw.read_speed("Speed", state.speed);
+                state.range_leptons = raw.read_range("Range", state.range_leptons);
                 self.allocate_list_from(&raw, "Anim", RulesTypeFamily::Animation, 0x80);
                 for key in ["AssaultAnim", "OccupantAnim", "OpenToppedAnim"] {
                     let _ = self.resolve_scalar_from(&raw, key, RulesTypeFamily::Animation, 0x80);
@@ -2588,7 +2614,9 @@ impl RulesPassProcessor {
                     RulesTypeFamily::ParticleSystem,
                     0x14,
                 );
-                let _ = self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80);
+                let incoming_warhead = raw.read_string("Warhead", "", 0x80);
+                let warhead = (!incoming_warhead.is_empty())
+                    .then(|| self.find_or_allocate(RulesTypeFamily::Warhead, &incoming_warhead));
                 let incoming = raw.read_string("Projectile", "", 0x80);
                 let projectile = (!incoming.is_empty())
                     .then(|| self.find_or_allocate(RulesTypeFamily::Projectile, &incoming));
@@ -2596,8 +2624,9 @@ impl RulesPassProcessor {
                 if let Some(projectile) = projectile {
                     state.projectile = projectile;
                 }
-                state.speed = raw.read_speed("Speed", state.speed);
-                state.range_leptons = raw.read_range("Range", state.range_leptons);
+                if let Some(warhead) = warhead {
+                    state.warhead = warhead;
+                }
             }
             index += 1;
         }
@@ -2961,14 +2990,25 @@ impl RulesPassProcessor {
             if let Some(members) = self.families.get(&family) {
                 for member in members {
                     let mut body = member.body.clone();
-                    if family == RulesTypeFamily::Weapon
-                        && let Some(index) = member.weapon.projectile
-                    {
-                        // Compatibility graph discovery must follow the
-                        // retained pointer even after an empty key read.
+                    if family == RulesTypeFamily::Weapon {
+                        // Compatibility graph discovery follows retained
+                        // pointers even after an empty key read. A native none
+                        // reference is distinct from the empty-string retention.
+                        if let Some(index) = member.weapon.projectile {
+                            body.set(
+                                "Projectile",
+                                &self.families[&RulesTypeFamily::Projectile][index]
+                                    .native_stored_id,
+                            );
+                        }
+                        body.set("Damage", &member.weapon.damage.to_string());
                         body.set(
-                            "Projectile",
-                            &self.families[&RulesTypeFamily::Projectile][index].native_stored_id,
+                            "Warhead",
+                            member.weapon.warhead.map_or("none", |index| {
+                                self.families[&RulesTypeFamily::Warhead][index]
+                                    .native_stored_id
+                                    .as_str()
+                            }),
                         );
                     }
                     ini.replace_first_section(body);
@@ -3034,6 +3074,10 @@ mod projectile_art_tests;
 #[cfg(test)]
 #[path = "weapon_speed_tests.rs"]
 mod weapon_speed_tests;
+
+#[cfg(test)]
+#[path = "weapon_registry_tests.rs"]
+mod weapon_registry_tests;
 
 #[cfg(test)]
 #[path = "guided_controls_tests.rs"]

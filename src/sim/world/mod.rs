@@ -102,6 +102,7 @@ mod projectile_collision;
 mod substrate;
 mod techno_ai;
 mod trigger_camera;
+mod trigger_explosion;
 #[cfg(test)]
 mod trigger_camera_tests;
 pub(crate) use techno_ai::DamageSpark;

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical RULESMD/ARTMD plus independent ALL06/SOV03 full native type histories: the retained WeaponType array order, Damage and Warhead that TAction42 (6E2390) indexes, and Weapon constructor/ReadINI Damage/Warhead controls.",
+  "assumptions": [
+    "535B30/4739F0/4741F0/525A60 parse actual source-selected bytes. Physical maps are loaded before a common full original Rules root history, then each original687744..687754 map Process runs from an in-memory CPU/RAM/transport snapshot. Optional LANGRULE and campaign basename INI guards execute473C50 and must report absent; a present file stops until its real pass is supported.",
+    "Original constructors/static type initializers, cold readers, init-depth kernels, media-2 (6BD7CB passes ECX), palette/Convert bodies, map Theater read and InitTheater5349C0, and destructive Reset6686C0/full Process668BF0 execute. The 192MiB successful heap is one existing Lists allocator, not native malloc-failure equivalence. Physical INI checkDigest0 is explicit; whole campaign digest/UI startup and theater tile/World loading are excluded.",
+    "The authored 42 record is read from each physical map [Actions] entry; its third field is the Weapon ordinal Execute42 passes to 6E2390. Action42 body behavior (coordinate, SelectAnim/Anim, Flash, AreaDamage) is outside this corpus and rests on instruction reading.",
+    "Weapon constructor771C9D/771CA9 initializes Damage0/WarheadNULL. Original772080 reads exact Damage at7722D4..7722E8 using5276D0 with CURRENT Damage; Warhead at77294C..772981 uses528A10/current binding, nonempty75E3B0. Missing and empty controls are executable, not inferred: empty Damage reads0; empty Warhead retains; none clears; case-insensitive lookup preserves stored identity."
+  ],
+  "substitutions": [
+    "Existing CampaignReader/Reader/Lists owns unchanged PE, INI caches, CRT/heap/GUID/clock/atomic transport. Existing NativeAudioPlatform owns RawFile bytes/Win32 and wsprintfA ASCII one-%s/%d formatting for InitTheater and direct CALL [7E14B0] sites. RetailRulesInputs selects actual archive bytes, records absent 8.3 names, and rejects unproven byte conflicts; it supplies only IO bytes/absence, not gameplay read/constructor/parser results. Existing RGB565 opaque surface/getter and palette transport remain explicit. No instruction patches, native RNG/timer calculations or gameplay-return stubs."
+  ],
+  "entry_points": {
+    "physical_ini_ctor": "0x00535B30",
+    "file_ctor": "0x004739F0",
+    "physical_load": "0x004741F0",
+    "physical_parse": "0x00525A60",
+    "init_theater": "0x005349C0",
+    "rules_reset": "0x006686C0",
+    "rules_process": "0x00668BF0",
+    "weapon_ctor": "0x00771C70",
+    "weapon_read": "0x00772080",
+    "weapon_find_or_allocate": "0x00772FA0",
+    "map_process": "0x00687744",
+    "action42": "0x006E2390"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --do-explosion",
+  "payload_sha256": "c7ee5dfdee2b9b701ca2b432dd335db600d2db0b7686b785b71aea4db934c68b"
+}

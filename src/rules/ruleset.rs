@@ -2,14 +2,14 @@
 //!
 //! RuleSet is the single source of truth for all game object definitions.
 //! It parses the type registries ([InfantryTypes], [VehicleTypes], etc.),
-//! then loads each referenced object's section into typed structs. Weapons
-//! referenced by objects and every explicitly registered warhead are also parsed.
+//! then loads each referenced object's section into typed structs. Every native
+//! registered weapon and warhead is also projected, including retained types.
 //!
 //! ## Loading strategy
 //! 1. Parse type registries → collect all object IDs per category
 //! 2. For each ID, look up its [ID] section → parse into ObjectType
-//! 3. Collect weapon/warhead IDs referenced by all objects
-//! 4. Parse each referenced weapon and every registered/referenced warhead section
+//! 3. Seed weapon/warhead closure from native registries and object references
+//! 4. Parse those bodies and install retained typed-reader results
 //! 5. Log summary counts
 //!
 //! ## Dependency rules
@@ -3732,6 +3732,11 @@ pub struct RuleSet {
     type_array_indices: HashMap<(ObjectCategory, String), i32>,
     /// All weapons indexed by ID (e.g., "105mm" → WeaponType).
     weapons: LookupMap<String, WeaponType>,
+    /// Derived from the one processed native Weapon family, in allocation
+    /// order. The bool admits only slots whose Weapon/Warhead stored IDs map
+    /// unambiguously into the existing name projection. Rebuilt with Rules;
+    /// it never allocates or mutates Type state (see issue1784).
+    weapon_array: Vec<(String, bool)>,
     /// All warheads indexed by ID (e.g., "AP" → WarheadType).
     warheads: LookupMap<String, WarheadType>,
     /// All projectiles indexed by ID (e.g., "InvisibleLow" → ProjectileType).
@@ -3970,7 +3975,7 @@ impl RuleSet {
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         processed.validate_saved_state()?;
         let mut rules =
-            Self::from_projected_ini(processed.ini(), project_country_side_registry(processed))?;
+            Self::from_projected_ini(processed, project_country_side_registry(processed))?;
         let mut native_identity_counts = HashMap::new();
         for (category, id, _) in processed.techno_type_states() {
             *native_identity_counts
@@ -4043,7 +4048,32 @@ impl RuleSet {
             rules.general.parachute_max_fall_rate,
             rules.general.no_parachute_max_fall_rate,
         ) = processed.fall_rate_controls();
-        for (name, speed, projectile) in processed.weapon_speeds_and_projectiles() {
+        let mut weapon_name_counts = HashMap::<String, usize>::new();
+        for (name, ..) in processed.weapon_states() {
+            *weapon_name_counts
+                .entry(name.to_ascii_uppercase())
+                .or_default() += 1;
+        }
+        let mut warhead_name_counts = HashMap::<String, usize>::new();
+        for (name, ..) in processed.warhead_anim_states() {
+            *warhead_name_counts
+                .entry(name.to_ascii_uppercase())
+                .or_default() += 1;
+        }
+        for (name, speed, projectile, damage, warhead) in processed.weapon_states() {
+            // Abstract410800 truncates stored IDs to24 bytes, but native
+            // FindOrAllocate compares the full incoming name. Do not alias two
+            // such Types through Action42's ordinal lookup. The wider existing
+            // name-projection limitation remains issue1784, without rejecting
+            // unrelated custom scenarios at load.
+            let unambiguous = weapon_name_counts[&name.to_ascii_uppercase()] == 1
+                && warhead.is_none_or(|name| {
+                    warhead_name_counts.get(&name.to_ascii_uppercase()) == Some(&1)
+                });
+            rules.weapon_array.push((name.to_owned(), unambiguous));
+            if !unambiguous {
+                continue;
+            }
             if let Some(weapon) = rules
                 .weapons
                 .values_mut()
@@ -4051,6 +4081,8 @@ impl RuleSet {
             {
                 weapon.speed = speed;
                 weapon.projectile = projectile.map(str::to_owned);
+                weapon.damage = damage;
+                weapon.warhead = warhead.map(str::to_owned);
             }
         }
         for (category, name, airstrike) in processed.airstrike_states() {
@@ -4335,9 +4367,10 @@ impl RuleSet {
     }
 
     fn from_projected_ini(
-        ini: &IniFile,
+        processed: &ProcessedRulesLayers,
         country_side_registry: ProjectedCountrySideRegistry,
     ) -> Result<Self, RulesError> {
+        let ini = processed.ini();
         let mut object_list: Vec<ObjectType> = Vec::new();
         let mut object_index: LookupMap<String, TypeHandle> = LookupMap::default();
         let mut object_category_index: HashMap<(ObjectCategory, String), TypeHandle> =
@@ -4547,6 +4580,10 @@ impl RuleSet {
 
         // Step 2: Collect all weapon IDs referenced by objects.
         let mut weapon_ids = collect_weapon_refs(&object_list);
+        // Existing process-resident weapons remain allocated even when no
+        // current object references them. Action42 indexes this native family
+        // directly (6E2390), so materialize the same retained bodies.
+        weapon_ids.extend(processed.weapon_states().map(|(id, ..)| id.to_owned()));
         if let Some(default_death_weapon) = ini
             .section_or_empty("CombatDamage")
             .read_name("DeathWeapon", 0x80)
@@ -4856,6 +4893,7 @@ impl RuleSet {
             native_techno_type_order: Vec::new(),
             type_array_indices,
             weapons,
+            weapon_array: Vec::new(),
             warheads,
             projectiles,
             countries,
@@ -5269,6 +5307,14 @@ impl RuleSet {
         Self::lookup_ci(&self.weapons, id)
     }
 
+    /// WeaponType global88756C's allocation index, used by Action42 at
+    /// 6E2390. Negative/out-of-range indices and ambiguous truncated
+    /// Weapon/Warhead names refuse admission rather than selecting an alias.
+    pub fn weapon_by_array_index(&self, index: i32) -> Option<&WeaponType> {
+        let (name, unambiguous) = self.weapon_array.get(usize::try_from(index).ok()?)?;
+        unambiguous.then(|| self.weapon(name)).flatten()
+    }
+
     /// Look up a warhead by ID (case-insensitive, gamemd parity).
     pub fn warhead(&self, id: &str) -> Option<&WarheadType> {
         Self::lookup_ci(&self.warheads, id)
@@ -5300,7 +5346,7 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v16".hash(&mut hasher);
+        b"rules-simulation-config-v17".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // Global construction order changes which category106 mutates when
         // IDs coincide. Current TechLevels can also differ after retained
@@ -5378,6 +5424,9 @@ impl RuleSet {
         self.general.weather_con_bolt_explosion.hash(&mut hasher);
         self.general.weapon_nullify_anim.hash(&mut hasher);
         self.combat_damage.splash_list.hash(&mut hasher);
+        // The live family order is independent of HashMap iteration and may
+        // survive earlier passes absent from the current source stack.
+        self.weapon_array.hash(&mut hasher);
         self.warheads
             .iter()
             .map(|(name, wh)| {
@@ -5394,7 +5443,12 @@ impl RuleSet {
                 (
                     id.to_ascii_uppercase(),
                     (
-                        (weapon.speed, &weapon.projectile),
+                        (
+                            weapon.speed,
+                            &weapon.projectile,
+                            weapon.damage,
+                            &weapon.warhead,
+                        ),
                         (
                             weapon.is_laser,
                             weapon.is_house_color,
