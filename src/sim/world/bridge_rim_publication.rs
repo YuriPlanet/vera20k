@@ -1,7 +1,7 @@
 //! Live host for the native bridge rim selector and restart loop.
 //!
-//! The original untagged575EE0 traversal remains mandatory even on a no-write
-//! refresh, because its GetCell calls can move the retained shared dummy.
+//! The original 575EE0 traversal runs even on a no-write refresh: its GetCell
+//! calls can move the retained shared dummy, and tagged cells raise event31.
 
 use super::*;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;

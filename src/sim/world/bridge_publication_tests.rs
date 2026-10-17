@@ -231,8 +231,8 @@ fn wooden_body_damage_collapses_through_the_live_publication_host() {
 #[test]
 fn ordinary_collapse_raises_event31_through_the_live_host() {
     // The ordinary concrete57CCF0 collapse shares the rim publisher's 575EE0
-    // per-cell Tag raise (its exact span order is pinned by
-    // rim::bridge_rim_collapse_raises_event31_on_each_tagged_span_cell).
+    // per-cell Tag raise (span, order and per-notify counts are compared with
+    // native notify records by the rim:: tests).
     // Declared synthetic prior on the shared resident-TMP terrain: a
     // three-wide Low EW-overlay strip x15..17, y13..19, overlay 89
     // (threshold), so one hit at its centre (16,16) collapses it.

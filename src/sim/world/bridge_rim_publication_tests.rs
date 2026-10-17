@@ -322,48 +322,23 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
     );
 }
 
-#[test]
-fn bridge_rim_collapse_raises_event31_on_each_tagged_span_cell() {
-    // Original575EE0 raises Tag6E53A0(31) for every nonnull CellClass+3C on
-    // the endpoint-exclusive span recorded by the native notify call; the
-    // endpoint itself and the earlier non-collapsing hit raise nothing.
-    let input: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
-    ))
-    .unwrap();
-    let original: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/bridge_rim_body.json",
-    ))
-    .unwrap();
-    let case = original["cases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|case| case["name"] == "single_section")
-        .unwrap();
-    let notify = case["hits"][1]["calls"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|call| call["kind"] == "notify")
-        .unwrap();
-    assert_eq!(notify["endpoints"], json!([[112, 136], [112, 152]]));
-    let rules = rules();
-    let mut sim = stock_world(&rules, &input);
-    // One-shot Tags on the span centre (112,140), the fourth row cell
-    // (110,150) and the exclusive endpoint (112,152); NewINIFormat4 packs y*1000+x.
+/// Install one Event31 trigger per `(x, y, local, repeat)` on the stock rim
+/// world: its Tag is a CellTag (NewINIFormat4 packs y*1000+x) and the action
+/// sets `local`. The minimal map header leaves Cell storage the stock
+/// world's, so CellTags resolve against its real cells.
+fn install_event31_cell_tags(sim: &mut Simulation, rules: &RuleSet, tags: &[(u16, u16, u32, u8)]) {
     let mut sections: [String; 5] = Default::default();
-    for (index, (x, y, local)) in [(112, 140, 9), (110, 150, 11), (112, 152, 10)]
-        .into_iter()
-        .enumerate()
-    {
+    for (index, &(x, y, local, repeat)) in tags.iter().enumerate() {
         sections[0].push_str(&format!(
             "T{index}=Neutral,<none>,Bridge{index},0,1,1,1,0\n"
         ));
         sections[1].push_str(&format!("T{index}=1,31,0,0\n"));
         sections[2].push_str(&format!("T{index}=1,56,0,{local},0,0,0,0,A\n"));
-        sections[3].push_str(&format!("G{index}=0,Bridge{index},T{index}\n"));
-        sections[4].push_str(&format!("{}=G{index}\n", y * 1000 + x));
+        sections[3].push_str(&format!("G{index}={repeat},Bridge{index},T{index}\n"));
+        sections[4].push_str(&format!(
+            "{}=G{index}\n",
+            u32::from(y) * 1000 + u32::from(x)
+        ));
     }
     let mut body = String::new();
     for (name, rows) in ["Triggers", "Events", "Actions", "Tags", "CellTags"]
@@ -373,8 +348,6 @@ fn bridge_rim_collapse_raises_event31_on_each_tagged_span_cell() {
         body.push_str(&format!("[{name}]\n{rows}"));
     }
     let map = crate::map::map_file::MapFile::from_bytes(
-        // The shared ingress fixture's minimal header; Cell storage stays the
-        // stock rim world's, so CellTags resolve against its real cells.
         format!(
             "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
@@ -390,44 +363,133 @@ fn bridge_rim_collapse_raises_event31_on_each_tagged_span_cell() {
         None,
     );
     sim.install_authored_cell_trigger_tags(&map);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(Some(rules));
+}
 
-    for (hit, raised) in [(0, &[][..]), (1, &[9, 11][..])] {
+/// Apply one native rim hit and return the event31 Tag indices raised.
+fn rim_hit_raises(sim: &mut Simulation, rules: &RuleSet, coord: (u16, u16)) -> Vec<usize> {
+    let mut damage = event(sim, coord);
+    damage.impact_z_leptons = 416
+        + 104
+            * i32::from(
+                sim.resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .cell(coord.0, coord.1)
+                    .unwrap()
+                    .level,
+            );
+    sim.clear_tag_dispatch_trace_for_test();
+    apply_bridge_damage_events_with_overlay_registry(
+        sim,
+        rules,
+        &[damage],
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    sim.tag_dispatch_trace_for_test()
+        .iter()
+        .filter(|(_, kind)| *kind == 31)
+        .map(|&(tag, _)| tag)
+        .collect()
+}
+
+fn rim_case<'a>(original: &'a Value, name: &str) -> &'a Value {
+    original["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == name)
+        .unwrap()
+}
+
+fn native_notifies(hit: &Value) -> Vec<&Value> {
+    hit["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|call| call["kind"] == "notify")
+        .collect()
+}
+
+#[test]
+fn bridge_rim_collapse_raises_event31_on_each_tagged_span_cell() {
+    // Original575EE0 raises Tag6E53A0(31) for every nonnull CellClass+3C on
+    // the endpoint-exclusive span recorded by the native notify call, in
+    // traversal order (row 140 before row 150); the endpoint itself and the
+    // earlier non-collapsing hit raise nothing.
+    let input: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
+    ))
+    .unwrap();
+    let original: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_body.json",
+    ))
+    .unwrap();
+    let case = rim_case(&original, "single_section");
+    let notifies = native_notifies(&case["hits"][1]);
+    assert_eq!(notifies.len(), 1);
+    assert_eq!(notifies[0]["endpoints"], json!([[112, 136], [112, 152]]));
+    let rules = rules();
+    let mut sim = stock_world(&rules, &input);
+    // One-shot Tags on the span centre (112,140), the fourth row cell
+    // (110,150) and the exclusive endpoint (112,152).
+    install_event31_cell_tags(
+        &mut sim,
+        &rules,
+        &[(112, 140, 9, 0), (110, 150, 11, 0), (112, 152, 10, 0)],
+    );
+    let tag_at = |sim: &Simulation, cell| {
+        let identity = sim
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .native_cell_identity(cell);
+        sim.cell_trigger_tag_for_test(identity).unwrap()
+    };
+    let expected = [tag_at(&sim, (112, 140)), tag_at(&sim, (110, 150))];
+    for (hit, raised, locals) in [(0, &[][..], &[][..]), (1, &expected[..], &[9, 11][..])] {
         let coord = serde_json::from_value(case["hits"][hit]["input"].clone()).unwrap();
-        let mut damage = event(&mut sim, coord);
-        damage.impact_z_leptons = 416
-            + 104
-                * i32::from(
-                    sim.resolved_terrain
-                        .as_ref()
-                        .unwrap()
-                        .cell(coord.0, coord.1)
-                        .unwrap()
-                        .level,
-                );
-        sim.clear_tag_dispatch_trace_for_test();
-        apply_bridge_damage_events_with_overlay_registry(
-            &mut sim,
-            &rules,
-            &[damage],
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(
-            sim.tag_dispatch_trace_for_test()
-                .iter()
-                .filter(|(_, kind)| *kind == 31)
-                .count(),
-            raised.len(),
-            "hit{hit}"
-        );
+        assert_eq!(rim_hit_raises(&mut sim, &rules, coord), raised, "hit{hit}");
         for local in [9, 10, 11] {
             assert_eq!(
                 sim.trigger_local_is_set_for_test(local),
-                raised.contains(&local),
+                locals.contains(&local),
                 "hit{hit} local{local}"
             );
         }
+    }
+}
+
+#[test]
+fn bridge_rim_repeating_cell_tag_is_raised_once_per_native_notify() {
+    // Retail Event31 Tags repeat (type 2). Native notifies the same span four
+    // times in two_breaks_remove_middle's final hit; each notify raises it.
+    let input: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
+    ))
+    .unwrap();
+    let original: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_body.json",
+    ))
+    .unwrap();
+    let case = rim_case(&original, "two_breaks_remove_middle");
+    let rules = rules();
+    let mut sim = stock_world(&rules, &input);
+    install_event31_cell_tags(&mut sim, &rules, &[(112, 140, 9, 2)]);
+    for (index, hit) in case["hits"].as_array().unwrap().iter().enumerate() {
+        let notifies = native_notifies(hit);
+        assert!(
+            notifies
+                .iter()
+                .all(|call| call["endpoints"] == json!([[112, 136], [112, 152]]))
+        );
+        let coord = serde_json::from_value(hit["input"].clone()).unwrap();
+        assert_eq!(
+            rim_hit_raises(&mut sim, &rules, coord).len(),
+            notifies.len(),
+            "hit{index}"
+        );
     }
 }
 

@@ -2114,19 +2114,27 @@ impl Simulation {
         self.publish_trigger_effects(effects);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn tag_dispatch_trace_for_test(&self) -> &[(usize, i32)] {
         &self.trigger_runtime.dispatch_trace
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_tag_dispatch_trace_for_test(&mut self) {
         self.trigger_runtime.dispatch_trace.clear();
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn trigger_local_is_set_for_test(&self, index: u32) -> bool {
         self.trigger_runtime.locals_set.contains(&index)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn cell_trigger_tag_for_test(
+        &self,
+        cell: crate::map::cell_index::NativeCellIdentity,
+    ) -> Option<usize> {
+        self.trigger_runtime.cell_tags.get(&cell).copied()
     }
 
     /// Pickup481AC1 writes Scenario+34BE only after its optional Tag callback

@@ -583,8 +583,9 @@ fn bridge_state_destroyable_flag_disabled() {
 //
 // High rim refresh (576770 -> 576200) is covered by rim_tests and published by
 // world::bridge_rim_publication. Those comparisons do not establish low-rim
-// 571050 -> 570AE0 or every high selector; tagged event31 delivery remains an
-// explicit dependency on the live trigger owner. Keep these bounds with the
+// 571050 -> 570AE0 or every high selector. Tagged event31 delivery through
+// the live trigger owner is tested by world::bridge_rim_publication_tests and
+// bridge_publication_tests. Keep these bounds with the
 // owning mechanisms rather than obsolete ignored tests claiming all repair
 // and rim writes are absent.
 
