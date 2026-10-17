@@ -7225,7 +7225,8 @@ def retained_campaign_root(m,inputs,map_names):
         'registry':'rules_oracle/weapon_speed_order.py','campaign':'input_oracle/campaign_start.py',
         'reader':'rules_oracle/bridge_anim_inputs.py','lists':'rules_oracle/bridge_anim_lists.py',
         'bullet':'projectile_oracle/bridge_render_inputs.py','platform':'spatial_oracle/engineer_repair_admission.py',
-        'palette':'projectile_oracle/bridge_render_inputs_palette.py'}.items()})
+        'palette':'projectile_oracle/bridge_render_inputs_palette.py',
+        'emulator':'native_oracle.py','mix':'sidebar_oracle/stock.py'}.items()})
     key=hashlib.sha256(json.dumps([image_sha256(),inputs.receipt()['catalog'],list(map_names),sources],
         sort_keys=True,default=str).encode()).hexdigest()[:24]
     path=Path(cache)/f'campaign-root-{key}.pickle'
@@ -7335,8 +7336,12 @@ if __name__=='__main__':
     if selected.do_explosion:
         if selected.inputs is not None:
             selector.error('--do-explosion reads configured physical MD assets, not --inputs')
-        if os.environ.get('VERA20K_NATIVE_STATE_CACHE') and '--write' in remaining and '--output' not in remaining:
-            selector.error('a resumed native state may only --write to a scratch --output')
+        reference=Path(__file__).with_name('trigger_do_explosion.json')
+        if os.environ.get('VERA20K_NATIVE_STATE_CACHE') and '--write' in remaining:
+            output=argparse.ArgumentParser(add_help=False)
+            output.add_argument('--output',type=Path,default=reference)
+            if output.parse_known_args(remaining)[0].output.resolve()==reference.resolve():
+                selector.error('a resumed native state may only --write to a scratch --output')
         receipt_path=os.environ.get('VERA20K_TRIGGER_EXPLOSION_RECEIPTS') if '--write' in remaining else None
         finish_vectors(lambda:do_explosion_generate(receipt_path=receipt_path),
             Path(__file__).with_name('trigger_do_explosion.json'),provenance=do_explosion_metadata,

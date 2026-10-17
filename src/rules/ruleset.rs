@@ -4071,9 +4071,8 @@ impl RuleSet {
                     warhead_name_counts.get(&name.to_ascii_uppercase()) == Some(&1)
                 });
             rules.weapon_array.push((name.to_owned(), unambiguous));
-            if !unambiguous {
-                continue;
-            }
+            // Every consumer keeps the retained fields, as speed/projectile
+            // did before; only the ordinal admission above is gated.
             if let Some(weapon) = rules
                 .weapons
                 .values_mut()

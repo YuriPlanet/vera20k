@@ -32,7 +32,11 @@ impl Simulation {
         let coordinate = ProjectileCoord::new(x, y, z);
         let weapon = rules.weapon_by_array_index(weapon_index)?;
         let damage = weapon.damage;
-        let warhead = rules.warhead(weapon.warhead.as_deref()?)?;
+        // A null Warhead makes SelectAnim (48A4FF), Flash (48A652) and
+        // AreaDamage (4892D7) each return early; 6E2513 still succeeds.
+        let Some(warhead) = weapon.warhead.as_deref().and_then(|id| rules.warhead(id)) else {
+            return Some(false);
+        };
 
         // 6E244F..6E24B8: raw cell land feeds SelectAnim48A4F0. Construct
         // immediately (2600h/-15), so Anim.Start precedes the outer damage.
