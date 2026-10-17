@@ -346,6 +346,17 @@ impl ScenarioLightingState {
         self.target_ambient = self.profile(profile).ambient_percent;
     }
 
+    /// Execute73 inline6DF292..6DF2D1 writes the ordinary ambient even
+    /// during a storm, but changes the current target only outside a raging
+    /// storm. This does not select a profile or restart/advance the fade.
+    /// Original: trigger_map_lighting.json ambient_controls (+meta).
+    pub(crate) fn set_ambient_light(&mut self, value: i32, storm_active: bool) {
+        self.normal.ambient_percent = value;
+        if !storm_active {
+            self.target_ambient = value;
+        }
+    }
+
     /// RecalcLighting's RGB for the selected profile (`0x0053AD00`): the
     /// alternate profile's percentages times 10, none for the ordinary one
     /// (`-1, -1, -1`).

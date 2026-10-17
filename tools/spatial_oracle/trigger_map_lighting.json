@@ -1,0 +1,4806 @@
+{
+  "ambient_controls": [
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 110,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 110,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 110,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 110,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 110,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,110,0,0,0,0,A",
+        "read": "1,73,0,110,0,0,0,0,A",
+        "value": 110,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 110
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 75,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 75,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 75,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 75,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 75,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,75,0,0,0,0,A",
+        "read": "1,73,0,75,0,0,0,0,A",
+        "value": 75,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 75
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 0,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 0,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 0,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 0,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 0,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,0,0,0,0,0,A",
+        "read": "1,73,0,0,0,0,0,0,A",
+        "value": 0,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 0
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -1,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -1,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -1,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -1,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -1,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-1,0,0,0,0,A",
+        "read": "1,73,0,-1,0,0,0,0,A",
+        "value": -1,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -1
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 100,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 100,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 100,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 100,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 100,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,100,0,0,0,0,A",
+        "read": "1,73,0,100,0,0,0,0,A",
+        "value": 100,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 100
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 2147483647,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 2147483647,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 2147483647,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 2147483647,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": 2147483647,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,2147483647,0,0,0,0,A",
+        "read": "1,73,0,2147483647,0,0,0,0,A",
+        "value": 2147483647,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": 2147483647
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -2147483648,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -2147483648,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -2147483648,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": -2147483648,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": false,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 1,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 1,
+        "current": 87,
+        "dominator": 0,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    },
+    {
+      "after": {
+        "current": 87,
+        "normal": -2147483648,
+        "normal_rgb_ground_level": [
+          90,
+          90,
+          100,
+          50,
+          8
+        ],
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ]
+      },
+      "calls": [
+        "0053A100"
+      ],
+      "definition": {
+        "args": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "kind": 73,
+        "raw": "73,0,-2147483648,0,0,0,0,A",
+        "read": "1,73,0,-2147483648,0,0,0,0,A",
+        "value": -2147483648,
+        "waypoint": 0
+      },
+      "input": {
+        "chrono": 0,
+        "current": 87,
+        "dominator": 2,
+        "normal": 87,
+        "nuke": 0,
+        "storm": true,
+        "target": 43,
+        "timer": [
+          12,
+          8
+        ],
+        "value": -2147483648
+      },
+      "returned": 1,
+      "rng_after": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      },
+      "rng_before": {
+        "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+        "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+      }
+    }
+  ],
+  "ambient_history": {
+    "constructor_rates": {
+      "rate_f64_le_hex": "9a9999999999c93f",
+      "step_f64_le_hex": "9a9999999999b93f"
+    },
+    "definition": {
+      "args": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "kind": 73,
+      "raw": "73,0,110,0,0,0,0,A",
+      "read": "1,73,0,110,0,0,0,0,A",
+      "value": 110,
+      "waypoint": 0
+    },
+    "initial": {
+      "current": 60,
+      "normal": 60,
+      "target": 60,
+      "timer": [
+        0,
+        0
+      ]
+    },
+    "layers": [
+      {
+        "after": {
+          "rate_f64_le_hex": "000000a09999c93f",
+          "step_f64_le_hex": "000000a09999c93f"
+        },
+        "file": "RULESMD.INI",
+        "keys": {
+          "AudioVisual": {
+            "AmbientChangeRate": ".2",
+            "AmbientChangeStep": ".2"
+          },
+          "General": {}
+        },
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "after": {
+          "rate_f64_le_hex": "000000a09999c93f",
+          "step_f64_le_hex": "000000a09999c93f"
+        },
+        "file": "Transylv.yro",
+        "keys": {
+          "AudioVisual": {},
+          "General": {}
+        },
+        "sha256": "b4b84f67b389f076f9f4a54105c56410492f1a1c82fbf2444e734ec8b968d02f"
+      }
+    ],
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "rates": {
+      "rate_f64_le_hex": "000000a09999c93f",
+      "step_f64_le_hex": "000000a09999c93f"
+    },
+    "rng_after": {
+      "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+    },
+    "rng_before": {
+      "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+    },
+    "rows": [
+      {
+        "current": 80,
+        "events": [
+          {
+            "call": "UpdateCellLighting"
+          },
+          {
+            "argument": 1,
+            "call": "Redraw"
+          }
+        ],
+        "frame": 1000,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1000,
+          180
+        ]
+      },
+      {
+        "current": 80,
+        "events": [],
+        "frame": 1001,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1000,
+          180
+        ]
+      },
+      {
+        "current": 80,
+        "events": [],
+        "frame": 1179,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1000,
+          180
+        ]
+      },
+      {
+        "current": 100,
+        "events": [
+          {
+            "call": "UpdateCellLighting"
+          },
+          {
+            "argument": 1,
+            "call": "Redraw"
+          }
+        ],
+        "frame": 1180,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1180,
+          180
+        ]
+      },
+      {
+        "current": 100,
+        "events": [],
+        "frame": 1359,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1180,
+          180
+        ]
+      },
+      {
+        "current": 110,
+        "events": [
+          {
+            "call": "UpdateCellLighting"
+          },
+          {
+            "argument": 1,
+            "call": "Redraw"
+          }
+        ],
+        "frame": 1360,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1360,
+          180
+        ]
+      },
+      {
+        "current": 110,
+        "events": [],
+        "frame": 1539,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1360,
+          180
+        ]
+      },
+      {
+        "current": 110,
+        "events": [],
+        "frame": 1540,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1360,
+          180
+        ]
+      },
+      {
+        "current": 110,
+        "events": [],
+        "frame": 1719,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1360,
+          180
+        ]
+      },
+      {
+        "current": 110,
+        "events": [],
+        "frame": 1720,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1360,
+          180
+        ]
+      },
+      {
+        "current": 110,
+        "events": [],
+        "frame": 1900,
+        "normal": 110,
+        "target": 110,
+        "timer": [
+          1360,
+          180
+        ]
+      }
+    ],
+    "scope": "Original Rules constructor then AudioVisual retained ReadDouble66B5D7..66B625 using physical selected key caches, then Execute73 and actual Logic55B33D..55B4D7. Declared initial map60 and sparse frame observations; cell relight/redraw output sinks only. Whole physical INI load/Process/mode chronology, gameplay and pixels excluded."
+  },
+  "flash_controls": {
+    "admission_rng_after": {
+      "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+    },
+    "admission_rng_before": {
+      "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+      "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+    },
+    "cases": [
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              0,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 50,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 64,
+          "raw": "64,0,130,0,0,0,0,EA",
+          "read": "1,64,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "name": "transylv_EA_flat_crop"
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              364,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 50,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 64,
+          "raw": "64,0,130,0,0,0,0,EA",
+          "read": "1,64,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "level": 3,
+          "name": "raised_slope",
+          "slope": 1
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              780,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 50,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 64,
+          "raw": "64,0,130,0,0,0,0,EA",
+          "read": "1,64,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "flags": 256,
+          "level": 3,
+          "name": "bridge100",
+          "slope": 1
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              416,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 50,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 64,
+          "raw": "64,0,130,0,0,0,0,EA",
+          "read": "1,64,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "flags": 1024,
+          "name": "bridge400"
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              0,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 50,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 64,
+          "raw": "64,0,131,0,0,0,0,EA",
+          "read": "1,64,0,131,0,0,0,0,EA",
+          "value": 131,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "name": "scalar_not_tail",
+          "scalar": 131
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              0,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 100,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 65,
+          "raw": "65,0,130,0,0,0,0,EA",
+          "read": "1,65,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "name": "transylv_EA_flat_crop"
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              364,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 100,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 65,
+          "raw": "65,0,130,0,0,0,0,EA",
+          "read": "1,65,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "level": 3,
+          "name": "raised_slope",
+          "slope": 1
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              780,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 100,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 65,
+          "raw": "65,0,130,0,0,0,0,EA",
+          "read": "1,65,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "flags": 256,
+          "level": 3,
+          "name": "bridge100",
+          "slope": 1
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              416,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 100,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 65,
+          "raw": "65,0,130,0,0,0,0,EA",
+          "read": "1,65,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "flags": 1024,
+          "name": "bridge400"
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              0,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 100,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 65,
+          "raw": "65,0,131,0,0,0,0,EA",
+          "read": "1,65,0,131,0,0,0,0,EA",
+          "value": 131,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "name": "scalar_not_tail",
+          "scalar": 131
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              0,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 300,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 66,
+          "raw": "66,0,130,0,0,0,0,EA",
+          "read": "1,66,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "name": "transylv_EA_flat_crop"
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              364,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 300,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 66,
+          "raw": "66,0,130,0,0,0,0,EA",
+          "read": "1,66,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "level": 3,
+          "name": "raised_slope",
+          "slope": 1
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              780,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 300,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 66,
+          "raw": "66,0,130,0,0,0,0,EA",
+          "read": "1,66,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "flags": 256,
+          "level": 3,
+          "name": "bridge100",
+          "slope": 1
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              416,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 300,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 66,
+          "raw": "66,0,130,0,0,0,0,EA",
+          "read": "1,66,0,130,0,0,0,0,EA",
+          "value": 130,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "flags": 1024,
+          "name": "bridge400"
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      },
+      {
+        "calls": [
+          {
+            "arguments": [
+              17536,
+              19840,
+              0,
+              0,
+              0
+            ],
+            "call": "Flash",
+            "damage": 300,
+            "warhead": "Super"
+          }
+        ],
+        "definition": {
+          "args": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "kind": 66,
+          "raw": "66,0,131,0,0,0,0,EA",
+          "read": "1,66,0,131,0,0,0,0,EA",
+          "value": 131,
+          "waypoint": 130
+        },
+        "input": {
+          "cell": [
+            68,
+            77
+          ],
+          "name": "scalar_not_tail",
+          "scalar": 131
+        },
+        "light_constructor_calls": 0,
+        "returned": 1,
+        "rng_after": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        },
+        "rng_before": {
+          "main": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "mapgen": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+          "scenario": "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+        }
+      }
+    ],
+    "constants": {
+      "bridge_deck_leptons": 416,
+      "ground_level_leptons": 104,
+      "scenario_waypoint_bridge_height": 416,
+      "slope_matrices_sha256": "4bf5efe4b381ab1460f18673904cd582b092377a3487455484ce0314d2900bdd"
+    },
+    "creation_admission": [
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 0,
+          "flags": 0,
+          "force": 1,
+          "fps": 60,
+          "minimum": 15,
+          "name": "detail0_cannot_force",
+          "reduced": 0
+        },
+        "queries": 0,
+        "reduced_after": 0,
+        "threshold": null
+      },
+      {
+        "bright_test_reached": true,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 0,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 0,
+          "flags": 1,
+          "force": 0,
+          "fps": 60,
+          "minimum": 15,
+          "name": "detail0_flag_but_not_bright",
+          "reduced": 0
+        },
+        "queries": 0,
+        "reduced_after": 0,
+        "threshold": null
+      },
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [
+          63
+        ],
+        "input": {
+          "bright": 0,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 0,
+          "flags": 1,
+          "force": 1,
+          "fps": 0,
+          "minimum": 15,
+          "name": "detail0_flag_force",
+          "reduced": 0
+        },
+        "queries": 0,
+        "reduced_after": 0,
+        "threshold": null
+      },
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 0,
+          "flags": 16,
+          "force": 1,
+          "fps": 60,
+          "minimum": 15,
+          "name": "detail0_high_flag_no_bypass",
+          "reduced": 0
+        },
+        "queries": 0,
+        "reduced_after": 0,
+        "threshold": null
+      },
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 1,
+          "fps": 10,
+          "minimum": 15,
+          "name": "lowfps_cannot_force",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 1,
+        "threshold": 20
+      },
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [
+          63
+        ],
+        "input": {
+          "bright": 0,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 1,
+          "force": 1,
+          "fps": 10,
+          "minimum": 15,
+          "name": "lowfps_flag_force",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 1,
+        "threshold": 20
+      },
+      {
+        "bright_test_reached": true,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 0,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 1,
+          "force": 0,
+          "fps": 10,
+          "minimum": 15,
+          "name": "lowfps_flag_but_not_bright",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 1,
+        "threshold": 20
+      },
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 16,
+          "force": 1,
+          "fps": 10,
+          "minimum": 15,
+          "name": "lowfps_high_flag_no_bypass",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 1,
+        "threshold": 20
+      },
+      {
+        "bright_test_reached": true,
+        "constructor_sizes": [
+          63
+        ],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 0,
+          "fps": 15,
+          "minimum": 15,
+          "name": "fps_equal_minimum",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 0,
+        "threshold": 15
+      },
+      {
+        "bright_test_reached": true,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 0,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 0,
+          "fps": 60,
+          "minimum": 15,
+          "name": "stock_no_bright_normalfps",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 0,
+        "threshold": 15
+      },
+      {
+        "bright_test_reached": false,
+        "constructor_sizes": [],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 0,
+          "fps": 17,
+          "minimum": 15,
+          "name": "hysteresis_band_reduced",
+          "reduced": 1
+        },
+        "queries": 1,
+        "reduced_after": 1,
+        "threshold": 20
+      },
+      {
+        "bright_test_reached": true,
+        "constructor_sizes": [
+          63
+        ],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 0,
+          "fps": 17,
+          "minimum": 15,
+          "name": "hysteresis_band_not_reduced",
+          "reduced": 0
+        },
+        "queries": 1,
+        "reduced_after": 0,
+        "threshold": 15
+      },
+      {
+        "bright_test_reached": true,
+        "constructor_sizes": [
+          63
+        ],
+        "input": {
+          "bright": 1,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 0,
+          "fps": 20,
+          "minimum": 15,
+          "name": "hysteresis_recovery_equal",
+          "reduced": 1
+        },
+        "queries": 1,
+        "reduced_after": 0,
+        "threshold": 15
+      }
+    ],
+    "creation_code_sha256": {
+      "0048A620": "feac0d76a5cde0f2cd9a08e3d0492c360f98c127b3b5d62a19f7efc60af2d676",
+      "0055AF60": "d7dd6e9d44e6857bb9c1931ec5bb15242ae494ef3d49a672e578c2332b3ecd3d"
+    },
+    "creation_code_unchanged": true,
+    "hysteresis_history": {
+      "after_flash_reduced": 1,
+      "flash_constructor_sizes": [],
+      "flash_queries": 1,
+      "input": {
+        "first_flash": {
+          "bright": 0,
+          "buffer": 5,
+          "damage": 300,
+          "detail": 2,
+          "flags": 0,
+          "force": 0,
+          "fps": 10,
+          "minimum": 15,
+          "name": "stock_no_bright_lowfps_then_sample",
+          "reduced": 0
+        },
+        "next_fps": 17
+      },
+      "with_flash_next_reduced": 1,
+      "with_flash_next_threshold": 20,
+      "without_flash_next_reduced": 0,
+      "without_flash_next_threshold": 15
+    },
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "scope": "Original Warhead ctor/full read and C4 reference selected physical-cache reader; Execute64..66/GetWaypointLocation/Flash body. Retail no-bright arm produces no CombatLight, but the original Flash detail query can mutate shared hysteresis. Declared creation-state controls execute Flash/55AF60; only5FF250 is an observed constructor return boundary. Declared terrain crop and FPS transitions, not played Transylv or render parity.",
+    "warhead_inputs": {
+      "after": {
+        "bright": 0,
+        "size_f32_le_hex": "00000000"
+      },
+      "c4": "Super",
+      "ctor": {
+        "bright": 0,
+        "size_f32_le_hex": "00000000"
+      },
+      "read_returned": 1,
+      "rules_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    }
+  },
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "rate_controls": {
+    "cases": [
+      {
+        "after": {
+          "rate_f64_le_hex": "9a9999999999c93f",
+          "step_f64_le_hex": "9a9999999999b93f"
+        },
+        "before": {
+          "rate_f64_le_hex": "9a9999999999c93f",
+          "step_f64_le_hex": "9a9999999999b93f"
+        },
+        "input": {
+          "cache": {
+            "General": {
+              "AmbientChangeRate": "1.5",
+              "AmbientChangeStep": ".9"
+            }
+          },
+          "name": "wrong_general_ignored"
+        }
+      },
+      {
+        "after": {
+          "rate_f64_le_hex": "000000e04d62503f",
+          "step_f64_le_hex": "0000002085ebb13f"
+        },
+        "before": {
+          "rate_f64_le_hex": "9a9999999999c93f",
+          "step_f64_le_hex": "9a9999999999b93f"
+        },
+        "input": {
+          "cache": {
+            "AudioVisual": {
+              "AmbientChangeRate": ".001",
+              "AmbientChangeStep": ".07"
+            }
+          },
+          "name": "av_exact"
+        }
+      },
+      {
+        "after": {
+          "rate_f64_le_hex": "000000e04d62503f",
+          "step_f64_le_hex": "0000002085ebb13f"
+        },
+        "before": {
+          "rate_f64_le_hex": "000000e04d62503f",
+          "step_f64_le_hex": "0000002085ebb13f"
+        },
+        "input": {
+          "cache": {},
+          "name": "missing_retains"
+        }
+      },
+      {
+        "after": {
+          "rate_f64_le_hex": "000000e04d62503f",
+          "step_f64_le_hex": "0000002085ebb13f"
+        },
+        "before": {
+          "rate_f64_le_hex": "000000e04d62503f",
+          "step_f64_le_hex": "0000002085ebb13f"
+        },
+        "input": {
+          "cache": {
+            "AudioVisual": {
+              "Ambientchangestep": "9",
+              "ambientchangerate": "9"
+            }
+          },
+          "name": "wrong_key_case_ignored"
+        }
+      },
+      {
+        "after": {
+          "rate_f64_le_hex": "0000000000000000",
+          "step_f64_le_hex": "000000a09999b9bf"
+        },
+        "before": {
+          "rate_f64_le_hex": "000000e04d62503f",
+          "step_f64_le_hex": "0000002085ebb13f"
+        },
+        "input": {
+          "cache": {
+            "AudioVisual": {
+              "AmbientChangeRate": "0",
+              "AmbientChangeStep": "-.1"
+            }
+          },
+          "name": "signed_zero"
+        }
+      }
+    ],
+    "constructor": {
+      "rate_f64_le_hex": "9a9999999999c93f",
+      "step_f64_le_hex": "9a9999999999b93f"
+    },
+    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "scope": "Original Rules constructor and retained AudioVisual two-key reader66B5D7..66B625; declared ordered cached keys. Physical lexical-empty elision and full Process not included. Cached-empty and malformed float reads expose uninitialized output and are excluded; physical empty omission is separate."
+  },
+  "retail": {
+    "map": {
+      "AudioVisual": {},
+      "CombatDamage": {},
+      "General": {},
+      "Lighting": {
+        "Ambient": "0.600000",
+        "Blue": "1.000000",
+        "DominatorAmbient": "1.500000",
+        "DominatorAmbientChangeRate": "0.001000",
+        "DominatorBlue": "0.300000",
+        "DominatorGreen": "0.200000",
+        "DominatorGround": "0.000000",
+        "DominatorLevel": "0.000000",
+        "DominatorRed": "0.850000",
+        "Green": "0.900000",
+        "Ground": "0.050000",
+        "IonAmbient": "0.870000",
+        "IonBlue": "0.750000",
+        "IonGreen": "0.400000",
+        "IonGround": "0.000000",
+        "IonLevel": "0.000000",
+        "IonRed": "0.300000",
+        "Level": "0.008000",
+        "Red": "0.900000"
+      },
+      "Super": {},
+      "Waypoints": {
+        "130": "77068"
+      },
+      "archive": "retail loose file",
+      "bytes": 150264,
+      "selected": {
+        "07718EBC": {
+          "actions": [
+            "54,2,08B1A51C,0,0,0,0,A",
+            "19,7,Cheer,0,0,0,0,A",
+            "53,2,08A51CCC,0,0,0,0,A",
+            "53,2,08A5196C,0,0,0,0,A",
+            "54,2,08A5617C,0,0,0,0,A",
+            "53,2,08A5487C,0,0,0,0,A",
+            "54,2,0890E6EC,0,0,0,0,A",
+            "54,2,089BBC7C,0,0,0,0,A",
+            "54,2,089AB4DC,0,0,0,0,A",
+            "54,2,089AE40C,0,0,0,0,A",
+            "73,0,110,0,0,0,0,A"
+          ],
+          "events": "1,48,0,0",
+          "raw": "11,54,2,08B1A51C,0,0,0,0,A,19,7,Cheer,0,0,0,0,A,53,2,08A51CCC,0,0,0,0,A,53,2,08A5196C,0,0,0,0,A,54,2,08A5617C,0,0,0,0,A,53,2,08A5487C,0,0,0,0,A,54,2,0890E6EC,0,0,0,0,A,54,2,089BBC7C,0,0,0,0,A,54,2,089AB4DC,0,0,0,0,A,54,2,089AE40C,0,0,0,0,A,73,0,110,0,0,0,0,A",
+          "trigger": "Neutral,<none>,Dark Cloud Ender,0,1,1,1,0"
+        },
+        "09DE99FC": {
+          "actions": [
+            "90,0,130,0,0,0,0,EA",
+            "66,0,130,0,0,0,0,EA"
+          ],
+          "events": "1,51,0,120",
+          "raw": "2,90,0,130,0,0,0,0,EA,66,0,130,0,0,0,0,EA",
+          "trigger": "Neutral,<none>,Lightning EA,0,1,1,1,0"
+        }
+      },
+      "sha256": "b4b84f67b389f076f9f4a54105c56410492f1a1c82fbf2444e734ec8b968d02f"
+    },
+    "rules": [
+      {
+        "AudioVisual": {
+          "AmbientChangeRate": ".2",
+          "AmbientChangeStep": ".2"
+        },
+        "CombatDamage": {
+          "C4Warhead": "Super"
+        },
+        "General": {},
+        "Super": {
+          "AnimList": "XGRYSML1,XGRYSML2,EXPLOSML,XGRYMED1,XGRYMED2,EXPLOMED,EXPLOLRG,TWLT070",
+          "InfDeath": "2",
+          "PenetratesBunker": "yes",
+          "ProneDamage": "100%",
+          "Sparky": "no",
+          "Tiberium": "yes",
+          "Verses": "100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%"
+        },
+        "archive": "expandmd01.mix",
+        "archive_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "bytes": 743215,
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "AudioVisual": {
+          "AmbientChangeRate": ".2",
+          "AmbientChangeStep": ".2"
+        },
+        "CombatDamage": {
+          "C4Warhead": "Super"
+        },
+        "General": {},
+        "Super": {
+          "AnimList": "XGRYSML1,XGRYSML2,EXPLOSML,XGRYMED1,XGRYMED2,EXPLOMED,EXPLOLRG,TWLT070",
+          "InfDeath": "2",
+          "PenetratesBunker": "yes",
+          "ProneDamage": "100%",
+          "Sparky": "no",
+          "Tiberium": "yes",
+          "Verses": "100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%"
+        },
+        "archive": "ra2md.mix -> localmd.mix",
+        "archive_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "bytes": 742958,
+        "sha256": "06761dd7f714e7d9400216ec3c06109ec5c1461f6a0727be7401eb9d8b0f6d05"
+      }
+    ]
+  },
+  "schema_version": 1
+}

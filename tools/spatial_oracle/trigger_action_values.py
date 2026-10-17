@@ -105,6 +105,7 @@ native-state caches are unsupported.
 """
 from pathlib import Path
 import hashlib
+import tools.native_oracle as native
 import json
 import struct
 from functools import lru_cache
@@ -7277,6 +7278,373 @@ def do_explosion_metadata():
             init_theater=0x5349C0,rules_reset=0x6686C0,rules_process=0x668BF0,weapon_ctor=0x771C70,weapon_read=0x772080,
             weapon_find_or_allocate=0x772FA0,map_process=0x687744,action42=0x6E2390))
 
+def _map_lighting_retail():
+    root = native.configured_gamemd().parent
+    matches = {}
+    candidates = []
+    for name in ('expandmd01.mix', 'ra2md.mix', 'ra2.mix'):
+        path = root / name
+        raw = path.read_bytes()
+        entries = mix(raw)
+        candidates.append((name, raw, entries))
+        for nested in ('multimd.mix', 'multi.mix', 'localmd.mix', 'local.mix'):
+            val = entries.get(mix_hash(nested))
+            if val is not None:
+                candidates.append((name + ' -> ' + nested, val, mix(val)))
+    for name in ('TRANSYLV.YRO', 'RULESMD.INI', 'MPBATTLEMD.INI', 'ARTMD.INI'):
+        if (root / name).is_file():
+            raw = (root / name).read_bytes()
+            matches.setdefault(name, []).append(dict(archive='retail loose file', sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw), sections=sections(raw)))
+        for archive, archive_raw, entries in candidates:
+            raw = entries.get(mix_hash(name))
+            if raw is not None:
+                matches.setdefault(name, []).append(dict(archive=archive, archive_sha256=hashlib.sha256(archive_raw).hexdigest(), sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw), sections=sections(raw)))
+    for val in matches.get('TRANSYLV.YRO', []):
+        s = val.pop('sections')
+        selected = {}
+        for key, raw in s.get('Actions', {}).items():
+            cells = raw.split(',')
+            n = int(cells[0])
+            assert len(cells) == 1 + n * 8
+            actions = [','.join(cells[1 + i * 8:9 + i * 8]) for i in range(n)]
+            if any((int(a.split(',')[0]) in (66, 73) for a in actions)):
+                selected[key] = dict(raw=raw, actions=actions, trigger=s.get('Triggers', {}).get(key), events=s.get('Events', {}).get(key))
+        val['selected'] = selected
+        val['Lighting'] = s.get('Lighting', {})
+        val['Waypoints'] = s.get('Waypoints', {})
+        val['Basic'] = s.get('Basic', {})
+        val['CombatDamage'] = s.get('CombatDamage', {})
+        val['Super'] = s.get('Super', {})
+        val['General'] = s.get('General', {})
+        val['AudioVisual'] = s.get('AudioVisual', {})
+        val['Triggers'] = s.get('Triggers', {})
+        val['Events'] = s.get('Events', {})
+        val['Actions'] = s.get('Actions', {})
+    for val in matches.get('RULESMD.INI', []):
+        s = val.pop('sections')
+        val['CombatDamage'] = {k: v for k, v in s.get('CombatDamage', {}).items() if k == 'C4Warhead'}
+        val['Super'] = s.get('Super', {})
+        val['General'] = {k: v for k, v in s.get('General', {}).items() if k in ('AmbientChangeRate', 'AmbientChangeStep')}
+        val['AudioVisual'] = {k: v for k, v in s.get('AudioVisual', {}).items() if k in ('AmbientChangeRate', 'AmbientChangeStep')}
+    for name in ('MPBATTLEMD.INI', 'ARTMD.INI'):
+        for val in matches.get(name, []):
+            val.pop('sections')
+    return matches
+
+def _map_lighting_ambient_controls():
+    rows = []
+    for value in (110, 75, 0, -1, 100, 2147483647, -2147483648):
+        for storm in (False, True):
+            for nuke, chrono, dominator in ((0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 2)):
+                f = ActionFixture()
+                u = f.u
+                definition = f.read_action(f'73,0,{value},0,0,0,0,A')
+                u.mem_write(SCENARIO + 13608, dwords(87, 87, 43))
+                u.mem_write(SCENARIO + 13620, dwords(90, 90, 100, 50, 8))
+                u.mem_write(SCENARIO + 4680, dwords(12, 2779096485, 8))
+                u.mem_write(11139764, bytes([storm]))
+                u.mem_write(11139772, dwords(nuke))
+                u.mem_write(11139760, dwords(chrono))
+                u.mem_write(11139776, dwords(dominator))
+                before = f.rng_hashes()
+                calls = []
+
+                def observe(uc, pc, _sz, _data):
+                    if pc in (5480704, 5489280, 5483776, 4908224, 6670032, 6670208, 6670304):
+                        calls.append(f'{pc:08X}')
+                h = u.hook_add(UC_HOOK_CODE, observe)
+                result = f.call(7198896, [0, 0, 0, 0], ecx=ACTION) & 255
+                u.hook_del(h)
+                f.check_code()
+                rows.append(dict(input=dict(value=value, storm=storm, nuke=nuke, chrono=chrono, dominator=dominator, current=87, target=43, normal=87, timer=[12, 8]), definition=definition, returned=result, after=dict(normal=f.integer(SCENARIO + 13608), current=f.integer(SCENARIO + 13612), target=f.integer(SCENARIO + 13616), normal_rgb_ground_level=list(struct.unpack('<5i', u.mem_read(SCENARIO + 13620, 20))), timer=[f.integer(SCENARIO + 4680), f.integer(SCENARIO + 4688)]), calls=calls, rng_before=before, rng_after=f.rng_hashes()))
+    return dict(native_sha256=native.image_sha256(), cases=rows, scope='Original action constructor/token reader/Execute73; supplied scenario/global priors; no consumer timing or render output claim')
+
+def _map_lighting_flash_controls():
+    f = ActionFixture()
+    u = f.u
+    constants = initialize_waypoint_map(f)
+    initializers = list(struct.unpack('<15I', u.mem_read(8472744, 60)))
+    for entry in initializers:
+        f.call(entry, [])
+    constants['scenario_waypoint_bridge_height'] = f.integer(11556028)
+    f.call(4701168, [], ecx=f.cell)
+    f.call(4701168, [], ecx=11263056)
+    u.mem_write(8942784, dwords(8304340, f.allocate(4096), 1024, 1, 0, 10))
+    f.call(8163166, [])
+    u.mem_write(8942048, dwords(RULES))
+    f.call(6706768, [], ecx=RULES)
+    root = native.configured_gamemd().parent
+    raw_rules = mix((root / 'expandmd01.mix').read_bytes())[mix_hash('RULESMD.INI')]
+    physical = sections(raw_rules)
+    f.ordered_ini({name: physical[name] for name in ('CombatDamage', 'Super')})
+    name = f.allocate(8)
+    u.mem_write(name, b'Super\x00')
+    wh = f.call(7726000, [], ecx=name)
+    ctor = dict(bright=u.mem_read(wh + 336, 1)[0], size_f32_le_hex=bytes(u.mem_read(wh + 316, 4)).hex())
+    answered = f.call(7721888, [INI], ecx=wh) & 255
+    from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EDI
+    u.reg_write(UC_X86_REG_ESP, 269475840)
+    u.reg_write(UC_X86_REG_ESI, RULES)
+    u.reg_write(UC_X86_REG_EDI, INI)
+    native.run_checked(u, 6734596, 6734668, count=100000)
+    assert f.read32(RULES + 4008) == wh
+    inputs = dict(rules_sha256=hashlib.sha256(raw_rules).hexdigest(), read_returned=answered, ctor=ctor, after=dict(bright=u.mem_read(wh + 336, 1)[0], size_f32_le_hex=bytes(u.mem_read(wh + 316, 4)).hex()), c4=f.string(f.read32(RULES + 4008) + 36))
+    rows = []
+    for kind in (64, 65, 66):
+        for case in (dict(name='transylv_EA_flat_crop', cell=[68, 77]), dict(name='raised_slope', cell=[68, 77], level=3, slope=1), dict(name='bridge100', cell=[68, 77], level=3, slope=1, flags=256), dict(name='bridge400', cell=[68, 77], flags=1024), dict(name='scalar_not_tail', cell=[68, 77], scalar=131)):
+            install_waypoint_cell(f, case)
+            scalar = case.get('scalar', 130)
+            definition = f.read_action(f'{kind},0,{scalar},0,0,0,0,EA')
+            u.mem_write(SCENARIO + 1586 + 130 * 4, struct.pack('<hh', 12, 11))
+            u.mem_write(SCENARIO + 1586 + scalar * 4, struct.pack('<hh', *case['cell']))
+            u.mem_write(11070328, dwords(2))
+            u.mem_write(11259204, dwords(60))
+            u.mem_write(11259216, b'\x00')
+            u.mem_write(8560628, dwords(15, 5))
+            calls = []
+
+            def observe(uc, pc, _sz, _data):
+                sp = uc.reg_read(UC_X86_REG_ESP)
+                if pc == 4761120:
+                    calls.append(dict(call='Flash', damage=f.integer_reg(UC_X86_REG_ECX), warhead=f.string(uc.reg_read(UC_X86_REG_EDX) + 36), arguments=list(struct.unpack('<5i', uc.mem_read(sp + 4, 20)))))
+                elif pc == 6287952:
+                    raise AssertionError('Unexpected retail Super bright light constructor')
+            h = u.hook_add(UC_HOOK_CODE, observe)
+            before = f.rng_hashes()
+            result = f.call(7198896, [0, 0, 0, 0], ecx=ACTION) & 255
+            u.hook_del(h)
+            f.check_code()
+            rows.append(dict(input=case, definition=definition, returned=result, calls=calls, light_constructor_calls=0, rng_before=before, rng_after=f.rng_hashes()))
+    # Flash queries the shared detail latch before its Bright test, including
+    # stock calls which create no light. Keep this original wrapper/55AF60 in
+    # the same physical C4 fixture; only the downstream Light constructor is
+    # a recorded return boundary in these explicit presentation-state controls.
+    original_code = {
+        start: native.file_span(native.image_bytes(), start, length)[1]
+        for start, length in ((0x48A620, 0xE0), (0x55AF60, 0x50))
+    }
+    assert all(bytes(u.mem_read(start, len(raw))) == raw for start, raw in original_code.items())
+    base = dict(detail=2, fps=60, minimum=15, buffer=5, reduced=0,
+                bright=1, force=0, flags=0, damage=300)
+    creation_inputs = [
+        dict(base, name='detail0_cannot_force', detail=0, force=1),
+        dict(base, name='detail0_flag_but_not_bright', detail=0, flags=1, bright=0),
+        dict(base, name='detail0_flag_force', detail=0, fps=0, flags=1, force=1, bright=0),
+        dict(base, name='detail0_high_flag_no_bypass', detail=0, flags=16, force=1),
+        dict(base, name='lowfps_cannot_force', fps=10, force=1),
+        dict(base, name='lowfps_flag_force', fps=10, flags=1, force=1, bright=0),
+        dict(base, name='lowfps_flag_but_not_bright', fps=10, flags=1, bright=0),
+        dict(base, name='lowfps_high_flag_no_bypass', fps=10, flags=16, force=1),
+        dict(base, name='fps_equal_minimum', fps=15),
+        dict(base, name='stock_no_bright_normalfps', bright=0),
+        dict(base, name='hysteresis_band_reduced', fps=17, reduced=1),
+        dict(base, name='hysteresis_band_not_reduced', fps=17),
+        dict(base, name='hysteresis_recovery_equal', fps=20, reduced=1),
+    ]
+    history_input = dict(base, name='stock_no_bright_lowfps_then_sample', fps=10, bright=0)
+    creation_admission = []
+    hysteresis_history = None
+    admission_rng_before = f.rng_hashes()
+    for case in [*creation_inputs, history_input]:
+        u.mem_write(0xA8EB78, dwords(case['detail']))
+        u.mem_write(0xABCD44, dwords(case['fps']))
+        u.mem_write(0x829FF4, dwords(case['minimum'], case['buffer']))
+        u.mem_write(0xABCD50, bytes([case['reduced']]))
+        # Declared Bright branch prior on the genuinely read C4 Warhead.
+        # Its original constructor/read established CombatLightSize=0 above.
+        u.mem_write(wh + 0x150, bytes([case['bright']]))
+        observation = dict(input=case, queries=0, threshold=None,
+                           bright_test_reached=False, constructor_sizes=[])
+
+        def observe_admission(uc, pc, _size, _data):
+            sp = uc.reg_read(UC_X86_REG_ESP)
+            if pc == 0x55AF60:
+                observation['queries'] += 1
+            elif pc == 0x48A639:
+                # Actual original55AF60 return, before Flash's unsigned gate.
+                observation['threshold'] = uc.reg_read(UC_X86_REG_EAX)
+            elif pc == 0x48A65A:
+                observation['bright_test_reached'] = True
+            elif pc == 0x5FF250:
+                observation['constructor_sizes'].append(f.integer(sp + 16))
+                # Flash needs the returned object for its flags OR at +14.
+                # The real allocator already supplied this24-byte object; no
+                # constructor fields, lifetime, manager or pixels are claimed.
+                return_from_sink(uc, 16, uc.reg_read(UC_X86_REG_ECX))
+
+        hook = u.hook_add(UC_HOOK_CODE, observe_admission)
+        try:
+            u.reg_write(UC_X86_REG_EDX, wh)
+            f.call(0x48A620, [17536, 19840, 0, case['force'], case['flags']],
+                   ecx=case['damage'])
+        finally:
+            u.hook_del(hook)
+        observation['reduced_after'] = u.mem_read(0xABCD50, 1)[0]
+        if case is history_input:
+            # Retain the Flash-produced latch across one explicit FPS sample.
+            # The omitted-Flash control changes only its initial latch; both
+            # next queries execute the same original55AF60, not Python math.
+            u.mem_write(0xABCD44, dwords(17))
+            with_threshold = f.call(0x55AF60, [])
+            with_reduced = u.mem_read(0xABCD50, 1)[0]
+            u.mem_write(0xABCD50, bytes([case['reduced']]))
+            without_threshold = f.call(0x55AF60, [])
+            hysteresis_history = dict(
+                input=dict(first_flash=case, next_fps=17),
+                after_flash_reduced=observation['reduced_after'],
+                flash_queries=observation['queries'],
+                flash_constructor_sizes=observation['constructor_sizes'],
+                with_flash_next_threshold=with_threshold,
+                with_flash_next_reduced=with_reduced,
+                without_flash_next_threshold=without_threshold,
+                without_flash_next_reduced=u.mem_read(0xABCD50, 1)[0])
+        else:
+            creation_admission.append(observation)
+        assert all(bytes(u.mem_read(start, len(raw))) == raw for start, raw in original_code.items())
+    f.check_code()
+    return dict(native_sha256=native.image_sha256(), warhead_inputs=inputs,
+        constants=constants, cases=rows, creation_admission=creation_admission,
+        hysteresis_history=hysteresis_history,
+        creation_code_sha256={f'{start:08X}': hashlib.sha256(raw).hexdigest()
+                             for start, raw in original_code.items()},
+        creation_code_unchanged=True, admission_rng_before=admission_rng_before,
+        admission_rng_after=f.rng_hashes(),
+        scope='Original Warhead ctor/full read and C4 reference selected physical-cache reader; Execute64..66/GetWaypointLocation/Flash body. Retail no-bright arm produces no CombatLight, but the original Flash detail query can mutate shared hysteresis. Declared creation-state controls execute Flash/55AF60; only5FF250 is an observed constructor return boundary. Declared terrain crop and FPS transitions, not played Transylv or render parity.')
+
+def _map_lighting_ambient_history():
+    from tools.spatial_oracle.building_body_rules import SP
+    from unicorn.x86_const import UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_FPCW
+    f = ActionFixture()
+    u = f.u
+    u.mem_write(8942048, dwords(RULES))
+    f.call(6706768, [], ecx=RULES)
+    f.call(8163166, [])
+
+    def rates():
+        return dict(rate_f64_le_hex=bytes(u.mem_read(RULES + 5736, 8)).hex(), step_f64_le_hex=bytes(u.mem_read(RULES + 5744, 8)).hex())
+    root = native.configured_gamemd().parent
+    raw_rules = mix((root / 'expandmd01.mix').read_bytes())[mix_hash('RULESMD.INI')]
+    raw_map = (root / 'Transylv.yro').read_bytes()
+    layers = []
+    ctor = rates()
+    for name, raw in (('RULESMD.INI', raw_rules), ('Transylv.yro', raw_map)):
+        source = sections(raw)
+        chosen = {sec: {k: v for k, v in source.get(sec, {}).items() if k in ('AmbientChangeRate', 'AmbientChangeStep')} for sec in ('General', 'AudioVisual')}
+        f.ordered_ini(chosen)
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, RULES)
+        u.reg_write(UC_X86_REG_EDI, INI)
+        u.reg_write(UC_X86_REG_FPCW, 3711)
+        native.run_checked(u, 6731223, 6731301, count=100000)
+        assert u.reg_read(UC_X86_REG_ESP) == SP
+        layers.append(dict(file=name, sha256=hashlib.sha256(raw).hexdigest(), keys=chosen, after=rates()))
+    u.mem_write(SCENARIO + 13608, dwords(60, 60, 60))
+    u.mem_write(SCENARIO + 4680, dwords(0, 2779096485, 0))
+    u.mem_write(11139772, dwords(0, 0))
+    u.mem_write(11139764, b'\x00')
+    u.mem_write(11139760, dwords(0))
+    definition = f.read_action('73,0,110,0,0,0,0,A')
+    f.call(7198896, [0, 0, 0, 0], ecx=ACTION)
+    events = []
+
+    def observe(uc, pc, _sz, _data):
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        if pc == 4908224:
+            events.append(dict(call='UpdateCellLighting'))
+            return_from_sink(uc, 0, 0)
+        elif pc == 5194480:
+            events.append(dict(call='Redraw', argument=f.read32(sp + 4)))
+            return_from_sink(uc, 4, 0)
+    h = u.hook_add(UC_HOOK_CODE, observe)
+    rows = []
+    before = f.rng_hashes()
+    for frame in (1000, 1001, 1179, 1180, 1359, 1360, 1539, 1540, 1719, 1720, 1900):
+        u.mem_write(11070852, dwords(frame))
+        events.clear()
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBP, SCENARIO)
+        u.reg_write(UC_X86_REG_EBX, RULES)
+        u.reg_write(UC_X86_REG_EDI, frame)
+        u.reg_write(UC_X86_REG_FPCW, 3711)
+        native.run_checked(u, 5616445, 5616855, count=10000)
+        rows.append(dict(frame=frame, normal=f.integer(SCENARIO + 13608), current=f.integer(SCENARIO + 13612), target=f.integer(SCENARIO + 13616), timer=[f.integer(SCENARIO + 4680), f.integer(SCENARIO + 4688)], events=list(events)))
+    u.hook_del(h)
+    f.check_code()
+    return dict(native_sha256=native.image_sha256(), definition=definition, constructor_rates=ctor, layers=layers, rates=rates(), initial=dict(normal=60, current=60, target=60, timer=[0, 0]), rows=rows, rng_before=before, rng_after=f.rng_hashes(), scope='Original Rules constructor then AudioVisual retained ReadDouble66B5D7..66B625 using physical selected key caches, then Execute73 and actual Logic55B33D..55B4D7. Declared initial map60 and sparse frame observations; cell relight/redraw output sinks only. Whole physical INI load/Process/mode chronology, gameplay and pixels excluded.')
+
+def _map_lighting_rate_controls():
+    from tools.spatial_oracle.building_body_rules import SP
+    from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_FPCW
+    f = ActionFixture()
+    u = f.u
+    f.call(8163166, [])
+    f.call(6706768, [], ecx=RULES)
+
+    def state():
+        return dict(rate_f64_le_hex=bytes(u.mem_read(RULES + 5736, 8)).hex(), step_f64_le_hex=bytes(u.mem_read(RULES + 5744, 8)).hex())
+    ctor = state()
+    rows = []
+    for case in (dict(name='wrong_general_ignored', cache={'General': {'AmbientChangeRate': '1.5', 'AmbientChangeStep': '.9'}}), dict(name='av_exact', cache={'AudioVisual': {'AmbientChangeRate': '.001', 'AmbientChangeStep': '.07'}}), dict(name='missing_retains', cache={}), dict(name='wrong_key_case_ignored', cache={'AudioVisual': {'ambientchangerate': '9', 'Ambientchangestep': '9'}}), dict(name='signed_zero', cache={'AudioVisual': {'AmbientChangeRate': '0', 'AmbientChangeStep': '-.1'}})):
+        before = state()
+        f.ordered_ini(case['cache'])
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, RULES)
+        u.reg_write(UC_X86_REG_EDI, INI)
+        u.reg_write(UC_X86_REG_FPCW, 3711)
+        native.run_checked(u, 6731223, 6731301, count=100000)
+        assert u.reg_read(UC_X86_REG_ESP) == SP
+        rows.append(dict(input=case, before=before, after=state()))
+    f.check_code()
+    return dict(native_sha256=native.image_sha256(), constructor=ctor, cases=rows, scope='Original Rules constructor and retained AudioVisual two-key reader66B5D7..66B625; declared ordered cached keys. Physical lexical-empty elision and full Process not included. Cached-empty and malformed float reads expose uninitialized output and are excluded; physical empty omission is separate.')
+
+def map_lighting_generate():
+    physical = _map_lighting_retail()
+    map_row = physical['TRANSYLV.YRO'][0]
+    retail_map = {key: map_row[key] for key in
+                  ('archive','sha256','bytes','selected','Lighting','Waypoints','General','AudioVisual','CombatDamage','Super')}
+    selected_waypoints = {str(130): retail_map['Waypoints']['130']}
+    retail_map['Waypoints'] = selected_waypoints
+    return dict(schema_version=1,
+        native_sha256=native.image_sha256(),
+        retail=dict(map=retail_map,rules=physical['RULESMD.INI']),
+        ambient_controls=_map_lighting_ambient_controls()['cases'],
+        flash_controls=_map_lighting_flash_controls(),
+        ambient_history=_map_lighting_ambient_history(),
+        rate_controls=_map_lighting_rate_controls())
+
+
+def map_lighting_metadata():
+    return provenance(
+        scope='Original Execute73 normal/target writes and64..66 local light producer, retained AV scalar readers, and bounded Transylv110 ambient fade; no full scene or pixel parity claim.',
+        assumptions=[
+            'Physical configured MD install: loose Transylv.yro and expandmd01.mix RULESMD.INI, with original hashes; lexical cache transport uses existing sections/ordered_ini. Physical INI loading, optional LANGRULE, full mode/Process chronology and full terrain are excluded.',
+            '56 declared Execute73 scenario/effect-state controls keep current ambient, RGB/Ground/Level and fade timer explicit. Storm activation alone gates target3530; original action remains reachable in YR dispatcher.',
+            'Retail C4Warhead=Super is resolved by original C4 reader and factory; original Warhead constructor/full Read runs. Stock Super Bright=0 and CombatLightSize=0 select the actual no-light Flash leaf.15 control producers cover50/100/300 and distinct scalar versus tail waypoint.',
+            'Thirteen additional creation-admission controls supply explicit detail/FPS/minimum/buffer/reduced/Bright/force/flags/damage priors on that same physical C4 object. Actual48A620 calls the original55AF60 before Bright; the constructor size, latch and threshold outputs are executed, not supplied. A stock no-Bright low-FPS Flash retains its mutated latch into a declared next-FPS sample and original55AF60 query; an omitted-Flash control changes only the latch prior.',
+            'History uses original Rules ctor, original retained AudioVisual ReadDouble kernels on physical selected keys and actual Logic fade instructions. Initial ambient60 is a declared prior corresponding to map Lighting.Ambient; this comparison does not execute the map lighting reader.',
+            'Action64/65 controls establish shared producer sizes; they are not used by this official map. Invalid native array/cell indices, non-finite float values and cached-empty/malformed uninitialized ReadDouble outputs are excluded. Existing ini_value.rs intentionally returns deterministic zero for malformed data; no parser exception is introduced here.',
+            'Native controller globals correspond to existing superweapon_oracle: stormA9FAB4, nukeA9FABC, chronoA9FAB0, PsyDomA9FAC0. Current root data has no applicable Transylv AV/C4 override; production Rust retail tests must independently parse layers.',
+        ],
+        substitutions=[
+            'Existing ActionFixture supplies allocator/delete/TLS/Win32 fixture seams and preallocated registries. Native action, Rules, Warhead, waypoint and Flash instructions are unchanged.',
+            'History UpdateCellLighting4AE4C0 and MapRedraw4F42F0 are recorded output sinks; no sampled colors, terrain relight, palette composition or rendered output is asserted.',
+            'Only in the additional creation-admission/hysteresis controls, LightCtor5FF250 records its actual size argument and returns its real allocated receiver with ret16; original Flash and55AF60 bytes are checked against the immutable executable before/after. No light constructor, lifetime, manager or Bright-positive rendered result is certified.',
+        ],
+        entry_points=dict(action_execute=0x6DD8B0,small_light=0x6DDDF6,
+            medium_light=0x6DDE4B,large_light=0x6DDEA0,ambient=0x6DF292,
+            rules_ctor=0x665650,ambient_rules=0x66B5D7,c4_reader=0x66C304,
+            warhead_factory=0x75E3B0,warhead_read=0x75D3A0,
+            waypoint_location=0x68BD00,flash=0x48A620,light_ctor=0x5FF250,
+            minimum_frame_rate=0x55AF60,
+            ambient_logic=0x55B33D,cell_refresh_sink=0x4AE4C0,redraw_sink=0x4F42F0))
+
+
+def map_lighting_source_paths():
+    return dict(SOURCE_PATHS,
+        scalar_reader_owner=Path(__file__).parents[1]/'rules_oracle/bridge_landing_inputs.py')
+
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -7304,9 +7672,17 @@ if __name__=='__main__':
     selected_modes.add_argument('--chrono-reinforcement', action='store_true')
     selected_modes.add_argument('--tech-level', action='store_true')
     selected_modes.add_argument('--do-explosion', action='store_true')
+    selected_modes.add_argument('--map-lighting', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.do_explosion:
+    if selected.map_lighting:
+        if selected.inputs is not None:
+            selector.error('--map-lighting reads configured physical retail assets, not --inputs')
+        finish_vectors(map_lighting_generate,
+            Path(__file__).with_name('trigger_map_lighting.json'),
+            provenance=map_lighting_metadata,argv=remaining,
+            source_paths=map_lighting_source_paths())
+    elif selected.do_explosion:
         if os.environ.get('VERA20K_NATIVE_STATE_CACHE'):
             selector.error('VERA20K_NATIVE_STATE_CACHE is no longer supported; unset it to read fresh retail inputs')
         if selected.inputs is not None:

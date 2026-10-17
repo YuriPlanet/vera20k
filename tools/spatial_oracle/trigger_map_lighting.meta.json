@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Execute73 normal/target writes and64..66 local light producer, retained AV scalar readers, and bounded Transylv110 ambient fade; no full scene or pixel parity claim.",
+  "assumptions": [
+    "Physical configured MD install: loose Transylv.yro and expandmd01.mix RULESMD.INI, with original hashes; lexical cache transport uses existing sections/ordered_ini. Physical INI loading, optional LANGRULE, full mode/Process chronology and full terrain are excluded.",
+    "56 declared Execute73 scenario/effect-state controls keep current ambient, RGB/Ground/Level and fade timer explicit. Storm activation alone gates target3530; original action remains reachable in YR dispatcher.",
+    "Retail C4Warhead=Super is resolved by original C4 reader and factory; original Warhead constructor/full Read runs. Stock Super Bright=0 and CombatLightSize=0 select the actual no-light Flash leaf.15 control producers cover50/100/300 and distinct scalar versus tail waypoint.",
+    "Thirteen additional creation-admission controls supply explicit detail/FPS/minimum/buffer/reduced/Bright/force/flags/damage priors on that same physical C4 object. Actual48A620 calls the original55AF60 before Bright; the constructor size, latch and threshold outputs are executed, not supplied. A stock no-Bright low-FPS Flash retains its mutated latch into a declared next-FPS sample and original55AF60 query; an omitted-Flash control changes only the latch prior.",
+    "History uses original Rules ctor, original retained AudioVisual ReadDouble kernels on physical selected keys and actual Logic fade instructions. Initial ambient60 is a declared prior corresponding to map Lighting.Ambient; this comparison does not execute the map lighting reader.",
+    "Action64/65 controls establish shared producer sizes; they are not used by this official map. Invalid native array/cell indices, non-finite float values and cached-empty/malformed uninitialized ReadDouble outputs are excluded. Existing ini_value.rs intentionally returns deterministic zero for malformed data; no parser exception is introduced here.",
+    "Native controller globals correspond to existing superweapon_oracle: stormA9FAB4, nukeA9FABC, chronoA9FAB0, PsyDomA9FAC0. Current root data has no applicable Transylv AV/C4 override; production Rust retail tests must independently parse layers."
+  ],
+  "substitutions": [
+    "Existing ActionFixture supplies allocator/delete/TLS/Win32 fixture seams and preallocated registries. Native action, Rules, Warhead, waypoint and Flash instructions are unchanged.",
+    "History UpdateCellLighting4AE4C0 and MapRedraw4F42F0 are recorded output sinks; no sampled colors, terrain relight, palette composition or rendered output is asserted.",
+    "Only in the additional creation-admission/hysteresis controls, LightCtor5FF250 records its actual size argument and returns its real allocated receiver with ret16; original Flash and55AF60 bytes are checked against the immutable executable before/after. No light constructor, lifetime, manager or Bright-positive rendered result is certified."
+  ],
+  "entry_points": {
+    "action_execute": "0x006DD8B0",
+    "small_light": "0x006DDDF6",
+    "medium_light": "0x006DDE4B",
+    "large_light": "0x006DDEA0",
+    "ambient": "0x006DF292",
+    "rules_ctor": "0x00665650",
+    "ambient_rules": "0x0066B5D7",
+    "c4_reader": "0x0066C304",
+    "warhead_factory": "0x0075E3B0",
+    "warhead_read": "0x0075D3A0",
+    "waypoint_location": "0x0068BD00",
+    "flash": "0x0048A620",
+    "light_ctor": "0x005FF250",
+    "minimum_frame_rate": "0x0055AF60",
+    "ambient_logic": "0x0055B33D",
+    "cell_refresh_sink": "0x004AE4C0",
+    "redraw_sink": "0x004F42F0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --map-lighting",
+  "payload_sha256": "dbc31d9c20dc0fa647f6d3289f758abc0300a5db544117cca25d615ffc5dc9fc"
+}

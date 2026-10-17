@@ -3704,6 +3704,36 @@ impl Simulation {
                     );
                 }
             }
+            73 => {
+                let Some(value) = value else {
+                    return false;
+                };
+                let storm = crate::sim::superweapon::lightning_storm::raging(self);
+                self.session.lighting.set_ambient_light(value, storm);
+            }
+            66 => {
+                let (Some(rules), Some(waypoint)) = (rules, value) else {
+                    return false;
+                };
+                // Execute6DDEA0..6DDEF5 uses +90, not the +44 tail waypoint.
+                // The same C4 reference/coordinate/Flash owners serve ordinary
+                // impacts; stock C4=Super is not Bright, so materializes no
+                // light. Do not force a screen/nuke flash from the action name.
+                // Native: trigger_map_lighting.json flash_controls (+meta).
+                let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
+                    return false;
+                };
+                let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
+                self.combat_light_requests
+                    .push(crate::sim::combat::CombatLightRequest::Impact {
+                        target_id: None,
+                        damage: 300,
+                        warhead_ref,
+                        coord: crate::sim::projectile::ProjectileCoord::new(x, y, z),
+                        force_create: false,
+                        flags: 0,
+                    });
+            }
             ACTION_DAMAGE_AT_WAYPOINT => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
                     return false;
@@ -4053,3 +4083,7 @@ mod lightning_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_explosion_tests.rs"]
 mod explosion_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_map_lighting_tests.rs"]
+mod map_lighting_tests;

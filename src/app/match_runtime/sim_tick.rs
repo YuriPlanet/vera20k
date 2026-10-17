@@ -954,6 +954,7 @@ fn advance_one_simulation_frame(
                             .match_presentation
                             .in_game_options
                             .detail_level,
+                        &mut state.match_state.match_presentation.detail.borrow_mut(),
                     );
             }
             // Parity capture, if requested. The sim has already finalized all

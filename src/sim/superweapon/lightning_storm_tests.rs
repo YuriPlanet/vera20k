@@ -800,6 +800,7 @@ fn lighting_timing_rules(deferment: i32, duration: i32, rate: &str) -> RuleSet {
          LightningStormDuration={duration}\n\
          LightningHitDelay=1000\n\
          LightningScatterDelay=1000\n\
+         [AudioVisual]\n\
          AmbientChangeRate={rate}\n\
          AmbientChangeStep=.2\n"
     )))
