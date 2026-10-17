@@ -711,6 +711,17 @@ mod tests {
         let mut state = TargetLineState::default();
         assert!(!state.is_selected_action_active(100));
         state.start_timer(100);
+        // The original admitted planning click reaches70D150; its rejected
+        // capacity control skips that suffix. Consume the executed duration
+        // here; production input capture covers whether dispatch reaches it.
+        let native = crate::test_fixture::json("tools/spatial_oracle/building_manual_primary.json");
+        assert_eq!(
+            state.remaining_frames(100),
+            native["planning_admission"]["controls"][0]["phases"][0]["state"]["planning"]
+                ["action_line_timer"][2]
+                .as_i64()
+                .unwrap() as i32
+        );
         assert!(state.is_selected_action_active(100));
         assert!(state.is_selected_action_active(124));
         assert!(!state.is_selected_action_active(125));

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock full-health E1 receives four original105mm/AP packets through complete Infantry/Foot/Techno/Object receivers, admits or rejects GIFear, then original physical sample/PCM service retires it, including started unbound playback across removal.",
+  "assumptions": [
+    "Existing joined_inputs/joined_fixture own constructors, physical layered type/weapon/warhead/AudioVisual readers, House/Cell setup and process startup. Fixed SOUNDMD GIFear is added through original7510D0 without resetting that registry.",
+    "Each seed initializes the existing fixture once. Four successive complete517FA0 calls retain frame0, native health/prone/state and all3RNG streams; only each caller-owned damage packet is reset to native-read105mm Damage. No inter-hit actor AI, FireAt/ROF or whole-frame schedule is claimed.",
+    "Pre-hit/post-hit RNG seams precede audio service. Existing VoiceHistory interning retains complete0x3F4 states; exact original ranged/raw requests record stream, callsite, arguments and result.",
+    "Original feedback702695 returns to common7027F7 through70270E and continues through uncloak70281D. This is not an early return from ReceiveDamage. The feedback arm itself writes no gameplay timer or detach; full receiver member writes and actual removal detach/destructor calls are recorded.",
+    "Existing NativePcmObserver records actual returned PCM bytes, projected here to counts/hashes. Native cached AudioIndex identities establish igifea selection; existing decoder/service corpora retain detailed codec controls."
+  ],
+  "substitutions": [
+    "Existing supplied clear16x16 Cells/House/visibility and declared640x480 listener at view0,0; selected physical Hills rule layers execute, but complete scenario/map/camera loading is excluded.",
+    "Vox/Speech and empty ThemeControl initialize3reserved channels through the existing owner; complete physical theme parsing is excluded.",
+    "Canonical NativeAudioPlatform supplies immutable physical files and explicit single-thread OS counters/cursor quanta. Existing original pump/worker/endpoint own completion. No hardware concurrency, device-mixer, audible comparison or full E1 lifecycle claim.",
+    "Live removal invokes original4DE5D0 and725C70 after actual state3/channel start; native damage/death scheduling is supplied. Separate ordinary production combat captures establish that integration."
+  ],
+  "entry_points": {
+    "infantry_constructor": "0x00517A50",
+    "infantry_unlimbo": "0x0051DFF0",
+    "infantry_receiver": "0x00517FA0",
+    "foot_receiver": "0x004D7330",
+    "techno_receiver": "0x00701900",
+    "object_receiver": "0x005F5390",
+    "damage_kernel": "0x00489180",
+    "voice_feedback_reader": "0x00712D99",
+    "voice_feedback": "0x00702695",
+    "house_admission": "0x0050B6F0",
+    "random_ranged": "0x0065C7E0",
+    "random_raw": "0x0065C780",
+    "sound_registry": "0x007510D0",
+    "play_at_position": "0x007509E0",
+    "service": "0x00406F70",
+    "worker": "0x004095B0",
+    "pcm_callback": "0x00409DE0",
+    "foot_uninit": "0x004DE5D0",
+    "deferred_destructor": "0x00725C70"
+  },
+  "command": "python -m tools.input_oracle.unit_voice_playback --stock-e1-feedback --check",
+  "input_environment": [
+    "VERA20K_STOCK_E1_FEEDBACK_INPUTS"
+  ],
+  "replay_command": "python -m tools.input_oracle.unit_voice_playback --stock-e1-feedback",
+  "payload_sha256": "9f33c6064b2236bc26c7b1d3d154282ef5e6eb296e65328a34c0f90697d486f1"
+}

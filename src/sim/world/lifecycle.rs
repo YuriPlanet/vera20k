@@ -5762,6 +5762,15 @@ impl Simulation {
         self.substrate.display.remove(stable_id);
         self.fog.forget_sight_source(stable_id);
         let entity = self.substrate.entities.remove(stable_id);
+        if entity
+            .as_ref()
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            // Techno+3D3 (ctor6F2F4F) dies with the Building's storage. Limbo retains it;
+            // physical disposal removes this identity without electing a
+            // replacement or altering the House's Factory queue slots.
+            self.production.clear_primary_factory(stable_id);
+        }
         let anim = self.substrate.anims.remove(stable_id);
         let particle_system = self.substrate.particle_systems.finalize_remove(stable_id);
         if let Some(system) = particle_system.as_ref() {

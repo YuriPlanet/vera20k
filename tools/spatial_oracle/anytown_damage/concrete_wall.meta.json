@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical XMP03T4 flat Cell GAWALL construction seam and independent stock AP AreaDamage histories through native three-stage inline200 cardinal fan-out. Ordinary paid Factory and whole opening RNG are separate integration evidence.",
+  "assumptions": [
+    "The existing Inputs/native OverlayType constructors enroll only extraGAWALL ART and physical GTWALL.SHP through the same archive/cache owner. Constructor defaults and each physical RULESMD/LANGRULE/Battle/map current-default reader state are retained. Original5FE620 and lazy image getter must admit the physical NewTheater winner; Strength300/DamageLevels3 are native outputs, never supplied fields.",
+    "Same physical full map/Cell/TMP/Terrain/95authored-wall/navigation/ScenarioInit/GameActive producers. Four independently declared flat empty Cells33,88/33,87/33,89/33,90 pass actual decoded construction slice5FD41A..5FD508, full Overlay5FC380/Unlimbo/ObjectMark5F5850/OverlayMark5FC570 and real deferred drain. GAWALL is not authored in this map; decoded constructor inputs are an explicit component seam, not native paid construction/autofill/Building presence or Factory admission.",
+    "Independent seed0 or1 is installed after observed construction, retaining both RNG/ID boundaries. Null attacker and empty Techno/listener population remain explicit. Full489280 and reached480CB0/480630/480510/Recalc/navigation/radar/expiry/detach/drain execute; complete all3RNG/request/raw order and Cell122/owner/material/zone changes are retained. Normal paid World integration has later Building/Foot context and does not share a claimed whole bootstrap RNG/owner/122 baseline.",
+    "Extra originalBuildingType FindOrAllocate4653C0/full45DD90 produces GAPILE/GAPOWR identities. Original ReadGeneral66D530 calls section admission526810 before66F450..66F589; ReadString uses an empty default, then an empty result retains the prior pointer for each physical gate/WallTower identity. Query-only supplied positive-health Building shells use unchanged7E3EBC vtable, native type pointers and explicit +30 links; original480510 GDI continuation executes. Cell head restored; no Building constructor/Fill/native paid lifecycle, positive gate, Nod walk or full query-function closure is claimed."
+  ],
+  "substitutions": [
+    "Existing successful bounded allocation/free, CRT/TLS/cache/physical asset transport and Windows SEH/checked pointer service. Empty tactical extents and screen/shroud presentation sinks remain; radar dirty body runs on shared supplied storage. No wall/area/Recalc/navigation/expiry result is supplied."
+  ],
+  "entry_points": {
+    "area_damage": "0x00489280",
+    "wall_damage": "0x00480CB0",
+    "cleanup": "0x00480630",
+    "connection": "0x00480510",
+    "map_identity": "0x005FD41A",
+    "map_data": "0x005FD61A",
+    "recalc": "0x0047D2B0",
+    "pointer_expiry": "0x007258D0",
+    "detach": "0x0070D4A0",
+    "main_counter_zero": "0x0048CDF0",
+    "active_game": "0x0052D9D7",
+    "cell_spread_init": "0x00561910",
+    "overlay_constructor": "0x005FC380",
+    "overlay_mark": "0x005FC570",
+    "object_mark": "0x005F5850",
+    "overlay_type_constructor": "0x005FE250",
+    "overlay_type_reader": "0x005FE770",
+    "overlay_theater": "0x005FE620",
+    "building_type_find": "0x004653C0",
+    "building_type_constructor": "0x0045DD90",
+    "general_gate_reader": "0x0066F450"
+  },
+  "replay_command": "python -m tools.spatial_oracle.anytown_damage.mtnk_attack --concrete-wall",
+  "payload_sha256": "4cf3ae6b8d83fa859588f8e0eef3af59e4ec8b555b001cb5bec7dd12483b787a"
+}

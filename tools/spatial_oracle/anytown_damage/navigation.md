@@ -148,3 +148,41 @@ sample, Drive `+64` pre-tilt, `+334` recoil or `+6B5` lifetime. Selected physica
 `WallCrushBlack` has random samples/pitch/volume, so draw-free forced Cell damage
 does not establish draw-free Unit/audio behavior. Empty native listeners do not
 prove positive target expiry, and no absolute normal movement frame is claimed.
+
+`python -m tools.spatial_oracle.anytown_damage.mtnk_attack --concrete-wall --write`
+(or `--check`) uses that same runtime and writes `concrete_wall.json`.
+The opt-in `Inputs` selection additionally enrolls GAWALL's fixed ART section
+and physical `GTWALL.SHP` through `bridge_shadow_render.physical_assets`' existing
+archive/cache loop. Native constructor/current-default and layered full
+`5FE770` outputs retain Strength, Wall, Image, fixed ART DamageLevels and theater
+flags; original `5FE620` and lazy GetSHP must admit the actual image.
+Historical selections use empty extra-type/material arguments.
+
+Four component constructor inputs use physical flat cells `33,88`, `33,87`,
+`33,89`, `33,90`. Each executes the existing decoded-construction caller
+`5FD41A..5FD508`, real Overlay constructor/Unlimbo/Object Mark/Overlay Mark,
+connectivity/navigation/122 writes and deferred drain. The corpus retains
+construction events and both construction/independent entry-seed boundaries.
+These cells are a separate ordinary paid witness's legal coordinates; GAWALL
+is not map-authored there, and this component does not execute paid factories,
+autofill or ordinary Building/Foot population. It supplies no damage nibble,
+overlay identity store, Mark answer or favorable random word.
+
+Independent seeds0/1 then execute stock MTNK/105mm/AP65 through complete
+`489280`, repeating until the source wall clears under a bounded impact count.
+Coverage requires actual accepted/rejected65 and original stage2 inline200
+caller `480EB4`, including an admitted child. Complete three-stream RNG states,
+request/raw order, inline calls, changed cells, dirty/navigation/radar, retained
+122, expiry/detach and drain remain in the shared history schema.
+
+The selected ordinary GDI-negative query controls use original BuildingType
+FindOrAllocate/full constructors for GAPILE/GAPOWR and original layered General
+gate/WallTower readers `66F450..66F589`. Original `526810` admits the General
+section first; each name uses ReadString's empty default, then retains the
+current field pointer when no name is returned. Separate
+query-only positive-health Building shells supply unchanged native vtables,
+constructed type pointers and linked-list priors. Complete original `480510`
+traverses them; it supplies no RTTI or predicate answer. The temporary Cell
+head is restored. This does not place or construct Buildings in the damage
+history, prove a positive gate/Nod branch, or establish whole native paid-scene
+owner/122/RNG equivalence. Production integration must preserve those contexts.

@@ -907,13 +907,15 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
 
     assert_eq!(
         sim.production
-            .primary_factory(americans, ProductionCategory::Vehicle)
+            .primary_factory_ids(americans, ProductionCategory::Vehicle)
+            .next()
             .unwrap(),
         1
     );
     assert_eq!(
         sim.production
-            .primary_factory(americans, ProductionCategory::Ship)
+            .primary_factory_ids(americans, ProductionCategory::Ship)
+            .next()
             .unwrap(),
         2
     );
@@ -974,7 +976,8 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     assert!(destroyer.lifecycle.cell_marked() && !destroyer.lifecycle.in_limbo());
     assert_eq!(
         sim.production
-            .primary_factory(americans, ProductionCategory::Ship)
+            .primary_factory_ids(americans, ProductionCategory::Ship)
+            .next()
             .unwrap(),
         2,
         "the older GAWEAP cannot receive the Ship completion"
@@ -1074,7 +1077,8 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     assert_eq!(credits_for_owner(&sim, "Americans"), credits + 1000);
     assert_eq!(
         sim.production
-            .primary_factory(americans, ProductionCategory::Ship),
+            .primary_factory_ids(americans, ProductionCategory::Ship)
+            .next(),
         Some(1),
         "HousePlace does not try the second eligible producer after Exit0"
     );
@@ -1214,7 +1218,8 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     assert_eq!(
         sim.production
-            .primary_factory(americans, ProductionCategory::Ship),
+            .primary_factory_ids(americans, ProductionCategory::Ship)
+            .next(),
         Some(1)
     );
     assert_eq!(sim.houses[&americans].stats.built(), 0);

@@ -1055,8 +1055,8 @@ fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 ///
 /// `+0xD97` is `Organic=`, which the InfantryType constructor stores
 /// (`0x00523911`) and the other classes leave clear, so the first arm serves
-/// vehicles and aircraft off the house unit count `UnitsGainSelfHeal` feeds,
-/// and the second serves infantry off the house infantry count
+/// non-organic Units off the house unit count `UnitsGainSelfHeal` feeds,
+/// and the second serves Infantry and organic Units off the infantry count
 /// `InfantryGainSelfHeal` feeds. Both run after the per-object pulse and before
 /// the cloak tick (`vt+0x410` at `0x006FA946`), so a same-frame heal is visible
 /// to the cloak's health branch.
@@ -1118,7 +1118,14 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
     } else {
         rules.general.self_heal_unit_frames
     };
-    if interval == 0 || (sim.session.binary_frame as i32) % interval != 0 {
+    // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
+    // keys retain constructor1000; an explicitly invalid IDIV is a fault,
+    // including period0 with no grant and signed MIN/-1 overflow.
+    let frame = sim.session.binary_frame as i32;
+    let remainder = frame.checked_rem(interval).unwrap_or_else(|| {
+        panic!("native House self-heal IDIV fault at 006FA7EE/006FA8E2: frame={frame} period={interval}")
+    });
+    if remainder != 0 {
         return;
     }
     let owner = entity.owner();

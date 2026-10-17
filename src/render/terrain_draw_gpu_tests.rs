@@ -23,6 +23,153 @@ pub(crate) struct Gpu {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
 }
+
+/// Shared production-draw timing interval. Query resources are reused; asset,
+/// upload and attachment setup stay outside the measured encoder callback.
+pub(crate) struct GpuFrameTimer {
+    queries: [wgpu::QuerySet; 2],
+    resolved: wgpu::Buffer,
+    mapped: wgpu::Buffer,
+    marker: wgpu::ComputePipeline,
+    marker_bind_group: wgpu::BindGroup,
+}
+
+impl GpuFrameTimer {
+    pub(crate) fn new(gpu: &Gpu) -> Self {
+        // Real dispatches make both pass-boundary samples observable on Metal.
+        // The prior encoder-only interval failed its monotonicity check on M4.
+        // Upstream27.0.4 documents empty-encoder sampling pitfalls:
+        // https://github.com/gfx-rs/wgpu/blob/v27.0.4/wgpu-hal/src/metal/command.rs#L46-L59
+        let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Timestamp boundary dispatch"),
+            source: wgpu::ShaderSource::Wgsl("@group(0) @binding(0) var<storage, read_write> counter: u32; @compute @workgroup_size(1) fn main() { counter += 1u; }".into()),
+        });
+        let marker = gpu
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Timestamp boundary dispatch"),
+                layout: None,
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Timestamp marker storage"),
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let marker_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Timestamp marker storage"),
+            layout: &marker.get_bind_group_layout(0),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        Self {
+            queries: std::array::from_fn(|_| {
+                gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
+                    label: Some("Production draw interval"),
+                    ty: wgpu::QueryType::Timestamp,
+                    count: 1,
+                })
+            }),
+            resolved: gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Production timestamp resolve"),
+                size: 512,
+                usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            }),
+            mapped: gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Production timestamp map"),
+                size: 16,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            }),
+            marker,
+            marker_bind_group,
+        }
+    }
+
+    fn mark(&self, encoder: &mut wgpu::CommandEncoder, index: u32) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Production timing boundary"),
+            timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                query_set: &self.queries[index as usize],
+                // Use one end sample per set, resolved separately. The prior
+                // two-slot interval returned a zero second sample on M4.
+                // The interval includes the final one-workgroup marker.
+                beginning_of_pass_write_index: None,
+                end_of_pass_write_index: Some(0),
+            }),
+        });
+        pass.set_pipeline(&self.marker);
+        pass.set_bind_group(0, &self.marker_bind_group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
+    }
+
+    /// CPU includes encoder construction/commands, excluding final submit/wait.
+    /// GPU includes callback commands/intermediate submits and the final marker.
+    pub(crate) fn measure<T>(
+        &self,
+        gpu: &Gpu,
+        encode: impl FnOnce(&mut wgpu::CommandEncoder) -> T,
+    ) -> (T, f64, f64) {
+        let begin = std::time::Instant::now();
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        self.mark(&mut encoder, 0);
+        let result = encode(&mut encoder);
+        self.mark(&mut encoder, 1);
+        let cpu_ms = begin.elapsed().as_secs_f64() * 1000.0;
+        let submission = gpu.queue.submit([encoder.finish()]);
+        // Resolve only after the producer has completed. Immediate resolve in
+        // the producer command buffer yielded a zero final sample on this M4.
+        gpu.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(60)),
+            })
+            .unwrap();
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        for (index, queries) in self.queries.iter().enumerate() {
+            let offset = index as u64 * wgpu::QUERY_RESOLVE_BUFFER_ALIGNMENT;
+            encoder.resolve_query_set(queries, 0..1, &self.resolved, offset);
+            encoder.copy_buffer_to_buffer(
+                &self.resolved,
+                offset,
+                &self.mapped,
+                index as u64 * 8,
+                8,
+            );
+        }
+        let submission = gpu.queue.submit([encoder.finish()]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.mapped
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+        gpu.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(60)),
+            })
+            .unwrap();
+        rx.recv().unwrap().unwrap();
+        let data = self.mapped.slice(..).get_mapped_range();
+        let first = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let last = u64::from_le_bytes(data[8..16].try_into().unwrap());
+        assert!(
+            last > first,
+            "GPU interval timestamps: first={first}, last={last}"
+        );
+        let gpu_ms = (last - first) as f64 * gpu.queue.get_timestamp_period() as f64 / 1_000_000.0;
+        drop(data);
+        self.mapped.unmap();
+        (result, cpu_ms, gpu_ms)
+    }
+}
+
 impl Gpu {
     pub(crate) fn new() -> Self {
         Self::with_features(wgpu::Features::empty())
@@ -1434,10 +1581,7 @@ fn production_mixed_destination_waves_preserve_pixels_depth_and_atlas_order() {
 #[test]
 #[ignore = "bounded GPU/CPU timing; close other renderers before uncontended measurements"]
 fn production_tree_piece_workload_timing() {
-    use std::time::Instant;
-    let gpu = Gpu::with_features(
-        wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
-    );
+    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [800, 600];
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
@@ -1456,23 +1600,7 @@ fn production_tree_piece_workload_timing() {
         1,
         Some(&[1]),
     );
-    let queries = gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: Some("Tree workload interval"),
-        ty: wgpu::QueryType::Timestamp,
-        count: 2,
-    });
-    let resolved = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Tree timestamp resolve"),
-        size: 256,
-        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-    let mapped = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Tree timestamp map"),
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
+    let timer = GpuFrameTimer::new(&gpu);
     let mut results = Vec::new();
     // Original frozen800x600 workloads remain literal. The added32-pair
     // disjoint grids fit this target;512 full-size disjoint pairs cannot.
@@ -1518,58 +1646,56 @@ fn production_tree_piece_workload_timing() {
                 for sample in 0..4 {
                     // Exactly one application frame per submission preserves
                     // the established command-buffer-memory measurement bound.
-                    let begin = Instant::now();
-                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    encoder.write_timestamp(&queries, 0);
-                    clear(
-                        &mut encoder,
-                        &cv,
-                        &dv,
-                        65535,
-                        wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                    );
-                    let kind = |i| {
-                        if i % 2 == 0 {
-                            TerrainPiece::Body
-                        } else {
-                            TerrainPiece::Shadow
-                        }
-                    };
-                    let stats = if batched {
-                        terrain.draw_span(
-                            &mut encoder,
+                    let (stats, encode_ms, gpu_ms) = timer.measure(&gpu, |encoder| {
+                        clear(
+                            encoder,
                             &cv,
                             &dv,
-                            &batch,
-                            |_| Some(&atlas),
-                            &buffer,
-                            &instances,
-                            (0..instances.len()).map(|i| terrain_command(i as u32, kind(i))),
-                            [0, 0, 800, 600],
-                        )
-                    } else {
-                        for (i, instance) in instances.iter().enumerate() {
-                            terrain.draw_piece(
-                                &mut encoder,
+                            65535,
+                            wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        );
+                        let kind = |i| {
+                            if i % 2 == 0 {
+                                TerrainPiece::Body
+                            } else {
+                                TerrainPiece::Shadow
+                            }
+                        };
+                        let stats = if batched {
+                            terrain.draw_span(
+                                encoder,
                                 &cv,
                                 &dv,
                                 &batch,
-                                &atlas,
+                                |_| Some(&atlas),
                                 &buffer,
-                                instance,
-                                terrain_command(i as u32, kind(i)),
+                                &instances,
+                                (0..instances.len()).map(|i| terrain_command(i as u32, kind(i))),
                                 [0, 0, 800, 600],
-                            );
-                        }
-                        super::terrain_draw::TerrainBatchStats {
-                            pieces: instances.len(),
-                            waves: instances.len(),
-                            passes: instances.len() * 2,
-                            tile_dependencies: 0,
-                        }
-                    };
-                    encoder.write_timestamp(&queries, 1);
-                    let encode_ms = begin.elapsed().as_secs_f64() * 1000.0;
+                            )
+                        } else {
+                            for (i, instance) in instances.iter().enumerate() {
+                                terrain.draw_piece(
+                                    encoder,
+                                    &cv,
+                                    &dv,
+                                    &batch,
+                                    &atlas,
+                                    &buffer,
+                                    instance,
+                                    terrain_command(i as u32, kind(i)),
+                                    [0, 0, 800, 600],
+                                );
+                            }
+                            super::terrain_draw::TerrainBatchStats {
+                                pieces: instances.len(),
+                                waves: instances.len(),
+                                passes: instances.len() * 2,
+                                tile_dependencies: 0,
+                            }
+                        };
+                        stats
+                    });
                     if batched {
                         let expected_waves = match layout {
                             "repeated" => 2 * count,
@@ -1589,28 +1715,6 @@ fn production_tree_piece_workload_timing() {
                         );
                     }
                     assert_eq!(stats.pieces, count * 2);
-                    encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
-                    encoder.copy_buffer_to_buffer(&resolved, 0, &mapped, 0, 16);
-                    let submission = gpu.queue.submit([encoder.finish()]);
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    mapped
-                        .slice(..)
-                        .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-                    gpu.device
-                        .poll(wgpu::PollType::Wait {
-                            submission_index: Some(submission),
-                            timeout: Some(Duration::from_secs(60)),
-                        })
-                        .unwrap();
-                    rx.recv().unwrap().unwrap();
-                    let data = mapped.slice(..).get_mapped_range();
-                    let first = u64::from_le_bytes(data[0..8].try_into().unwrap());
-                    let last = u64::from_le_bytes(data[8..16].try_into().unwrap());
-                    assert!(last > first);
-                    let gpu_ms = (last - first) as f64 * gpu.queue.get_timestamp_period() as f64
-                        / 1_000_000.0;
-                    drop(data);
-                    mapped.unmap();
                     if sample > 0 {
                         eprintln!(
                             "TREE timing sample: pairs={count}, layout={layout}, batched={batched}, sample={sample}, waves={}, passes={}, tile_dependencies={}, gpu_ms={gpu_ms}, cpu_prepare_encode_ms={encode_ms}",
@@ -1626,7 +1730,7 @@ fn production_tree_piece_workload_timing() {
     }
     let report = serde_json::json!({"target":[800,600],"color_format":"Bgra8UnormSrgb",
         "source":"frozen original opaque TREE01-sized workload positions plus32 pixel-disjoint and tile-disjoint pairs; actual sequential and batched snapshot/edit owner",
-        "interval":"GPU includes frame clears and every snapshot/edit. CPU includes scheduler reset/preparation, encoder construction and commands, excludes finish/submit/wait. Setup excluded. tile_dependencies counts covered tiles per command, each queried then updated.",
+        "interval":"GPU includes frame clears, every snapshot/edit and the final one-workgroup timestamp marker. CPU includes scheduler reset/preparation, encoder construction and commands, excludes finish/submit/wait. Setup excluded. tile_dependencies counts covered tiles per command, each queried then updated.",
         "samples":results});
     eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Some(path) = std::env::var_os("VERA20K_TERRAIN_PERF_OUTPUT") {

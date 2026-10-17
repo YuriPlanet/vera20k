@@ -27,6 +27,8 @@ pub(super) struct DrawPassData<'a> {
     pub overlay_render_z: &'a [RenderZPolicy],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
+    pub building_status_text:
+        &'a crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
     pub sidebar_unavailable: &'a [SpriteInstance],
     pub sidebar_flash: &'a [SpriteInstance],
@@ -406,6 +408,26 @@ pub(super) fn dispatch_draw_passes(
                 )
                 .map(|(overlay, buffer)| (overlay, buffer, Some(state.renderer.bit_font.atlas()))),
         );
+        if layer == 2 {
+            // Tactical6D9427 admits this BuildingClass::Array sweep only
+            // after Ground2, before Air3/Top4 and the late Extras sweep.
+            super::object_extras::draw_building_status_text(
+                encoder,
+                view,
+                &state.renderer.depth_view,
+                &mut state.renderer.terrain_draw_renderer,
+                [tac_x, tac_y, tac_w, tac_h],
+                &state.renderer.batch_renderer,
+                state
+                    .match_state
+                    .match_presentation
+                    .selection_overlay
+                    .as_ref(),
+                pool.get("building_status_text").map(|(buffer, _)| buffer),
+                Some(state.renderer.bit_font.atlas()),
+                &data.building_status_text.runs,
+            );
+        }
     }
 
     let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
@@ -592,27 +614,8 @@ pub(super) fn dispatch_draw_passes(
             objects,
         );
     }
-    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
-    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-    // The Crazy Ivan bomb clock, drawn before the veterancy chevrons that
-    // share the occupant pass, as `DrawExtras` orders them.
-    let bomb_clock_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .and_then(|o| o.bomb_clock())
-        .map(|clock| clock.texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        bomb_clock_tex,
-        "bomb_clocks",
-    );
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
-    drop(pass);
     state
         .renderer
         .combat_light_renderer
@@ -1043,7 +1046,7 @@ pub(crate) fn draw_pooled_overlay_bodies<'a>(
 }
 
 /// Submit the bridge shadow cell sweep between overlay bodies and objects.
-pub(super) fn draw_bridge_shadows(
+pub(crate) fn draw_bridge_shadows(
     encoder: &mut wgpu::CommandEncoder,
     color: &wgpu::TextureView,
     depth: &wgpu::TextureView,

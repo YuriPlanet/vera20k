@@ -95,6 +95,7 @@ pub(super) fn draw_native_object_pass<'a>(
                 batch,
                 extras.map(|(overlay, _, _)| overlay),
                 extras.map(|(_, buffer, _)| buffer),
+                &ground.extras_instances,
                 extras.and_then(|(_, _, font)| font),
                 &ground.extras_runs[index..index + 1],
             );

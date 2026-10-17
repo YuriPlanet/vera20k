@@ -84,3 +84,54 @@ PYTHONDONTWRITEBYTECODE=1 python -m tools.input_oracle.unit_voice_playback --che
 source-guarded candidate and meta sidecar. Native output, not a Rust result or
 hand calculation, supplies every comparison value. Run results and validation
 receipts belong outside the repository.
+
+## Stock E1 damage feedback
+
+The additive `stock_e1_feedback.json` comparison joins four complete original
+Infantry receivers (`517FA0` → `4D7330` → `701900` → `5F5390`) to the existing
+feedback and audio owners. Native physical E1 Strength125 and 105mm/AP packets
+produce `125→109→93→77→61`, with result2 only on the fourth call. Result2 uses
+the Object receiver's signed `Strength SAR1`, rather than ConditionYellow.
+The prior component feedback rows and historical payload remain unchanged.
+
+Three histories retain admitted seed2, rejected seed17, and started unbound
+seed2 playback across original Foot UnInit/deferred destruction. The feedback
+arm's `70270E` jump joins common `7027F7`, before uncloak at `70281D` and the
+remaining receiver tail. Feedback is not an early ReceiveDamage return.
+
+`hits[].rng_before/rng_after` are complete receiver boundaries **before audio
+service**. Their main/scenario/mapgen references resolve through the existing
+`complete_rng_states` format (`stream`, `sha256`, full `bytes`). Requests retain
+stream, original callsite, arguments and results. Scoped native member writes
+include receiver timer storage; opaque words are retained as raw values, not
+assigned invented semantics. The actual removal calls and all subsequent
+service RNG states remain separate from that Core comparison seam.
+
+The live removal hook runs after original playback reaches state3 with a real
+channel. Actor destruction leaves the same handle0 feedback event running;
+the original worker supplies further PCM and later endpoint/service retirement.
+Native cached AudioIndex identities identify the sample. Only returned PCM
+lengths, hashes and nonzero sample counts are retained here; existing codec
+and service controls own detailed decoder validation. Detailed scratch traces
+and raw PCM are not committed.
+
+Four direct packets share native frame0, with no inter-hit AI or reseeding.
+They establish a receiver/feedback history, not FireAt, prone recovery or ROF
+timing. The existing joined fixture supplies clear16x16 Cells/House/visibility,
+selected physical Hills rules, a declared640x480 listener and explicit OS
+clock/cursor inputs. Whole scenario loading, concurrent device behavior,
+audible equivalence and the complete E1 lifecycle remain outside this witness.
+Separate ordinary production combat captures cover firing and removal timing.
+
+Use a freshly prepared directory matching the new payload's `physical`
+manifest, including real `Hills.map`, its container and selected audio.idx/bag:
+
+```sh
+VERA20K_STOCK_E1_FEEDBACK_INPUTS=/absolute/prepared/extract \
+PYTHONDONTWRITEBYTECODE=1 python -m tools.input_oracle.unit_voice_playback \
+  --stock-e1-feedback --check
+```
+
+`--write --output /absolute/scratch/stock_e1_feedback.json` creates a separate
+candidate and binary/command meta sidecar. The existing VM, native readers,
+sound registry, RNG, worker and PCM observation owners are reused throughout.

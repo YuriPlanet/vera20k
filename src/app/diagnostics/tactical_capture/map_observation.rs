@@ -607,6 +607,7 @@ impl MapCaptureProfile {
                         | Command::RepairAtDepot { .. }
                         | Command::SellBuilding { .. }
                         | Command::LaunchSuperWeapon { .. }
+                        | Command::TogglePrimaryFactory { .. }
                 ),
                 "command is outside the map observation's ordinary order coverage"
             );

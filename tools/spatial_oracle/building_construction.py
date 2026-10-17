@@ -43,6 +43,8 @@ and the Construction mission.
 Usage: python -m tools.spatial_oracle.building_construction [--check|--write]
 Add --joined for the retail-input joined execution corpus and its separate
 provenance sidecar. This additive mode does not replace the original payload.
+Add --manual-primary for the ordinary factory self-click/Event17 history and
+its separate corpus. The original default and joined payloads stay unchanged.
 """
 from pathlib import Path
 import hashlib
@@ -376,7 +378,21 @@ JOINED_ROOT = Path(os.environ.get('VERA20K_BUILDING_CONSTRUCTION_ASSETS',
 JOINED_MEMORY = 0x28000000
 
 
-def joined_inputs(root, *, layers=None):
+def manual_primary_type_state(u, pointer):
+    """Observed native fields used by the primary input/FindFactory paths."""
+    ints = {'strength': 0xA0, 'build_category': 0xE08, 'factory': 0xEB8, 'foundation': 0xEF0,
+            'ownable': 0x6CC, 'passengers': 0x5E0}
+    flags = {'naval': 0xCCE, 'gap_generator': 0xCD1, 'construction_yard': 0x16B9,
+             'unit_absorb': 0x16AE, 'infantry_absorb': 0x16AF,
+             'invisible_in_game': 0x1701}
+    return dict(**{k: struct.unpack('<i', u.mem_read(pointer + o, 4))[0]
+                   for k, o in ints.items()},
+                **{k: u.mem_read(pointer + o, 1)[0] for k, o in flags.items()})
+
+
+def joined_inputs(root, *, layers=None, building_names=JOINED_NAMES,
+                  art_names=JOINED_ART_NAMES, country_names=(), unit_names=(),
+                  primary_field_names=(), planning_admission=False):
     """Original constructors and scalar readers; lexical caches/file IO supplied.
 
     Sound owns the source-order INI links; Reader owns the signed-CRC caches,
@@ -385,13 +401,18 @@ def joined_inputs(root, *, layers=None):
     from tools.rules_oracle.bridge_anim_inputs import Reader
     from tools.rules_oracle.bridge_child_sound import Sound, sections
     from tools.spatial_oracle.building_body_rules import INI
-    from unicorn.x86_const import UC_X86_REG_EDI, UC_X86_REG_ESI
+    from unicorn.x86_const import UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_EBP, UC_X86_REG_EBX
 
     m = Sound.__new__(Sound)
     m.samples, m.calls = [], []
     sound = sections((root / 'SOUNDMD.INI').read_bytes())
-    selected = {n: sound[n] for n in ('Defaults', 'Dummy')}
-    selected['SoundList'] = {k: v for k, v in sound['SoundList'].items() if v == 'Dummy'}
+    sound_names = ('Dummy', 'MenuScold') if planning_admission else ('Dummy',)
+    selected = {n: sound[n] for n in ('Defaults',) + sound_names}
+    selected['SoundList'] = {k: v for k, v in sound['SoundList'].items() if v in sound_names}
+    if planning_admission:
+        # Original Sound reader requests the physical MenuScold sample name.
+        # Its immutable sample-catalog identity is supplied; playback is not.
+        m.sample_ids = {'umenscol': 0}
     Reader.__init__(m, root, selected)
     u = m.u
     m.selected = selected
@@ -404,12 +425,13 @@ def joined_inputs(root, *, layers=None):
     m.rules = m.alloc(0x5000)
     u.mem_write(0x8871E0, dwords(m.rules))
     m.invoke(0x665650, m.rules)
+    m.scold_constructor_default = struct.unpack('<i', u.mem_read(m.rules + 0x700, 4))[0]
     m.invoke(0x4E7CF0, 0)  # all original MissionControl static constructors.
     scene = m.alloc(0x1500)
     u.mem_write(0xA8B230, dwords(scene))
     u.mem_write(scene + 0x1258, dwords(0))  # supplied prior Scenario: Temperate.
     art = sections((root / 'ARTMD.INI').read_bytes())
-    m.make_ini({n: art[n] for n in JOINED_ART_NAMES})
+    m.make_ini({n: art[n] for n in art_names if n in art})
     art_cache = bytes(u.mem_read(INI, 0x40))
     m.types = {}
     if layers is not None:
@@ -417,17 +439,39 @@ def joined_inputs(root, *, layers=None):
         # Legacy fixtures keep their historical supplied registry boundary.
         u.reg_write(UC_X86_REG_ESP, SP)
         run_checked(u, 0x4E7A60, 0x4E7A96)
-    for name in JOINED_NAMES:
+    for name in building_names:
         pointer = m.alloc(0x2000)
         m.invoke(0x45DD90, pointer, (m.cstring(name),))
         m.types[name] = pointer
+    m.primary_constructor_inputs = {
+        name: manual_primary_type_state(u, m.types[name]) for name in primary_field_names}
+    m.country_catalog = []
+    if country_names:
+        # Supply registry capacity and physical [Countries] name/order, not a
+        # second country reader. Real constructors enroll each name/index;
+        # original Owner lookup4750D0/5117D0 consumes this native catalog.
+        countries = m.alloc(len(country_names) * 4)
+        u.mem_write(0xA83C98, dwords(0x7EB6D4, countries, len(country_names),
+                                    1, 0, 10))
+        for index, name in enumerate(country_names):
+            pointer = m.alloc(0x200)
+            m.invoke(0x5113F0, pointer, (m.cstring(name),))
+            assert m.read32(pointer + 0xB8) == index
+            assert m.read32(countries + index * 4) == pointer
+            m.country_catalog.append(dict(index=index, name=name))
+    m.unit_types = {}
+    for name in unit_names:
+        pointer = m.alloc(0x1100)
+        m.invoke(0x7470D0, pointer, (m.cstring(name),))
+        m.unit_types[name] = pointer
     m.layers = []
+    m.scold_layers = []
     # Prior selected AnimTypes from the real rules list, in its source order.
     # Whole Rules::Process/other registry entries remain outside this fixture.
     animations = sections((root / 'RULESMD.INI').read_bytes())['Animations']
     m.animation_list = []
     for key, name in animations.items():
-        if name in JOINED_ART_NAMES and name not in JOINED_NAMES:
+        if name in art_names and name not in building_names:
             m.invoke(0x428B80, m.cstring(name))
             m.animation_list.append(dict(key=key, name=name))
     for filename in (layers if layers is not None else
@@ -439,7 +483,7 @@ def joined_inputs(root, *, layers=None):
             continue
         physical = sections(path.read_bytes())
         mission_names = tuple(m.string(m.read32(0x816CAC + i * 4)) for i in range(32))
-        names = JOINED_NAMES + ('General', 'AudioVisual') + mission_names
+        names = building_names + unit_names + ('General', 'AudioVisual') + mission_names
         retained = {n: physical[n] for n in names if n in physical}
         m.make_ini(retained)
         rules_ini = m.alloc(0x40)
@@ -454,13 +498,85 @@ def joined_inputs(root, *, layers=None):
             # 66A96A includes the previous sound's retained store/push prefix.
             u.reg_write(UC_X86_REG_EAX, m.read32(m.rules + 0x6C0))
             run_checked(u, begin, end, count=2_000_000)
+        if planning_admission:
+            # Same retained-default ScoldSound block used by foot_scold_latch;
+            # the real 7514D0 lookup resolves the selected native registry.
+            before = struct.unpack('<i', u.mem_read(m.rules + 0x700, 4))[0]
+            u.mem_write(SP, bytes(0x200))
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ESI, m.rules)
+            u.reg_write(UC_X86_REG_EDI, rules_ini)
+            run_checked(u, 0x66ABCD, 0x66AC18)
+            m.scold_layers.append(dict(file=filename,
+                physical_value=physical.get('AudioVisual', {}).get('ScoldSound'),
+                native_buffer=m.string(SP + 0x14), before=before,
+                after=struct.unpack('<i', u.mem_read(m.rules + 0x700, 4))[0]))
         reads = {n: bool(m.invoke(0x45FE50, p, (rules_ini,)) & 255)
-                 for n, p in m.types.items()}
+                 for n, p in m.types.items() if n not in primary_field_names}
+        for name in primary_field_names:
+            pointer = m.types[name]
+            # Existing placement_render's exact native Image block supplies
+            # the ART section name before the unlayered Foundation read.
+            u.mem_write(SP, bytes(0x200))
+            u.mem_write(SP + 0x1B4, dwords(rules_ini))
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_EBX, pointer)
+            run_checked(u, 0x5F92F9, 0x5F9340)
+            # The primary-action profile needs these scalar fields, not
+            # GAWEAP's demand-loaded buildup/file/image/animation lifecycle.
+            # Execute exact retained-default/store blocks, never VERA values.
+            for begin, end in ((0x45FE78, 0x45FE97),  # BuildCat
+                               (0x46051A, 0x46054B),  # Factory
+                               (0x713F92, 0x713FAC),  # GapGenerator
+                               (0x460A24, 0x460A44),  # ConstructionYard
+                               (0x7149E1, 0x7149FB),  # Owner
+                               (0x714A63, 0x714A7D),  # Naval
+                               (0x714B35, 0x714B56),  # Passengers
+                               (0x460988, 0x4609D6),  # Absorb flags
+                               (0x460DEB, 0x460E07),  # InvisibleInGame
+                               (0x5F94D3, 0x5F94F3)):  # Strength
+                u.mem_write(SP, bytes(0x200))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                u.reg_write(UC_X86_REG_EBP, pointer)
+                u.reg_write(UC_X86_REG_EBX, pointer + 0x24)
+                u.reg_write(UC_X86_REG_ESI, rules_ini)
+                u.reg_write(UC_X86_REG_EDI, rules_ini)
+                if begin == 0x5F94D3:
+                    u.reg_write(UC_X86_REG_EBP, pointer + 0x24)
+                    u.reg_write(UC_X86_REG_EBX, pointer)
+                run_checked(u, begin, end)
+        for name, pointer in m.unit_types.items():
+            # FindFactory(0,0,0,House) reads only the query's real RTTI,
+            # Ownable and Naval fields. Run their actual common reader blocks;
+            # the wider UnitType reader/weapon and production admission are
+            # outside this profile, rather than supplied gameplay answers.
+            for begin, end in ((0x7149E1, 0x7149FB), (0x714A63, 0x714A7D)):
+                u.mem_write(SP, bytes(0x200))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                u.reg_write(UC_X86_REG_EBP, pointer)
+                u.reg_write(UC_X86_REG_EDI, rules_ini)
+                u.reg_write(UC_X86_REG_EBX, m.cstring(name))
+                run_checked(u, begin, end)
         u.reg_write(UC_X86_REG_ESP, SP)
         u.reg_write(UC_X86_REG_ESI, rules_ini)
         run_checked(u, 0x679C92, 0x679CAF, required_addresses=(0x5B3760,))
         m.layers.append(dict(file=filename, absent=False, sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
                              type_read=reads))
+        if primary_field_names:
+            m.layers[-1]['primary_fields'] = {
+                name: manual_primary_type_state(u, m.types[name]) for name in primary_field_names}
+    if primary_field_names:
+        m.invoke(0x45B1C0, 0)
+        for name in primary_field_names:
+            pointer = m.types[name]
+            for reg, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, pointer),
+                               (UC_X86_REG_EBX, pointer + 0x24),
+                               (UC_X86_REG_EDI, pointer + 0x1F8), (UC_X86_REG_ESI, INI)):
+                u.reg_write(reg, value)
+            run_checked(u, 0x461225, 0x46125D)
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_EBP, pointer)
+            run_checked(u, 0x46152C, 0x461547)
     m.anim_rows = []
     for i in range(m.read32(0x8B4160)):
         pointer = m.read32(m.read32(0x8B4154) + i * 4)
@@ -656,10 +772,13 @@ class JoinedFixture:
             self.events.append(dict(event='arena_release', pointer=self.read32(sp + 4), frame=frame))
             self.ret()
 
-    def rng(self):
+    def rng(self, *, include_mapgen=False):
         from tools.spatial_oracle.unit_source_scatter import SCENARIO
+        streams = (('main', 0x886B88), ('scenario', SCENARIO + 0x218))
+        if include_mapgen:
+            streams += (('mapgen', 0xABE890),)
         return {name: bytes(self.u.mem_read(pointer, 0x3F4)).hex()
-                for name, pointer in (('main', 0x886B88), ('scenario', SCENARIO + 0x218))}
+                for name, pointer in streams}
 
     def code_unchanged(self):
         return self.original_code == [bytes(self.u.mem_read(a, n)) for a, n in self.code_spans]
@@ -896,6 +1015,424 @@ def joined_dummy_sound(inputs):
                         'The destruction case executes only43BD1F..43BD3A, not the whole Building destructor.'])
 
 
+def manual_primary_cases():
+    """Inputs only. All action, event, byte and factory outputs execute natively."""
+    factory = lambda **kw: dict(type='GAWEAP', **kw)
+    return [
+        dict(name='ordinary_self_click_switch_back_and_stale_event',
+             actors=[factory(), factory()],
+             operations=[dict(op='automatic', actor=1), dict(op='automatic', actor=2),
+                         dict(op='click', actor=1), dict(op='click', actor=2),
+                         dict(op='click', actor=2), dict(op='click', actor=1),
+                         dict(op='repeat_event', event=1),
+                         dict(op='click', actor=2, planning=True)]),
+        dict(name='retained_limbo_primary_bytes',
+             supplied_control='No ordinary stock GAWEAP live/true-primary Limbo producer is claimed.',
+             actors=[factory(primary=1, limbo=1), factory()],
+             operations=[dict(op='event', actor=2), dict(op='event', actor=1),
+                         dict(op='event', actor=1)]),
+        dict(name='exact_factory_naval_and_owner_peer_groups',
+             actors=[factory(primary=1), factory(), factory(primary=1),
+                     factory(primary=1, type_overrides=dict(naval=1)),
+                     dict(type='GAPILE', primary=1), factory(owner=1, primary=1)],
+             operations=[dict(op='event', actor=2), dict(op='event', actor=6),
+                         dict(op='repeat_event', event=1)]),
+        dict(name='receiver_liveness_and_body_gates',
+             actors=[factory(primary=1), factory(alive=0),
+                     dict(type='GAPOWR')],
+             operations=[dict(op='event', actor=2), dict(op='event', actor=None),
+                         dict(op='event', actor=3),
+                         dict(op='event', actor=2, changes=dict(alive=1, limbo=1,
+                              online=0, health=0, mission=19, queued_mission=19)),
+                         dict(op='repeat_event', event=3)]),
+        dict(name='invisible_factory_self_action_and_received_event',
+             actors=[factory(primary=1),
+                     factory(type_overrides=dict(invisible_in_game=1))],
+             operations=[dict(op='click', actor=2), dict(op='event', actor=2)]),
+        dict(name='construction_yard_received_event_edge',
+             actors=[dict(type='GACNST'), dict(type='GACNST')],
+             operations=[dict(op='event', actor=1), dict(op='event', actor=2),
+                         dict(op='repeat_event', event=1)]),
+    ]
+
+
+def manual_primary_admission_cases():
+    """Supplied prior path counts; original admission decides the outcomes."""
+    return [dict(name=f'planning_prior_{count}_selected_no_path',
+                 planning_admission=dict(prior_house_nonempty_paths=count),
+                 actors=[dict(type='GAWEAP', primary=1), dict(type='GAWEAP')],
+                 operations=[dict(op='click', actor=2, planning=True)])
+            for count in (0, 127, 128)]
+
+
+def manual_primary_case(inputs, case):
+    """One JoinedFixture history; no action/event/selection decision is supplied."""
+    from tools.native_oracle import (NativeCallTrace, initialize_empty_windows_seh,
+                                    checked_is_bad_read_ptr_transport)
+    from tools.spatial_oracle.refinery_dock import HOUSE
+    from tools.spatial_oracle.unit_source_scatter import SCENARIO
+    from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EBX
+
+    f = JoinedFixture(inputs)
+    u, read = f.u, f.read32
+    invoke(u, 0x45B1C0, 0)
+    invoke(u, 0x65C6D0, 0xABE890, 31)
+    if not any(start <= 0 <= end for start, end, _ in u.mem_regions()):
+        initialize_empty_windows_seh(u)
+    houses = [HOUSE, f.allocate(0x6000)]
+    u.mem_write(houses[1], bytes(u.mem_read(HOUSE, 0x6000)))
+    for index, house in enumerate(houses):
+        u.mem_write(house + 0x30, dwords(index))
+    house_items = f.allocate(8)
+    u.mem_write(house_items, dwords(*houses))
+    u.mem_write(0xA8022C, dwords(house_items))
+    u.mem_write(0xA83D4C, dwords(HOUSE))
+    u.mem_write(0xA8B238, dwords(1))
+    u.mem_write(SCENARIO + 0x214, dwords(0))
+    # Actual cached keyboard reader53EC90 returns these supplied settled keys;
+    # no GetAsyncKeyState return or action result is answered.
+    u.mem_write(0xAA0444, dwords(1))
+    u.mem_write(0xAA0168, bytes(512))
+    u.mem_write(0xA8ECC8, dwords(1))
+    selection = f.allocate(4)
+    u.mem_write(0xA8ECBC, dwords(selection))
+    u.mem_write(0xA802C8, dwords(0, 0, 0))
+    clock = f.allocate(16)
+    u.mem_write(0x7E1530, dwords(clock))  # timeGetTime import, not a sim timer.
+    actors, constructor_primary = [], []
+    offsets = dict(primary=(0x3D3, 1), limbo=(0x81, 1), alive=(0x90, 1),
+                   online=(0x660, 1), health=(0x6C, 4), mission=(0xAC, 4),
+                   queued_mission=(0xB4, 4))
+
+    def fields(pointer, values):
+        for key, value in values.items():
+            offset, size = offsets[key]
+            u.mem_write(pointer + offset, bytes([value]) if size == 1 else dwords(value))
+
+    for index, actor in enumerate(case['actors']):
+        pointer = f.allocate(0x800)
+        actors.append(pointer)
+        f.building(actor['type'], pointer, f.allocate(16), coord=(6 + index * 3, 9))
+        # The actual Techno constructor primary-byte store; wider ctor/Unlimbo
+        # remains supplied scene admission, as in JoinedFixture.building.
+        u.reg_write(UC_X86_REG_ESI, pointer)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x6F2F4F, 0x6F2F55)
+        constructor_primary.append(u.mem_read(pointer + 0x3D3, 1)[0])
+        invoke(u, 0x410230, 0, pointer + 4)
+        u.mem_write(pointer + 0x21C, dwords(houses[actor.get('owner', 0)]))
+        u.mem_write(pointer + 0x83, b'\0')
+        fields(pointer, dict(mission=5, queued_mission=-1) |
+                        {k: v for k, v in actor.items() if k in offsets})
+        overrides = actor.get('type_overrides', {})
+        if overrides:
+            typ = f.allocate(0x2000)
+            u.mem_write(typ, bytes(u.mem_read(read(pointer + 0x520), 0x2000)))
+            for key, value in overrides.items():
+                offset, size = dict(naval=(0xCCE, 1), factory=(0xEB8, 4),
+                                    invisible_in_game=(0x1701, 1))[key]
+                u.mem_write(typ + offset, bytes([value]) if size == 1 else dwords(value))
+            u.mem_write(pointer + 0x520, dwords(typ))
+    for index, house in enumerate(houses):
+        owned = [p for p, a in zip(actors, case['actors']) if a.get('owner', 0) == index]
+        items = f.allocate(max(4, 4 * len(owned)))
+        u.mem_write(items, dwords(*owned))
+        u.mem_write(house + 0x6C, dwords(items))
+        u.mem_write(house + 0x78, dwords(len(owned)))
+    # The original ID producer assigned the keys. Runtime publication into a
+    # pre-sorted ID catalog is an explicit scene prior; native lookup/RTTI run.
+    catalog = f.allocate(8 * len(actors))
+    for index, pointer in enumerate(actors):
+        u.mem_write(catalog + index * 8, dwords(read(pointer + 0x10), pointer))
+    u.mem_write(0xB0E840, dwords(catalog, len(actors)))
+    u.mem_write(0xB0E84C, b'\1')
+    u.mem_write(0xB0E850, dwords(0))
+    u.mem_write(0xB78828, dwords(0))
+    admission = case.get('planning_admission')
+    if admission is not None:
+        # Explicit scene prior: other actors already have nonempty paths. The
+        # original counter increment helper, not a supplied decision, records
+        # that prior. Constructing/playing those other paths is outside this VM.
+        u.mem_write(0xAC4B84, bytes(24 * 4))
+        for _ in range(admission['prior_house_nonempty_paths']):
+            invoke(u, 0x639F60, 0)
+        u.mem_write(0xAC4C08, b'\0')
+        u.mem_write(0xB0EA80, dwords(-1, 0, 0))
+        u.mem_write(HOUSE + 0x16054, dwords(0))  # supplied local message color.
+        text = inputs.planner_csf['text'].encode('utf-16-le') + b'\0\0'
+        localized_text = f.allocate(len(text))
+        u.mem_write(localized_text, text)
+    identities = {p: index + 1 for index, p in enumerate(actors)}
+    trace, effects, imports = NativeCallTrace(u, read), [], []
+    entries = {0x447210: ('building_what_action', 2, 8),
+               0x6FFEC0: ('techno_what_action', 2, 8),
+               0x443410: ('building_click', 3, 12),
+               0x6E6AB0: ('target_pack', 1, 4),
+               0x4C65E0: ('target_event_ctor', 4, 16),
+               0x4C6CB0: ('event_execute', 0, 0),
+               0x6E7A80: ('target_as_building', 0, 0),
+               0x6386E0: ('clear_planning_tokens', 0, 0),
+               0x639040: ('planning_compatible', 0, 0),
+               0x639130: ('planning_capacity', 0, 0),
+               0x448160: ('manual_primary', 0, 0),
+               0x448070: ('automatic_primary', 1, 4),
+               0x43F180: ('building_mark', 1, 4),
+               0x50DB00: ('determine_edge', 1, 4),
+               0x5F7900: ('find_factory', 4, 16),
+               0x70D4A0: ('detach', 1, 4), 0x7258D0: ('pointer_expiry', 2, 8)}
+    if admission is not None:
+        entries.update({0x734E60: ('localized_string', 2, 8),
+                        0x730A90: ('planning_message', 0, 0),
+                        0x5D3BA0: ('message_list_add', 7, 28),
+                        0x750920: ('planning_scold', 2, 8),
+                        0x70D150: ('action_line_timer_start', 0, 0)})
+
+    def hook(uc, pc, _size, _data):
+        sp, this = uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_ECX)
+        trace.returned(pc, sp)
+        if pc in entries:
+            trace.entered(pc, sp, entries[pc])
+        if checked_is_bad_read_ptr_transport(uc, pc, sp, imports):
+            return
+        if pc == clock:
+            imports.append(dict(event='OS_timeGetTime', supplied_result=100000))
+            f.ret(100000)
+        elif admission is not None and pc == 0x734E60:
+            key = bytes(uc.mem_read(this, 128)).split(b'\0', 1)[0].decode('latin1')
+            assert key == inputs.planner_csf['key']
+            imports.append(dict(event='localized_string', key=key,
+                                text=inputs.planner_csf['text']))
+            f.ret(localized_text, 8)
+        elif admission is not None and pc == 0x5D3BA0:
+            args = list(struct.unpack('<7I', uc.mem_read(sp + 4, 28)))
+            assert args[2] == localized_text
+            effects.append(dict(event='planning_refusal_message',
+                                key=inputs.planner_csf['key'],
+                                text=inputs.planner_csf['text'],
+                                color=args[3], flags=args[4], duration=args[5],
+                                force=args[6]))
+            f.ret(0, 28)
+        elif admission is not None and pc == 0x750920:
+            effects.append(dict(event='planning_scold',
+                sound_index=struct.unpack('<i', dwords(this))[0],
+                pan=uc.reg_read(UC_X86_REG_EDX),
+                volume_f32_hex=bytes(uc.mem_read(sp + 4, 4)).hex(),
+                handle=read(sp + 8)))
+            f.ret(0, 8)
+        elif pc == 0x752700:
+            key = bytes(uc.mem_read(this, 128)).split(b'\0', 1)[0].decode('latin1')
+            effects.append(dict(event='eva', key=key,
+                                priority=struct.unpack('<i', dwords(uc.reg_read(UC_X86_REG_EDX)))[0],
+                                type=struct.unpack('<i', uc.mem_read(sp + 4, 4))[0]))
+            f.ret(0, 4)
+        elif pc in (0x43F180, 0x50DB00, 0x70D4A0, 0x7258D0):
+            effects.append(dict(event=entries[pc][0], actor=identities.get(this),
+                                argument=identities.get(read(sp + 4), read(sp + 4))))
+
+    u.hook_add(UC_HOOK_CODE, hook)
+
+    def call(entry, this, *args):
+        result = invoke(u, entry, this, *args)
+        trace.returned(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+        return result
+
+    def state():
+        selected = call(0x5F7900, inputs.unit_types['MTNK'], 0, 0, 0, HOUSE)
+        observed = dict(primary=[u.mem_read(p + 0x3D3, 1)[0] for p in actors],
+            find_factory=identities.get(selected),
+            actors=[dict(id=i + 1, uid=read(p + 0x10),
+                         coords=list(struct.unpack('<3i', u.mem_read(p + 0x9C, 12))),
+                         selected=u.mem_read(p + 0x83, 1)[0],
+                         flags={k: (u.mem_read(p + off, 1)[0] if size == 1 else
+                                    struct.unpack('<i', u.mem_read(p + off, 4))[0])
+                                for k, (off, size) in offsets.items() if k != 'primary'},
+                         marked=u.mem_read(p + 0x74, 1)[0],
+                         mission_timer=list(struct.unpack('<3i', u.mem_read(p + 0xC8, 12))),
+                         stage_timer=list(struct.unpack('<5i', u.mem_read(p + 0x100, 20))))
+                    for i, p in enumerate(actors)],
+            houses=[dict(index=i, recheck=u.mem_read(p + 0x1FC, 1)[0], edge=read(p + 0x577C),
+                         timer=list(struct.unpack('<3i', u.mem_read(p + 0x2A4, 12))),
+                         factory_slots=[read(p + off) for off in
+                                        (0x53AC, 0x53B0, 0x53B4, 0x53B8, 0x53BC, 0x53CC)])
+                    for i, p in enumerate(houses)])
+        if admission is not None:
+            observed['planning'] = dict(
+                house_nonempty_paths=[read(0xAC4B84 + i * 4) for i in range(len(houses))],
+                actor_path_present=[bool(read(p + 0x514)) for p in actors],
+                refusal_latch=u.mem_read(0xAC4C08, 1)[0],
+                action_line_timer=list(struct.unpack('<3i', u.mem_read(0xB0EA80, 12))))
+        return observed
+
+    issued, phases = [], []
+    initial = state()
+    before = f.rng(include_mapgen=True)
+    for frame, operation in enumerate(case['operations'], 1):
+        u.mem_write(FRAME, dwords(frame))
+        pointer = actors[operation['actor'] - 1] if operation.get('actor') else 0
+        if operation.get('changes'):
+            fields(pointer, operation['changes'])
+        first_call, first_effect, first_import = len(trace.calls), len(effects), len(imports)
+        first_joined_event = len(f.events)
+        result = {}
+        if operation['op'] == 'automatic':
+            result['return_al'] = call(0x448070, pointer, 0) & 255
+        elif operation['op'] == 'click':
+            u.mem_write(selection, dwords(pointer))
+            for actor in actors:
+                u.mem_write(actor + 0x83, bytes([actor == pointer]))
+            u.mem_write(0xAC4CF4, bytes([bool(operation.get('planning'))]))
+            action = call(0x447210, pointer, pointer, 0)
+            if operation.get('planning'):
+                # Real LeftUp's compatibility/capacity branch for Action4.
+                # Its caller locals/selection are supplied; no gate result or
+                # planning mission/event is synthesized by the driver.
+                u.mem_write(SP, bytes(0x200))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                stop = run_checked(u, 0x4ABF78, (0x4ABF94, 0x4AC294))
+                result['planning_admission_stop'] = f'{stop:08X}'
+                if admission is None:
+                    assert stop == 0x4ABF94, ('ordinary empty-planning control refused', stop)
+                else:
+                    result['admitted'] = stop == 0x4ABF94
+            prior_count, prior_tail = read(0xA802C8), read(0xA802D0)
+            if result.get('admitted', True):
+                call(0x443410, pointer, action, pointer, 0)
+                if admission is not None:
+                    # Actual LeftUp4ABFAE suffix, only after admitted click.
+                    # The timer's unused middle word inherits caller scratch.
+                    u.mem_write(SP - 0x200, bytes(0x200))
+                    call(0x70D150, 0)
+            records = []
+            for index in range(read(0xA802C8) - prior_count):
+                record = 0xA802D4 + ((prior_tail + index) & 127) * 0x6F
+                records.append(record)
+            result.update(action=action, issued=len(records))
+            for record in records:
+                issued.append(record)
+                call(0x4C6CB0, record)
+        elif operation['op'] == 'event':
+            record = f.allocate(0x70)
+            owner = read(pointer + 0x21C) if pointer else HOUSE
+            uid = read(pointer + 0x10) if pointer else 0x12345678
+            call(0x4C65E0, record, read(owner + 0x30), 17, uid, 0x34)
+            issued.append(record)
+            call(0x4C6CB0, record)
+        elif operation['op'] == 'repeat_event':
+            record = issued[operation['event']]
+            call(0x4C6CB0, record)
+        else:
+            raise ValueError(operation)
+        observed = state()
+        phases.append(dict(input=operation, frame=frame, **result, state=observed,
+            effects=effects[first_effect:], imports=imports[first_import:],
+            calls=trace.calls[first_call:], joined_events=f.events[first_joined_event:],
+            rng=f.rng(include_mapgen=True)))
+    assert not f.pending and not trace.pending
+    assert f.code_unchanged()
+    return dict(input=case, actor_addresses=actors, constructor_primary=constructor_primary,
+                initial=initial, rng_before=before, phases=phases,
+                events=[dict(event=read(p) & 255, issuer=u.mem_read(p + 2, 1)[0],
+                             frame=read(p + 3), uid=read(p + 7),
+                             target_kind=u.mem_read(p + 11, 1)[0]) for p in issued],
+                rng_requests=f.draws, rng_advances=f.advances,
+                original_executable_sections_unchanged=True)
+
+
+def manual_primary_generate():
+    from tools.native_oracle import NATIVE_SHA256, image_sha256
+    from tools.rules_oracle.bridge_child_sound import sections
+    # Same existing cache owner and physical-layer selection. GAWEAP only
+    # needs the exact original scalar blocks declared by primary_field_names.
+    assert image_sha256() == NATIVE_SHA256, 'Manual-primary corpus requires the sealed original image'
+    physical = sections((JOINED_ROOT / 'RULESMD.INI').read_bytes())
+    m = joined_inputs(JOINED_ROOT,
+        layers=('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'),
+        building_names=JOINED_NAMES + ('GAWEAP',), art_names=JOINED_ART_NAMES + ('GAWEAP',),
+        country_names=tuple(physical['Countries'].values()), unit_names=('MTNK',),
+        primary_field_names=('GAWEAP',))
+    cases = [manual_primary_case(m, case) for case in manual_primary_cases()]
+    eva_path = Path(__file__).resolve().parents[2] / 'ini/evamd.ini'
+    eva_raw = eva_path.read_bytes()
+    cue = 'EVA_PrimaryBuildingSelected'
+    m.make_ini({cue: sections(eva_raw)[cue]})
+    cue_fields = {}
+    from tools.spatial_oracle.building_body_rules import INI
+    for key in ('Text', 'Allied', 'Russian', 'Yuri', 'Priority'):
+        buffer = m.alloc(256)
+        m.invoke(0x528A10, INI, (m.cstring(cue), m.cstring(key), m.cstring(''), buffer, 256))
+        cue_fields[key] = m.string(buffer)
+    # A separate input run leaves all six original histories/address mappings
+    # untouched while registering the physical refusal sound for these controls.
+    a = joined_inputs(JOINED_ROOT,
+        layers=('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'),
+        building_names=JOINED_NAMES + ('GAWEAP',), art_names=JOINED_ART_NAMES + ('GAWEAP',),
+        country_names=tuple(physical['Countries'].values()), unit_names=('MTNK',),
+        primary_field_names=('GAWEAP',), planning_admission=True)
+    from tools.storage_oracle.keyboard_bindings import stock_csf
+    csf, csf_hash = stock_csf()
+    a.planner_csf = dict(file='langmd.mix/ra2md.csf', sha256=csf_hash,
+                        key='MSG:PlannerMaximum', text=csf['MSG:PLANNERMAXIMUM'])
+    admission_controls = [manual_primary_case(a, case)
+                          for case in manual_primary_admission_cases()]
+    scold_index = a.invoke(0x7514D0, a.cstring('MenuScold'))
+    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+                seed=31, layers=m.layers, country_catalog=m.country_catalog,
+                retail_files=[dict(name=name, size=(JOINED_ROOT / name).stat().st_size,
+                                   sha256=hashlib.sha256((JOINED_ROOT / name).read_bytes()).hexdigest())
+                              for name in ('RULESMD.INI', 'ARTMD.INI', 'SOUNDMD.INI',
+                                           'MPBattleMD.ini', 'Hills.map')],
+                eva=dict(file='EVAMD.INI', sha256=hashlib.sha256(eva_raw).hexdigest(),
+                         key=cue, native_strings=cue_fields),
+                constructor_type_inputs=m.primary_constructor_inputs,
+                native_type_inputs={name: manual_primary_type_state(m.u, p)
+                                    for name, p in m.types.items()},
+                query_unit=dict(name='MTNK', ownable=m.read32(m.unit_types['MTNK'] + 0x6CC),
+                                naval=m.u.mem_read(m.unit_types['MTNK'] + 0xCCE, 1)[0],
+                                rtti=m.invoke(m.read32(m.read32(m.unit_types['MTNK']) + 0x2C),
+                                              m.unit_types['MTNK'])),
+                cases=cases,
+                planning_admission=dict(csf=a.planner_csf,
+                    scold_sound=dict(key='ScoldSound', section='AudioVisual',
+                        constructor_default=a.scold_constructor_default, layers=a.scold_layers,
+                        name='MenuScold', registry_index=scold_index,
+                        selected_registry=list(a.selected['SoundList'].values())),
+                    controls=admission_controls))
+
+
+def manual_primary_metadata():
+    return provenance(scope='Ordinary selected stock GAWEAP self-action/click -> original TargetEvent17/receiver/manual primary448160 -> original MTNK FindFactory, plus explicit receiver/group/limbo/edge controls',
+        entry_points=dict(building_what_action=0x447210, techno_what_action=0x6FFEC0,
+                          building_click=0x443410, target_pack=0x6E6AB0,
+                          target_event_ctor=0x4C65E0, event_execute=0x4C6CB0,
+                          event17_arm=0x4C718C, target_as_building=0x6E7A80,
+                          clear_planning_tokens=0x6386E0, manual_primary=0x448160,
+                          automatic_primary=0x448070, find_factory=0x5F7900,
+                          building_mark=0x43F180, determine_edge=0x50DB00,
+                          primary_ctor_store=0x6F2F4F, create_id=0x410230,
+                          next_id=0x68BCB0, local_house=0x50B6F0,
+                          eva_request=0x752700, planning_compatible=0x639040,
+                          planning_capacity=0x639130, increment_plan_count=0x639F60,
+                          scold_sound_read=0x66ABCD, string_lookup=0x734E60,
+                          planning_message=0x730A90, message_list_add=0x5D3BA0,
+                          centered_scold_sound=0x750920, action_line_timer=0x70D150),
+        assumptions=[
+            'Extends the existing JoinedFixture/Reader/Lists/Sound owners, not a new VM or parser. Full original BuildingType constructors execute. GACNST/GAPOWR/GAPILE keep the existing complete readers. GAWEAP executes exact Image5F92F9..5F9340, Strength5F94D3..5F94F3, BuildCat45FE78..45FE97, Factory46051A..46054B, GapGenerator713F92..713FAC, ConstructionYard460A24..460A44, Owner7149E1..7149FB, Naval714A63..714A7D, Passengers714B35..714B56, absorb460988..4609D6 and InvisibleInGame460DEB..460E07 blocks, then fixed ART Foundation461225..46125D/table binding46152C..461547 after original45B1C0 table initialization. UnitAbsorb is+16AE/key81AABC; InfantryAbsorb is+16AF/key81AAAC. The demand-loaded buildup/image/animation lifecycle is excluded.',
+            'Source-order lexical strings from physical RULESMD.INI, absent LANGRULE.INI, MPBattleMD.ini and Hills.map feed original native scalar/enum readers with their retained constructor defaults. Country vector capacity/physical [Countries] name order are supplied; full5113F0 enrolls/indexes each country before original Owner lookup. Country inherited metadata and full Rules/Process are outside this selected catalog.',
+            'MTNK uses its full UnitType constructor7470D0 and original Owner/Naval read blocks. FindFactory(0,0,0,House) executes unchanged with its actual RTTI; CanBuild/online-required/aircraft contact/paid production/delivery are excluded.',
+            'Building/House/map admission and ordered House building vectors are supplied. Existing Mission/stage constructor stores and sound-handle constructors execute; primary byte store6F2F4F and UID producer410230/68BCB0 execute. Runtime ID catalog publication is supplied sorted storage; original token binary search/RTTI and empty-planning cleanup execute. Cached keyboard is supplied settled with one selected actor. No normal input result is answered.',
+            'The ordinary history executes whole447210,443410, native OutList copy,4C65E0 and4C6CB0. The final empty-planning click also runs actual LeftUp4ABF78..4ABF94 compatibility/capacity gates639040/639130 on one selected actor with null+514 and zero House plan count. Earlier Display geometry/picking/selection and full LeftUp/4AE750 scheduling remain supplied. Event transport/scheduling supplies actual issued record pointers immediately to the original receiver. Direct event controls execute original constructor/receiver without claiming their supplied stale/foreign/limbo/zero-health priors arise from normal clicking.',
+            'Separate planning_admission controls retain the six original histories and supply0/127/128 other nonempty paths as House0 counter priors through original639F60 increments. They select one no-path GAWEAP, execute actual639040/639130 and LeftUp4ABF78 branch, and only on actual acceptance continue the original click/event and70D150 timer suffix. They do not construct128 other paths or execute whole Display/PlanMgr ticks. AC4B84 counts nonempty paths: append638470 increments empty-to-nonempty; consume636718..636760 releases the count at zero remaining commands, before an empty executing path is acknowledged. Dispatch6386E0 and ownership-change701585->638840 clear nonempty paths before owner replacement; capture does not transfer an existing count. Delayed old-issuer appends after capture, arbitrary compatibility and counter corruption are outside these three controls.',
+            'Admission sound inputs use the same Sound/Reader owners, with physical Dummy/MenuScold entries and supplied immutable sample identityumenscol=0. Rules ctor666027 suppliesScoldSound=-1; exact66ABCD..66AC18 ReadString128/7514D0 blocks run in physical RULESMD, optional LANGRULE, MPBattleMD and Hills.map order. Unlayered langmd.mix/ra2md.csf bytes are read by existing keyboard_bindings.stock_csf, without another CSF/INI parser. The native refusal itself selects MSG:PlannerMaximum, sets AC4C08, and calls original730A90 duration480 then750920 centered pan8192/volume1/null handle. No decision result is supplied.',
+            'Each actual per-Building primary byte is observed independently from live FindFactory. A supplied alive+Limbo+primary prior is a representability/control bound, not established stock GAWEAP producer reachability. Factory0, liveness, exact raw Factory/Naval grouping, foreign/local EVA and stale duplicate controls retain original body gates only.',
+            'Scenario/Main/MapGen seed31 use original65C6D0 and retain full1012-byte buffers continuously across each case, with original shared request/advance tracing. Building/House mission, stage and House timer bytes are observed. Native constructor/admission before supplied scene priors, whole frame scheduling and downstream audio cue/device RNG are outside this boundary.',
+            'Original BuildingMark(2) entry/switch body and DetermineEdge execute. Mark2 uses existing705D70 presentation-getter transport, reached8 times in the original six histories and once in each admitted capacity control; its palette/tint/attached-Anim outputs are not claimed unsubstituted. The ordinary untethered scene takes redraw/cache propagation, not occupancy/PlaceUp/PlaceDown. Native executable PE sections compare byte-for-byte before/after. No gameplay, Mark entry, timer, random, factory or peer-loop return or instruction is replaced.'],
+        substitutions=[
+            'Inherited native-input lexical caches, immutable file/image IO, successful shared bump allocation/delete and CRT TLS transports remain. Scene/registry/selection priors are explicit inputs.',
+            'Existing initialize_empty_windows_seh and checked_is_bad_read_ptr_transport supply Windows exception/readability boundaries for original RTTI. timeGetTime IAT7E1530 supplies100000 milliseconds for original OutList transport; no simulation timer result is supplied.',
+            'Only the separate planning_admission controls supply physical localized text at734E60 (RET8), sink the final MessageList5D3BA0 insertion (RET28) after original730A90, and record centered Voc750920 (RET8) before downstream playback/device/RNG. HUD queue layout, pixels and audible playback are not certified. Action-line70D150 executes with zero caller scratch below ESP; its raw middle timer word is unused storage, not a gameplay comparison claim. Existing cases do not install these reached transports.',
+            'Vox752700 records actual literal EVA_PrimaryBuildingSelected, priority/type and returns0 with RET4; audible playback, queue/device state and downstream audio RNG are not certified. Existing JoinedFixture705D70 palette getter returns0 when Mark2 reaches it (8 recorded presentation_boundary entries in the original histories, plus2 in the admission controls). Other inherited UpdateAnimation presentation sinks remain installed but unreached. Common primary toggles change no palette/tint/cloak input; wider cloak/flash/attached-Anim refresh and pixels need their existing presentation owners.'])
+
+
 def joined_generate():
     import json
     from tools.native_oracle import NATIVE_SHA256
@@ -973,8 +1510,11 @@ def joined_metadata():
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    if '--joined' in argv:
-        argv.remove('--joined')
+    if '--joined' in argv or '--manual-primary' in argv:
+        if '--joined' in argv and '--manual-primary' in argv:
+            raise ValueError('--joined and --manual-primary select separate corpora')
+        manual = '--manual-primary' in argv
+        argv.remove('--manual-primary' if manual else '--joined')
         root = Path(__file__).resolve().parents[2]
         sources = ('tools/spatial_oracle/building_construction.py',
                    'tools/native_oracle.py', 'tools/rules_oracle/bridge_anim_inputs.py',
@@ -984,8 +1524,12 @@ def main(argv=None):
                    'tools/spatial_oracle/unit_scatter_state.py', 'tools/spatial_oracle/unit_source_scatter.py',
                    'tools/spatial_oracle/building_body_rules.py', 'tools/spatial_oracle/anim_bouncer_launch.py',
                    'tools/spatial_oracle/building_slot_replacement.py')
-        finish_vectors(joined_generate, Path(__file__).with_name('building_construction_joined.json'),
-                       provenance=joined_metadata, argv=argv,
+        if manual:
+            sources += ('tools/storage_oracle/keyboard_bindings.py', 'tools/sidebar_oracle/stock.py')
+        finish_vectors(manual_primary_generate if manual else joined_generate,
+                       Path(__file__).with_name('building_manual_primary.json' if manual else
+                                                'building_construction_joined.json'),
+                       provenance=manual_primary_metadata if manual else joined_metadata, argv=argv,
                        source_paths={name: root / name for name in sources})
         return
     finish_vectors(

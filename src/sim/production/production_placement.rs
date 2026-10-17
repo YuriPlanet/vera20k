@@ -169,15 +169,10 @@ pub fn active_producer_for_owner_category(
         true,
         &sim.interner,
     );
-    let owner_id = sim.interner.get(owner);
-    let active_sid = owner_id.and_then(|id| sim.production.primary_factory(id, category));
-    let selected = active_sid
-        .and_then(|sid| {
-            candidates
-                .iter()
-                .find(|candidate| candidate.0 == sid)
-                .cloned()
-        })
+    let selected = candidates
+        .iter()
+        .find(|candidate| sim.production.is_primary_factory(candidate.0))
+        .cloned()
         .or_else(|| candidates.into_iter().next())?;
     let display_name = rules
         .object(&selected.3)
@@ -210,16 +205,17 @@ pub fn cycle_active_producer_for_owner_category(
         return false;
     }
 
-    let owner_id = sim.interner.intern(owner);
-    let current = sim.production.primary_factory(owner_id, category);
-    let next_sid =
-        match current.and_then(|sid| candidates.iter().position(|candidate| candidate.0 == sid)) {
-            Some(index) => candidates[(index + 1) % candidates.len()].0,
-            None => candidates[0].0,
-        };
-    sim.production
-        .set_primary_factory(owner_id, category, next_sid);
-    true
+    let next_sid = match candidates
+        .iter()
+        .position(|candidate| sim.production.is_primary_factory(candidate.0))
+    {
+        Some(index) => candidates[(index + 1) % candidates.len()].0,
+        None => candidates[0].0,
+    };
+    // Choosing the already-primary sole candidate keeps the VERA-only cycle
+    // a no-op. Every actual change goes through the native manual owner.
+    sim.production.is_primary_factory(next_sid)
+        || super::can_build::toggle_factory_primary(sim, rules, next_sid)
 }
 
 /// One HouseClass::Place_Production4FB0E0 owner. A building PLACE uses

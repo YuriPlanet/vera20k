@@ -97,8 +97,8 @@ impl Simulation {
     ///
     /// VoiceAttack7090A0 consumes the committed attack target before event
     /// encoding, independently of the actor's old TarCom or UI hover.
-    /// VoiceMove's current projection still retains one sound from native
-    /// ReadSoundList; broader Move lists/retained passes remain open.
+    /// VoiceMove708FC0 consumes the full fixed-catalog list retained by the
+    /// existing type-processing owner, including Enter/Capture/Harvest fallback.
     pub fn order_voice_request<'a>(
         &mut self,
         rules: &'a RuleSet,
@@ -128,25 +128,18 @@ impl Simulation {
         let scalar = match voice_field {
             "VoiceMove" => None,
             "VoiceHarvest" => object.voice_harvest(),
-            "VoiceEnter" => object.voice_enter.as_deref(),
-            "VoiceCapture" => object
-                .voice_capture
-                .as_deref()
-                .or(object.voice_enter.as_deref()),
+            "VoiceEnter" => object.voice_enter(),
+            "VoiceCapture" => object.voice_capture().or(object.voice_enter()),
             _ => return None,
         };
         if let Some(sound) = scalar {
             return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
         }
-        // VoiceMove708FD6..70900C: every nonempty list, including this
-        // represented singleton, spends one raw Main65C780 draw before
+        // VoiceMove708FD6..70900C: every nonempty list, including a
+        // singleton, spends one raw Main65C780 draw before
         // QueueVoice's enable/House rejection. The caller enable gate above
         // instead prevents reaching VoiceMove at all (6FFCBD..6FFCCB).
-        let voices = object
-            .voice_move
-            .as_ref()
-            .map_or(&[][..], std::slice::from_ref);
-        self.voice_request_from_list(voices, voices_enabled, human_player)
+        self.voice_request_from_list(object.voice_move(), voices_enabled, human_player)
     }
 
     /// VoiceAttack7090A0 through the existing SelectWeapon/GetWeapon,

@@ -3,8 +3,10 @@
 import base64
 import configparser
 import hashlib
+import json
 import struct
 import unittest
+from pathlib import Path
 
 from tools.render_depth_fixture import (
     build_fixture, decode_fixture_lcw, decode_literal_lzo,
@@ -72,6 +74,72 @@ def decode_iso_cells(section):
 
 
 class RenderDepthFixtureTests(unittest.TestCase):
+    def test_move_voice_controls_keep_stock_actors_and_use_executed_reader_inputs(self):
+        native = json.loads((Path(__file__).resolve().parents[1] /
+                             'spatial_oracle/move_order_voice.json').read_text())
+        native_inputs = {
+            row['input']['sections'].get('MTNK', {}).get('VoiceMove')
+            for row in native['readers']['retained_controls']
+        }
+        stock = parse_ini(build_fixture(move_order_voice='stock'))
+        for mode in ('stock', 'multiple', 'unknown-first', 'unknown-only'):
+            with self.subTest(mode=mode):
+                ini = parse_ini(build_fixture(move_order_voice=mode))
+                self.assertEqual(len(ini['Units']), 1)
+                self.assertEqual(ini['Units']['0'].split(',')[:5],
+                                 ['Americans', 'MTNK', '256', '48', '48'])
+                self.assertEqual(len(ini['Infantry']), 0)
+                self.assertEqual(ini['IsoMapPack5'], stock['IsoMapPack5'])
+                self.assertEqual(decode_iso_cells(ini['IsoMapPack5'])[48, 48], (0, 0, 0))
+                self.assertEqual(set(decode_overlay_section(ini['OverlayPack'])), {255})
+                for section in ('General', '105mm', 'AP', 'AudioVisual'):
+                    self.assertNotIn(section, ini)
+                if mode == 'stock':
+                    self.assertNotIn('MTNK', ini)
+                else:
+                    self.assertEqual(set(ini['MTNK']), {'VoiceMove'})
+                    self.assertIn(ini['MTNK']['VoiceMove'], native_inputs)
+        with self.assertRaises(ValueError):
+            build_fixture(move_order_voice='stock', damage_feedback='single')
+
+    def test_damage_feedback_keeps_full_health_stock_actors_on_clear_ground(self):
+        for mode, tanks in [('single', 1), ('removal', 5)]:
+            with self.subTest(mode=mode):
+                ini = parse_ini(build_fixture(damage_feedback=mode))
+                gi = ini['Infantry']['0'].split(',')
+                self.assertEqual(gi[:5], ['Americans', 'E1', '256', '52', '48'])
+                units = [entry.split(',') for entry in ini['Units'].values()]
+                self.assertEqual(len(units), tanks)
+                self.assertTrue(all(entry[:3] == ['Americans', 'MTNK', '256'] for entry in units))
+                cells = decode_iso_cells(ini['IsoMapPack5'])
+                actors = units + [gi]
+                positions = [tuple(map(int, entry[3:5])) for entry in actors]
+                self.assertEqual(len(set(positions)), len(actors))
+                self.assertTrue(all(cells[cell] == (0, 0, 0) for cell in positions))
+                self.assertEqual(set(decode_overlay_section(ini['OverlayPack'])), {255})
+                for section in ('General', 'E1', 'MTNK', '105mm', 'AP', 'AudioVisual'):
+                    self.assertNotIn(section, ini)
+        with self.assertRaises(ValueError):
+            build_fixture(damage_feedback='single', house_self_heal='recovery')
+
+    def test_house_self_heal_uses_stock_grant_and_damage_actors(self):
+        for mode, fraction in [('recovery', '256'), ('removal', '32')]:
+            with self.subTest(mode=mode):
+                ini = parse_ini(build_fixture(house_self_heal=mode))
+                shop = ini['Structures']['1'].split(',')
+                self.assertEqual(shop[:5], ['Americans', 'CAMACH', fraction, '44', '50'])
+                units = [entry.split(',') for entry in ini['Units'].values()]
+                self.assertEqual([entry[:3] for entry in units],
+                                 [['Americans', 'MTNK', '256'], ['Americans', 'MTNK', '256']])
+                cells = decode_iso_cells(ini['IsoMapPack5'])
+                for x in (44, 45):
+                    for y in (50, 51):
+                        self.assertEqual(cells[x, y], (0, 0, 0))
+                for section in ('General', 'MTNK', 'CAMACH', '105mm', 'AudioVisual'):
+                    self.assertNotIn(section, ini)
+        with self.assertRaises(ValueError):
+            build_fixture(house_self_heal='recovery', attack_order_voice='unit')
+
     def test_attack_voice_has_clear_stock_targets_and_no_gameplay_overrides(self):
         for target in ('unit', 'building'):
             with self.subTest(target=target):

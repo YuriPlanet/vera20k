@@ -6,7 +6,7 @@ use super::Simulation;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::SoundRegistry;
-use crate::sim::rng::trace_draws;
+use crate::sim::rng::{SimRng, trace_draws};
 
 fn native_voice_corpus() -> serde_json::Value {
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -92,9 +92,17 @@ fn scene_with_input(body: &str, input: &serde_json::Value) -> (Simulation, RuleS
         "[InfantryTypes]\n0=ENGINEER\n[ENGINEER]\nStrength=100\n{body}"
     ));
     let mut rules = RuleSet::from_ini(&ini).unwrap();
-    let sounds = SoundRegistry::from_ini(&IniFile::from_str(
-        "[SoundList]\n0=Move\n1=Enter\n2=Capture\n3=Harvest\n4=Attack\n5=Special\n",
-    ));
+    let native_sounds: String = input["voice_ids"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|id| id.as_i64().filter(|id| *id >= 0))
+        .enumerate()
+        .map(|(index, id)| format!("Native{index}=Sound{id}\n"))
+        .collect();
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str(&format!(
+        "[SoundList]\n0=Move\n1=Enter\n2=Capture\n3=Harvest\n4=Attack\n5=Special\n{native_sounds}"
+    )));
     rules.bind_type_sound_references(&ini, &sounds);
     scene_for_rules(
         rules,
@@ -154,6 +162,190 @@ fn scene_for_rules(
             false,
         ));
     (sim, rules, id)
+}
+
+fn move_control_rules(corpus: &serde_json::Value, reader_case: &str) -> RuleSet {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::test_fixture::ini_sections;
+
+    // The action fixture supplies a positive-health MTNK actor shell. Its
+    // voice fields come only from the linked original raw reader history.
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\n",
+    ));
+    for row in corpus["readers"]["layers"].as_array().unwrap() {
+        if row["absent"] != true {
+            layers.push(RulesLayerKind::Scenario, ini_sections(&row["selected"]));
+        }
+    }
+    if reader_case != "stock" {
+        let mut found = false;
+        for row in corpus["readers"]["retained_controls"].as_array().unwrap() {
+            layers.push(
+                RulesLayerKind::Scenario,
+                ini_sections(&row["input"]["sections"]),
+            );
+            if row["name"] == reader_case {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "native raw reader history {reader_case}");
+    }
+    let processed = layers.process().unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let sounds = SoundRegistry::from_ini(&ini_sections(&corpus["readers"]["sound"]["selected"]));
+    rules.bind_type_sound_references(processed.ini(), &sounds);
+    rules
+}
+
+fn assert_move_voice_request(corpus: &serde_json::Value, row: &serde_json::Value, rules: RuleSet) {
+    let label = row["name"].as_str().unwrap();
+    let input = &row["input"];
+    let output = &row["output"];
+    let sound_name = |index: i64| {
+        corpus["readers"]["sound"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|sound| sound["fixture_index"] == index)
+            .unwrap()["name"]
+            .as_str()
+            .unwrap()
+    };
+    let voices: Vec<_> = input["voice_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|index| sound_name(index.as_i64().unwrap()).to_owned())
+        .collect();
+    assert_eq!(
+        rules.object("MTNK").unwrap().voice_move(),
+        voices,
+        "{label}"
+    );
+    let (mut sim, rules, actor) = scene_for_rules(
+        rules,
+        input,
+        "MTNK",
+        crate::map::entities::EntityCategory::Unit,
+    );
+    // A declared native action boundary, before event encoding/audio. These
+    // complete states are installed once, never reseeded between draws.
+    sim.main_rng =
+        SimRng::from_native_state_hex_for_test(output["main_before_hex"].as_str().unwrap()).into();
+    sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(output["scenario_before_hex"].as_str().unwrap());
+    sim.mapgen_rng =
+        SimRng::from_native_state_hex_for_test(output["mapgen_before_hex"].as_str().unwrap());
+    let enabled = input["voices_enabled"].as_bool().unwrap();
+    let entry = input["caller_entry"].as_str().unwrap();
+    let field = match entry {
+        "0x006FFBE0" | "0x00708FC0" => "VoiceMove",
+        "0x00709020" => "VoiceEnter",
+        "0x00708DC0" => "VoiceCapture",
+        "0x00709060" => "VoiceHarvest",
+        other => panic!("unhandled native order voice {other}"),
+    };
+    let human = sim.house_is_human_player(sim.entities().get(actor).unwrap().owner());
+    let world = sim.state_hash();
+    let (request, draws) = trace_draws(|| {
+        if entry == "0x00708FC0" && !enabled {
+            // Direct disabled VoiceMove bypasses QueueMegaMission's earlier
+            // caller gate, while still consuming the production-bound list.
+            sim.voice_request_from_list(rules.object("MTNK").unwrap().voice_move(), enabled, human)
+        } else {
+            sim.order_voice_request(&rules, actor, field, None, enabled)
+        }
+    });
+    let queued = request.map_or_else(
+        || output["queued_voice_before"].as_i64().unwrap(),
+        |name| {
+            corpus["readers"]["sound"]["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|sound| sound["name"] == name)
+                .expect("queued name belongs to the fixed native catalog")["fixture_index"]
+                .as_i64()
+                .unwrap()
+        },
+    );
+    assert_eq!(
+        queued, output["queued_voice_after"],
+        "{label}: native request"
+    );
+    assert_eq!(
+        serde_json::json!(draws.iter().map(|draw| &draw["value"]).collect::<Vec<_>>()),
+        output["main_draws"],
+        "{label}: raw draw count/order"
+    );
+    for (stream, actual, key) in [
+        ("main", sim.main_rng.native_state_hex(), "main_after_hex"),
+        (
+            "scenario",
+            sim.scenario_rng.native_state_hex(),
+            "scenario_after_hex",
+        ),
+        (
+            "mapgen",
+            sim.mapgen_rng.native_state_hex(),
+            "mapgen_after_hex",
+        ),
+    ] {
+        assert_eq!(
+            actual,
+            output[key].as_str().unwrap(),
+            "{label}: full {stream}"
+        );
+    }
+    assert_eq!(
+        sim.state_hash(),
+        world,
+        "{label}: voice has no world effect"
+    );
+    for expected in output["main_next_four"].as_array().unwrap() {
+        assert_eq!(
+            u64::from(sim.main_rng.next_u32()),
+            expected.as_u64().unwrap(),
+            "{label}"
+        );
+    }
+}
+
+#[test]
+fn move_voice_matches_original_linked_readers_fallbacks_and_all_streams() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/move_order_voice.json");
+    assert_eq!(
+        corpus["native_sha256"],
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
+    );
+    let rows = corpus["voice_controls"].as_array().unwrap();
+    assert_eq!(rows.len(), 18, "all original action controls");
+    for row in rows {
+        assert_move_voice_request(
+            corpus,
+            row,
+            move_control_rules(corpus, row["input"]["reader_case"].as_str().unwrap()),
+        );
+    }
+}
+
+#[test]
+#[ignore = "slow; requires retail Battle map rules and fixed sound catalog"]
+fn retail_move_voice_matches_original_fixed_reader_and_request() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/move_order_voice.json");
+    let row = corpus["voice_controls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "stock_caller")
+        .unwrap();
+    assert_move_voice_request(corpus, row, retail.rules.clone());
 }
 
 fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -> RuleSet {
@@ -599,6 +791,7 @@ fn disabled_order_voice_rejects_before_move_or_fallback_is_reached() {
 fn allied_object_move_voice_matches_native_rng_and_queue() {
     let corpus = native_voice_corpus();
     let mut singleton = 0;
+    let mut multiple = 0;
     let mut empty = 0;
     let mut caller_disabled = 0;
     let mut nonhuman_draw_then_reject = 0;
@@ -621,10 +814,7 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
         let entry = u32::from_str_radix(entry.trim_start_matches("0x"), 16).unwrap();
         assert!(matches!(entry, 0x006f_fbe0 | 0x0070_8fc0), "{name}");
         let is_direct = entry == 0x0070_8fc0;
-        let body = voices
-            .first()
-            .filter(|voice| !voice.is_empty())
-            .map_or(String::new(), |voice| format!("VoiceMove={voice}\n"));
+        let body = format!("VoiceMove={}\n", voices.join(","));
         let (mut sim, rules, id) = scene_with_input(&body, input);
         let human = sim.house_is_human_player(sim.entities().get(id).unwrap().owner());
         assert_eq!(
@@ -635,11 +825,10 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
         let scenario = sim.scenario_rng.logical_state();
         let mapgen = sim.mapgen_rng.logical_state();
         let world_hash = sim.state_hash();
-        // The API consumes its real rules projection for empty/singleton
-        // stock-compatible lists. Multi-entry and an explicit unbound -1
-        // control instead exercise the existing shared list kernel: those
-        // native vector states are outside the scalar rules projection.
-        let kernel_only = is_direct || voices.len() > 1 || voices == [String::new()];
+        // Every reader-producible vector reaches the production rules/API.
+        // Only a direct function entry or an explicit unbound native ID -1
+        // needs the existing kernel seam; ReadSoundList cannot produce -1.
+        let kernel_only = is_direct || voices == [String::new()];
         let (request, draws) = trace_draws(|| {
             if kernel_only {
                 if enabled || is_direct {
@@ -691,12 +880,15 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
             list_kernel += 1;
         } else if !human {
             nonhuman_draw_then_reject += 1;
+        } else if voices.len() > 1 {
+            multiple += 1;
         } else {
             singleton += 1;
         }
     }
     for (name, count) in [
         ("singleton production request", singleton),
+        ("multiple-entry production request", multiple),
         ("empty production list", empty),
         ("disabled caller before VoiceMove", caller_disabled),
         (

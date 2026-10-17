@@ -2,14 +2,14 @@
 //!
 //! RuleSet is the single source of truth for all game object definitions.
 //! It parses the type registries ([InfantryTypes], [VehicleTypes], etc.),
-//! then loads each referenced object's section into typed structs. Weapons
-//! referenced by objects and every explicitly registered warhead are also parsed.
+//! then loads each referenced object's section into typed structs. Every native
+//! registered weapon and warhead is also projected, including retained types.
 //!
 //! ## Loading strategy
 //! 1. Parse type registries → collect all object IDs per category
 //! 2. For each ID, look up its [ID] section → parse into ObjectType
-//! 3. Collect weapon/warhead IDs referenced by all objects
-//! 4. Parse each referenced weapon and every registered/referenced warhead section
+//! 3. Seed weapon/warhead closure from native registries and object references
+//! 4. Parse those bodies and install retained typed-reader results
 //! 5. Log summary counts
 //!
 //! ## Dependency rules
@@ -487,19 +487,22 @@ pub struct GeneralRules {
     /// `[General] SelfHealInfantryFrames=` — `RulesClass+0x30`, read by the
     /// General reader at `0x0066D530`. The house pulse of
     /// `TechnoClass::AI_Update @ 0x006FA8E2` divides the global frame counter
-    /// by it (`idiv`) and runs only on an exact remainder of zero. Stock 50.
+    /// by it (`idiv`) and runs only on an exact remainder of zero.
+    /// Ctor6656A7 defaults1000; ReadInt66E6F3 retains it. Stock50.
     pub self_heal_infantry_frames: i32,
     /// `[General] SelfHealInfantryAmount=` — `RulesClass+0x34`, read by the
     /// same reader. `HouseClass::GetInfSelfHealStep @ 0x0050D9E0` multiplies it
-    /// by the house's infantry count (`+0x164`). Stock 20.
+    /// by the house's infantry count (`+0x164`). Ctor6656AA defaults1;
+    /// ReadInt66E70D retains it. Stock20.
     pub self_heal_infantry_amount: i32,
     /// `[General] SelfHealUnitFrames=` — `RulesClass+0x38`, same reader. The
-    /// unit pulse of `TechnoClass::AI_Update @ 0x006FA8E2` divides the frame
-    /// counter by it. Stock 75.
+    /// unit pulse of `TechnoClass::AI_Update @ 0x006FA7EE` divides the frame
+    /// counter by it. Ctor6656AD defaults1000; ReadInt66E727 retains it. Stock75.
     pub self_heal_unit_frames: i32,
     /// `[General] SelfHealUnitAmount=` — `RulesClass+0x3C`, same reader.
     /// `HouseClass::GetUnitSelfHealStep @ 0x0050D9F0` multiplies it by the
-    /// house's unit count (`+0x168`). Stock 5.
+    /// house's unit count (`+0x168`). Ctor6656B0 defaults1;
+    /// ReadInt66E740 retains it. Stock5.
     pub self_heal_unit_amount: i32,
     /// `[General] VeteranRatio=` — how many times its own cost an object must
     /// destroy to gain one rank. `RulesClass+0x668`, read at `0x0066EEB0`.
@@ -2126,12 +2129,12 @@ impl Default for GeneralRules {
             veteran_armor: 1.0,
             curley_shuffle: false,
             repair_rate_minutes: 0.016,
-            // The native constructor never writes Rules+0x30/+0x34/+0x38/+0x3C,
-            // so the reader's argument stands when the key is absent.
-            self_heal_infantry_frames: 0,
-            self_heal_infantry_amount: 0,
-            self_heal_unit_frames: 0,
-            self_heal_unit_amount: 0,
+            // Rules665696..6656B0 initializes the current-default fields
+            // before ReadGeneral66E6E2..66E74B. Retail overrides are separate.
+            self_heal_infantry_frames: 1000,
+            self_heal_infantry_amount: 1,
+            self_heal_unit_frames: 1000,
+            self_heal_unit_amount: 1,
             veteran_ratio: VETERAN_RATIO_DEFAULT,
             veteran_cap: VETERAN_CAP_DEFAULT,
             computer_base_defense_response: 3,
@@ -3089,8 +3092,8 @@ impl GeneralRules {
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
-            // `0x0066D530`. The native constructor leaves them untouched, so a
-            // rules set without the key keeps the reader's argument: zero.
+            // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current
+            // field, initially constructor1000/1/1000/1, without a clamp.
             self_heal_infantry_frames: general
                 .read_int("SelfHealInfantryFrames", defaults.self_heal_infantry_frames),
             self_heal_infantry_amount: general
@@ -3743,6 +3746,11 @@ pub struct RuleSet {
     type_array_indices: HashMap<(ObjectCategory, String), i32>,
     /// All weapons indexed by ID (e.g., "105mm" → WeaponType).
     weapons: LookupMap<String, WeaponType>,
+    /// Derived from the one processed native Weapon family, in allocation
+    /// order. The bool admits only slots whose Weapon/Warhead stored IDs map
+    /// unambiguously into the existing name projection. Rebuilt with Rules;
+    /// it never allocates or mutates Type state (see issue1784).
+    weapon_array: Vec<(String, bool)>,
     /// All warheads indexed by ID (e.g., "AP" → WarheadType).
     warheads: LookupMap<String, WarheadType>,
     /// All projectiles indexed by ID (e.g., "InvisibleLow" → ProjectileType).
@@ -3981,7 +3989,7 @@ impl RuleSet {
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         processed.validate_saved_state()?;
         let mut rules =
-            Self::from_projected_ini(processed.ini(), project_country_side_registry(processed))?;
+            Self::from_projected_ini(processed, project_country_side_registry(processed))?;
         let mut native_identity_counts = HashMap::new();
         for (category, id, _) in processed.techno_type_states() {
             *native_identity_counts
@@ -4054,7 +4062,31 @@ impl RuleSet {
             rules.general.parachute_max_fall_rate,
             rules.general.no_parachute_max_fall_rate,
         ) = processed.fall_rate_controls();
-        for (name, speed, projectile) in processed.weapon_speeds_and_projectiles() {
+        let mut weapon_name_counts = HashMap::<String, usize>::new();
+        for (name, ..) in processed.weapon_states() {
+            *weapon_name_counts
+                .entry(name.to_ascii_uppercase())
+                .or_default() += 1;
+        }
+        let mut warhead_name_counts = HashMap::<String, usize>::new();
+        for (name, ..) in processed.warhead_anim_states() {
+            *warhead_name_counts
+                .entry(name.to_ascii_uppercase())
+                .or_default() += 1;
+        }
+        for (name, speed, projectile, damage, warhead) in processed.weapon_states() {
+            // Abstract410800 truncates stored IDs to24 bytes, but native
+            // FindOrAllocate compares the full incoming name. Do not alias two
+            // such Types through Action42's ordinal lookup. The wider existing
+            // name-projection limitation remains issue1784, without rejecting
+            // unrelated custom scenarios at load.
+            let unambiguous = weapon_name_counts[&name.to_ascii_uppercase()] == 1
+                && warhead.is_none_or(|name| {
+                    warhead_name_counts.get(&name.to_ascii_uppercase()) == Some(&1)
+                });
+            rules.weapon_array.push((name.to_owned(), unambiguous));
+            // Every consumer keeps the retained fields, as speed/projectile
+            // did before; only the ordinal admission above is gated.
             if let Some(weapon) = rules
                 .weapons
                 .values_mut()
@@ -4062,6 +4094,8 @@ impl RuleSet {
             {
                 weapon.speed = speed;
                 weapon.projectile = projectile.map(str::to_owned);
+                weapon.damage = damage;
+                weapon.warhead = warhead.map(str::to_owned);
             }
         }
         for (category, name, airstrike) in processed.airstrike_states() {
@@ -4272,7 +4306,7 @@ impl RuleSet {
             let section = ini.section(&object.id);
             object.bind_scalar_sound_references(section, sounds);
             object.bind_deploy_voice_references(section, sounds);
-            object.bind_attack_voice_references(section, sounds);
+            object.bind_order_voice_references(section, sounds);
             object.voice_select = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "VoiceSelect")
             });
@@ -4350,9 +4384,10 @@ impl RuleSet {
     }
 
     fn from_projected_ini(
-        ini: &IniFile,
+        processed: &ProcessedRulesLayers,
         country_side_registry: ProjectedCountrySideRegistry,
     ) -> Result<Self, RulesError> {
+        let ini = processed.ini();
         let mut object_list: Vec<ObjectType> = Vec::new();
         let mut object_index: LookupMap<String, TypeHandle> = LookupMap::default();
         let mut object_category_index: HashMap<(ObjectCategory, String), TypeHandle> =
@@ -4562,6 +4597,10 @@ impl RuleSet {
 
         // Step 2: Collect all weapon IDs referenced by objects.
         let mut weapon_ids = collect_weapon_refs(&object_list);
+        // Existing process-resident weapons remain allocated even when no
+        // current object references them. Action42 indexes this native family
+        // directly (6E2390), so materialize the same retained bodies.
+        weapon_ids.extend(processed.weapon_states().map(|(id, ..)| id.to_owned()));
         if let Some(default_death_weapon) = ini
             .section_or_empty("CombatDamage")
             .read_name("DeathWeapon", 0x80)
@@ -4871,6 +4910,7 @@ impl RuleSet {
             native_techno_type_order: Vec::new(),
             type_array_indices,
             weapons,
+            weapon_array: Vec::new(),
             warheads,
             projectiles,
             countries,
@@ -5284,6 +5324,14 @@ impl RuleSet {
         Self::lookup_ci(&self.weapons, id)
     }
 
+    /// WeaponType global88756C's allocation index, used by Action42 at
+    /// 6E2390. Negative/out-of-range indices and ambiguous truncated
+    /// Weapon/Warhead names refuse admission rather than selecting an alias.
+    pub fn weapon_by_array_index(&self, index: i32) -> Option<&WeaponType> {
+        let (name, unambiguous) = self.weapon_array.get(usize::try_from(index).ok()?)?;
+        unambiguous.then(|| self.weapon(name)).flatten()
+    }
+
     /// Look up a warhead by ID (case-insensitive, gamemd parity).
     pub fn warhead(&self, id: &str) -> Option<&WarheadType> {
         Self::lookup_ci(&self.warheads, id)
@@ -5315,7 +5363,7 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v16".hash(&mut hasher);
+        b"rules-simulation-config-v17".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // Global construction order changes which category106 mutates when
         // IDs coincide. Current TechLevels can also differ after retained
@@ -5393,6 +5441,9 @@ impl RuleSet {
         self.general.weather_con_bolt_explosion.hash(&mut hasher);
         self.general.weapon_nullify_anim.hash(&mut hasher);
         self.combat_damage.splash_list.hash(&mut hasher);
+        // The live family order is independent of HashMap iteration and may
+        // survive earlier passes absent from the current source stack.
+        self.weapon_array.hash(&mut hasher);
         self.warheads
             .iter()
             .map(|(name, wh)| {
@@ -5409,7 +5460,12 @@ impl RuleSet {
                 (
                     id.to_ascii_uppercase(),
                     (
-                        (weapon.speed, &weapon.projectile),
+                        (
+                            weapon.speed,
+                            &weapon.projectile,
+                            weapon.damage,
+                            &weapon.warhead,
+                        ),
                         (
                             weapon.is_laser,
                             weapon.is_house_color,
@@ -5497,7 +5553,7 @@ impl RuleSet {
         // Rules text is identical. Empty versus nonempty vectors gates Main
         // draws; list order/duplicates select the sound. Hash effective lists
         // in canonical type order, independently of registry insertion order.
-        b"resolved-type-sound-lists-v3".hash(&mut hasher);
+        b"resolved-type-sound-lists-v4".hash(&mut hasher);
         self.general.voice_ifv_repair().hash(&mut hasher);
         self.object_list
             .iter()
@@ -5507,6 +5563,10 @@ impl RuleSet {
                     (
                         &object.voice_select,
                         &object.voice_select_enslaved,
+                        object.voice_move(),
+                        object.voice_enter(),
+                        object.voice_capture(),
+                        object.voice_harvest(),
                         &object.move_sound,
                         &object.voice_special_attack,
                         &object.voice_feedback,
@@ -8555,13 +8615,56 @@ MutateWarhead=MyMutate\n\
         .unwrap();
         assert_eq!(bare.general.veteran_rof, 1.0);
         assert_eq!(bare.general.upgrade_veteran_sound, None);
-        // `RulesClass+0x30/+0x34/+0x38/+0x3C` are never written by the native
-        // constructor, so a rules set without the keys keeps the reader's
-        // argument: zero, which the heal arms decline to divide by.
-        assert_eq!(bare.general.self_heal_infantry_frames, 0);
-        assert_eq!(bare.general.self_heal_infantry_amount, 0);
-        assert_eq!(bare.general.self_heal_unit_frames, 0);
-        assert_eq!(bare.general.self_heal_unit_amount, 0);
+        // Rules6656A7..6656B0 supplies the retained ReadInt defaults.
+        assert_eq!(bare.general.self_heal_infantry_frames, 1000);
+        assert_eq!(bare.general.self_heal_infantry_amount, 1);
+        assert_eq!(bare.general.self_heal_unit_frames, 1000);
+        assert_eq!(bare.general.self_heal_unit_amount, 1);
+    }
+
+    /// Original constructor6656A7..6656B0 and ReadGeneral66E6E2..66E74B.
+    /// The retained corpus distinguishes physical empty-value omission from
+    /// an explicitly prepared stored-empty native cache entry.
+    #[test]
+    fn house_self_heal_defaults_and_retained_readers_match_native_execution() {
+        use crate::rules::native_processing::RulesLayerKind;
+
+        let native =
+            crate::test_fixture::json("tools/procedural_drawing_oracle/self_heal_status.json");
+        let controls = &native["reader_controls"];
+        let state = |general: &GeneralRules| {
+            serde_json::json!({
+                "SelfHealInfantryFrames": general.self_heal_infantry_frames,
+                "SelfHealInfantryAmount": general.self_heal_infantry_amount,
+                "SelfHealUnitFrames": general.self_heal_unit_frames,
+                "SelfHealUnitAmount": general.self_heal_unit_amount,
+            })
+        };
+        assert_eq!(state(&GeneralRules::default()), controls["constructor"]);
+        let mut layers = RulesLayerStack::new(IniFile::empty());
+        let mut rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(state(&rules.general), controls["constructor"]);
+        let rows = controls["retained_history"].as_array().unwrap();
+        assert_eq!(rows.len(), 11);
+        for row in rows {
+            assert_eq!(state(&rules.general), row["before"], "{}", row["name"]);
+            let mut pass = IniFile::from_str(row["input_text"].as_str().unwrap());
+            if row["raw_cached_values"] == true {
+                // This row supplies a native cache, rather than a physical
+                // file. Use the existing cache API; do not reinterpret empty
+                // authored values that the normal lexical loader omits.
+                for (name, keys) in row["sections"].as_object().unwrap() {
+                    let mut section = IniSection::new(name.clone());
+                    for (key, value) in keys.as_object().unwrap() {
+                        section.set(key, value.as_str().unwrap());
+                    }
+                    pass.replace_first_section(section);
+                }
+            }
+            layers.push(RulesLayerKind::Scenario, pass);
+            rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(state(&rules.general), row["after"], "{}", row["name"]);
+        }
     }
 
     #[test]

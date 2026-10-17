@@ -1,0 +1,3139 @@
+{
+  "complete_rng_states": {
+    "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b": {
+      "bytes": "00000000000000006700000018c6fe8c13b5b40768a26b525bf5617fc465482a85470f9da1844da1b682adca2f7e74cfdd4106f0737f761086f95067ceb0cd3249bdcf96e1795ff241d0c4cb7a0ab1a95f5e901d2d7a96ce89555bb0097dba3cd92cd50087e2268580e78340f5eb2381f1663c0c4051b3e0d88fce9e5dcd9e1b8eea43832b22b9892f724e4c153ab34adc8b60e380b3a93ee8d499de5c313d662140bce44e08ca2dfe93d7f8a69fca7d36e217954c46631152d3f1480b8d3464bbc77f069165af26b8fe1993e09be442935da6e0f9ec38946de3195fed6f17eedaae2651a5cff9d2d3e26aed432ea1218500b0258f7af6f98304218156ae5fd416f894b40a06bcf2dc026c172b803acff3eff969ed00f2378dbfcf417810e2c94f68f3684a016813eb3ffcaa9daf29bafa9b186524c392bbb26906b3d44d30db47f2182110eaad55cddaf80d6d7c55c1ce827dbaf23dcf5c0e623fdd06ff7797cf909733b9acd1b0f92d2f0d23a1b31da3a3cf0b75ff328c325e4b1e05eae5b88415cc188796876791937557c43e59360b4a2915ffac24b056b668b705b047cc2c61f925ab3fc9ba86dc2544e71158e07305f21e3651cf829c3a57d73fc5bffad24e56244ec69032bbdfaba8b3bb4a12096b1b01d35996729ebc5564795427bb9f9daa7d79215e5ff388cd6c3545384209e643552b2d766f4ab955f5a2ba90b1360eecd11fe21c11401d42e89fbf3b7d473d6ee5ac4e4fa158c1fd8ab51bbf5e3446721791bdbdfe9a81df84eb5139895e40ef4c41467a13a49e4ca239cce784d2e18b961c52746f20d1796f12294ac75fd43b3ab097a7fc4350835e75e09802b16d51bd147eb902c529eab6b2a2b40c3e08e12c8143e3f4a6fe54caed60cc4466d3b6bfd77185d4bfa121854edacccb715010e909b076b9b6ca9becc25674ae0c838b7374ceda8c9f25934bafcdababab8ead25f5a03591f94d840297dd752012e5b5491d5119719c4a0f4f24e48da202f9b104a5bffd39b57da3161470a6c011d282239891083c5d977481472f2dd25a74f0f175463271e1183779b5504612d3b2a0c548f992a0966195ec6da8230ea6d991d225df889760d0f130c92d2e198a085c668ccf75a6d14e1a800fad777b330f5918b26ab5f54325cfeffd92a1597dce54b36e866217d2aabb39cf6512a3124eeb543d2253a1febbc79ac217d52f474e9c7370cfba4d1bba418f191bd5f2ebce30cfed464322e31553f8d55a48541a185417d81044fe2c18e7ee66ddb7e60d7f09ed22a4e0a7ffc260795b7e8169d4696a2add11cd77d725c2e3f32cc7aef1c4fe419fe87b6ee0893c5ccd879d3270ff30a532a9caa53f782b3b76b8ef3358a9c3b36c5513a2d074df11e6fb0daf1465a4ce65021bd6507b21d0582b0abda52f1403",
+      "sha256": "29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+      "stream": "main"
+    },
+    "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d": {
+      "bytes": "0000000001000000680000009e1adbc813b5b40768a26b525bf5617fc465482a85470f9da1844da1b682adca2f7e74cfdd4106f0737f761086f95067ceb0cd3249bdcf96e1795ff241d0c4cb7a0ab1a95f5e901d2d7a96ce89555bb0097dba3cd92cd50087e2268580e78340f5eb2381f1663c0c4051b3e0d88fce9e5dcd9e1b8eea43832b22b9892f724e4c153ab34adc8b60e380b3a93ee8d499de5c313d662140bce44e08ca2dfe93d7f8a69fca7d36e217954c46631152d3f1480b8d3464bbc77f069165af26b8fe1993e09be442935da6e0f9ec38946de3195fed6f17eedaae2651a5cff9d2d3e26aed432ea1218500b0258f7af6f98304218156ae5fd416f894b40a06bcf2dc026c172b803acff3eff969ed00f2378dbfcf417810e2c94f68f3684a016813eb3ffcaa9daf29bafa9b186524c392bbb26906b3d44d30db47f2182110eaad55cddaf80d6d7c55c1ce827dbaf23dcf5c0e623fdd06ff7797cf909733b9acd1b0f92d2f0d23a1b31da3a3cf0b75ff328c325e4b1e05eae5b88415cc188796876791937557c43e59360b4a2915ffac24b056b668b705b047cc2c61f925ab3fc9ba86dc2544e71158e07305f21e3651cf829c3a57d73fc5bffad24e56244ec69032bbdfaba8b3bb4a12096b1b01d35996729ebc5564795427bb9f9daa7d79215e5ff388cd6c3545384209e643552b2d766f4ab955f5a2ba90b1360eecd11fe21c11401d42e89fbf3b7d473d6ee5ac4e4fa158c1fd8ab51bbf5e3446721791bdbdfe9a81df84eb5139895e40ef4c41467a13a49e4ca239cce784d2e18b961c52746f20d1796f12294ac75fd43b3ab097a7fc4350835e75e09802b16d51bd147eb902c529eab6b2a2b40c3e08e12c8143e3f4a6fe54caed60cc4466d3b6bfd77185d4bfa121854edacccb715010e909b076b9b6ca9becc25674ae0c838b7374ceda8c9f25934bafcdababab8ead25f5a03591f94d840297dd752012e5b5491d5119719c4a0f4f24e48da202f9b104a5bffd39b57da3161470a6c011d282239891083c5d977481472f2dd25a74f0f175463271e1183779b5504612d3b2a0c548f992a0966195ec6da8230ea6d991d225df889760d0f130c92d2e198a085c668ccf75a6d14e1a800fad777b330f5918b26ab5f54325cfeffd92a1597dce54b36e866217d2aabb39cf6512a3124eeb543d2253a1febbc79ac217d52f474e9c7370cfba4d1bba418f191bd5f2ebce30cfed464322e31553f8d55a48541a185417d81044fe2c18e7ee66ddb7e60d7f09ed22a4e0a7ffc260795b7e8169d4696a2add11cd77d725c2e3f32cc7aef1c4fe419fe87b6ee0893c5ccd879d3270ff30a532a9caa53f782b3b76b8ef3358a9c3b36c5513a2d074df11e6fb0daf1465a4ce65021bd6507b21d0582b0abda52f1403",
+      "sha256": "5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+      "stream": "main"
+    },
+    "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8": {
+      "bytes": "00000000030000006a0000001283cfa5eb1c2564f668f457c6d5913b7d4d7e199ddd1f9f82662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67",
+      "sha256": "60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+      "stream": "main"
+    },
+    "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec": {
+      "bytes": "0000000002000000690000001283cfa5eb1c25646c506cd6c6d5913b7d4d7e199ddd1f9f82662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67",
+      "sha256": "6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+      "stream": "main"
+    },
+    "main:bfc3f51e0fa9b66f733effb2a4062df55be216d8e2f862af23b05da381829415": {
+      "bytes": "0000000001000000680000001283cfa58f889c726c506cd6c6d5913b7d4d7e199ddd1f9f82662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67",
+      "sha256": "bfc3f51e0fa9b66f733effb2a4062df55be216d8e2f862af23b05da381829415",
+      "stream": "main"
+    },
+    "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34": {
+      "bytes": "000000000000000067000000a3e56e528f889c726c506cd6c6d5913b7d4d7e199ddd1f9f82662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67",
+      "sha256": "d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+      "stream": "main"
+    },
+    "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6": {
+      "bytes": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+      "sha256": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "stream": "mapgen"
+    },
+    "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8": {
+      "bytes": "00000000030000006a0000001283cfa5eb1c2564f668f457c6d5913b7d4d7e199ddd1f9f82662e6f4bccdd0303f062b9b037d31d8b1bc030f565f821410c76187a25860010315b0deff695337119bc786f5f77cbbc3c1455a74e2ec7d29a7e8412788d82943686a241bed2a02ae59381532bc37a3991adcfaf8b2415a04899a3f3e61e238c608703037a92e37c01123da97537050acbe2dda122857f0059c7bc1ab01ab80069fd14f1448126d2af1137fada121528e5094b457825fbbc2963acca26c1347c4cce3d4c37e19289c01c0aa3ff08ee74e7bb7ad8b24b842e86181438854f88f639e743719d47e4f28a4c144771fe27bb023a9bf5537e2d5cc5f0c462d73b00cd7dfe0e90f8b9f17b9afd2293a2d0f4a9d9391f939ecbd59ed51db79bb6b7cc558850c56f4d7aa607335ebaaf04748921e8656a3397eea753d1db9b6675f6db510b684b2855f3695bec5a6600135bbb8de95d4592e06387ee4933c74907a343cc17d38508794d3efd139ee8cdc3f53bd6774e4bddc8fe72a726d7eaf49bed3d15556bbf47724f38002d1cec9b1d7f43371f06709b9c93dd5d79a1c09f534fc2198ba131b166a1f76494b9169a389881b3e404e90a7361ca46c1a01f17410c6ef2ffdf247eef71ab0a45ff91fee7772ab46b8eaab1e75c6609512eb0bddb811ed29590ed8de34c1dc75aa6b2a7951838e4fb9e8d4a8b449ade7a8fe976e503ff135d9b4b888063ea48b5306f5d9490427b9dbbeb68995df6a86981748f203d389913d0d8a4cd3c0d520b1408fbdf55d988161bcd2ea89f1ce9f348d5efacc0daa30b5c9f6a3eaedf4832ca859c26f05a9e65d485680d1fcab2cd606ca0542542d952c71e565a45979128ba151b9c9df9578a1c8d8d6b0a48ade06c1f3c3cff8ed85f86bd67b828331d9019333ec00e530e8b13471fd0e7cb7466f5cd2201b34b5bd661e193a1dac2beaf4e1c12de41dc590d8877835fd81a5bcc1e8ec75a2213a7e0165796e92577afbee2b1d2a5ce4926ec578dc33221f56b6da327bc9cfaa43e73dd6c114327b4eb328db7fde344997aaeb92cb1b70cd7d06d8f0ca780ccdfcf4e6c0908f220883e675b204a49379a64d66c9e87b73f7528dbc67bf60bead533f3943cbbf3c5386ca0c70d2d840de315e96d0f314b1f1d5fbb45e1e0e420ca16027aa4ac5fac67edff7203dfbc4e5569ae108b47693633b2e98244a8831f9686c91bccd86989c607b76683a52109e4ff61f781946507a6d180a3e44aa2ebdd4323d74b0addda11f5c22609f58f53b267d84a1077f62771b6f359d8e10b4b3958da7088758fd2801290e969e3c84c74ac15a3c182e726e3d5c7ee72bbd275a5654069afb8815d60587cc578ea9d534127812d2835435f4a72c4b75303e4e329800f3b37a44c02e43e4b4190f371aa67",
+      "sha256": "60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+      "stream": "scenario"
+    },
+    "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f": {
+      "bytes": "00000000030000006a0000009e1adbc8f4a4ece71ba7994c5bf5617fc465482a85470f9da1844da1b682adca2f7e74cfdd4106f0737f761086f95067ceb0cd3249bdcf96e1795ff241d0c4cb7a0ab1a95f5e901d2d7a96ce89555bb0097dba3cd92cd50087e2268580e78340f5eb2381f1663c0c4051b3e0d88fce9e5dcd9e1b8eea43832b22b9892f724e4c153ab34adc8b60e380b3a93ee8d499de5c313d662140bce44e08ca2dfe93d7f8a69fca7d36e217954c46631152d3f1480b8d3464bbc77f069165af26b8fe1993e09be442935da6e0f9ec38946de3195fed6f17eedaae2651a5cff9d2d3e26aed432ea1218500b0258f7af6f98304218156ae5fd416f894b40a06bcf2dc026c172b803acff3eff969ed00f2378dbfcf417810e2c94f68f3684a016813eb3ffcaa9daf29bafa9b186524c392bbb26906b3d44d30db47f2182110eaad55cddaf80d6d7c55c1ce827dbaf23dcf5c0e623fdd06ff7797cf909733b9acd1b0f92d2f0d23a1b31da3a3cf0b75ff328c325e4b1e05eae5b88415cc188796876791937557c43e59360b4a2915ffac24b056b668b705b047cc2c61f925ab3fc9ba86dc2544e71158e07305f21e3651cf829c3a57d73fc5bffad24e56244ec69032bbdfaba8b3bb4a12096b1b01d35996729ebc5564795427bb9f9daa7d79215e5ff388cd6c3545384209e643552b2d766f4ab955f5a2ba90b1360eecd11fe21c11401d42e89fbf3b7d473d6ee5ac4e4fa158c1fd8ab51bbf5e3446721791bdbdfe9a81df84eb5139895e40ef4c41467a13a49e4ca239cce784d2e18b961c52746f20d1796f12294ac75fd43b3ab097a7fc4350835e75e09802b16d51bd147eb902c529eab6b2a2b40c3e08e12c8143e3f4a6fe54caed60cc4466d3b6bfd77185d4bfa121854edacccb715010e909b076b9b6ca9becc25674ae0c838b7374ceda8c9f25934bafcdababab8ead25f5a03591f94d840297dd752012e5b5491d5119719c4a0f4f24e48da202f9b104a5bffd39b57da3161470a6c011d282239891083c5d977481472f2dd25a74f0f175463271e1183779b5504612d3b2a0c548f992a0966195ec6da8230ea6d991d225df889760d0f130c92d2e198a085c668ccf75a6d14e1a800fad777b330f5918b26ab5f54325cfeffd92a1597dce54b36e866217d2aabb39cf6512a3124eeb543d2253a1febbc79ac217d52f474e9c7370cfba4d1bba418f191bd5f2ebce30cfed464322e31553f8d55a48541a185417d81044fe2c18e7ee66ddb7e60d7f09ed22a4e0a7ffc260795b7e8169d4696a2add11cd77d725c2e3f32cc7aef1c4fe419fe87b6ee0893c5ccd879d3270ff30a532a9caa53f782b3b76b8ef3358a9c3b36c5513a2d074df11e6fb0daf1465a4ce65021bd6507b21d0582b0abda52f1403",
+      "sha256": "c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f",
+      "stream": "scenario"
+    }
+  },
+  "physical": [
+    {
+      "bytes": 48,
+      "name": "120MM.SHP",
+      "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
+    },
+    {
+      "bytes": 336535,
+      "name": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    {
+      "bytes": 2672,
+      "name": "CTMISC03.SHP",
+      "sha256": "2bcef904fd968c5bf400e436e5c195000612e174313c810de9c650f5ac4d9161"
+    },
+    {
+      "bytes": 1728,
+      "name": "DBRIS1LG.SHP",
+      "sha256": "e45eee6368cc397d13b56dff989d5695cd605212a0055e64cadbb988a57d8f9f"
+    },
+    {
+      "bytes": 1536,
+      "name": "DBRIS1SM.SHP",
+      "sha256": "9f39db7add44a9d3ac33c5025705c0511b63ba3313d531074432ee88c4c4e422"
+    },
+    {
+      "bytes": 2600,
+      "name": "DBRIS4LG.SHP",
+      "sha256": "4262df2a6f4aaf5600c6a726f2b977fbbfc8f8824ba79b4857af0b06a4743bcc"
+    },
+    {
+      "bytes": 2824,
+      "name": "DBRIS4SM.SHP",
+      "sha256": "81cf49b9f7849b69c71e92844ece9c4494e329abf718edc8fd80c7dc66f299ca"
+    },
+    {
+      "bytes": 2104,
+      "name": "DBRIS5LG.SHP",
+      "sha256": "db855e5306685a81310789fc3f3ade6e25bc8be36efb05cca38db5323654737d"
+    },
+    {
+      "bytes": 1536,
+      "name": "DBRIS5SM.SHP",
+      "sha256": "df75d0676499c700358f36377f1b042577ffef82ea38ee871249cdfebf15b432"
+    },
+    {
+      "bytes": 114032,
+      "name": "ENGINEER.SHP",
+      "sha256": "f8eb0dc0156a877028ac2ed57bf2e71a9445ffcb6ef6a4caf3b0dbb7b111834c"
+    },
+    {
+      "bytes": 6344,
+      "name": "GGCNST_A.SHP",
+      "sha256": "f7ddb3c50e2a44894db6d0e6b455ba57a6c252eec3b4daba79363daa04135559"
+    },
+    {
+      "bytes": 320968,
+      "name": "GGCNST_B.SHP",
+      "sha256": "aa037ee1329c2ea6db5275485c0d864554452f2f4b871a4f2c5d38e2f3f8fe25"
+    },
+    {
+      "bytes": 23584,
+      "name": "GGPILE_A.SHP",
+      "sha256": "37bd29c741fbe235411c8416e78abd41a59c57f935f60a4fbf091e501462c23e"
+    },
+    {
+      "bytes": 49480,
+      "name": "GGPOWR_A.SHP",
+      "sha256": "4761e4c39be2683362baa8987fbbcff9ab0deacda75344848b9427e84c621724"
+    },
+    {
+      "bytes": 186032,
+      "name": "GI.SHP",
+      "sha256": "bceaee9c270d6382d80d509f2c4b2893c10565f779096b3add37a4d5321e8be1"
+    },
+    {
+      "bytes": 428080,
+      "name": "GTCNSTMK.SHP",
+      "sha256": "cfefb3b412c48ffd57852ec4e22b1109affdaac62b3061e2a58a7c071daeed46"
+    },
+    {
+      "bytes": 181888,
+      "name": "GTPILEMK.SHP",
+      "sha256": "bacb42b4048a5077101c6f35fb403a1835def1348567aafb67356f52b6c92297"
+    },
+    {
+      "bytes": 101960,
+      "name": "GTPOWRMK.SHP",
+      "sha256": "0ae9b81804b725ff662a56c81d23b3af031d66ac273554651bb0ccf189fdc873"
+    },
+    {
+      "bytes": 792,
+      "name": "GUNFIRE.SHP",
+      "sha256": "863ad6a6a184f8ca1863ea1546af75972f0af973c36efa7e270575ae28a161e9"
+    },
+    {
+      "bytes": 144458,
+      "name": "Hills.map",
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    },
+    {
+      "bytes": 144760,
+      "name": "Hills.mmx",
+      "sha256": "96de259a741f1fc4d0d4bc4de1a1582755e90a77c2404978814149113fc42f22"
+    },
+    {
+      "bytes": 295,
+      "name": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "bytes": 743215,
+      "name": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "bytes": 2488,
+      "name": "SMOKEY2.SHP",
+      "sha256": "52f6faf0f78607bb4215c8c22a502c516dbbe0a5734440229f1c9ea4290f30ea"
+    },
+    {
+      "bytes": 99392,
+      "name": "SOUNDMD.INI",
+      "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+    },
+    {
+      "bytes": 65744,
+      "name": "S_BANG48.SHP",
+      "sha256": "653bd2cfd875bf71ddb8b0ce48f5855a65869eede7d510bacd4f11cf0a3535c1"
+    },
+    {
+      "bytes": 21544,
+      "name": "S_BRNL58.SHP",
+      "sha256": "ed2a252d2479facadd219496c9a4d47165b9e52857e239633a62b1a6cfa5d986"
+    },
+    {
+      "bytes": 6088,
+      "name": "S_CLSN16.SHP",
+      "sha256": "771b2c8f180dc29d6296cd96084425bdb4323c708aa133fe1e339eb0b2d2d3da"
+    },
+    {
+      "bytes": 9536,
+      "name": "S_CLSN22.SHP",
+      "sha256": "4217fa39c3c970fa718c8e16d500a6bf39ecdb72c1dd7df21a1a6271abb0a294"
+    },
+    {
+      "bytes": 77960,
+      "name": "S_CLSN58.SHP",
+      "sha256": "8a976413360cd20392bab3b98ec2dafa82c123a4aee4dfee13a3d9e05d019e37"
+    },
+    {
+      "bytes": 66672,
+      "name": "S_TUMU60.SHP",
+      "sha256": "9a22506695d0a7cb6b94058100b40bb11e52ca3c24987c9bc962af590d90c2fb"
+    },
+    {
+      "bytes": 7120,
+      "name": "TWLT026.SHP",
+      "sha256": "ceef1aadc2ad3dcd11755b065631836e154041060b3fd3ec09ceb73173d089a7"
+    },
+    {
+      "bytes": 12024,
+      "name": "TWLT036.SHP",
+      "sha256": "9e210bc3ccd550439fc96e46b9db2f494a18b6ac2b6ff6f953ec42597a3eadee"
+    },
+    {
+      "bytes": 95472,
+      "name": "TWLT070.SHP",
+      "sha256": "2b48d44f23c91591f8b905fbbc9bfcb584e0069784d7472212d6a5e3df5fcd2f"
+    },
+    {
+      "bytes": 37625632,
+      "name": "audio.bag",
+      "sha256": "8917fb579eb9f312b09f626e8b6b085958a36d0aa86b4e7db3f4cfb87016f69f"
+    },
+    {
+      "bytes": 82272,
+      "name": "audio.idx",
+      "sha256": "b3be1ac75032d062dce3d7415cb7dbe7ceec0b479bc6450241dee3148b7c12c1"
+    }
+  ],
+  "retail": {
+    "e1": {
+      "armor": 0,
+      "strength": 125,
+      "voice_feedback": {
+        "ids": [
+          13
+        ],
+        "names": [
+          "GIFear"
+        ]
+      }
+    },
+    "layers": [
+      {
+        "bytes": 743215,
+        "file": "RULESMD.INI",
+        "native_after": {
+          "e1_strength": 125,
+          "mtnk_strength": 300,
+          "voice_feedback": {
+            "ids": [
+              13
+            ],
+            "names": [
+              "GIFear"
+            ]
+          },
+          "weapon_damage": 65
+        },
+        "sections": {
+          "105mm": {
+            "Damage": "65",
+            "Projectile": "Cannon",
+            "ROF": "60",
+            "Range": "5",
+            "Warhead": "AP"
+          },
+          "AP": {
+            "ProneDamage": "50%",
+            "Verses": "25%,25%,15%,75%,100%,100%,65%,45%,60%,60%,100%"
+          },
+          "E1": {
+            "Armor": "none",
+            "Strength": "125",
+            "VoiceFeedback": "GIFear"
+          },
+          "MTNK": {
+            "Armor": "heavy",
+            "Primary": "105mm",
+            "Strength": "300"
+          }
+        },
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "bytes": 295,
+        "file": "MPBattleMD.ini",
+        "native_after": {
+          "e1_strength": 125,
+          "mtnk_strength": 300,
+          "voice_feedback": {
+            "ids": [
+              13
+            ],
+            "names": [
+              "GIFear"
+            ]
+          },
+          "weapon_damage": 65
+        },
+        "sections": {
+          "105mm": {},
+          "AP": {},
+          "E1": {},
+          "MTNK": {}
+        },
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "bytes": 144458,
+        "file": "Hills.map",
+        "native_after": {
+          "e1_strength": 125,
+          "mtnk_strength": 300,
+          "voice_feedback": {
+            "ids": [
+              13
+            ],
+            "names": [
+              "GIFear"
+            ]
+          },
+          "weapon_damage": 65
+        },
+        "sections": {
+          "105mm": {},
+          "AP": {},
+          "E1": {},
+          "MTNK": {}
+        },
+        "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+      }
+    ],
+    "mtnk": {
+      "armor": 5,
+      "primary": "105mm",
+      "strength": 300
+    },
+    "sound": {
+      "fields": {
+        "control": 2,
+        "limit": 5,
+        "priority": 1,
+        "sample_count": 2,
+        "type": 1056,
+        "volume_fixed16": 966328320
+      },
+      "index": 13,
+      "sections": {
+        "Defaults": {
+          "Limit": "5",
+          "MinVolume": "50",
+          "Priority": "NORMAL",
+          "Range": "10",
+          "Type": "NORMAL SCREEN UNSHROUD",
+          "Volume": "80"
+        },
+        "GIFear": {
+          "Control": "random",
+          "Priority": "low",
+          "Sounds": "$igifea $igifeb",
+          "Volume": "90"
+        },
+        "SoundList": {
+          "69": "GIFear"
+        }
+      }
+    },
+    "warhead": {
+      "name": "AP",
+      "prone_damage_bits": "3fe0000000000000",
+      "verses_bits": [
+        "3fd0000000000000",
+        "3fd0000000000000",
+        "3fc3333333333333",
+        "3fe8000000000000",
+        "3ff0000000000000",
+        "3ff0000000000000",
+        "3fe4cccccccccccc",
+        "3fdccccccccccccc",
+        "3fe3333333333333",
+        "3fe3333333333333",
+        "3ff0000000000000"
+      ]
+    },
+    "weapon": {
+      "damage": 65,
+      "name": "105mm",
+      "range": 1280,
+      "rof": 60,
+      "warhead": "AP"
+    }
+  },
+  "rows": [
+    {
+      "after_allocation": {
+        "actor": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 61,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "bound_effect_channels": 0,
+        "coordinate_request_count": 0,
+        "events": [
+          {
+            "channel_live": false,
+            "flags": 0,
+            "loaded_sample_identities": [],
+            "serial": 1,
+            "sound_name": "GIFear",
+            "state": 0
+          }
+        ],
+        "rng": {
+          "main": "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+        }
+      },
+      "audio": {
+        "last_worker_ms": 2596,
+        "pcm": {
+          "bytes": 46782,
+          "callbacks": [
+            {
+              "bytes": 32544,
+              "phase": "gi_reissue_admitted_seed2_audio_pump_1034",
+              "sha256": "1b0585c72a44777102b7ac52bba6b17e5e3944a889def31e1df8a116ed7643e6"
+            },
+            {
+              "bytes": 12204,
+              "phase": "gi_reissue_admitted_seed2_audio_pump_1034",
+              "sha256": "60bffc82a49d4d6d529ae12f176ba8afae688b6b654724d84a7b5c141c9c3117"
+            },
+            {
+              "bytes": 308,
+              "phase": "gi_reissue_admitted_seed2_audio_pump_1034",
+              "sha256": "90dad7dd205c6bce22a4b130a17c64fcea4d939c63aba9e40ded3fdc7df94cbb"
+            },
+            {
+              "bytes": 1726,
+              "phase": "original_worker_1316",
+              "sha256": "fa2de45aa2ad2529933427dc6b6348d518f9a8ac3da7792b2101ced54614308e"
+            }
+          ],
+          "channels": 1,
+          "decoded_sample_bytes": 2,
+          "nonzero_i16_samples": 23367,
+          "samples_per_second": 22050,
+          "sha256": "77b4d2d054667af9791e36bdc3148316778c4401661191b648f51be7d6da321d"
+        },
+        "phases": [
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": false,
+                "flags": 0,
+                "samples": [],
+                "serial": 1,
+                "state": 0
+              }
+            ],
+            "phase": "audio_pump_1033",
+            "rng": {
+              "main": "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "audio_pump_1034",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1060",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1316",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1572",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1828",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_2084",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_2340",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 8,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 4
+              }
+            ],
+            "phase": "original_worker_2596",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [],
+            "phase": "audio_pump_2630",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          }
+        ],
+        "ranged_raw_advances": [
+          {
+            "masked": 0,
+            "range": 1,
+            "raw": 1475635446,
+            "rejected": false,
+            "stream": "main"
+          }
+        ],
+        "requests": [
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x00405684",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x0040569C",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              1
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x004049EE",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x004047EA",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x004047EA",
+            "stream": "main"
+          }
+        ]
+      },
+      "feedback": [
+        {
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "handle": 0,
+          "kind": "PlayAtPosition",
+          "pc": "0x007509E0",
+          "returned": 672301520,
+          "sound": "GIFear",
+          "sound_index": 13
+        }
+      ],
+      "final": {
+        "actor": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 61,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "bound_effect_channels": 0,
+        "coordinate_request_count": 0,
+        "events": [],
+        "rng": {
+          "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+        }
+      },
+      "hits": [
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 109,
+          "health_before": 125,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 109
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518CB3",
+              "size": 4,
+              "value": 100
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_0",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 93,
+          "health_before": 109,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 93
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 112
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_1",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 77,
+          "health_before": 93,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 77
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 124
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_2",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 2
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 2
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 2
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 2
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            },
+            {
+              "kind": "HouseInputOwner",
+              "pc": "0x0050B6F0",
+              "returned": 1
+            },
+            {
+              "coordinate": [
+                2176,
+                1408,
+                0
+              ],
+              "handle": 0,
+              "kind": "PlayAtPosition",
+              "pc": "0x007509E0",
+              "returned": 672301520,
+              "sound": "GIFear",
+              "sound_index": 13
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 61,
+          "health_before": 77,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 61
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 149
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_3",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [
+            {
+              "masked": 18,
+              "range": 99,
+              "raw": 2781840146,
+              "rejected": false,
+              "stream": "main"
+            }
+          ],
+          "requests": [
+            {
+              "args": [
+                0,
+                99
+              ],
+              "entry": "0x0065C7E0",
+              "result": 18,
+              "site": "0x007026B8",
+              "stream": "main"
+            },
+            {
+              "args": [],
+              "entry": "0x0065C780",
+              "result": 1680153835,
+              "site": "0x007026DE",
+              "stream": "main"
+            }
+          ],
+          "result": 2,
+          "rng_after": {
+            "main": "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        }
+      ],
+      "input": {
+        "distance": 0,
+        "ignore_defenses": false,
+        "initial": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 125,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "prevent_passengers_escape": false,
+        "receiver_entry": "0x00517FA0",
+        "seed": 2
+      },
+      "name": "admitted_seed2",
+      "original_code_unchanged": true,
+      "removal": null,
+      "setup_ranged_raw_advances": [],
+      "setup_requests": [
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 2781840146,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        },
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 1680153835,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        },
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 1475635446,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        }
+      ]
+    },
+    {
+      "after_allocation": {
+        "actor": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 61,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "bound_effect_channels": 0,
+        "coordinate_request_count": 0,
+        "events": [],
+        "rng": {
+          "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+        }
+      },
+      "audio": {
+        "last_worker_ms": 1060,
+        "pcm": {
+          "bytes": 0,
+          "callbacks": [],
+          "nonzero_i16_samples": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "phases": [
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [],
+            "phase": "audio_pump_1033",
+            "rng": {
+              "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+            }
+          },
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [],
+            "phase": "audio_pump_1034",
+            "rng": {
+              "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+            }
+          },
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [],
+            "phase": "original_worker_1060",
+            "rng": {
+              "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+            }
+          },
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [],
+            "phase": "audio_pump_1094",
+            "rng": {
+              "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+            }
+          }
+        ],
+        "ranged_raw_advances": [],
+        "requests": []
+      },
+      "feedback": [],
+      "final": {
+        "actor": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 61,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "bound_effect_channels": 0,
+        "coordinate_request_count": 0,
+        "events": [],
+        "rng": {
+          "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+        }
+      },
+      "hits": [
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 109,
+          "health_before": 125,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 109
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518CB3",
+              "size": 4,
+              "value": 100
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_0",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          },
+          "rng_before": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 93,
+          "health_before": 109,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 93
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 112
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_1",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          },
+          "rng_before": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 77,
+          "health_before": 93,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 77
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 124
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_2",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          },
+          "rng_before": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 2
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 2
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 2
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 2
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 61,
+          "health_before": 77,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 61
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 149
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_3",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [
+            {
+              "masked": 30,
+              "range": 99,
+              "raw": 3369802398,
+              "rejected": false,
+              "stream": "main"
+            }
+          ],
+          "requests": [
+            {
+              "args": [
+                0,
+                99
+              ],
+              "entry": "0x0065C7E0",
+              "result": 30,
+              "site": "0x007026B8",
+              "stream": "main"
+            }
+          ],
+          "result": 2,
+          "rng_after": {
+            "main": "main:5db8e482771505a9c754bffa50d16eef222530327838d3cacb6c52ba9cf6339d",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          },
+          "rng_before": {
+            "main": "main:29d629f2086329ead2c3abb5b3ba4c8cbe7ba8bcac868da5b522b93b9d3f7e4b",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:c79f371e9ff6af9f6300c691946b1a615787ceb3675ceb6c918141b66e4cbb6f"
+          }
+        }
+      ],
+      "input": {
+        "distance": 0,
+        "ignore_defenses": false,
+        "initial": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 125,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "prevent_passengers_escape": false,
+        "receiver_entry": "0x00517FA0",
+        "seed": 17
+      },
+      "name": "rejected_seed17",
+      "original_code_unchanged": true,
+      "removal": null,
+      "setup_ranged_raw_advances": [],
+      "setup_requests": [
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 3369802398,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        },
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 3891045620,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        },
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 1285138203,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        }
+      ]
+    },
+    {
+      "after_allocation": {
+        "actor": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 61,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "bound_effect_channels": 0,
+        "coordinate_request_count": 0,
+        "events": [
+          {
+            "channel_live": false,
+            "flags": 0,
+            "loaded_sample_identities": [],
+            "serial": 1,
+            "sound_name": "GIFear",
+            "state": 0
+          }
+        ],
+        "rng": {
+          "main": "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+        }
+      },
+      "audio": {
+        "last_worker_ms": 2596,
+        "pcm": {
+          "after_actor_removal_bytes": 1726,
+          "after_actor_removal_sha256": "fa2de45aa2ad2529933427dc6b6348d518f9a8ac3da7792b2101ced54614308e",
+          "bytes": 46782,
+          "callbacks": [
+            {
+              "bytes": 32544,
+              "phase": "gi_reissue_live_unbound_removal_seed2_audio_pump_1034",
+              "sha256": "1b0585c72a44777102b7ac52bba6b17e5e3944a889def31e1df8a116ed7643e6"
+            },
+            {
+              "bytes": 12204,
+              "phase": "gi_reissue_live_unbound_removal_seed2_audio_pump_1034",
+              "sha256": "60bffc82a49d4d6d529ae12f176ba8afae688b6b654724d84a7b5c141c9c3117"
+            },
+            {
+              "bytes": 308,
+              "phase": "gi_reissue_live_unbound_removal_seed2_audio_pump_1034",
+              "sha256": "90dad7dd205c6bce22a4b130a17c64fcea4d939c63aba9e40ded3fdc7df94cbb"
+            },
+            {
+              "bytes": 1726,
+              "phase": "original_worker_1316",
+              "sha256": "fa2de45aa2ad2529933427dc6b6348d518f9a8ac3da7792b2101ced54614308e"
+            }
+          ],
+          "channels": 1,
+          "decoded_sample_bytes": 2,
+          "nonzero_i16_samples": 23367,
+          "samples_per_second": 22050,
+          "sha256": "77b4d2d054667af9791e36bdc3148316778c4401661191b648f51be7d6da321d"
+        },
+        "phases": [
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": false,
+                "flags": 0,
+                "samples": [],
+                "serial": 1,
+                "state": 0
+              }
+            ],
+            "phase": "audio_pump_1033",
+            "rng": {
+              "main": "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "audio_pump_1034",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1060",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1316",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1572",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_1828",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_2084",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 10,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 3
+              }
+            ],
+            "phase": "original_worker_2340",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 1,
+            "coordinate_request_count": 0,
+            "events": [
+              {
+                "channel_live": true,
+                "flags": 8,
+                "samples": [
+                  {
+                    "index": 850,
+                    "name": "igifea",
+                    "pointer": 672279904,
+                    "source_bytes": 11428,
+                    "source_offset": 15895298
+                  }
+                ],
+                "serial": 1,
+                "state": 4
+              }
+            ],
+            "phase": "original_worker_2596",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          },
+          {
+            "bound_effect_channels": 0,
+            "coordinate_request_count": 0,
+            "events": [],
+            "phase": "audio_pump_2630",
+            "rng": {
+              "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+              "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+              "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+            }
+          }
+        ],
+        "ranged_raw_advances": [
+          {
+            "masked": 0,
+            "range": 1,
+            "raw": 1475635446,
+            "rejected": false,
+            "stream": "main"
+          }
+        ],
+        "requests": [
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x00405684",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x0040569C",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              1
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x004049EE",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x004047EA",
+            "stream": "main"
+          },
+          {
+            "args": [
+              0,
+              0
+            ],
+            "entry": "0x0065C7E0",
+            "result": 0,
+            "site": "0x004047EA",
+            "stream": "main"
+          }
+        ]
+      },
+      "feedback": [
+        {
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "handle": 0,
+          "kind": "PlayAtPosition",
+          "pc": "0x007509E0",
+          "returned": 672301520,
+          "sound": "GIFear",
+          "sound_index": 13
+        }
+      ],
+      "final": {
+        "actor": {
+          "alive": 0,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": 0,
+          "handle": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "health": 61,
+          "last": -1,
+          "limbo": 1,
+          "logic": 0,
+          "pending": -1,
+          "prone": 0
+        },
+        "bound_effect_channels": 0,
+        "coordinate_request_count": 0,
+        "events": [],
+        "rng": {
+          "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+        }
+      },
+      "hits": [
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 109,
+          "health_before": 125,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 109
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518CB3",
+              "size": 4,
+              "value": 100
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_0",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 93,
+          "health_before": 109,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 93
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 112
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_1",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 1
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 1
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 1
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 1
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 77,
+          "health_before": 93,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 77
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 124
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_2",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [],
+          "requests": [],
+          "result": 1,
+          "rng_after": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        {
+          "calls": [
+            {
+              "kind": "InfantryReceiver",
+              "pc": "0x00517FA0",
+              "returned": 2
+            },
+            {
+              "kind": "FootReceiver",
+              "pc": "0x004D7330",
+              "returned": 2
+            },
+            {
+              "kind": "TechnoReceiver",
+              "pc": "0x00701900",
+              "returned": 2
+            },
+            {
+              "kind": "ObjectReceiver",
+              "pc": "0x005F5390",
+              "returned": 2
+            },
+            {
+              "kind": "WarheadDamageKernel",
+              "pc": "0x00489180",
+              "returned": 16
+            },
+            {
+              "kind": "HouseInputOwner",
+              "pc": "0x0050B6F0",
+              "returned": 1
+            },
+            {
+              "coordinate": [
+                2176,
+                1408,
+                0
+              ],
+              "handle": 0,
+              "kind": "PlayAtPosition",
+              "pc": "0x007509E0",
+              "returned": 672301520,
+              "sound": "GIFear",
+              "sound_index": 13
+            }
+          ],
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "frame": 0,
+          "health_after": 61,
+          "health_before": 77,
+          "member_writes": [
+            {
+              "offset": 108,
+              "owner": "E1",
+              "pc": "0x005F550D",
+              "size": 4,
+              "value": 61
+            },
+            {
+              "offset": 22016,
+              "owner": "House0",
+              "pc": "0x0050484F",
+              "size": 4,
+              "value": 4294967295
+            },
+            {
+              "offset": 372,
+              "owner": "E1",
+              "pc": "0x00701FBD",
+              "size": 4,
+              "value": 0
+            },
+            {
+              "offset": 376,
+              "owner": "E1",
+              "pc": "0x00701FC5",
+              "size": 4,
+              "value": 675789036
+            },
+            {
+              "offset": 380,
+              "owner": "E1",
+              "pc": "0x00701FC8",
+              "size": 4,
+              "value": 49
+            },
+            {
+              "offset": 1748,
+              "owner": "E1",
+              "pc": "0x00518D40",
+              "size": 4,
+              "value": 149
+            }
+          ],
+          "packet_after": 16,
+          "packet_before": 65,
+          "phase": "receiver_3",
+          "prone_after": 0,
+          "prone_before": 0,
+          "ranged_raw_advances": [
+            {
+              "masked": 18,
+              "range": 99,
+              "raw": 2781840146,
+              "rejected": false,
+              "stream": "main"
+            }
+          ],
+          "requests": [
+            {
+              "args": [
+                0,
+                99
+              ],
+              "entry": "0x0065C7E0",
+              "result": 18,
+              "site": "0x007026B8",
+              "stream": "main"
+            },
+            {
+              "args": [],
+              "entry": "0x0065C780",
+              "result": 1680153835,
+              "site": "0x007026DE",
+              "stream": "main"
+            }
+          ],
+          "result": 2,
+          "rng_after": {
+            "main": "main:6ba811b770528559f77d0ec056f698a7a710fe65beed620dde249461c43607ec",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          },
+          "rng_before": {
+            "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        }
+      ],
+      "input": {
+        "distance": 0,
+        "ignore_defenses": false,
+        "initial": {
+          "alive": 1,
+          "coordinate": [
+            2176,
+            1408,
+            0
+          ],
+          "doing": -1,
+          "handle": [
+            0,
+            0,
+            0,
+            8905364
+          ],
+          "health": 125,
+          "last": -1,
+          "limbo": 0,
+          "logic": 1,
+          "pending": -1,
+          "prone": 0
+        },
+        "prevent_passengers_escape": false,
+        "receiver_entry": "0x00517FA0",
+        "seed": 2
+      },
+      "name": "live_unbound_removal_seed2",
+      "original_code_unchanged": true,
+      "removal": {
+        "after": {
+          "actor": {
+            "alive": 0,
+            "coordinate": [
+              2176,
+              1408,
+              0
+            ],
+            "doing": 0,
+            "handle": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "health": 61,
+            "last": -1,
+            "limbo": 1,
+            "logic": 0,
+            "pending": -1,
+            "prone": 0
+          },
+          "bound_effect_channels": 1,
+          "coordinate_request_count": 0,
+          "events": [
+            {
+              "channel_live": true,
+              "flags": 10,
+              "loaded_sample_identities": [
+                {
+                  "index": 850,
+                  "name": "igifea",
+                  "pointer": 672279904,
+                  "source_bytes": 11428,
+                  "source_offset": 15895298
+                }
+              ],
+              "serial": 1,
+              "sound_name": "GIFear",
+              "state": 3
+            }
+          ],
+          "rng": {
+            "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        "before": {
+          "actor": {
+            "alive": 1,
+            "coordinate": [
+              2176,
+              1408,
+              0
+            ],
+            "doing": -1,
+            "handle": [
+              0,
+              0,
+              0,
+              8905364
+            ],
+            "health": 61,
+            "last": -1,
+            "limbo": 0,
+            "logic": 1,
+            "pending": -1,
+            "prone": 0
+          },
+          "bound_effect_channels": 1,
+          "coordinate_request_count": 0,
+          "events": [
+            {
+              "channel_live": true,
+              "flags": 10,
+              "loaded_sample_identities": [
+                {
+                  "index": 850,
+                  "name": "igifea",
+                  "pointer": 672279904,
+                  "source_bytes": 11428,
+                  "source_offset": 15895298
+                }
+              ],
+              "serial": 1,
+              "sound_name": "GIFear",
+              "state": 3
+            }
+          ],
+          "rng": {
+            "main": "main:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8",
+            "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+            "scenario": "scenario:60552707cd3140b95cdc7f188137d864a9698ed496b63e833e5704f0f53aeff8"
+          }
+        },
+        "ordered_calls": [
+          {
+            "kind": "FootUnInit",
+            "pc": "0x004DE5D0"
+          },
+          {
+            "kind": "ObjectUnInit",
+            "pc": "0x005F65F0"
+          },
+          {
+            "kind": "AnnounceExpired",
+            "pc": "0x007258D0"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "UnitPointerExpired",
+            "pc": "0x007446E0"
+          },
+          {
+            "kind": "FootPointerExpired",
+            "pc": "0x004D9960"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "FootPointerExpired",
+            "pc": "0x004D9960"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "GI_Stop",
+            "pc": "0x0051DAF0"
+          },
+          {
+            "kind": "GI_DoAction",
+            "pc": "0x0051D6F0"
+          },
+          {
+            "kind": "GI_CanEnter",
+            "pc": "0x0051BF90"
+          },
+          {
+            "kind": "Walk_StopMoving",
+            "pc": "0x0075ADA0"
+          },
+          {
+            "kind": "GI_RawClear",
+            "pc": "0x00521850"
+          },
+          {
+            "kind": "HandleRelease",
+            "pc": "0x00406060"
+          },
+          {
+            "kind": "HandleRelease",
+            "pc": "0x00406060"
+          },
+          {
+            "kind": "HandleRelease",
+            "pc": "0x00406060"
+          },
+          {
+            "kind": "FootDetachAll",
+            "pc": "0x004D9720"
+          },
+          {
+            "kind": "ObjectDetachAll",
+            "pc": "0x005F5280"
+          },
+          {
+            "kind": "AnnounceExpired",
+            "pc": "0x007258D0"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "UnitPointerExpired",
+            "pc": "0x007446E0"
+          },
+          {
+            "kind": "FootPointerExpired",
+            "pc": "0x004D9960"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "FootPointerExpired",
+            "pc": "0x004D9960"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "HandleStopClear",
+            "pc": "0x00405D40"
+          },
+          {
+            "kind": "InfantryDestructor",
+            "pc": "0x00517D90"
+          },
+          {
+            "kind": "AnnounceExpired",
+            "pc": "0x007258D0"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "UnitPointerExpired",
+            "pc": "0x007446E0"
+          },
+          {
+            "kind": "FootPointerExpired",
+            "pc": "0x004D9960"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "FootPointerExpired",
+            "pc": "0x004D9960"
+          },
+          {
+            "kind": "TechnoPointerExpired",
+            "pc": "0x007077C0"
+          },
+          {
+            "kind": "FootDestructor",
+            "pc": "0x004D3590"
+          },
+          {
+            "kind": "HandleRelease",
+            "pc": "0x00406060"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          },
+          {
+            "kind": "TechnoDestructor",
+            "pc": "0x006F4500"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          },
+          {
+            "kind": "HandleStopClear",
+            "pc": "0x00405D40"
+          },
+          {
+            "kind": "HandleStopClear",
+            "pc": "0x00405D40"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          },
+          {
+            "kind": "HandleDestructor",
+            "pc": "0x00405C00"
+          }
+        ]
+      },
+      "setup_ranged_raw_advances": [],
+      "setup_requests": [
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 2781840146,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        },
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 1680153835,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        },
+        {
+          "args": [],
+          "entry": "0x0065C780",
+          "result": 1475635446,
+          "site": "0x006F3254",
+          "stream": "scenario"
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

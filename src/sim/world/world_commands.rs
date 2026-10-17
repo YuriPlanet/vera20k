@@ -1167,6 +1167,25 @@ impl Simulation {
             Command::SuspendProduction { category } => {
                 production::suspend_production(self, command_owner, *category)
             }
+            Command::TogglePrimaryFactory { entity_id } => {
+                // Event17 4C718F resolves a Building, then6386E0 receives
+                // that pointer (NULL is a no-op). Only afterward4C71A7 tests
+                // +90. A failed cast must not detach an unrelated Foot plan.
+                let Some(alive) = self.substrate.entities.get(*entity_id).and_then(|entity| {
+                    (entity.category() == EntityCategory::Structure)
+                        .then_some(entity.lifecycle.object_alive())
+                }) else {
+                    return false;
+                };
+                self.planning_detach_actor(*entity_id);
+                if !alive {
+                    return false;
+                }
+                // The issuer adds no ownership/online/limbo/HP admission.
+                rules.is_some_and(|rules| {
+                    production::toggle_factory_primary(self, rules, *entity_id)
+                })
+            }
             Command::CycleProducerFocus { category } => {
                 let Some(rules) = rules else { return false };
                 production::cycle_active_producer_for_owner_category(

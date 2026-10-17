@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Damaged MTNK House self-heal status601 and affected Infantry/Organic Unit phases, original pixels and four current-default General readers",
+  "assumptions": [
+    "Additive mode of the existing selected-health/group-status generator. One PaletteReader owns original image, allocator, native INI cache, Rules/UnitType/InfantryType constructors, palette startup and Surface/circular A/Z. Existing mobile constructor-prefix, House query/step identities and font owners are reused; no VM/parser/palette/raster/numeric implementation is copied. Historical control_group_status payload and its scope remain separate.",
+    "Physical RULESMD from expandmd01, optional loose LANGRULE, MPBattleMD and XMP03T4 feed the existing native lexical/cache transport and original selected type/General/AudioVisual read-store blocks. Original665650 defaults the four General fields1000/1/1000/1. Original66E6E2..66E74B reads exact keys in InfantryFrames/Amount, UnitFrames/Amount order with current-field defaults; no clamp/postpass is present in that block. Reader controls supply explicit cached empty strings because physical lexical transport drops empty entries. Original66D530 admission prefix executes before each retained-history read.",
+    "Stock MTNK Strength300/nonorganic and E1 Strength125/Organic are native constructor/physical-reader outputs. Explicit Organic=yes uses its original reader/store block and is restored through the same reader. Supplied actor health, House counts, signed global frame, selection/hover, position, camera and legal Surface clip are render-consumer priors. They do not prove natural damage, capture/House-grant/revoke, selection, collision-valid dense placement or full simulation lifecycles.",
+    "Whole6F5190->6F64A0->709A90/70AA60 executes. Admitted damaged signed Frame remainder<=5 chooses one601 draw; other phases and the actual native299->300 heal transition choose600. Native4AED70 centering/clipping, plain/RLE pickers, row walkers and492670/496250 destination-half leaves execute unchanged. Every retained marker pixel is native output, with actual dispatch/mask and destination reads observed. Original PIPS21frame/PIPBRD/PALETTE and GAME.FNT physical winners are unchanged.",
+    "Two prepared same-position parents prove positive non-idempotent composition; each original health->marker->group sequence executes separately. An ordered neighboring group control also retains final native pixels. A0/Z0 and partial clipping are component controls. Existing all-word native_packed half goldens own the numeric kernel; this corpus adds no independently calculated half-word golden.",
+    "Bounded original House-heal AI6FA793..6FA941 starts after the separate alive/per-object heal arm and stops before cloak update. Actual Has/Step bodies execute; the supplied attached-smoke pointer is null. Zero period and INT_MIN/-1 reach native x86 IDIV interrupt0 even at count0 in AI, while whole drawing queries the House first and skips division at count0. Trap controls restore only their prior emulator CPU context after recording the terminal exception, preventing an inherited pending exception from manufacturing a later double fault; no gameplay state or arithmetic is supplied. Ordinary phase/timer/lifecycle facts may rest on original instructions and production behavior tests.",
+    "Original code/vtables, draw actor bytes and A/Z remain unchanged. Measured draw/House-heal arms request no RNG, write no timers and call no detach; the native full-heal control changes Health only. Constructor-prefix Scenario RNG/passive timer initialization is retained separately. The Unit smoke F8 call site is observed but no nonnull smoke lifecycle, whole Techno/House/DrawExtras function, GPU frame or full native game is claimed."
+  ],
+  "substitutions": [
+    "Inherited allocator/delete/CRT TLS and immutable physical file/archive transports plus BSurface/circular A/Z memory replace platform services. Existing font owner supplies file reads, bounded CRT digit formatting and Win32 SetRect. No reached gameplay predicate, division, reader result, palette conversion, dispatch, shape/glyph decoder or pixel leaf is replaced."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "general_admission": "0x0066D530",
+    "general_read_begin": "0x0066E6E2",
+    "general_read_end": "0x0066E74B",
+    "read_int": "0x005276D0",
+    "ai_begin": "0x006FA793",
+    "ai_end": "0x006FA941",
+    "ai_unit_divide": "0x006FA7EE",
+    "ai_infantry_divide": "0x006FA8E2",
+    "has_infantry": "0x0050D9C0",
+    "has_unit": "0x0050D9D0",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "pip_tail": "0x00709A90",
+    "draw_unit_divide": "0x0070A5B5",
+    "draw_infantry_divide": "0x0070A549",
+    "self_heal_shape": "0x0070A6BB",
+    "shape": "0x004AED70",
+    "plain_half_leaf": "0x00492670",
+    "rle_half_leaf": "0x00496250"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --self-heal-status",
+  "payload_sha256": "31c017ad6136b50f0154b5d88d6aa455b94ec6a33c0b0724473f7a20b21fc541"
+}

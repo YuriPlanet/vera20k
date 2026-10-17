@@ -22,17 +22,17 @@
 
 #[cfg(test)]
 mod bridge_shadow_gpu_tests;
+mod build_instances;
 #[cfg(test)]
 mod building_bracket_gpu_tests;
-#[cfg(test)]
-mod status_gpu_tests;
-mod build_instances;
 mod draw_passes;
 mod object_extras;
 #[cfg(test)]
 mod placement_gpu_tests;
 #[cfg(test)]
-pub(crate) use draw_passes::draw_pooled_overlay_bodies;
+mod status_gpu_tests;
+#[cfg(test)]
+pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_overlay_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
@@ -402,6 +402,7 @@ pub(crate) fn render_game(
             overlay_render_z: &world.overlay_render_z,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
+            building_status_text: &world.building_status_text,
             surface_effects,
             sidebar_unavailable: &sidebar.unavailable,
             sidebar_flash: &sidebar.flash,
@@ -459,6 +460,11 @@ fn upload_to_gpu(
     // Terrain + overlays
     pool.upload(&state.renderer.gpu, "terrain", &world.terrain.normal);
     pool.upload(&state.renderer.gpu, "overlay", &world.overlay);
+    pool.upload(
+        &state.renderer.gpu,
+        "building_status_text",
+        &world.building_status_text.instances,
+    );
     for (layer, objects) in world.object_layers.iter().enumerate() {
         pool.upload_page(
             &state.renderer.gpu,
@@ -505,7 +511,6 @@ fn upload_to_gpu(
         "building_radius_rings",
         &ui.radius_ring,
     );
-    pool.upload(&state.renderer.gpu, "bomb_clocks", &ui.bomb_clock);
     pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
     pool.upload(&state.renderer.gpu, "placement", &ui.placement);
     pool.upload(

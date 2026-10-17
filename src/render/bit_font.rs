@@ -127,6 +127,31 @@ impl BitFont {
         self.cell_height as f32
     }
 
+    /// ComputeTextRect4A59E0: whole-string width, horizontal alignment and
+    /// signed margins. Unlike the shell's wrapped layout, this query uses the
+    /// font's cell height and measures before clipping. PRIMARY70AC60 supplies
+    /// flags149 and margins[4,2]. Native pixels: primary_factory_status.json.
+    pub(crate) fn compute_text_rect(
+        &self,
+        text: &str,
+        [mut x, y]: [i32; 2],
+        flags: u32,
+        [margin_x, margin_y]: [i32; 2],
+    ) -> [i32; 4] {
+        let width = self.text_width(text) as i32;
+        if flags & 0x100 != 0 {
+            x = x.wrapping_sub(width / 2);
+        } else if flags & 0x200 != 0 {
+            x = x.wrapping_sub(width);
+        }
+        [
+            x.wrapping_sub(margin_x),
+            y.wrapping_sub(margin_y),
+            width.wrapping_add(margin_x.wrapping_mul(2)),
+            (self.cell_height as i32).wrapping_add(margin_y.wrapping_mul(2)),
+        ]
+    }
+
     pub fn build_text(
         &self,
         text: &str,

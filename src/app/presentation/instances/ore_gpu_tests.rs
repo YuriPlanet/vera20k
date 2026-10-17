@@ -7,9 +7,11 @@ use crate::headless_scenario::HeadlessScenario;
 use crate::map::lighting::CellLightGrid;
 use crate::map::overlay::OverlayEntry;
 use crate::render::batch::{BatchRenderer, InstanceBufferPool, SpriteInstance};
+use crate::render::bridge_atlas::{BridgeAtlas, build_bridge_atlas};
 use crate::render::overlay_atlas::{OverlayAtlas, build_overlay_atlas_on_device};
 use crate::render::shroud_buffer::ShroudBuffer;
 use crate::render::tactical_draw_plan::RenderZPolicy;
+use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{
     Gpu, assert_native_color_and_depth, camera, clear, encoded, extent,
 };
@@ -17,9 +19,23 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+struct ProbeBatch {
+    format: wgpu::TextureFormat,
+    batch: BatchRenderer,
+    atlas: OverlayAtlas,
+    shadow: Option<(BridgeAtlas, TerrainDrawRenderer)>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CellRasterPiece {
+    Body,
+    Shadow,
+    BodyThenShadow,
+}
+
 struct Probe {
     gpu: Gpu,
-    batches: Vec<(wgpu::TextureFormat, BatchRenderer, OverlayAtlas)>,
+    batches: Vec<ProbeBatch>,
     names: BTreeMap<u8, String>,
     size: [u32; 2],
     lighting: crate::app::presentation::lighting::MatchLighting,
@@ -30,7 +46,7 @@ impl Probe {
     fn new(
         scene: &HeadlessScenario,
         packet: &Value,
-        source_cell: (u16, u16),
+        source_cell: Option<(u16, u16)>,
         viewer: Option<crate::sim::intern::InternedId>,
     ) -> Self {
         let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
@@ -94,14 +110,25 @@ impl Probe {
         let gpu = Gpu::new();
         let registry = &scene.runtime.resources.overlay_registry;
         let rules = &scene.runtime.resources.rules;
-        let entries: Vec<_> = scene
-            .map
-            .overlays
-            .iter()
-            .filter(|e| (e.rx, e.ry) == source_cell)
-            .cloned()
-            .collect();
-        assert_eq!(entries.len(), 1);
+        // A future paid wall has no map-pack slot. The production atlas
+        // preloads all Wall frames from the retail registry independently.
+        let entries: Vec<_> = source_cell
+            .map(|at| {
+                let entries: Vec<_> = scene
+                    .map
+                    .overlays
+                    .iter()
+                    .filter(|e| (e.rx, e.ry) == at)
+                    .cloned()
+                    .collect();
+                assert_eq!(entries.len(), 1, "authored source slot at {at:?}");
+                entries
+            })
+            .unwrap_or_default();
+        let names = crate::render::overlay_assets::render_overlay_names(registry);
+        let with_shadows = packet["rows"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row.get("shadow").is_some()));
         let batches = [
             wgpu::TextureFormat::Bgra8UnormSrgb,
             wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -131,7 +158,31 @@ impl Probe {
                 &[],
             )
             .unwrap();
-            (format, batch, atlas)
+            let shadow = with_shadows.then(|| {
+                let atlas = build_bridge_atlas(
+                    &gpu.device,
+                    &gpu.queue,
+                    &batch,
+                    &names,
+                    &assets,
+                    &theater.iso_palette,
+                    &theater.unit_palette,
+                    theater.extension,
+                    &scene.map.header.theater,
+                    registry,
+                    &rules_ini,
+                    rules.art(),
+                )
+                .expect("production Cell shadow atlas");
+                let renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+                (atlas, renderer)
+            });
+            ProbeBatch {
+                format,
+                batch,
+                atlas,
+                shadow,
+            }
         })
         .collect();
         let size = [
@@ -172,7 +223,7 @@ impl Probe {
         Self {
             gpu,
             batches,
-            names: crate::render::overlay_assets::render_overlay_names(registry),
+            names,
             size,
             lighting,
             live_a,
@@ -180,6 +231,25 @@ impl Probe {
     }
 
     fn compare(&mut self, scene: &HeadlessScenario, entries: &[OverlayEntry], row: &Value) {
+        self.compare_piece(scene, entries, row, CellRasterPiece::Body);
+        if let Some(shadow) = row.get("shadow") {
+            self.compare_piece(scene, entries, shadow, CellRasterPiece::Shadow);
+            self.compare_piece(
+                scene,
+                entries,
+                &row["body_then_shadow"],
+                CellRasterPiece::BodyThenShadow,
+            );
+        }
+    }
+
+    fn compare_piece(
+        &mut self,
+        scene: &HeadlessScenario,
+        entries: &[OverlayEntry],
+        row: &Value,
+        piece: CellRasterPiece,
+    ) {
         let hash_before = scene.sim().state_hash();
         let input = &row["input"];
         let rx = input["coords"][0].as_u64().unwrap() as u16;
@@ -215,39 +285,70 @@ impl Probe {
                     .all(|pixel| (pixel[0] * 255.0).round() as u8 == *expected)
             );
         }
-        for (format, batch, atlas) in &mut self.batches {
+        for ProbeBatch {
+            format,
+            batch,
+            atlas,
+            shadow,
+        } in &mut self.batches
+        {
             batch.bind_shroud(
                 &self.gpu.device,
                 self.live_a.as_ref().map(|(source, _, _)| source),
             );
             let mut instances: Vec<SpriteInstance> = Vec::new();
             let mut policies: Vec<RenderZPolicy> = Vec::new();
-            build_cell_overlay_instances(
-                &CellOverlayInputs {
-                    entries,
+            if piece != CellRasterPiece::Shadow {
+                build_cell_overlay_instances(
+                    &CellOverlayInputs {
+                        entries,
+                        atlas,
+                        names: &self.names,
+                        live_grid: scene.sim().overlay_grid.as_ref(),
+                        registry: Some(&scene.runtime.resources.overlay_registry),
+                        rules: Some(&scene.runtime.resources.rules),
+                        interner: Some(&scene.sim().interner),
+                        tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
+                        terrain: Some(terrain),
+                        heights: &heights,
+                        lighting: self.lighting.grid(),
+                        scenario_lighting: &scene.sim().session.lighting,
+                        camera: camera.camera_pos,
+                        viewport: self.size.map(|v| v as f32),
+                        origin_y: camera.world_origin_y,
+                        world_height: camera.world_height,
+                    },
+                    &mut instances,
+                    &mut policies,
+                );
+            }
+            let mut shadow_instances = Vec::new();
+            if piece != CellRasterPiece::Body {
+                let (atlas, _) = shadow.as_ref().expect("native shadow comparison resources");
+                crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+                    terrain,
                     atlas,
-                    names: &self.names,
-                    live_grid: scene.sim().overlay_grid.as_ref(),
-                    registry: Some(&scene.runtime.resources.overlay_registry),
-                    rules: Some(&scene.runtime.resources.rules),
-                    interner: Some(&scene.sim().interner),
-                    tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
-                    terrain: Some(terrain),
-                    heights: &heights,
-                    lighting: self.lighting.grid(),
-                    scenario_lighting: &scene.sim().session.lighting,
-                    camera: camera.camera_pos,
-                    viewport: self.size.map(|v| v as f32),
-                    origin_y: camera.world_origin_y,
-                    world_height: camera.world_height,
-                },
-                &mut instances,
-                &mut policies,
-            );
+                    &self.names,
+                    entries,
+                    scene.sim().overlay_grid.as_ref(),
+                    Some(&scene.runtime.resources.overlay_registry),
+                    camera.world_origin_y,
+                    camera.world_height,
+                    camera.camera_pos[0],
+                    camera.camera_pos[1],
+                    self.size[0] as f32,
+                    self.size[1] as f32,
+                    &mut shadow_instances,
+                );
+            }
             if input["overlay_id"].as_i64() == Some(-1) {
                 assert!(
                     instances.is_empty(),
                     "live erased Cell suppresses its retained entry"
+                );
+                assert!(
+                    shadow_instances.is_empty(),
+                    "erased Cell suppresses its retained shadow"
                 );
             }
             let mut pool = InstanceBufferPool::new();
@@ -257,6 +358,14 @@ impl Probe {
                 "cell-overlay-native",
                 &instances,
             );
+            if piece != CellRasterPiece::Body {
+                pool.upload_on_device(
+                    &self.gpu.device,
+                    &self.gpu.queue,
+                    "cell-shadow-native",
+                    &shadow_instances,
+                );
+            }
             batch.write_camera(&self.gpu.queue, camera);
             let color = self.gpu.target(self.size, *format);
             let depth = self
@@ -264,6 +373,13 @@ impl Probe {
                 .target(self.size, wgpu::TextureFormat::Depth32Float);
             let cv = color.create_view(&Default::default());
             let dv = depth.create_view(&Default::default());
+            if piece != CellRasterPiece::Body {
+                shadow
+                    .as_mut()
+                    .unwrap()
+                    .1
+                    .prepare(&self.gpu.device, &color, &dv, camera);
+            }
             let background = input["background"].as_u64().unwrap() as u16;
             let initial =
                 encoded(background, *format).repeat((self.size[0] * self.size[1]) as usize);
@@ -308,6 +424,22 @@ impl Probe {
                     &policies,
                 );
             }
+            if piece != CellRasterPiece::Body {
+                let (atlas, renderer) = shadow.as_mut().unwrap();
+                renderer.note_external_passes(&mut encoder, 1);
+                let clip = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
+                crate::app::presentation::render::draw_bridge_shadows(
+                    &mut encoder,
+                    &cv,
+                    &dv,
+                    renderer,
+                    clip,
+                    batch,
+                    pool.get("cell-shadow-native"),
+                    &shadow_instances,
+                    Some(&atlas.texture),
+                );
+            }
             let reads = [
                 self.gpu.read(&mut encoder, &color),
                 self.gpu.read(&mut encoder, &depth),
@@ -333,6 +465,34 @@ fn packet() -> &'static Value {
 #[test]
 #[ignore = "requires physical retail XMP03T4 and GPU; ordinary fence fire publication and native wall rasters with live A"]
 fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
+    assert_retail_wall_profile_reaches_native_raster(
+        "tools/map_observation.authored-fence.example.json",
+        "tools/spatial_oracle/wall_render.json",
+        "CAFNCB",
+        true,
+    );
+}
+
+/// Normal paid GAWALL admission and AP damage supply the live wall states.
+/// Original Cell47F6A0 supplies raster expectations; its independent damage
+/// history is not an oracle for this World's shot frames or recursive rolls.
+#[test]
+#[ignore = "requires physical retail XMP03T4 and GPU; paid concrete wall publication and native wall rasters with live A"]
+fn retail_paid_concrete_wall_fire_reaches_index_a_and_native_cell_raster() {
+    assert_retail_wall_profile_reaches_native_raster(
+        "tools/map_observation.concrete-wall.example.json",
+        "tools/spatial_oracle/concrete_wall_render.json",
+        "GAWALL",
+        false,
+    );
+}
+
+fn assert_retail_wall_profile_reaches_native_raster(
+    profile_path: &'static str,
+    native_path: &'static str,
+    wall_name: &str,
+    initially_authored: bool,
+) {
     use crate::app::presentation::overlay_index::OverlayRenderIndex;
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::world::{FrameEffects, TickLane};
@@ -340,8 +500,8 @@ fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
     let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
-    let profile = crate::test_fixture::json("tools/map_observation.authored-fence.example.json");
-    let native = crate::test_fixture::json("tools/spatial_oracle/wall_render.json");
+    let profile = crate::test_fixture::json(profile_path);
+    let native = crate::test_fixture::json(native_path);
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     let map_name = launch.selected_map_file.as_deref().unwrap().to_owned();
@@ -373,17 +533,53 @@ fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
     let owner = scene.sim().session.current_house.unwrap();
-    assert_eq!(profile["commands"].as_array().unwrap().len(), 1);
-    assert_eq!(profile["commands"][0]["issue_after_step"], 0);
-    let command: Command =
-        serde_json::from_value(profile["commands"][0]["payload"].clone()).unwrap();
-    let Command::ForceAttackCell { attacker_id, .. } = command else {
-        panic!("ordinary Cell attack profile");
-    };
+    let orders: Vec<_> = profile["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| {
+            assert_eq!(record["owner"], "VERA-OBSERVER");
+            CommandEnvelope::new(
+                owner,
+                record["issue_after_step"].as_u64().unwrap(),
+                serde_json::from_value::<Command>(record["payload"].clone()).unwrap(),
+            )
+        })
+        .collect();
+    let (attacker_id, source) = orders
+        .iter()
+        .find_map(|order| match order.payload {
+            Command::ForceAttackCell {
+                attacker_id,
+                target_rx,
+                target_ry,
+            } => Some((attacker_id, (target_rx, target_ry))),
+            _ => None,
+        })
+        .expect("ordinary Cell attack profile");
+    if initially_authored {
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].execute_tick, 0);
+    }
     let tank = scene.sim().entities().get(attacker_id).unwrap();
     assert_eq!(scene.sim().resolve(tank.type_ref()), "MTNK");
     assert_eq!(tank.owner(), owner);
-    let order = CommandEnvelope::new(owner, 0, command);
+    let wall = scene
+        .runtime
+        .resources
+        .overlay_registry
+        .id_for_name(wall_name)
+        .unwrap();
+    let initial = scene
+        .sim()
+        .overlay_grid
+        .as_ref()
+        .unwrap()
+        .cell(source.0, source.1);
+    assert_eq!(initial.overlay_id, initially_authored.then_some(wall));
+    if !initially_authored {
+        assert_eq!(initial.overlay_data, 0);
+    }
     let rows = native["rows"].as_array().unwrap();
     assert!(!rows.is_empty());
     let coords = |row: &Value| {
@@ -401,20 +597,59 @@ fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
             .prepare_fog_view_for("VERA-OBSERVER")
     );
     let hash = scene.sim().state_hash();
-    let mut probe = Probe::new(&scene, native, coords(&rows[0]), Some(owner));
+    let mut probe = Probe::new(
+        &scene,
+        native,
+        initially_authored.then_some(source),
+        Some(owner),
+    );
     assert_eq!(
         scene.sim().state_hash(),
         hash,
         "atlas/A/light preparation is read-only"
     );
+    let observed_cells: std::collections::BTreeSet<_> = rows.iter().map(coords).collect();
+    if !initially_authored {
+        for &at in &observed_cells {
+            let initial = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            assert_eq!((initial.overlay_id, initial.overlay_data), (None, 0));
+            assert!(!entries.iter().any(|entry| (entry.rx, entry.ry) == at));
+        }
+    }
+    let mut placed = std::collections::BTreeSet::new();
     let mut seen = std::collections::BTreeSet::new();
+    let mut dispatched = 0;
     for step in 0..=profile["ticks"].as_u64().unwrap() {
+        for &at in &observed_cells {
+            let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            if live.overlay_id == Some(wall) {
+                let published: Vec<_> = entries
+                    .iter()
+                    .filter(|entry| (entry.rx, entry.ry) == at)
+                    .collect();
+                assert_eq!(
+                    published.len(),
+                    1,
+                    "published live wall at {at:?}, step {step}"
+                );
+                assert_eq!(
+                    (published[0].overlay_id, published[0].frame),
+                    (wall, live.overlay_data)
+                );
+                placed.insert(at);
+            }
+        }
         for (index, row) in rows.iter().enumerate() {
             if seen.contains(&index) {
                 continue;
             }
             let at = coords(row);
             let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            // Initial absence is not removal. Credit an erased raster only
+            // after ordinary placement has published this coordinate's slot.
+            if !placed.contains(&at) {
+                continue;
+            }
             if live.overlay_id.map_or(-1, i64::from) != row["input"]["overlay_id"].as_i64().unwrap()
                 || u64::from(live.overlay_data) != row["input"]["state"].as_u64().unwrap()
             {
@@ -456,27 +691,29 @@ fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
         if step == profile["ticks"].as_u64().unwrap() {
             break;
         }
+        let due: Vec<_> = orders
+            .iter()
+            .filter(|order| order.execute_tick == step)
+            .cloned()
+            .collect();
+        dispatched += due.len();
         let output = scene
             .runtime
-            .advance_frame(
-                if step == 0 {
-                    std::slice::from_ref(&order)
-                } else {
-                    &[]
-                },
-                22,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         entries.remove_cells(&output.overlay_removals);
         entries.upsert_occupied(output.overlay_updates);
     }
     assert_eq!(
+        dispatched,
+        orders.len(),
+        "all ordinary profile commands executed"
+    );
+    assert_eq!(
         seen.len(),
         rows.len(),
-        "ordinary fire must reach each independent native raster witness; saw {seen:?}"
+        "ordinary {wall_name} fire must reach each independent native raster witness; saw {seen:?}"
     );
 }
 
@@ -558,7 +795,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
     );
     let owner = scene.sim().session.current_house.unwrap();
     let hash = scene.sim().state_hash();
-    let mut probe = Probe::new(&scene, native, source, Some(owner));
+    let mut probe = Probe::new(&scene, native, Some(source), Some(owner));
     assert_eq!(
         scene.sim().state_hash(),
         hash,
@@ -621,7 +858,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
     let mut scene = crate::headless_scenario::load(&root, "GoldSt.mmx", 0x12345678).unwrap();
     let packet = packet();
-    let mut probe = Probe::new(&scene, &packet, (123, 33), None);
+    let mut probe = Probe::new(&scene, &packet, Some((123, 33)), None);
     let mut entries = OverlayRenderIndex::default();
     entries.replace_from_source(
         scene
@@ -834,7 +1071,7 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
     let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
     let mut scene = crate::headless_scenario::load(&root, "GoldSt.mmx", 0x12345678).unwrap();
     let packet = packet();
-    let mut probe = Probe::new(&scene, &packet, (123, 33), None);
+    let mut probe = Probe::new(&scene, &packet, Some((123, 33)), None);
     let registry = &scene.runtime.resources.overlay_registry;
     let tib01 = registry.id_for_name("TIB01").unwrap();
     for control in packet["controls"].as_array().unwrap() {

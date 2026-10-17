@@ -56,20 +56,24 @@
 //!   Scenario flags are off in stock skirmish.
 //! - The local-player branch (`0x004FC1B0..0x004FC307`) is ported for the
 //!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
-//!   `local_player_defeated` names the ported readers). Its client UI is not:
-//!   beacons deleted (`0x00431410`), the command bar closed (`0x006D1660`),
-//!   planning and beacon modes left (`0x00637A10`, `0x004AC960`), and the
+//!   `local_player_defeated` names the ported readers). The borrowed client
+//!   boundary leaves planning (`0x00637A10`), supplies its2B event to the same
+//!   frame's dispatcher and rejects re-entry (`0x00731A50`). Remaining UI:
+//!   beacons deleted (`0x00431410`), beacon mode left (`0x004AC960`), and the
 //!   bytes `0x00A8D108..0x00A8D10F` that Taunt and dialog `0x73` read set and
-//!   that dialog refreshed (`0x004FC239..0x004FC25D`). Nor are Session
-//!   `+0x300`'s UI readers: band-box and type selection (`0x004AC03F`,
-//!   `0x00732950`), the planning, beacon, cheer and taunt commands
-//!   (`0x00731A50`, `0x00731A30`, `0x00730F30`, `0x0053636C`), the sidebar tab
+//!   that dialog refreshed (`0x004FC239..0x004FC25D`). The command bar is
+//!   saved/closed6D1660 but restored4FC591→6D1610 on the common sole-human
+//!   terminal path, so its retained open state is unchanged. Wider multiplayer
+//!   close/restore paths remain outside this chain. Session+300 already guards
+//!   band-box/type/navigation selection; remaining UI readers include beacon,
+//!   cheer and taunt (`0x00731A30`, `0x00730F30`, `0x0053636C`), the sidebar tab
 //!   (`0x006D08F5`), `RadarClass::SetRadarMode` (`0x00656CCC`), MakeAlly's
 //!   alliance line (`0x004F9E49`) and the dialog and session readers
 //!   (`0x004F1534`, `0x00657F4A`, `0x0078D52A`, `0x004E20BA`, `0x004F10FD`,
 //!   `0x0055EE60` and others). Trigger: the local player is defeated. Effect:
 //!   for the savour delay (retail `SavourDelay=.1`) those UI states and
-//!   commands stay as they were; a defeated house owns nothing left to command.
+//!   commands may stay as they were. Frequency: once on a local loss; beacon,
+//!   dialog and multiplayer consequences need their own connected mechanisms.
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -222,10 +226,10 @@ impl Simulation {
                         frame_effects,
                     );
                 }
-                self.mplayer_defeated(
+                generated.extend(self.mplayer_defeated(
                     owner,
                     UninitContext::new(rules, registry).with_effects(frame_effects),
-                );
+                ));
             }
             self.raise_house_tags(owner, rules, registry, frame_effects);
             if let Some(rules) = rules {
@@ -331,6 +335,7 @@ impl Simulation {
     /// - for a computer house at `[IQ] MaxIQLevels` under `[AI] Paranoid`,
     ///   Computer_Paranoid (`0x004FC10D`, `sim::house_diplomacy`);
     /// - for the current house (`PlayerPtr`, `0x004FC1B0..0x004FC1B7`), the
+    ///   local planning exit (`0x004FC1EE`) through its existing client owner,
     ///   whole-map reveal ([`Self::reveal_entire_map`] at `0x004FC20F`, which
     ///   also writes the map-clear byte `+0x241`) and the radar switched on
     ///   (`RadarClass::SetTacticalMapAvailable(1)` at `0x004FC21B`), which
@@ -341,7 +346,11 @@ impl Simulation {
     /// - the announcement (`0x004FC262..0x004FC2EA` for the current house,
     ///   `0x004FC343..0x004FC3BC` for another; the app decides which) and the
     ///   loss.
-    fn mplayer_defeated(&mut self, owner: InternedId, context: UninitContext<'_>) {
+    fn mplayer_defeated(
+        &mut self,
+        owner: InternedId,
+        context: UninitContext<'_>,
+    ) -> Option<crate::sim::command::CommandEnvelope> {
         if let Some(house) = self.houses.get_mut(&owner) {
             house.is_defeated = true;
         }
@@ -359,18 +368,33 @@ impl Simulation {
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
         }
-        if self.session.current_house == Some(owner) {
+        let planning_commit = if self.session.current_house == Some(owner) {
+            // Original1cdd:4FC1EE ->637A10, before Session+300/reveal
+            // and the loss announcement. Input owns the exit and2B event;
+            // House returns it to MainTick's existing post-Logic dispatcher.
+            // Earlier death cues precede EndPlanningModeSound; MatchOutcome's
+            // synchronous flush later delivers that cue before the local EVA.
+            // Executable controls: spatial_oracle/planning_local_defeat.
+            context.effects().flush_sound(self, context.rules());
+            let commit = context
+                .effects()
+                .leave_local_planning(self, context.rules());
             self.reveal_entire_map(Some(owner), context);
             self.power_states
                 .entry(owner)
                 .or_default()
                 .set_tactical_map_available();
-        } else if let Some(house) = self.houses.get_mut(&owner) {
-            house.map_is_clear = true;
-        }
+            commit
+        } else {
+            if let Some(house) = self.houses.get_mut(&owner) {
+                house.map_is_clear = true;
+            }
+            None
+        };
         self.sound_events
             .push(SimSoundEvent::PlayerDefeated { house: owner });
         self.flag_house_to_lose(owner, context.rules(), false, context.effects());
+        planning_commit
     }
 
     /// `HouseClass::Flag_To_Win4FC9E0`, common offline campaign/skirmish path.
@@ -534,7 +558,8 @@ impl Simulation {
     /// flag, which only [`Self::mplayer_defeated`] sets. Its readers here are
     /// the House radar recheck (`0x004F84FB`), the Lightning Storm's outages
     /// (`0x00539FE0`), the superweapon EVA lines (`0x004468DA`, `0x006CCCF0`
-    /// and the other `SuperClass::Launch` cases) and selection navigation.
+    /// and the other `SuperClass::Launch` cases), selection navigation and
+    /// local planning command admission (`0x00731A50`).
     pub fn local_player_defeated(&self) -> bool {
         self.session
             .current_house

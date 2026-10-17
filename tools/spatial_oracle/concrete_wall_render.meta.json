@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical TEMPERATE GAWALL initial/partial/stage-two/connection-change/erased Cell body, standalone shadow and retained body-then-shadow raster components from selected independent native AreaDamage states. No native paid Factory, whole Tactical/frame/World/GPU or recursive admission from pixels claim.",
+  "assumptions": [
+    "The same prepare/type/theater/image/Convert/Cell/raster owner as authored CAFNCB. Full5FE770 reads GAWALL using physical expansion RULESMD/Battle/XMP and fixed ART. Original5FE620 constructs the TEMPERATE filename; existing archive transport supplies physical GTWALL.SHP. Actual selected Image/flags/type values and loaded payload identity are compared to the consumed concrete_wall CPU inputs. Native5FEDE0 cached getter executes; 5B40B0 remains the existing physical-byte transport, not full native archive/cache/SHPReference loading.",
+    "The five source states name exact CPU seed/path/hit references. Initial source33,88 comes from seed0 initial_patch; north33,87 partial and stage-two states from seed1 hits3/8; endpoint33,90 connection change from seed0 hit5; erased source33,88 from seed0 hit6. These independent component states are also selected for a separate normal paid World consumer; no shared shot timing/RNG or positive recursive200 claim follows from pixels.",
+    "Physical map hashes and selected tile/subtile/level tuples match native CPU states. These map Cells are authored empty; actual GAWALL CPU construction is an explicit decoded Overlay seam. Existing original theater readers resolve each unique selected TMP, and full native TMP constructor/lazy loader publishes each descriptor to a supplied sparse registry. Each row chooses its actual tile head for slope/land and original Cell480350 lighting; no CAFNCB/source-tile reuse or hand color is supplied.",
+    "Existing sole ReadColor owner parses the selected physical Colors entry in its small INI Fixture; its byte result enters the existing raster VM, where physical UNITTEM expansion and original paired1/53 ColorScheme constructors execute. Supplied current Player/House index1 is an explicit component prior; original wall caller reads its Convert. Full House startup/ownership is excluded.",
+    "Local projected point96,120, viewport0, clip192x160, A127, backgroundFFFF and oldZ65535 are supplied component priors; actual native A is read back. Occupied rows execute actual47F6A0/shape/selector/rowwalker/raster; the erased row reuses the actual Tactical -1 admission and observes no draw. No Rust expected pixels or source states.",
+    "Each row retains its original body-only fields. Standalone shadow executes original47F510, raw state plus signed SHP frame count/2, flags4601 and original493830/497390 leaves against a reset surface. The body is independently repeated and required to reproduce its body-only draws/output, then original47F510 executes again on that same PIXELS/Z/A without resetting. Actual draw args, rectangle, rowwalker/leaf and final color/Z spans are retained. No host shadow pixels/composition math or second VM is supplied.",
+    "The original shadow caller and shadow-rectangle body47FDE0 have no Wall exclusion; Tactical6D719F calls47F510 in its second sweep. Standalone/composed rows are bounded direct-caller components with supplied visible clip/point, not full native shadow visibility/rectangle/bootstrap. Erased rows use the existing actual Tactical suffix with declared map/visibility/rectangle transports and observe no body/shadow entry; no invalid id-minus-one direct caller executes."
+  ],
+  "substitutions": [
+    "Existing bounded allocation, TLS, archive/cache and surface transport; sparse TMP/Cell/current Player enrollment and supplied projection/A/Z. Original occupied wall caller, lighting, palette generation, shape and raster are not substituted. Only the erased row reuses the existing traversal map/visibility transports and observes no body/shadow entry."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "cell_lighting": "0x00480350",
+    "wall_branch": "0x0047F96A",
+    "shape": "0x004AED70",
+    "type_reader": "0x005FE770",
+    "tmp_lazy": "0x00544CB0",
+    "empty_caller": "0x006D6E5B",
+    "cell_shadow": "0x0047F510",
+    "shadow_rectangle": "0x0047FDE0",
+    "tactical_shadow_call": "0x006D719F",
+    "plain_shadow_leaf": "0x00493830",
+    "rle_shadow_leaf": "0x00497390"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --concrete-wall",
+  "payload_sha256": "74b7260b24f76c6170899e614716bd909538451b12a0b3987eda513360c3248f"
+}

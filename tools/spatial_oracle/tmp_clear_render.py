@@ -61,16 +61,22 @@ def profile(m, raw=None):
     return dict(zip(keys, (struct.unpack('<i', u.mem_read(scenario + off, 4))[0] for off in offsets)))
 
 
-def load_tmp_files(m, files, *, chain=False):
+def load_tmp_files(m, files, *, chain=False, prepared_files=None):
     """Shared original TMP constructor/lazy IO owner; no host TMP decoding.
 
     A variant chain constructs all descriptors before loading. Independent
     registrations preserve the historical construct/load interleave. These
     are supplied registration boundaries, not a second theater loader.
+    Optional prepared_files admit other physical/absent RawFile probes on
+    this same transport; they do not register additional TMP descriptors.
     """
     u = m.u
     platform = NativeAudioPlatform(m, configured_gamemd().parent)
-    platform.configure_transport(prepared_files=files)
+    transport_files = dict(files)
+    if prepared_files is not None:
+        assert not {name.lower() for name in files} & {name.lower() for name in prepared_files}
+        transport_files.update(prepared_files)
+    platform.configure_transport(prepared_files=transport_files)
     u.hook_add(UC_HOOK_CODE, lambda u, pc, n, d: platform.hook(u, pc, n) if pc != 0x7C9430 else None)
     u.reg_write(UC_X86_REG_ESP, SP)
     run_checked(u, 0x4E76E0, 0x4E7716)
@@ -136,7 +142,7 @@ def theater_tile_files(m, raw, selected_tile, extension):
     return tiles, mapping
 
 
-def prepare(*, tmp_names=(), hills=False):
+def prepare(*, tmp_names=(), hills=False, prepared_files=None):
     m, _types, inputs = prepare_shared(body=True)
     u = m.u
     # Actual WinMain6BDF5F ->5355D0 ->4E6190 calls both original CPU probes.
@@ -182,7 +188,8 @@ def prepare(*, tmp_names=(), hills=False):
     assert count == 1 and m.string(filename) == 'Clear'
     m.phase = 'tmp_loading'
     names = [name for name in files if name.endswith('.tem')]
-    _heads, file_io = load_tmp_files(m, {name: files[name] for name in names}, chain=True)
+    _heads, file_io = load_tmp_files(m, {name: files[name] for name in names}, chain=True,
+                                   prepared_files=prepared_files)
     inputs['tmp_loader'] = dict(names=names, next_absent='clear01h.tem', constructor='005447C0', lazy='00547020',
         file_io=file_io,
         boundary='Original constructors and full lazy loaders; chain/filename/count metadata supplied from physical contiguous filenames, not full tile-set loader.')

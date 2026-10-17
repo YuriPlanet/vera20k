@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Local House defeat tail4FC1EE..4FC20F, whole planning exit637A10 and registered keyboard/direct731A50/731A70 admission with actual event header and OutList enqueue",
+  "assumptions": [
+    "Reuses SelectionFixture/KeyboardFixture, their original532150 command registration and runtime containers, NativeCallTrace, native RNG seeding and call runner; no additional VM, INI parser, planning decision or RNG implementation.",
+    "The House and preceding local/nonpassive/noncampaign/count admissions are supplied scene state. Defeat controls start after the native Defeated flag store, execute637A10 and4AC960 plus actual Session+300 store, and stop BEFORE577F30 map reveal. Beacon is inactive and placement absent. Map/radar/result flags, SavourDelay countdown, full HouseUpdate and whole frame scheduler are not emulated.",
+    "Three original65C6D0 seeds31 initialize the retained Main/Scenario/MapGen buffers before each history. All1012 bytes remain continuous across phases; frame labels advance only the supplied global. Constructor draws before these priors and downstream audio draws are outside scope.",
+    "Original Rules constructor sound-default stores6658F2..66590A execute with its-1 EBP constant. Resolved runtime sound IDs21/22 are explicit fixture transport bindings to physical StartPlanningModeSound/EndPlanningModeSound names, NOT native global catalog indices or an execution of the Rules sound reader. Existing native reader identities6696C0/66970A and production retail-reader tests establish that separate owner. Physical RULESMD, absent LANGRULE, MPBattleMD, Hills.map and unlayered SOUNDMD lexical inputs/hashes are retained using the existing sections owner.",
+    "Null actor/layer/selection containers, empty capacity128 OutList and nonzero display reference priors are supplied. No other paths execute; these records certify event issuance/current House index and cleanup, not post-Logic dispatch timing. MainTick55DC9E/55DE40 and QueueAI6474DC timing remains instruction-level evidence plus the connected production regression.",
+    "The first-use planning hint counters are supplied settled1 so actual63A120 declines tutorials. The already-defeated active prior is an explicit receiver control; no ordinary producer is claimed. Original .text remains unchanged."
+  ],
+  "substitutions": [
+    "Diagnostic4068E0 returns0 with cdecl caller cleanup; original event constructor4C66C0 writes its actual header. Original6521C0 performs the real111-byte OutList copy, capacity check, counters and imported timeGetTime timestamp; the Windows clock import returns100000.",
+    "Centered Voc750920 is observed then returns0/RET8 before playback/device/pool admission and downstream audio RNG. Optional AC4B80 listener dispatch is observed at a supplied callback address and returns0/RET8; no native gadget paint/behavior is supplied or certified. Existing Mouse virtual cursor transports remain installed but unreached by inactive beacon controls.",
+    "No planning active/Session gate, event/opcode/issuer, state clear, queue or timer return is supplied. Event payload beyond its constructed header is caller scratch, not a gameplay claim. No scheduler decision is answered."
+  ],
+  "entry_points": {
+    "house_local_tail": "0x004FC1EE",
+    "stop_before_reveal": "0x004FC20F",
+    "planning_exit": "0x00637A10",
+    "planning_enter": "0x006379C0",
+    "planning_press": "0x00731A50",
+    "planning_release": "0x00731A70",
+    "keyboard_execute": "0x00536750",
+    "first_use_hint": "0x0063A120",
+    "event_constructor": "0x004C66C0",
+    "enqueue": "0x006521C0",
+    "beacon_mode": "0x004AC960",
+    "random_seed": "0x0065C6D0",
+    "centered_sound": "0x00750920",
+    "sound_default_stores": "0x006658F2"
+  },
+  "replay_command": "python -m tools.spatial_oracle.planning_mode --local-defeat",
+  "payload_sha256": "d1843fded6c52192a9da92f0323e803a434f732844bb29245be7cfe91ed60641"
+}
