@@ -302,8 +302,14 @@ impl OrdinaryDamageHost for LiveOrdinary<'_, '_> {
     fn notify_span(&mut self, first: CellCoord, end: CellCoord) -> Result<(), String> {
         crate::sim::bridge_state::rim::visit_span_cells(first, end, |point| {
             let cell = self.live.lookup(point);
-            // The same tagged event31 dependency remains open as in the rim
-            // publisher. The selected stock Anytown/Shrapnel spans have no CellTags.
+            // The same 575EE0 per-cell Tag raise as the rim publisher.
+            let live = &mut *self.live;
+            live.sim.dispatch_bridge_cell_tag_event(
+                cell,
+                live.rules,
+                live.registry,
+                live.frame_effects,
+            );
             self.live.coord(cell)
         });
         Ok(())

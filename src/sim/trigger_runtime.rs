@@ -45,6 +45,7 @@ const ACTION_SET_ALTERNATE_BASE: i32 = 137;
 const ACTION_CLEAR_ALTERNATE_BASE: i32 = 138;
 
 const EVENT_ANY: i32 = 8;
+const EVENT_BRIDGE_COLLAPSED: i32 = 31;
 const EVENT_GLOBAL_IS_SET: i32 = 27;
 const EVENT_GLOBAL_IS_CLEAR: i32 = 28;
 const EVENT_LOCAL_IS_SET: i32 = 36;
@@ -1871,7 +1872,10 @@ impl Simulation {
             //execute30 controls, including prior persistence and NULL House.
             //49/50 use the same gate. Steam3e81a617,71EC9A/71F1B1;
             //trigger_action_values --crate records their original predicates.
-            2 | 4 | 6 | 7 | 29 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 | 49 | 50 => {
+            //31: bridge575EE0 raises it on each tagged span cell. After this
+            //gate,71EE91 routes it to71F069, whose Country502D30 lookup
+            //selects only the71F1B1 true tail either way.
+            2 | 4 | 6 | 7 | 29 | 31 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 | 49 | 50 => {
                 input.kind == condition.kind && !self.buildup_bypass_active()
             }
             //71F28B selects the generic true tail71F1B4, no persistence write.
@@ -2075,6 +2079,54 @@ impl Simulation {
         );
         self.publish_trigger_effects(effects);
         true
+    }
+
+    /// Bridge575EE0's per-cell ingress: each visited CellClass whose +3C Tag
+    /// is nonnull calls Tag6E53A0(31, null actor, Cell ABD480, unforced,
+    /// null source). ABD480 is the zero Cell (startup5618B0). The raise is
+    /// synchronous inside the collapse traversal; HasOccurred71E940 admits
+    /// it through71EC9A/71F069 (raised31, clear A8ED6B) without latching.
+    pub(crate) fn dispatch_bridge_cell_tag_event(
+        &mut self,
+        cell: crate::map::cell_index::NativeCellIdentity,
+        rules: &crate::rules::ruleset::RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(&tag) = self.trigger_runtime.cell_tags.get(&cell) else {
+            return;
+        };
+        let mut effects = Vec::new();
+        self.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: EVENT_BRIDGE_COLLAPSED,
+                actor: None,
+                source: None,
+                cell: (0, 0),
+                force: false,
+            },
+            &mut effects,
+            Some(rules),
+            overlay_registry,
+            frame_effects,
+        );
+        self.publish_trigger_effects(effects);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tag_dispatch_trace_for_test(&self) -> &[(usize, i32)] {
+        &self.trigger_runtime.dispatch_trace
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear_tag_dispatch_trace_for_test(&mut self) {
+        self.trigger_runtime.dispatch_trace.clear();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trigger_local_is_set_for_test(&self, index: u32) -> bool {
+        self.trigger_runtime.locals_set.contains(&index)
     }
 
     /// Pickup481AC1 writes Scenario+34BE only after its optional Tag callback
@@ -3925,3 +3977,7 @@ mod wakeup_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_chrono_reinforcement_tests.rs"]
 mod chrono_reinforcement_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_bridge_event_tests.rs"]
+mod bridge_event_tests;

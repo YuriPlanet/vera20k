@@ -322,5 +322,114 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
     );
 }
 
+#[test]
+fn bridge_rim_collapse_raises_event31_on_each_tagged_span_cell() {
+    // Original575EE0 raises Tag6E53A0(31) for every nonnull CellClass+3C on
+    // the endpoint-exclusive span recorded by the native notify call; the
+    // endpoint itself and the earlier non-collapsing hit raise nothing.
+    let input: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_stock_inputs.json",
+    ))
+    .unwrap();
+    let original: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_rim_body.json",
+    ))
+    .unwrap();
+    let case = original["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "single_section")
+        .unwrap();
+    let notify = case["hits"][1]["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|call| call["kind"] == "notify")
+        .unwrap();
+    assert_eq!(notify["endpoints"], json!([[112, 136], [112, 152]]));
+    let rules = rules();
+    let mut sim = stock_world(&rules, &input);
+    // One-shot Tags on the span centre (112,140), the fourth row cell
+    // (110,150) and the exclusive endpoint (112,152); NewINIFormat4 packs y*1000+x.
+    let mut sections: [String; 5] = Default::default();
+    for (index, (x, y, local)) in [(112, 140, 9), (110, 150, 11), (112, 152, 10)]
+        .into_iter()
+        .enumerate()
+    {
+        sections[0].push_str(&format!(
+            "T{index}=Neutral,<none>,Bridge{index},0,1,1,1,0\n"
+        ));
+        sections[1].push_str(&format!("T{index}=1,31,0,0\n"));
+        sections[2].push_str(&format!("T{index}=1,56,0,{local},0,0,0,0,A\n"));
+        sections[3].push_str(&format!("G{index}=0,Bridge{index},T{index}\n"));
+        sections[4].push_str(&format!("{}=G{index}\n", y * 1000 + x));
+    }
+    let mut body = String::new();
+    for (name, rows) in ["Triggers", "Events", "Actions", "Tags", "CellTags"]
+        .into_iter()
+        .zip(sections)
+    {
+        body.push_str(&format!("[{name}]\n{rows}"));
+    }
+    let map = crate::map::map_file::MapFile::from_bytes(
+        // The shared ingress fixture's minimal header; Cell storage stays the
+        // stock rim world's, so CellTags resolve against its real cells.
+        format!(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+             [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+             [Basic]\nNewINIFormat=4\n{body}"
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.install_authored_cell_trigger_tags(&map);
+    sim.classify_map_triggers(Some(&rules));
+
+    for (hit, raised) in [(0, &[][..]), (1, &[9, 11][..])] {
+        let coord = serde_json::from_value(case["hits"][hit]["input"].clone()).unwrap();
+        let mut damage = event(&mut sim, coord);
+        damage.impact_z_leptons = 416
+            + 104
+                * i32::from(
+                    sim.resolved_terrain
+                        .as_ref()
+                        .unwrap()
+                        .cell(coord.0, coord.1)
+                        .unwrap()
+                        .level,
+                );
+        sim.clear_tag_dispatch_trace_for_test();
+        apply_bridge_damage_events_with_overlay_registry(
+            &mut sim,
+            &rules,
+            &[damage],
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            sim.tag_dispatch_trace_for_test()
+                .iter()
+                .filter(|(_, kind)| *kind == 31)
+                .count(),
+            raised.len(),
+            "hit{hit}"
+        );
+        for local in [9, 10, 11] {
+            assert_eq!(
+                sim.trigger_local_is_set_for_test(local),
+                raised.contains(&local),
+                "hit{hit} local{local}"
+            );
+        }
+    }
+}
+
 #[path = "bridge_ifv_impact_tests.rs"]
 mod ifv_impact;

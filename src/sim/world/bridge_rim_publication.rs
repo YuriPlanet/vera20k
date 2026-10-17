@@ -92,9 +92,14 @@ impl HighBridgeRimHost for LiveRim<'_, '_> {
     fn notify_span(&mut self, first: RimCoord, end: RimCoord) {
         rim::notify_span_cells(self, first, end);
     }
-    fn notify_cell(&mut self, _cell: Cell) {
-        // TagClass event31 dispatch requires the live trigger authority
-        // (Phase10 rows209/222-224). Keep that behavior explicitly open.
+    fn notify_cell(&mut self, cell: Cell) {
+        let publication = &mut *self.publication;
+        publication.sim.dispatch_bridge_cell_tag_event(
+            cell,
+            publication.rules,
+            publication.registry,
+            publication.frame_effects,
+        );
     }
     // Native rectangles schedule partial tactical redraws. VERA clears color
     // and depth and rebuilds/uploads all three bridge batches every frame
