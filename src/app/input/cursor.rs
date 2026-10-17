@@ -477,7 +477,7 @@ fn what_action_on_cell(
 /// group.
 ///
 /// Priority (highest first):
-/// 1. Deployer self-hover: the selected object itself has a deploy capability.
+/// 1. Self-hover: deploy/unload capabilities or an own factory's primary action.
 /// 2. SabotageCursor: selected unit has SabotageCursor=yes hovering an enemy structure.
 /// 3. Engineer capturing: selected Engineer hovering capturable enemy building.
 /// 4. Engineer repairing: selected Engineer hovering damaged friendly building.
@@ -559,6 +559,24 @@ pub(super) fn capability_cursor_for_hover(
                 sim.should_show_undeploy_building_command(hover.stable_id, rules)
             }) {
                 return CursorFeedbackKind::Deploy;
+            }
+            if sim.session.current_house == Some(entity.owner())
+                && obj.is_some_and(|object| object.factory_type().is_some())
+                && let Some(rules) = rules
+            {
+                // Building4472EC..447319 keeps Action4 for a nonprimary
+                // factory and returns Action0 for its current primary.
+                // SetCursorFromAction4AB449 maps those to rows27 and0;
+                // the existing Deploy feedback already owns row27.
+                return if crate::sim::production::can_select_factory_primary(
+                    sim,
+                    rules,
+                    hover.stable_id,
+                ) {
+                    CursorFeedbackKind::Deploy
+                } else {
+                    CursorFeedbackKind::Default
+                };
             }
         }
     }

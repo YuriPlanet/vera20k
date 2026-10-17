@@ -423,6 +423,42 @@ impl Simulation {
         Some(record)
     }
 
+    /// PlanMgr639130, called by LeftUp4ABF7F before dispatch: a House may
+    /// retain128 nonempty actor paths, including the newly selected actors.
+    /// Every entity in this store is a Techno (+14 bit0); missing selection
+    /// references do not contribute, and an existing nonempty path adds none.
+    ///
+    /// AC4B84 counts nonempty paths, not retained empty executing paths:
+    /// append638470 increments empty->nonempty; consume636718..636760 and
+    /// detach6386E0 decrement at the transition to empty. ChangeHouse701585
+    /// detaches before replacing the owner. Derive that count from this owner
+    /// using its existing effective-House projection, without a second counter.
+    /// Source: original gamemd.exe / building_manual_primary.md and its
+    /// executed planning_admission controls. Delayed old-issuer appends after
+    /// capture remain a separate native accounting bound.
+    pub fn planning_selection_has_capacity(&self, owner: InternedId, selected: &[u64]) -> bool {
+        let retained = self
+            .planning
+            .paths
+            .iter()
+            .filter(|(actor, path)| {
+                !path.nodes.is_empty() && self.planning_actor_house(**actor) == Some(owner)
+            })
+            .count();
+        let additional = selected
+            .iter()
+            .filter(|actor| {
+                self.substrate.entities.contains(**actor)
+                    && self
+                        .planning
+                        .paths
+                        .get(*actor)
+                        .is_none_or(|path| path.nodes.is_empty())
+            })
+            .count();
+        retained.saturating_add(additional) <= 0x80
+    }
+
     pub fn encode_plan_commit_record(&self, owner: InternedId) -> Option<CommandRecord> {
         // Event constructor4C66C0: header only, no route packet.
         self.planning_header(owner, 0x2b)

@@ -157,9 +157,9 @@ class TextRecorder:
     This adds no pixel writer or raster model. The original BSurface fill,
     outline and glyph functions execute to their actual returns.
     """
-    def __init__(self,m,status,size):
+    def __init__(self,m,status,size,*,direct_simple_text=False):
         from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_READ,UC_HOOK_MEM_WRITE
-        from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_EDX
+        from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_EDX,UC_X86_REG_ECX
         from tools.projectile_oracle.bridge_render_shape import A,Z
         self.m,self.status,self.rows,self.entries=m,status,[],[]
         self.active=None
@@ -168,15 +168,22 @@ class TextRecorder:
             if self.active is not None:
                 row,stage,start,ret=self.active
                 row['stages'][-1]['color_stores']=len(status.stores)-start
-                if stage=='glyph':row['glyph_stores']=status.stores[start:].copy()
+                if stage=='glyph':
+                    row['glyph_stores']=status.stores[start:].copy()
+                    if '_simple_result' in row:
+                        row['result_position']=dwords(m,row.pop('_simple_result'),2)
                 self.active=None
         def observe(_u,pc,_n,_d):
             if self.active is not None and pc==self.active[3]:finish()
             if pc in (0x70A6FD,0x4A66D0,0x4A5EB0,0x434B90,0x434500,0x434120):
                 self.entries.append(dict(actor=status.actor_index,entry=f'{pc:08X}'))
-            if pc not in (0x7BB020,0x7BAD90,0x4A66D0):return
+            # PRIMARY calls SimpleText4A5EB0 directly. A group4A66D0
+            # wrapper already owns its nested SimpleText interval; do not
+            # observe it twice or change any historical/default payload.
+            simple=direct_simple_text and pc==0x4A5EB0 and self.active is None
+            if pc not in (0x7BB020,0x7BAD90,0x4A66D0) and not simple:return
             sp=u.reg_read(UC_X86_REG_ESP)
-            args=[m.read32(sp+4+i*4) for i in range(8 if pc==0x4A66D0 else 2)]
+            args=[m.read32(sp+4+i*4) for i in range(7 if simple else 8 if pc==0x4A66D0 else 2)]
             if pc==0x7BB020:
                 row=dict(actor=status.actor_index,rect=dwords(m,args[0]),
                          fill_word=args[1],stages=[])
@@ -190,7 +197,11 @@ class TextRecorder:
                 else:
                     row.update(text=readwide(m,u.reg_read(UC_X86_REG_EDX)),
                         position=dwords(m,args[2],2),clip=dwords(m,args[1]),
-                        packed_owner_rgb=args[3],flags=args[5],color_mode=args[6],draw_mode=args[7])
+                        packed_owner_rgb=args[3],flags=args[5])
+                    if simple:
+                        row.update(draw_mode=args[6],_simple_result=u.reg_read(UC_X86_REG_ECX))
+                    else:
+                        row.update(color_mode=args[6],draw_mode=args[7])
                     stage='glyph'
             row['stages'].append(dict(stage=stage,entry=f'{pc:08X}',a_reads=0,z_reads=0,
                                      a_writes=0,z_writes=0))

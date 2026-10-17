@@ -22,15 +22,15 @@
 
 #[cfg(test)]
 mod bridge_shadow_gpu_tests;
+mod build_instances;
 #[cfg(test)]
 mod building_bracket_gpu_tests;
-#[cfg(test)]
-mod status_gpu_tests;
-mod build_instances;
 mod draw_passes;
 mod object_extras;
 #[cfg(test)]
 mod placement_gpu_tests;
+#[cfg(test)]
+mod status_gpu_tests;
 #[cfg(test)]
 pub(crate) use draw_passes::draw_pooled_overlay_bodies;
 pub(crate) mod draw_plan_lowering;
@@ -402,6 +402,7 @@ pub(crate) fn render_game(
             overlay_render_z: &world.overlay_render_z,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
+            primary_factory_status: &world.primary_factory_status,
             surface_effects,
             sidebar_unavailable: &sidebar.unavailable,
             sidebar_flash: &sidebar.flash,
@@ -459,6 +460,11 @@ fn upload_to_gpu(
     // Terrain + overlays
     pool.upload(&state.renderer.gpu, "terrain", &world.terrain.normal);
     pool.upload(&state.renderer.gpu, "overlay", &world.overlay);
+    pool.upload(
+        &state.renderer.gpu,
+        "primary_factory_status",
+        &world.primary_factory_status.instances,
+    );
     for (layer, objects) in world.object_layers.iter().enumerate() {
         pool.upload_page(
             &state.renderer.gpu,

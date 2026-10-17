@@ -88,6 +88,348 @@ fn native_repair_wrenches_preserve_color_a_z_and_parent_order() {
     );
 }
 
+#[test]
+#[ignore = "requires retail assets and GPU; original Ground2 PRIMARY loop, physical text and unchanged A/Z"]
+fn native_primary_factory_labels_preserve_color_a_z_and_constructor_order() {
+    use crate::app::presentation::ui_overlays::build_primary_factory_status_render_instances;
+    use crate::sim::{command::Command, house_state::HouseState};
+    use std::collections::BTreeSet;
+
+    let native =
+        crate::test_fixture::json("tools/procedural_drawing_oracle/primary_factory_status.json");
+    let producer = crate::test_fixture::json("tools/spatial_oracle/building_manual_primary.json");
+    assert_eq!(native["native_sha256"], producer["native_sha256"]);
+    for (key, phase) in [("primary_on", 3), ("primary_off", 5)] {
+        assert_eq!(
+            native["producer_priors"][key]["value"],
+            producer["cases"][0]["phases"][phase]["state"]["primary"][1],
+            "the renderer's primary-byte priors come from original Event17 output"
+        );
+    }
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        .expect("physical Battle INIs");
+    let root = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("retail root"));
+    let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    crate::map::theater::load_theater(
+        &mut assets,
+        native["raw_file_inputs"]["theater"].as_str().unwrap(),
+    )
+    .expect("normal active theater assets");
+    for name in native["raw_file_inputs"]["absent"].as_array().unwrap() {
+        let name = name.as_str().unwrap();
+        assert!(
+            assets.get_ref(name).is_none(),
+            "normal AssetManager confirms absent native filename probe {name}"
+        );
+    }
+    for source in native["physical_inputs"].as_array().unwrap() {
+        let name = source["name"].as_str().unwrap();
+        assert_eq!(
+            crate::util::sha256::sha256_hex(assets.get_ref(name).expect("physical input")),
+            source["sha256"].as_str().unwrap(),
+            "normal AssetManager winner for {name}"
+        );
+    }
+    let csf_bytes = assets.get_ref("ra2md.csf").expect("active-YR CSF");
+    assert_eq!(
+        crate::util::sha256::sha256_hex(csf_bytes),
+        native["retail_csf"]["sha256"].as_str().unwrap()
+    );
+    let csf = crate::assets::csf_file::CsfFile::from_bytes(csf_bytes).unwrap();
+    for key in ["TXT_PRIMARY", "TXT_PRI"] {
+        assert_eq!(
+            csf.text(key).as_ref(),
+            native["retail_csf"]["labels"][key].as_str().unwrap()
+        );
+    }
+    let short_rules = primary_label_rules_with_fixed_art_override(&assets, &root);
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let overlay =
+            SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+        let fnt = crate::assets::fnt_file::FntFile::from_bytes(
+            assets.get_ref("GAME.FNT").expect("physical GAME.FNT"),
+        )
+        .unwrap();
+        let font =
+            crate::render::bit_font::BitFont::from_fnt(&gpu.device, &gpu.queue, &batch, &fnt);
+        let mut pool = InstanceBufferPool::new();
+        for row in native["raster_controls"].as_array().unwrap() {
+            let input = &row["input"];
+            let rules = if input["foundation_override"].is_null() {
+                &retail.rules
+            } else {
+                assert_eq!(input["foundation_override"], "1x1");
+                &short_rules
+            };
+            let size = pair(&input["size"]);
+            let clip: [u32; 4] =
+                std::array::from_fn(|index| input["clip"][index].as_u64().unwrap() as u32);
+            let mut cam = camera(size);
+            cam.camera_pos = [
+                input["camera"][0].as_i64().unwrap() as f32,
+                input["camera"][1].as_i64().unwrap() as f32
+                    + crate::util::lepton::absolute_leptons_to_screen(0, 0, 0).1,
+            ];
+            let mut sim = Simulation::new();
+            sim.intern_rule_type_ids(rules);
+            sim.resolve_type_handles(rules);
+            let owner = sim.interner.intern("Owner");
+            let ally = sim.interner.intern("Ally");
+            sim.session.game_mode_nonzero = true;
+            sim.session.current_house = Some(owner);
+            for house in [owner, ally] {
+                sim.houses
+                    .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+                sim.session.house_order.push(house);
+            }
+            for (admitted, asker, other) in [
+                (
+                    input["owner_allied_to_current"].as_bool().unwrap(),
+                    "ALLY",
+                    "OWNER",
+                ),
+                (
+                    input["current_allied_to_owner"].as_bool().unwrap(),
+                    "OWNER",
+                    "ALLY",
+                ),
+            ] {
+                if admitted {
+                    sim.house_alliances
+                        .entry(asker.to_owned())
+                        .or_default()
+                        .insert(other.to_owned());
+                }
+            }
+            let mut colors = crate::map::houses::HouseColorMap::new();
+            let mut opportunities = BTreeSet::new();
+            for (index, actor) in input["actors"].as_array().unwrap().iter().enumerate() {
+                assert_eq!(
+                    actor["display_bits"], 0,
+                    "non-allied discovery producer is outside this control"
+                );
+                let id = index as u64 + 1;
+                let name = actor["type_name"].as_str().unwrap();
+                let object = rules.object(name).unwrap();
+                assert_eq!(
+                    crate::rules::foundation::foundation_dimensions(&object.foundation).0,
+                    row["native_foundation_width"].as_u64().unwrap() as u16
+                );
+                let type_ref = sim.interner.intern(name);
+                let actor_owner = if actor["owner"] == "Owner" {
+                    owner
+                } else {
+                    ally
+                };
+                let xyz: [i32; 3] =
+                    std::array::from_fn(|axis| actor["location"][axis].as_i64().unwrap() as i32);
+                let mut entity = GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    (xyz[0] / 256) as u16,
+                    (xyz[1] / 256) as u16,
+                    0,
+                    0,
+                    actor_owner,
+                    Health::new(object.strength),
+                    type_ref,
+                    EntityCategory::Structure,
+                    0,
+                    5,
+                    false,
+                );
+                entity
+                    .type_facts
+                    .set_foundation_for_test(object.foundation.clone());
+                entity.position.put_location(DriveCoord {
+                    x: xyz[0],
+                    y: xyz[1],
+                    z: xyz[2],
+                });
+                entity.lifecycle.set_in_limbo_for_test(false);
+                entity
+                    .lifecycle
+                    .set_cell_marked(actor["marked"].as_bool().unwrap());
+                entity
+                    .selection
+                    .set_selected_for_test(actor["selected"].as_bool().unwrap());
+                sim.entities_mut().insert(entity);
+                sim.append_house_base_building_for_test(id);
+                if actor["primary"].as_bool().unwrap() {
+                    assert!(sim.apply_command(
+                        "Owner",
+                        &Command::TogglePrimaryFactory { entity_id: id },
+                        Some(rules),
+                    ));
+                }
+                assert_eq!(
+                    sim.production.is_primary_factory(id),
+                    actor["primary"].as_bool().unwrap()
+                );
+                if actor["body_opportunity"].as_bool().unwrap() {
+                    opportunities.insert(id);
+                }
+                let color = crate::rules::house_colors::HouseColorIndex(
+                    rules
+                        .color_schemes
+                        .iter()
+                        .position(|scheme| scheme.name == actor["color"].as_str().unwrap())
+                        .unwrap() as u8,
+                );
+                colors.insert(actor["owner"].as_str().unwrap().to_owned(), color);
+            }
+            let labels = build_primary_factory_status_render_instances(
+                &sim,
+                &opportunities,
+                owner,
+                &colors,
+                &rules.house_color_ramps,
+                &font,
+                &csf,
+                cam.camera_pos,
+                clip.map(|value| value as i32),
+                rules,
+            );
+            assert_eq!(
+                labels.runs.len(),
+                row["text_draws"].as_array().unwrap().len(),
+                "{} label admission",
+                row["name"]
+            );
+            for (run, draw) in labels
+                .runs
+                .iter()
+                .zip(row["text_draws"].as_array().unwrap())
+            {
+                let first = &labels.instances[run.text.start as usize];
+                assert_eq!(
+                    first.position,
+                    [
+                        draw["result_position"][0].as_i64().unwrap() as f32 + cam.camera_pos[0],
+                        draw["result_position"][1].as_i64().unwrap() as f32 + cam.camera_pos[1],
+                    ],
+                    "{} original centered text origin",
+                    row["name"]
+                );
+                assert!(draw["stages"].as_array().unwrap().iter().all(|stage| {
+                    ["a_reads", "a_writes", "z_reads", "z_writes"]
+                        .iter()
+                        .all(|key| stage[*key].as_u64() == Some(0))
+                }));
+            }
+            pool.upload_on_device(
+                &gpu.device,
+                &gpu.queue,
+                "primary_factory_status",
+                &labels.instances,
+            );
+            let a_input =
+                vec![input["a_value"].as_u64().unwrap() as u8; (size[0] * size[1]) as usize];
+            let a = ShroudBuffer::fixture(&gpu.device, &gpu.queue, size, cam.camera_pos, &a_input);
+            batch.bind_shroud(&gpu.device, Some(&a));
+            batch.write_camera(&gpu.queue, cam);
+            let color = gpu.target(size, format);
+            let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+            let cv = color.create_view(&Default::default());
+            let dv = depth.create_view(&Default::default());
+            let initial = encoded(input["background"].as_u64().unwrap() as u16, format)
+                .repeat((size[0] * size[1]) as usize);
+            write_color(&gpu, &color, size, &initial);
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let old_z = input["old_z"].as_u64().unwrap() as u16;
+            clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
+            let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+            terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+            super::object_extras::draw_building_status_text(
+                &mut encoder,
+                &cv,
+                &dv,
+                &mut terrain,
+                clip,
+                &batch,
+                Some(&overlay),
+                pool.get("primary_factory_status").map(|(buffer, _)| buffer),
+                Some(font.atlas()),
+                &labels.runs,
+            );
+            let reads = [
+                gpu.read(&mut encoder, &color),
+                gpu.read(&mut encoder, &depth),
+            ];
+            let output = gpu.finish(encoder, &reads, size);
+            assert_pixels(
+                &output[0],
+                &initial,
+                &row["pixels"],
+                size,
+                format,
+                false,
+                row,
+            );
+            assert_z(&output[1], &vec![old_z; (size[0] * size[1]) as usize], row);
+            for (actual, expected) in gpu
+                .read_float_texels(a.gpu_source().0, [0, 0], size)
+                .iter()
+                .zip(&a_input)
+            {
+                assert_eq!(
+                    (actual[0] * 255.0).round() as u8,
+                    *expected,
+                    "{} A unchanged",
+                    row["name"]
+                );
+            }
+        }
+    }
+}
+
+/// The width1 control changes fixed ART before the production Rules process
+/// starts; reparsing a merged scenario would lose native reader chronology.
+fn primary_label_rules_with_fixed_art_override(
+    assets: &AssetManager,
+    root: &std::path::Path,
+) -> crate::rules::ruleset::RuleSet {
+    use crate::rules::{ini_parser::IniFile, retail_sources::RetailRulesSources};
+    let mut sources = RetailRulesSources::select(assets).unwrap();
+    sources
+        .artmd
+        .ini
+        .merge(&IniFile::from_str("[GAWEAP]\nFoundation=1x1\n"));
+    let audio = crate::rules::audio_sources::AudioDefinitions::select(assets);
+    let mut owner = sources
+        .into_owner(std::sync::Arc::clone(audio.sounds()))
+        .unwrap();
+    let mut scenario_assets = assets.clone();
+    scenario_assets.register_neutral_archives().unwrap();
+    crate::map::scenario_sources::list_skirmish_scenario_records_with_assets(
+        root,
+        &mut scenario_assets,
+        None,
+    )
+    .unwrap();
+    let map = crate::map::source::load_map_by_name_or_path_with_assets(
+        root,
+        "XMP03T4.MAP",
+        &scenario_assets,
+    )
+    .unwrap();
+    let mode =
+        crate::rules::retail_sources::select_ini(&scenario_assets, "MPBattleMD.ini").unwrap();
+    let (mut rules, _, art, _) = owner
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(&mode.ini)),
+            &map.map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules
+}
+
 fn native_status_controls(fixture: &'static str, type_name: &str, category: EntityCategory) {
     let native = crate::test_fixture::json(fixture);
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")

@@ -104,11 +104,12 @@ pub(crate) fn toggle(state: &mut AppState) {
     set_active(state, active);
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum PlanningRefusal {
     Guard,
     Stop,
     Scatter,
+    Capacity,
 }
 
 impl PlanningRefusal {
@@ -117,11 +118,12 @@ impl PlanningRefusal {
             Self::Guard => "MSG:PlanningModeNoGuardArea",
             Self::Stop => "MSG:PlanningModeNoStop",
             Self::Scatter => "MSG:PlanningModeNoScatter",
+            Self::Capacity => "MSG:PlannerMaximum",
         }
     }
 }
 
-/// Guard730D60 ->63A0D0 and ClickedEvent6FFE00 ->639FD0 share
+/// Guard730D60 ->63A0D0, ClickedEvent6FFE00 ->639FD0 and639130 share
 /// AC4C08, silent730A90 duration1E0, and Rules+700 ScoldSound.
 pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
     let Some(tick) = state
@@ -186,20 +188,52 @@ fn set_active(state: &mut AppState, active: bool) {
     ui_sound(state, sound);
 }
 
-/// Encode the already resolved ordinary action through the planning producer.
-/// Unsupported actions are consumed, never downgraded to immediate orders.
-pub(crate) fn queue_orders(state: &mut AppState, orders: Vec<CommandEnvelope>) {
-    if let Some(rt) = state.match_state.sim_runtime.as_mut() {
-        queue_orders_in_sim(&mut rt.simulation, orders);
+/// Encode resolved missions through the planning producer. Building primary
+/// selection keeps its ordinary Event17 route; unsupported actions are
+/// consumed, never downgraded to immediate orders.
+pub(crate) fn queue_orders(
+    state: &mut AppState,
+    selected: &[u64],
+    orders: Vec<CommandEnvelope>,
+) -> bool {
+    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
+        return false;
+    };
+    let Some(owner) = rt.simulation.session.current_house() else {
+        return false;
+    };
+    match queue_orders_in_sim(&mut rt.simulation, owner, selected, orders) {
+        Ok(_) => true,
+        Err(refusal) => {
+            refuse(state, refusal);
+            false
+        }
     }
 }
 
 fn queue_orders_in_sim(
     sim: &mut crate::sim::world::Simulation,
+    owner: crate::sim::intern::InternedId,
+    selected: &[u64],
     orders: Vec<CommandEnvelope>,
-) -> bool {
+) -> Result<bool, PlanningRefusal> {
+    //4ABF7F's selection-wide admission precedes4AE750 for primary clicks
+    // and ordinary planned missions. It is not a receiver/encoding guard.
+    if !sim.planning_selection_has_capacity(owner, selected) {
+        return Err(PlanningRefusal::Capacity);
+    }
     let mut added = false;
     for order in orders {
+        if matches!(
+            order.payload,
+            crate::sim::command::Command::TogglePrimaryFactory { .. }
+        ) {
+            // Selection4AE750 reaches Building443410's direct Event17.
+            // It is not a planning MegaMission or a plan-node append.
+            sim.queue_command(order);
+            added = true;
+            continue;
+        }
         let Some(record) = sim.encode_planning_order_record(order.owner, &order.payload) else {
             continue;
         };
@@ -210,7 +244,7 @@ fn queue_orders_in_sim(
             added = true;
         }
     }
-    added
+    Ok(added)
 }
 
 pub(crate) fn node_at_cursor(state: &AppState) -> Option<(u16, u16)> {
@@ -438,11 +472,200 @@ mod tests {
             Command::Stop { entity_id: 42 },
             Command::Scatter { entity_id: 42 },
         ] {
-            assert!(!queue_orders_in_sim(
-                &mut sim,
-                vec![CommandEnvelope::new(local, 0, payload)]
-            ));
+            assert!(
+                queue_orders_in_sim(
+                    &mut sim,
+                    local,
+                    &[42],
+                    vec![CommandEnvelope::new(local, 0, payload)]
+                )
+                .is_ok_and(|added| !added)
+            );
             assert!(sim.pending_command_snapshot().is_empty());
+        }
+    }
+
+    fn retail_primary_planning_fixture() -> Option<(
+        Simulation,
+        crate::rules::retail_ini_fixture::RetailBattleRules,
+        u64,
+        u64,
+    )> {
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
+        let rules = &retail.rules;
+        let mut sim = Simulation::with_seed(0x004A_BFA9);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        sim.session.game_mode_nonzero = true;
+        sim.session.game_options.short_game = false;
+        let owner = sim.intern("Americans");
+        let side = rules.country_side_index("Americans").unwrap().0;
+        let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
+        house.project_country_mults(rules, &sim.interner);
+        sim.houses.insert(owner, house);
+        sim.session.house_order.push(owner);
+        sim.session.current_house = Some(owner);
+        crate::sim::arena_fixture::flat_ground(&mut sim, rules);
+        let first = sim
+            .spawn_object("GAWEAP", "Americans", 6, 6, 0, rules)
+            .expect("stock initial primary War Factory");
+        let second = sim
+            .spawn_object("GAWEAP", "Americans", 20, 6, 0, rules)
+            .expect("stock nonprimary War Factory");
+        assert!(sim.production.is_primary_factory(first));
+        assert!(!sim.production.is_primary_factory(second));
+        Some((sim, retail, first, second))
+    }
+
+    #[test]
+    fn retail_planning_primary_selection_keeps_its_ordinary_scheduled_event() {
+        use crate::rules::overlay_types::OverlayTypeRegistry;
+        use crate::sim::runtime::{SimResources, SimRuntime};
+        use crate::sim::world::{FrameEffects, TickLane};
+
+        let Some((mut sim, retail, first, second)) = retail_primary_planning_fixture() else {
+            return;
+        };
+        let owner = sim.session.current_house().unwrap();
+        let overlays =
+            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
+        let rules = retail.rules;
+        let order = CommandEnvelope::new(
+            owner,
+            2,
+            Command::TogglePrimaryFactory { entity_id: second },
+        );
+        assert!(queue_orders_in_sim(&mut sim, owner, &[second], vec![order.clone()]).unwrap());
+        assert_eq!(
+            sim.pending_command_snapshot(),
+            vec![order],
+            "the planning boundary preserves the Event17 target, issuer and execute tick"
+        );
+        assert!(sim.planning_paths(owner).is_empty());
+
+        let mut resources = SimResources::empty();
+        resources.rules = rules;
+        resources.overlay_registry = overlays;
+        let mut runtime = SimRuntime {
+            simulation: sim,
+            resources,
+        };
+        for selected in [false, true] {
+            let due = runtime.simulation.take_due_commands();
+            runtime
+                .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                .expect("ordinary planning-active primary-selection frame");
+            assert_eq!(
+                runtime.simulation.production.is_primary_factory(second),
+                selected
+            );
+            assert_eq!(
+                runtime.simulation.production.is_primary_factory(first),
+                !selected
+            );
+            assert!(runtime.simulation.planning_paths(owner).is_empty());
+        }
+        assert!(runtime.simulation.pending_command_snapshot().is_empty());
+    }
+
+    #[test]
+    fn retail_planning_primary_click_matches_native_capacity_boundaries() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/building_manual_primary.json");
+        let admission = &corpus["planning_admission"];
+        assert_eq!(
+            PlanningRefusal::Capacity.csf_key(),
+            admission["csf"]["key"].as_str().unwrap()
+        );
+        for case in admission["controls"].as_array().unwrap() {
+            let Some((mut sim, retail, first, second)) = retail_primary_planning_fixture() else {
+                return;
+            };
+            let owner = sim.session.current_house().unwrap();
+            assert_eq!(
+                retail.rules.general.scold_sound.as_deref(),
+                admission["scold_sound"]["name"].as_str()
+            );
+            let count = case["input"]["planning_admission"]["prior_house_nonempty_paths"]
+                .as_u64()
+                .unwrap() as u16;
+            // Create the native control's other retained plans through the
+            // production producer/receiver, rather than a fabricated counter.
+            for index in 0..count {
+                let actor = sim
+                    .spawn_object(
+                        "MTNK",
+                        "Americans",
+                        1 + index % 16,
+                        16 + index / 16,
+                        0,
+                        &retail.rules,
+                    )
+                    .expect("retail tank for one retained House plan");
+                let record = sim
+                    .encode_planning_order_record(
+                        owner,
+                        &Command::Move {
+                            entity_id: actor,
+                            target_rx: 25,
+                            target_ry: 25,
+                        },
+                    )
+                    .unwrap();
+                let envelope = sim.decode_native_command_record(&record, 0).unwrap();
+                assert!(sim.apply_command("Americans", &envelope.payload, Some(&retail.rules)));
+            }
+            assert_eq!(sim.planning_paths(owner).len(), usize::from(count));
+            assert!(sim.pending_command_snapshot().is_empty());
+            let before = sim.state_hash();
+            let result = queue_orders_in_sim(
+                &mut sim,
+                owner,
+                &[second],
+                vec![CommandEnvelope::new(
+                    owner,
+                    2,
+                    Command::TogglePrimaryFactory { entity_id: second },
+                )],
+            );
+            let native = &case["phases"][0];
+            let admitted = native["admitted"].as_bool().unwrap();
+            assert_eq!(result.is_ok_and(|added| added), admitted, "count {count}");
+            let pending = sim.pending_command_snapshot();
+            assert_eq!(pending.len(), native["issued"].as_u64().unwrap() as usize);
+            if admitted {
+                assert_eq!(pending[0].execute_tick, 2);
+                assert!(sim.apply_command("Americans", &pending[0].payload, Some(&retail.rules)));
+            } else {
+                assert!(matches!(result, Err(PlanningRefusal::Capacity)));
+                assert_eq!(
+                    sim.state_hash(),
+                    before,
+                    "refusal may not queue or mutate gameplay"
+                );
+            }
+            for (index, actor) in [first, second].into_iter().enumerate() {
+                assert_eq!(
+                    u8::from(sim.production.is_primary_factory(actor)),
+                    native["state"]["primary"][index].as_u64().unwrap() as u8
+                );
+            }
+            assert_eq!(
+                sim.planning_paths(owner).len(),
+                native["state"]["planning"]["house_nonempty_paths"][0]
+                    .as_u64()
+                    .unwrap() as usize
+            );
+            if !admitted {
+                // Commit consumes each single-leg path but retains its
+                // executing record until acknowledgement. Those128 empty
+                // paths must release capacity before their records complete.
+                let commit = sim.encode_plan_commit_record(owner).unwrap();
+                let envelope = sim.decode_native_command_record(&commit, 0).unwrap();
+                assert!(sim.apply_command("Americans", &envelope.payload, Some(&retail.rules)));
+                assert!(sim.planning_paths(owner).is_empty());
+                assert_eq!(sim.pending_command_snapshot().len(), usize::from(count));
+                assert!(sim.planning_selection_has_capacity(owner, &[second]));
+            }
         }
     }
 
@@ -463,7 +686,7 @@ mod tests {
                 )
             })
             .collect();
-        assert!(queue_orders_in_sim(&mut sim, orders.clone()));
+        assert!(queue_orders_in_sim(&mut sim, local, &[43, 42], orders.clone()).unwrap());
         let pending = sim.pending_command_snapshot();
         assert_eq!(pending.len(), 2);
         for (planned, ordinary) in pending.iter().zip(&orders) {

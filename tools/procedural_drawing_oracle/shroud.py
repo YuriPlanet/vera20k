@@ -871,7 +871,8 @@ def _prepare_flat_cells(m, xs, ys):
     return table, cells
 
 
-def _building_ground_runtime(*, type_name='GAPOWR', render_ground=True, wrench=False):
+def _building_ground_runtime(*, type_name='GAPOWR', render_ground=True, wrench=False,
+                             prepared_files=None, extra_art_names=(), building_registry=False):
     """Actual flat TMP + placed GAPOWR body depth, on the existing TMP VM.
 
     Only the native depth plane's row runs cross to the line-consumer control.
@@ -884,8 +885,10 @@ def _building_ground_runtime(*, type_name='GAPOWR', render_ground=True, wrench=F
     from tools.spatial_oracle import tmp_clear_render as tmp
     from tools.spatial_oracle.building_body_rules import RULES as INI_RULES, SP as READER_SP
 
-    m, terrain, _files = tmp.prepare(tmp_names=('clear01.tem',))
+    m, terrain, _files = tmp.prepare(tmp_names=('clear01.tem',), prepared_files=prepared_files)
     u, layers = m.u, physical_layers()
+    if prepared_files is not None:
+        m.assets.update({name.upper(): raw for name, raw in prepared_files.items() if raw is not None})
     sources = []
     for outer_name, inner_name, names in (
             ('ra2.mix', 'generic.mix', ('GGPOWR.SHP',)),
@@ -917,7 +920,7 @@ def _building_ground_runtime(*, type_name='GAPOWR', render_ground=True, wrench=F
                                   show_occupant_pips=bool(u.mem_read(typ+0x1584,1)[0]))
     type_layer_fields = []
     art, _ = lexical(m.assets['ARTMD.INI'],
-                     {type_name,type_name+'_A',type_name+'_AD',type_name+'MK'})
+                     {type_name,type_name+'_A',type_name+'_AD',type_name+'MK',*extra_art_names})
     m.make_ini(art)
     layer_reads = []
     for name, archive, raw in layers:
@@ -942,6 +945,13 @@ def _building_ground_runtime(*, type_name='GAPOWR', render_ground=True, wrench=F
         m.invoke(entry, 0)
     u.mem_write(0x89DDB8, words(104))
     u.mem_write(0xB0CD48, struct.pack('<Q', 0x3FC25E5374344960))
+    if building_registry:
+        # CRT initializer pointer81322C names this exact prefix. It prepares
+        # growth/defaults; each subsequent43B740 performs its own append.
+        # Stop only before the process-exit callback registration4E6B96.
+        u.reg_write(UC_X86_REG_ESP, READER_SP)
+        native.run_checked(u, 0x4E6B60, 0x4E6B96,
+                           required_addresses=(0x4E6B7D, 0x4E6B91))
     building, house = m.alloc(0x800), m.alloc(0x18000)
     _prepare_ground_building(m, building, typ, house)
     table, cells = _prepare_flat_cells(m, range(7,16), range(17,26))
@@ -2430,6 +2440,231 @@ def _building_health_composition(scene, ground, actor_template, shape_names, *, 
     return rows
 
 
+def generate_primary_factory_status():
+    """Original Ground2 Building-array label pass, sharing the status VM/font.
+
+    Primary bytes are render-consumer priors backed by the separate executed
+    manual-primary producer. This profile does not reproduce the gameplay
+    history, earlier Display opportunities or factory body art a second time.
+    """
+    from tools import control_group_text_oracle as text_owner
+    from tools.projectile_oracle.bridge_render_shape import prepare_surface, PIXELS, Z, A
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.spatial_oracle.building_body_rules import INI, SP as READER_SP
+    from tools.storage_oracle.keyboard_bindings import stock_csf
+
+    producer_path=Path(__file__).resolve().parents[1]/'spatial_oracle/building_manual_primary.json'
+    producer=json.loads(producer_path.read_text())
+    assert producer['native_sha256']==native.image_sha256()
+    history=producer['cases'][0]
+    assert history['input']['name']=='ordinary_self_click_switch_back_and_stale_event'
+    on=history['phases'][3]['state']['primary'][1]
+    off=history['phases'][5]['state']['primary'][1]
+    assert (on,off)==(1,0)
+    producer_priors=dict(path='tools/spatial_oracle/building_manual_primary.json',
+        case=history['input']['name'],actor=2,
+        primary_on=dict(phase=3,value=on),primary_off=dict(phase=5,value=off))
+    # GAWEAP's full ART reader probes temperate names before loading the
+    # physical generic winners. TMP's existing RawFile platform owns those
+    # probes too; explicit None means physical absence, not an invented SHP.
+    root=native.configured_gamemd().parent
+    ra2=stock.mix((root/'ra2.mix').read_bytes())
+    generic=stock.mix(ra2[stock.mix_hash('generic.mix')])
+    isotemp=stock.mix(ra2[stock.mix_hash('isotemp.mix')])
+    temperate=stock.mix(ra2[stock.mix_hash('temperat.mix')])
+    prepared_files={}
+    factory_sources=[]
+    for suffix in ('','_1','_2','_3','_4','_A','_B','BB'):
+        name=f'GGWEAP{suffix}.SHP'
+        raw=generic[stock.mix_hash(name)]
+        prepared_files[name]=raw
+        factory_sources.append(dict(name=name,archive='ra2.mix/generic.mix',
+                                    bytes=len(raw),sha256=sha(raw)))
+    name='GTWEAPMK.SHP'
+    raw=isotemp[stock.mix_hash(name)]
+    prepared_files[name]=raw
+    factory_sources.append(dict(name=name,archive='ra2.mix/isotemp.mix',
+                                bytes=len(raw),sha256=sha(raw)))
+    absent_probes=[]
+    for suffix in ('','_1','_2','_3','_4','_A','_AD','_B','_BD','BB'):
+        name=f'GTWEAP{suffix}.SHP'
+        assert not (root/name.lower()).exists() and not (root/name).exists()
+        assert all(stock.mix_hash(name) not in archive for archive in (generic,isotemp,temperate))
+        prepared_files[name]=None
+        absent_probes.append(name)
+    scene=_building_ground_runtime(type_name='GAWEAP',render_ground=False,
+        prepared_files=prepared_files,building_registry=True,
+        extra_art_names=tuple('GAWEAP'+suffix for suffix in ('_1','_2','_3','_4','_B','_BD')))
+    m,u,typ,current,tactical=(scene[key] for key in ('m','u','typ','house','tactical'))
+    assert m.read32(typ+0xEF0)==producer['native_type_inputs']['GAWEAP']['foundation']
+    assert m.read32(typ+0xEE0)==0  # The separate storage-counter arm is absent.
+    other=m.alloc(0x18000)
+    u.mem_write(other,bytes(u.mem_read(current,0x18000)))
+    country=m.alloc(0x100)
+    u.mem_write(country+0xB8,words(0))
+    for index,house in enumerate((current,other)):
+        u.mem_write(house+0x30,words(index))
+        u.mem_write(house+0x34,words(country))
+    actors=[scene['building'],m.alloc(0x800)]
+    _prepare_ground_building(m,actors[1],typ,other)
+    u.mem_write(0xA83D4C,words(current))
+    # Constructor registration, not a host-sorted replacement array.
+    assert m.read32(0xA8EB50)==len(actors)
+    assert rally.ints(u,m.read32(0xA8EB44),len(actors))==actors
+
+    outer=stock.mix((native.configured_gamemd().parent/'ra2.mix').read_bytes())
+    font_raw=stock.mix(outer[stock.mix_hash('local.mix')])[stock.mix_hash('GAME.FNT')]
+    assert sha(font_raw)=='ec8d6d85db3eedf5a862cc6ffb87bfad4c77279dd946bc2d30879ad9140c8d3f'
+    font=text_owner.initialize_font(font_raw,owner=m)
+    strings,csf_sha=stock_csf()
+    labels={key:strings[key] for key in ('TXT_PRIMARY','TXT_PRI')}
+    assert labels=={'TXT_PRIMARY':'Primary','TXT_PRI':'Pri.'}
+    string_pointers={key:m.alloc(len(text_owner.wide(value))) for key,value in labels.items()}
+    for key,pointer in string_pointers.items():u.mem_write(pointer,text_owner.wide(labels[key]))
+    csf_calls=[]
+    def physical_string(_u,_pc,_size,_data):
+        key=m.string(u.reg_read(UC_X86_REG_ECX))
+        if key not in labels:raise RuntimeError(f'unexpected PRIMARY CSF request {key!r}')
+        csf_calls.append(dict(actor=recorder.actor_index,key=key,text=labels[key]))
+        m.ret(string_pointers[key],8)
+    csf_hook=u.hook_add(UC_HOOK_CODE,physical_string,begin=0x734E60,end=0x734E60)
+    colors=json.loads(Path(__file__).with_name('house_color.json').read_text())
+    assert colors['rulesmd_sha256']==scene['layer_reads'][0]['sha256']
+    house_rgb={name:next(row for row in colors['colors'] if row['name']==name)['modes']['scalar']['rgb']
+               for name in ('Gold','Red')}
+    actor_templates=[bytes(u.mem_read(p,0x800)) for p in actors]
+    type_template=bytes(u.mem_read(typ,0x2000))
+    art,_=lexical(m.assets['ARTMD.INI'],{'GAWEAP',m.string(typ+0x1F8)})
+    original_code=sha(u.mem_read(0x401000,0x3E0000))
+    base=dict(type_name='GAWEAP',location=[2688,5248,0],owner='Owner',color='Gold',
+              selected=True,hovered=False,marked=True,body_opportunity=True,
+              display_bits=0,primary=bool(on))
+    cases=[dict(name=f'primary_a{value}',a_value=value) for value in (127,63,2,0)]
+    cases += [dict(name='occluding_z',old_z=0),
+        dict(name='native_primary_off',actors=[dict(base,primary=bool(off))]),
+        dict(name='hover_only',actors=[dict(base,selected=False,hovered=True)]),
+        dict(name='unmarked',actors=[dict(base,marked=False)]),
+        dict(name='no_body_opportunity',actors=[dict(base,body_opportunity=False)]),
+        dict(name='one_cell_foundation',foundation_override='1x1'),
+        dict(name='left_edge',camera=[-284,376]),
+        dict(name='right_edge',camera=[-464,376]),
+        dict(name='viewer_only_ally',owner_allied_to_current=False,current_allied_to_owner=True,
+             actors=[dict(base,owner='Ally',color='Red')]),
+        dict(name='owner_only_ally',owner_allied_to_current=True,current_allied_to_owner=False,
+             actors=[dict(base,owner='Ally',color='Red')]),
+        dict(name='constructor_order_overlap',actors=[base,
+             dict(base,owner='Ally',color='Red',location=[2696,5240,0])])]
+    rows=[]
+    for case in cases:
+        spec=dict(size=[160,160],camera=[-384,376],clip=[0,0,160,160],a_value=127,
+                  old_z=65535,background=rally.BACKGROUND,owner_allied_to_current=True,
+                  current_allied_to_owner=False,foundation_override=None,actors=[dict(base)])
+        spec.update({key:value for key,value in case.items() if key!='name'})
+        spec['actors']=[dict(actor) for actor in spec['actors']]
+        u.mem_write(typ,type_template)
+        if spec['foundation_override']:
+            changed={name:dict(keys) for name,keys in art.items()}
+            changed.setdefault('GAWEAP',{})['Foundation']=spec['foundation_override']
+            m.make_ini(changed)
+            _status_reader_block(m,0x461225,0x46125D,
+                {UC_X86_REG_EBP:typ,UC_X86_REG_EBX:typ+0x24,
+                 UC_X86_REG_ESI:INI,UC_X86_REG_EDI:typ+0x1F8})
+            assert m.invoke(0x45EC90,typ)==1
+        for index,pointer in enumerate(actors):
+            u.mem_write(pointer,actor_templates[index])
+            u.mem_write(pointer+0x99,b'\0')
+            u.mem_write(pointer+0x83,b'\0')
+            u.mem_write(pointer+0x3D3,b'\0')
+        for house in (current,other):u.mem_write(house+0x5788,words(0))
+        if spec['owner_allied_to_current']:u.mem_write(other+0x5788,words(1))
+        if spec['current_allied_to_owner']:u.mem_write(current+0x5788,words(2))
+        for index,actor in enumerate(spec['actors']):
+            pointer=actors[index]
+            house=current if actor['owner']=='Owner' else other
+            u.mem_write(pointer+0x21C,words(house))
+            u.mem_write(pointer+0x9C,words(*actor['location']))
+            # The separate non-allied discovery producer is outside this
+            # ordinary owned/allied label comparison, not an invented mask.
+            u.mem_write(pointer+0x210,words(actor['display_bits']))
+            for offset,key in ((0x74,'marked'),(0x83,'selected'),(0x99,'body_opportunity'),
+                               (0x3D3,'primary'),(0x431,'hovered')):
+                u.mem_write(pointer+offset,bytes([actor[key]]))
+            u.mem_write(house+0x56F9,bytes(house_rgb[actor['color']]))
+        u.mem_write(0xA83D4C,words(current))
+        u.mem_write(tactical+0xB0,words(*spec['camera']))
+        u.mem_write(0x886FA0,words(*spec['clip']))
+        u.mem_write(0xB0CE30,words(*spec['size']))
+        buffers=prepare_surface(u,spec,size=tuple(spec['size']))
+        recorder=_HealthRecorder(m,spec['size'],{},phase_aware=True)
+        recorder.phase='after_ground2'
+        text=text_owner.TextRecorder(m,recorder,spec['size'],direct_simple_text=True)
+        entries=[]
+        identities={pointer:index for index,pointer in enumerate(actors)}
+        def observe(_u,pc,_size,_data):
+            if pc==0x43E7B0:recorder.actor_index=identities[u.reg_read(UC_X86_REG_ECX)]
+            if pc in (0x6D9423,0x43E7B0,0x459EF0,0x70AA60,0x4A59E0,0x4A5EB0):
+                entries.append(dict(actor=recorder.actor_index,entry=f'{pc:08X}'))
+        observer=u.hook_add(UC_HOOK_CODE,observe)
+        before=[bytes(u.mem_read(pointer,0x800)) for pointer in actors]
+        first_csf=len(csf_calls)
+        u.mem_write(READER_SP,bytes(0x300))
+        u.mem_write(READER_SP+0x2C,words(2))
+        u.reg_write(UC_X86_REG_ESP,READER_SP)
+        native.run_checked(u,0x6D9423,0x6D95A1,count=4000000,
+                           required_addresses=(0x6D9423,))
+        text.finish();recorder.finish()
+        u.hook_del(observer);text.close();recorder.close()
+        raw=bytes(u.mem_read(PIXELS,160*160*2))
+        assert before==[bytes(u.mem_read(pointer,0x800)) for pointer in actors]
+        assert not recorder.rng
+        assert bytes(u.mem_read(A,len(buffers['lighting'])))==buffers['lighting']
+        assert bytes(u.mem_read(Z,len(buffers['depths'])))==buffers['depths']
+        assert original_code==sha(u.mem_read(0x401000,0x3E0000))
+        pixels=[[index%160,index//160,value[0]]
+                for index,value in enumerate(struct.iter_unpack('<H',raw))
+                if value[0]!=spec['background']]
+        rows.append(dict(name=case['name'],input=spec,
+            native_foundation=m.read32(typ+0xEF0),native_foundation_width=m.invoke(0x45EC90,typ),
+            csf_calls=csf_calls[first_csf:],caller_entries=entries,text_draws=text.rows,
+            pixels=pixels,color_sha256=sha(raw),actor_bytes_unchanged=True,
+            a_unchanged=True,z_unchanged=True,rng_entries=recorder.rng))
+    u.hook_del(csf_hook)
+    for hook in font['hooks']:u.hook_del(hook)
+    physical=scene['sources']+factory_sources+[
+        dict(name='ARTMD.INI',archive='ra2md.mix/localmd.mix',sha256=sha(m.assets['ARTMD.INI'])),
+        dict(name='GAME.FNT',archive='ra2.mix/local.mix',sha256=sha(font_raw))]
+    return dict(schema_version=1,native_sha256=native.image_sha256(),
+        producer_priors=producer_priors,physical_inputs=physical,
+        raw_file_inputs=dict(theater=scene['terrain']['theater']['name'],absent=absent_probes,
+            boundary='Explicit physical temperate-name absences and GG/temperate-buildup byte winners; original filename probes/fallback execute in the existing TMP RawFile transport. Native archive search is not executed.'),
+        retail_csf=dict(name='ra2md.csf',archive='langmd.mix',sha256=csf_sha,labels=labels),
+        native_font=dict(runtime_fields=font['font_meta'],
+                         file_reads=[dict(file_offset=row['file_offset'],size=row['size'])
+                                     for row in font['loader']['reads']]),
+        native_type_inputs=dict(name='GAWEAP',foundation=scene['type_layer_fields'][-1]['after']['foundation']),
+        layers=scene['layer_reads'],house_colors=house_rgb,raster_controls=rows,
+        original_code_unchanged=True)
+
+
+def primary_factory_status_metadata():
+    return native.provenance(
+        scope='Original Ground2 Building-array PRIMARY labels, physical CSF/GAME.FNT and actual packed Surface pixels; bounded production renderer consumer',
+        assumptions=[
+            'Reuse the existing PaletteReader/TMP/Building reader/runtime. Original Building-array CRT prefix4E6B60..4E6B96 (initializer pointer81322C) runs before the two43B740 constructors, which self-register in native order through43BB0F..43BB24; only process-exit callback registration at4E6B96 is omitted. No host-built Building array supplies order. GAWEAP full original retained reader consumes physical RULESMD/optional LANGRULE/Battle/XMP03T4; fixed ART Foundation and related animation sections are physical. Explicit absent GT filename probes, physical GG body/animation bytes and temperate GTWEAPMK share the existing TMP RawFile/Reader cache transport; original file-probe/fallback code executes, not native archive search. No GAWEAP body/bib/animation shape parity or whole scenario is claimed.',
+            'The separate executed building_manual_primary producer supplies GAWEAP actor2 true atcase0phase3 and false atphase5. Those byte values are explicit label-consumer priors, not another execution of selection, events, Unlimbo or cleanup. Selected/hover, mark74, earlier Display opportunity99, location, House index/country/alliance, zero non-allied210 display bits and palette RGB are supplied bounds.',
+            'Original6D9423..6D95A1 executes its actual currentLayer2 gate and BuildingClass::Array forward loop, mark/opportunity gates,459EF0 projection, viewport bounds and direct43E7B0. Actual selected/owner-alliance gates,70AA60 primary/width branch,45EC90,4A59E0,421B60, Surface fill/outline and4A5EB0/font raster execute. The earlier Display latch producer and later Air/Top/Extras are instruction evidence, not a whole rendered frame.',
+            'A named one-cell ART override runs the original461225..46125D Foundation reader for TXT_PRI; this is a declared reader control, not a stock GAWEAP footprint. No host formula supplies a rectangle, text width, font pixel or output color. House56F9 inputs reuse the existing original house_color corpus and current physical RULES hash.',
+            'Physical GAME.FNT is loaded by the existing434AD0/433990 owner in this SAME VM. RGB565 Surface, opaque backgrounds, A127/63/2/0 and oldZ65535/0 are prepared consumer planes. Original actor bytes and A/Z remain unchanged during each measured loop; drawing RNG requests are empty. Full Display, picking, fog, alpha, cloak/flash, non-allied210, arbitrary strings and device output remain separate bounds.',
+        ],substitutions=[
+            'Inherited allocation/delete/CRT TLS/Win32 SetRect and immutable archive/file/BSurface memory transports are unchanged. CSF734E60 is an explicit UTF16 transport returning only TXT_PRIMARY/TXT_PRI from physical langmd.mix/ra2md.csf through existing stock_csf; no branch, measurement, clip, font lookup, raster or reached pixel return is supplied.',
+        ],entry_points=dict(building_registry_begin=0x4E6B60,building_registry_stop=0x4E6B96,
+            caller_begin=0x6D9423,caller_stop=0x6D95A1,
+            building_text=0x43E7B0,status=0x70AA60,render_coords=0x459EF0,
+            foundation_width=0x45EC90,measure=0x4A59E0,clip=0x421B60,
+            fill=0x7BB020,outline=0x7BAD90,text=0x4A5EB0,glyph=0x434120,
+            font_ctor=0x434AD0,font_load=0x433990,csf_transport=0x734E60))
+
+
 def repair_wrench_metadata():
     return native.provenance(
         scope='Ordinary repairing GAPOWR wrench prefix and complete first-Extras/body/late-Extras composition',
@@ -2602,6 +2837,19 @@ def unit_health_metadata():
 
 if __name__=='__main__':
     import sys
+    if '--primary-factory-status' in sys.argv[1:]:
+        native.finish_vectors(generate_primary_factory_status,
+            Path(__file__).with_name('primary_factory_status.json'),
+            argv=[arg for arg in sys.argv[1:] if arg!='--primary-factory-status'],
+            provenance=primary_factory_status_metadata,
+            source_paths={'oracle':Path(__file__),
+                'font_owner':Path('tools/control_group_text_oracle.py'),
+                'csf_owner':Path('tools/storage_oracle/keyboard_bindings.py'),
+                'tmp_owner':Path('tools/spatial_oracle/tmp_clear_render.py'),
+                'surface_owner':Path('tools/projectile_oracle/bridge_render_shape.py'),
+                'reader_owner':Path('tools/projectile_oracle/bridge_render_inputs.py'),
+                'stock_owner':Path(stock.__file__)})
+        raise SystemExit(0)
     if '--repair-wrench' in sys.argv[1:]:
         native.finish_vectors(lambda:generate_unit_health(wrench=True),
             Path(__file__).with_name('repair_wrench.json'),

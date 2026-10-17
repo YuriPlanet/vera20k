@@ -17,7 +17,7 @@ use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Position;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -243,12 +243,114 @@ pub(crate) fn control_group_status_labels(
         .collect()
 }
 
-/// One parent's fill/outline followed by its GAME.FNT glyph. Both materials
-/// bypass A/Z; their ranges stay with that parent's other Extras commands.
+/// One parent's fill/outline followed by its GAME.FNT glyphs. Both materials
+/// bypass A/Z; each native caller retains its own phase and parent order.
 #[derive(Debug, Default)]
-pub(crate) struct ControlGroupStatusOverlayInstances {
+pub(crate) struct StatusTextOverlayInstances {
     pub rectangles: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
+}
+
+/// One label's two material spans in a frame-local upload. Rectangle and
+/// glyph stores stay together when several Building labels overlap.
+#[derive(Debug)]
+pub(crate) struct StatusTextRun {
+    pub rectangles: std::ops::Range<u32>,
+    pub text: std::ops::Range<u32>,
+}
+
+/// BuildingClass::Array-ordered text emitted once after Ground2. This is draw
+/// data only; ProductionState remains the owner of every primary identity.
+#[derive(Debug, Default)]
+pub(crate) struct BuildingStatusTextInstances {
+    pub instances: Vec<SpriteInstance>,
+    pub runs: Vec<StatusTextRun>,
+}
+
+impl BuildingStatusTextInstances {
+    fn push(&mut self, label: StatusTextOverlayInstances) {
+        let start = self.instances.len() as u32;
+        self.instances.extend(label.rectangles);
+        let rectangles_end = self.instances.len() as u32;
+        self.instances.extend(label.text);
+        self.runs.push(StatusTextRun {
+            rectangles: start..rectangles_end,
+            text: rectangles_end..self.instances.len() as u32,
+        });
+    }
+}
+
+fn status_text_tint(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    house_color_map: &HouseColorMap,
+    house_color_ramps: &HouseColorRamps,
+) -> [f32; 3] {
+    let owner = sim.interner.resolve(entity.owner());
+    let color = house_color_map.get(owner).copied().unwrap_or(NO_REMAP);
+    // Both70A8xx and70ACxx read House+56F9, not ColorScheme UI text RGB.
+    let [red, green, blue] =
+        crate::render::palette_light::house_color_rgb(house_color_ramps, color);
+    let [red, green, blue, _] =
+        crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+            .quantize_rgba8([red, green, blue, 255]);
+    [red, green, blue].map(|channel| f32::from(channel) / 255.0)
+}
+
+/// The shared7BB020/7BAD90/434120 material geometry. Callers supply their
+/// already measured/clipped backing and native glyph origin; group and
+/// PRIMARY deliberately use different rectangles and alignment.
+fn status_text_instances(
+    font: &BitFont,
+    text: &str,
+    origin: [f32; 2],
+    [rect_x, rect_y, rect_width, rect_height]: [i32; 4],
+    camera: [f32; 2],
+    tint: [f32; 3],
+) -> StatusTextOverlayInstances {
+    let mut label = StatusTextOverlayInstances::default();
+    if rect_width > 0 && rect_height > 0 {
+        let rect_x = rect_x as f32 + camera[0];
+        let rect_y = rect_y as f32 + camera[1];
+        let rect_width = rect_width as f32;
+        let rect_height = rect_height as f32;
+        label.rectangles.push(SpriteInstance {
+            position: [rect_x, rect_y],
+            size: [rect_width, rect_height],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            tint: [0.0, 0.0, 0.0],
+            alpha: 1.0,
+            ..Default::default()
+        });
+        //7BADC0 uses inclusive endpoints. Avoid zero-area vertical quads
+        // when clipping retains only a one- or two-pixel row.
+        let edges = [
+            ([rect_x, rect_y], [rect_width, 1.0]),
+            ([rect_x, rect_y + rect_height - 1.0], [rect_width, 1.0]),
+            ([rect_x, rect_y + 1.0], [1.0, rect_height - 2.0]),
+            (
+                [rect_x + rect_width - 1.0, rect_y + 1.0],
+                [1.0, rect_height - 2.0],
+            ),
+        ];
+        let count = if rect_height > 2.0 { 4 } else { 2 };
+        label.rectangles.extend(
+            edges[..count]
+                .iter()
+                .map(|&(position, size)| SpriteInstance {
+                    position,
+                    size,
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    tint,
+                    alpha: 1.0,
+                    ..Default::default()
+                }),
+        );
+    }
+    label.text = font.build_text(text, origin[0], origin[1], 1.0, 0.0, tint, [0.0, 0.0]);
+    label
 }
 
 /// Emit the selected/hovered unit's control-group digit with the shared GAME.FNT
@@ -280,7 +382,7 @@ pub(crate) fn build_control_group_status_render_instances(
     sh: f32,
     tactical_clip: [i32; 4],
     rules: Option<&RuleSet>,
-) -> BTreeMap<u64, ControlGroupStatusOverlayInstances> {
+) -> BTreeMap<u64, StatusTextOverlayInstances> {
     let labels = control_group_status_labels(
         sim,
         control_groups,
@@ -291,7 +393,6 @@ pub(crate) fn build_control_group_status_render_instances(
     );
     let mut parents = BTreeMap::new();
     for (stable_id, digit) in labels {
-        let mut label = ControlGroupStatusOverlayInstances::default();
         let Some(entity) = sim.entities().get(stable_id) else {
             continue;
         };
@@ -347,79 +448,33 @@ pub(crate) fn build_control_group_status_render_instances(
         if !in_view(x, y, width, height, camera[0], camera[1], sw, sh, 48.0) {
             continue;
         }
-        let owner = sim.interner.resolve(entity.owner());
-        let color = house_color_map.get(owner).copied().unwrap_or(NO_REMAP);
-        // Native `DrawPipScalePips @0x00709A90` reads House+0x56F9 directly.
-        let [red, green, blue] =
-            crate::render::palette_light::house_color_rgb(house_color_ramps, color);
-        // House50B840 returns zero-filled RGB extracted from the packed word.
-        // The outline and glyph store that word; display expansion belongs to
-        // the existing surface presentation profile, after House lookup.
-        let [red, green, blue, _] =
-            crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-                .quantize_rgba8([red, green, blue, 255]);
-        let tint = [red, green, blue].map(|channel| f32::from(channel) / 255.0);
+        let tint = status_text_tint(sim, entity, house_color_map, house_color_ramps);
         // The original measures the text rectangle, clips it to the tactical
         // surface, then expands the clipped result one pixel to the left for
         // its opaque black fill and House-color outline. All rectangles here
         // use the shared xywh owner; the GPU scissor remains the final clip.
-        let measure_rect = [
-            (x - camera[0]).round() as i32 - 2,
-            (y - camera[1]).round() as i32 + 2,
-            font.text_width(&text) as i32 + 4,
-            13,
-        ];
-        let clipped = crate::util::rect::clip_rect(measure_rect, tactical_clip);
+        //70A75E..70A776 calls the same4A59E0 owner as PRIMARY, with
+        // flags49 and signed margins[2,-2] (GAME.FNT cell17 -> height13).
+        let measure_rect = font.compute_text_rect(
+            &text,
+            [
+                (x - camera[0]).round() as i32,
+                (y - camera[1]).round() as i32,
+            ],
+            0x49,
+            [2, -2],
+        );
+        let mut clipped = crate::util::rect::clip_rect(measure_rect, tactical_clip);
         if clipped[2] > 0 && clipped[3] > 0 {
-            let rect_x = clipped[0] - 1;
-            let rect_y = clipped[1];
-            let rect_width = clipped[2] + 1;
-            let rect_height = clipped[3];
-            let rect_x = rect_x as f32 + camera[0];
-            let rect_y = rect_y as f32 + camera[1];
-            let rect_width = rect_width as f32;
-            let rect_height = rect_height as f32;
-            label.rectangles.push(SpriteInstance {
-                position: [rect_x, rect_y],
-                size: [rect_width, rect_height],
-                uv_origin: [0.0, 0.0],
-                uv_size: [1.0, 1.0],
-                tint: [0.0, 0.0, 0.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-            // Native 0x7BADC0 draws inclusive endpoints (origin+size-1).
-            // Avoid zero-area quads when clipping leaves a one-pixel edge.
-            let edges = [
-                ([rect_x, rect_y], [rect_width, 1.0]),
-                ([rect_x, rect_y + rect_height - 1.0], [rect_width, 1.0]),
-                ([rect_x, rect_y + 1.0], [1.0, rect_height - 2.0]),
-                (
-                    [rect_x + rect_width - 1.0, rect_y + 1.0],
-                    [1.0, rect_height - 2.0],
-                ),
-            ];
-            let count = if rect_height > 2.0 { 4 } else { 2 };
-            label
-                .rectangles
-                .extend(
-                    edges[..count]
-                        .iter()
-                        .map(|&(position, size)| SpriteInstance {
-                            position,
-                            size,
-                            uv_origin: [0.0, 0.0],
-                            uv_size: [1.0, 1.0],
-                            tint,
-                            alpha: 1.0,
-                            ..Default::default()
-                        }),
-                );
+            clipped[0] -= 1;
+            clipped[2] += 1;
         }
         // These are world-pixel coordinates; the tactical surface camera
         // applies the camera offset at draw time, like the neighboring pips.
-        label.text = font.build_text(&text, x, y, 1.0, 0.0, tint, [0.0, 0.0]);
-        parents.insert(stable_id, label);
+        parents.insert(
+            stable_id,
+            status_text_instances(font, &text, [x, y], clipped, camera, tint),
+        );
     }
     parents
 }
@@ -429,7 +484,7 @@ pub(crate) fn build_control_group_status_instances(
     state: &AppState,
     sw: f32,
     sh: f32,
-) -> BTreeMap<u64, ControlGroupStatusOverlayInstances> {
+) -> BTreeMap<u64, StatusTextOverlayInstances> {
     let (Some(sim), Some(rules)) = (
         state
             .match_state
@@ -472,6 +527,139 @@ pub(crate) fn build_control_group_status_instances(
         sh,
         tactical_clip,
         Some(rules),
+    )
+}
+
+/// Building43E7B0 -> Techno70AA60 PRIMARY, called from Tactical6D957A
+/// after Ground2. The caller supplies this frame's native +99 body
+/// opportunities; successful glyph/body pixels are not the admission fact.
+/// BuildingClass::Array order is the existing monotonic construction-ID
+/// order, independent of the retained Display sort. No RNG/timer/detach or
+/// persistent state is changed. Native pixels: primary_factory_status.json.
+pub(crate) fn build_primary_factory_status_render_instances(
+    sim: &crate::sim::world::Simulation,
+    body_opportunities: &BTreeSet<u64>,
+    current_house_id: crate::sim::intern::InternedId,
+    house_color_map: &HouseColorMap,
+    house_color_ramps: &HouseColorRamps,
+    font: &BitFont,
+    csf: &crate::assets::csf_file::CsfFile,
+    camera: [f32; 2],
+    tactical_clip: [i32; 4],
+    rules: &RuleSet,
+) -> BuildingStatusTextInstances {
+    let mut labels = BuildingStatusTextInstances::default();
+    let current_house = sim.interner.resolve(current_house_id);
+    for entity in sim.entities().values() {
+        //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
+        //requires selected, including when the object is also hovered.
+        if entity.category() != EntityCategory::Structure
+            || !body_opportunities.contains(&entity.stable_id())
+            || !entity.lifecycle.cell_marked()
+            || !entity.selection.is_selected()
+            || !sim.production.is_primary_factory(entity.stable_id())
+            || !crate::map::houses::is_allied_with(
+                &sim.house_alliances,
+                sim.interner.resolve(entity.owner()),
+                current_house,
+            )
+        {
+            continue;
+        }
+        //43E7EF's separate non-allied Techno+210 display-bit producer is
+        //still an explicit status-owner residual; do not invent its state.
+        let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        let location = crate::sim::movement::ground_pose::object_location(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        );
+        //6D9472 calls virtual+AC=459EF0, not GetCoords447AC0. Neither
+        //foundation half-dimensions nor the group tail's offsets apply.
+        let (render, _) =
+            crate::sim::movement::ground_pose::building_render_order_parts(location, false, false);
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
+        let anchor = [
+            (x - camera[0]).round() as i32,
+            (y - camera[1]).round() as i32,
+        ];
+        //6D94DD..9516's coarse caller bounds precede the actual text clip.
+        if anchor[0] < -360
+            || anchor[0] > tactical_clip[2] + 360
+            || anchor[1] < -180
+            || anchor[1] > tactical_clip[3] + 180
+        {
+            continue;
+        }
+        //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
+        let key = if crate::rules::foundation::foundation_dimensions(&object.foundation).0 == 1 {
+            "TXT_PRI"
+        } else {
+            "TXT_PRIMARY"
+        };
+        let text = csf.text(key);
+        let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
+        let clipped = crate::util::rect::clip_rect(measure, tactical_clip);
+        //70AC60 and4A5EF9 share the whole-string center. Unlike group,
+        //PRIMARY does not expand the clipped backing one pixel left.
+        let origin = [
+            measure[0].wrapping_add(4) as f32 + camera[0],
+            measure[1].wrapping_add(2) as f32 + camera[1],
+        ];
+        labels.push(status_text_instances(
+            font,
+            &text,
+            origin,
+            clipped,
+            camera,
+            status_text_tint(sim, entity, house_color_map, house_color_ramps),
+        ));
+    }
+    labels
+}
+
+/// AppState supplies current resources and the existing tactical viewport;
+/// the sim's primary query and the per-frame body plan supply all identities.
+pub(crate) fn build_primary_factory_status_instances(
+    state: &AppState,
+    body_opportunities: &BTreeSet<u64>,
+) -> BuildingStatusTextInstances {
+    let (Some(runtime), Some(rules), Some(csf)) = (
+        state.match_state.sim_runtime.as_ref(),
+        state.rules(),
+        state.process_assets.csf.as_ref(),
+    ) else {
+        return BuildingStatusTextInstances::default();
+    };
+    let sim = &runtime.simulation;
+    let Some(current_house) = preferred_local_owner_name(state)
+        .as_deref()
+        .and_then(|name| sim.interner.get(name))
+    else {
+        return BuildingStatusTextInstances::default();
+    };
+    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+    let zoom = state.match_state.input.zoom_level;
+    build_primary_factory_status_render_instances(
+        sim,
+        body_opportunities,
+        current_house,
+        &state.match_state.match_presentation.house_color_map,
+        &rules.house_color_ramps,
+        &state.renderer.bit_font,
+        csf,
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+        [
+            0,
+            0,
+            (width as f32 / zoom).round() as i32,
+            (height as f32 / zoom).round() as i32,
+        ],
+        rules,
     )
 }
 
@@ -677,7 +865,7 @@ pub(crate) struct TechnoExtras {
     /// Existing House-owned self-heal marker, between scale and group text.
     pub self_heal: Option<SpriteInstance>,
     ///709A90's group tail follows this parent's pip scale, not a global sweep.
-    pub group: ControlGroupStatusOverlayInstances,
+    pub group: StatusTextOverlayInstances,
 }
 
 /// One Techno DrawExtras6F5190 parent, wrench prefix, rank, then health6F64A0.

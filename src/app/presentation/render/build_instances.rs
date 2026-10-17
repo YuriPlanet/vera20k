@@ -17,7 +17,8 @@ use crate::app::presentation::sidebar_render::{
 };
 use crate::app::presentation::ui_overlays::{
     build_bomb_clock_instances, build_building_radius_ring_instances,
-    build_control_group_status_instances, build_software_cursor_instances,
+    build_control_group_status_instances, build_primary_factory_status_instances,
+    build_software_cursor_instances,
 };
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
@@ -37,6 +38,8 @@ pub(super) struct WorldInstances {
     pub overlay_render_z: Vec<crate::render::tactical_draw_plan::RenderZPolicy>,
     /// Represented Display parents in their five retained native layer orders.
     pub object_layers: [super::draw_plan_lowering::ObjectLayerPass; 5],
+    /// One BuildingClass::Array-ordered text sweep after Ground2 bodies.
+    pub primary_factory_status: crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     /// Static smudge decals (craters, scorches) — drawn between terrain and entities.
     pub smudge: Vec<SpriteInstance>,
     pub bridge_body: Vec<SpriteInstance>,
@@ -320,6 +323,15 @@ pub(super) fn build_world_instances(
             });
         }
     }
+    // Native +99 is set before a Building's body opportunity, independently
+    // of successful pixels. Empty body frames still have a retained parent.
+    let building_body_opportunities = planned_objects
+        .iter()
+        .filter(|parent| parent.building_pieces.is_some())
+        .map(|parent| parent.parent.id)
+        .collect();
+    let primary_factory_status =
+        build_primary_factory_status_instances(state, &building_body_opportunities);
     let object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
 
     // PixelFX water/ore sparkles — per-frame 1-pixel cell dots.
@@ -359,6 +371,7 @@ pub(super) fn build_world_instances(
         overlay,
         overlay_render_z,
         object_layers,
+        primary_factory_status,
         smudge,
         bridge_body,
         bridge_body_shadow,

@@ -2961,10 +2961,12 @@ fn cycle_active_producer_rotates_matching_factories() {
         ProductionCategory::Vehicle,
     ));
     assert_eq!(
-        sim.production.primary_factory(
-            sim.interner.intern("Americans"),
-            ProductionCategory::Vehicle
-        ),
+        sim.production
+            .primary_factory_ids(
+                sim.interner.intern("Americans"),
+                ProductionCategory::Vehicle
+            )
+            .next(),
         Some(3)
     );
     assert!(cycle_active_producer_for_owner_category(
@@ -2974,10 +2976,12 @@ fn cycle_active_producer_rotates_matching_factories() {
         ProductionCategory::Vehicle,
     ));
     assert_eq!(
-        sim.production.primary_factory(
-            sim.interner.intern("Americans"),
-            ProductionCategory::Vehicle
-        ),
+        sim.production
+            .primary_factory_ids(
+                sim.interner.intern("Americans"),
+                ProductionCategory::Vehicle
+            )
+            .next(),
         Some(5)
     );
 }

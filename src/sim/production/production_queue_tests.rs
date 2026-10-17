@@ -223,7 +223,8 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
     assert_eq!(sim.scenario_rng.logical_state(), rng);
     assert_eq!(
         sim.production
-            .primary_factory(owner, ProductionCategory::Vehicle),
+            .primary_factory_ids(owner, ProductionCategory::Vehicle)
+            .next(),
         Some(1)
     );
     assert!(sim.production.factories.is_empty());
@@ -279,7 +280,8 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     assert!(sim.production.factories.building_factory(5).is_none());
     assert_eq!(
         sim.production
-            .primary_factory(owner, ProductionCategory::Vehicle),
+            .primary_factory_ids(owner, ProductionCategory::Vehicle)
+            .next(),
         Some(1)
     );
 }
@@ -304,7 +306,8 @@ fn busy_factory_exit_restores_building_attachment_after_success() {
     assert_eq!(sim.substrate.next_stable_object_id, next_id);
     assert_eq!(
         sim.production
-            .primary_factory(owner, ProductionCategory::Vehicle),
+            .primary_factory_ids(owner, ProductionCategory::Vehicle)
+            .next(),
         Some(1)
     );
     assert!(!sim.object_placement_scope_active());
@@ -847,7 +850,8 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         assert_eq!(sim.substrate.next_stable_object_id, next_id);
         assert_eq!(
             sim.production
-                .primary_factory(owner, ProductionCategory::Vehicle),
+                .primary_factory_ids(owner, ProductionCategory::Vehicle)
+                .next(),
             Some(labels["source"])
         );
         for (label, id) in &labels {

@@ -85,8 +85,10 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-pub use self::can_build::object_find_factory;
-pub(crate) use self::can_build::{CanBuild, can_build, find_factory, initialize_factory_primary};
+pub use self::can_build::{can_select_factory_primary, object_find_factory};
+pub(crate) use self::can_build::{
+    CanBuild, can_build, find_factory, initialize_factory_primary, toggle_factory_primary,
+};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,
 };
@@ -124,3 +126,6 @@ mod replay_tests;
 #[cfg(test)]
 #[path = "factory_lifecycle_tests.rs"]
 mod lifecycle_tests;
+
+#[cfg(test)]
+mod manual_primary_tests;
