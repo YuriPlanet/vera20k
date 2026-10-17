@@ -487,19 +487,22 @@ pub struct GeneralRules {
     /// `[General] SelfHealInfantryFrames=` — `RulesClass+0x30`, read by the
     /// General reader at `0x0066D530`. The house pulse of
     /// `TechnoClass::AI_Update @ 0x006FA8E2` divides the global frame counter
-    /// by it (`idiv`) and runs only on an exact remainder of zero. Stock 50.
+    /// by it (`idiv`) and runs only on an exact remainder of zero.
+    /// Ctor6656A7 defaults1000; ReadInt66E6F3 retains it. Stock50.
     pub self_heal_infantry_frames: i32,
     /// `[General] SelfHealInfantryAmount=` — `RulesClass+0x34`, read by the
     /// same reader. `HouseClass::GetInfSelfHealStep @ 0x0050D9E0` multiplies it
-    /// by the house's infantry count (`+0x164`). Stock 20.
+    /// by the house's infantry count (`+0x164`). Ctor6656AA defaults1;
+    /// ReadInt66E70D retains it. Stock20.
     pub self_heal_infantry_amount: i32,
     /// `[General] SelfHealUnitFrames=` — `RulesClass+0x38`, same reader. The
-    /// unit pulse of `TechnoClass::AI_Update @ 0x006FA8E2` divides the frame
-    /// counter by it. Stock 75.
+    /// unit pulse of `TechnoClass::AI_Update @ 0x006FA7EE` divides the frame
+    /// counter by it. Ctor6656AD defaults1000; ReadInt66E727 retains it. Stock75.
     pub self_heal_unit_frames: i32,
     /// `[General] SelfHealUnitAmount=` — `RulesClass+0x3C`, same reader.
     /// `HouseClass::GetUnitSelfHealStep @ 0x0050D9F0` multiplies it by the
-    /// house's unit count (`+0x168`). Stock 5.
+    /// house's unit count (`+0x168`). Ctor6656B0 defaults1;
+    /// ReadInt66E740 retains it. Stock5.
     pub self_heal_unit_amount: i32,
     /// `[General] VeteranRatio=` — how many times its own cost an object must
     /// destroy to gain one rank. `RulesClass+0x668`, read at `0x0066EEB0`.
@@ -2126,12 +2129,12 @@ impl Default for GeneralRules {
             veteran_armor: 1.0,
             curley_shuffle: false,
             repair_rate_minutes: 0.016,
-            // The native constructor never writes Rules+0x30/+0x34/+0x38/+0x3C,
-            // so the reader's argument stands when the key is absent.
-            self_heal_infantry_frames: 0,
-            self_heal_infantry_amount: 0,
-            self_heal_unit_frames: 0,
-            self_heal_unit_amount: 0,
+            // Rules665696..6656B0 initializes the current-default fields
+            // before ReadGeneral66E6E2..66E74B. Retail overrides are separate.
+            self_heal_infantry_frames: 1000,
+            self_heal_infantry_amount: 1,
+            self_heal_unit_frames: 1000,
+            self_heal_unit_amount: 1,
             veteran_ratio: VETERAN_RATIO_DEFAULT,
             veteran_cap: VETERAN_CAP_DEFAULT,
             computer_base_defense_response: 3,
@@ -3089,8 +3092,8 @@ impl GeneralRules {
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
-            // `0x0066D530`. The native constructor leaves them untouched, so a
-            // rules set without the key keeps the reader's argument: zero.
+            // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current
+            // field, initially constructor1000/1/1000/1, without a clamp.
             self_heal_infantry_frames: general
                 .read_int("SelfHealInfantryFrames", defaults.self_heal_infantry_frames),
             self_heal_infantry_amount: general
@@ -4303,7 +4306,7 @@ impl RuleSet {
             let section = ini.section(&object.id);
             object.bind_scalar_sound_references(section, sounds);
             object.bind_deploy_voice_references(section, sounds);
-            object.bind_attack_voice_references(section, sounds);
+            object.bind_order_voice_references(section, sounds);
             object.voice_select = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "VoiceSelect")
             });
@@ -5550,7 +5553,7 @@ impl RuleSet {
         // Rules text is identical. Empty versus nonempty vectors gates Main
         // draws; list order/duplicates select the sound. Hash effective lists
         // in canonical type order, independently of registry insertion order.
-        b"resolved-type-sound-lists-v3".hash(&mut hasher);
+        b"resolved-type-sound-lists-v4".hash(&mut hasher);
         self.general.voice_ifv_repair().hash(&mut hasher);
         self.object_list
             .iter()
@@ -5560,6 +5563,10 @@ impl RuleSet {
                     (
                         &object.voice_select,
                         &object.voice_select_enslaved,
+                        object.voice_move(),
+                        object.voice_enter(),
+                        object.voice_capture(),
+                        object.voice_harvest(),
                         &object.move_sound,
                         &object.voice_special_attack,
                         &object.voice_feedback,
@@ -8608,13 +8615,56 @@ MutateWarhead=MyMutate\n\
         .unwrap();
         assert_eq!(bare.general.veteran_rof, 1.0);
         assert_eq!(bare.general.upgrade_veteran_sound, None);
-        // `RulesClass+0x30/+0x34/+0x38/+0x3C` are never written by the native
-        // constructor, so a rules set without the keys keeps the reader's
-        // argument: zero, which the heal arms decline to divide by.
-        assert_eq!(bare.general.self_heal_infantry_frames, 0);
-        assert_eq!(bare.general.self_heal_infantry_amount, 0);
-        assert_eq!(bare.general.self_heal_unit_frames, 0);
-        assert_eq!(bare.general.self_heal_unit_amount, 0);
+        // Rules6656A7..6656B0 supplies the retained ReadInt defaults.
+        assert_eq!(bare.general.self_heal_infantry_frames, 1000);
+        assert_eq!(bare.general.self_heal_infantry_amount, 1);
+        assert_eq!(bare.general.self_heal_unit_frames, 1000);
+        assert_eq!(bare.general.self_heal_unit_amount, 1);
+    }
+
+    /// Original constructor6656A7..6656B0 and ReadGeneral66E6E2..66E74B.
+    /// The retained corpus distinguishes physical empty-value omission from
+    /// an explicitly prepared stored-empty native cache entry.
+    #[test]
+    fn house_self_heal_defaults_and_retained_readers_match_native_execution() {
+        use crate::rules::native_processing::RulesLayerKind;
+
+        let native =
+            crate::test_fixture::json("tools/procedural_drawing_oracle/self_heal_status.json");
+        let controls = &native["reader_controls"];
+        let state = |general: &GeneralRules| {
+            serde_json::json!({
+                "SelfHealInfantryFrames": general.self_heal_infantry_frames,
+                "SelfHealInfantryAmount": general.self_heal_infantry_amount,
+                "SelfHealUnitFrames": general.self_heal_unit_frames,
+                "SelfHealUnitAmount": general.self_heal_unit_amount,
+            })
+        };
+        assert_eq!(state(&GeneralRules::default()), controls["constructor"]);
+        let mut layers = RulesLayerStack::new(IniFile::empty());
+        let mut rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(state(&rules.general), controls["constructor"]);
+        let rows = controls["retained_history"].as_array().unwrap();
+        assert_eq!(rows.len(), 11);
+        for row in rows {
+            assert_eq!(state(&rules.general), row["before"], "{}", row["name"]);
+            let mut pass = IniFile::from_str(row["input_text"].as_str().unwrap());
+            if row["raw_cached_values"] == true {
+                // This row supplies a native cache, rather than a physical
+                // file. Use the existing cache API; do not reinterpret empty
+                // authored values that the normal lexical loader omits.
+                for (name, keys) in row["sections"].as_object().unwrap() {
+                    let mut section = IniSection::new(name.clone());
+                    for (key, value) in keys.as_object().unwrap() {
+                        section.set(key, value.as_str().unwrap());
+                    }
+                    pass.replace_first_section(section);
+                }
+            }
+            layers.push(RulesLayerKind::Scenario, pass);
+            rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(state(&rules.general), row["after"], "{}", row["name"]);
+        }
     }
 
     #[test]

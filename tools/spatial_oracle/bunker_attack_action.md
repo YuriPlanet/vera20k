@@ -201,3 +201,62 @@ GetWeapon returns a NULL slot and7090C0 dereferences it. Its explicit direct
 boundary control records that native fault before any RNG/queue request; no
 fallback result or ordinary command reachability is invented. All whole action,
 mission/event, arbitrary weapon/target and playback functions remain partial.
+
+## Move acknowledgement and scalar fallbacks
+
+`--move-order-voice` adds `move_order_voice.json` and its binary/command
+sidecar. It extends the same reader bootstrap and `voice_control` action
+recorder used above; the historical Attack/allied payloads stay independent.
+
+```sh
+VERA20K_SHRAPNEL_INPUTS=/path/to/existing/extract \
+  python -m tools.spatial_oracle.bunker_attack_action --move-order-voice --check
+```
+
+Whole native UnitType construction establishes the empty Move vector at
+TechnoType+468/count+478 (`710DFD/710E03`). Exact reader `712AB3..712B1D`
+copies its current list and passes literal `VoiceMove` to original ReadSoundList
+`525430`. Enter+558, Capture+55C and Harvest+57C default to signed−1 at
+`710F19/710F1F/710F4F` (EBP becomes−1 at `710CED`). Original selected blocks
+`713091..71310F` and `71363D..7136C1` execute their ReadString128/Voc7514D0
+reads, preserving adjacent delayed stores. Their scalar slots retain the
+current ID on missing, empty or unresolved names. They are bound references,
+not unvalidated raw strings.
+
+`readers.layers` records actual RULESMD, optional LANGRULE, MPBattleMD and
+XMP03T4 admission, selected keys and native results. Fixed patched SOUNDMD
+supplies GenAllVehicleMove and IFVMove through the existing Sound owner; it is
+not layered with scenarios. Registry IDs are local to this declared subset.
+Stock MTNK retains one Move cue and scalar−1 in all applicable passes.
+`readers.retained_controls` adds ordered raw histories for replacement,
+missing/empty retention, unresolved names, duplicates, value/key case,
+comma-only input and the127-byte boundary. Scalar list-like and `<none>`
+tokens execute the same single-name native reader. No second parser/binder
+or numeric implementation supplies expected results.
+
+Every `voice_controls[].input.reader_case` links to these raw production
+inputs. `stock` means the physical layer prefix; a named case means that
+prefix plus every ordered `input.sections` pass through the named retained
+control. A consumer can therefore run the real rules reader and binder before
+requesting the cue, including unknown-first/unknown-only inputs. Rebuilding a
+fixture only from resolved `voice_ids` would omit this reader comparison.
+`scalar_voice_slots` uses Enter/Capture/Harvest order.
+
+Ordinary controls execute Foot's original `4D7C76` Move argument producer,
+then accepted mission2 through `6FFBE0`, stopping at `6FFDA5` before event
+encoding. Other controls enter the named original voice body directly.
+Move708FC0 consumes one raw Main draw for each nonempty list, including a
+singleton, then QueueVoice708D90 checks enable, ID and House admission.
+Empty lists spend none. Bound scalar Enter709020, Capture708DC0 and
+Harvest709060 queue without a draw. Missing Capture falls through Enter;
+missing Enter/Harvest calls the same Move owner. Ordered native events retain
+these bodies, raw draw, queue, House and pending-store order.
+
+The existing RNG owner supplies seeded state and actual next-four continuation.
+Outputs retain full Main/Scenario/MapGen states, raw draws, requested IDs and
+pending777 outcome. No timer-start or detach occurs in this measured voice
+interval; the later input action-line timer remains with its existing owner.
+Actor/type/House, selected Object and NULL planning Cell are declared consumer
+priors in the existing action VM. Complete Enter/Capture/Harvest gameplay,
+whole scenario/selection/event scheduling, navigation, sound-service/sample
+RNG, PCM and audio lifecycle are outside this comparison.

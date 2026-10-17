@@ -882,17 +882,21 @@ fn advance_one_simulation_frame(
                         minimap.admit_radar_event(request, tick, Some(rules))
                     })
                 };
-                let boundary = super::sound_dispatch::FrameSoundBoundary::new(
+                let boundary = super::frame_effects::FrameClientBoundary::new(
                     playback,
                     local_owner_name.as_deref(),
                     &mut state.match_state.match_audio.sound_events,
                     &mut admit_radar,
+                )
+                .with_planning(
+                    &mut state.match_state.input.planning,
+                    &mut state.match_state.input.selection_state,
                 );
                 rt.advance_frame(
                     &due_commands,
                     SIM_TICK_MS,
                     tick_lane,
-                    FrameEffects::for_sound(&boundary),
+                    FrameEffects::for_sound(&boundary).with_local_defeat(&boundary),
                 )
                 .expect("simulation frame failed; prior world mutations remain")
             };

@@ -32,7 +32,7 @@ mod placement_gpu_tests;
 #[cfg(test)]
 mod status_gpu_tests;
 #[cfg(test)]
-pub(crate) use draw_passes::draw_pooled_overlay_bodies;
+pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_overlay_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
@@ -402,7 +402,7 @@ pub(crate) fn render_game(
             overlay_render_z: &world.overlay_render_z,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
-            primary_factory_status: &world.primary_factory_status,
+            building_status_text: &world.building_status_text,
             surface_effects,
             sidebar_unavailable: &sidebar.unavailable,
             sidebar_flash: &sidebar.flash,
@@ -462,8 +462,8 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "overlay", &world.overlay);
     pool.upload(
         &state.renderer.gpu,
-        "primary_factory_status",
-        &world.primary_factory_status.instances,
+        "building_status_text",
+        &world.building_status_text.instances,
     );
     for (layer, objects) in world.object_layers.iter().enumerate() {
         pool.upload_page(
@@ -511,7 +511,6 @@ fn upload_to_gpu(
         "building_radius_rings",
         &ui.radius_ring,
     );
-    pool.upload(&state.renderer.gpu, "bomb_clocks", &ui.bomb_clock);
     pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
     pool.upload(&state.renderer.gpu, "placement", &ui.placement);
     pool.upload(

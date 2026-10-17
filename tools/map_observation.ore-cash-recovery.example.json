@@ -1,0 +1,303 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v3",
+  "launch": {
+    "mode": {
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "player_name": "VERA-OBSERVER",
+    "local": {
+      "country": "Russia",
+      "country_random": false,
+      "color_index": 0,
+      "color_random": false,
+      "start_position": {
+        "Position": 0
+      },
+      "team": "None"
+    },
+    "opponents": [
+      {
+        "country": "Yuri",
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": "None",
+        "difficulty": "Easy"
+      }
+    ],
+    "options": {
+      "starting_credits": 50,
+      "unit_count": 0,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": true,
+      "bases": false,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": false,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": false,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    },
+    "selected_map_file": "tools/map_observation/examples/ore_cash_recovery.map",
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": true
+        },
+        {
+          "slot_index": 1,
+          "valid": false
+        },
+        {
+          "slot_index": 2,
+          "valid": false
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 2000,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 900,
+  "observe_owners": [
+    "VERA-OBSERVER"
+  ],
+  "observe_types": [
+    "NACNST",
+    "NAPOWR",
+    "NAHAND",
+    "NAREFN",
+    "HARV",
+    "E2"
+  ],
+  "commands": [
+    {
+      "issue_after_step": 4,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "E2"
+        }
+      }
+    },
+    {
+      "issue_after_step": 4,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "E2"
+        }
+      }
+    }
+  ],
+  "camera_cell": [
+    43,
+    42
+  ],
+  "cursor_position": [
+    320,
+    240
+  ],
+  "observe_sidebar_steps": [
+    0,
+    100,
+    200,
+    300,
+    400,
+    500,
+    600,
+    700,
+    800,
+    900,
+    1000,
+    1100,
+    1200,
+    1300,
+    1400,
+    1401,
+    1402,
+    1403,
+    1404,
+    1405,
+    1406,
+    1407,
+    1408,
+    1409,
+    1410,
+    1411,
+    1412,
+    1413,
+    1414,
+    1415,
+    1416,
+    1417,
+    1418,
+    1419,
+    1420,
+    1421,
+    1422,
+    1423,
+    1424,
+    1425,
+    1426,
+    1427,
+    1428,
+    1429,
+    1430,
+    1431,
+    1432,
+    1433,
+    1434,
+    1435,
+    1436,
+    1437,
+    1438,
+    1439,
+    1440,
+    1441,
+    1442,
+    1443,
+    1444,
+    1445,
+    1446,
+    1447,
+    1448,
+    1449,
+    1450,
+    1451,
+    1452,
+    1453,
+    1454,
+    1455,
+    1456,
+    1457,
+    1458,
+    1459,
+    1460,
+    1461,
+    1462,
+    1463,
+    1464,
+    1465,
+    1466,
+    1467,
+    1468,
+    1469,
+    1470,
+    1471,
+    1472,
+    1473,
+    1474,
+    1475,
+    1476,
+    1477,
+    1478,
+    1479,
+    1480,
+    1481,
+    1482,
+    1483,
+    1484,
+    1485,
+    1486,
+    1487,
+    1488,
+    1489,
+    1490,
+    1491,
+    1492,
+    1493,
+    1494,
+    1495,
+    1496,
+    1497,
+    1498,
+    1499,
+    1500,
+    1501,
+    1502,
+    1503,
+    1504,
+    1505,
+    1506,
+    1507,
+    1508,
+    1509,
+    1510,
+    1511,
+    1512,
+    1513,
+    1514,
+    1515,
+    1516,
+    1517,
+    1518,
+    1519,
+    1520,
+    1600,
+    1700,
+    1800,
+    1900,
+    2000
+  ],
+  "terrain_cells": [],
+  "gestures": [
+    {
+      "issue_after_step": 8,
+      "gesture": {
+        "kind": "sidebar",
+        "target": {
+          "kind": "tab",
+          "tab": "infantry"
+        }
+      }
+    }
+  ]
+}

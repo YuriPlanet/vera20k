@@ -9,6 +9,7 @@ use crate::app::input::cursor::{
 };
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
+use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::render::batch::{BatchTexture, SpriteInstance};
@@ -17,6 +18,7 @@ use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Position;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
@@ -260,7 +262,8 @@ pub(crate) struct StatusTextRun {
 }
 
 /// BuildingClass::Array-ordered text emitted once after Ground2. This is draw
-/// data only; ProductionState remains the owner of every primary identity.
+/// data only; ProductionState owns primary identities and PowerState owns the
+/// retained House totals.
 #[derive(Debug, Default)]
 pub(crate) struct BuildingStatusTextInstances {
     pub instances: Vec<SpriteInstance>,
@@ -288,7 +291,7 @@ fn status_text_tint(
 ) -> [f32; 3] {
     let owner = sim.interner.resolve(entity.owner());
     let color = house_color_map.get(owner).copied().unwrap_or(NO_REMAP);
-    // Both70A8xx and70ACxx read House+56F9, not ColorScheme UI text RGB.
+    //70A8xx/70ABxx/70ACxx read House+56F9, not ColorScheme UI text RGB.
     let [red, green, blue] =
         crate::render::palette_light::house_color_rgb(house_color_ramps, color);
     let [red, green, blue, _] =
@@ -299,7 +302,7 @@ fn status_text_tint(
 
 /// The shared7BB020/7BAD90/434120 material geometry. Callers supply their
 /// already measured/clipped backing and native glyph origin; group and
-/// PRIMARY deliberately use different rectangles and alignment.
+/// Building labels deliberately use different rectangles and alignment.
 fn status_text_instances(
     font: &BitFont,
     text: &str,
@@ -530,13 +533,14 @@ pub(crate) fn build_control_group_status_instances(
     )
 }
 
-/// Building43E7B0 -> Techno70AA60 PRIMARY, called from Tactical6D957A
-/// after Ground2. The caller supplies this frame's native +99 body
+/// Building43E7B0 -> Techno70AA60 Power/Drain and PRIMARY, called from
+/// Tactical6D957A after Ground2. The caller supplies this frame's native +99 body
 /// opportunities; successful glyph/body pixels are not the admission fact.
 /// BuildingClass::Array order is the existing monotonic construction-ID
 /// order, independent of the retained Display sort. No RNG/timer/detach or
-/// persistent state is changed. Native pixels: primary_factory_status.json.
-pub(crate) fn build_primary_factory_status_render_instances(
+/// persistent state is changed. Native pixels: building_power_status.json and
+/// primary_factory_status.json under tools/procedural_drawing_oracle.
+pub(crate) fn build_building_status_render_instances(
     sim: &crate::sim::world::Simulation,
     body_opportunities: &BTreeSet<u64>,
     current_house_id: crate::sim::intern::InternedId,
@@ -557,7 +561,6 @@ pub(crate) fn build_primary_factory_status_render_instances(
             || !body_opportunities.contains(&entity.stable_id())
             || !entity.lifecycle.cell_marked()
             || !entity.selection.is_selected()
-            || !sim.production.is_primary_factory(entity.stable_id())
             || !crate::map::houses::is_allied_with(
                 &sim.house_alliances,
                 sim.interner.resolve(entity.owner()),
@@ -571,6 +574,12 @@ pub(crate) fn build_primary_factory_status_render_instances(
         let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
             continue;
         };
+        let primary = sim.production.is_primary_factory(entity.stable_id());
+        //70AA88..70AAA4 admits the positive type Power arm only when the
+        //primary latch is clear.70ABEA then tests that latch for PRIMARY.
+        if !primary && object.power <= 0 {
+            continue;
+        }
         let location = crate::sim::movement::ground_pose::object_location(
             entity,
             sim.resolved_terrain.as_ref(),
@@ -592,17 +601,36 @@ pub(crate) fn build_primary_factory_status_render_instances(
         {
             continue;
         }
-        //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
-        let key = if crate::rules::foundation::foundation_dimensions(&object.foundation).0 == 1 {
-            "TXT_PRI"
+        let text = if primary {
+            //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
+            let key = if crate::rules::foundation::foundation_dimensions(&object.foundation).0 == 1
+            {
+                "TXT_PRI"
+            } else {
+                "TXT_PRIMARY"
+            };
+            csf.text(key)
         } else {
-            "TXT_PRIMARY"
+            //70AAAA..70AAEA reads the owner's retained IHouse4F6A00/4F6A10
+            //slots and formats physical TXT_POWER_DRAIN2. Drawing neither
+            //reassesses power nor substitutes the selected building's output.
+            let (output, drain) = crate::sim::production::power_balance_for_owner(
+                sim,
+                rules,
+                sim.interner.resolve(entity.owner()),
+            );
+            Cow::Owned(format_csf(
+                &csf.text("TXT_POWER_DRAIN2"),
+                &[
+                    CsfArg::Int(i64::from(output)),
+                    CsfArg::Int(i64::from(drain)),
+                ],
+            ))
         };
-        let text = csf.text(key);
         let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
         let clipped = crate::util::rect::clip_rect(measure, tactical_clip);
-        //70AC60 and4A5EF9 share the whole-string center. Unlike group,
-        //PRIMARY does not expand the clipped backing one pixel left.
+        //70AB0A/70AC60 and4A5EF9 share the whole-string center. Unlike
+        //group, these labels do not expand the clipped backing one pixel left.
         let origin = [
             measure[0].wrapping_add(4) as f32 + camera[0],
             measure[1].wrapping_add(2) as f32 + camera[1],
@@ -620,8 +648,9 @@ pub(crate) fn build_primary_factory_status_render_instances(
 }
 
 /// AppState supplies current resources and the existing tactical viewport;
-/// the sim's primary query and the per-frame body plan supply all identities.
-pub(crate) fn build_primary_factory_status_instances(
+/// simulation owners supply primary identity and retained power, and the
+/// per-frame body plan supplies the current opportunities.
+pub(crate) fn build_building_status_instances(
     state: &AppState,
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
@@ -641,7 +670,7 @@ pub(crate) fn build_primary_factory_status_instances(
     };
     let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
     let zoom = state.match_state.input.zoom_level;
-    build_primary_factory_status_render_instances(
+    build_building_status_render_instances(
         sim,
         body_opportunities,
         current_house,
@@ -739,100 +768,6 @@ pub(crate) fn self_heal_pip(
 //   through the live input membership in `build_control_group_status_instances`
 //   above; the self-heal status pip is ported below.
 //
-/// The Crazy Ivan bomb clock, `TechnoClass::DrawExtras @ 0x006F5190`
-/// (0x006F519B..0x006F524E): over a carrier being drawn (DrawExtras is reached
-/// only from the tactical render loop, `0x006D9153`, so never in limbo or a
-/// transport) that is not sinking (`+0x3CD`), whose
-/// BombVisible (`+0x68`) holds for the local player and whose cell is not
-/// shrouded (`0x00487950`), BOMBCURS.SHP frame `BombClass::GetClockFrame`
-/// centered (flags `0xE00`) on the render point (`vt+0xAC`: a building's art
-/// anchor, `0x00459EF0`, else its coordinate; `CoordsToClient2 @ 0x006D2140`).
-/// Drawn before the veterancy chevrons (0x006F5382), as there.
-pub(crate) fn build_bomb_clock_instances(
-    state: &AppState,
-    sw: f32,
-    sh: f32,
-) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay), Some(rules)) = (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.selection_overlay,
-        state.rules(),
-    ) else {
-        return Vec::new();
-    };
-    let Some(clock) = overlay.bomb_clock() else {
-        return Vec::new();
-    };
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
-    let local = preferred_local_owner_name(state).and_then(|name| sim.interner.get(&name));
-    // `GetClockFrame` reads the frame the draw sees: the next one to run.
-    let frame = sim.session.binary_frame as i32;
-    let mut instances = Vec::new();
-    for &carrier in sim.bomb_carriers() {
-        let Some(entity) = sim.entities().get(carrier) else {
-            continue;
-        };
-        let Some(bomb) = entity.bomb else {
-            continue;
-        };
-        if entity.lifecycle.in_limbo()
-            || entity.passenger_role.is_inside_transport()
-            || entity.sinking.is_active()
-        {
-            continue;
-        }
-        if !ignore_visibility {
-            let Some(local) = local else {
-                continue;
-            };
-            let (rx, ry) = (entity.position.rx(), entity.position.ry());
-            if !sim.bomb_seen_by(carrier, local)
-                || !sim.fog.is_cell_revealed(local, rx, ry)
-                || sim.fog.is_cell_gap_covered(local, rx, ry)
-            {
-                continue;
-            }
-        }
-        let Some(index) = bomb
-            .clock_frame(
-                frame,
-                rules.combat_damage.ivan_timed_delay,
-                rules.combat_damage.ivan_icon_flicker_rate,
-            )
-            .and_then(|index| usize::try_from(index).ok())
-        else {
-            continue;
-        };
-        let point = crate::render::locomotor_visual::screen_position(entity);
-        let point = if entity.category() == EntityCategory::Structure {
-            crate::render::locomotor_visual::building_art_anchor(point.0, point.1)
-        } else {
-            point
-        };
-        let Some(instance) = clock.instance(index, point, 0.0006) else {
-            continue;
-        };
-        if in_view(
-            instance.position[0],
-            instance.position[1],
-            instance.size[0],
-            instance.size[1],
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-            sw,
-            sh,
-            48.0,
-        ) {
-            instances.push(instance);
-        }
-    }
-    instances
-}
-
 /// The repair wrench's WRENCH.SHP frame at `frame`
 /// (`TechnoClass::DrawExtras 0x006F52D8..0x006F532B`): a cycle of
 /// `SpeedNormalize(14) / 4` frames (at least 2) spread over frames 0..=6,
@@ -851,9 +786,11 @@ pub(crate) struct StatusViewport {
     pub ignore_visibility: bool,
 }
 
-/// One Display parent's wrench, rank, health and pip commands in Extras order.
+/// One Display parent's clock, wrench, rank, health and pip commands in Extras order.
 #[derive(Debug, Default)]
 pub(crate) struct TechnoExtras {
+    ///6F519B..524E: BOMBCURS/MOUSEPAL N1 prefix, before every other status.
+    pub bomb_clock: Option<SpriteInstance>,
     ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
     pub wrench: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
@@ -868,7 +805,7 @@ pub(crate) struct TechnoExtras {
     pub group: StatusTextOverlayInstances,
 }
 
-/// One Techno DrawExtras6F5190 parent, wrench prefix, rank, then health6F64A0.
+/// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
 /// Rank70A990 precedes the selected/hovered health gate at6F5388. It uses
 /// the shared cloak/disguise and raw Veterancy owners, with opaque status art.
 /// Ordinary MTNK is executed in procedural_drawing_oracle/unit_rank.json;
@@ -882,6 +819,8 @@ pub(crate) struct TechnoExtras {
 /// Source/executable controls: procedural_drawing_oracle/building_health.json
 /// and unit_health.json. Stock selected/hovered GAPOWR and mobile coverage;
 /// conditional pip/status tails remain with their existing owners.
+/// Clock prefix6F519B..524E and its body/parent overlap execute in
+/// procedural_drawing_oracle/bomb_clock.json with physical BOMBCURS/MOUSEPAL.
 /// No RNG, timer, detach or retained presentation state changes here.
 pub(crate) fn techno_extras_for_parent(
     sim: &crate::sim::world::Simulation,
@@ -898,10 +837,16 @@ pub(crate) fn techno_extras_for_parent(
     if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() {
         return strip;
     }
-    //6F5253..5345 precedes the observer/selection/health gates. The same
-    // frame-local command is replayed in both native Building Extras visits.
-    if entity.category() == EntityCategory::Structure
-        && entity.repairing.is_on()
+    //6F519B..524E clock and6F5253..5345 wrench precede observer/selection
+    // admission. Both use the existing per-parent MOUSEPAL N1 material; the
+    // clock's886FA0 clip is the tactical viewport, not a sprite's body bounds.
+    let bomb_visible = entity.bomb.is_some()
+        && (viewport.ignore_visibility
+            || local_owner
+                .and_then(|name| sim.interner.get(name))
+                .is_some_and(|viewer| sim.bomb_seen_by(entity.stable_id(), viewer)));
+    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    if (bomb_visible || repairing)
         && (viewport.ignore_visibility
             || local_owner
                 .and_then(|name| sim.interner.get(name))
@@ -915,26 +860,29 @@ pub(crate) fn techno_extras_for_parent(
                         (entity.position.rx(), entity.position.ry()),
                     )
                 }))
-        && let Some(wrench) = overlay.repair_wrench()
-        && let Ok(frame) = usize::try_from(repair_wrench_frame(
-            sim.session.binary_frame as i32,
-            &sim.session.game_options,
-        ))
     {
-        // Building459EF0 is its render point, distinct from foundation-centre
-        // GetCoords447AC0 used by the health/line callers below.
-        let location = crate::sim::movement::ground_pose::object_location(
-            entity,
-            sim.resolved_terrain.as_ref(),
-        );
-        let (render, _) =
-            crate::sim::movement::ground_pose::building_render_order_parts(location, false, false);
+        // Virtual+AC: Building459EF0 uses Location-128XY; the ordinary
+        // mobile5F65A0 uses its existing GetCoords owner. Tactical6D2140
+        // projects integer XYZ, independently of the status caller's point.
+        let render = if entity.category() == EntityCategory::Structure {
+            let location = crate::sim::movement::ground_pose::object_location(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            );
+            crate::sim::movement::ground_pose::building_render_order_parts(location, false, false).0
+        } else {
+            crate::sim::movement::ground_pose::object_get_coords(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            )
+        };
         let point = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
-        if let Some(mut instance) = wrench.instance(frame, point, 0.0) {
-            // Init52C1D8 constructs MOUSEPAL with N1. E00/493DF0 reads A,
-            // whose row offsets are all zero for N1; neither reads nor writes Z.
+        let prefix = |shape: &crate::render::selection_overlay::CenteredShapeStrip, frame| {
+            let mut instance = shape.instance(frame, point, 0.0)?;
+            // Init52C1D8 MOUSEPAL N1; E00/493DF0 consumes A with zero
+            // row offsets and performs opaque packed stores, bypassing Z.
             instance.palette_light = crate::render::palette_light::PaletteLight::plain(1, 1000);
-            if in_view(
+            in_view(
                 instance.position[0],
                 instance.position[1],
                 instance.size[0],
@@ -944,9 +892,29 @@ pub(crate) fn techno_extras_for_parent(
                 viewport.size[0],
                 viewport.size[1],
                 48.0,
-            ) {
-                strip.wrench = Some(instance);
-            }
+            )
+            .then_some(instance)
+        };
+        if bomb_visible
+            && let (Some(bomb), Some(rules), Some(shape)) =
+                (entity.bomb, rules, overlay.bomb_clock())
+            && let Some(frame) = bomb.clock_frame(
+                sim.session.binary_frame as i32,
+                rules.combat_damage.ivan_timed_delay,
+                rules.combat_damage.ivan_icon_flicker_rate,
+            )
+            && let Ok(frame) = usize::try_from(frame)
+        {
+            strip.bomb_clock = prefix(shape, frame);
+        }
+        if repairing
+            && let Some(shape) = overlay.repair_wrench()
+            && let Ok(frame) = usize::try_from(repair_wrench_frame(
+                sim.session.binary_frame as i32,
+                &sim.session.game_options,
+            ))
+        {
+            strip.wrench = prefix(shape, frame);
         }
     }
     let Some(observer) = admitted_techno_observer(sim, entity, local_owner, rules) else {
@@ -1210,10 +1178,10 @@ pub(crate) fn techno_extras_for_parent(
                 .extend(instance(art, frame, (x, sy + delta + scale_y), 0.0004));
         }
     }
-    //70A614..6BB: the existing House bonus owner selects the full-health
-    //plain600 marker. Keep its consumer in this parent's status sequence.
-    //Damaged first-six-frame flags601 behavior remains an explicit residual;
-    //this migration preserves that existing marker policy.
+    //70A50C..6BB: House admission precedes signed frame division, even for
+    //a healthy object. Damaged remainder<=5 uses601 destination-halving;
+    //otherwise the same icon/frame uses ordinary600. Native controls:
+    //procedural_drawing_oracle/self_heal_status. No render timer is retained.
     if entity_status_pips_drawable(sim, entity, hovered_id, observer_id, Some(rules)) {
         let (infantry_heal, unit_heal) = sim.houses.get(&entity.owner()).map_or((0, 0), |house| {
             (house.self_heal_infantry(), house.self_heal_units())
@@ -1221,8 +1189,22 @@ pub(crate) fn techno_extras_for_parent(
         if let Some(arm) =
             self_heal_pip(entity.category(), object.organic, infantry_heal, unit_heal)
         {
+            let period = match arm {
+                SelfHealPip::Organic => rules.general.self_heal_infantry_frames,
+                SelfHealPip::Units => rules.general.self_heal_unit_frames,
+            };
+            let frame = sim.session.binary_frame as i32;
+            let remainder = frame.checked_rem(period).unwrap_or_else(|| {
+                panic!("native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={frame} period={period}")
+            });
+            let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
             let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
-            strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004);
+            strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)
+                .map(|mut instance| {
+                    instance.draw_state =
+                        crate::render::draw_state::DrawState::from_native_selector(0, selector);
+                    instance
+                });
         }
     }
     strip

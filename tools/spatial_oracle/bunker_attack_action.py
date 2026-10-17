@@ -309,7 +309,7 @@ def allied_continuation(u, read, ret, calls, result, receiver):
         main_draw_count=0,timer_start_calls=0,detach_calls=0)
 
 
-def voice_control(spec, *, attack=False):
+def voice_control(spec, *, attack=False, move=False):
     """Use the SAME action bootstrap; shared RNG owner supplies seed/continuation."""
     from tools.rmg_oracle.gen_rng_vectors import STRUCT_LEN, seeded_struct, draws
 
@@ -322,6 +322,7 @@ def voice_control(spec, *, attack=False):
         u.mem_write(voice_data,dwords(*(values or [0])))
         u.mem_write(TYPE+(0x488 if attack else 0x46C),dwords(voice_data,len(values)))
         u.mem_write(TYPE+(0x494 if attack else 0x478),dwords(len(values)))
+        assert not (attack and move)
         events=[];target_reads=[];selector_active=False
         if attack:
             # Values come from the original reader below. Copy values, never
@@ -369,6 +370,21 @@ def voice_control(spec, *, attack=False):
                     target_reads.append([hex(address),length])
             observer=u.hook_add(UC_HOOK_CODE,observe)
             memory_observer=u.hook_add(UC_HOOK_MEM_READ,target_read)
+        elif move:
+            for offset,value in zip((0x558,0x55C,0x57C),spec['scalar_voice_slots']):
+                u.mem_write(TYPE+offset,dwords(value))
+            entries={0x6FFCBD:'CallerVoiceGate',0x708FC0:'VoiceMove',
+                0x709020:'VoiceEnter',0x708DC0:'VoiceCapture',0x709060:'VoiceHarvest',
+                0x65C780:'MainRandom',0x708D90:'QueueVoice',0x50B6F0:'HouseInputOwner',
+                0x708DB5:'PendingStore'}
+            def observe(machine,pc,*_):
+                if pc not in entries:return
+                row=dict(entry=f'0x{pc:08X}',name=entries[pc])
+                if pc==0x708D90:
+                    row['requested_voice']=signed(read(machine.reg_read(UC_X86_REG_ESP)+4))
+                if pc==0x708DB5:row['stored_voice']=signed(machine.reg_read(UC_X86_REG_EDI))
+                events.append(row)
+            observer=u.hook_add(UC_HOOK_CODE,observe)
         u.mem_write(ACTOR+0x4F0,dwords(777))
         u.mem_write(ACTOR+0x21C,dwords(HOUSE if spec['actor_owner']=='local' else OTHER))
         u.mem_write(OTHER+0x1EC,bytes([spec.get('other_human',False)]))
@@ -418,6 +434,7 @@ def voice_control(spec, *, attack=False):
             assert fault==dict(pc='0x7090c0',slot_is_null=True)
         if attack:
             u.hook_del(observer);u.hook_del(memory_observer)
+        elif move:u.hook_del(observer)
         calls.returned(stop,u.reg_read(UC_X86_REG_ESP))
         if calls.pending:raise RuntimeError(f'Unreturned voice calls: {calls.pending}')
         after={name:bytes(u.mem_read(pointer,STRUCT_LEN)) for name,pointer in rngs.items()}
@@ -445,6 +462,13 @@ def voice_control(spec, *, attack=False):
                 scenario_before_hex=before['scenario'].hex(),scenario_after_hex=after['scenario'].hex(),
                 mapgen_before_hex=before['mapgen'].hex(),mapgen_after_hex=after['mapgen'].hex(),
                 fault=fault,stop=fault['pc'] if fault else hex(stop))
+        elif move:
+            output.update(events=events,
+                voice_enter_calls=sum(row['name']=='VoiceEnter' for row in events),
+                voice_capture_calls=sum(row['name']=='VoiceCapture' for row in events),
+                voice_harvest_calls=sum(row['name']=='VoiceHarvest' for row in events),
+                scenario_before_hex=before['scenario'].hex(),scenario_after_hex=after['scenario'].hex(),
+                mapgen_before_hex=before['mapgen'].hex(),mapgen_after_hex=after['mapgen'].hex())
         return dict(voice_output=output)
 
     signed=lambda x:struct.unpack('<i',struct.pack('<I',x))[0]
@@ -605,20 +629,11 @@ def allied_metadata():
             'The mock Display virtual48 remains an observed cursor setter sink with palette/empty-waypoint storage. UI cursor SHP/glyph raster is outside the fixture. Original text hash is checked before/after every shared-VM continuation.'])
 
 
-def attack_voice_readers():
-    """Selected unchanged constructor/read blocks in the EXISTING INI owner.
-
-    SoundList source links, Voc construction/name lookup and sample-name
-    transport belong to Sound/sound_inputs; no cache or binder is copied here.
-    """
+def order_voice_reader_inputs(wanted_names):
+    """One shared original type/Rules/Sound bootstrap for order-voice readers."""
     import os
-    from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
+    from tools.projectile_oracle.bridge_render_inputs import BulletReader
     from tools.spatial_oracle.anytown_damage.mtnk_attack import sound_inputs
-    from tools.rules_oracle.weapon_laser import physical_layers
-    from tools.spatial_oracle.building_body_rules import RULES, SP as reader_sp
-    from tools.procedural_drawing_oracle.shroud import _status_reader_block
-
-    signed=lambda x:struct.unpack('<i',dwords(x))[0]
     root=Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])
     m=BulletReader({},root);u=m.u
     initialization_events=[]
@@ -626,13 +641,29 @@ def attack_voice_readers():
         if pc in (0x65C780,0x65C7E0,0x70D150,0x7258D0,0x5F5280):
             initialization_events.append(dict(entry=f'0x{pc:08X}',ecx=hex(u.reg_read(UC_X86_REG_ECX))))
     initialization_hook=u.hook_add(UC_HOOK_CODE,initialization_observer)
-    sound=sound_inputs(m,root,{},wanted_names={
-        'GenAllVehicleAttackCommand','GenAllVehicleMove','IFVMove'})
+    sound=sound_inputs(m,root,{},wanted_names=wanted_names)
     for registry in (0xA8EB00,0x887568):
         u.mem_write(registry,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
     rules=m.alloc(0x5000);m.invoke(0x665650,rules)
     u.mem_write(0x8871E0,dwords(rules))
     typ=m.alloc(0x1900);m.invoke(0x7470D0,typ,(m.cstring('MTNK'),))
+    return m,sound,rules,typ,initialization_events,initialization_hook
+
+
+def attack_voice_readers():
+    """Selected unchanged constructor/read blocks in the EXISTING INI owner.
+
+    SoundList source links, Voc construction/name lookup and sample-name
+    transport belong to Sound/sound_inputs; no cache or binder is copied here.
+    """
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.rules_oracle.weapon_laser import physical_layers
+    from tools.spatial_oracle.building_body_rules import RULES, SP as reader_sp
+    from tools.procedural_drawing_oracle.shroud import _status_reader_block
+    signed=lambda x:struct.unpack('<i',dwords(x))[0]
+    m,sound,rules,typ,initialization_events,initialization_hook=order_voice_reader_inputs({
+        'GenAllVehicleAttackCommand','GenAllVehicleMove','IFVMove'})
+    u=m.u
     weapon=m.alloc(0x200);m.invoke(0x771C70,weapon,(m.cstring('105mm'),))
     repair=m.alloc(0x200);m.invoke(0x771C70,repair,(m.cstring('RepairBullet'),))
     keys=('VoiceAttack','VoicePrimaryWeaponAttack','VoicePrimaryEliteWeaponAttack',
@@ -769,6 +800,148 @@ def generate_attack_order_voice():
                 voice_controls=[voice_control(spec,attack=True) for spec in voices])
 
 
+def move_voice_readers():
+    """Original retained Move vector and Enter/Capture/Harvest bound scalars."""
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.rules_oracle.weapon_laser import physical_layers
+    from tools.spatial_oracle.building_body_rules import RULES
+    from tools.procedural_drawing_oracle.shroud import _status_reader_block
+    m,sound,_rules,typ,initialization_events,initialization_hook=order_voice_reader_inputs({
+        'GenAllVehicleMove','IFVMove'})
+    u=m.u
+    signed=lambda value:struct.unpack('<i',dwords(value))[0]
+    scalar_offsets=dict(VoiceEnter=0x558,VoiceCapture=0x55C,VoiceHarvest=0x57C)
+    keys=('VoiceMove',*scalar_offsets)
+
+    def fields():
+        ptr,count=m.read32(typ+0x46C),m.read32(typ+0x478)
+        return dict(voice_move=[signed(m.read32(ptr+i*4)) for i in range(count)],
+            voice_enter=signed(m.read32(typ+0x558)),
+            voice_capture=signed(m.read32(typ+0x55C)),
+            voice_harvest=signed(m.read32(typ+0x57C)))
+
+    def read_type():
+        registers={UC_X86_REG_EBP:typ,UC_X86_REG_EBX:typ+0x24,UC_X86_REG_ESI:RULES}
+        _status_reader_block(m,0x712AB3,0x712B1D,registers)
+        # Adjacent scalar reads delay their preceding stores. Preserve those
+        # native current values; each complete block has a balanced stack.
+        _status_reader_block(m,0x713091,0x71310F,
+            registers|{UC_X86_REG_EAX:m.read32(typ+0x554)})
+        _status_reader_block(m,0x71363D,0x7136C1,
+            registers|{UC_X86_REG_EAX:m.read32(typ+0x578)})
+
+    observed=[]
+    def observe(_u,pc,*_):
+        if pc!=0x528A10:return
+        sp=u.reg_read(UC_X86_REG_ESP)
+        key=m.string(m.read32(sp+8))
+        row=dict(reader='0x00528A10',section=m.string(m.read32(sp+4)),key=key,
+            default_string=m.string(m.read32(sp+12)),capacity=m.read32(sp+20))
+        if key in scalar_offsets:row['current_id']=signed(m.read32(typ+scalar_offsets[key]))
+        if key=='VoiceMove':row['current_list']=fields()['voice_move']
+        observed.append(row)
+    hook=u.hook_add(UC_HOOK_CODE,observe)
+    constructor=fields()
+    layers=[]
+    for name,archive,raw in physical_layers():
+        if raw is None:
+            layers.append(dict(file=name,archive=archive,absent=True));continue
+        sections,_=lexical(raw,{'MTNK'});m.rules_cache(sections);mark=len(observed)
+        admitted=bool(m.invoke(0x526810,RULES,(typ+0x24,)))
+        if admitted:read_type()
+        layers.append(dict(file=name,archive=archive,sha256=hashlib.sha256(raw).hexdigest(),
+            section_admitted=admitted,
+            selected={'MTNK':{key:value for key,value in sections.get('MTNK',{}).items() if key in keys}},
+            reads=observed[mark:],after=fields()))
+    stock=fields()
+    controls=[]
+    for name,values in (
+        ('unknown_with_unbound_scalars',{'VoiceMove':'NOT_A_RETAIL_SOUND'}),
+        ('two_entries',{'VoiceMove':'GenAllVehicleMove,IFVMove'}),
+        ('enter_only',{'VoiceEnter':'IFVMove'}),
+        ('absent_section',None),('admitted_missing',{'Strength':'300'}),
+        ('empty_values',dict.fromkeys(keys,'')),
+        ('mixed_case_duplicates_and_scalars',dict(VoiceMove='gEnAllVehicleMove,IFVMove,GenAllVehicleMove',
+            VoiceEnter='iFvMoVe',VoiceCapture='gEnAllVehicleMove',VoiceHarvest='IFVMove')),
+        ('unknown_values',dict.fromkeys(keys,'NOT_A_RETAIL_SOUND')),
+        ('unknown_first',{'VoiceMove':'NOT_A_RETAIL_SOUND,GenAllVehicleMove'}),
+        ('wrong_case_keys',{'voicemove':'IFVMove','voiceenter':'GenAllVehicleMove',
+                            'voicecapture':'IFVMove','voiceharvest':'GenAllVehicleMove'}),
+        ('scalar_list_tokens',dict.fromkeys(scalar_offsets,'GenAllVehicleMove,IFVMove')),
+        ('scalar_none_tokens',dict.fromkeys(scalar_offsets,'<none>')),
+        ('comma_only_move',{'VoiceMove':',,,'}),
+        ('127_byte_complete_token',{'VoiceMove':'x'*119+',IFVMove'}),
+        ('128_byte_cut_token',{'VoiceMove':'x'*120+',IFVMove'}),
+        ('127_byte_cut_later_token',{'VoiceMove':'GenAllVehicleMove,'+'x'*109+',IFVMove'}),
+        ('restore_stock_move',{'VoiceMove':'GenAllVehicleMove'}),
+    ):
+        sections={} if values is None else {'MTNK':values}
+        before=fields();m.rules_cache(sections);mark=len(observed)
+        admitted=bool(m.invoke(0x526810,RULES,(typ+0x24,)))
+        if admitted:read_type()
+        controls.append(dict(name=name,input=dict(sections=sections),admitted=admitted,
+                             before=before,after=fields(),reads=observed[mark:]))
+    u.hook_del(hook);u.hook_del(initialization_hook)
+    return dict(constructor=constructor,layers=layers,sound=sound,result=stock,
+                initialization_events=initialization_events,retained_controls=controls)
+
+
+def generate_move_order_voice():
+    readers=move_voice_readers()
+    controls={row['name']:row['after'] for row in readers['retained_controls']}
+    states=dict(controls,stock=readers['result'])
+    def spec(name,reader_case,**changes):
+        fields=states[reader_case]
+        return dict(name=name,seed=1,voices_enabled=True,actor_owner='local',mode=1,
+            other_human=False,other_player_control=False,caller_entry='0x006FFBE0',
+            reader_case=reader_case,
+            voice_ids=fields['voice_move'],scalar_voice_slots=[fields[key] for key in
+                ('voice_enter','voice_capture','voice_harvest')])|changes
+    two='two_entries';bound='mixed_case_duplicates_and_scalars'
+    voices=[spec('stock_caller','stock'),spec('two_entries_caller',two),
+        spec('unknown_first_caller','unknown_first'),
+        spec('unknown_only_caller','unknown_values'),
+        spec('retained_after_empty_caller','empty_values'),
+        spec('duplicates_caller',bound),
+        spec('disabled_caller','stock',voices_enabled=False),
+        spec('direct_move_disabled',two,caller_entry='0x00708FC0',voices_enabled=False),
+        spec('direct_move_nonhuman',two,caller_entry='0x00708FC0',actor_owner='other'),
+        spec('enter_scalar',bound,caller_entry='0x00709020'),
+        spec('enter_move_fallback',two,caller_entry='0x00709020'),
+        spec('capture_scalar',bound,caller_entry='0x00708DC0'),
+        spec('capture_enter_fallback','enter_only',caller_entry='0x00708DC0'),
+        spec('capture_move_fallback',two,caller_entry='0x00708DC0'),
+        spec('harvest_scalar',bound,caller_entry='0x00709060'),
+        spec('harvest_move_fallback',two,caller_entry='0x00709060'),
+        spec('capture_empty_fallback','unknown_with_unbound_scalars',caller_entry='0x00708DC0'),
+        spec('scalar_direct_nonhuman',bound,caller_entry='0x00709020',actor_owner='other')]
+    return dict(schema=1,native_sha256=image_sha256(),readers=readers,
+                voice_controls=[voice_control(case,move=True) for case in voices])
+
+
+def move_voice_metadata():
+    return provenance(scope='Retained fixed-catalog MTNK VoiceMove list and required Enter/Capture/Harvest scalar bindings, complete reached voice bodies and native Main/QueueVoice order; bounded input/caller priors.',
+        entry_points=dict(unit_type_ctor=0x7470D0,techno_type_ctor=0x710AF0,
+            voice_move_reader=0x712AB3,voice_enter_reader=0x713091,
+            voice_capture_reader=0x7130D3,voice_harvest_reader=0x71363D,
+            read_sound_list=0x525430,read_string=0x528A10,
+            sound_types=0x7510D0,sound_lookup=0x7514D0,
+            move_argument_producer=0x4D7C76,accepted_order=0x6FFBE0,
+            voice_enable_gate=0x6FFCBD,voice_move=0x708FC0,voice_enter=0x709020,
+            voice_capture=0x708DC0,voice_harvest=0x709060,
+            queue_voice=0x708D90,house_admission=0x50B6F0,main_raw=0x65C780),
+        assumptions=[
+            'The existing shared order-voice reader bootstrap owns BulletReader, Rules665650 and UnitType7470D0 construction, fixed physical SOUNDMD through Sound/sound_inputs and original lookup. Move vector+468/count+478 defaults empty at710DFD/710E03. Enter+558/Capture+55C/Harvest+57C default-1 at710F19/710F1F/710F4F, with EBP=-1 from710CED.',
+            'Selected original reader blocks execute at712AB3..712B1D,713091..71310F and71363D..7136C1 after original526810 section admission. Adjacent delayed scalar stores retain their actual current values. Whole type/file readers are excluded. Actual RULESMD/LANGRULE/MPBattleMD/XMP03T4 layers come from physical_layers; SOUNDMD is fixed and ART is irrelevant to these decisions.',
+            'Native ReadString capacity128 bounds tokens to127bytes. Missing/empty list reads retain the current vector; a nonempty unresolved/comma-only list can replace it with empty. Order/duplicates and case behavior are original reader outputs. Scalar names resolve through7514D0 and retain the current signed ID for missing/empty/unresolved inputs; they are not raw unbound strings.',
+            'Native reader values transfer by value into the existing run/voice_control action VM, never as transplanted pointers. Full Move708FC0, Enter709020, Capture708DC0, Harvest709060, raw Main65C780 and QueueVoice708D90/House50B6F0 execute unchanged. Capture falls to Enter then Move; Harvest falls to Move. Bound scalars spend no raw draw; every nonempty reached Move list including singleton spends one before QueueVoice admission.',
+            'Ordinary Move controls execute original Foot4D7C76 argument production with declared selected Object/NULL planning Cell, then mission2/NULL attack target through6FFBE0. Stop6FFDA5 precedes event encoding. Fallback and disabled/nonhuman direct controls enter the named voice body explicitly; they do not establish complete Enter/Capture/Harvest gameplay actions or ordinary nonhuman input admission.',
+            'Existing canonical seeded_struct/draws owns seed and native four-word continuation. All3complete RNG states are retained; Scenario/MapGen stay unchanged. There are no measured timer-start or detach calls in the voice continuation. The later ordinary input action-line timer remains outside it.'],
+        substitutions=[
+            'Historical run owns the sole action VM and its supplied selection/keyboard/map/Cell/height/shroud/playfield/terrain/range/FireError and cursor-sink boundaries. Actor/type/House state, pending777 and initial RNG seed are consumer priors, not whole scenario construction or movement/path/event scheduling.',
+            'Sound owns source-order cache/registry/binding. AudioIndex names map to local selected-subset indices; numeric sound IDs are fixture-relative. No audio service/sample RNG, PCM, hardware or complete playback claim. Native instructions/vtables are unchanged and original text is checked before/after each action continuation.'])
+
+
 def attack_voice_metadata():
     return provenance(scope='Ordinary selected MTNK Attack acknowledgement: native retained type/sound readers, accepted mission1 prefix, unchanged primary-only selector, complete VoiceAttack and QueueVoice; bounded shared scalar/FV/absence controls.',
         entry_points=dict(unit_type_ctor=0x7470D0,weapon_type_ctor=0x771C70,rules_ctor=0x665650,
@@ -792,18 +965,19 @@ def attack_voice_metadata():
 if __name__=='__main__':
     allied='--allied-objects' in sys.argv
     attack='--attack-order-voice' in sys.argv
-    assert not (allied and attack)
+    move='--move-order-voice' in sys.argv
+    assert sum((allied,attack,move))<=1
     sources={'harness':Path(__file__),'native_oracle':Path(native_oracle.__file__)}
-    if allied or attack:
+    if allied or attack or move:
         sources.update(rng_owner=Path(__file__).parents[1]/'rmg_oracle/gen_rng_vectors.py',
             physical_inputs_owner=Path(__file__).parents[1]/'rules_oracle/weapon_laser.py',
             lexical_owner=Path(__file__).parents[1]/'projectile_oracle/bridge_render_inputs.py')
-    if attack:
+    if attack or move:
         sources.update(sound_owner=Path(__file__).parents[1]/'rules_oracle/bridge_child_sound.py',
             sound_composition=Path(__file__).parent/'anytown_damage/mtnk_attack.py',
             reader_blocks=Path(__file__).parents[1]/'procedural_drawing_oracle/shroud.py')
-    finish_vectors(generate_attack_order_voice if attack else generate_allied_objects if allied else generate,
-        Path(__file__).with_name('attack_order_voice.json' if attack else 'allied_object_action.json') if allied or attack else Path(__file__).with_suffix('.json'),
-        provenance=attack_voice_metadata if attack else allied_metadata if allied else metadata,
-        argv=[arg for arg in sys.argv[1:] if arg not in ('--allied-objects','--attack-order-voice')],
+    finish_vectors(generate_move_order_voice if move else generate_attack_order_voice if attack else generate_allied_objects if allied else generate,
+        Path(__file__).with_name('move_order_voice.json' if move else 'attack_order_voice.json' if attack else 'allied_object_action.json') if allied or attack or move else Path(__file__).with_suffix('.json'),
+        provenance=move_voice_metadata if move else attack_voice_metadata if attack else allied_metadata if allied else metadata,
+        argv=[arg for arg in sys.argv[1:] if arg not in ('--allied-objects','--attack-order-voice','--move-order-voice')],
         source_paths=sources)

@@ -32,6 +32,14 @@ fn export(scene: &HeadlessScenario, phase: &str) {
 }
 
 #[test]
+fn retail_starting_mtnk_attack_publishes_concrete_damage_collapse_and_target_cleanup() {
+    if crate::rules::retail_ini_fixture::retail_assets().is_none() {
+        return;
+    }
+    crate::sim::world::bridge_test_evidence::visit_starting_mtnk_concrete_attack(|_, _, _| {});
+}
+
+#[test]
 #[ignore = "requires unmodified physical Anytown and retail TEMPERATE assets"]
 fn retail_concrete_damage_repair_and_restore_publish_navigation() {
     let mut scene = loaded();

@@ -402,6 +402,72 @@ The export records a final incomplete channel frame, if present, as
 `unframed_tail_samples`; those samples remain intact in the original receipt.
 Neither export nor validation writes into a retained run.
 
+The [GI damage-feedback profile](map_observation.e1-feedback.example.json)
+uses a full-health local GI, one initial tank and four supporting stock tanks.
+Generate its clear-ground placement map before capturing:
+
+```sh
+python tools/render_depth_fixture.py target/stock-e1-feedback-removal.map --damage-feedback removal
+```
+
+Copy the profile and set `launch.selected_map_file` to the generated map's
+absolute path; relative map names are searched in the retail install.
+
+The first ForceAttack admits ordinary damage; the later volley can remove the
+GI while its unbound `GIFear` event is playing. Inspect the actual health crossing,
+submission/start/completion contexts, null owner, physical sample and retirement.
+The `single` fixture variant supplies only the initial tank for a natural-end
+control. Both variants retain full map health and retail weapons/rules. A launch
+seed does not specify the later percent draw after loading and audio service;
+absence of a submission alone cannot establish the exact rejected value.
+
+The [movement-voice profile](map_observation.move-voice.example.json) selects
+one full-health stock MTNK and issues an ordinary command click on clear ground.
+Generate its map with:
+
+```sh
+python tools/render_depth_fixture.py target/move-voice.map --move-order-voice multiple
+```
+
+Copy the profile and use the map's absolute path. The `stock` variant retains
+all retail type values. `multiple`, `unknown-first` and `unknown-only` override
+only `VoiceMove` with inputs executed by the native
+[movement-voice comparison](spatial_oracle/move_order_voice.json); geometry,
+health and weapons stay identical. Inspect the committed acknowledgement,
+queued/head voice actions, physical sample/finite PCM and event/channel
+retirement. Loading and service can advance Main before the order, so a launch
+seed alone does not determine which entry a multi-entry list chooses.
+
+The [building power-status profile](map_observation.building-power-status.example.json)
+selects an ordinary full-health owned GAPOWR in the existing clear-ground scene:
+
+```sh
+python tools/render_depth_fixture.py target/building-power-status.map --building-brackets
+```
+
+Copy the profile and set the generated map's absolute path. Its three owned
+plants keep their retail Power, health and rules. Inspect the selected building's
+localized House power/drain text, then the same scene after an ordinary right-click
+deselect. The text reads the House's retained totals; it does not sum buildings or
+assess power during drawing. The existing Building-array text pass draws after
+Ground2, with the same physical GAME.FNT and House color as PRIMARY labels.
+
+The [Ivan bomb-clock profile](map_observation.bomb-clock.example.json) uses an
+ordinary Crazy Ivan planting order on a friendly stock tank:
+
+```sh
+python tools/render_depth_fixture.py target/bomb-clock.map --bomb-clock
+```
+
+Set the generated map's absolute path in a copy of the profile. It selects Ivan,
+clicks the nearby tank, then deselects Ivan and selects the carrier. Health,
+weapons, visibility and the fuse keep their retail values. `observe_bombs` reads
+the existing bomb owner's carrier index and records at each committed step.
+Use 120 steps to inspect the active selected clock; the supplied 480-step run
+continues through detonation and removal. Each clock belongs to its admitted
+Display parent's Extras prefix, before rank, brackets and health, with the
+global tactical clip and the existing MOUSEPAL material.
+
 Literal `key` gestures may optionally include a unique `modifiers` list containing
 `Ctrl`, `Shift`, `Alt`, and/or `Super`. These use the shared modifier-key owner and
 ordinary key edges, and release every modifier before rendering. Bare historical
@@ -2027,6 +2093,32 @@ lifetime, audio playback and raster parity are also unclaimed.
 
 ## War Miner refinery-cycle observation
 
+The [ore cash recovery profile](map_observation.ore-cash-recovery.example.json)
+joins an ordinary HARV harvest/return/unload to two paid E2 orders. Its
+[authored clear map](map_observation/examples/ore_cash_recovery.map) supplies a
+completed Soviet base, an empty miner, an ore patch and a distant opponent's
+yard. A remote local MTNK supplies the ordinary vehicle-atlas prerequisite.
+There are no rules or type overrides. Starting cash is 50; the only production
+orders queue two Conscripts. The infantry-tab gesture exposes the retained
+running cameo during the cash stall. No refund, Resume or injected cargo funds
+the queue.
+
+Copy the JSON to a scratch profile and replace `launch.selected_map_file` with
+the map's absolute checkout path before running the existing capture command.
+Use a fresh scratch runtime/config and retain the whole 2000-step run. Inspect
+the miner's cargo, radio contact and Unload departure alongside House cash,
+score and spending, the original paid limbo actor's stable identity and its
+later map entry, and the queued successor. Capture validity alone does not
+establish those outcomes. Use the existing `inspect --expect` reader with
+[retained-outcome assertions](map_observation.ore-cash-recovery.expectations.json)
+for this exact launch; their step windows describe a Rust production witness,
+not native timing goldens. The production-frame regression
+`retail_ore_deposit_funds_the_retained_cash_stalled_build` separately covers
+due and not-due deposits, retained Factory balance/timer/FIFO and delivery;
+its full cargo and return state are supplied priors. Both checks join existing
+owners. Native money and docking controls bound their component behavior;
+neither is a whole native scheduler, audio-device or pixel comparison.
+
 [`map_observation.refinery-docking.example.json`](map_observation.refinery-docking.example.json)
 uses the same stock Russia/Battle/AnyTown launch and first five ordinary deployment
 and production commands as the Attack profile. It issues no combat order and
@@ -2145,6 +2237,23 @@ in [`spatial_oracle/ore_queue.md`](spatial_oracle/ore_queue.md) and its
 `validation receipt` (`tools/spatial_oracle/ore_queue.validation.json`, in git at 1b1a8b43e).
 
 ## Ordinary scheduled commands and actor trajectories
+
+The [paid concrete-wall profile](map_observation.concrete-wall.example.json)
+uses stock Battle/AnyTown, America and ordinary starting forces. It deploys
+the MCV, pays for GAPOWR and GAPILE, then places two paid GAWALL endpoints
+at `(33,87)` and `(33,90)`. The production placement owner supplies the two
+intervening wall cells through its regular autofill. It moves the starting
+MTNK to `(37,88)` and orders ForceAttackCell at `(33,88)`; the profile supplies
+no ready product, overlay state, damage stage or random result. The defense
+tab samples retain the normal queue view. Numeric command handles belong to
+this launch; rediscover bindings with v3 named commands after changing it.
+
+The original-executable [wall component](spatial_oracle/anytown_damage/navigation.md)
+separately establishes three-stage AP damage, inline cardinal damage200,
+connectivity and removal. Its decoded Overlay construction inputs and
+independent RNG entry seeds are explicit component boundaries. The paid
+profile observes the normal producer and its consumers; `VALID` alone does
+not establish successful orders, native factory timing or whole-frame parity.
 
 [`map_observation.engineer-repair.example.json`](map_observation.engineer-repair.example.json)
 uses ordinary Battle/AnyTown orders to deploy the MCV, construct GAPOWR/GAPILE,
@@ -2569,3 +2678,20 @@ The previous bounded actor/GPU comparisons and native-parity limits remain.
 ### Occupied crate slots
 
 Set `observe_crates: true` to read the existing MapClass crate-slot authority at each committed boundary. Each frame adds `crates` in ascending slot order, containing only occupied slots: `slot`, signed packed `cell`, raw timer `start_frame`/`aux`/`duration`, and current real-grid `overlay` (`id`, `data`, or null for a missing grid). Empty coordinates disappear; accepted ghosts remain visible to the observation even without an overlay. This projection never performs a gameplay map lookup or stamps the shared Dummy, places crates, or changes timers. It supports locating a naturally generated startup crate and observing ordinary movement pickup, replacement and cleanup. Each occupied slot counts toward the existing sample budget. Omit the flag or set it false to preserve existing frame fields.
+
+
+### Starting tank and ordinary low concrete bridge
+
+[map_observation.low-concrete-bridge.example.json](map_observation.low-concrete-bridge.example.json)
+uses the stock Battle opening on XMP03T4 with the local player at start1. Its
+starting MTNK1374 moves from (88,35) to the bank (87,50), then receives an ordinary
+ForceAttackCell order for (87,54). No unit is spawned or relocated by the observer.
+The camera covers the bridge and its three width cells at x86..88/y54.
+
+The bridge's live identity changes from LOBRDB12 through LOBRDB16 to LOBRDB28.
+Width data0/1/2 remains distinct. LOBRDB28 is a retained overlay with empty art,
+not an erased cell. Bridge mutation mirrors live Terrain and OverlayGrid
+synchronously; the retained render-index entries remain anchors, and their live
+identity resolves at draw time. Generic placement upserts are not required for
+every bridge transition. The profile records ordinary gameplay and rendering;
+its shot count and timing are not native mission/RNG goldens.

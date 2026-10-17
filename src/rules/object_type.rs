@@ -502,7 +502,12 @@ pub struct ObjectType {
     /// Art.ini image reference. Defaults to the object's ID if not specified.
     /// Used to look up sprite/voxel filenames in art.ini.
     pub image: String,
-    /// Power generation (positive) or consumption (negative). Buildings only.
+    /// Signed Power read result for Buildings. Constructor45DEF6/45DEFC
+    /// starts output/drain at0;461060..4610A0 passes their reconstructed
+    /// signed value to ReadInt5276D0. The existing reached-history reader
+    /// retains that value; power consumers split generation from wrapping
+    /// negated consumption.
+    /// Source: building_power_status.json reader_controls.
     pub power: i32,
     /// Extra power bonus per occupant for `InfantryAbsorb`/`UnitAbsorb`
     /// buildings. Parsed from `ExtraPower=` (signed i32). Only contributes
@@ -550,8 +555,11 @@ pub struct ObjectType {
     /// with its retention. VoiceSelect chooses it for a deactivated object
     /// (`+0x1C8`, `0x00708EFD`) that has no SlaveOwner.
     pub voice_select_deactivated: Vec<String>,
-    /// Sound ID played when this unit is ordered to move.
-    pub voice_move: Option<String>,
+    /// VoiceMove vector at TechnoType+468/count+478. Constructor710DCD..
+    /// 710E03 leaves it empty;712AB3..712B1D reads ReadSoundList525430 with
+    /// current-vector retention. Fixed SOUNDMD binding preserves resolved
+    /// order/duplicates and skips unknown names. Source: move_order_voice.
+    voice_move: Vec<String>,
     /// VoiceAttack vector at TechnoType+484/count+494. Ctor710DEF..710E26
     /// creates an empty vector;712C5B..712CC5 uses ReadSoundList525430 with
     /// current-list retention. The fixed SOUNDMD binder preserves every
@@ -563,7 +571,7 @@ pub struct ObjectType {
     /// valid current ID on missing/empty/unknown text.
     voice_attack_overrides: [Option<String>; 4],
     /// Registered scalar `VoiceHarvest=` (TechnoType+57C). Constructor710F4F
-    /// starts at -1; ReadINI71363D..713696 reads ReadString128 then Voc7514D0.
+    /// starts at -1; ReadINI stores at713696 after ReadString128/Voc7514D0.
     /// The fixed SOUNDMD reader retains the prior valid slot across passes.
     voice_harvest: Option<String>,
     /// Registered scalar `VoiceDeploy=` (TechnoType+590), default -1 at
@@ -572,16 +580,14 @@ pub struct ObjectType {
     /// Registered scalar `VoiceUndeploy=` (TechnoType+594), default -1 at
     /// constructor710F7B. ReadINI7137A5..7137FE follows VoiceDeploy.
     voice_undeploy: Option<String>,
-    /// Sound ID played when a harvester is manually ordered to return to a
-    /// friendly refinery (right-click own refinery).
-    pub voice_enter: Option<String>,
-    /// Sound ID played when this unit is ordered to capture a building.
-    ///
-    /// Retail gives capture its own order-ack slot and falls back to the Enter
-    /// slot only when this key is absent. Stock YR ships it on every engineer
-    /// (`EngAllAttackCommand` / `EngSovAttackCommand`), so the fallback is not
-    /// the ordinary-play path.
-    pub voice_capture: Option<String>,
+    /// VoiceEnter scalar at TechnoType+558, constructor710F19=-1.
+    /// ReadString128/Voc7514D0 stores at7130CD, retaining the current ID
+    /// for missing/empty/unresolved text. Enter709020 falls to Move for -1.
+    voice_enter: Option<String>,
+    /// VoiceCapture scalar at TechnoType+55C, constructor710F1F=-1.
+    /// The same retained reader stores at713109. Capture708DC0 falls to
+    /// Enter709020 for -1; registered scalars queue without a Main draw.
+    voice_capture: Option<String>,
     /// `PreventAttackMove=` — the type refuses attack-move orders even when it
     /// carries a real `Primary=`.
     ///
@@ -2069,6 +2075,18 @@ impl ObjectType {
         self.voice_harvest.as_deref()
     }
 
+    pub fn voice_move(&self) -> &[String] {
+        &self.voice_move
+    }
+
+    pub fn voice_enter(&self) -> Option<&str> {
+        self.voice_enter.as_deref()
+    }
+
+    pub fn voice_capture(&self) -> Option<&str> {
+        self.voice_capture.as_deref()
+    }
+
     pub fn voice_attack(&self) -> &[String] {
         &self.voice_attack
     }
@@ -2082,14 +2100,21 @@ impl ObjectType {
 
     /// Bind the existing native type reader's list and scalar slots against
     /// the one fixed catalog and its reached processed-section history.
-    pub(crate) fn bind_attack_voice_references(
+    pub(crate) fn bind_order_voice_references(
         &mut self,
         section: Option<&IniSection>,
         sounds: &SoundRegistry,
     ) {
+        self.voice_move = section.map_or_else(Vec::new, |section| {
+            sounds.read_rules_sound_list(section, "VoiceMove")
+        });
         self.voice_attack = section.map_or_else(Vec::new, |section| {
             sounds.read_rules_sound_list(section, "VoiceAttack")
         });
+        self.voice_enter =
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter"));
+        self.voice_capture =
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture"));
         self.voice_attack_overrides = [
             "VoicePrimaryWeaponAttack",
             "VoicePrimaryEliteWeaponAttack",
@@ -2649,11 +2674,10 @@ impl ObjectType {
                 .read_sound_list("VoiceSelectDeactivated")
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
                 .unwrap_or_default(),
-            // Legacy VoiceMove still represents only its first list entry;
-            // its broader retained-list migration remains with that owner.
             voice_move: section
                 .read_sound_list("VoiceMove")
-                .and_then(|sounds| sounds.first().map(|sound| sound.to_string())),
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                .unwrap_or_default(),
             voice_attack: section
                 .read_sound_list("VoiceAttack")
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
@@ -3852,12 +3876,14 @@ mod tests {
             ini.section("CMIN").unwrap(),
             ObjectCategory::Vehicle,
         );
-        let sounds =
-            SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=ChronoMinerHarvest\n"));
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=ChronoMinerHarvest\n1=ChronoMinerMove\n2=ChronoMinerReturn\n",
+        ));
         obj.bind_deploy_voice_references(ini.section("CMIN"), &sounds);
-        assert_eq!(obj.voice_move, Some("ChronoMinerMove".to_string()));
+        obj.bind_order_voice_references(ini.section("CMIN"), &sounds);
+        assert_eq!(obj.voice_move(), ["ChronoMinerMove"]);
         assert_eq!(obj.voice_harvest(), Some("ChronoMinerHarvest"));
-        assert_eq!(obj.voice_enter, Some("ChronoMinerReturn".to_string()));
+        assert_eq!(obj.voice_enter(), Some("ChronoMinerReturn"));
 
         // Absent keys default to None (e.g. a plain tank).
         let none_ini: IniFile = IniFile::from_str("[MTNK]\nName=Grizzly\n");
@@ -3867,24 +3893,27 @@ mod tests {
             ObjectCategory::Vehicle,
         );
         assert_eq!(none_obj.voice_harvest(), None);
-        assert_eq!(none_obj.voice_enter, None);
+        assert_eq!(none_obj.voice_enter(), None);
     }
 
-    /// GSI-06.04 carry-over: retail's capture order-ack reads the type's own
-    /// `VoiceCapture=` slot and only falls back to Enter when the key is absent.
-    /// Stock engineers ship the key, so it must round-trip through the parse.
+    /// Capture708DC0 consumes the fixed type slot before its Enter fallback.
+    /// Stock engineers register this cue in SOUNDMD.
     #[test]
     fn gsi_06_parses_voice_capture_slot() {
         let ini: IniFile = IniFile::from_str(
             "[ENGINEER]\nName=Engineer\nVoiceMove=EngAllMove\n\
              VoiceEnter=EngAllMove\nVoiceCapture=EngAllAttackCommand\n",
         );
-        let obj = ObjectType::from_ini_section(
+        let mut obj = ObjectType::from_ini_section(
             "ENGINEER",
             ini.section("ENGINEER").unwrap(),
             ObjectCategory::Infantry,
         );
-        assert_eq!(obj.voice_capture, Some("EngAllAttackCommand".to_string()));
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=EngAllMove\n1=EngAllAttackCommand\n",
+        ));
+        obj.bind_order_voice_references(ini.section("ENGINEER"), &sounds);
+        assert_eq!(obj.voice_capture(), Some("EngAllAttackCommand"));
 
         // Absent key stays None, which is the retail "fall back to Enter" case.
         let none_ini: IniFile = IniFile::from_str("[E1]\nName=GI\n");
@@ -3893,7 +3922,7 @@ mod tests {
             none_ini.section("E1").unwrap(),
             ObjectCategory::Infantry,
         );
-        assert_eq!(none_obj.voice_capture, None);
+        assert_eq!(none_obj.voice_capture(), None);
     }
 
     /// GSI-06.04 carry-over: retail's attack-move eligibility is

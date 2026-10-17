@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Five TEMPERATE ordinary low-concrete bridge native raster components:216/220/232 center data1 and220 flank data0/2. Actual positive/empty image, Cell body/shadow, same-surface composition, selected TMP lighting and original Tactical bounds. No whole frame/map/gameplay equivalence.",
+  "assumptions": [
+    "Existing mission.json.gz original executed states and physical XMP03T4 tile/level tuples supply inputs. Native flags2 are retained; production flags0 relation is a static bit80-only read proof in the selected drawing bodies, excluding unrelated upstream flags/visibility.",
+    "Shared full Overlay registry/reader, ART Image/Theater reads, original5FE620 and5FEDE0 bind physical LOBRDB12/16/28.TEM. Actual image payload bytes, default flags and six-frame domain are asserted. ISO default LightConvert and selected TMP loader/480350 Cell scalar execute; no current-House remap or Rust-provided material input is used.",
+    "Each row directly executes original47F6A0 and47F510, repeats body to check equality, then executes shadow on the same PIXELS/Z/A without reset. Original69E7E0 zero crop legitimizes missing leaf work; bound image and actual Shape entry remain required. Two bodies draw, three bodies and all shadows have actual empty crops. No synthetic empty JSON or invalid minus-one direct caller is used.",
+    "Original Tactical6D6E5B..6D71D3 suffix uses supplied sparse selected Cell lookup, native-constructed empty Dummy and true map visibility. A declared full-rectangle point observation obtains native projection before the final pass; final47FB90/47FDE0/6D2140/69E7E0 and intersections execute. Draw calls in that final suffix are recorded sinks, not a whole Tactical execution. Raster components execute the real draw bodies separately.",
+    "Supplied192x160 surface, cell point96,120, white background, oldZ65535 and neutral A127 bound the component. Native color/Z runs are observed, not computed. Normal production visitor/GPU tests separately test live identity/data, actual A and presentation determinism."
+  ],
+  "substitutions": [
+    "Shared PaletteReader successful allocator/TLS/physical resource transports and selected Cell/TMP surface priors. Tactical map/visibility lookup and draw sinks are explicit; the final bounds, projection, clipping, palette, rowwalker and raster leaves are original."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "cell_shadow": "0x0047F510",
+    "body_bounds": "0x0047FB90",
+    "shadow_bounds": "0x0047FDE0",
+    "shape_bounds": "0x0069E7E0",
+    "projection": "0x006D2140",
+    "cell_tile": "0x00480350",
+    "type_ctor": "0x005FE250",
+    "type_read": "0x005FE770",
+    "theater": "0x005FE620",
+    "get_image": "0x005FEDE0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --low-concrete-bridge",
+  "payload_sha256": "37fc914bb44db5fecc164238d55acec29a6fe7bdc3426ed6d50862150282bd65"
+}

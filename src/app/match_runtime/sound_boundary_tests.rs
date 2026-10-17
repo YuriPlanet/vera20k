@@ -1,7 +1,8 @@
 //! Headless app-boundary transport checks. These exercise the production
 //! dispatcher and its local/radar gates; they do not establish device parity.
 
-use super::{FrameSoundBoundary, dispatch_sim_sound_events};
+use super::dispatch_sim_sound_events;
+use crate::app::match_runtime::frame_effects::FrameClientBoundary;
 use crate::audio::events::SoundEventQueue;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
@@ -133,7 +134,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
         };
         // Absent output is the ordinary headless/audio-unavailable path.
         // Cue/radar conversion still runs through the production dispatcher.
-        let boundary = FrameSoundBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &facts);
         boundary.consume(&sim, &rules, &facts);
         facts.push(SimSoundEvent::UnitVoiceVisit { owner: 41 });
@@ -177,7 +178,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
             admitted.push((tick, request.rx));
             true
         };
-        let boundary = FrameSoundBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &[repaired(local, 2)]);
         assert_eq!(boundary.delivered(), 1);
     }

@@ -29,11 +29,11 @@ mod crash;
 pub(crate) mod entry_test_fixture;
 mod object_entry;
 mod sinking;
-mod sound_boundary;
+mod frame_effects;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
-pub use sound_boundary::{FrameEffects, SoundBoundary};
+pub use frame_effects::{FrameEffects, LocalDefeatBoundary, SoundBoundary};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;

@@ -3,9 +3,12 @@
 
 use crate::app::AppState;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
-use crate::audio::events::GameSoundEvent;
+use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::net::lockstep::SynchronizedCommand;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
+use crate::sim::selection::SelectionState;
+use crate::sim::world::Simulation;
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
@@ -43,6 +46,50 @@ impl PlanningInputState {
         self.key = None;
         self.refusal_tick = None;
         self.highlighted_node = None;
+    }
+
+    /// The single PlanMgr6379C0/637A10 transition, also reached by
+    /// House4FC1EE. Return the native OutList event to the caller's existing
+    /// scheduler; a House visit must admit it before this frame's dispatch.
+    /// Original1cdd controls: tools/spatial_oracle/planning_local_defeat.
+    pub(crate) fn set_active(
+        &mut self,
+        active: bool,
+        sim: Option<&Simulation>,
+        rules: Option<&RuleSet>,
+        selection: &mut SelectionState,
+        sounds: &mut SoundEventQueue,
+    ) -> Option<CommandEnvelope> {
+        // Command536750 ->731A50 rejects entry after Session+300 is set.
+        // Release731A70 still reaches637A10, including after defeat.
+        if self.active == active || (active && sim.is_some_and(Simulation::local_player_defeated)) {
+            return None;
+        }
+        let commit = if active {
+            None
+        } else {
+            sim.and_then(|sim| {
+                let owner = sim.session.current_house()?;
+                let record = sim.encode_plan_commit_record(owner)?;
+                SynchronizedCommand::opaque(record).decode_for_simulation(sim, sim.session.tick)
+            })
+        };
+        if !active {
+            self.highlighted_node = None;
+        }
+        self.active = active;
+        selection.cancel_drag();
+        let sound = rules.and_then(|rules| {
+            if active {
+                rules.general.start_planning_mode_sound.clone()
+            } else {
+                rules.general.end_planning_mode_sound.clone()
+            }
+        });
+        if let Some(sound_id) = sound {
+            sounds.push(GameSoundEvent::UiSound { sound_id });
+        }
+        commit
     }
 
     // Native63753F resets AC4C08 in the per-frame PlanMgr637270 pass.
@@ -163,29 +210,19 @@ fn ui_sound(state: &mut AppState, sound: Option<String>) {
 }
 
 fn set_active(state: &mut AppState, active: bool) {
-    if state.match_state.input.planning.active == active {
-        return;
+    let rt = state.match_state.sim_runtime.as_mut();
+    let command = state.match_state.input.planning.set_active(
+        active,
+        rt.as_ref().map(|rt| &rt.simulation),
+        rt.as_ref()
+            .map(|rt| &rt.resources.rules)
+            .or(state.frontend.frontend_rules.as_ref()),
+        &mut state.match_state.input.selection_state,
+        &mut state.match_state.match_audio.sound_events,
+    );
+    if let (Some(rt), Some(command)) = (rt, command) {
+        rt.simulation.queue_command(command);
     }
-    // Native637A10 sends an empty PLANCOMMIT before dropping the input byte.
-    if !active
-        && let Some(rt) = state.match_state.sim_runtime.as_mut()
-        && let Some(owner) = rt.simulation.session.current_house()
-        && let Some(record) = rt.simulation.encode_plan_commit_record(owner)
-        && let Some(envelope) = SynchronizedCommand::opaque(record)
-            .decode_for_simulation(&rt.simulation, rt.simulation.session.tick)
-    {
-        rt.simulation.queue_command(envelope);
-    }
-    state.match_state.input.planning.active = active;
-    state.match_state.input.selection_state.cancel_drag();
-    let sound = state.rules().and_then(|rules| {
-        if active {
-            rules.general.start_planning_mode_sound.clone()
-        } else {
-            rules.general.end_planning_mode_sound.clone()
-        }
-    });
-    ui_sound(state, sound);
 }
 
 /// Encode resolved missions through the planning producer. Building primary
@@ -728,6 +765,130 @@ mod tests {
         assert!(!input.owns_key(KeyCode::KeyZ));
         input.reset();
         assert!(!input.active());
+    }
+
+    #[test]
+    fn local_planning_transitions_match_executed_native_defeat_histories() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/planning_local_defeat.json");
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let rules = &retail.rules;
+        let cases = corpus["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 4);
+        for case in cases {
+            let mut sim = Simulation::with_seed(31);
+            let local = sim.intern("Local");
+            let index = case["input"]["house_index"].as_u64().unwrap();
+            for slot in 0..=index {
+                let owner = if slot == index {
+                    local
+                } else {
+                    sim.intern(&format!("Other{slot}"))
+                };
+                sim.session.house_order.push(owner);
+                sim.houses
+                    .insert(owner, HouseState::new(owner, 0, None, slot == index, 0, 10));
+            }
+            sim.session.current_house = Some(local);
+            sim.houses.get_mut(&local).unwrap().is_defeated = case["initial"]["session300"] != 0;
+            let before_rng = sim.rng_state();
+            let mut input = PlanningInputState::default();
+            input.restore_active(case["initial"]["active"].as_bool().unwrap());
+            input.node_deleted(0, case["initial"]["highlight"].as_u64());
+            let mut selection = SelectionState::new();
+            let mut sounds = SoundEventQueue::new();
+            assert_eq!(case["rng_before"], case["rng_after"]);
+            assert_eq!(case["rng_requests"], serde_json::json!([]));
+            assert_eq!(case["raw_advances"], serde_json::json!([]));
+            assert_eq!(case["detach"], serde_json::json!([]));
+            for phase in case["phases"].as_array().unwrap() {
+                let frame = phase["frame"].as_u64().unwrap();
+                sim.session.tick = frame;
+                sim.session.binary_frame = frame as u32;
+                let requested = match phase["input"].as_str().unwrap() {
+                    "house_defeat_tail" => {
+                        // The native component starts after the House flag
+                        // store. Its production trigger is tested through the
+                        // real lifecycle/House rung in planning_defeat_tests.
+                        sim.houses.get_mut(&local).unwrap().is_defeated = true;
+                        Some(false)
+                    }
+                    "keyboard_press" => input.key_transition(true, KeyCode::KeyZ, true, false),
+                    "keyboard_release" => input.key_transition(true, KeyCode::KeyZ, false, false),
+                    "direct_press" => Some(true),
+                    "direct_release" => Some(false),
+                    other => panic!("unhandled native operation {other}"),
+                };
+                if let Some(active) = requested
+                    && let Some(commit) = input.set_active(
+                        active,
+                        Some(&sim),
+                        Some(rules),
+                        &mut selection,
+                        &mut sounds,
+                    )
+                {
+                    sim.queue_command(commit);
+                }
+                assert_eq!(
+                    input.active(),
+                    phase["state"]["active"].as_bool().unwrap(),
+                    "{} {}",
+                    case["input"]["name"],
+                    phase["input"]
+                );
+                assert_eq!(
+                    input.highlighted_node(),
+                    phase["state"]["highlight"].as_u64()
+                );
+                let events: Vec<_> = sim.pending_command_snapshot().iter().map(|event| {
+                    let Command::PlanningRecord { record } = &event.payload else { panic!("unexpected non-planning event") };
+                    serde_json::json!({"opcode":record.opcode(),"issuer":record.house_id(),"frame":record.frame_stamp()})
+                }).collect();
+                assert_eq!(serde_json::json!(events), phase["state"]["events"]);
+                let actual_cues: Vec<_> = sounds
+                    .drain()
+                    .into_iter()
+                    .map(|event| {
+                        let GameSoundEvent::UiSound { sound_id } = event else {
+                            panic!("unexpected planning cue")
+                        };
+                        sound_id
+                    })
+                    .collect();
+                let native_cues: Vec<_> = phase["effects"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|effect| effect["event"] == "sound")
+                    .map(|effect| {
+                        let role = effect["role"].as_str().unwrap();
+                        corpus["inputs"]["sound_bindings"][role]["name"]
+                            .as_str()
+                            .unwrap()
+                            .to_string()
+                    })
+                    .collect();
+                assert_eq!(actual_cues, native_cues);
+                assert_eq!(
+                    sim.rng_state(),
+                    before_rng,
+                    "local transition must not draw from any simulation stream"
+                );
+                assert_eq!(phase["rng"], case["rng_before"]);
+                assert_eq!(
+                    phase["state"]["house_timer"],
+                    case["initial"]["house_timer"]
+                );
+                assert_eq!(
+                    phase["state"]["action_line_timer"],
+                    case["initial"]["action_line_timer"]
+                );
+            }
+        }
     }
 
     #[test]

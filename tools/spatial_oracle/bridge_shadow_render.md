@@ -302,3 +302,28 @@ Final release SHA-256:
 `6a07e15bbf01369807e4c011dd7a90095a649b20f0518dd15ac3f9ccb3bc88f7`.
 The timing table predates this allocation-only refactor; no frame-time saving
 is claimed without measurement.
+
+
+## Paid concrete-wall body and shadow
+
+`python -m tools.spatial_oracle.bridge_shadow_render --concrete-wall --check`
+replays the component inputs in `concrete_wall_render.json`. `--write` regenerates
+that corpus from the original executable. The selected initial, partially damaged,
+stage-two, endpoint and erased cells come from `anytown_damage/concrete_wall.json`;
+the normal paid-production Rust path independently reaches these states.
+
+Each row retains the original body comparison, an independent shadow surface,
+and body followed by shadow on the same RGB/Z/A stores. The shadow executes
+`CellClass::DrawOverlay_Shadow @ 0047F510` through its original indexed destination
+blitter. The erased case uses the Tactical admission gate. Physical retail inputs,
+component points, clipping and surface initialization are declared by the sidecar.
+This bounds cell raster behavior; it does not compare a whole Tactical frame or
+execute the native paid Factory lifecycle.
+
+The Rust consumer is
+`app::presentation::instances::overlays::ore_gpu_tests::retail_paid_concrete_wall_fire_reaches_index_a_and_native_cell_raster`.
+It reads published overlay-index entries and the live grid after ordinary paid
+construction and combat, then exercises the existing overlay-body and shared
+Cell-shadow production renderers in both sRGB formats. Wall shadows use each
+material's actual SHP half-count, independently of DamageLevels, and share the
+native traversal order with retained high-bridge shadows.

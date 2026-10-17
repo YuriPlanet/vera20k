@@ -250,13 +250,39 @@ fn the_land_row_refuses_after_the_wall_arm() {
 /// native480CB0/480630/480510 comparisons have their own independent inputs.
 #[test]
 fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() {
+    assert_retail_wall_fire_profile(
+        "tools/map_observation.authored-fence.example.json",
+        "CAFNCB",
+        "tools/spatial_oracle/anytown_damage/authored_fence.json",
+    );
+}
+
+/// Paid GAWALL admission/autofill feeds the same Cell480CB0 wall owner.
+/// Its stage-two branch (480E21..480EAF) admits pristine cardinal children
+/// for inline damage200; the original component corpus separately pins the
+/// recursive requests, results and RNG order, not this World's frame numbers.
+#[test]
+fn retail_paid_concrete_wall_fire_publishes_chain_and_target_expiry() {
+    assert_retail_wall_fire_profile(
+        "tools/map_observation.concrete-wall.example.json",
+        "GAWALL",
+        "tools/spatial_oracle/anytown_damage/concrete_wall.json",
+    );
+}
+
+fn assert_retail_wall_fire_profile(
+    profile_path: &'static str,
+    wall_name: &str,
+    native_path: &'static str,
+) {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::world::{FrameEffects, TickLane};
 
     let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
-    let profile = crate::test_fixture::json("tools/map_observation.authored-fence.example.json");
+    let profile = crate::test_fixture::json(profile_path);
+    let native = crate::test_fixture::json(native_path);
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     let map_name = launch.selected_map_file.as_deref().unwrap().to_owned();
@@ -281,27 +307,86 @@ fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() 
     scene.runtime.simulation.batch_target_scans();
     let initial_hash = scene.sim().state_hash();
     let owner = scene.sim().session.current_house.unwrap();
-    let record = &profile["commands"][0];
-    assert_eq!(record["issue_after_step"], 0);
-    assert_eq!(profile["commands"].as_array().unwrap().len(), 1);
-    let command: Command = serde_json::from_value(record["payload"].clone()).unwrap();
-    let Command::ForceAttackCell {
-        attacker_id,
-        target_rx,
-        target_ry,
-    } = command
-    else {
-        panic!("the profile must exercise an ordinary Cell attack");
-    };
-    let source = (target_rx, target_ry);
+    let orders: Vec<_> = profile["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| {
+            assert_eq!(record["owner"], "VERA-OBSERVER");
+            CommandEnvelope::new(
+                owner,
+                record["issue_after_step"].as_u64().unwrap(),
+                serde_json::from_value::<Command>(record["payload"].clone()).unwrap(),
+            )
+        })
+        .collect();
+    let (attacker_id, source) = orders
+        .iter()
+        .find_map(|order| match order.payload {
+            Command::ForceAttackCell {
+                attacker_id,
+                target_rx,
+                target_ry,
+            } => Some((attacker_id, (target_rx, target_ry))),
+            _ => None,
+        })
+        .expect("the profile must exercise an ordinary Cell attack");
     let tank = scene.sim().entities().get(attacker_id).unwrap();
     assert_eq!(scene.sim().resolve(tank.type_ref()), "MTNK");
     assert_eq!(tank.owner(), owner);
     let registry = &scene.runtime.resources.overlay_registry;
-    let wall = registry.id_for_name("CAFNCB").unwrap();
+    let wall = registry.id_for_name(wall_name).unwrap();
     let flags = registry.flags(wall).unwrap();
-    assert!(flags.wall && flags.armor_is_wood);
-    assert_eq!((flags.strength, flags.damage_levels), (100, 2));
+    let native_type = native["cases"][0]["input"]["wall_types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["index"].as_u64() == Some(u64::from(wall)))
+        .unwrap();
+    assert_eq!(native_type["name"], wall_name);
+    assert!(flags.wall);
+    assert_eq!(flags.armor_is_wood, native_type["armor"] == 6);
+    assert_eq!(
+        u64::from(flags.strength),
+        native_type["strength"].as_u64().unwrap()
+    );
+    assert_eq!(
+        u64::from(flags.damage_levels),
+        native_type["damage_levels"].as_u64().unwrap()
+    );
+    let damage_levels = flags.damage_levels;
+    if wall_name == "GAWALL" {
+        let rules = &scene.runtime.resources.rules;
+        let building = rules.object(wall_name).unwrap();
+        // Selected physical RULESMD values through Building46048E (Wall),
+        // Techno71469F/714570/7141C5 (Cost/TechLevel/Prerequisite). The
+        // selected mode/map lack this section. ART4611DD/461225 reads fixed
+        // ToOverlay/Foundation; General67187F reads the wall time factor.
+        assert!(building.wall);
+        assert_eq!((building.cost, building.tech_level), (100, 1));
+        assert_eq!(building.image, "GAWALL");
+        assert_eq!(
+            building.prerequisite,
+            [crate::rules::prerequisite::Prerequisite::Building(
+                rules.building_type_index("GAPILE").unwrap(),
+            )]
+        );
+        assert!(building.prerequisite_override.is_empty());
+        let foundation = crate::rules::foundation::foundation_def(&building.foundation);
+        assert_eq!((foundation.width, foundation.height), (1, 1));
+        assert_eq!(building.to_overlay.as_deref(), Some("GAWALL"));
+        assert_eq!(
+            building
+                .to_overlay
+                .as_deref()
+                .and_then(|name| registry.id_for_name(name)),
+            Some(wall)
+        );
+        assert_eq!(
+            rules.production.wall_build_speed_coefficient,
+            crate::util::native_x87::NativeF64Bits::from_bits(3.0_f64.to_bits())
+        );
+    }
     let weapon = scene.runtime.resources.rules.weapon("105mm").unwrap();
     assert_eq!(weapon.damage, 65);
     assert_eq!(weapon.warhead.as_deref(), Some("AP"));
@@ -313,8 +398,9 @@ fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() 
         .as_ref()
         .unwrap()
         .cell(source.0, source.1);
-    assert_eq!(initial.overlay_id, Some(wall));
-    assert_eq!(initial.overlay_data, 5);
+    let paid_wall = wall_name == "GAWALL";
+    assert_eq!(initial.overlay_id, (!paid_wall).then_some(wall));
+    assert_eq!(initial.overlay_data, if paid_wall { 0 } else { 5 });
     let cell = scene
         .sim()
         .resolved_terrain
@@ -323,29 +409,39 @@ fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() 
         .cell(source.0, source.1)
         .unwrap();
     assert_eq!((cell.level, cell.slope_type), (4, 0));
-    let order = CommandEnvelope::new(owner, 0, command);
+    let mut source_present = !paid_wall;
     let mut partial_seen = false;
+    let mut inline_child_admission_seen = false;
     let mut first_partial_at = None;
     let mut shot_frames = Vec::new();
     let mut removed_at = None;
     let mut shots = 0;
     let mut shots_at_removal = None;
-    let patch: Vec<_> = (79..=83)
-        .flat_map(|y| (41..=45).map(move |x| (x, y)))
+    let patch: Vec<_> = profile["terrain_cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|at| {
+            (
+                at[0].as_u64().unwrap() as u16,
+                at[1].as_u64().unwrap() as u16,
+            )
+        })
         .collect();
     for step in 1..=profile["ticks"].as_u64().unwrap() {
         let before: Vec<_> = patch
             .iter()
             .map(|&(x, y)| *scene.sim().overlay_grid.as_ref().unwrap().cell(x, y))
             .collect();
+        let due: Vec<_> = orders
+            .iter()
+            .filter(|order| order.execute_tick == step - 1)
+            .cloned()
+            .collect();
         let output = scene
             .runtime
             .advance_frame(
-                if step == 1 {
-                    std::slice::from_ref(&order)
-                } else {
-                    &[]
-                },
+                &due,
                 22, // Normal client interval; the headless convenience tick is 66ms.
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -362,10 +458,23 @@ fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() 
         }
         let sim = scene.sim();
         let grid = sim.overlay_grid.as_ref().unwrap();
-        for (&at, old) in patch.iter().zip(before) {
+        for (&at, old) in patch.iter().zip(&before) {
             let now = grid.cell(at.0, at.1);
-            if *now == old {
+            if now == old {
                 continue;
+            }
+            if damage_levels == 3
+                && old.overlay_id == Some(wall)
+                && old.overlay_data >> 4 == 1
+                && now.overlay_id == Some(wall)
+                && now.overlay_data >> 4 == 2
+            {
+                inline_child_admission_seen |=
+                    patch.iter().zip(&before).any(|(&neighbor, prior)| {
+                        at.0.abs_diff(neighbor.0) + at.1.abs_diff(neighbor.1) == 1
+                            && prior.overlay_id == Some(wall)
+                            && prior.overlay_data < 0x10
+                    });
             }
             if now.overlay_id.is_none() {
                 // Wall clears recalculate their cells; the frame's explicit
@@ -391,11 +500,17 @@ fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() 
             }
         }
         let live = grid.cell(source.0, source.1);
+        if live.overlay_id == Some(wall) {
+            source_present = true;
+            if paid_wall {
+                assert_eq!(live.wall_owner, Some(owner), "paid wall retains its owner");
+            }
+        }
         if live.overlay_id == Some(wall) && live.overlay_data >> 4 != 0 {
             partial_seen = true;
             first_partial_at.get_or_insert(step);
         }
-        if live.overlay_id.is_none() && removed_at.is_none() {
+        if source_present && live.overlay_id.is_none() && removed_at.is_none() {
             assert!(
                 partial_seen,
                 "ordinary fire first damages the connected source"
@@ -419,6 +534,15 @@ fn retail_authored_fence_fire_publishes_damage_removal_and_cell_target_expiry() 
         "authored_fence_integration initial_hash={initial_hash} partial={first_partial_at:?} removed={removed_at:?} shot_frames={shot_frames:?}"
     );
     assert!(removed_at.is_some(), "ordinary AP fire opens the fence");
+    if paid_wall {
+        assert!(
+            inline_child_admission_seen,
+            "ordinary AP reaches stage two beside a pristine same-type child"
+        );
+        let house = scene.sim().houses.get(&owner).unwrap();
+        assert_eq!(house.economy.credits(), 8500);
+        assert_eq!(house.economy.spent_credits(), 1500);
+    }
     assert!(shots >= 2, "the real weapon reaches repeated impacts");
     assert_eq!(
         Some(shots),
@@ -568,7 +692,11 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
 /// no wall state is supplied. This is separate from the ordinary shot witness.
 #[test]
 fn retail_authored_fence_area_damage_matches_original_histories() {
-    assert_retail_authored_fence_history(false);
+    assert_retail_wall_history(
+        "tools/spatial_oracle/anytown_damage/authored_fence.json",
+        "CAFNCB",
+        false,
+    );
 }
 
 /// Direct Cell480CB0(-1), independent of the actor/audio boundary. The
@@ -576,10 +704,26 @@ fn retail_authored_fence_area_damage_matches_original_histories() {
 /// controls and exercise real lifecycle/navigation/cleanup rather than stubs.
 #[test]
 fn retail_authored_fence_forced_removal_matches_original_histories() {
-    assert_retail_authored_fence_history(true);
+    assert_retail_wall_history(
+        "tools/spatial_oracle/anytown_damage/fence_driveover.json",
+        "CAFNCB",
+        true,
+    );
 }
 
-fn assert_retail_authored_fence_history(direct: bool) {
+/// Original480CB0's recursive200 calls and480630's isolated concrete-wall
+/// removal use the same runtime host as ordinary AP. Original construction
+/// is a declared Overlay seam; paid production is exercised separately above.
+#[test]
+fn retail_concrete_wall_area_damage_matches_original_histories() {
+    assert_retail_wall_history(
+        "tools/spatial_oracle/anytown_damage/concrete_wall.json",
+        "GAWALL",
+        false,
+    );
+}
+
+fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct: bool) {
     use crate::sim::combat::world_receiver::apply_area_damage;
     use crate::sim::projectile::ProjectileCoord;
     use crate::sim::world::FrameEffects;
@@ -648,16 +792,6 @@ fn assert_retail_authored_fence_history(direct: bool) {
         // remain unchanged, and direct480EF6 writes -1. Test those operations
         // below without replacing the World's independently produced owner.
         assert_eq!(expected["wall_owner"], -1);
-        if expected["overlay"] == -1 {
-            assert!(
-                sim.overlay_grid
-                    .as_ref()
-                    .unwrap()
-                    .cell(at(expected).0, at(expected).1)
-                    .wall_owner
-                    .is_none()
-            );
-        }
     }
     fn snapshot(sim: &Simulation) -> Vec<Value> {
         let grid = sim.overlay_grid.as_ref().unwrap();
@@ -677,11 +811,7 @@ fn assert_retail_authored_fence_history(direct: bool) {
         return;
     };
     let profile = crate::test_fixture::json("tools/map_observation.authored-fence.example.json");
-    let native = crate::test_fixture::json(if direct {
-        "tools/spatial_oracle/anytown_damage/fence_driveover.json"
-    } else {
-        "tools/spatial_oracle/anytown_damage/authored_fence.json"
-    });
+    let native = crate::test_fixture::json(native_path);
     assert!(!native["cases"].as_array().unwrap().is_empty());
     for case in native["cases"].as_array().unwrap() {
         let neighbor_domain = case["steps"]
@@ -726,6 +856,39 @@ fn assert_retail_authored_fence_history(direct: bool) {
         .unwrap();
         let rules = &scene.runtime.resources.rules;
         let registry = &scene.runtime.resources.overlay_registry;
+        if let Some(gdi) = case["input"].get("gdi_type_inputs") {
+            let final_types = &gdi["layers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .rev()
+                .find(|layer| layer.get("after").is_some())
+                .unwrap()["after"];
+            for (key, actual) in [
+                ("GDIGateOne", &rules.general.building_types.gdi_gate_one),
+                ("GDIGateTwo", &rules.general.building_types.gdi_gate_two),
+                ("NodGateOne", &rules.general.building_types.nod_gate_one),
+                ("NodGateTwo", &rules.general.building_types.nod_gate_two),
+                ("WallTower", &rules.general.building_types.wall_tower),
+            ] {
+                assert_eq!(actual.as_deref(), final_types[key]["name"].as_str());
+            }
+            // Original480575..4805B8 compares a living Building's type
+            // against these retained identities before its direction gates.
+            // The shared query's unported positive-list arm therefore has a
+            // proved false result for these ordinary paid-base neighbors.
+            for query in case["query_controls"]["rows"].as_array().unwrap() {
+                if let Some(buildings) = query["buildings"].as_array() {
+                    assert_eq!(query["returned_low_byte"], 0);
+                    assert_eq!(query["rng_unchanged"], true);
+                    for name in buildings {
+                        let name = name.as_str().unwrap();
+                        assert!(rules.object(name).is_some());
+                        assert!(!rules.general.building_types.stands_on_gdi_wall(name));
+                    }
+                }
+            }
+        }
         if direct {
             assert_eq!(
                 u64::from(rules.object("MTNK").unwrap().tilts_when_crushes),
@@ -733,10 +896,30 @@ fn assert_retail_authored_fence_history(direct: bool) {
             );
         }
         let sim = &mut scene.runtime.simulation;
+        let wall = registry.id_for_name(wall_name).unwrap();
+        if let Some(construction) = case.get("construction") {
+            // The original component starts before the later Building/Foot
+            // population. Stamp through the existing production wall owner;
+            // do not copy its resulting data/122/zone fields from the packet.
+            let wall_type = rules.object(wall_name).unwrap();
+            let owner = sim.interner.get("Neutral").unwrap();
+            sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation);
+            for placement in construction["placements"].as_array().unwrap() {
+                let coordinate = (
+                    placement["cell"][0].as_u64().unwrap() as u16,
+                    placement["cell"][1].as_u64().unwrap() as u16,
+                );
+                assert!(crate::sim::production::stamp_wall_with_autofill(
+                    sim, rules, registry, wall_type, coordinate, owner,
+                ));
+                for change in placement["changed"].as_array().unwrap() {
+                    assert_cell(sim, &change["after"], &neighbor_domain);
+                }
+            }
+        }
         for expected in case["initial_patch"].as_array().unwrap() {
             assert_cell(sim, expected, &neighbor_domain);
         }
-        let wall = registry.id_for_name("CAFNCB").unwrap();
         let expected_type = case["input"]["wall_types"]
             .as_array()
             .unwrap()
@@ -744,6 +927,7 @@ fn assert_retail_authored_fence_history(direct: bool) {
             .find(|row| row["index"].as_u64() == Some(u64::from(wall)))
             .unwrap();
         let flags = registry.flags(wall).unwrap();
+        assert_eq!(expected_type["name"], wall_name);
         assert_eq!(json!(flags.strength), expected_type["strength"]);
         assert_eq!(json!(flags.damage_levels), expected_type["damage_levels"]);
         assert_eq!(
@@ -819,7 +1003,13 @@ fn assert_retail_authored_fence_history(direct: bool) {
         sim.main_rng = SimRng::new(seed).into();
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
-        sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation);
+        if case.get("construction").is_none() {
+            sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation);
+        }
+        assert_eq!(
+            json!(sim.radar_terrain_dirty_cells),
+            case["initial"]["radar"]["cells"]
+        );
         let cursor = sim.native_identity_cursor();
         let mut expected_patch = case["initial_patch"]
             .as_array()
@@ -885,11 +1075,27 @@ fn assert_retail_authored_fence_history(direct: bool) {
                 "wall Cell removal does not construct an object"
             );
             let after = snapshot(sim);
-            for (prior, current) in owners_before
+            // Direct480EF6 clears +50; isolated4808A7/4808BA cleanup leaves
+            // it retained. Native's -1 prior cannot itself distinguish them,
+            // so use the actual7258D0 receiver at return4808B8. A480630 call
+            // visits five Cells; its outer receiver need not be the one erased.
+            // Preserve the independently produced World owner on that arm.
+            let cleanup_removed: std::collections::BTreeSet<_> = events
+                .iter()
+                .filter(|event| event["kind"] == "pointer_expiry" && event["caller"] == "004808B8")
+                .map(|event| at(&event["before"]))
+                .collect();
+            let grid_width = usize::from(sim.overlay_grid.as_ref().unwrap().width());
+            for (index, (prior, current)) in owners_before
                 .iter()
                 .zip(sim.overlay_grid.as_ref().unwrap().cells())
+                .enumerate()
             {
-                if current.overlay_id.is_some() || prior.0.is_none() {
+                let coordinate = ((index % grid_width) as u16, (index / grid_width) as u16);
+                if current.overlay_id.is_some()
+                    || prior.0.is_none()
+                    || cleanup_removed.contains(&coordinate)
+                {
                     assert_eq!(
                         current.wall_owner, prior.1,
                         "retained owner is not read or replaced by this AP transaction"
@@ -897,7 +1103,7 @@ fn assert_retail_authored_fence_history(direct: bool) {
                 } else {
                     assert!(
                         current.wall_owner.is_none(),
-                        "direct480EF6 clears a removed CAFNCB's existing owner"
+                        "direct480EF6 clears the removed wall's existing owner"
                     );
                 }
             }

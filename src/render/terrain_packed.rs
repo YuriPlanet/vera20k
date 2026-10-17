@@ -385,6 +385,40 @@ impl PackedSpriteGpu {
 }
 
 impl TerrainDrawRenderer {
+    /// Longest adjacent prefix whose complete sprite groups have disjoint
+    /// conservative clips. The accumulated union deliberately over-fences;
+    /// overlap retains source order, including stores outside a packed marker.
+    pub(crate) fn disjoint_sprite_prefix<'a>(
+        &self,
+        groups: impl IntoIterator<Item = &'a [SpriteInstance]>,
+        tactical: [u32; 4],
+    ) -> usize {
+        let mut bounds: Option<[u32; 4]> = None;
+        let mut count = 0;
+        for group in groups {
+            let rect = group
+                .iter()
+                .filter_map(|instance| piece_scissor(instance, self.camera, tactical))
+                .reduce(union);
+            if let Some(rect) = rect {
+                if let Some(prior) = bounds {
+                    if rect[0] < prior[0] + prior[2]
+                        && prior[0] < rect[0] + rect[2]
+                        && rect[1] < prior[1] + prior[3]
+                        && prior[1] < rect[1] + rect[3]
+                    {
+                        break;
+                    }
+                    bounds = Some(union(prior, rect));
+                } else {
+                    bounds = Some(rect);
+                }
+            }
+            count += 1;
+        }
+        count
+    }
+
     /// Pixel-local, equal-policy composites commute only when their complete
     /// conservative rectangles are disjoint. Reuse the destination-edit tile
     /// scheduler; displaced neighbor reads remain strict sequential fences.

@@ -140,10 +140,24 @@ def initialize_font(raw, *, owner=None):
         native_digit_metrics=native_digit_metrics)
 
 
-def install_digit_format(m):
-    """Install the same CRT transport in an existing PaletteReader VM."""
+def install_digit_format(m, *, native=False):
+    """Share the format boundary, optionally executing the complete CRT body.
+
+    Legacy digit callers retain their bounded transport. Power labels need two
+    integer substitutions: their native option supplies only the existing
+    single-thread Win32 atomic imports and leaves7CA564/7D21BE unchanged.
+    """
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import UC_X86_REG_ESP
+    if native:
+        from types import SimpleNamespace
+        from tools.spatial_oracle.infantry_deploy_action import Fixture as AtomicTransportOwner
+        sinks=[m.alloc(16),m.alloc(16)]
+        atomic=SimpleNamespace(u=m.u,imports=sinks,read=m.read32)
+        m.u.mem_write(0x7E11C8,b''.join(u32(p) for p in sinks))
+        def atomic_import(u,pc,size,data):
+            if pc in sinks:AtomicTransportOwner.observe(atomic,u,pc,size,data)
+        return m.u.hook_add(UC_HOOK_CODE,atomic_import)
     def formatted(_u,_pc,_size,_data):
         sp=m.u.reg_read(UC_X86_REG_ESP)
         _value,rendered=format_digit(m,lambda i:m.read32(sp+4+i*4))
