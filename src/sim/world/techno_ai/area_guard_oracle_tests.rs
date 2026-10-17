@@ -89,7 +89,7 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         let coordinate = crate::sim::movement::nav_target_coordinate(
             NavTargetRef::cell(x, y),
             None,
-            &f.sim.substrate.entities,
+            &f.sim,
             Some(&terrain),
             Some((rules, &f.sim.interner)),
         )

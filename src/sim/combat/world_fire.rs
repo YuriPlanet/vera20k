@@ -133,10 +133,22 @@ fn admit_attacker_fire<'r>(
     // cell-center coords, "always alive" (hp 1: cells don't despawn), and the
     // attacker's own type as the target type.
     let target_data: Option<(u16, u16, SimFixed, SimFixed, i32, InternedId)> = match snap.target {
-        TargetKind::Entity(target_id) => world.substrate.entities.get(target_id).map(|t| {
-            let (trx, try_, tsx, tsy) = target_coords(t);
-            (trx, try_, tsx, tsy, t.health.current(), t.type_ref())
-        }),
+        TargetKind::Entity(target_id) => world
+            .substrate
+            .entities
+            .get(target_id)
+            .map(|t| {
+                let (trx, try_, tsx, tsy) = target_coords(t);
+                (trx, try_, tsx, tsy, t.health.current(), t.type_ref())
+            })
+            .or_else(|| {
+                // FireAt6FDDAE..6FDDC0 retains the actual Object pointer;
+                // Terrain's +48 is Object5F65A0, owned by the shared resolver.
+                // Read its actual Terrain type/Health, without a Techno shell.
+                let target = world.production.terrain_objects.get(&target_id)?;
+                let (rx, ry, sx, sy) = resolve_target_coords(&snap.target, world)?;
+                Some((rx, ry, sx, sy, target.health, target.type_ref))
+            }),
         TargetKind::Cell(rx, ry) => {
             let (trx, try_, tsx, tsy) = cell_center_coords(rx, ry);
             Some((trx, try_, tsx, tsy, 1i32, snap.type_id))
@@ -199,7 +211,7 @@ fn admit_attacker_fire<'r>(
             obj,
             &combat_weapon::attacker_facts(firer, obj),
             Some(&snap.target),
-            &world.substrate.entities,
+            world,
             &world.interner,
             world.resolved_terrain.as_ref(),
             fog_enabled.then_some(&world.fog.alliances),
@@ -462,7 +474,7 @@ fn admit_attacker_fire<'r>(
             obj,
             &combat_weapon::attacker_facts(actor, obj),
             target.as_ref(),
-            &world.substrate.entities,
+            world,
             &world.interner,
             world.resolved_terrain.as_ref(),
             fog_enabled.then_some(&world.fog.alliances),
@@ -505,8 +517,20 @@ fn admit_attacker_fire<'r>(
     let (target_coords, target_type_ref) = if infantry_fire {
         match snap.target {
             TargetKind::Entity(id) => {
-                let target = world.substrate.entities.get(id)?;
-                (target_coords(target), target.type_ref())
+                let coords = resolve_target_coords(&snap.target, world)?;
+                let type_ref = world
+                    .substrate
+                    .entities
+                    .get(id)
+                    .map(|target| target.type_ref())
+                    .or_else(|| {
+                        world
+                            .production
+                            .terrain_objects
+                            .get(&id)
+                            .map(|target| target.type_ref)
+                    })?;
+                (coords, type_ref)
             }
             TargetKind::Cell(rx, ry) => (cell_center_coords(rx, ry), snap.type_id),
         }
@@ -644,11 +668,15 @@ pub(super) struct AdmittedFire<'a> {
 /// [`crate::sim::movement::ground_pose::object_get_coords`]) as a projectile
 /// coordinate.
 pub(super) fn object_get_coords(world: &Simulation, id: u64) -> Option<ProjectileCoord> {
-    let entity = world.substrate.entities.get(id)?;
-    let coord = crate::sim::movement::ground_pose::object_get_coords(
-        entity,
-        world.resolved_terrain.as_ref(),
-    );
+    let coord = crate::sim::movement::ground_pose::target_get_coords(
+        TargetKind::Entity(id),
+        world,
+        world
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+            .as_ref(),
+    )?;
     Some(ProjectileCoord::new(coord.x, coord.y, coord.z))
 }
 
@@ -1040,6 +1068,28 @@ pub(super) fn emit_admitted_fire(
     } = shot;
     let snap = &snap;
     let weapon = selected.weapon;
+    // ObjectCtor5F3B37 sets Abstract flag0x2 (Object, not Foot0x4).
+    // FireAt6FDD88..6FDDBE refuses any Object with +81 InLimbo before
+    // Suicide or launch work. Cells bypass this gate; missing IDs represent
+    // retired Objects. Infantry's pre-base firing-latch clear stays above it.
+    if let TargetKind::Entity(id) = snap.target {
+        let in_limbo = world
+            .substrate
+            .entities
+            .get(id)
+            .map(|target| target.lifecycle.in_limbo())
+            .or_else(|| {
+                world
+                    .production
+                    .terrain_objects
+                    .get(&id)
+                    .map(|target| !target.is_live())
+            })
+            .unwrap_or(true);
+        if in_limbo {
+            return None;
+        }
+    }
     if weapon.suicide {
         // Techno6FDDC0..6FDE0E: the local packet is type Strength, not
         // current Health or weapon Damage. The real self receiver completes
@@ -1203,21 +1253,15 @@ pub(super) fn emit_admitted_fire(
     let native_unique_id = world.next_native_runtime_id();
     fireat_estimate_debit(world, rules, snap.stable_id, tarcom, obj, weapon);
     let launched = {
-        let impact_world_z_leptons = attack_world_z_leptons(
-            snap.target,
-            &world.substrate.entities,
-            world.resolved_terrain.as_ref(),
-        );
+        let impact_world_z_leptons =
+            attack_world_z_leptons(snap.target, world, world.resolved_terrain.as_ref());
         let origin_world_z_leptons = fire.source_z;
         let impact = ProjectileCoord::new(
             i32::from(target_rx) * 256 + target_sub_x.to_num::<i32>(),
             i32::from(target_ry) * 256 + target_sub_y.to_num::<i32>(),
             impact_world_z_leptons,
         );
-        let target = match snap.target {
-            TargetKind::Entity(id) => ProjectileTarget::Entity(id),
-            TargetKind::Cell(rx, ry) => ProjectileTarget::Cell { rx, ry },
-        };
+        let target = snap.target.projectile_target(world);
         // The bullet leaves from the launch source (the fire coordinate, or for
         // a `Dropping=` projectile the firer's GetCoords, `0x006FE2E2`); the
         // delta aims at the target, led when it is a moving vehicle
@@ -1230,8 +1274,12 @@ pub(super) fn emit_admitted_fire(
             launch_source.coord,
             // 6FE1EE reads the Building argument's+A4. The launch delta and
             // Bullet::Fire reference below independently read+58 instead.
-            super::fire_coord::effect_target_coordinate(world, rules, snap.target.into())
-                .unwrap_or(impact),
+            super::fire_coord::effect_target_coordinate(
+                world,
+                rules,
+                snap.target.projectile_target(world),
+            )
+            .unwrap_or(impact),
             tarcom,
         );
         let origin = launch_source.coord;
@@ -1991,7 +2039,7 @@ fn infantry_fire_tail(
     let Some(target) = actor
         .attack_target
         .target()
-        .filter(|&target| target_present(Some(target), &world.substrate.entities))
+        .filter(|&target| target_present(Some(target), world))
     else {
         return;
     };
@@ -2138,9 +2186,20 @@ pub(crate) fn visit_fire(
                     &world.substrate.entities,
                     &world.interner,
                 )?;
-                let coords = resolve_target_coords(&target, &world.substrate.entities)?;
+                let coords = resolve_target_coords(&target, world)?;
                 let type_ref = match target {
-                    TargetKind::Entity(target) => world.substrate.entities.get(target)?.type_ref(),
+                    TargetKind::Entity(target) => world
+                        .substrate
+                        .entities
+                        .get(target)
+                        .map(|target| target.type_ref())
+                        .or_else(|| {
+                            world
+                                .production
+                                .terrain_objects
+                                .get(&target)
+                                .map(|target| target.type_ref)
+                        })?,
                     TargetKind::Cell(..) => actor.type_ref(),
                 };
                 Some(AdmittedFire {
@@ -2203,7 +2262,7 @@ pub(crate) fn visit_fire(
                 id,
                 crate::sim::movement::turret::facing_update(
                     entity,
-                    &world.substrate.entities,
+                    world,
                     Some(rules),
                     &world.interner,
                     binary_frame,

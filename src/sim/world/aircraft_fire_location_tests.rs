@@ -389,7 +389,7 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
     let entity = sim.substrate.entities.get(1).unwrap();
     let nav = match entity.navigation.nav_com() {
         Some(NavTargetRef::Cell { rx, ry }) => json!([rx, ry]),
-        Some(NavTargetRef::Entity { id: 2 }) => json!("target"),
+        Some(NavTargetRef::Entity { id: 2 } | NavTargetRef::Object { id: 2 }) => json!("target"),
         None => Value::Null,
         other => panic!("unexpected NavCom: {other:?}"),
     };

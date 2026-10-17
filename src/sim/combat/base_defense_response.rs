@@ -539,12 +539,12 @@ pub(crate) fn respond_to_base_attack(
             // resolve the victim before the candidate. Source-layer queries
             // use the same Foot/ground owners as movement, never NavCom.
             let Ok(victim_destination) =
-                destination_cell(victim, entities, Some(terrain), rules, &sim.interner)
+                destination_cell(victim, sim, Some(terrain), rules, &sim.interner)
             else {
                 continue;
             };
             let Ok(destination) =
-                destination_cell(candidate, entities, Some(terrain), rules, &sim.interner)
+                destination_cell(candidate, sim, Some(terrain), rules, &sim.interner)
             else {
                 continue;
             };

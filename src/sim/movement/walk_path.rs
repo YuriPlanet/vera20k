@@ -325,7 +325,7 @@ impl Simulation {
             let coordinate = super::navcom::nav_target_coordinate(
                 target,
                 Some(id),
-                &self.substrate.entities,
+                self,
                 self.resolved_terrain.as_ref(),
                 Some((rules, &self.interner)),
             )?;

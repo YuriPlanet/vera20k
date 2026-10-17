@@ -123,6 +123,115 @@ fn dispatch(sim: &mut Simulation, rules: &RuleSet) -> CombatTickResult {
 }
 
 #[test]
+fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
+    // ObjectCtor5F3B37 ORs flag0x2; FireAt6FDD88..6FDDBE checks +81
+    // on every Object. Supplied lifecycle controls isolate the common entry,
+    // not an ordinary positive-health Limbo producer or aircraft sortie.
+    for (kind, limbo, suicide, infantry) in [
+        ("unit", true, false, false),
+        ("building", true, false, false),
+        ("terrain", true, false, false),
+        ("unit", false, false, false),
+        ("building", false, false, false),
+        ("terrain", false, false, false),
+        ("cell", false, false, false),
+        ("terrain", true, true, false),
+        ("terrain", true, false, true),
+    ] {
+        let (mut sim, rules) = fixture(&serde_json::json!({
+            "extra_ini": format!("[TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\n\
+                [VehicleTypes]\n0=TARGET\n[TARGET]\nStrength=100\n\
+                [BuildingTypes]\n0=TARGETBUILD\n[TARGETBUILD]\nStrength=100\n\
+                [Gun]\nSuicide={}\n", if suicide { "yes" } else { "no" })
+        }));
+        match kind {
+            "unit" | "building" => {
+                let (type_id, category) = if kind == "building" {
+                    ("TARGETBUILD", EntityCategory::Structure)
+                } else {
+                    ("TARGET", EntityCategory::Unit)
+                };
+                let mut target = GameEntity::test_default(2, type_id, "Russians", 11, 10);
+                target.set_type_ref_for_test(sim.interner.intern(type_id));
+                target.set_category_for_test(category);
+                target.lifecycle.set_in_limbo_for_test(false);
+                sim.substrate.entities.insert(target);
+            }
+            "terrain" => {
+                let type_ref = sim.interner.intern("TREE01");
+                sim.production.terrain_objects.insert(
+                    2,
+                    crate::sim::terrain_object::TerrainObjectState::for_test(2, type_ref, 11, 10),
+                );
+            }
+            "cell" => {}
+            _ => unreachable!(),
+        }
+        let actor = sim.substrate.entities.get_mut(1).unwrap();
+        actor.attack_target.set_for_test(Some(if kind == "cell" {
+            TargetKind::Cell(11, 10)
+        } else {
+            TargetKind::Entity(2)
+        }));
+        if infantry {
+            actor.set_category_for_test(EntityCategory::Infantry);
+            actor.mission_leaf = MissionLeafState::infantry_raw_for_test(7, 0);
+        }
+        let shot = live_shot(&sim, &rules, 1)
+            .unwrap()
+            .1
+            .expect("live target snapshot");
+        if limbo {
+            if let Some(target) = sim.substrate.entities.get_mut(2) {
+                target.lifecycle.set_in_limbo_for_test(true);
+                assert!(target.lifecycle.object_alive() && target.health.current() > 0);
+            } else {
+                let target = sim.production.terrain_objects.get_mut(&2).unwrap();
+                target.lifecycle = crate::sim::terrain_object::TerrainObjectLifecycle::Limbo;
+                assert!(target.object_alive() && target.health > 0);
+            }
+        }
+        let before = sim.state_hash();
+        let rng = sim.rng_state();
+        let actor = sim.substrate.entities.get(1).unwrap();
+        let health = actor.health;
+        let rearm = actor.rearm_timer;
+        let mut out = CombatEmit::default();
+        let bullet = emit_admitted_fire(
+            &mut sim,
+            &rules,
+            shot,
+            100,
+            &mut out,
+            None,
+            FrameEffects::default(),
+        );
+        if limbo {
+            assert_eq!(
+                bullet, None,
+                "{kind}/{suicide}/{infantry}: Object Limbo refuses FireAt"
+            );
+            assert!(sim.projectiles.is_empty());
+            assert_eq!(sim.rng_state(), rng);
+            let actor = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                actor.health, health,
+                "Suicide must not reach the self receiver"
+            );
+            assert_eq!(actor.rearm_timer, rearm);
+            if infantry {
+                // Infantry51DF70 clears68D before the base refusal.
+                assert_eq!(actor.mission_leaf.foot_firing_sequence_latch(), 0);
+            } else {
+                assert_eq!(sim.state_hash(), before, "{kind}: no other FireAt work");
+            }
+        } else {
+            assert!(bullet.is_some(), "{kind}: live Object/Cell still launches");
+        }
+    }
+}
+
+#[test]
 fn aircraft_release_control_matches_316_original_mission_suffixes() {
     // Native witness replaces FireAt with a NULL-return callback. Here actual
     // shared emission runs; only loop count, pending ammo and suffix are parity

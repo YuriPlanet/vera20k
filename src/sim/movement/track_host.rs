@@ -1075,7 +1075,7 @@ impl Simulation {
         let coord = super::navcom::nav_target_coordinate(
             target,
             Some(id),
-            &self.substrate.entities,
+            self,
             self.resolved_terrain.as_ref(),
             rules.map(|rules| (rules, &self.interner)),
         )?;
@@ -1181,7 +1181,7 @@ impl Simulation {
                 super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref());
             let there = super::ground_pose::target_get_coords(
                 target,
-                &self.substrate.entities,
+                self,
                 self.resolved_terrain
                     .as_ref()
                     .map(crate::map::resolved_terrain::NativeCellQuery::canonical)

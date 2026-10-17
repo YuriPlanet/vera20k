@@ -251,7 +251,7 @@ impl Simulation {
             object,
             &combat::combat_weapon::attacker_facts(actor, object),
             Some(&target),
-            &self.substrate.entities,
+            self,
             &self.interner,
             self.resolved_terrain.as_ref(),
             Some(&self.house_alliances),
@@ -387,7 +387,10 @@ impl Simulation {
             && !actor.infantry_deploy_doing()
             && match target {
                 TargetKind::Cell(..) => true,
-                TargetKind::Entity(target) => self.substrate.entities.contains(target),
+                TargetKind::Entity(target) => {
+                    self.substrate.entities.contains(target)
+                        || self.production.terrain_objects.contains_key(&target)
+                }
             }
             && self.resolved_terrain.is_some()
             && self.zone_grid.is_some()
@@ -486,14 +489,13 @@ impl Simulation {
                 weapon,
                 rules,
                 &self.interner,
-                &self.substrate.entities,
                 terrain,
                 &los,
             )
             .ok_or("Approach CanFireAt coordinate failed")?
         } else {
             combat::can_fire_at_target_in_query(
-                &self.substrate.entities,
+                self,
                 rules,
                 &self.interner,
                 id,
@@ -672,13 +674,7 @@ impl Simulation {
         let _ = if let Some(identity) = identity {
             in_range::native_cell_range_coords(identity, &cells)
         } else {
-            in_range::resolve_target_coords_3d(
-                &target,
-                &self.substrate.entities,
-                rules,
-                &self.interner,
-                &cells,
-            )
+            in_range::resolve_target_coords_3d(&target, self, rules, &self.interner, &cells)
         }
         .ok_or("Approach target surface failed")?;
         let mut retained_candidate = target_cell;
@@ -936,15 +932,8 @@ impl Simulation {
             | NavTargetRef::Object { id }
             | NavTargetRef::Building { id } => id,
         };
-        let entity = self
-            .substrate
-            .entities
-            .get(id)
-            .ok_or("retired Approach NavCom")?;
-        Ok(super::ground_pose::object_get_coords(
-            entity,
-            Some(cells.terrain()),
-        ))
+        super::ground_pose::target_get_coords(TargetKind::Entity(id), self, Some(cells))
+            .ok_or_else(|| "retired Approach NavCom".to_owned())
     }
 
     /// The CloseRange= arm ahead of the search (`0x004D5D37..0x004D5F62`).
@@ -985,15 +974,19 @@ impl Simulation {
         let own_centre = native_cell_own_xy(query_object_cell(&cells, location), &cells);
         let target_centre = match target {
             TargetKind::Entity(target) => {
-                let target = self
-                    .substrate
-                    .entities
-                    .get(target)
-                    .ok_or("Approach Target retired")?;
-                native_cell_own_xy(
-                    query_object_cell(&cells, position_world_coord(&target.position)),
-                    &cells,
-                )
+                // 4D5D83 tests the Techno bit before GetCell. Terrain
+                // follows 4D5DCB's virtual+48 and the common Map565730.
+                let coordinate = if let Some(target) = self.substrate.entities.get(target) {
+                    position_world_coord(&target.position)
+                } else {
+                    super::ground_pose::target_get_coords(
+                        TargetKind::Entity(target),
+                        self,
+                        Some(&cells),
+                    )
+                    .ok_or("Approach Target retired")?
+                };
+                native_cell_own_xy(query_object_cell(&cells, coordinate), &cells)
             }
             TargetKind::Cell(..) => native_cell_own_xy(
                 target
@@ -1061,7 +1054,7 @@ impl Simulation {
             weapon,
             rules,
             &self.interner,
-            &self.substrate.entities,
+            self,
             &cells,
             &combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),

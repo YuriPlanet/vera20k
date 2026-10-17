@@ -90,6 +90,7 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_disguise_inputs', 'observe_lasers', 'observe_electric_bolts',
                               'observe_electric_bolt_steps', 'observe_bombs', 'observe_spawns', 'observe_crates',
                               'observe_audio', 'allow_load_segments',
+                              'observe_tooltips',
                               'camera_cell', 'cursor_position', 'terrain_cells',
                               'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
@@ -209,7 +210,51 @@ def _unit_atlas(value: Any) -> dict[str, Any]:
     return dict(atlas)
 
 
-def _presentation_clock(value: Any, ticks: int, segments=None) -> dict[str, Any]:
+def _tooltip_projection(value: Any, label: str, now_ms: int | None) -> None:
+    tooltip = require_object(value, label)
+    require_exact_keys(tooltip, ('cursor_px', 'camera_top_left', 'camera_zoom',
+                                'cursor_coordinates', 'captured', 'input_locked',
+                                'camera_blocks_tooltip', 'plane_xyz', 'plane_cell',
+                                'ground_unshrouded', 'active'), label)
+    cursor = require_array(tooltip['cursor_px'], f'{label}.cursor_px')
+    if len(cursor) != 2:
+        raise ValidationError(f'{label}.cursor_px must contain exactly two coordinates')
+    for index, component in enumerate(cursor):
+        _bounded_int(component, f'{label}.cursor_px[{index}]', -(1 << 31), (1 << 31) - 1)
+    camera = require_array(tooltip['camera_top_left'], f'{label}.camera_top_left')
+    if len(camera) != 2:
+        raise ValidationError(f'{label}.camera_top_left must contain exactly two coordinates')
+    for index, component in enumerate(camera):
+        _finite_number(component, f'{label}.camera_top_left[{index}]')
+    _finite_number(tooltip['camera_zoom'], f'{label}.camera_zoom')
+    if tooltip['camera_zoom'] <= 0:
+        raise ValidationError(f'{label}.camera_zoom must be positive')
+    for key in ('cursor_coordinates', 'captured', 'input_locked',
+                'camera_blocks_tooltip', 'ground_unshrouded'):
+        if type(tooltip[key]) is not bool:
+            raise ValidationError(f'{label}.{key} must be a boolean')
+    _coordinate(tooltip['plane_xyz'], f'{label}.plane_xyz', leptons=True)
+    _coordinate(tooltip['plane_cell'], f'{label}.plane_cell', packed_cell=True)
+    if tooltip['active'] is not None:
+        active_label = f'{label}.active'
+        active = require_object(tooltip['active'], active_label)
+        require_exact_keys(active, ('id', 'text', 'cursor_px', 'shown_at_ms'), active_label)
+        _bounded_int(active['id'], f'{active_label}.id', 0, (1 << 32) - 1)
+        text = require_string(active['text'], f'{active_label}.text')
+        if len(text) > 256:
+            raise ValidationError(f'{active_label}.text exceeds 256 Unicode characters')
+        cursor = require_array(active['cursor_px'], f'{active_label}.cursor_px')
+        if len(cursor) != 2:
+            raise ValidationError(f'{active_label}.cursor_px must contain exactly two coordinates')
+        for index, component in enumerate(cursor):
+            _bounded_int(component, f'{active_label}.cursor_px[{index}]', -(1 << 31), (1 << 31) - 1)
+        _bounded_int(active['shown_at_ms'], f'{active_label}.shown_at_ms', 0, (1 << 64) - 1)
+        if now_ms is not None and active['shown_at_ms'] > now_ms:
+            raise ValidationError(f'{active_label}.shown_at_ms is later than its tooltip clock')
+
+
+def _presentation_clock(value: Any, ticks: int, segments=None, *,
+                        observe_tooltips: bool = False) -> dict[str, Any]:
     """Validate the versioned diagnostic transcript, not native wall cadence."""
     label = 'render.presentation_clock'
     clock = require_object(value, label)
@@ -225,7 +270,8 @@ def _presentation_clock(value: Any, ticks: int, segments=None) -> dict[str, Any]
         row_label = f'{label}.draws[{index}]'
         row = require_object(value, row_label)
         require_exact_keys(row, ('completed_steps', 'radar_ms', 'tooltip_ms', 'message_ms',
-                                *(('simulation_tick',) if segments is not None else ())),
+                                *(('simulation_tick',) if segments is not None else ()),
+                                *(('tooltip',) if observe_tooltips else ())),
                            row_label)
         step = index + 1 if ticks else 0
         require_value(row.get('completed_steps'), step, f'{row_label}.completed_steps')
@@ -234,6 +280,9 @@ def _presentation_clock(value: Any, ticks: int, segments=None) -> dict[str, Any]
             require_value(row['simulation_tick'], tick, f'{row_label}.simulation_tick')
         for key in ('radar_ms', 'tooltip_ms', 'message_ms'):
             require_value(row.get(key), tick * 22, f'{row_label}.{key}')
+        if observe_tooltips:
+            _tooltip_projection(row['tooltip'], f'{row_label}.tooltip',
+                                row['tooltip_ms'] if segments is None else None)
     return dict(clock)
 
 
@@ -577,7 +626,8 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
         raise ValidationError('profile.observe_action_line_inputs must be a boolean')
     if 'observe_disguise_inputs' in profile and type(profile['observe_disguise_inputs']) is not bool:
         raise ValidationError('profile.observe_disguise_inputs must be a boolean')
-    for key in ('observe_lasers', 'observe_electric_bolts', 'observe_bombs', 'observe_spawns', 'observe_crates'):
+    for key in ('observe_lasers', 'observe_electric_bolts', 'observe_bombs', 'observe_spawns',
+                'observe_crates', 'observe_tooltips'):
         if key in profile and type(profile[key]) is not bool:
             raise ValidationError(f'profile.{key} must be a boolean')
     if 'observe_electric_bolt_steps' in profile:
@@ -2737,7 +2787,8 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
         clock = {'policy': 'legacy-wall-clock'}
     else:
         clock = _presentation_clock(render.get('presentation_clock'), ticks,
-                                    segments if profile.get('allow_load_segments', False) else None)
+                                    segments if profile.get('allow_load_segments', False) else None,
+                                    observe_tooltips=profile.get('observe_tooltips', False))
         neutral = require_object(render.get('neutral_input'), 'render.neutral_input')
         require_exact_keys(neutral, ('static_default_cursor', 'camera_input_idle'),
                            'render.neutral_input')

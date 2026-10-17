@@ -4021,7 +4021,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
         rules.weapon("SonicZap").unwrap(),
         &rules,
         &sim.interner,
-        &sim.substrate.entities,
+        &sim,
         terrain,
         &Default::default(),
     ));
@@ -6947,9 +6947,11 @@ fn move_event_issuer_does_not_replace_actor_owner() {
 
     let _ = sim.advance_tick(&[cmd], None, Some(&grid), None, 33);
     assert!(
-        sim.substrate.entities.get(1).is_some_and(
-            |e| e.navigation.nav_com() == Some(crate::sim::components::NavTargetRef::cell(8, 2))
-        ),
+        sim.substrate
+            .entities
+            .get(1)
+            .is_some_and(|e| e.navigation.nav_com()
+                == Some(crate::sim::components::NavTargetRef::cell(8, 2))),
         "Event4C71CA resolves the actor independently of the issuer"
     );
     assert_eq!(
@@ -7533,7 +7535,7 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
     );
     assert_eq!(
         attacker.navigation.nav_com(),
-        Some(crate::sim::components::NavTargetRef::Entity { id: mcv })
+        Some(crate::sim::components::NavTargetRef::Object { id: mcv })
     );
 
     sim.detach_all_pointer_expired(

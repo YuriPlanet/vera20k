@@ -166,15 +166,15 @@ fn native_response_uses_the_paid_foot_head_instead_of_navcom() {
             rx: 7,
             ry: 7,
         }));
-    let mut entities = EntityStore::new();
-    entities.insert(candidate.clone());
+    let mut sim = crate::sim::world::Simulation::new();
+    sim.substrate.entities.insert(candidate.clone());
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DEFENDER\n[DEFENDER]\nStrength=100\n",
     ))
     .unwrap();
     let native = &row["coordinate"];
     assert_eq!(
-        destination_cell(&candidate, &entities, None, &rules, &test_interner()).unwrap(),
+        destination_cell(&candidate, &sim, None, &rules, &test_interner()).unwrap(),
         (
             native[0].as_i64().unwrap() as i32 / 256,
             native[1].as_i64().unwrap() as i32 / 256

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "24 complete Tactical plane inverse6D2280 calls; integer signed, cell-edge, final-f32 integer-boundary, camera, viewport and upper-window controls",
+  "assumptions": [
+    "Original6D2280, matrix multiply5AFB80 and conversion7C5F00 execute unchanged; no function result is substituted.",
+    "Existing NativeFixture executes constructor matrix block6D1DC5..6D1E1E with EBX zero; other constructor state is supplied.",
+    "world_input is integer VERA world pixels; native absolute tactical Y is world Y minus15. Incoming point is world minus camera (and Y bias), not plus viewport.",
+    "6D2280 does not read886FA0/4; independently supplied viewport globals are controls, not an extra arithmetic offset.",
+    "Supplied B0CE30 is signed upper X; supplied B0CE2C plus B0CE34 is signed upper Y. Equality rejects. Negative lower coordinates are admitted by this body.",
+    "Invalid B0CE08/0C/10 values are explicit fixture markers, not claimed constructor defaults. Invalid controls are separate from arithmetic outputs.",
+    "Each call resets stack/registers and checks output guards, return pointer and two-argument stack cleanup. Valid paths require original multiply and both conversion calls.",
+    "x87 control word0E7F follows the existing fixture; the recorded preconversion matrix f32 bits are actual native stores under that rounding mode.",
+    "No map lookup, current Cell bits, full ProcessClickCoords, Windows input, fractional zoom, normal map load or rendered tooltip is executed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "plane_inverse": "0x006D2280",
+    "matrix_initializer": "0x006D1DC5",
+    "matrix_multiply": "0x005AFB80",
+    "x87_integer_conversion": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.bridge_click_oracle --plane",
+  "payload_sha256": "249752af93b872f1d4399a35773a314a1f1deac126a3c5700298e8d692bef1ee"
+}

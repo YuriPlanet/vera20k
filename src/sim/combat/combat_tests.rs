@@ -304,10 +304,28 @@ fn align_attackers_to_targets(store: &mut EntityStore) {
             let Some(attack) = entity.attack_target.target() else {
                 continue;
             };
-            match crate::sim::movement::turret::facing_toward_target(entity, &attack, store) {
-                Some(desired) => desired,
-                None => continue,
-            }
+            // Author this phase fixture's guaranteed Techno/Cell aim through
+            //the existing pure coordinate and facing kernels. This helper
+            //does not stand in for the production Object target resolver.
+            let coords = match attack {
+                TargetKind::Entity(target) => store
+                    .get(target)
+                    .map(crate::sim::combat::attack_target::target_coords),
+                TargetKind::Cell(rx, ry) => Some(cell_center_coords(rx, ry)),
+            };
+            let Some((rx, ry, sub_x, sub_y)) = coords else {
+                continue;
+            };
+            crate::sim::movement::turret::facing_toward_lepton(
+                entity.position.rx(),
+                entity.position.ry(),
+                entity.position.sub_x(),
+                entity.position.sub_y(),
+                rx,
+                ry,
+                sub_x,
+                sub_y,
+            )
         };
         if let Some(entity) = store.get_mut(id) {
             entity.body_facing.snap(desired & 0xFF00, 0);
@@ -1984,9 +2002,9 @@ fn cell_center_coords_and_mapless_launch_height() {
     assert_eq!(sub_x.to_num::<i32>(), 128);
     assert_eq!(sub_y.to_num::<i32>(), 128);
 
-    let entities = EntityStore::new();
+    let sim = crate::sim::world::Simulation::new();
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Cell(7, 9), &entities, None),
+        attack_world_z_leptons(TargetKind::Cell(7, 9), &sim, None),
         0,
         "with no loaded terrain there is no cell floor to read; the cell-centre \
          helper never invents one. The terrain-backed cases live in \
@@ -6961,7 +6979,7 @@ fn wall_damage_deterministic_across_replays() {
 fn selected_weapon_range(
     attacker: &GameEntity,
     target: &TargetKind,
-    store: &EntityStore,
+    sim: &crate::sim::world::Simulation,
     rules: &RuleSet,
     interner: &StringInterner,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -6973,7 +6991,7 @@ fn selected_weapon_range(
         obj,
         &combat_weapon::attacker_facts(attacker, obj),
         Some(target),
-        store,
+        sim,
         interner,
         terrain,
         None,
@@ -6988,14 +7006,18 @@ fn selected_weapon_range(
 fn selected_weapon_range_for_entity_and_cell_targets() {
     use crate::sim::combat::TargetKind;
     let rules = test_rules();
-    let mut store = EntityStore::new();
-    store.insert(make_entity(1, "MTNK", 0, 0, 300));
-    store.insert(make_entity(2, "MTNK", 5, 0, 300));
-    let interner = test_interner();
+    let mut sim = crate::sim::world::Simulation::new();
+    sim.substrate
+        .entities
+        .insert(make_entity(1, "MTNK", 0, 0, 300));
+    sim.substrate
+        .entities
+        .insert(make_entity(2, "MTNK", 5, 0, 300));
+    sim.interner = test_interner();
 
-    let attacker = store.get(1).unwrap();
+    let attacker = sim.substrate.entities.get(1).unwrap();
     for target in [TargetKind::Entity(2), TargetKind::Cell(50, 50)] {
-        let range = selected_weapon_range(attacker, &target, &store, &rules, &interner, None);
+        let range = selected_weapon_range(attacker, &target, &sim, &rules, &sim.interner, None);
         // 105mm Range=6; a Cell target's ladder returns slot 0.
         assert_eq!(
             range,
@@ -7052,7 +7074,7 @@ fn an_illegal_shot_is_still_in_range() {
     assert_eq!(code, crate::sim::combat::fire_error::FireError::Illegal);
 
     assert!(can_fire_at_target(
-        &sim.substrate.entities,
+        &sim,
         &rules,
         &sim.interner,
         1,
@@ -7068,7 +7090,7 @@ fn an_illegal_shot_is_still_in_range() {
     let range = selected_weapon_range(
         tank,
         &target,
-        &sim.substrate.entities,
+        &sim,
         &rules,
         &sim.interner,
         sim.resolved_terrain.as_ref(),
@@ -7084,17 +7106,19 @@ fn selected_weapon_range_none_for_unarmed_attacker() {
                      [ENGI]\nStrength=75\nArmor=none\nSpeed=4\n";
     let ini = IniFile::from_str(rules_str);
     let rules = RuleSet::from_ini(&ini).expect("parse");
-    let mut store = EntityStore::new();
-    store.insert(make_entity(1, "ENGI", 0, 0, 75));
-    let interner = test_interner();
+    let mut sim = crate::sim::world::Simulation::new();
+    sim.substrate
+        .entities
+        .insert(make_entity(1, "ENGI", 0, 0, 75));
+    sim.interner = test_interner();
 
-    let attacker = store.get(1).unwrap();
+    let attacker = sim.substrate.entities.get(1).unwrap();
     let range = selected_weapon_range(
         attacker,
         &TargetKind::Cell(50, 50),
-        &store,
+        &sim,
         &rules,
-        &interner,
+        &sim.interner,
         None,
     );
     assert_eq!(range, None);

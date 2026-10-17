@@ -4363,13 +4363,18 @@ impl Simulation {
         // cell — `0x00707994 CALL 0x004870D0`. The Techno half of that guard is
         // `AbstractFlags +0x14` bit 0, ORed in for every object by
         // `TechnoClass__Constructor @ 0x006F3228` and therefore true of every
-        // `GameEntity`, so it needs no test here. `allowClear` gates both the
+        // `GameEntity`. Terrain retains the Object flags without that bit,
+        // so its expiry never asks the sensor guard. `allowClear` gates both the
         // Target (`+0x2B4`) clear at `0x007079AD` and the `+0x2B8` clear at
         // `0x00707A7A`.
         let allow_clear = match control {
             PointerExpiryControl::Uninit => true,
-            PointerExpiryControl::DetachAll => !expired_get_coords_cell
-                .is_some_and(|(rx, ry)| self.fog.has_sensor_for_house(listener_owner, rx, ry)),
+            PointerExpiryControl::DetachAll => {
+                !self.substrate.entities.contains(expired_id)
+                    || !expired_get_coords_cell.is_some_and(|(rx, ry)| {
+                        self.fog.has_sensor_for_house(listener_owner, rx, ry)
+                    })
+            }
         };
         // `0x007079B7..0x007079CB`: on the same control the Target clear is
         // additionally skipped when the expiring object's `GetOwner` (vslot
@@ -4928,7 +4933,7 @@ impl Simulation {
                 let cell = u16::try_from(crate::util::lepton::lepton_to_cell(coord.x))
                     .ok()
                     .zip(u16::try_from(crate::util::lepton::lepton_to_cell(coord.y)).ok());
-                Some((cell, tree.is_live(), tree.health, false, None))
+                Some((cell, tree.object_alive(), tree.health, false, None))
             })
             .or_else(|| {
                 let smudge = self.smudge_grid.as_ref()?.object(expired_id)?;
@@ -5098,7 +5103,7 @@ impl Simulation {
                         self.production
                             .terrain_objects
                             .get(&expired_id)
-                            .map(|tree| (tree.is_live(), !tree.is_live()))
+                            .map(|tree| (tree.object_alive(), !tree.is_live()))
                     })
                     .or_else(|| {
                         self.smudge_grid

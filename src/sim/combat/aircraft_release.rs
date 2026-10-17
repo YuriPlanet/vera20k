@@ -28,47 +28,32 @@ fn live_shot<'r>(
     let entity = world.substrate.entities.get(id)?;
     let obj = world.interner.object_type(entity.type_ref(), rules)?;
     let target = entity.attack_target.target();
-    let target_facts = match target {
-        Some(TargetKind::Entity(id)) => world.substrate.entities.get(id).and_then(|target| {
-            let obj = world.interner.object_type(target.type_ref(), rules)?;
-            Some(combat_weapon::techno_target_facts(
-                target,
-                obj,
-                world.resolved_terrain.as_ref(),
-                combat_weapon::is_ally_by_object(
-                    Some(&world.house_alliances),
-                    &world.interner,
-                    entity.owner(),
-                    target.owner(),
-                ),
-                rules,
-                &world.interner,
-            ))
-        }),
-        Some(TargetKind::Cell(rx, ry)) => Some(combat_weapon::cell_target_facts(
-            rx,
-            ry,
-            world.resolved_terrain.as_ref(),
-        )),
-        None => None,
-    };
-    let selected = combat_weapon::resolve_selected_weapon(
+    let (_, selected) = combat_weapon::select_weapon_against(
         rules,
         entity,
         obj,
         &combat_weapon::attacker_facts(entity, obj),
-        target_facts.as_ref(),
-        &world.substrate.entities,
+        target.as_ref(),
+        world,
         &world.interner,
+        world.resolved_terrain.as_ref(),
+        Some(&world.house_alliances),
     )?;
+    let selected = selected?;
     let burst = selected.weapon.burst;
     let coordinates = match target {
         Some(TargetKind::Entity(id)) => world
             .substrate
             .entities
             .get(id)
-            .filter(|target| !target.lifecycle.in_limbo())
-            .map(|target| (target_coords(target), target.type_ref())),
+            .map(|target| (target_coords(target), target.type_ref()))
+            .or_else(|| {
+                let terrain = world.production.terrain_objects.get(&id)?;
+                Some((
+                    resolve_target_coords(&TargetKind::Entity(id), world)?,
+                    terrain.type_ref,
+                ))
+            }),
         Some(TargetKind::Cell(rx, ry)) => Some((cell_center_coords(rx, ry), entity.type_ref())),
         None => None,
     };
@@ -116,10 +101,7 @@ pub(super) fn visit(
         .and_then(|name| rules.weapon(name));
     let facts = StrikeFacts {
         state,
-        target: crate::sim::combat::target_present(
-            entity.attack_target.target(),
-            &world.substrate.entities,
-        ),
+        target: crate::sim::combat::target_present(entity.attack_target.target(), world),
         ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
         strafe: combat_weapon::aircraft_strafes(rules, obj, entity.veterancy.rank()),
         fighter: obj.fighter,
@@ -191,35 +173,21 @@ impl CombatStrike<'_, '_, '_> {
         let world = &*self.world;
         let firer = world.substrate.entities.get(self.id())?;
         let target = self.target()?;
-        let target_facts = match target {
-            TargetKind::Entity(id) => world.substrate.entities.get(id).and_then(|target| {
-                let obj = world.interner.object_type(target.type_ref(), self.rules)?;
-                Some(combat_weapon::techno_target_facts(
-                    target,
-                    obj,
-                    world.resolved_terrain.as_ref(),
-                    combat_weapon::is_ally_by_object(
-                        Some(&world.house_alliances),
-                        &world.interner,
-                        firer.owner(),
-                        target.owner(),
-                    ),
-                    self.rules,
-                    &world.interner,
-                ))
-            }),
-            TargetKind::Cell(rx, ry) => Some(combat_weapon::cell_target_facts(
-                rx,
-                ry,
-                world.resolved_terrain.as_ref(),
-            )),
-        };
-        let weapon_index = combat_weapon::what_weapon_should_i_use(
+        let cells = world
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let weapon_index = combat_weapon::select_weapon_index_against_in_query(
             self.rules,
+            firer,
             self.obj,
             &combat_weapon::attacker_facts(firer, self.obj),
-            target_facts.as_ref(),
-        );
+            Some(&target),
+            world,
+            &world.interner,
+            cells.as_ref(),
+            Some(&world.house_alliances),
+        )?;
         Some(ask(&fire_error_world::FireSubject {
             world,
             rules: self.rules,
@@ -358,11 +326,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
         self.target
             .and_then(|target| {
-                crate::sim::movement::ground_pose::target_get_coords(
-                    target,
-                    &world.substrate.entities,
-                    cells.as_ref(),
-                )
+                crate::sim::movement::ground_pose::target_get_coords(target, world, cells.as_ref())
             })
             .map_or(ProjectileCoord::new(0, 0, 0), |coord| {
                 ProjectileCoord::new(coord.x, coord.y, coord.z)
@@ -504,11 +468,7 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
         };
         let world = &mut *self.world;
         let Some(desired) = world.substrate.entities.get(id).and_then(|entity| {
-            crate::sim::movement::turret::facing_toward_target(
-                entity,
-                &target,
-                &world.substrate.entities,
-            )
+            crate::sim::movement::turret::facing_toward_target(entity, &target, world)
         }) else {
             return;
         };
@@ -574,10 +534,7 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
     fn assign_target_destination(&mut self) {
         let id = self.id();
         if let Some(target) = self.target() {
-            let destination = match target {
-                TargetKind::Entity(id) => crate::sim::components::NavTargetRef::Entity { id },
-                TargetKind::Cell(rx, ry) => crate::sim::components::NavTargetRef::cell(rx, ry),
-            };
+            let destination = target.into();
             self.world.assign_aircraft_destination(
                 id,
                 Some(destination),

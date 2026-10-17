@@ -487,17 +487,7 @@ impl Simulation {
             // 75BACE..75BAEB asks Is_Ally (0x004F9A90) for the tree too. A
             // TerrainClass has no house (vt+0x3C is 0x004104A0, which returns
             // NULL), so native orders Attack on it.
-            // RESIDUAL: VERA targets only objects and cells, so no Override is
-            // issued and the Foot keeps its mission; the stop below still runs.
-            // Trigger: the Cell's raw byte answers for a non-allied
-            // infantryman (one stepping in, or the owner a departed one left
-            // beside a terrain object's own sub-cell bits, which keep 0x1C
-            // set; 0x00521850) while its ground list holds no Techno, so
-            // Find_Blocking_Object falls to the terrain object (0x0047C5A0).
-            // Seen in 20,000-unit battles (#1517). Effect: native's walker
-            // turns on the tree, VERA's keeps its mission. Risk: that
-            // walker's mission for the frames native spends on the tree.
-            Some(BlockingObject::Terrain) => None,
+            Some(BlockingObject::Terrain(blocker)) => Some(TargetKind::Entity(blocker)),
             None => {
                 //75BAF3..75BB49: three lookups of the Cell, for its +0x44,
                 //its OverlayType's +0x2A8 and the Attack target.
@@ -635,14 +625,16 @@ pub(super) fn clear_walk_doing(actor: &mut crate::sim::game_entity::GameEntity) 
 
 #[cfg(test)]
 mod tests {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::mission::MissionType;
     use crate::sim::timer::CdTimer;
 
     /// The code-4/5 response (`0x0075BA46..0x0075BB90`) for a Cell whose only
-    /// object is a tree: `Find_Blocking_Object` returns the tree, which VERA
-    /// cannot target. The response issues no Override and still stops the
-    /// walker, where it used to stop the whole frame (#1517).
+    /// object is a tree: retain its Object identity through Override and still
+    /// stop the walker. The old unsupported-target error stopped the entire
+    /// frame (#1517); replacing that error with a no-op also lost the Attack.
     #[test]
-    fn a_tree_blocker_stops_the_walker_without_an_override() {
+    fn a_tree_blocker_overrides_attack_without_stopping_the_frame() {
         use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
         let (mut sim, rules, registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules("");
@@ -659,9 +651,8 @@ mod tests {
         mark_terrain_raw_occupation(&mut sim.substrate.raw_cell_occupation, tree, 5);
         assert!(matches!(
             sim.find_blocking_object(tree, crate::sim::movement::locomotor::MovementLayer::Ground,),
-            Some(super::BlockingObject::Terrain)
+            Some(super::BlockingObject::Terrain(900))
         ));
-        let mission = sim.substrate.entities.get(id).unwrap().mission.current();
         let candidate = crate::sim::movement::foot_path::cell_centre((11, 10));
 
         let retry = sim
@@ -670,7 +661,11 @@ mod tests {
 
         assert!(retry.is_none());
         let walker = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(walker.mission.current(), mission, "no Attack override");
+        assert_eq!(
+            walker.mission.effective().known(),
+            Some(MissionType::Attack)
+        );
+        assert_eq!(walker.attack_target.target(), Some(TargetKind::Entity(900)));
         assert_eq!(
             walker.foot_speed.applied_fraction(),
             crate::util::fixed_math::SIM_ZERO

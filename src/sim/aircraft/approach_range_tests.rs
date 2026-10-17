@@ -143,9 +143,7 @@ fn selected_strafe_range_branch_matches_native_and_dispatches_when_in_range() {
         let (mut sim, rules) = fixture(&row);
         let aircraft = sim.substrate.entities.get(1).unwrap();
         let target = aircraft.attack_target.target().unwrap();
-        let distance =
-            crate::sim::combat::object_distance_to(aircraft, &target, &sim.substrate.entities)
-                .unwrap();
+        let distance = crate::sim::combat::object_distance_to(aircraft, &target, &sim).unwrap();
         assert_eq!(distance, row["distance"].as_i64().unwrap() as i32, "{row}");
         let weapon = crate::sim::combat::combat_weapon::primary_for_tier(
             rules.object("ORCA").unwrap(),

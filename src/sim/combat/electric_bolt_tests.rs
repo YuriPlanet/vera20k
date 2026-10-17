@@ -359,7 +359,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         &mut sim,
         &rules,
         source,
-        TargetKind::Entity(target).into(),
+        crate::sim::projectile::ProjectileTarget::Entity(target),
         rules.weapon("CoilBolt").unwrap(),
         from,
     );

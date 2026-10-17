@@ -2824,7 +2824,7 @@ fn a_recalled_hornet_flies_home_and_lands_on_the_carrier() {
         let navs = &sortie.navs[hornet];
         assert_eq!(
             navs.iter().rev().find_map(|&(_, nav)| nav),
-            Some(crate::sim::components::NavTargetRef::Entity { id: sortie.carrier }),
+            Some(crate::sim::components::NavTargetRef::Object { id: sortie.carrier }),
             "Hornet {hornet} is sent home to the Carrier: {navs:?}"
         );
         let h = sortie.sim.substrate.entities.get(*hornet).unwrap();

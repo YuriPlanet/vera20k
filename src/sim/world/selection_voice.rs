@@ -171,7 +171,7 @@ impl Simulation {
             object,
             &combat_weapon::attacker_facts(entity, object),
             target.as_ref(),
-            self.entities(),
+            self,
             &self.interner,
             cells.as_ref(),
             Some(&self.house_alliances),

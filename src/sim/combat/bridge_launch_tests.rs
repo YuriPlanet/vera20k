@@ -27,7 +27,7 @@ fn expected_coord(row: &Value, key: &str) -> ProjectileCoord {
 
 #[test]
 fn cell_launch_aim_matches_original_fireat_and_bullet_fire() {
-    let entities = EntityStore::new();
+    let world = Simulation::new();
     for row in aim_cases() {
         let input = &row["input"];
         let mut cells = (0..32)
@@ -39,7 +39,7 @@ fn cell_launch_aim_matches_original_fireat_and_bullet_fire() {
         cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
         // Derived walkability is deliberately absent: native reads raw 0x100.
         let terrain = ResolvedTerrainGrid::from_cells(32, 32, cells);
-        let z = attack_world_z_leptons(TargetKind::Cell(10, 20), &entities, Some(&terrain));
+        let z = attack_world_z_leptons(TargetKind::Cell(10, 20), &world, Some(&terrain));
         let expected = expected_coord(&row, "fireat_aim");
         assert_eq!(z, expected.z, "FireAt {input}");
         assert_eq!(

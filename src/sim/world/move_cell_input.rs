@@ -429,7 +429,7 @@ impl Simulation {
         let navigation = crate::sim::movement::nav_target_coordinate(
             NavTargetRef::Entity { id: target },
             None,
-            &self.substrate.entities,
+            self,
             Some(terrain),
             Some((rules, &self.interner)),
         )?;

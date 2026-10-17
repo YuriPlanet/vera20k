@@ -176,7 +176,7 @@ fn save_load_round_trip_on_kill_tick() {
         let e = sim.substrate.entities.get(1).unwrap();
         facing_update(
             e,
-            &sim.substrate.entities,
+            &sim,
             Some(&rules),
             &sim.interner,
             sim.session.binary_frame,
@@ -522,7 +522,7 @@ fn turret_cadence_matches_the_original() {
             }
             let update = facing_update(
                 sim.substrate.entities.get(1).unwrap(),
-                &sim.substrate.entities,
+                &sim,
                 Some(&rules),
                 &sim.interner,
                 frame,

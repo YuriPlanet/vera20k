@@ -2310,7 +2310,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         ] {
             assert_eq!(
                 crate::sim::combat::can_fire_at_target(
-                    sim.entities(),
+                    &sim,
                     &rules,
                     &sim.interner,
                     actor,
@@ -2602,7 +2602,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             actor,
             &target,
             weapon,
-            sim.entities(),
+            &sim,
             terrain,
             (&rules, &sim.interner),
         )
@@ -2615,7 +2615,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             weapon,
             &rules,
             &sim.interner,
-            sim.entities(),
+            &sim,
             terrain,
             &LineOfFireInputs::terrain_only(),
         ));

@@ -113,7 +113,14 @@ fn friendly_attack_is_admitted(
         return false;
     };
     let Some(target) = sim.entities().get(target_id) else {
-        return false;
+        // House4F9A90 sees Terrain's null owner (Object4104A0), so
+        // the allied-only restrictions do not apply to a real Terrain.
+        return crate::sim::movement::ground_pose::target_get_coords(
+            TargetKind::Entity(target_id),
+            sim,
+            None,
+        )
+        .is_some();
     };
     if !combat_weapon::is_ally_by_object(
         Some(&sim.house_alliances),
@@ -139,7 +146,7 @@ fn friendly_attack_is_admitted(
         kind,
         &combat_weapon::attacker_facts(actor, kind),
         Some(&TargetKind::Entity(target_id)),
-        sim.entities(),
+        sim,
         &sim.interner,
         cells.as_ref(),
         Some(&sim.house_alliances),
@@ -389,7 +396,7 @@ pub(crate) fn resolved_unit_in_range(
     if let Some(terrain) = terrain {
         let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
         return crate::sim::combat::can_fire_at_target_in_query(
-            sim.entities(),
+            sim,
             rules,
             &sim.interner,
             actor_id,
@@ -418,7 +425,7 @@ pub(crate) fn resolved_unit_in_range(
         object,
         &crate::sim::combat::combat_weapon::attacker_facts(actor, object),
         selection_target,
-        sim.entities(),
+        sim,
         &sim.interner,
         None,
         Some(&sim.house_alliances),
@@ -435,25 +442,16 @@ pub(crate) fn resolved_unit_in_range(
     ) else {
         return false;
     };
-    let (rx, ry, sub_x, sub_y) = match *target {
-        TargetKind::Entity(id) => {
-            let Some(target) = sim.entities().get(id) else {
-                return false;
-            };
-            (
-                target.position.rx(),
-                target.position.ry(),
-                target.position.sub_x(),
-                target.position.sub_y(),
-            )
-        }
-        TargetKind::Cell(rx, ry) => (
-            rx,
-            ry,
-            crate::util::fixed_math::SimFixed::from_num(128),
-            crate::util::fixed_math::SimFixed::from_num(128),
-        ),
+    let Some(point) = crate::sim::movement::ground_pose::target_get_coords(*target, sim, None)
+    else {
+        return false;
     };
+    let (rx, ry, sub_x, sub_y) = (
+        (point.x / 256) as u16,
+        (point.y / 256) as u16,
+        crate::util::fixed_math::SimFixed::from_num(point.x % 256),
+        crate::util::fixed_math::SimFixed::from_num(point.y % 256),
+    );
     let distance = crate::sim::combat::lepton_distance_sq_raw(
         actor.position.rx(),
         actor.position.ry(),

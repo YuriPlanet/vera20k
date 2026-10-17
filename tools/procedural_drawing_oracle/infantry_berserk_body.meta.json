@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight original prepared ground GI body/shadow draws through physical raw/RLE SHP, native DarkRed Convert and packed RGB565 pixels",
+  "assumptions": [
+    "Original Rules665650/66D480/6691E0 read physical root ColorAdd and AudioVisual BerserkColor/ExtraInfantryLight. InfantryType5236A0/full5240A0 receive only physical E1 Image/Strength/Armor plus fixed ART GI/GISequence. Native Image/sequence loading executes; unrelated type fields retain constructor defaults. This is not full retail type/scenario fill or a layered rules history.",
+    "The existing shroud status preparation runs Infantry prefix517A50..517AE6 including Foot/Techno/Object and whole Walk75AA90. Prepared owner/current House, local DarkRed scheme index1, Alive1/Limbo0/HP125, Location2688/5248/0, Ready/Stage0 and ordinary guardFF admit the draw. Whole Infantry construction, COM activation, Unlimbo, display admission and CAOS receiver/refresh/expiry are not executed.",
+    "Existing PaletteReader startup and color_scheme_palette execute original palette expansion, paired selected DarkRed1/53 ColorScheme construction and complete Convert initialization on physical palettes. Local scheme1 is not a lobby/world scheme index. RGB565 format2, CMOV/MMX and FPCW0E7F are declared inputs, not pixel-fitted outputs.",
+    "GetZAdjust704350 runs with original geometry initialization and existing theater_tile_files/load_tmp_files native TMP registry/lazy loader. Prepared native-constructed3x3 Cells around10/20 have flat level/slope0, tile0/subtile0, no bridge/overlay and top light1000. Selected theater registration base0, actor pose, tactical rectangle/point and Cell visibility are explicit priors, not a whole map/topology lifecycle.",
+    "Whole Infantry518F90->Foot41C090->Techno705E00 and actual705D70/518D80/GetZAdjust/shape4AED70/pickers/rowwalkers/raw or RLE leaves run unchanged. Facing inputs are selected from original table7EAEFC and snapped by4C9300; no frame, word, intensity, shape, shadow or pixel result is substituted. Physical frames0/1 plus shadows372/373 are bounded controls, not whole DrawIt/DrawSHP coverage.",
+    "Each body buffer is observed immediately at actual shape return70645D before shadow; final buffer is observed after actual shadow return706602. Physical shadow372/373 have original empty rectangles, so final equals body; real shadow calls/pickers execute but no positive shadow-store/overlap is established. Source holes, packed colour, A/Z predicates and blocked stores are native results. The shrouded control deliberately enters the body and proves caller-word clearing, not that full DrawIfVisible admits a shrouded GI. All three full RNG buffers, physical GI bytes, A/Z and original executable code are checked unchanged after every measured draw; constructor RNG/timer evidence is separate.",
+    "Prepared64x96 BSurface/circular planes use A127, baseline1024, background39E7 and oldZ2000 or0. No VERA raster/table provides expected pixels. These component crops do not establish GPU, whole frame, CAOS lifecycle, arbitrary stance/effects/custom values/nonflat sites/global ordering or Behind behavior."
+  ],
+  "substitutions": [
+    "Existing PaletteReader/BulletReader/HutTypeReader supplies immutable archive-selected file bytes, lexical linked/cache INI objects, successful allocator/delete/CRT/TLS and OS resource transport. Existing stock MIX decoding selects physical inputs; original native readers/frame accessors/shape/blitters produce draw outputs. The full native archive/scenario startup is outside this prepared fixture.",
+    "Existing infantry_deploy_action atomic service handles only Windows InterlockedIncrement/Decrement through IAT7E11C8/CC. Existing bridge_render_shape BSurface storage/locks/pitch replace DirectDraw backing. Existing TMP RawFile service supplies exact selected physical bytes. No original executable bytes or selected gameplay/draw/pixel results are patched."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "color_add": "0x0066D480",
+    "audio_visual": "0x006691E0",
+    "infantry_type_ctor": "0x005236A0",
+    "infantry_type_read": "0x005240A0",
+    "infantry_prefix": "0x00517A50",
+    "infantry_prefix_stop": "0x00517AE6",
+    "walk_ctor": "0x0075AA90",
+    "infantry_body": "0x00518F90",
+    "berserk_reader": "0x00518FDA",
+    "frame": "0x00518D80",
+    "foot_shape": "0x0041C090",
+    "draw_shp": "0x00705E00",
+    "house_convert": "0x00705D70",
+    "get_z_adjust": "0x00704350",
+    "tmp_query": "0x00547150",
+    "tmp_load": "0x00544CB0",
+    "shape": "0x004AED70",
+    "frame_rect": "0x0069E7E0",
+    "frame_compressed": "0x0069E900",
+    "raw_picker": "0x00490B90",
+    "rle_picker": "0x00490E50",
+    "raw_plain": "0x00494B60",
+    "raw_colour": "0x00494C40",
+    "rle_plain": "0x00497FD0",
+    "rle_colour": "0x00498150",
+    "body_return": "0x0070645D",
+    "shadow_return": "0x00706602"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --infantry-berserk-body",
+  "payload_sha256": "df2e0c537dacb1476aefcadbccbb0ef7456e1705a33d620506eb215edcc3bbc2"
+}

@@ -652,11 +652,7 @@ impl Simulation {
                             .resolved_terrain
                             .as_ref()
                             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                        ground_pose::target_get_coords(
-                            TargetKind::from(cell),
-                            &self.substrate.entities,
-                            cells.as_ref(),
-                        )
+                        ground_pose::target_get_coords(TargetKind::from(cell), self, cells.as_ref())
                     })
                     .unwrap_or(NULL_COORD);
             }
@@ -686,12 +682,8 @@ impl Simulation {
                 Some(target) => (!locked).then(|| {
                     let cells =
                         terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                    let at = ground_pose::target_get_coords(
-                        target,
-                        &self.substrate.entities,
-                        cells.as_ref(),
-                    )
-                    .unwrap_or(owner);
+                    let at = ground_pose::target_get_coords(target, self, cells.as_ref())
+                        .unwrap_or(owner);
                     crate::util::direction_tables::facing16_between(
                         [owner.x, owner.y],
                         [at.x, at.y],

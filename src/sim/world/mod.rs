@@ -1752,6 +1752,8 @@ pub(crate) fn repair_zone_after_recalc(
 /// already available as disjoint Simulation fields.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
     pub(crate) entities: &'a mut EntityStore,
+    pub(crate) target_terrain_objects:
+        &'a BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) detach_trace: &'a mut Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
     pub(crate) radar_dirty_cells: &'a mut Vec<(u16, u16)>,
@@ -1798,6 +1800,7 @@ impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
         if let WallPointerTarget::Real(rx, ry) = target {
             crate::sim::combat::combat_aoe::expire_cell_target_references(
                 self.entities,
+                self.target_terrain_objects,
                 rx,
                 ry,
                 #[cfg(any(test, feature = "test-support"))]
@@ -2234,14 +2237,12 @@ impl Simulation {
         let target = match event.target {
             // FireAt aims at the target's vt+0xA4 (`0x006FE1EE`), including
             // a Building's TargetCoordOffset. Wave AI later reads +58 instead.
-            crate::sim::combat::TargetKind::Entity(id) => {
-                let entity = entities.get(id)?;
-                let coords = crate::sim::movement::ground_pose::object_target_coords(
-                    entity,
-                    terrain,
-                    interner.object_type(entity.type_ref(), rules),
-                );
-                ProjectileCoord::new(coords.x, coords.y, coords.z)
+            crate::sim::combat::TargetKind::Entity(_) => {
+                crate::sim::combat::fire_coord::effect_target_coordinate(
+                    self,
+                    rules,
+                    event.target.projectile_target(self),
+                )?
             }
             crate::sim::combat::TargetKind::Cell(rx, ry) => {
                 self.wave_cell_target_position_in(terrain, rx, ry)
@@ -2591,6 +2592,7 @@ impl Simulation {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
                                 entities: &mut self.substrate.entities,
+                                target_terrain_objects: &self.production.terrain_objects,
                                 #[cfg(any(test, feature = "test-support"))]
                                 detach_trace: &mut effects.cell_target_detaches,
                                 radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
@@ -2649,6 +2651,7 @@ impl Simulation {
                         for &coord in &mutation.original_footprint {
                             crate::sim::combat::combat_aoe::expire_cell_target_references(
                                 &mut self.substrate.entities,
+                                &self.production.terrain_objects,
                                 coord.0,
                                 coord.1,
                                 #[cfg(any(test, feature = "test-support"))]
@@ -6105,6 +6108,7 @@ impl Simulation {
         let mut cell_target_detaches = Vec::new();
         let mut host = SimulationWallRuntimeHost {
             entities: &mut self.substrate.entities,
+            target_terrain_objects: &self.production.terrain_objects,
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut cell_target_detaches,
             radar_dirty_cells: &mut self.radar_terrain_dirty_cells,

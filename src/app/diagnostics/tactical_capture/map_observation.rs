@@ -438,6 +438,13 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     observe_action_line_inputs: Option<bool>,
+    /// Passive post-render tooltip owner state on the presentation clock.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_tooltips: Option<bool>,
     /// Read retained disguise state and the actual body-builder decisions.
     #[serde(
         default,
@@ -565,6 +572,7 @@ impl MapCaptureProfile {
                     && self.observe_audio.is_none()
                     && self.allow_load_segments.is_none()
                     && self.observe_action_line_inputs.is_none()
+                    && self.observe_tooltips.is_none()
                     && self.observe_disguise_inputs.is_none()
                     && self.observe_lasers.is_none()
                     && self.observe_electric_bolts.is_none()
@@ -2250,6 +2258,53 @@ struct MapDrawTime {
     message_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     simulation_tick: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tooltip: Option<Value>,
+}
+
+/// Read the actual post-render service and its existing coordinate/fog owners.
+/// No hit-test, tooltip update, canonical Dummy stamp or presentation mutation.
+fn capture_tooltip(state: &AppState) -> Result<Value> {
+    let view = state
+        .sim_view()
+        .context("tooltip observation lost simulation")?;
+    let terrain = view
+        .resolved_terrain()
+        .context("tooltip observation lost terrain")?;
+    let viewer = view
+        .session()
+        .current_house()
+        .context("tooltip observation lost current House")?;
+    let input = &state.match_state.input;
+    let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state,
+        input.cursor_x,
+        input.cursor_y,
+    );
+    let point = crate::map::terrain::screen_to_plane_leptons(world.0, world.1);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+    let cell = cells.lookup_world(point.x, point.y);
+    let active = state
+        .match_state
+        .match_presentation
+        .tooltips
+        .active()
+        .map(|tip| {
+            json!({"id": tip.id, "text": tip.text, "cursor_px": [tip.x, tip.y],
+               "shown_at_ms": tip.shown_at_ms})
+        });
+    Ok(json!({
+        "cursor_px": input.cursor_px(),
+        "camera_top_left": [input.camera_x, input.camera_y],
+        "camera_zoom": input.zoom_level,
+        "cursor_coordinates": input.cursor_coordinates,
+        "captured": input.tactical_mouse.captured,
+        "input_locked": view.session().input_locked(),
+        "camera_blocks_tooltip": input.pending_camera_scroll.blocks_tactical_tooltip(),
+        "plane_xyz": point.to_array(), "plane_cell": cells.coord(cell),
+        "ground_unshrouded": crate::sim::vision::cell_ground_mapped(view.fog(), terrain, viewer, cell),
+        "active": active,
+    }))
 }
 
 impl MapObservation {
@@ -2502,6 +2557,7 @@ impl MapObservation {
             tooltip_ms: times.tooltip_ms,
             message_ms,
             simulation_tick: self.allow_load_segments.then_some(clock_tick),
+            tooltip: None,
         });
         Ok(())
     }
@@ -3727,12 +3783,15 @@ impl TacticalCaptureSession {
         state: &AppState,
         output: &GameRenderOutput,
     ) -> Result<()> {
-        let requested = self
+        let profile = &self
             .request
             .map_profile()
             .context("map profile missing")?
-            .value
-            .ticks;
+            .value;
+        let requested = profile.ticks;
+        let tooltip = (profile.observe_tooltips == Some(true))
+            .then(|| capture_tooltip(state))
+            .transpose()?;
         let sim = &state
             .match_state
             .sim_runtime
@@ -3790,6 +3849,7 @@ impl TacticalCaptureSession {
             return Ok(());
         }
         map.observe_draw(requested, step, output.times)?;
+        map.draws.last_mut().expect("draw just observed").tooltip = tooltip;
         if let Some(frame) = map
             .sidebar_frames
             .last_mut()
@@ -4898,6 +4958,9 @@ mod tests {
         legacy.observe_action_line_inputs = Some(false);
         assert!(legacy.validate().is_err());
         let mut legacy = example();
+        legacy.observe_tooltips = Some(false);
+        assert!(legacy.validate().is_err());
+        let mut legacy = example();
         legacy.observe_disguise_inputs = Some(false);
         assert!(legacy.validate().is_err());
         let mut legacy = example();
@@ -4941,6 +5004,7 @@ mod tests {
         modern["observe_projectiles"] = json!(true);
         modern["observe_anim_types"] = json!(["BBBLELRG"]);
         modern["observe_action_line_inputs"] = json!(true);
+        modern["observe_tooltips"] = json!(true);
         modern["observe_disguise_inputs"] = json!(true);
         modern["observe_lasers"] = json!(true);
         modern["observe_electric_bolts"] = json!(true);
@@ -4964,6 +5028,7 @@ mod tests {
             "observe_projectiles",
             "observe_anim_types",
             "observe_action_line_inputs",
+            "observe_tooltips",
             "observe_disguise_inputs",
             "observe_lasers",
             "observe_electric_bolts",

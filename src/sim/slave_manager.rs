@@ -688,7 +688,7 @@ impl Simulation {
             let Ok(coord) = crate::sim::movement::nav_target_coordinate(
                 target,
                 Some(slave),
-                &self.substrate.entities,
+                self,
                 self.resolved_terrain.as_ref(),
                 Some((rules, &self.interner)),
             ) else {
@@ -1075,7 +1075,7 @@ impl Simulation {
                 crate::sim::movement::nav_target_coordinate(
                     target,
                     Some(master),
-                    &self.substrate.entities,
+                    self,
                     self.resolved_terrain.as_ref(),
                     Some((rules, &self.interner)),
                 )

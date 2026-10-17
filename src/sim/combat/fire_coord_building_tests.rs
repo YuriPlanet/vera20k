@@ -133,11 +133,8 @@ fn building_aim_directions_match_the_original() {
             current,
         );
         let output = &row["output"];
-        let coords = crate::sim::combat::resolve_target_coords(
-            &TargetKind::Entity(1),
-            &sim.substrate.entities,
-        )
-        .map(coords_xy);
+        let coords =
+            crate::sim::combat::resolve_target_coords(&TargetKind::Entity(1), &sim).map(coords_xy);
         let native = &output["get_coords"];
         assert_eq!(
             coords,

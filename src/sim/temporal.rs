@@ -379,6 +379,7 @@ impl Simulation {
                         let requested = Some(crate::sim::combat::TargetKind::Entity(bunker));
                         let commits = crate::sim::mission::concrete_effects::assign_target_commits(
                             &self.substrate.entities,
+                            &self.production.terrain_objects,
                             requested,
                         );
                         if let Some(firer_entity) = self.substrate.entities.get_mut(firer) {
@@ -542,7 +543,7 @@ impl Simulation {
         // `0x004F950E`, `0x004F956A`).
         let Some((rx, ry, _, _)) = crate::sim::combat::resolve_target_coords(
             &crate::sim::combat::TargetKind::Entity(target),
-            &self.substrate.entities,
+            self,
         ) else {
             return;
         };

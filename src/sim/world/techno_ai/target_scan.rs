@@ -589,38 +589,24 @@ pub(super) fn select_weapon(
     let Some(obj) = sim.interner.object_type(firer.type_ref(), rules) else {
         return 0;
     };
-    let terrain = sim.resolved_terrain.as_ref();
-    let target_facts = match target {
-        Some(TargetKind::Entity(target_id)) => {
-            sim.substrate.entities.get(target_id).and_then(|target| {
-                sim.interner
-                    .object_type(target.type_ref(), rules)
-                    .map(|target_obj| {
-                        combat_weapon::techno_target_facts(
-                            target,
-                            target_obj,
-                            terrain,
-                            combat_weapon::is_ally_by_object(
-                                Some(&sim.fog.alliances),
-                                &sim.interner,
-                                firer.owner(),
-                                target.owner(),
-                            ),
-                            rules,
-                            &sim.interner,
-                        )
-                    })
-            })
-        }
-        Some(TargetKind::Cell(rx, ry)) => Some(combat_weapon::cell_target_facts(rx, ry, terrain)),
-        None => None,
-    };
-    combat_weapon::what_weapon_should_i_use(
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    //7098D2/709971 dispatch the shared SelectWeapon ladder on an arbitrary
+    //target Object. Terrain facts belong to that owner, not a second AI adapter.
+    combat_weapon::select_weapon_index_against_in_query(
         rules,
+        firer,
         obj,
         &combat_weapon::attacker_facts(firer, obj),
-        target_facts.as_ref(),
+        target.as_ref(),
+        sim,
+        &sim.interner,
+        cells.as_ref(),
+        Some(&sim.fog.alliances),
     )
+    .unwrap_or(0)
 }
 
 /// `TechnoClass::CanFireAt @ 0x006F77B0` (vt+0x3A8): InRange for `target`
@@ -850,7 +836,9 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn is_techno(&self, target: TargetKind) -> bool {
-        matches!(target, TargetKind::Entity(_))
+        //70997B tests AbstractFlags bit0 before estimated-health debit.
+        //The legacy Entity arm also carries Terrain Object IDs.
+        matches!(target, TargetKind::Entity(id) if self.sim.substrate.entities.contains(id))
     }
 
     fn estimated_damage(&mut self, target: TargetKind, weapon: &'r WeaponType) -> i32 {
@@ -1109,6 +1097,35 @@ mod tests {
                 "the rearmed timer gates another scan"
             );
         }
+    }
+
+    #[test]
+    fn scan_estimates_only_real_techno_targets() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::terrain_object::TerrainObjectState;
+
+        let rules =
+            RuleSet::from_ini(&IniFile::from_str("[VehicleTypes]\n0=TEST\n[TEST]\n")).unwrap();
+        let mut sim = Simulation::new();
+        sim.substrate
+            .entities
+            .insert(GameEntity::test_default(1, "TEST", "Americans", 5, 5));
+        let tree_type = sim.interner.intern("TREE01");
+        sim.production
+            .terrain_objects
+            .insert(2, TerrainObjectState::for_test(2, tree_type, 7, 5));
+        let host = WorldScan {
+            sim: &mut sim,
+            rules: &rules,
+            id: 1,
+            ctx: ObjectAiCtx::default(),
+            scan_coord: None,
+        };
+        assert!(host.is_techno(TargetKind::Entity(1)));
+        assert!(!host.is_techno(TargetKind::Entity(2)));
+        assert!(!host.is_techno(TargetKind::Entity(999)));
+        assert!(!host.is_techno(TargetKind::Cell(7, 5)));
     }
 
     const TARGET: i64 = 0x2000_4000;

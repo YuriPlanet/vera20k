@@ -3820,6 +3820,254 @@ fn target_expiry_rearms_passive_scan_and_restores_suspended_mission() {
     );
 }
 
+/// Techno707964..70799E and the Foot sensor call4D9A57 ask the
+/// predicate only for an expiring Techno (+14 bit0). This explicitly supplied
+/// control0 callback isolates that class guard: ordinary Terrain lethal
+/// integration uses control1, and the public DetachAll entry has Techno callers.
+/// It does not claim a Terrain control0 broadcast or expiry-index traversal.
+#[test]
+fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
+    use super::lifecycle::PointerExpiryControl;
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use crate::sim::vision::FogState;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n[VehicleTypes]\n0=SENSOR\n1=TARGET\n\
+         [AircraftTypes]\n[BuildingTypes]\n[TerrainTypes]\n0=TREE01\n\
+         [SENSOR]\nStrength=100\nSight=0\nSpeed=0\nSensorsSight=4\n\
+         [TARGET]\nStrength=100\nSight=0\nSpeed=0\n\
+         [TREE01]\nStrength=100\n",
+    ))
+    .unwrap();
+    for terrain_expires in [true, false] {
+        let mut sim = Simulation::with_seed(0x1234);
+        sim.fog = FogState::new(32, 32);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        assert_eq!(
+            crate::sim::terrain_spawn::construct_terrain_objects(
+                &mut sim,
+                &[crate::map::overlay::TerrainObject {
+                    rx: 16,
+                    ry: 16,
+                    name: "TREE01".to_owned(),
+                }],
+                &rules,
+                false,
+            ),
+            1
+        );
+        let tree = sim.production.terrain_object_cells[&(16, 16)];
+        let listener = sim
+            .spawn_object_at_height("SENSOR", "Americans", 15, 16, 0, 0, &rules)
+            .unwrap();
+        let references = sim
+            .spawn_object_at_height("SENSOR", "Americans", 15, 17, 0, 0, &rules)
+            .unwrap();
+        let techno = sim
+            .spawn_object_at_height("TARGET", "Soviet", 18, 16, 0, 0, &rules)
+            .unwrap();
+        let saved = sim
+            .spawn_object_at_height("TARGET", "Soviet", 20, 20, 0, 0, &rules)
+            .unwrap();
+        let (expired, cell, owner) = if terrain_expires {
+            (tree, (16, 16), None)
+        } else {
+            (
+                techno,
+                (18, 16),
+                Some(sim.substrate.entities.get(techno).unwrap().owner()),
+            )
+        };
+        let sensing_house = sim.substrate.entities.get(listener).unwrap().owner();
+        assert!(sim.fog.has_sensor_for_house(sensing_house, cell.0, cell.1));
+        assert!(
+            sim.substrate
+                .entities
+                .get(listener)
+                .unwrap()
+                .sensor_deposit
+                .is_some()
+        );
+        let sensor_counts = sim.fog.sensors_by_house.clone();
+        let registered = sim.live_object_order_snapshot();
+        sim.session.binary_frame = 105;
+        {
+            let actor = sim.substrate.entities.get_mut(listener).unwrap();
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(expired)));
+            actor
+                .suspended_attack_target
+                .set_for_test(Some(TargetKind::Entity(saved)));
+            actor.set_archive_target(Some(TargetKind::Entity(expired)));
+            actor
+                .navigation
+                .set_nav_com_for_test(Some(NavTargetRef::object(expired)));
+            actor
+                .navigation
+                .set_suspended_nav_com_for_test(Some(NavTargetRef::cell(20, 16)));
+            actor.passive_scan.timer_mut_for_test().arm(100, 20);
+            actor.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_known(MissionType::Attack),
+                suspended: MissionId::from_known(MissionType::Guard),
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 100,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(100),
+            });
+        }
+        {
+            // A separate unsuspended listener keeps every exact expired
+            // reference observable; Restore above installs a surviving target.
+            let actor = sim.substrate.entities.get_mut(references).unwrap();
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(expired)));
+            actor
+                .suspended_attack_target
+                .set_for_test(Some(TargetKind::Entity(expired)));
+            actor.set_archive_target(Some(TargetKind::Entity(expired)));
+            actor
+                .navigation
+                .set_nav_com_for_test(Some(NavTargetRef::object(expired)));
+            actor
+                .navigation
+                .set_nav_com_aux_for_test(Some(NavTargetRef::object(expired)));
+            actor
+                .navigation
+                .set_suspended_nav_com_for_test(Some(NavTargetRef::object(expired)));
+            actor.navigation.set_nav_queue_for_test(vec![
+                NavTargetRef::object(expired),
+                NavTargetRef::cell(20, 16),
+            ]);
+            actor.passive_scan.timer_mut_for_test().arm(0, 0);
+        }
+        let timer_before = sim
+            .substrate
+            .entities
+            .get(listener)
+            .unwrap()
+            .passive_scan
+            .timer();
+        let mut expected_rng = sim.scenario_rng.clone();
+        let delay = terrain_expires.then(|| expected_rng.next_range_u32_inclusive(4, 8));
+        for receiver in [listener, references] {
+            sim.notify_entity_pointer_expired(
+                receiver,
+                expired,
+                Some(cell),
+                true,
+                100,
+                false,
+                owner,
+                PointerExpiryControl::DetachAll,
+                Some(&rules),
+                None,
+                super::FrameEffects::default(),
+            );
+        }
+        let actor = sim.substrate.entities.get(listener).unwrap();
+        assert_eq!(
+            actor.attack_target.target(),
+            Some(TargetKind::Entity(if terrain_expires {
+                saved
+            } else {
+                expired
+            },))
+        );
+        assert_eq!(
+            actor.mission.current(),
+            MissionId::from_known(if terrain_expires {
+                MissionType::Guard
+            } else {
+                MissionType::Attack
+            },)
+        );
+        assert_eq!(
+            actor.mission.suspended(),
+            if terrain_expires {
+                MissionId::NONE
+            } else {
+                MissionId::from_known(MissionType::Guard)
+            }
+        );
+        assert_eq!(
+            actor.suspended_attack_target.target(),
+            Some(TargetKind::Entity(saved))
+        );
+        assert_eq!(
+            actor.archive_target(),
+            None,
+            "Foot archive clear ignores the sensor gate"
+        );
+        assert_eq!(
+            actor.navigation.nav_com(),
+            Some(if terrain_expires {
+                NavTargetRef::cell(20, 16)
+            } else {
+                NavTargetRef::object(expired)
+            })
+        );
+        if let Some(delay) = delay {
+            assert_eq!(actor.passive_scan.timer().start_frame(), 105);
+            assert_eq!(actor.passive_scan.timer().duration(), delay);
+        } else {
+            assert_eq!(actor.passive_scan.timer(), timer_before);
+        }
+        let actor = sim.substrate.entities.get(references).unwrap();
+        let retained = (!terrain_expires).then_some(TargetKind::Entity(expired));
+        assert_eq!(actor.attack_target.target(), retained);
+        assert_eq!(actor.suspended_attack_target.target(), retained);
+        assert_eq!(actor.archive_target(), None);
+        let retained_nav = (!terrain_expires).then_some(NavTargetRef::object(expired));
+        assert_eq!(actor.navigation.nav_com(), retained_nav);
+        assert_eq!(actor.navigation.nav_com_aux(), retained_nav);
+        assert_eq!(actor.navigation.suspended_nav_com(), None);
+        assert_eq!(
+            actor.navigation.nav_queue(),
+            vec![NavTargetRef::cell(20, 16)]
+        );
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected_rng.logical_state()
+        );
+
+        // The first callback consumed the only Restore and shortening event.
+        // A repeat must not spend another draw, even while the Techno control
+        // still retains its sensed target.
+        let after_first = sim.substrate.entities.get(listener).unwrap().clone();
+        for receiver in [listener, references] {
+            sim.notify_entity_pointer_expired(
+                receiver,
+                expired,
+                Some(cell),
+                true,
+                100,
+                false,
+                owner,
+                PointerExpiryControl::DetachAll,
+                Some(&rules),
+                None,
+                super::FrameEffects::default(),
+            );
+        }
+        let actor = sim.substrate.entities.get(listener).unwrap();
+        assert_eq!(actor.attack_target, after_first.attack_target);
+        assert_eq!(actor.mission, after_first.mission);
+        assert_eq!(actor.passive_scan, after_first.passive_scan);
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected_rng.logical_state()
+        );
+        assert_eq!(sim.fog.sensors_by_house, sensor_counts);
+        assert_eq!(sim.production.terrain_object_cells[&(16, 16)], tree);
+        assert!(sim.production.terrain_objects[&tree].is_live());
+        assert_eq!(sim.live_object_order_snapshot(), registered);
+    }
+}
+
 #[test]
 fn infantry_target_expiry_clears_firing_action_before_target() {
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};

@@ -44,6 +44,7 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
+use crate::sim::world::Simulation;
 
 /// Which weapon slot the unit is using for this engagement.
 ///
@@ -1031,7 +1032,7 @@ pub(crate) fn select_weapon_against<'a>(
     attacker_obj: &'a ObjectType,
     attacker: &AttackerFacts,
     target: Option<&TargetKind>,
-    entities: &EntityStore,
+    world: &Simulation,
     interner: &StringInterner,
     terrain: Option<&ResolvedTerrainGrid>,
     alliances: Option<&HouseAllianceMap>,
@@ -1043,7 +1044,7 @@ pub(crate) fn select_weapon_against<'a>(
         attacker_obj,
         attacker,
         target,
-        entities,
+        world,
         interner,
         cells.as_ref(),
         alliances,
@@ -1058,7 +1059,7 @@ pub fn select_weapon_against_in_query<'a>(
     attacker_obj: &'a ObjectType,
     attacker: &AttackerFacts,
     target: Option<&TargetKind>,
-    entities: &EntityStore,
+    world: &Simulation,
     interner: &StringInterner,
     cells: Option<&NativeCellQuery<'_>>,
     alliances: Option<&HouseAllianceMap>,
@@ -1069,7 +1070,7 @@ pub fn select_weapon_against_in_query<'a>(
         attacker_obj,
         attacker,
         target,
-        entities,
+        world,
         interner,
         cells,
         alliances,
@@ -1081,7 +1082,7 @@ pub fn select_weapon_against_in_query<'a>(
             attacker_entity,
             attacker_obj,
             index,
-            entities,
+            &world.substrate.entities,
             interner,
         ),
     ))
@@ -1097,7 +1098,7 @@ pub(crate) fn select_weapon_index_against_in_query(
     attacker_obj: &ObjectType,
     attacker: &AttackerFacts,
     target: Option<&TargetKind>,
-    entities: &EntityStore,
+    world: &Simulation,
     interner: &StringInterner,
     cells: Option<&NativeCellQuery<'_>>,
     alliances: Option<&HouseAllianceMap>,
@@ -1105,27 +1106,40 @@ pub(crate) fn select_weapon_index_against_in_query(
     let terrain = cells.map(NativeCellQuery::terrain);
     let target_facts = match target.copied() {
         Some(TargetKind::Entity(target_id)) => {
-            let target_entity = entities.get(target_id)?;
-            let target_obj = interner.object_type(target_entity.type_ref(), rules)?;
-            let is_ally = is_ally_by_object(
-                alliances,
-                interner,
-                attacker_entity.owner(),
-                target_entity.owner(),
-            );
-            let mut facts =
-                techno_target_facts(target_entity, target_obj, terrain, is_ally, rules, interner);
-            if let Some(cells) = cells
-                && let TargetFacts::Techno { flight, .. } = &mut facts
-            {
-                *flight = TargetFlight::InQuery {
-                    entity: target_entity,
-                    cells,
+            // SelectWeapon6F3330 distinguishes Techno bit0 from Terrain
+            // WhatAmI24 before its shared ladder. The Object-ID arm retains
+            // the actual Terrain identity rather than treating it as NULL.
+            if let Some(target_entity) = world.substrate.entities.get(target_id) {
+                let target_obj = interner.object_type(target_entity.type_ref(), rules)?;
+                let is_ally = is_ally_by_object(
+                    alliances,
+                    interner,
+                    attacker_entity.owner(),
+                    target_entity.owner(),
+                );
+                let mut facts = techno_target_facts(
+                    target_entity,
+                    target_obj,
+                    terrain,
+                    is_ally,
                     rules,
                     interner,
-                };
+                );
+                if let Some(cells) = cells
+                    && let TargetFacts::Techno { flight, .. } = &mut facts
+                {
+                    *flight = TargetFlight::InQuery {
+                        entity: target_entity,
+                        cells,
+                        rules,
+                        interner,
+                    };
+                }
+                Some(facts)
+            } else {
+                world.production.terrain_objects.get(&target_id)?;
+                Some(TargetFacts::Terrain)
             }
-            Some(facts)
         }
         Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(rx, ry, terrain)),
         None => None,

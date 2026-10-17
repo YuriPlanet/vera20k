@@ -49,13 +49,7 @@ pub(crate) const ID_POWER_TIP: u32 = 999;
 /// `"Power = %d\nDrain = %d"`.
 const TIP_LABEL_POWER_DRAIN: &str = "TXT_POWER_DRAIN";
 
-/// Whether an already visible tip slides after the cursor. `false` is gamemd:
-/// the pop-up keeps the spot it appeared in and only a move off its region ends
-/// it, so a resting hand's 1-px jitter leaves it steady. Set `true` for the
-/// tracking behaviour (every move hides the tip and re-shows it at the new
-/// cursor position). The in-game coordinate toggle has its own native tracking
-/// branch (`CursorCheat` 724251 → 72429E) and ignores this.
-pub(crate) const TIP_FOLLOWS_CURSOR: bool = false;
+const TIP_LABEL_SHADOW: &str = "TXT_SHADOW";
 
 /// Box placement: cursor offset, flipped to the other side when the box would
 /// leave the region. Both halves are VERA-local: the native placement branches
@@ -105,7 +99,6 @@ pub(crate) fn on_mouse_move(state: &mut AppState) {
             .on_mouse_move_immediate(x, y, now);
     } else {
         let tips = &mut state.match_state.match_presentation.tooltips;
-        tips.set_follow_cursor(TIP_FOLLOWS_CURSOR);
         tips.on_mouse_move(x, y, now);
     }
 }
@@ -155,6 +148,64 @@ fn csf_text(state: &AppState, key: &str) -> String {
         .as_ref()
         .map(|csf| csf.text(key).into_owned())
         .unwrap_or_default()
+}
+
+/// Display4AE580..4AE5FD: CursorCheat formats the signed plane XYZ /256;
+/// otherwise that same ProcessClickCoords output goes through Map565730,
+/// then direct Cell12C&8, before any object/picker text.
+/// Isolated lookup preserves Dummy identity/flags without stamping canonical
+/// simulation coordinates from presentation. No RNG/timer/detach here.
+fn tactical_cell_tip_text(
+    fog: &crate::sim::vision::FogState,
+    terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    viewer: crate::sim::intern::InternedId,
+    world: (f32, f32),
+    cursor_coordinates: bool,
+    localize: impl FnOnce(&str) -> String,
+) -> String {
+    let point = crate::map::terrain::screen_to_plane_leptons(world.0, world.1);
+    if cursor_coordinates {
+        return format!("({},{})", point.x / 256, point.y / 256);
+    }
+    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+    let cell = cells.lookup_world(point.x, point.y);
+    if crate::sim::vision::cell_ground_mapped(fog, terrain, viewer, cell) {
+        String::new()
+    } else {
+        localize(TIP_LABEL_SHADOW)
+    }
+}
+
+fn tactical_tip_text(state: &AppState) -> String {
+    let input = &state.match_state.input;
+    let Some(view) = state.sim_view() else {
+        return String::new();
+    };
+    // Actual Mouse vtable7E1964+68 ->693060 runs before CursorCheat too.
+    if input.tactical_mouse.captured
+        || view.session().input_locked()
+        || input.pending_camera_scroll.blocks_tactical_tooltip()
+    {
+        return String::new();
+    }
+    let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
+    else {
+        return String::new();
+    };
+    let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state,
+        input.cursor_x,
+        input.cursor_y,
+    );
+    tactical_cell_tip_text(
+        view.fog(),
+        terrain,
+        viewer,
+        world,
+        input.cursor_coordinates,
+        |key| csf_text(state, key),
+    )
+    // The later object/cloak/resource tooltip ladder remains a separate path.
 }
 
 /// gamemd re-formats a tab/scroll tip as `"<tip>\n(<Tip:Disabled>)"` when the
@@ -207,24 +258,14 @@ fn sync_in_game_regions(state: &mut AppState) {
     };
     let frame = state.sidebar_frame();
     let mut regions: Vec<TipRegion> = Vec::with_capacity(9 + view.items.len());
-    // Set_View_Dimensions4A8B50 registers the complete tactical viewport as
+    // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
     // 4AE580, before the ordinary object/shroud tooltip lookup.
     let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let coordinate_text = if state.match_state.input.cursor_coordinates {
-        let (rx, ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-        );
-        format!("({rx},{ry})")
-    } else {
-        String::new()
-    };
     regions.push(TipRegion {
         id: 500,
         rect: TipRect::new(x as i32, y as i32, width as i32, height as i32),
-        text: coordinate_text,
+        text: tactical_tip_text(state),
     });
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
@@ -494,6 +535,82 @@ mod tests {
 
     /// Retail English `TXT_MONEY_FORMAT_2`.
     const RETAIL_MONEY_FORMAT_2: &str = "%s $%d";
+
+    #[test]
+    fn tactical_ground_tip_uses_plane_receiver_and_direct_ground_byte() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+        use crate::sim::vision::FogState;
+        let mut interner = crate::sim::intern::StringInterner::new();
+        let viewer = interner.intern("player");
+        let other = interner.intern("other");
+        let terrain = ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| {
+                        let mut cell = ResolvedTerrainCell::clear_for_test(x, y);
+                        cell.level = 6; // Display's plane receiver ignores this height.
+                        cell
+                    })
+                })
+                .collect(),
+        );
+        let mut fog = FogState::new(32, 32);
+        let point = (0.0, 615.0); // Native plane(5120,5120,0), receiver20,20.
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
+            "TXT_SHADOW"
+        );
+        fog.set_ground_bits_for_test(viewer, 20, 20, 8);
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
+            ""
+        );
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, other, point, false, str::to_owned),
+            "TXT_SHADOW"
+        );
+        // Gap6FB3B8 clears the same native bit8 that Display4AE5D0 reads.
+        // Its canonical knowledge decision must win over the legacy cache.
+        crate::sim::vision::apply_gap_generators(&mut fog, &[(other, 20, 20, 2)], &interner);
+        assert!(!fog.is_cell_revealed(viewer, 20, 20));
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
+            "TXT_SHADOW"
+        );
+        // The production Display text owner must use its plane XYZ for the
+        // coordinate branch too, despite real level6 below this cursor.
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, true, |_| panic!(
+                "CursorCheat precedes localized shroud text"
+            )),
+            "(20,20)"
+        );
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, viewer, (-2006.0, 15.0), true, |_| panic!(
+                "CursorCheat precedes localized shroud text"
+            )),
+            "(-33,33)"
+        );
+        let before_dummy = terrain.shared_cell_dummy().snapshot();
+        assert_eq!(
+            tactical_cell_tip_text(
+                &fog,
+                &terrain,
+                viewer,
+                (-20_000.0, -20_000.0),
+                false,
+                str::to_owned
+            ),
+            "TXT_SHADOW"
+        );
+        assert_eq!(
+            terrain.shared_cell_dummy().snapshot(),
+            before_dummy,
+            "presentation may stamp only its isolated lookup"
+        );
+    }
 
     #[test]
     fn cameo_tip_splits_every_space_including_the_formats_own() {

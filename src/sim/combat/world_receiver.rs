@@ -181,6 +181,7 @@ pub(crate) fn collect_area(
     let prelude: &mut dyn combat_aoe::AoECellPrelude = &mut prelude;
     combat_aoe::apply_aoe_damage_with_terrain_and_scenario(
         &mut world.substrate.entities,
+        &world.production.terrain_objects,
         cell.0,
         cell.1,
         damage,

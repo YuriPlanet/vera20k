@@ -1277,7 +1277,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         };
         let sim = &*self.sim;
         crate::sim::combat::can_fire_at_target(
-            &sim.substrate.entities,
+            sim,
             rules,
             &sim.interner,
             self.owner_id,

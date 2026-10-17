@@ -30,14 +30,9 @@
 //!   `0x4B46E6`) run through [`Simulation::pickup_crate_at`]; a host called
 //!   without the OverlayType table answers as a cell without a crate (the
 //!   native early exit `0x481A39`). Production always binds it.
-//! - Terrain blockers in the code-4/5 arm (`Find_Blocking_Object 0x47C5A0`
-//!   returning a TerrainClass): native's Is_Ally (`0x004F9A90`) is false for a
-//!   tree, which has no house, so it orders Attack on it; VERA targets only
-//!   objects and cells, so no Override is issued. Trigger: a Unit whose
-//!   selected weapon's warhead has `Wood=` meets a tree Cell on its route (the
-//!   class answers 5 there, which A* prices at 20). Effect: it drops its head
-//!   without turning on the tree. Frequency: not measured. Hover shares this
-//!   arm (`override_movement_blocker_at`); Walk's has the same gap (#1517).
+//! - Terrain blockers retain the actual Object target through the shared
+//!   code-4/5 Override arm (4B3B8D..4B3BE9). The ordinary route must first
+//!   admit that cell; a blocked zone can reject a destination before this arm.
 //! - Drive's retained +64 now feeds the wall pre-entry tilt in `track_host`.
 //!   The separate CrusherAll/current-Unit arm4B1A04..4B1A58 still lacks its
 //!   Foot+6B5 producer/speed-clamp integration. Selected stock MTNK's zone0
@@ -1317,8 +1312,11 @@ impl Simulation {
                 }
                 self.track_override(id, TargetKind::Entity(blocker), rules, frame_effects);
             }
-            Some(BlockingObject::Terrain) => {
-                //See the terrain-blocker residual: no terrain target exists.
+            Some(BlockingObject::Terrain(blocker)) => {
+                // Terrain7F522C+3C ->4104A0 returns NULL, so the native
+                // House4F9A90 test is false. Keep the Object pointer through
+                // the same Foot4D8F40 target/destination transaction.
+                self.track_override(id, TargetKind::Entity(blocker), rules, frame_effects);
             }
             None => {
                 //4B3B94..4B3BE3: a wall overlay makes the Cell the target.
@@ -1380,15 +1378,16 @@ impl Simulation {
         }
         self.production
             .terrain_object_cells
-            .contains_key(&cell)
-            .then_some(BlockingObject::Terrain)
+            .get(&cell)
+            .copied()
+            .map(BlockingObject::Terrain)
     }
 }
 
 /// What `Find_Blocking_Object` returned.
 pub(crate) enum BlockingObject {
     Entity(u64),
-    Terrain,
+    Terrain(u64),
 }
 
 /// LandType Tunnel (10), Cell+EC.
@@ -1406,4 +1405,155 @@ impl FreshCall<'_> {
 /// tools/spatial_oracle/drive_fresh_turn.json.
 pub(super) fn fresh_heading_ready(body_facing: u16, direction: u8) -> bool {
     body_facing == u16::from(direction) << 13
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sim::mission::MissionId;
+
+    #[test]
+    fn terrain_blocker_response_preserves_object_target_and_move_archive() {
+        // Component boundary: original 4B3B24/4C/8D returns the Terrain
+        // pointer, whose null House (7F522C+3C -> 4104A0) permits Attack at
+        // 4B3BE9. This supplies that response's cell, not a path or an ordinary
+        // map-route claim. Unit73FBAC and the real stock AP reader establish
+        // the preceding code5; no CanEnter/FindPath/Override seam is installed.
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+            .expect("stock tank admitted on clear ground");
+        assert_eq!(
+            crate::sim::terrain_spawn::construct_terrain_objects(
+                &mut sim,
+                &[crate::map::overlay::TerrainObject {
+                    rx: 11,
+                    ry: 10,
+                    name: "TREE01".into(),
+                }],
+                &rules,
+                false,
+            ),
+            1
+        );
+        let tree = sim.production.terrain_object_cells[&(11, 10)];
+        assert!(!sim.substrate.entities.contains(tree));
+        let cell = sim
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .native_cell_identity((11, 10));
+        assert_eq!(
+            sim.foot_can_enter(
+                tank,
+                cell,
+                InfantryEntryArgs {
+                    direction: 2,
+                    height: 0,
+                    previous_cell: None,
+                },
+                &rules,
+                None,
+            )
+            .expect("real Unit entry receiver"),
+            5,
+            "stock AP Wood admits the live Terrain as a destructible blocker"
+        );
+        let destination = NavTargetRef::cell(14, 10);
+        assert!(
+            sim.set_unit_destination(tank, destination, &rules, true, FrameEffects::default(),)
+        );
+        sim.mission_assign_exact(tank, MissionId::from_known(MissionType::Move), 0)
+            .unwrap();
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(tank)
+                .unwrap()
+                .mission
+                .effective()
+                .known(),
+            Some(MissionType::Move)
+        );
+
+        sim.override_movement_blocker_at(tank, (11, 10), &rules, None, FrameEffects::default());
+
+        let actor = sim.substrate.entities.get(tank).unwrap();
+        assert_eq!(actor.mission.effective().known(), Some(MissionType::Attack));
+        assert_eq!(actor.attack_target.target(), Some(TargetKind::Entity(tree)));
+        assert_eq!(actor.mission.suspended().known(), Some(MissionType::Move));
+        assert_eq!(actor.navigation.suspended_nav_com(), Some(destination));
+        assert_eq!(actor.navigation.nav_com(), None);
+
+        // This is a component save/restore, with the same external terrain and
+        // rules rebound through the existing owners. It tests the retained
+        // Object reference and interrupt stack, not app resource admission or
+        // native save timing. Native load resets Scenario RNG, so these two
+        // continuations assert the loop outcome, not matching clocks/hashes.
+        let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+        let speed_config = sim.terrain_speed_config.clone();
+        let bytes =
+            crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "Terrain blocker interrupt", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .expect("represented Terrain target has the existing wire shape")
+            .sim;
+        restored
+            .restore_after_snapshot_load()
+            .expect("real Terrain target resolves in its authoritative store");
+        restored.resolve_type_handles(&rules);
+        restored.rebuild_caches_after_load(terrain, speed_config, &rules);
+        assert!(restored.rebuild_dynamic_navigation(&rules));
+        let actor = restored.substrate.entities.get(tank).unwrap();
+        assert_eq!(actor.attack_target.target(), Some(TargetKind::Entity(tree)));
+        assert_eq!(actor.mission.suspended().known(), Some(MissionType::Move));
+        assert_eq!(actor.navigation.suspended_nav_com(), Some(destination));
+
+        for sim in [&mut sim, &mut restored] {
+            // Continue through ordinary AI/FireAt/Bullet/Terrain damage and the
+            // existing clear-before-Restore expiry owner, without a firing seam.
+            // Both controls begin at the bounded response, not an ordinary path.
+            sim.clear_lifecycle_test_events_for_test();
+            let mut fired_at_tree = false;
+            for _ in 0..1200 {
+                sim.advance_tick(&[], Some(&rules), None, None, 22);
+                fired_at_tree |= sim.fire_events.iter().any(|event| {
+                    event.attacker_id == tank && event.target == TargetKind::Entity(tree)
+                });
+                if !sim.production.terrain_object_cells.contains_key(&(11, 10)) {
+                    break;
+                }
+            }
+            assert!(fired_at_tree, "the retained Object target reaches FireAt");
+            assert!(
+                !sim.production.terrain_object_cells.contains_key(&(11, 10)),
+                "the existing Terrain receiver takes the cannon's Wood damage"
+            );
+            let actor = sim.substrate.entities.get(tank).unwrap();
+            assert_eq!(actor.attack_target.target(), None);
+            assert_eq!(actor.mission.suspended(), MissionId::NONE);
+            // Foot Restore4D8F80..4D8FA6 reads +5A8 into the destination
+            // setter without clearing the retained archive.
+            assert_eq!(actor.navigation.suspended_nav_com(), Some(destination));
+            assert_eq!(actor.navigation.nav_com(), Some(destination));
+            assert_eq!(actor.mission.effective().known(), Some(MissionType::Move));
+            assert_eq!(
+                sim.lifecycle_test_events_for_test()
+                    .iter()
+                    .filter(|event| matches!(
+                        event, crate::sim::world::LifecycleTestEvent::TerrainExpiryBoundary {
+                            stable_id, indexed: true, in_logic: true, live: true, ..
+                        } if *stable_id == tree
+                    ))
+                    .count(),
+                4,
+                "all four lethal callbacks precede Terrain unlink"
+            );
+        }
+    }
 }

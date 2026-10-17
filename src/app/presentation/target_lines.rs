@@ -335,7 +335,7 @@ pub(crate) fn build_factory_rally_line_instances(
         }
         let Some(mut target) = entity
             .archive_target()
-            .and_then(|target| target_get_coords(target, sim.entities(), Some(&cells)))
+            .and_then(|target| target_get_coords(target, sim, Some(&cells)))
         else {
             continue;
         };
@@ -413,7 +413,7 @@ fn selected_action_line_for_entity(
         | NavTargetRef::Object { id }
         | NavTargetRef::Building { id } => TargetKind::Entity(id),
     };
-    let mut end = target_get_coords(target, sim.entities(), cells)?;
+    let mut end = target_get_coords(target, sim, cells)?;
     let end_cell = (
         crate::util::lepton::lepton_to_cell_packed(end.x),
         crate::util::lepton::lepton_to_cell_packed(end.y),

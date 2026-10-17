@@ -221,7 +221,7 @@ impl EnterHost for WorldEnter<'_> {
             ),
             None => ground_pose::target_get_coords(
                 crate::sim::combat::TargetKind::from(nav),
-                &self.sim.substrate.entities,
+                self.sim,
                 terrain
                     .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
                     .as_ref(),

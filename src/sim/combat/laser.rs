@@ -87,7 +87,7 @@ pub(crate) fn fired(
         world,
         rules,
         source_id,
-        target.into(),
+        target.projectile_target(world),
         weapon_index,
         weapon,
         None,

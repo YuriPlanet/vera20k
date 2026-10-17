@@ -34,7 +34,7 @@ fn retail_shipyard_target_offset_reaches_effect_coordinate() {
             super::fire_coord::effect_target_coordinate(
                 &sim,
                 &rules,
-                super::TargetKind::Entity(id).into()
+                super::TargetKind::Entity(id).projectile_target(&sim)
             ),
             Some(ProjectileCoord::new(
                 centre.x + offset[0],

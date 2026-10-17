@@ -2041,7 +2041,7 @@ impl Simulation {
                 self.team_waypoint_blocker(waypoint)
                     .map(|(target, blocker)| match blocker {
                         Some(BlockingObject::Entity(object)) => TeamTarget::Object(object),
-                        Some(BlockingObject::Terrain) | None => target,
+                        Some(BlockingObject::Terrain(_)) | None => target,
                     });
             self.team_assign_mission_target(team_id, target, rules, registry, frame_effects);
         }

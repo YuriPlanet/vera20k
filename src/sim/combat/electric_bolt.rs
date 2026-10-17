@@ -38,7 +38,7 @@ pub(crate) fn fired(
         object,
         &super::combat_weapon::attacker_facts(source, object),
         Some(&target),
-        &world.substrate.entities,
+        world,
         &world.interner,
         world.resolved_terrain.as_ref(),
         Some(&world.fog.alliances),
@@ -59,7 +59,7 @@ pub(crate) fn fired(
         world,
         rules,
         source_id,
-        target.into(),
+        target.projectile_target(world),
         selected.weapon,
         from,
     );

@@ -244,7 +244,8 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
                 .iter()
                 .map(|(_, bullet)| bullet)
                 .find(|bullet| {
-                    bullet.source_id == scene.aegis && bullet.target == shot.target.into()
+                    bullet.source_id == scene.aegis
+                        && bullet.target == shot.target.projectile_target(&scene.sim)
                 })
                 .expect("real returned Medusa remains targeted independently of shooter TarCom");
             assert_eq!(bullet.payload.installed_weapon(), Some(shot.weapon_id));

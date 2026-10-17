@@ -1260,10 +1260,7 @@ fn release_contact(
         locomotor.power_on();
     }
     let destination = if let Some(archive) = ai_archive {
-        match archive {
-            TargetKind::Cell(x, y) => Some(crate::sim::components::NavTargetRef::cell(x, y)),
-            TargetKind::Entity(id) => Some(crate::sim::components::NavTargetRef::Entity { id }),
-        }
+        Some(archive.into())
     } else {
         let Some(building) = sim.substrate.entities.get(depot) else {
             return;

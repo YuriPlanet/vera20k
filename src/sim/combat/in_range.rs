@@ -50,13 +50,14 @@ use crate::sim::cell_kernel::native_cell_own_coords;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon;
 use crate::sim::combat::line_of_fire::{self, LineOfFireInputs};
-use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::air_movement::{is_high_flying_in_query, is_low_flying_in_query};
 use crate::sim::movement::ground_pose::{
     object_center_xy, object_get_coords, object_world_z_leptons,
 };
+use crate::sim::terrain_object::TerrainObjectState;
+use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{
     BRIDGE_DECK_HEIGHT_LEPTONS, LEPTONS_PER_LEVEL, WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS,
@@ -91,25 +92,26 @@ fn cells_fixed_to_leptons(cells: SimFixed) -> i64 {
 /// open-topped stages, before either elevation arm.
 fn initial_range_leptons(
     attacker: &GameEntity,
-    target: &TargetKind,
+    target: RangeTarget<'_>,
     weapon: &WeaponType,
     rules: &RuleSet,
     interner: &StringInterner,
-    entities: &EntityStore,
     cells: &NativeCellQuery<'_>,
 ) -> i64 {
     let mut range_lep: i64 = i64::from(weapon.range_leptons);
 
-    if let TargetKind::Entity(target_id) = *target
-        && let Some(target_entity) = entities.get(target_id)
-    {
-        // AirRange bonus when target is high-flying.
-        if is_high_flying_in_query(target_entity, cells, Some((rules, interner)))
-            && let Some(attacker_obj) = interner.object_type(attacker.type_ref(), rules)
-            && let Some(air_bonus) = attacker_obj.air_range_bonus
-        {
-            range_lep += cells_fixed_to_leptons(air_bonus);
+    let high = match target {
+        RangeTarget::Techno(target) => {
+            is_high_flying_in_query(target, cells, Some((rules, interner)))
         }
+        RangeTarget::Terrain(target) => target.is_high_flying_in_query(Some(cells)),
+        RangeTarget::Cell(_) | RangeTarget::Missing => false,
+    };
+    if high
+        && let Some(attacker_obj) = interner.object_type(attacker.type_ref(), rules)
+        && let Some(air_bonus) = attacker_obj.air_range_bonus
+    {
+        range_lep += cells_fixed_to_leptons(air_bonus);
     }
 
     range_lep
@@ -182,21 +184,24 @@ fn elevation_bonus_leptons(
     arm: ElevationArm,
     rules: &RuleSet,
     interner: &StringInterner,
-    entities: &EntityStore,
     cells: &NativeCellQuery<'_>,
 ) -> i64 {
     if !is_low_flying_in_query(attacker, cells, Some((rules, interner))) {
         return 0;
     }
     let target_xy = match target {
-        RangeTarget::Abstract(TargetKind::Entity(id)) => {
-            let Some(entity) = entities.get(*id) else {
-                return 0;
-            };
-            if !is_low_flying_in_query(entity, cells, Some((rules, interner))) {
+        RangeTarget::Techno(target) => {
+            if !is_low_flying_in_query(target, cells, Some((rules, interner))) {
                 return 0;
             }
-            object_center_xy(entity)
+            object_center_xy(target)
+        }
+        RangeTarget::Terrain(target) => {
+            if !target.is_low_flying_in_query(Some(cells)) {
+                return 0;
+            }
+            let point = target.world_coord();
+            [point.x, point.y]
         }
         RangeTarget::Cell(cell) => {
             if cells.terrain().native_cell_is_water_set_tile(cell) {
@@ -204,8 +209,7 @@ fn elevation_bonus_leptons(
             }
             crate::sim::cell_kernel::native_cell_own_xy(cell, cells)
         }
-        // Unreached: `RangeTarget::from_target` gives every Cell its identity.
-        RangeTarget::Abstract(TargetKind::Cell(..)) => return 0,
+        RangeTarget::Missing => return 0,
     };
     let height = |[x, y]: [i32; 2]| {
         let cell = cells.lookup(((x / 256) as i16, (y / 256) as i16));
@@ -281,7 +285,7 @@ pub fn compute_in_range(
     weapon: &WeaponType,
     rules: &RuleSet,
     interner: &StringInterner,
-    entities: &EntityStore,
+    world: &Simulation,
     terrain: &ResolvedTerrainGrid,
     los: &LineOfFireInputs<'_>,
 ) -> bool {
@@ -292,7 +296,7 @@ pub fn compute_in_range(
         weapon,
         rules,
         interner,
-        entities,
+        world,
         &NativeCellQuery::canonical(terrain),
         los,
     )
@@ -308,34 +312,52 @@ pub(crate) fn compute_in_range_in_query(
     weapon: &WeaponType,
     rules: &RuleSet,
     interner: &StringInterner,
-    entities: &EntityStore,
+    world: &Simulation,
     cells: &NativeCellQuery<'_>,
     los: &LineOfFireInputs<'_>,
 ) -> bool {
     compute_range_target(
         attacker,
         src,
-        RangeTarget::from_target(target, cells.terrain()),
+        RangeTarget::from_target(target, world, cells.terrain()),
         weapon,
         rules,
         interner,
-        entities,
         cells,
         los,
     )
 }
 
+/// Borrowed native receiver for this source/range query. This is not target
+/// state: World adapters resolve stable Object IDs once, while callers already
+/// holding a Techno (EvaluateCandidate6F8178) retain that same receiver.
 #[derive(Clone, Copy)]
-enum RangeTarget<'a> {
-    Abstract(&'a TargetKind),
+pub(crate) enum RangeTarget<'a> {
+    Techno(&'a GameEntity),
+    Terrain(&'a TerrainObjectState),
     Cell(NativeCellIdentity),
+    // InRange6F724E's -512 sentinel precedes even a missing target read.
+    Missing,
 }
 
 impl<'a> RangeTarget<'a> {
-    fn from_target(target: &'a TargetKind, terrain: &ResolvedTerrainGrid) -> Self {
-        target
-            .cell_identity(terrain)
-            .map_or(Self::Abstract(target), Self::Cell)
+    fn from_target(
+        target: &TargetKind,
+        world: &'a Simulation,
+        terrain: &ResolvedTerrainGrid,
+    ) -> Self {
+        match *target {
+            TargetKind::Entity(id) => world
+                .substrate
+                .entities
+                .get(id)
+                .map(Self::Techno)
+                .or_else(|| world.production.terrain_objects.get(&id).map(Self::Terrain))
+                .unwrap_or(Self::Missing),
+            TargetKind::Cell(..) => target
+                .cell_identity(terrain)
+                .map_or(Self::Missing, Self::Cell),
+        }
     }
 }
 
@@ -350,33 +372,24 @@ pub(crate) fn cell_target_in_range(
     weapon: &WeaponType,
     rules: &RuleSet,
     interner: &StringInterner,
-    entities: &EntityStore,
     terrain: &ResolvedTerrainGrid,
     los: &LineOfFireInputs<'_>,
 ) -> Option<bool> {
     let cells = NativeCellQuery::canonical(terrain);
     let target = RangeTarget::Cell(target);
-    let source = fire_source_for_target(
-        attacker,
-        target,
-        weapon,
-        entities,
-        &cells,
-        (rules, interner),
-    )?;
+    let source = fire_source_for_target(attacker, target, weapon, &cells, (rules, interner))?;
     Some(compute_range_target(
-        attacker, source, target, weapon, rules, interner, entities, &cells, los,
+        attacker, source, target, weapon, rules, interner, &cells, los,
     ))
 }
 
-fn compute_range_target(
+pub(crate) fn compute_range_target(
     attacker: &GameEntity,
     src: (i64, i64, i64),
     target: RangeTarget<'_>,
     weapon: &WeaponType,
     rules: &RuleSet,
     interner: &StringInterner,
-    entities: &EntityStore,
     cells: &NativeCellQuery<'_>,
     los: &LineOfFireInputs<'_>,
 ) -> bool {
@@ -388,13 +401,7 @@ fn compute_range_target(
         return true;
     }
 
-    let initial_range_lep = match target {
-        RangeTarget::Abstract(target) => {
-            initial_range_leptons(attacker, target, weapon, rules, interner, entities, cells)
-        }
-        // CellClass+54 is the false Abstract predicate; it has no map query.
-        RangeTarget::Cell(_) => weapon_range_lep,
-    };
+    let initial_range_lep = initial_range_leptons(attacker, target, weapon, rules, interner, cells);
     let mut initial_range_lep =
         occupied_range_leptons(attacker, rules, interner).unwrap_or(initial_range_lep);
     // Active-YR InRange6F72A2..6F72C8: +2E4 on a non-Building adds
@@ -422,7 +429,7 @@ fn compute_range_target(
     let subject_to_elevation = projectile.is_some_and(|p| p.subject_to_elevation);
     let elevation_bonus = |arm| {
         if subject_to_elevation {
-            elevation_bonus_leptons(attacker, target, arm, rules, interner, entities, cells)
+            elevation_bonus_leptons(attacker, target, arm, rules, interner, cells)
         } else {
             0
         }
@@ -431,12 +438,7 @@ fn compute_range_target(
     // arms, before the target's coordinates, so its cell lookups come first.
     let direct_range_lep = initial_range_lep + elevation_bonus(ElevationArm::Direct);
 
-    let coords = match target {
-        RangeTarget::Abstract(target) => {
-            resolve_target_coords_3d(target, entities, rules, interner, cells)
-        }
-        RangeTarget::Cell(cell) => native_cell_range_coords(cell, cells),
-    };
+    let coords = range_target_coords_3d(target, rules, interner, cells);
     let Some((tx, ty, tz)) = coords else {
         return false;
     };
@@ -502,8 +504,7 @@ fn compute_range_target(
     let mut max_range_lep = direct_range_lep;
     // Building foundation size is queried only after the non-arcing split,
     // 6F7525..6F7554, after target coordinates and MinimumRange.
-    if let RangeTarget::Abstract(TargetKind::Entity(id)) = target
-        && let Some(entity) = entities.get(*id)
+    if let RangeTarget::Techno(entity) = target
         && entity.category() == EntityCategory::Structure
         && let Some(object) = interner.object_type(entity.type_ref(), rules)
     {
@@ -570,30 +571,53 @@ fn line_of_fire_clear(
 /// FootApproach4D5F6F shares this target surface read before its candidate scan.
 pub(crate) fn resolve_target_coords_3d(
     target: &TargetKind,
-    entities: &EntityStore,
+    world: &Simulation,
     rules: &RuleSet,
     interner: &StringInterner,
     cells: &NativeCellQuery<'_>,
 ) -> Option<(i64, i64, i64)> {
-    let terrain = cells.terrain();
-    match *target {
-        TargetKind::Entity(id) => {
-            let t = entities.get(id)?;
-            let (rx, ry, sub_x, sub_y) = super::target_coords(t);
-            let tx = rx as i64 * 256 + sub_x.to_num::<i64>();
-            let ty = ry as i64 * 256 + sub_y.to_num::<i64>();
-            // Virtual+48 supplies the target point before +50. The height
-            // predicate reads physical XY; the following Map queries use this
-            // returned point (which can be a building's foundation centre).
-            let own_z = i64::from(object_world_z_leptons(t, Some(terrain)));
-            let tz = if is_low_flying_in_query(t, cells, Some((rules, interner))) {
+    range_target_coords_3d(
+        RangeTarget::from_target(target, world, cells.terrain()),
+        rules,
+        interner,
+        cells,
+    )
+}
+
+fn range_target_coords_3d(
+    target: RangeTarget<'_>,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    cells: &NativeCellQuery<'_>,
+) -> Option<(i64, i64, i64)> {
+    match target {
+        RangeTarget::Techno(target) => {
+            let (rx, ry, sub_x, sub_y) = super::target_coords(target);
+            let tx = i64::from(rx) * 256 + sub_x.to_num::<i64>();
+            let ty = i64::from(ry) * 256 + sub_y.to_num::<i64>();
+            // Virtual+48 precedes +50. The predicate reads physical XY;
+            // Map queries use GetCoords (including a foundation centre).
+            let own_z = i64::from(object_world_z_leptons(target, Some(cells.terrain())));
+            let tz = if is_low_flying_in_query(target, cells, Some((rules, interner))) {
                 native_ground_target_z(tx as i32, ty as i32, cells)?
             } else {
                 own_z
             };
             Some((tx, ty, tz))
         }
-        TargetKind::Cell(..) => native_cell_range_coords(target.cell_identity(terrain)?, cells),
+        RangeTarget::Terrain(target) => {
+            // Terrain VT7F522C+48=5F65A0 retains Object Location; +50
+            // remains Object5F6B60 before InRange6F7332's ground snap.
+            let point = target.world_coord();
+            let z = if target.is_low_flying_in_query(Some(cells)) {
+                native_ground_target_z(point.x, point.y, cells)?
+            } else {
+                i64::from(point.z)
+            };
+            Some((i64::from(point.x), i64::from(point.y), z))
+        }
+        RangeTarget::Cell(cell) => native_cell_range_coords(cell, cells),
+        RangeTarget::Missing => None,
     }
 }
 
@@ -655,19 +679,15 @@ fn native_source_under_bridge(
 
 /// The target's own `GetCoords` Z (`vtable+0x48`), with NO low-flying snap —
 /// the snap belongs to `InRange` 0x006F7332, not to this read.
-fn target_own_z_leptons(
-    target: &TargetKind,
-    entities: &EntityStore,
-    cells: &NativeCellQuery<'_>,
-) -> Option<i64> {
-    match *target {
-        TargetKind::Entity(id) => Some(i64::from(object_world_z_leptons(
-            entities.get(id)?,
+fn target_own_z_leptons(target: RangeTarget<'_>, cells: &NativeCellQuery<'_>) -> Option<i64> {
+    match target {
+        RangeTarget::Techno(target) => Some(i64::from(object_world_z_leptons(
+            target,
             Some(cells.terrain()),
         ))),
-        TargetKind::Cell(..) => {
-            native_cell_own_coords(target.cell_identity(cells.terrain())?, cells).map(|(_, _, z)| z)
-        }
+        RangeTarget::Terrain(target) => Some(i64::from(target.world_coord().z)),
+        RangeTarget::Cell(cell) => native_cell_own_coords(cell, cells).map(|(_, _, z)| z),
+        RangeTarget::Missing => None,
     }
 }
 
@@ -702,7 +722,7 @@ pub fn fire_source_coords(
     attacker: &GameEntity,
     target: &TargetKind,
     weapon: &WeaponType,
-    entities: &EntityStore,
+    world: &Simulation,
     terrain: &ResolvedTerrainGrid,
     rules_context: (&RuleSet, &StringInterner),
 ) -> Option<(i64, i64, i64)> {
@@ -710,7 +730,7 @@ pub fn fire_source_coords(
         attacker,
         target,
         weapon,
-        entities,
+        world,
         &NativeCellQuery::canonical(terrain),
         rules_context,
     )
@@ -721,25 +741,23 @@ pub(crate) fn fire_source_coords_in_query(
     attacker: &GameEntity,
     target: &TargetKind,
     weapon: &WeaponType,
-    entities: &EntityStore,
+    world: &Simulation,
     cells: &NativeCellQuery<'_>,
     rules_context: (&RuleSet, &StringInterner),
 ) -> Option<(i64, i64, i64)> {
     fire_source_for_target(
         attacker,
-        RangeTarget::from_target(target, cells.terrain()),
+        RangeTarget::from_target(target, world, cells.terrain()),
         weapon,
-        entities,
         cells,
         rules_context,
     )
 }
 
-fn fire_source_for_target(
+pub(crate) fn fire_source_for_target(
     attacker: &GameEntity,
     target: RangeTarget<'_>,
     weapon: &WeaponType,
-    entities: &EntityStore,
     cells: &NativeCellQuery<'_>,
     rules_context: (&RuleSet, &StringInterner),
 ) -> Option<(i64, i64, i64)> {
@@ -768,10 +786,7 @@ fn fire_source_for_target(
     }
 
     if is_high_flying_in_query(attacker, cells, Some(rules_context)) {
-        z = match target {
-            RangeTarget::Abstract(target) => target_own_z_leptons(target, entities, cells)?,
-            RangeTarget::Cell(cell) => native_cell_own_coords(cell, cells)?.2,
-        };
+        z = target_own_z_leptons(target, cells)?;
     }
 
     Some((x, y, z))
@@ -815,7 +830,7 @@ mod cell_query_tests;
 /// (`0x006F77B0`) and ordinary `TechnoClass::InRange` @ `0x006F7220`. It asks
 /// no legality: a target the weapon may not fire at is still in range.
 pub fn can_fire_at_target(
-    entities: &EntityStore,
+    world: &Simulation,
     rules: &RuleSet,
     interner: &StringInterner,
     attacker_id: u64,
@@ -826,7 +841,7 @@ pub fn can_fire_at_target(
 ) -> bool {
     let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
     can_fire_at_target_in_query(
-        entities,
+        world,
         rules,
         interner,
         attacker_id,
@@ -850,7 +865,7 @@ impl crate::sim::world::Simulation {
     ) -> bool {
         self.resolved_terrain.as_ref().is_some_and(|terrain| {
             can_fire_at_target(
-                &self.substrate.entities,
+                self,
                 rules,
                 &self.interner,
                 id,
@@ -873,7 +888,7 @@ impl crate::sim::world::Simulation {
 /// wrappers (740793/7403AA) explicitly select against NULL before measuring
 /// their original target. The range itself remains one owner.
 pub fn can_fire_at_target_in_query(
-    entities: &EntityStore,
+    world: &Simulation,
     rules: &RuleSet,
     interner: &StringInterner,
     attacker_id: u64,
@@ -883,7 +898,7 @@ pub fn can_fire_at_target_in_query(
     los: &line_of_fire::LineOfFireInputs<'_>,
     selection_target: Option<&TargetKind>,
 ) -> bool {
-    let Some(attacker) = entities.get(attacker_id) else {
+    let Some(attacker) = world.substrate.entities.get(attacker_id) else {
         return false;
     };
     let Some(attacker_obj) = interner.object_type(attacker.type_ref(), rules) else {
@@ -895,7 +910,7 @@ pub fn can_fire_at_target_in_query(
         attacker_obj,
         &combat_weapon::attacker_facts(attacker, attacker_obj),
         selection_target,
-        entities,
+        world,
         interner,
         Some(cells),
         alliances,
@@ -904,18 +919,23 @@ pub fn can_fire_at_target_in_query(
     };
     // CanFireAt6F77B0 reads GetWeapon(index), not a Warhead pointer. Keep
     // selection's index even when the selected slot has no resolved warhead.
-    let Some(weapon) =
-        combat_weapon::get_weapon(attacker, attacker_obj, index, entities, rules, interner)
+    let Some(weapon) = combat_weapon::get_weapon(
+        attacker,
+        attacker_obj,
+        index,
+        &world.substrate.entities,
+        rules,
+        interner,
+    ) else {
+        return false;
+    };
+    let target = RangeTarget::from_target(target, world, cells.terrain());
+    let Some(source) = fire_source_for_target(attacker, target, weapon, cells, (rules, interner))
     else {
         return false;
     };
-    let Some(source) =
-        fire_source_coords_in_query(attacker, target, weapon, entities, cells, (rules, interner))
-    else {
-        return false;
-    };
-    compute_in_range_in_query(
-        attacker, source, target, weapon, rules, interner, entities, cells, los,
+    compute_range_target(
+        attacker, source, target, weapon, rules, interner, cells, los,
     )
 }
 
@@ -994,11 +1014,11 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::entity_store::EntityStore;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_interner;
     use crate::sim::movement::air_movement::{is_high_flying, is_low_flying};
     use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::world::Simulation;
     use crate::util::fixed_math::{SIM_ZERO, SimFixed};
     use crate::util::lepton::{HIGH_FLIGHT_THRESHOLD_LEPTONS, LEPTONS_PER_LEVEL};
 
@@ -1197,7 +1217,7 @@ mod tests {
             crate::sim::intern::test_intern(name);
         }
         let interner = test_interner();
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
         for (index, row) in rows.as_array().unwrap().iter().enumerate() {
             let input = &row["input"];
             let bits = usize::from(input["arcing"] == true) * 4
@@ -1340,23 +1360,20 @@ mod tests {
             // Each bonus InRange computed (`0x006F6F60`, `0x006F70E0`), from
             // the target lookup's Dummy state: no elevation row's source
             // lookups (CellRangefinding) restamp it first.
-            let assert_bonuses =
-                |target: RangeTarget<'_>, objects: &EntityStore, cells: &NativeCellQuery<'_>| {
-                    for bonus in row["bonuses"].as_array().into_iter().flatten() {
-                        let arm = match bonus[0].as_str().unwrap() {
-                            "direct" => ElevationArm::Direct,
-                            _ => ElevationArm::Arcing,
-                        };
-                        assert_eq!(
-                            elevation_bonus_leptons(
-                                &actor, target, arm, rules, &interner, objects, cells
-                            ),
-                            bonus[1].as_i64().unwrap(),
-                            "row {index}: {} bonus",
-                            bonus[0]
-                        );
-                    }
-                };
+            let assert_bonuses = |target: RangeTarget<'_>, cells: &NativeCellQuery<'_>| {
+                for bonus in row["bonuses"].as_array().into_iter().flatten() {
+                    let arm = match bonus[0].as_str().unwrap() {
+                        "direct" => ElevationArm::Direct,
+                        _ => ElevationArm::Arcing,
+                    };
+                    assert_eq!(
+                        elevation_bonus_leptons(&actor, target, arm, rules, &interner, cells),
+                        bonus[1].as_i64().unwrap(),
+                        "row {index}: {} bonus",
+                        bonus[0]
+                    );
+                }
+            };
             if let Some(object) = input.get("target_object") {
                 // CanFireAt `0x006F77B0` against an Infantry object.
                 let at = |axis: usize| object["location"][axis].as_i64().unwrap() as i32;
@@ -1378,8 +1395,8 @@ mod tests {
                 target
                     .lifecycle
                     .set_cell_marked(object["marked"].as_bool().unwrap_or(true));
-                let mut objects = EntityStore::new();
-                objects.insert(target);
+                let mut objects = Simulation::new();
+                objects.substrate.entities.insert(target);
                 let target = TargetKind::Entity(2);
                 let cells = NativeCellQuery::canonical(&terrain);
                 let source = fire_source_coords_in_query(
@@ -1410,7 +1427,10 @@ mod tests {
                 assert_eq!(Some(actual), row["result"].as_bool(), "row {index}: object");
                 let dummy = cells.dummy().snapshot().coord;
                 assert_eq!(serde_json::json!([dummy.0, dummy.1]), row["dummy_coord"]);
-                assert_bonuses(RangeTarget::Abstract(&target), &objects, &cells);
+                assert_bonuses(
+                    RangeTarget::from_target(&target, &objects, &terrain),
+                    &cells,
+                );
                 continue;
             }
             let target = input
@@ -1424,15 +1444,9 @@ mod tests {
             let identity = terrain.native_cell_identity(coord);
             let range_target = RangeTarget::Cell(identity);
             let cells = NativeCellQuery::canonical(&terrain);
-            let source = fire_source_for_target(
-                &actor,
-                range_target,
-                &weapon,
-                &entities,
-                &cells,
-                (rules, &interner),
-            )
-            .unwrap();
+            let source =
+                fire_source_for_target(&actor, range_target, &weapon, &cells, (rules, &interner))
+                    .unwrap();
             assert_eq!(
                 serde_json::json!([source.0, source.1, source.2]),
                 native_source[1],
@@ -1456,7 +1470,6 @@ mod tests {
                 &weapon,
                 rules,
                 &interner,
-                &entities,
                 &terrain,
                 &LineOfFireInputs::terrain_only(),
             );
@@ -1519,7 +1532,6 @@ mod tests {
             let identity = terrain.native_cell_identity(coord);
             assert_bonuses(
                 RangeTarget::Cell(identity),
-                &entities,
                 &NativeCellQuery::canonical(&terrain),
             );
         }
@@ -1606,23 +1618,27 @@ mod tests {
         let weapon = rules.weapon("GUN").expect("weapon");
         let attacker = ground_attacker(5, 5, 0, "ATKR");
         let target = ground_target(50, 50, 0, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
-        let in_range = compute_in_range(
-            &attacker,
-            src_at_cell(5, 5, 0),
-            &TargetKind::Entity(200),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(in_range, "sentinel range should always be in range");
+        for target in [TargetKind::Entity(200), TargetKind::Entity(u64::MAX)] {
+            assert!(
+                compute_in_range(
+                    &attacker,
+                    src_at_cell(5, 5, 0),
+                    &target,
+                    weapon,
+                    &rules,
+                    &interner,
+                    &entities,
+                    &terrain,
+                    &LineOfFireInputs::terrain_only(),
+                ),
+                "InRange6F724E sentinel precedes live or missing Object reads: {target:?}"
+            );
+        }
     }
 
     // Test 2: Boundary inclusive max
@@ -1633,8 +1649,8 @@ mod tests {
         let attacker = ground_attacker(0, 0, 0, "ATKR");
         // dx = 4 cells = 1024 lep exactly.
         let target_at = ground_target(4, 0, 0, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target_at);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target_at);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
@@ -1654,8 +1670,8 @@ mod tests {
         // Now move target 1 lepton further (rx=4, sub_x=129 → total = 1024+1 lep horizontal).
         let mut over = ground_target(4, 0, 0, "TGT");
         over.position.set_sub_x_for_test(SimFixed::from_num(129));
-        let mut entities2 = EntityStore::new();
-        entities2.insert(over);
+        let mut entities2 = Simulation::new();
+        entities2.substrate.entities.insert(over);
         let one_past = compute_in_range(
             &attacker,
             src_at_cell(0, 0, 0),
@@ -1671,6 +1687,8 @@ mod tests {
         // Approximate sqrt truncates1025 to1024; the following lepton fails.
         assert!(one_past, "native approximate distance admits 1025 leptons");
         entities2
+            .substrate
+            .entities
             .get_mut(200)
             .unwrap()
             .position
@@ -1703,8 +1721,8 @@ mod tests {
 
         // At exactly min range (2 cells = 512 lep): inclusive — true.
         let target = ground_target(2, 0, 0, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let at_min = compute_in_range(
             &attacker,
             src_at_cell(0, 0, 0),
@@ -1724,8 +1742,8 @@ mod tests {
         // 1 lepton inside min (rx=1, sub_x=128+255=383 → 1*256+255=511 lep): strict — false.
         let mut inside = ground_target(1, 0, 0, "TGT");
         inside.position.set_sub_x_for_test(SimFixed::from_num(255));
-        let mut entities2 = EntityStore::new();
-        entities2.insert(inside);
+        let mut entities2 = Simulation::new();
+        entities2.substrate.entities.insert(inside);
         let inside_min = compute_in_range(
             &attacker,
             src_at_cell(0, 0, 0),
@@ -1752,8 +1770,8 @@ mod tests {
         let weapon = rules.weapon("GUN").expect("weapon");
         let attacker = ground_attacker(5, 5, 0, "ATKR");
         let target = ground_target(6, 5, 12, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let mut terrain = flat_terrain(64, 64);
         terrain.cells[5 * 64 + 6].level = 12;
@@ -1796,8 +1814,8 @@ mod tests {
         let attacker = ground_attacker(0, 0, 0, "ATKR");
         // Aircraft one lepton below the verified high-flight split, 4 cells away.
         let target = aircraft_target(4, 0, 0, HIGH_FLIGHT_THRESHOLD_LEPTONS - 1, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
@@ -1824,8 +1842,8 @@ mod tests {
         let mut target = aircraft_target(4, 0, 0, HIGH_FLIGHT_THRESHOLD_LEPTONS - 1, "TGT");
         target.position.set_sub_x_for_test(SimFixed::from_num(3));
         target.position.set_sub_y_for_test(SIM_ZERO);
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         // Snapshot after the target has interned its Aircraft type identity.
         let interner = test_interner();
         let mut terrain = flat_terrain(8, 1);
@@ -1846,8 +1864,8 @@ mod tests {
     fn gsi_04_03b_low_flight_bridge_snap_requires_structural_flag() {
         let rules = rules_with_weapon("Damage=1\nROF=20\nRange=4\nWarhead=WH", "", "");
         let target = aircraft_target(0, 0, 0, HIGH_FLIGHT_THRESHOLD_LEPTONS - 1, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         // Snapshot after the target has interned its Aircraft type identity.
         let interner = test_interner();
         let mut terrain = flat_terrain(1, 1);
@@ -1916,8 +1934,8 @@ mod tests {
         let weapon = rules.weapon("GUN").expect("weapon");
         let attacker = ground_attacker(0, 0, 0, "ATKR");
         let target = aircraft_target(4, 0, 0, 1500, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
@@ -1969,8 +1987,8 @@ mod tests {
         let mut target = building_target(0, 0, "BLDG");
         // Construction stamps the type's `Foundation=4x2`.
         target.type_facts.set_foundation_for_test("4x2".to_string());
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
@@ -2002,8 +2020,8 @@ mod tests {
         let weapon = rules.weapon("GUN").expect("weapon");
         let attacker = ground_attacker(5, 5, 0, "ATKR");
         let target = ground_target(5, 5, 0, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
@@ -2029,7 +2047,7 @@ mod tests {
         // Attacker on level 5 (= 520 lep up). Target = cell at same XY, level 0.
         // Range = 2 cells = 512 lep. dz = 520 lep > 512 → false.
         let attacker = ground_attacker(5, 5, 5, "ATKR");
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
         let src = (5i64 * 256 + 128, 5i64 * 256 + 128, 5i64 * LEPTONS_PER_LEVEL);
@@ -2072,8 +2090,8 @@ mod tests {
 
         let attacker = ground_attacker(0, 0, 0, "ATKR");
         let target = ground_target(4, 0, 5, "TGT");
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
 
@@ -2127,8 +2145,8 @@ mod tests {
     fn kirov_can_engage(rules: &RuleSet, kirov: &GameEntity, target: GameEntity) -> bool {
         let interner = test_interner();
         let terrain = flat_terrain(64, 64);
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut entities = Simulation::new();
+        entities.substrate.entities.insert(target);
         let weapon = rules.weapon("BlimpBomb").expect("weapon");
         let target = TargetKind::Entity(200);
         let src = fire_source_coords(
@@ -2206,7 +2224,7 @@ mod tests {
     #[test]
     fn cell_rangefinding_moves_the_shot_to_the_attackers_cell_centre() {
         let terrain = flat_terrain(64, 64);
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
         let target = TargetKind::Cell(9, 9);
 
         let mut low = jumpjet_unit_at_altitude(HIGH_FLIGHT_THRESHOLD_LEPTONS - 8);
@@ -2255,7 +2273,7 @@ mod tests {
     fn cell_rangefinding_adds_the_deck_offset_from_the_attackers_own_flag() {
         let rules = kirov_rules("CellRangefinding=yes");
         let weapon = rules.weapon("BlimpBomb").unwrap();
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
         let terrain = terrain_with_bridge_cells(&[(5, 5)]);
         let target = TargetKind::Cell(9, 9);
 
@@ -2303,8 +2321,11 @@ mod tests {
         // level-0 ground one cell away, so the height term is what decides.
         let mut terrain = flat_terrain(64, 64);
         terrain.cells[5 * 64 + 5].level = 5;
-        let mut entities = EntityStore::new();
-        entities.insert(ground_target(6, 5, 0, "TGT"));
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(6, 5, 0, "TGT"));
         let target = TargetKind::Entity(200);
 
         let mut cruising = kirov_at(5, 5, KIROV_JUMPJET_HEIGHT_LEPTONS);
@@ -2399,8 +2420,11 @@ mod tests {
         let interner = test_interner();
         let mut terrain = flat_terrain(64, 64);
         terrain.cells[5].level = 5;
-        let mut entities = EntityStore::new();
-        entities.insert(ground_target(5, 0, 5, "TGT"));
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(5, 0, 5, "TGT"));
 
         // Flat distance is 5 cells; that alone clears the minimum. The point of
         // the test is the pairing: the 3-D leg is the one native measures, and
@@ -2421,8 +2445,11 @@ mod tests {
         // five terrain levels of climb push the 3-D distance to 730 — legal.
         let mut close = flat_terrain(64, 64);
         close.cells[2].level = 5;
-        let mut close_entities = EntityStore::new();
-        close_entities.insert(ground_target(2, 0, 5, "TGT"));
+        let mut close_entities = Simulation::new();
+        close_entities
+            .substrate
+            .entities
+            .insert(ground_target(2, 0, 5, "TGT"));
         assert!(
             compute_in_range(
                 &attacker,
@@ -2466,7 +2493,7 @@ mod tests {
         src: (i64, i64, i64),
         target: &TargetKind,
         terrain: &ResolvedTerrainGrid,
-        entities: &EntityStore,
+        entities: &Simulation,
     ) -> bool {
         let rules = rules_with_weapon("Damage=1\nROF=20\nRange=6\nWarhead=WH", "", "");
         let weapon = rules.weapon("GUN").expect("weapon");
@@ -2490,7 +2517,7 @@ mod tests {
     fn inrange_bridge_gate_blocks_under_bridge_attacker_firing_up() {
         let terrain = terrain_with_bridge_cells(&[(5, 5)]);
         let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
 
         let under = (5i64 * 256 + 128, 5i64 * 256 + 128, 0i64);
         assert!(
@@ -2511,7 +2538,7 @@ mod tests {
     fn inrange_bridge_gate_allows_attacker_at_or_above_the_deck_top() {
         let terrain = terrain_with_bridge_cells(&[(5, 5)]);
         let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
 
         let on_deck = (
             5i64 * 256 + 128,
@@ -2536,7 +2563,7 @@ mod tests {
     fn inrange_bridge_gate_reads_only_the_attacker_cell() {
         let terrain = terrain_with_bridge_cells(&[(5, 6)]);
         let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
 
         let src = (5i64 * 256 + 128, 5i64 * 256 + 128, 0i64);
         assert!(
@@ -2562,7 +2589,7 @@ mod tests {
         let terrain = ResolvedTerrainGrid::from_cells(16, 16, cells);
 
         let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let entities = EntityStore::new();
+        let entities = Simulation::new();
         let under = (5i64 * 256 + 128, 5i64 * 256 + 128, 0i64);
         assert!(
             in_range_at(
@@ -2581,8 +2608,11 @@ mod tests {
     fn inrange_bridge_gate_allows_target_below_the_deck_top() {
         let terrain = terrain_with_bridge_cells(&[(5, 5)]);
         let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let mut entities = EntityStore::new();
-        entities.insert(ground_target(6, 5, 0, "TGT"));
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(6, 5, 0, "TGT"));
 
         let under = (5i64 * 256 + 128, 5i64 * 256 + 128, 0i64);
         assert!(
@@ -2664,8 +2694,11 @@ mod tests {
         );
         let weapon = rules.weapon("GUN").expect("weapon");
         let attacker = ground_attacker(2, 2, 0, "ATKR");
-        let mut entities = EntityStore::new();
-        entities.insert(ground_target(6, 2, 0, "TGT"));
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(6, 2, 0, "TGT"));
         // Snapshot the thread-local interner only after both entities have
         // interned their owner and type names.
         let interner = test_interner();
@@ -2726,8 +2759,11 @@ mod tests {
             "the fixture must actually take the arcing arm"
         );
         let attacker = ground_attacker(2, 2, 0, "ATKR");
-        let mut entities = EntityStore::new();
-        entities.insert(ground_target(6, 2, 0, "TGT"));
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(6, 2, 0, "TGT"));
         // Snapshot the thread-local interner only after both entities have
         // interned their owner and type names.
         let interner = test_interner();
@@ -2765,8 +2801,11 @@ mod tests {
         );
         let weapon = rules.weapon("GUN").expect("weapon");
         let attacker = ground_attacker(2, 2, 0, "ATKR");
-        let mut entities = EntityStore::new();
-        entities.insert(ground_target(6, 2, 0, "TGT"));
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(6, 2, 0, "TGT"));
         // Snapshot the thread-local interner only after both entities have
         // interned their owner and type names.
         let interner = test_interner();
@@ -2813,13 +2852,13 @@ mod tests {
     fn inrange_bridge_gate_target_boundary_is_inclusive() {
         let terrain = terrain_with_bridge_cells(&[(5, 5), (6, 5)]);
         let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let mut entities = EntityStore::new();
+        let mut entities = Simulation::new();
         let mut target = ground_target(6, 5, 0, "TGT");
         target.set_on_bridge(true);
         target
             .position
             .set_exact_z_leptons_for_test(Some(BRIDGE_DECK_HEIGHT_LEPTONS));
-        entities.insert(target);
+        entities.substrate.entities.insert(target);
         // Marked Object+50 snaps to the live target-cell surface. Both source
         // and target must have a structural span for this exact-deck test;
         // OnBridge alone cannot make a clear target cell snap to its deck.
@@ -2861,8 +2900,8 @@ mod tests {
             let weapon = rules.weapon("GUN").unwrap();
             let attacker = ground_attacker(2, 2, 0, "ATKR");
             let target = ground_target(6, 2, 0, "TGT");
-            let mut entities = EntityStore::new();
-            entities.insert(target);
+            let mut entities = Simulation::new();
+            entities.substrate.entities.insert(target);
             let interner = test_interner();
             let mut terrain = flat_terrain(16, 16);
             terrain.cell_mut(6, 2).unwrap().bridge_facts.raw_flags |= 0x100;

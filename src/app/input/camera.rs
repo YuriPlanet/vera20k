@@ -246,6 +246,13 @@ impl PendingCameraScroll {
             && (self.focus.rate_bits == 0 || self.focus.target == [0, 0])
     }
 
+    /// Mouse693060 rejects tactical text while Tactical+D8's focus rate is
+    /// ordered nonzero. Pending scroll deltas/target coordinates are separate.
+    pub(crate) fn blocks_tactical_tooltip(&self) -> bool {
+        let rate = f32::from_bits(self.focus.rate_bits);
+        rate != 0.0 && !rate.is_nan()
+    }
+
     fn clear(&mut self) {
         self.world_pixels = (0.0, 0.0);
     }
@@ -2075,6 +2082,25 @@ pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tactical_tooltip_gate_reads_focus_rate_independently_of_pending_scroll() {
+        let mut pending = PendingCameraScroll::default();
+        pending.world_pixels = (21.0, 0.0);
+        assert!(!pending.blocks_tactical_tooltip());
+        pending.focus.rate_bits = CameraFocus::RATE_BITS[0];
+        assert!(
+            pending.blocks_tactical_tooltip(),
+            "zero target does not bypass693060"
+        );
+        pending.focus.rate_bits = (-0.0_f32).to_bits();
+        assert!(!pending.blocks_tactical_tooltip());
+        pending.focus.rate_bits = f32::NAN.to_bits();
+        assert!(
+            !pending.blocks_tactical_tooltip(),
+            "unordered native comparison setsC3"
+        );
+    }
 
     #[test]
     fn zoom_keeps_the_entire_view_inside_the_abuffer_texture() {

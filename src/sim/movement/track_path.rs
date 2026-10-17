@@ -1118,7 +1118,7 @@ impl Simulation {
             super::navcom::nav_target_coordinate(
                 requested,
                 Some(id),
-                &self.substrate.entities,
+                self,
                 self.resolved_terrain.as_ref(),
                 Some((rules, &self.interner)),
             )
@@ -1682,11 +1682,10 @@ impl Simulation {
             }
         };
         let keeps = leads_to_target
-            || super::turret::facing_toward_target(actor, &target, &self.substrate.entities)
-                .is_some_and(|direction| {
-                    let turn = direction.wrapping_sub(actor.body_facing_current(frame)) as i16;
-                    i32::from(turn).abs() <= 0x4000
-                });
+            || super::turret::facing_toward_target(actor, &target, self).is_some_and(|direction| {
+                let turn = direction.wrapping_sub(actor.body_facing_current(frame)) as i16;
+                i32::from(turn).abs() <= 0x4000
+            });
         if !keeps {
             return false;
         }

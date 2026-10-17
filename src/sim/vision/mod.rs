@@ -2473,8 +2473,11 @@ pub fn point_is_shrouded(
 /// whole-map writers still move it alone). The canonical Dummy answers its
 /// retained record, which only the
 /// cell writers touch. [`point_is_shrouded`] and the Foot click queries use
-/// it; the Fire_At reveal (`world_fire.rs`) still answers its own (#1117).
-pub(crate) fn cell_ground_mapped(
+/// it; Display4AE5D0 reads this same bit on its unprojected plane receiver.
+/// This read-only decision is public so app consumers use the same authority,
+/// rather than the legacy edge-frame ground cache. Gap6FB3B8 clears bit8;
+/// every such writer reaches the published knowledge this owner reads.
+pub fn cell_ground_mapped(
     fog: &FogState,
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     viewer: InternedId,

@@ -118,7 +118,7 @@ impl Simulation {
         let coord = super::navcom::nav_target_coordinate(
             target,
             Some(id),
-            entities,
+            self,
             self.resolved_terrain.as_ref(),
             rules.map(|rules| (rules, &self.interner)),
         )?;

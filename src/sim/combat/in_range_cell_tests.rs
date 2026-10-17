@@ -5,6 +5,7 @@
 use super::tests::flat_terrain;
 use super::*;
 use crate::sim::intern::test_interner;
+use crate::sim::world::Simulation;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -116,8 +117,8 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
             input.target_marked != 0,
             input.target_on_bridge != 0,
         );
-        let mut entities = EntityStore::new();
-        entities.insert(target);
+        let mut world = Simulation::new();
+        world.substrate.entities.insert(target);
         let interner = test_interner();
         // Match supplied retained fields in the native direct-call fixture,
         // independently of the physical reader values asserted above.
@@ -144,7 +145,7 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
                     &weapon,
                     &rules,
                     &interner,
-                    &entities,
+                    &world,
                     &cells,
                     &LineOfFireInputs::terrain_only(),
                 ),
@@ -174,7 +175,7 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
             assert_eq!(
                 resolve_target_coords_3d(
                     &target,
-                    &entities,
+                    &world,
                     &rules,
                     &interner,
                     &NativeCellQuery::canonical(&terrain),
@@ -240,7 +241,7 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
             .unwrap()
             .has_bridge_deck = true;
         let target = TargetKind::Cell(target_xy.0, target_xy.1);
-        let entities = EntityStore::new();
+        let world = Simulation::new();
         let interner = test_interner();
         for isolated in [true, false] {
             let cells = if isolated {
@@ -252,13 +253,13 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
                 &actor,
                 &target,
                 weapon,
-                &entities,
+                &world,
                 &cells,
                 (&rules, &interner),
             )
             .unwrap();
             let geometry =
-                resolve_target_coords_3d(&target, &entities, &rules, &interner, &cells).unwrap();
+                resolve_target_coords_3d(&target, &world, &rules, &interner, &cells).unwrap();
             assert_eq!(
                 serde_json::json!([geometry.0, geometry.1, geometry.2]),
                 row["target_geometry"],
@@ -272,7 +273,7 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
                     weapon,
                     &rules,
                     &interner,
-                    &entities,
+                    &world,
                     &cells,
                     &LineOfFireInputs::terrain_only()
                 ),

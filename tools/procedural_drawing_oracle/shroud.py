@@ -31,6 +31,8 @@ through the same native status, palette and packed-shape owners.
 ordered INIT/YENGINEER Cargo and the native absorber passenger-pip arm.
 ``--radial-indicator`` executes selected GAGAP range geometry, original
 ellipse/DSurface cubic rays and their shared primary A/Z admission.
+``--infantry-berserk-body`` composes the existing Infantry, palette, TMP and
+Surface owners for physical GI body/shadow pixels with the caller colour word.
 """
 from functools import lru_cache
 import hashlib
@@ -4413,8 +4415,270 @@ def radial_indicator_metadata():
             ellipse=0x7BB350,cubic_line=0x4BC750,cubic_end=0x4BC7C2,tangent=0x4CAD50))
 
 
+def generate_infantry_berserk_body():
+    """Eight prepared GI draws; the original body, shadow and blitters run.
+
+    The shared owner supplies only immutable file/cache and platform storage.
+    Actor/House/Cell admission is a declared prior, not a simulated gas hit.
+    """
+    from types import SimpleNamespace
+    from tools.rules_oracle.weapon_speed_order import RetailRulesInputs
+    from tools.rules_oracle.weapon_laser import physical_layers
+    from tools.rules_oracle.bridge_child_sound import sections
+    from tools.input_oracle.campaign_start import CampaignReader
+    from tools.projectile_oracle.bridge_render_inputs_palette import (
+        PaletteReader, initialize, color_scheme_palette)
+    from tools.projectile_oracle.bridge_render_shape import prepare_surface, PIXELS, Z, A
+    from tools.spatial_oracle.building_body_rules import INI, RULES, dwords
+    from tools.spatial_oracle.trigger_action_values import initialize_discovery_geometry
+    from tools.spatial_oracle.infantry_deploy_action import Fixture as AtomicTransportOwner
+    from tools.spatial_oracle.tmp_clear_render import (
+        physical_assets, load_tmp_files, theater_tile_files)
+    from tools.native_inspect import selected_ranges
+
+    catalog = RetailRulesInputs(native.configured_gamemd().parent)
+    raw_rules = physical_layers()[0][2]
+    rules = sections(raw_rules)
+    raw_art = catalog.lookup('ARTMD.INI')
+    art = sections(raw_art)
+    assets = {name:catalog.lookup(name) for name in
+              ('GI.SHP', 'UNITTEM.PAL', 'PALETTE.PAL', 'ANIM.PAL')}
+    assets.update({'RULESMD.INI':raw_rules, 'ARTMD.INI':raw_art})
+    assert all(assets.values())
+    selected_art = {name:art[name] for name in ('GI', 'GISequence')}
+    m = PaletteReader(selected_art, root=Path('/nonexistent'))
+    m.assets.update(assets)
+    m.original_code = selected_ranges(native.image_bytes(), None, None, code_only=True)
+    u = m.u
+
+    # Reuse the established Windows atomic ABI seam; no native code is patched.
+    atomic = SimpleNamespace(u=u, imports=[m.alloc(16), m.alloc(16)], read=m.read32)
+    u.mem_write(0x7E11C8, dwords(*atomic.imports))
+    def atomic_transport(_u, pc, size, data):
+        if pc in atomic.imports:
+            AtomicTransportOwner.observe(atomic, _u, pc, size, data)
+    atomic_hook = u.hook_add(UC_HOOK_CODE, atomic_transport)
+    art_cache = bytes(u.mem_read(INI, 0x40))
+    u.mem_write(0x8205D0, dwords(2))
+    u.mem_write(0x829D20, dwords(2))
+    u.mem_write(0x84E860, bytes((1, 0, 1)))
+    initialize(m)
+    _storage, scheme = color_scheme_palette('DarkRed', owner=m, physical_assets=assets)
+
+    rules_object = m.alloc(0x2000)
+    u.mem_write(0x8871E0, dwords(rules_object))
+    m.invoke(0x665650, rules_object)
+    selected_rules = {'ColorAdd':rules['ColorAdd'],
+        'AudioVisual':{key:rules['AudioVisual'][key] for key in
+                       ('BerserkColor', 'ExtraInfantryLight')}}
+    CampaignReader.ordered_ini(m, selected_rules)
+    m.invoke(0x66D480, rules_object, (INI,))
+    m.invoke(0x6691E0, rules_object, (INI,))
+    native_rules = dict(berserk_color=m.read32(rules_object+0x18AC),
+                       extra_infantry_light=m.read32(rules_object+0x17D8))
+    native_rules['colour_add_rgb'] = list(u.mem_read(
+        rules_object+0x1874+3*native_rules['berserk_color'], 3))
+    u.mem_write(INI, art_cache)
+    typ = m.alloc(0x1900)
+    m.invoke(0x5236A0, typ, (m.cstring('E1'),))
+    selected_rules['E1'] = {key:rules['E1'][key] for key in ('Image', 'Strength', 'Armor')}
+    m.rules_cache({'E1':selected_rules['E1']})
+    admitted = bool(m.invoke(0x5240A0, typ, (RULES,)) & 255)
+    shp = m.read32(typ+0xA4)
+    native_type = dict(name='E1', image=m.string(typ+0x1F8),
+                       strength=m.read32(typ+0xA0), admitted=admitted)
+    assert admitted and shp and native_type['image'] == 'GI'
+
+    streams = dict(main=0x886B88, scenario=m.read32(0xA8B230)+0x218, mapgen=0xABE890)
+    for pointer in streams.values():
+        m.invoke(0x65C6D0, pointer, (31,))
+    u.mem_write(0xB0F720, dwords(0x7EB6D4, m.alloc(4096), 1024, 1, 0, 10))
+    house = m.alloc(0x18000)
+    passengers = _prepare_status_passengers(m, {'E1':typ}, house)
+    actor = passengers['E1']['actor']
+    u.mem_write(actor+0x21C, dwords(house))
+    u.mem_write(house+0x16054, dwords(scheme['color_index']))
+    u.mem_write(0xA83D4C, dwords(house))
+    u.mem_write(actor+0x41A, b'\x01')
+    u.mem_write(actor+0x9C, dwords(2688, 5248, 0))
+    u.mem_write(actor+0x81, b'\x00')
+    u.mem_write(actor+0x90, b'\x01')
+    u.mem_write(actor+0x6C, dwords(125))
+    u.mem_write(actor+0x6C4, dwords(0))
+    u.mem_write(actor+0xF8, dwords(0))
+
+    # GetZAdjust704350 needs the real physical TMP registry and geometry.
+    tile_assets, _tile_sources = physical_assets(tile=True, tmp_names=('clear01.tem',))
+    m.assets.update(tile_assets)
+    m.phase = 'selected_flat_TMP'
+    _tiles, tile_mapping = theater_tile_files(m, tile_assets['TEMPERATMD.INI'], 0, 'tem')
+    _heads, _io = load_tmp_files(m, {'clear01.tem':tile_assets['CLEAR01.TEM']})
+    _table, cells = _prepare_flat_cells(m, range(9, 12), range(19, 22))
+    for cell in cells:
+        u.mem_write(cell+0x10A, struct.pack('<h', 1000))
+    initialize_discovery_geometry(m.invoke, m.read32, u)
+    tactical = m.alloc(0x1000)
+    u.mem_write(0x887324, dwords(tactical))
+    u.mem_write(0x886FA0, dwords(0, 0, 64, 96))
+    u.mem_write(0xB0CE30, dwords(64, 96))
+    point, clip, facing = m.alloc(8), m.alloc(16), m.alloc(4)
+    u.mem_write(point, dwords(32, 48))
+    u.mem_write(clip, dwords(0, 0, 64, 96))
+    u.mem_write(facing, dwords(0))
+    m.invoke(0x4C9300, actor+0x388, (facing,))
+    u.mem_map(0x21000000, 0x100000)
+
+    draws, reached, rng_requests = [], set(), []
+    expected_entries = {0x518F90, 0x518D80, 0x41C090, 0x705E00,
+                        0x705D70, 0x704350, 0x4AED70, 0x487950}
+    def observe(_u, pc, _size, _data):
+        if pc in expected_entries:
+            reached.add(pc)
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc == 0x4AED70:
+            args = list(struct.unpack('<14i', u.mem_read(sp+4, 56)))
+            draws.append(dict(return_pc=m.read32(sp), frame=args[1],
+                point=list(struct.unpack('<2i', u.mem_read(args[2], 8))),
+                clip=list(struct.unpack('<4i', u.mem_read(args[3], 16))),
+                flags=args[4], z_adjust=args[6], gradient=args[7],
+                intensity=args[8], colour_word=args[9]&65535))
+        elif pc in (0x490B90, 0x490E50):
+            draws[-1]['picker'] = f'{pc:08X}'
+        elif pc in (0x494B60, 0x494C40, 0x497FD0, 0x498150):
+            draw = draws[-1]
+            if 'leaf' not in draw:
+                draw['leaf'] = f'{pc:08X}'
+                draw['first_candidate'] = m.read32(sp+(20 if pc in (0x497FD0, 0x498150) else 16))
+            assert draw['leaf'] == f'{pc:08X}'
+        elif pc in (0x70645D, 0x706532, 0x706602) and draws:
+            if draws[-1]['return_pc'] == pc:
+                draws[-1]['rgb565_le_hex'] = bytes(u.mem_read(PIXELS, 64*96*2)).hex()
+        elif pc in (0x65C780, 0x65C7E0):
+            rng_requests.append(f'{pc:08X}')
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    try:
+        lut = list(struct.unpack('<32I', native.file_span(native.image_bytes(), 0x7EAEFC, 128)[1]))
+        rows = []
+        for frame in (0, 1):
+            angle = lut.index(frame)*2048
+            for label, active, shrouded, old_z in (
+                ('ordinary', False, False, 2000), ('berserk', True, False, 2000),
+                ('shrouded_berserk', True, True, 2000), ('blocked_berserk', True, False, 0)):
+                buffers = prepare_surface(u, dict(old_z=old_z, a_value=127, background=0x39E7))
+                u.mem_write(facing, dwords(angle))
+                m.invoke(0x4C9300, actor+0x388, (facing,))
+                u.mem_write(actor+0x298, bytes((active,)))
+                for cell in cells:
+                    u.mem_write(cell+0x12C, dwords(0 if shrouded else 0x18))
+                before = {name:bytes(u.mem_read(pointer, 0x3F4)) for name, pointer in streams.items()}
+                reached.clear()
+                draws.clear()
+                rng_requests.clear()
+                m.invoke(0x518F90, actor, (point, clip),
+                         timeout_us=120000000, instruction_limit=10000000)
+                assert expected_entries <= reached and len(draws) == 2
+                body, shadow = (dict(draw) for draw in draws)
+                assert body.pop('return_pc') == 0x70645D and body['frame'] == frame
+                assert shadow.pop('return_pc') == 0x706602
+                final = shadow.pop('rgb565_le_hex')
+                invariants = dict(
+                    source_unchanged=bytes(u.mem_read(shp, len(assets['GI.SHP']))) == assets['GI.SHP'],
+                    a_unchanged=bytes(u.mem_read(A, len(buffers['lighting']))) == buffers['lighting'],
+                    z_unchanged=bytes(u.mem_read(Z, len(buffers['depths']))) == buffers['depths'],
+                    rng_unchanged={name:bytes(u.mem_read(pointer, 0x3F4)) == before[name]
+                                   for name, pointer in streams.items()},
+                    rng_requests=rng_requests.copy())
+                assert all(invariants[key] for key in ('source_unchanged', 'a_unchanged', 'z_unchanged'))
+                assert all(invariants['rng_unchanged'].values()) and not rng_requests
+                CampaignReader.check_code(m)
+                invariants['original_code_unchanged'] = True
+                rows.append(dict(name=f'frame{frame}_{label}',
+                    input=dict(frame=frame, facing=angle, berserk=active,
+                               shrouded=shrouded, old_z=old_z),
+                    body=body, shadow=shadow, final_rgb565_le_hex=final, invariants=invariants))
+        # Original selected-frame accessors avoid a second host SHP decoder.
+        canvas_width, canvas_height = struct.unpack('<2H', u.mem_read(shp+2, 4))
+        rectangle = m.alloc(16)
+        frames = []
+        for frame in (0, 1, 372, 373):
+            m.invoke(0x69E7E0, shp, (rectangle, frame))
+            frames.append(dict(frame=frame,
+                native_rect=list(struct.unpack('<4i', u.mem_read(rectangle, 16))),
+                compressed=bool(m.invoke(0x69E900, shp, (frame,)) & 255)))
+        assets.update({name:tile_assets[name] for name in ('TEMPERATMD.INI', 'CLEAR01.TEM')})
+        shared = dict(
+            assets=[dict(name=name, bytes=len(raw), sha256=sha(raw)) for name, raw in assets.items()],
+            rule_sections=selected_rules, art_sections=selected_art,
+            native_rules=native_rules, native_type=native_type,
+            colour_scheme={key:scheme[key] for key in ('name', 'lexical', 'hsv', 'color_index',
+                'shade_count', 'expanded_palette_sha256', 'table_sha256')},
+            actor_constructor=passengers['E1']['evidence'],
+            actor=dict(xyz=[2688,5248,0], health=125, alive=True, limbo=False,
+                doing=0, stage=0, body_guard=u.mem_read(actor+0x684,1)[0],
+                cloak=False, disguise=False, curtain=False, flash=False),
+            house=dict(scheme_name='DarkRed', scheme_index=scheme['color_index'], current_house_is_owner=True),
+            cells=dict(x_range=[9,11], y_range=[19,21], tile_id=0, subtile=0,
+                level=0, slope=0, top_light=1000, visible_flags=0x18, shrouded_flags=0,
+                no_overlay=True, no_bridge=True, tile_mapping=tile_mapping),
+            surface=dict(width=64, height=96, point=[32,48], clip=[0,0,64,96],
+                format=2, bytes_per_pixel=2, background=0x39E7, depth_baseline=1024,
+                a_value=127, scroll_rows=0, fpcw=0x0E7F, cmov=True, mmx=True,
+                canvas=[canvas_width,canvas_height]),
+            frames=frames)
+        return dict(schema_version=1, native_sha256=native.image_sha256(), shared=shared, rows=rows)
+    finally:
+        u.hook_del(hook)
+        u.hook_del(atomic_hook)
+
+
+def infantry_berserk_body_metadata():
+    return native.provenance(
+        scope='Eight original prepared ground GI body/shadow draws through physical raw/RLE SHP, native DarkRed Convert and packed RGB565 pixels',
+        assumptions=[
+            'Original Rules665650/66D480/6691E0 read physical root ColorAdd and AudioVisual BerserkColor/ExtraInfantryLight. InfantryType5236A0/full5240A0 receive only physical E1 Image/Strength/Armor plus fixed ART GI/GISequence. Native Image/sequence loading executes; unrelated type fields retain constructor defaults. This is not full retail type/scenario fill or a layered rules history.',
+            'The existing shroud status preparation runs Infantry prefix517A50..517AE6 including Foot/Techno/Object and whole Walk75AA90. Prepared owner/current House, local DarkRed scheme index1, Alive1/Limbo0/HP125, Location2688/5248/0, Ready/Stage0 and ordinary guardFF admit the draw. Whole Infantry construction, COM activation, Unlimbo, display admission and CAOS receiver/refresh/expiry are not executed.',
+            'Existing PaletteReader startup and color_scheme_palette execute original palette expansion, paired selected DarkRed1/53 ColorScheme construction and complete Convert initialization on physical palettes. Local scheme1 is not a lobby/world scheme index. RGB565 format2, CMOV/MMX and FPCW0E7F are declared inputs, not pixel-fitted outputs.',
+            'GetZAdjust704350 runs with original geometry initialization and existing theater_tile_files/load_tmp_files native TMP registry/lazy loader. Prepared native-constructed3x3 Cells around10/20 have flat level/slope0, tile0/subtile0, no bridge/overlay and top light1000. Selected theater registration base0, actor pose, tactical rectangle/point and Cell visibility are explicit priors, not a whole map/topology lifecycle.',
+            'Whole Infantry518F90->Foot41C090->Techno705E00 and actual705D70/518D80/GetZAdjust/shape4AED70/pickers/rowwalkers/raw or RLE leaves run unchanged. Facing inputs are selected from original table7EAEFC and snapped by4C9300; no frame, word, intensity, shape, shadow or pixel result is substituted. Physical frames0/1 plus shadows372/373 are bounded controls, not whole DrawIt/DrawSHP coverage.',
+            'Each body buffer is observed immediately at actual shape return70645D before shadow; final buffer is observed after actual shadow return706602. Physical shadow372/373 have original empty rectangles, so final equals body; real shadow calls/pickers execute but no positive shadow-store/overlap is established. Source holes, packed colour, A/Z predicates and blocked stores are native results. The shrouded control deliberately enters the body and proves caller-word clearing, not that full DrawIfVisible admits a shrouded GI. All three full RNG buffers, physical GI bytes, A/Z and original executable code are checked unchanged after every measured draw; constructor RNG/timer evidence is separate.',
+            'Prepared64x96 BSurface/circular planes use A127, baseline1024, background39E7 and oldZ2000 or0. No VERA raster/table provides expected pixels. These component crops do not establish GPU, whole frame, CAOS lifecycle, arbitrary stance/effects/custom values/nonflat sites/global ordering or Behind behavior.',
+        ], substitutions=[
+            'Existing PaletteReader/BulletReader/HutTypeReader supplies immutable archive-selected file bytes, lexical linked/cache INI objects, successful allocator/delete/CRT/TLS and OS resource transport. Existing stock MIX decoding selects physical inputs; original native readers/frame accessors/shape/blitters produce draw outputs. The full native archive/scenario startup is outside this prepared fixture.',
+            'Existing infantry_deploy_action atomic service handles only Windows InterlockedIncrement/Decrement through IAT7E11C8/CC. Existing bridge_render_shape BSurface storage/locks/pitch replace DirectDraw backing. Existing TMP RawFile service supplies exact selected physical bytes. No original executable bytes or selected gameplay/draw/pixel results are patched.',
+        ], entry_points=dict(rules_ctor=0x665650, color_add=0x66D480, audio_visual=0x6691E0,
+            infantry_type_ctor=0x5236A0, infantry_type_read=0x5240A0,
+            infantry_prefix=0x517A50, infantry_prefix_stop=0x517AE6, walk_ctor=0x75AA90,
+            infantry_body=0x518F90, berserk_reader=0x518FDA, frame=0x518D80,
+            foot_shape=0x41C090, draw_shp=0x705E00, house_convert=0x705D70,
+            get_z_adjust=0x704350, tmp_query=0x547150, tmp_load=0x544CB0,
+            shape=0x4AED70, frame_rect=0x69E7E0, frame_compressed=0x69E900,
+            raw_picker=0x490B90, rle_picker=0x490E50,
+            raw_plain=0x494B60, raw_colour=0x494C40, rle_plain=0x497FD0, rle_colour=0x498150,
+            body_return=0x70645D, shadow_return=0x706602))
+
+
 if __name__=='__main__':
     import sys
+    if '--infantry-berserk-body' in sys.argv[1:]:
+        native.finish_vectors(generate_infantry_berserk_body,
+            Path(__file__).with_name('infantry_berserk_body.json'),
+            argv=[arg for arg in sys.argv[1:] if arg!='--infantry-berserk-body'],
+            provenance=infantry_berserk_body_metadata,
+            source_paths={'oracle':Path(__file__),
+                'native_owner':Path(native.__file__),
+                'palette_owner':Path('tools/projectile_oracle/bridge_render_inputs_palette.py'),
+                'surface_owner':Path('tools/projectile_oracle/bridge_render_shape.py'),
+                'reader_owner':Path('tools/projectile_oracle/bridge_render_inputs.py'),
+                'physical_inputs':Path('tools/rules_oracle/weapon_speed_order.py'),
+                'physical_layers':Path('tools/rules_oracle/weapon_laser.py'),
+                'ini_cache_owner':Path('tools/input_oracle/campaign_start.py'),
+                'lexical_owner':Path('tools/rules_oracle/bridge_child_sound.py'),
+                'tmp_owner':Path('tools/spatial_oracle/tmp_clear_render.py'),
+                'geometry_owner':Path('tools/spatial_oracle/trigger_action_values.py'),
+                'atomic_owner':Path('tools/spatial_oracle/infantry_deploy_action.py'),
+                'stock_owner':Path(stock.__file__)})
+        raise SystemExit(0)
     if '--radial-indicator' in sys.argv[1:]:
         native.finish_vectors(generate_radial_indicator,
             Path(__file__).with_name('radial_indicator.json'),

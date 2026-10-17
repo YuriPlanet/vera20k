@@ -378,7 +378,7 @@ impl move_mission::MoveHost for RowHost<'_> {
         let coord = nav_target_coordinate(
             nav.unwrap(),
             Some(OWNER),
-            &self.sim.substrate.entities,
+            self.sim,
             self.sim.resolved_terrain.as_ref(),
             Some((self.rules, &self.sim.interner)),
         )

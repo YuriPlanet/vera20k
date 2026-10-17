@@ -717,7 +717,7 @@ impl Simulation {
                 .then(|| {
                     crate::sim::movement::ground_pose::current_destination_coords(
                         entity,
-                        &self.substrate.entities,
+                        self,
                         self.resolved_terrain.as_ref(),
                     )
                 })
@@ -890,7 +890,7 @@ impl Simulation {
         };
         crate::sim::movement::ground_pose::target_get_target_coords(
             kind,
-            &self.substrate.entities,
+            self,
             self.resolved_terrain.as_ref(),
         )
     }
@@ -903,11 +903,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-        crate::sim::movement::ground_pose::target_get_coords(
-            target,
-            &self.substrate.entities,
-            cells.as_ref(),
-        )
+        crate::sim::movement::ground_pose::target_get_coords(target, self, cells.as_ref())
     }
 
     fn planning_candidates(

@@ -27,7 +27,7 @@ impl Simulation {
                 .expect("aircraft dispatch")
                 .attack_target
                 .target(),
-            &self.substrate.entities,
+            self,
         );
         (if present { 1 } else { 10 }, 1)
     }
@@ -46,9 +46,7 @@ impl Simulation {
         let target = entity
             .attack_target
             .target()
-            .filter(|&target| {
-                crate::sim::combat::target_present(Some(target), &self.substrate.entities)
-            })
+            .filter(|&target| crate::sim::combat::target_present(Some(target), self))
             .map(NavTargetRef::from);
         let ammo = entity.ammo().map_or(-1, |a| a.current());
         let state = if target.is_some() && ammo != 0 {
@@ -101,9 +99,11 @@ impl Simulation {
             .entities
             .get(id)
             .expect("aircraft approach owner");
-        let Some(target) = entity.attack_target.target().filter(|&target| {
-            crate::sim::combat::target_present(Some(target), &self.substrate.entities)
-        }) else {
+        let Some(target) = entity
+            .attack_target
+            .target()
+            .filter(|&target| crate::sim::combat::target_present(Some(target), self))
+        else {
             return 10;
         };
         if entity.ammo().is_some_and(|a| a.current() == 0) {
@@ -117,9 +117,8 @@ impl Simulation {
             let weapon = combat_weapon::primary_for_tier(object, entity.veterancy.rank())
                 .and_then(|name| rules.weapon(name))
                 .expect("strafe classifier's weapon");
-            let distance =
-                crate::sim::combat::object_distance_to(entity, &target, &self.substrate.entities)
-                    .expect("live aircraft Target");
+            let distance = crate::sim::combat::object_distance_to(entity, &target, self)
+                .expect("live aircraft Target");
             if distance < weapon.range_leptons {
                 return 4;
             }
@@ -139,19 +138,11 @@ impl Simulation {
         let Some(nav) = entity.navigation.nav_com() else {
             return 1;
         };
-        let distance = crate::sim::combat::object_distance_to(
-            entity,
-            &TargetKind::from(nav),
-            &self.substrate.entities,
-        )
-        .expect("live aircraft NavCom");
+        let distance = crate::sim::combat::object_distance_to(entity, &TargetKind::from(nav), self)
+            .expect("live aircraft NavCom");
         let facing = if distance < 512 {
-            crate::sim::movement::turret::facing_toward_target(
-                entity,
-                &target,
-                &self.substrate.entities,
-            )
-            .expect("live approach Target")
+            crate::sim::movement::turret::facing_toward_target(entity, &target, self)
+                .expect("live approach Target")
         } else {
             let object = self.interner.object_type(entity.type_ref(), rules).unwrap();
             let snap = crate::sim::combat::build_attacker_snapshot(entity, target, None);
@@ -198,7 +189,7 @@ impl Simulation {
     pub(crate) fn aircraft_strikes(&self, id: u64, state: u8) -> bool {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         let attack = entity.attack_target.target();
-        let target = crate::sim::combat::target_present(attack, &self.substrate.entities);
+        let target = crate::sim::combat::target_present(attack, self);
         let ammo = entity.ammo().map_or(-1, |a| a.current());
         attack.is_some() && !attack_mission::strike_leaves(state, target, ammo)
     }
@@ -214,10 +205,7 @@ impl Simulation {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         let facts = attack_mission::ExitFacts {
             ammo: entity.ammo().map_or(-1, |a| a.current()),
-            target: crate::sim::combat::target_present(
-                entity.attack_target.target(),
-                &self.substrate.entities,
-            ),
+            target: crate::sim::combat::target_present(entity.attack_target.target(), self),
             leaves_map: entity.is_mission_only(),
             human: self.owner_is_human(entity.owner()),
             airstrike: entity.airstrike_link().is_some(),

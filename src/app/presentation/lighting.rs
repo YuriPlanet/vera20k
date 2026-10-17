@@ -345,7 +345,14 @@ fn with_intensity(
     )
 }
 
-/// The colour word a building's draws hand their blits, as
+/// The caller colour word for SHP bodies and a building's attached draws.
+/// InfantryClass::DrawIt (`0x00518FBC..0x005190DE`) selects BerserkColor while
+/// Techno+298 is active, packs the retained ColorAdd entry through
+/// `0x00519008..0x0051907E`, and clears it when Cell487950 is shrouded.
+/// Original raw/RLE GI controls: procedural_drawing_oracle/infantry_berserk_body.json.
+/// SHP vehicles pass no word (`0x0073CE3E`, `0x0073CE7D`).
+///
+/// A building's draws hand their blits the word that
 /// BuildingClass_DrawBody (`0x0043D386..0x0043D544`), BuildingClass::Draw
 /// (`0x0043DC1C..0x0043DDF1`) and AnimClass::DrawIt for the building at a
 /// slot anim's cell (`0x004233EE..0x00423630`) compute it: the
@@ -358,20 +365,31 @@ fn with_intensity(
 ///
 /// Any nonnull Airstrike pointer (`+0x294`) ORs LaserTargetColor too,
 /// independently of its manager target and of the Force Shield colour.
-pub(crate) fn building_colour_word(
-    building: &crate::sim::game_entity::GameEntity,
+pub(crate) fn shp_colour_word(
+    entity: &crate::sim::game_entity::GameEntity,
     sim: &Simulation,
     rules: &RuleSet,
     shrouded: impl FnOnce() -> bool,
 ) -> u16 {
-    let shielded = building.invulnerability.as_ref().is_some_and(|curtain| {
+    match entity.category() {
+        crate::map::entities::EntityCategory::Infantry => {
+            return if entity.berserk.is_active() && !shrouded() {
+                rules.color_add.rgb565_word(rules.general.berserk_color)
+            } else {
+                0
+            };
+        }
+        crate::map::entities::EntityCategory::Structure => {}
+        _ => return 0,
+    }
+    let shielded = entity.invulnerability.as_ref().is_some_and(|curtain| {
         curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
             && crate::sim::superweapon::invulnerability::is_invulnerable(
                 Some(curtain),
                 sim.session.binary_frame,
             )
     });
-    let marked = building.has_airstrike_marker();
+    let marked = entity.has_airstrike_marker();
     if !(shielded || marked) || shrouded() {
         return 0;
     }

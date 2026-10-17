@@ -465,7 +465,7 @@ impl Simulation {
         {
             return Ok(());
         }
-        if crate::sim::combat::target_present(unit.attack_target.target(), &self.substrate.entities)
+        if crate::sim::combat::target_present(unit.attack_target.target(), self)
             && !flags.forced
             && self.scenario_rng.next_range_u32_inclusive(1, 4) != 1
         {
@@ -605,9 +605,8 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-        let Some(cell) =
-            super::ground_pose::target_get_coords(target, &self.substrate.entities, cells.as_ref())
-                .and_then(|coord| self.map_coord_cell(coord.x, coord.y))
+        let Some(cell) = super::ground_pose::target_get_coords(target, self, cells.as_ref())
+            .and_then(|coord| self.map_coord_cell(coord.x, coord.y))
         else {
             return Ok(false);
         };

@@ -173,7 +173,7 @@ fn retail_electric_assault_enables_the_coils_overpowered_weapon() {
         object,
         &combat_weapon::attacker_facts(coil, object),
         Some(&TargetKind::Entity(target)),
-        &f.sim.substrate.entities,
+        &f.sim,
         &f.sim.interner,
         f.sim.resolved_terrain.as_ref(),
         Some(&f.sim.house_alliances),

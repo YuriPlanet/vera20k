@@ -18,6 +18,34 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 #[path = "terrain_bridge_click_tests.rs"]
 mod bridge_click_tests;
 
+#[cfg(test)]
+mod plane_inverse_tests {
+    #[test]
+    fn plane_xyz_matches_original_tactical_body() {
+        let vectors = crate::test_fixture::json("tools/bridge_click_oracle/plane_vectors.json");
+        let mut count = 0;
+        for row in vectors["cases"].as_array().unwrap() {
+            if row["native_exit"] != "plane" {
+                continue; // Upper-window rejection is the caller's admission.
+            }
+            let world = &row["world_input"];
+            let actual = super::screen_to_plane_leptons(
+                world[0].as_i64().unwrap() as f32,
+                world[1].as_i64().unwrap() as f32,
+            );
+            let expected = &row["expected_xyz"];
+            assert_eq!(
+                actual.to_array(),
+                std::array::from_fn(|i| expected[i].as_i64().unwrap() as i32),
+                "{}",
+                row["name"],
+            );
+            count += 1;
+        }
+        assert_eq!(count, 22);
+    }
+}
+
 /// Isometric tile diamond width in pixels (RA2 standard).
 pub const TILE_WIDTH: f32 = 60.0;
 
@@ -330,6 +358,33 @@ pub fn screen_to_iso(screen_x: f32, screen_y: f32) -> (f32, f32) {
     let rx: f32 = (col + row) / 2.0;
     let ry: f32 = (row - col) / 2.0;
     (rx, ry)
+}
+
+/// The separate Z=0 plane XYZ returned by Tactical6D2280, not the
+/// height/bridge Cell answer from6D6590. Input uses VERA world pixels.
+///
+/// Original ctor6D1DC5 stores matrix coefficients408888CE/410888CE:
+/// A=8947918/2^21, B=2*A. For map-sized integer pixels (|x|,|y| <=65536)
+/// both products/sums are exact in native53-bit precision. Its toward-zero
+/// f32 store then integer conversion equals truncating this exact rational:
+/// the result is below2^24, where every integer is representable. A normal
+/// nearest-rounded f32 store is wrong; consumed +/-2006 controls catch it.
+/// No x87 emulator or presentation write into simulation state is needed.
+/// Tools/bridge_click_oracle/plane_vectors.json executes the original body.
+///
+/// As with the shared Cell inverse, fractional camera/zoom pixels select the
+/// containing pixel; this presentation extension is not native parity proof.
+/// Arbitrary out-of-map/overflow pixel inputs are outside this numeric bound.
+pub fn screen_to_plane_leptons(world_x: f32, world_y: f32) -> glam::IVec3 {
+    let x = i64::from(world_x.floor() as i32);
+    let y = i64::from(world_y.floor() as i32) - i64::from(crate::util::lepton::WORLD_ROW_BIAS_PX);
+    const NUMERATOR: i64 = 0x88_88ce;
+    const DENOMINATOR: i64 = 1 << 21;
+    glam::IVec3::new(
+        ((x + 2 * y) * NUMERATOR / DENOMINATOR) as i32,
+        ((-x + 2 * y) * NUMERATOR / DENOMINATOR) as i32,
+        0,
+    )
 }
 
 /// Convert tactical/client pixels to isometric cell coordinates using the

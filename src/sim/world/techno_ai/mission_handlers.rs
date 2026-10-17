@@ -914,7 +914,7 @@ fn infantry_automatic_guard_delay(
         let here = object_get_coords(actor, terrain);
         let Some(post) = target_get_coords(
             archive,
-            &sim.substrate.entities,
+            sim,
             terrain
                 .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
                 .as_ref(),
@@ -1704,7 +1704,7 @@ fn evaluate_foot_rescue(
         let coords = |sim: &Simulation, target| {
             crate::sim::movement::ground_pose::target_get_coords(
                 target,
-                &sim.substrate.entities,
+                sim,
                 sim.resolved_terrain
                     .as_ref()
                     .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
@@ -1810,7 +1810,7 @@ fn area_guard_scan_point(
     }
     let coord = crate::sim::movement::ground_pose::target_get_coords(
         post?,
-        &sim.substrate.entities,
+        sim,
         sim.resolved_terrain
             .as_ref()
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
@@ -1932,14 +1932,7 @@ pub(super) fn evaluate_foot_area_guard(
         //4D6EB8 precedes4D6ECB, even when the class target setter refuses.
         let _ =
             sim.assign_target_represented(id, None, Some(rules), ctx.overlay_registry, ctx.effects);
-        let destination = match post {
-            crate::sim::combat::TargetKind::Cell(rx, ry) => {
-                crate::sim::components::NavTargetRef::cell(rx, ry)
-            }
-            crate::sim::combat::TargetKind::Entity(id) => {
-                crate::sim::components::NavTargetRef::Entity { id }
-            }
-        };
+        let destination = post.into();
         let _ = sim.assign_destination_represented(
             id,
             Some(destination),
@@ -2392,14 +2385,23 @@ fn foot_dispatch_in_cadence_band(sim: &Simulation, rules: &RuleSet, id: u64) -> 
     if !foot_type_takes_cadence_band(sim, rules, attacker, CLOSE_PRIMARY_RANGE_LEPTONS) {
         return false;
     };
-    let Some(crate::sim::combat::TargetKind::Entity(target_id)) = attacker.attack_target.target()
-    else {
+    let Some(target) = attacker.attack_target.target() else {
         return false;
     };
-    let Some(target) = sim.substrate.entities.get(target_id) else {
+    //4D4F22..4D4F44 asks the target's virtual+48, including Terrain's
+    //retained Object coordinate; TarCom's legacy Entity arm is not a class gate.
+    let terrain = sim.resolved_terrain.as_ref();
+    let Some(target) = crate::sim::movement::ground_pose::target_get_coords(
+        target,
+        sim,
+        terrain
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+            .as_ref(),
+    ) else {
         return false;
     };
-    native_distance_is_in_cadence_band(&attacker.position, &target.position)
+    let source = crate::sim::movement::ground_pose::object_get_coords(attacker, terrain);
+    native_distance_is_in_cadence_band(source, target)
 }
 
 /// Lower bound of the shared cadence band, in leptons.
@@ -2419,14 +2421,11 @@ const CADENCE_BAND_MAX_LEPTONS: i64 = 768;
 /// component differences; the length is
 /// [`sqrt_approx_length`](crate::util::native_x87::sqrt_approx_length).
 fn native_distance_is_in_cadence_band(
-    from: &crate::sim::components::Position,
-    to: &crate::sim::components::Position,
+    from: crate::sim::components::DriveCoord,
+    to: crate::sim::components::DriveCoord,
 ) -> bool {
-    let lepton = |cell: u16, sub: crate::util::fixed_math::SimFixed| -> i64 {
-        cell as i64 * 256 + sub.to_num::<i64>()
-    };
-    let dx = lepton(from.rx(), from.sub_x()) - lepton(to.rx(), to.sub_x());
-    let dy = lepton(from.ry(), from.sub_y()) - lepton(to.ry(), to.sub_y());
+    let dx = i64::from(from.x) - i64::from(to.x);
+    let dy = i64::from(from.y) - i64::from(to.y);
     let (Ok(dx), Ok(dy)) = (i32::try_from(dx), i32::try_from(dy)) else {
         // Native holds both differences in 32-bit registers; a map large
         // enough to overflow one cannot exist.
@@ -2555,10 +2554,12 @@ fn attack_target_is_stale(sim: &Simulation, id: u64) -> bool {
     else {
         return false;
     };
-    !sim.substrate
-        .entities
-        .get(target_id)
-        .is_some_and(|target| !target.death.is_dying() && target.is_alive())
+    // Native lethal DetachAll clears any Object target, not only a Techno;
+    // the shared presence owner reads Terrain's own lifecycle/Health.
+    !crate::sim::combat::target_present(
+        Some(crate::sim::combat::TargetKind::Entity(target_id)),
+        sim,
+    )
 }
 
 #[cfg(test)]
@@ -2697,5 +2698,57 @@ mod guard_rearm_tests {
                 None => assert_ne!(sim.scenario_rng.logical_state(), before, "{row}"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod terrain_target_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::combat::TargetKind;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
+
+    #[test]
+    fn terrain_target_uses_object_presence_and_cadence_coordinates() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\nPrimary=GUN\n\
+             [GUN]\nDamage=10\nRange=1\nROF=10\nWarhead=WH\n\
+             [Warheads]\n0=WH\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let mut actor = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+        actor.set_type_ref_for_test(sim.interner.intern("TEST"));
+        actor
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
+        sim.substrate.entities.insert(actor);
+        let tree_type = sim.interner.intern("TREE01");
+        sim.production
+            .terrain_objects
+            .insert(2, TerrainObjectState::for_test(2, tree_type, 7, 5));
+
+        assert!(!attack_target_is_stale(&sim, 1));
+        assert!(foot_dispatch_in_cadence_band(&sim, &rules, 1));
+        sim.production.terrain_objects.get_mut(&2).unwrap().health = 0;
+        assert!(attack_target_is_stale(&sim, 1));
+        // Coordinate virtuals remain readable while expiry still holds the
+        // Object; presence and coordinate resolution are different questions.
+        assert!(foot_dispatch_in_cadence_band(&sim, &rules, 1));
+        let tree = sim.production.terrain_objects.get_mut(&2).unwrap();
+        tree.health = 100;
+        tree.lifecycle = TerrainObjectLifecycle::Limbo;
+        // Object Alive remains set in Limbo; only UnInit clears it.
+        assert!(!attack_target_is_stale(&sim, 1));
+        sim.production
+            .terrain_objects
+            .get_mut(&2)
+            .unwrap()
+            .lifecycle = TerrainObjectLifecycle::Destroyed;
+        assert!(attack_target_is_stale(&sim, 1));
+        sim.production.terrain_objects.remove(&2);
+        assert!(attack_target_is_stale(&sim, 1));
+        assert!(!foot_dispatch_in_cadence_band(&sim, &rules, 1));
     }
 }

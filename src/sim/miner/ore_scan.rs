@@ -168,7 +168,7 @@ fn techno_scan_for_tiberium(
 ) -> Option<(u16, u16)> {
     let (x, y, _, _) = crate::sim::combat::resolve_target_coords(
         &crate::sim::combat::TargetKind::Entity(id),
-        &sim.substrate.entities,
+        sim,
     )?;
     let own = (x, y);
     if cell_is_tiberium_land(sim, overlay_registry, own) {

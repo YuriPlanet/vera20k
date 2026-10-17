@@ -26,6 +26,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::{
     object_center_xy, position_world_coord, query_object_cell,
 };
+use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::touch_log::live_read_check_enabled;
 use crate::sim::vision::FireFog;
 use crate::sim::world::Simulation;
@@ -102,6 +103,7 @@ impl FirerPart {
 struct ResolvedTarget<'a> {
     entity: Option<&'a GameEntity>,
     obj: Option<&'a ObjectType>,
+    terrain: Option<&'a TerrainObjectState>,
 }
 
 impl<'a> FireSubject<'a> {
@@ -143,8 +145,15 @@ impl<'a> FireSubject<'a> {
             Some(TargetKind::Entity(id)) => self.world.substrate.entities.get(id),
             _ => None,
         };
+        let terrain = match self.target {
+            Some(TargetKind::Entity(id)) if entity.is_none() => {
+                self.world.production.terrain_objects.get(&id)
+            }
+            _ => None,
+        };
         ResolvedTarget {
             entity,
+            terrain,
             obj: entity.and_then(|target| {
                 self.world
                     .interner
@@ -456,7 +465,22 @@ impl<'a> FireSubject<'a> {
                         building_vehicle: target_obj.is_1x1_with_undeploy(),
                     },
                 ),
-                // A target without a type is no techno the tests can read.
+                // GetFireError6FC177 preserves the original Object receiver
+                // but derives EBP only from Techno bit0. Terrain enters the
+                // common coordinate/range path and skips Techno-only facts.
+                _ if resolved.terrain.is_some() => {
+                    let terrain = resolved.terrain.unwrap();
+                    (
+                        TargetFacts {
+                            kind: FireTargetKind::Object,
+                            in_limbo: !terrain.is_live(),
+                            z: terrain.world_coord().z,
+                            health: super::Health::new(terrain.health),
+                            ..TargetFacts::default()
+                        },
+                        TargetTypeFacts::default(),
+                    )
+                }
                 _ => (TargetFacts::default(), TargetTypeFacts::default()),
             },
         };
@@ -466,17 +490,13 @@ impl<'a> FireSubject<'a> {
     /// The target's coordinates in leptons (a building's foundation center).
     fn target_point(
         &self,
-        entity: Option<&GameEntity>,
     ) -> Option<(
         u16,
         u16,
         crate::util::fixed_math::SimFixed,
         crate::util::fixed_math::SimFixed,
     )> {
-        match self.target? {
-            TargetKind::Entity(_) => entity.map(super::target_coords),
-            TargetKind::Cell(rx, ry) => Some(super::cell_center_coords(rx, ry)),
-        }
+        super::resolve_target_coords(&self.target?, self.world)
     }
 
     /// Native receives an already resolved Cell pointer. TargetKind stores the
@@ -516,11 +536,15 @@ impl FireQuery for WorldQuery<'_, '_> {
         };
         let xy = match self.subject.target {
             Some(TargetKind::Entity(_)) => {
-                let Some(target) = self.target.entity else {
+                if let Some(target) = self.target.entity {
+                    let [x, y] = object_center_xy(target);
+                    (x, y)
+                } else if let Some(target) = self.target.terrain {
+                    let point = target.world_coord();
+                    (point.x, point.y)
+                } else {
                     return;
-                };
-                let [x, y] = object_center_xy(target);
-                (x, y)
+                }
             }
             Some(TargetKind::Cell(..)) => {
                 let Some(cell) = self.subject.cell_target_identity() else {
@@ -551,7 +575,7 @@ impl FireQuery for WorldQuery<'_, '_> {
         let Some(weapon) = subject.weapon_at(subject.weapon_index) else {
             return false;
         };
-        let Some((rx, ry, sub_x, sub_y)) = subject.target_point(self.target.entity) else {
+        let Some((rx, ry, sub_x, sub_y)) = subject.target_point() else {
             return false;
         };
         let firer = subject.firer;
@@ -569,7 +593,6 @@ impl FireQuery for WorldQuery<'_, '_> {
                     weapon,
                     subject.rules,
                     &subject.world.interner,
-                    &subject.world.substrate.entities,
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
@@ -583,7 +606,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                 firer,
                 &target,
                 weapon,
-                &subject.world.substrate.entities,
+                subject.world,
                 terrain,
                 (subject.rules, &subject.world.interner),
             )
@@ -595,7 +618,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     weapon,
                     subject.rules,
                     &subject.world.interner,
-                    &subject.world.substrate.entities,
+                    subject.world,
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
@@ -635,6 +658,11 @@ impl FireQuery for WorldQuery<'_, '_> {
                     subject.rules,
                     &subject.world.interner,
                 )
+            })
+            .or_else(|| {
+                self.target
+                    .terrain
+                    .map(|_| combat_weapon::TargetFacts::Terrain)
             });
         combat_weapon::select_naval_targeting_weapon(subject.obj, facts.as_ref())
     }
@@ -664,23 +692,31 @@ impl FireQuery for WorldQuery<'_, '_> {
 
     fn high_flying(&mut self) -> bool {
         // CellClass vt+0x54 (`0x00410530`) is constant false.
-        self.target.entity.is_some_and(|target| {
+        if let Some(target) = self.target.entity {
             crate::sim::movement::air_movement::is_high_flying(
                 target,
                 self.subject.terrain(),
                 Some((self.subject.rules, &self.subject.world.interner)),
             )
-        })
+        } else {
+            self.target
+                .terrain
+                .is_some_and(|target| target.is_high_flying_in_query(self.cells.as_ref()))
+        }
     }
 
     fn low_flying(&mut self) -> bool {
-        self.target.entity.is_some_and(|target| {
+        if let Some(target) = self.target.entity {
             crate::sim::movement::air_movement::is_low_flying(
                 target,
                 self.subject.terrain(),
                 Some((self.subject.rules, &self.subject.world.interner)),
             )
-        })
+        } else {
+            self.target
+                .terrain
+                .is_some_and(|target| target.is_low_flying_in_query(self.cells.as_ref()))
+        }
     }
 
     fn firer_high_flying(&mut self) -> bool {
@@ -709,9 +745,18 @@ impl FireQuery for WorldQuery<'_, '_> {
     }
 
     fn target_cell(&mut self) -> Option<CellFacts> {
-        let target = self.target.entity?;
         let cells = self.cells.as_ref()?;
-        let cell = query_object_cell(cells, position_world_coord(&target.position));
+        let point = if let Some(target) = self.target.entity {
+            position_world_coord(&target.position)
+        } else {
+            let point = self.target.terrain?.world_coord();
+            crate::sim::components::DriveCoord {
+                x: point.x,
+                y: point.y,
+                z: point.z,
+            }
+        };
+        let cell = query_object_cell(cells, point);
         Some(CellFacts {
             land_type: cells.land_type(cell),
             flags: cells.flags(cell),
@@ -751,7 +796,7 @@ impl FireQuery for WorldQuery<'_, '_> {
             (Some(_), _) => return false,
             // Legacy headless fixtures have no native map allocation domain.
             (None, _) => {
-                let Some((rx, ry, _, _)) = subject.target_point(self.target.entity) else {
+                let Some((rx, ry, _, _)) = subject.target_point() else {
                     return false;
                 };
                 (rx, ry)
@@ -903,23 +948,93 @@ impl WorldQuery<'_, '_> {
                 .unwrap_or(0)
             });
         }
-        subject
-            .target_point(self.target.entity)
-            .map_or(0, |(rx, ry, sub_x, sub_y)| {
-                crate::sim::movement::turret::facing_toward_lepton(
-                    firer.position.rx(),
-                    firer.position.ry(),
-                    firer.position.sub_x(),
-                    firer.position.sub_y(),
-                    rx,
-                    ry,
-                    sub_x,
-                    sub_y,
-                )
-            })
+        subject.target_point().map_or(0, |(rx, ry, sub_x, sub_y)| {
+            crate::sim::movement::turret::facing_toward_lepton(
+                firer.position.rx(),
+                firer.position.ry(),
+                firer.position.sub_x(),
+                firer.position.sub_y(),
+                rx,
+                ry,
+                sub_x,
+                sub_y,
+            )
+        })
     }
 }
 
 #[cfg(test)]
 #[path = "fire_error_world_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod terrain_target_tests {
+    use super::*;
+
+    #[test]
+    fn retail_tree_uses_object_weapon_and_fire_range_without_techno_facts() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut world = crate::sim::arena_fixture::rival_arena(rules, 31);
+        let firer_id = world
+            .spawn_object("MTNK", "Americans", 8, 10, 0, rules)
+            .expect("retail MTNK");
+        assert_eq!(
+            crate::sim::terrain_spawn::construct_terrain_objects(
+                &mut world,
+                &[crate::map::overlay::TerrainObject {
+                    rx: 10,
+                    ry: 10,
+                    name: "TREE01".into()
+                }],
+                rules,
+                false,
+            ),
+            1
+        );
+        let tree_id = world.production.terrain_object_cells[&(10, 10)];
+        let tree = &world.production.terrain_objects[&tree_id];
+        let target = TargetKind::Entity(tree_id);
+        let firer = world.substrate.entities.get(firer_id).unwrap();
+        let obj = world.interner.object_type(firer.type_ref(), rules).unwrap();
+        let before_rng = world.rng_state();
+        let (index, weapon) = combat_weapon::select_weapon_against(
+            rules,
+            firer,
+            obj,
+            &combat_weapon::attacker_facts(firer, obj),
+            Some(&target),
+            &world,
+            &world.interner,
+            world.resolved_terrain.as_ref(),
+            Some(&world.house_alliances),
+        )
+        .expect("a live Terrain Object is a selection target");
+        assert_eq!(weapon.unwrap().weapon_id, "105mm");
+        let subject = FireSubject {
+            world: &world,
+            rules,
+            overlay_registry: None,
+            fog: None,
+            firer,
+            obj,
+            target: Some(target),
+            weapon_index: index,
+        };
+        let facts = subject.whole_facts();
+        assert_eq!(facts.target.kind, FireTargetKind::Object);
+        assert_eq!(facts.target.health.current(), tree.health);
+        assert_eq!(
+            subject.target_point(),
+            super::super::resolve_target_coords(&target, &world)
+        );
+        assert!(
+            subject.in_range(),
+            "the original Object coordinate reaches the shared cannon range gate"
+        );
+        assert_ne!(subject.fire_error(false), FireError::Illegal);
+        assert_eq!(world.rng_state(), before_rng);
+    }
+}

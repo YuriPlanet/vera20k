@@ -445,7 +445,7 @@ impl Simulation {
                 let coord = super::super::navcom::nav_target_coordinate(
                     NavTargetRef::Object { id: contact },
                     Some(id),
-                    &self.substrate.entities,
+                    self,
                     self.resolved_terrain.as_ref(),
                     Some((rules, &self.interner)),
                 )

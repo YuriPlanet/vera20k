@@ -123,14 +123,13 @@ impl Simulation {
         // The target's vt+0x58 (`0x00762BD1`, `0x00762D2C`), which an object
         // forwards to its GetCoords (`0x00410540`).
         let target_position = match wave.target_ref {
-            Some(TargetKind::Entity(target_id)) => {
-                self.substrate.entities.get(target_id).map(|entity| {
-                    let coords = crate::sim::movement::ground_pose::object_get_coords(
-                        entity,
-                        self.resolved_terrain.as_ref(),
-                    );
-                    ProjectileCoord::new(coords.x, coords.y, coords.z)
-                })
+            Some(target @ TargetKind::Entity(_)) => {
+                crate::sim::movement::ground_pose::target_get_target_coords(
+                    target,
+                    self,
+                    self.resolved_terrain.as_ref(),
+                )
+                .map(|coords| ProjectileCoord::new(coords.x, coords.y, coords.z))
             }
             Some(TargetKind::Cell(rx, ry)) => Some(self.wave_cell_target_position(rx, ry)),
             None => None,
@@ -1498,8 +1497,8 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // A target that no longer resolves never reaches this check natively
     // (`PointerExpired` clears it first); the Attack handler owns VERA's
     // clear of such a stale target.
-    if let TargetKind::Entity(target_id) = target
-        && sim.substrate.entities.get(target_id).is_none()
+    if matches!(target, TargetKind::Entity(_))
+        && crate::sim::combat::resolve_target_coords(&target, sim).is_none()
     {
         return;
     }
@@ -1579,8 +1578,8 @@ fn target_reach_step(
     }
     // A target that no longer resolves is cleared natively (`PointerExpired`)
     // before this block; the Attack handler owns VERA's clear of it.
-    if let TargetKind::Entity(target_id) = target
-        && !sim.substrate.entities.contains(target_id)
+    if matches!(target, TargetKind::Entity(_))
+        && crate::sim::combat::resolve_target_coords(&target, sim).is_none()
     {
         return;
     }
@@ -2111,6 +2110,36 @@ mod tests {
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
     use crate::sim::snapshot::GameSnapshot;
+
+    #[test]
+    fn wave_context_keeps_terrain_object_coordinates_until_pointer_expiry() {
+        use crate::sim::projectile::ProjectileCoord;
+        use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
+        use crate::sim::wave::Wave;
+
+        let mut sim = Simulation::new();
+        let tree_type = sim.interner.intern("TREE01");
+        let tree = TerrainObjectState::for_test(2, tree_type, 7, 5);
+        let retained = tree.world_coord();
+        sim.production.terrain_objects.insert(2, tree);
+        sim.waves.spawn(
+            3,
+            Wave::new_owned(
+                0,
+                1,
+                TargetKind::Entity(2),
+                ProjectileCoord::new(0, 0, 0),
+                retained,
+            ),
+        );
+        assert_eq!(sim.wave_update_context(3).target_position, Some(retained));
+        let tree = sim.production.terrain_objects.get_mut(&2).unwrap();
+        tree.health = 0;
+        tree.lifecycle = TerrainObjectLifecycle::Limbo;
+        assert_eq!(sim.wave_update_context(3).target_position, Some(retained));
+        sim.waves.pointer_expired(3, 2);
+        assert_eq!(sim.wave_update_context(3).target_position, None);
+    }
 
     /// Build a test entity of a specific category (`test_default` makes a Unit).
     fn entity_of(id: u64, category: EntityCategory) -> GameEntity {

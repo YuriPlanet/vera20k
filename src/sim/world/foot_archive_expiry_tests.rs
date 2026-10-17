@@ -67,6 +67,18 @@ fn native_foot_archive_expiry_matches_all_22_original_class_rows() {
                 .set_for_test(Some(crate::sim::combat::TargetKind::Entity(2)));
         }
         sim.substrate.entities.insert(listener);
+        if input["expired_flags"].as_i64().unwrap() & 1 != 0 {
+            // This native input is a real Techno. Supply its authoritative
+            // store identity; an arbitrary Object ID no longer implies Techno.
+            let mut expired = GameEntity::test_default(2, "TEST", "Enemy", 5, 5);
+            expired.set_type_ref_for_test(type_ref);
+            expired.set_owner_for_test(if input["same_owner"].as_bool().unwrap() {
+                owner
+            } else {
+                other_owner
+            });
+            sim.substrate.entities.insert(expired);
+        }
         if input["sensor"].as_i64().unwrap() != 0 {
             sim.fog.increment_sensor_at(owner, 5, 5);
         }

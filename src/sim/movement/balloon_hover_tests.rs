@@ -216,7 +216,7 @@ fn balloon_null_destination_arm_matches_the_original() {
         // Cell's its centre.
         let actor = sim.substrate.entities.get(ACTOR).unwrap();
         assert_eq!(
-            super::turret::facing_toward_target(actor, &target(input), &sim.substrate.entities),
+            super::turret::facing_toward_target(actor, &target(input), &sim),
             Some(row["direction"].as_u64().unwrap() as u16),
             "{input}"
         );
@@ -261,12 +261,8 @@ fn stop_clears_an_attacking_balloons_destination() {
         });
         let (mut sim, rules) = world(&input, 0);
         let actor = sim.substrate.entities.get(ACTOR).unwrap();
-        let direction = super::turret::facing_toward_target(
-            actor,
-            &TargetKind::Entity(TARGET),
-            &sim.substrate.entities,
-        )
-        .unwrap();
+        let direction =
+            super::turret::facing_toward_target(actor, &TargetKind::Entity(TARGET), &sim).unwrap();
         sim.substrate.entities.get_mut(ACTOR).unwrap().body_facing = FacingClass::new(direction, 0);
 
         assert!(sim.apply_command(

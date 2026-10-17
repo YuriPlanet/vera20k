@@ -1265,7 +1265,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
     let coord = super::navcom::nav_target_coordinate(
         crate::sim::components::NavTargetRef::Building { id: 1 },
         None,
-        &sim.substrate.entities,
+        &sim,
         sim.resolved_terrain.as_ref(),
         Some((&rules, &sim.interner)),
     )

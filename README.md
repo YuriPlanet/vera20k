@@ -53,12 +53,7 @@ This separation supports deterministic gameplay.
 
 Arrows show data flow:
 
-```mermaid
-flowchart LR
-    App[Application] -->|Commands| Sim[Simulation]
-    Sim -->|World state| App
-    App -->|Draw data| Render[Rendering]
-```
+![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](docs/images/architecture.png)
 
 ## Build and run
 

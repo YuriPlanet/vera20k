@@ -44,7 +44,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::movement::ground_pose::object_get_coords;
+
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
@@ -719,10 +719,14 @@ impl Simulation {
                     .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
                     .as_ref(),
             )),
-            TeamTarget::Object(id) => {
-                let entity = self.substrate.entities.get(id)?;
-                Some(object_get_coords(entity, self.resolved_terrain.as_ref()))
-            }
+            TeamTarget::Object(id) => crate::sim::movement::ground_pose::target_get_coords(
+                crate::sim::combat::TargetKind::Entity(id),
+                self,
+                self.resolved_terrain
+                    .as_ref()
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                    .as_ref(),
+            ),
         }
     }
 

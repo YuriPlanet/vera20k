@@ -3,6 +3,8 @@
 Run ``python -m tools.bridge_click_oracle --check`` from the repository root.
 ``--write`` explicitly generates the reviewed reference and metadata. Unicorn
 must already be installed; this module does not download dependencies.
+``--plane --check`` selects the separate, small6D2280 plane-XYZ corpus; it does
+not regenerate or compare the established bridge corpus.
 
 The complete Tactical inverse at 0x6D6590 executes with its original inverse
 matrix, constructed by the original constant-store block 0x6D1DC5..0x6D1E1E.
@@ -21,6 +23,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 import struct
+import sys
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import (
@@ -35,6 +38,7 @@ from tools.native_oracle import (
 
 
 INVERSE = 0x6D6590
+PLANE_INVERSE = 0x6D2280
 EDGE_ENTRY = 0x6D6751
 EDGE_ENDS = (0x6D69C4, 0x6D6A02, 0x6D6A36)
 MATRIX_INITIALIZER = (0x6D1DC5, 0x6D1E1E)
@@ -70,6 +74,7 @@ class NativeFixture:
         self.uc.mem_map(RETURN, 0x1000)
         self.visits: Counter[int] = Counter()
         self.native_reference: list[int] | None = None
+        self.plane_matrix_bits: list[str] | None = None
         self.lookup_miss = False
         self.uc.hook_add(UC_HOOK_CODE, self.observe)
         self.reset_call()
@@ -111,6 +116,10 @@ class NativeFixture:
         if address == 0x6D6901:
             self.native_reference = [signed32(self.uc.reg_read(UC_X86_REG_EBP)),
                                      signed32(self.uc.reg_read(UC_X86_REG_ECX))]
+        if address == 0x6D230D:
+            sp = self.uc.reg_read(UC_X86_REG_ESP)
+            self.plane_matrix_bits = [hex(value) for value in struct.unpack(
+                "<3I", bytes(self.uc.mem_read(sp + 0x14, 12)))]
         if address == 0x5657C8:
             # This fallback's mutable global sentinel is deliberately not supplied.
             # All fixtures promise mapped lookup cells; a miss invalidates the run.
@@ -120,6 +129,7 @@ class NativeFixture:
     def reset_call(self) -> None:
         self.visits.clear()
         self.native_reference = None
+        self.plane_matrix_bits = None
         self.lookup_miss = False
         self.uc.mem_write(SP - 0x2000, bytes(0x2200))
         for register in REGISTERS:
@@ -186,6 +196,61 @@ class NativeFixture:
         return {"expected_cell": list(struct.unpack("<hh", raw[4:8])),
                 "native_exit": observed[0], "scan_attempts": self.visits[0x6D66AA],
                 "bridge_candidates": self.visits[0x6D6779]}
+
+    def plane(self, world_input: list[int], camera: list[int], viewport: list[int],
+              window: list[int]) -> dict:
+        """Whole6D2280; world Y includes VERA's existing15px presentation bias.
+
+        This body does not subtract886FA0/4. ProcessClickCoords adds the
+        viewport back before calling it. The supplied point is consequently
+        world-camera; viewport globals are varied independently as controls.
+        """
+        self.reset_call()
+        self.put32(TACTICAL + 0xB0, camera[0])
+        self.put32(TACTICAL + 0xB4, camera[1])
+        self.put32(0x886FA0, viewport[0])
+        self.put32(0x886FA4, viewport[1])
+        width, top, height = window
+        self.put32(0xB0CE30, width)
+        self.put32(0xB0CE2C, top)
+        self.put32(0xB0CE34, height)
+        # Deliberately distinct supplied globals prove the invalid branch's
+        # copy, not the unexecuted constructor's sentinel initialization.
+        invalid = [-123456789, 987654321, -31415926]
+        self.uc.mem_write(0xB0CE08, struct.pack("<3i", *invalid))
+        point = [world_input[0] - camera[0],
+                 world_input[1] - WORLD_Y_BIAS - camera[1]]
+        self.uc.mem_write(INPUT, struct.pack("<2i", *point))
+        before = bytes.fromhex("a1a2a3a4" + "cc" * 12 + "b1b2b3b4")
+        self.uc.mem_write(OUTPUT - 4, before)
+        self.put32(SP, RETURN)
+        self.put32(SP + 4, OUTPUT)
+        self.put32(SP + 8, INPUT)
+        self.uc.reg_write(UC_X86_REG_ECX, TACTICAL)
+        run_checked(self.uc, PLANE_INVERSE, RETURN, count=1000)
+        raw = bytes(self.uc.mem_read(OUTPUT - 4, len(before)))
+        if raw[:4] != before[:4] or raw[-4:] != before[-4:]:
+            raise OracleError("Native plane inverse wrote outside XYZ output")
+        if self.uc.reg_read(UC_X86_REG_EAX) != OUTPUT:
+            raise OracleError("Native plane inverse output pointer mismatch")
+        if self.uc.reg_read(UC_X86_REG_ESP) != SP + 12:
+            raise OracleError("Native plane inverse stack cleanup mismatch")
+        invalid_path = bool(self.visits[0x6D2337])
+        if not invalid_path:
+            if not self.visits[0x5AFB80] or self.visits[0x7C5F00] != 2:
+                raise OracleError("Native plane conversion leaves did not execute")
+            if self.plane_matrix_bits is None:
+                raise OracleError("Native plane matrix output was not observed")
+        elif self.visits[0x5AFB80] or self.visits[0x7C5F00]:
+            raise OracleError("Invalid plane point unexpectedly ran conversion")
+        result = {"native_client_input": point,
+                  "native_exit": "invalid_upper_bound" if invalid_path else "plane",
+                  "expected_xyz": list(struct.unpack("<3i", raw[4:16]))}
+        if invalid_path:
+            result["supplied_invalid_xyz"] = invalid
+        else:
+            result["matrix_result_f32_bits"] = self.plane_matrix_bits
+        return result
 
 
 def edge_scenarios() -> list[dict]:
@@ -292,5 +357,81 @@ def metadata() -> dict:
     )
 
 
+def generate_plane() -> dict:
+    # Cell allocation is immaterial to6D2280; reuse the checked fixture and
+    # original matrix initialization without introducing a second loader.
+    fixture = NativeFixture([0, 0, 0, 0], 0, [], [])
+    cases = []
+    for name, point in [
+        ("origin", [0, 15]), ("positive_pixel", [1, 16]),
+        ("negative_pixel", [-1, 14]), ("mixed_signs", [-61, 46]),
+        ("positive_cell_edge_before", [0, 44]),
+        ("positive_cell_edge", [0, 45]),
+        ("positive_cell_edge_after", [0, 46]),
+        ("negative_cell_edge_before", [0, -16]),
+        ("negative_cell_edge", [0, -15]),
+        ("negative_cell_edge_after", [0, -14]),
+        ("interior_center", [420, 2310]),
+        ("east_map_extent", [15330, 15360]),
+        ("west_map_extent", [-15330, 15360]),
+        ("mixed_cancellation", [30690, -15330]),
+        ("f32_integer_boundary_positive", [2006, 15]),
+        ("f32_integer_boundary_negative", [-2006, 15]),
+    ]:
+        cases.append({"name": name, "world_input": point,
+                      "camera": [0, 0], "viewport": [0, 0],
+                      "window_width_top_height": [32768, 0, 32768]})
+    for name, camera, viewport in [
+        ("camera_offset", [217, 1981], [0, 0]),
+        ("viewport_offset", [217, 1981], [120, 40]),
+        ("negative_camera", [-219, -1979], [-120, -40]),
+    ]:
+        cases.append({"name": name, "world_input": [420, 2310],
+                      "camera": camera, "viewport": viewport,
+                      "window_width_top_height": [32768, 0, 32768]})
+    for name, point in [
+        ("upper_x_before", [639, 15]), ("upper_x_equal", [640, 15]),
+        ("upper_y_before", [0, 514]), ("upper_y_equal", [0, 515]),
+        ("no_lower_bounds", [-1, -1]),
+    ]:
+        cases.append({"name": name, "world_input": point,
+                      "camera": [0, 0], "viewport": [0, 20],
+                      "window_width_top_height": [640, 20, 480]})
+    for case in cases:
+        case.update(fixture.plane(case["world_input"], case["camera"],
+                                  case["viewport"], case["window_width_top_height"]))
+    return {"source": "unicorn/gamemd.exe", "plane_entry": hex(PLANE_INVERSE),
+            "inverse_matrix_bits": fixture.matrix_bits,
+            "world_y_bias": WORLD_Y_BIAS, "cases": cases}
+
+
+def plane_metadata() -> dict:
+    return provenance(
+        scope="24 complete Tactical plane inverse6D2280 calls; integer signed, cell-edge, final-f32 integer-boundary, camera, viewport and upper-window controls",
+        assumptions=[
+            "Original6D2280, matrix multiply5AFB80 and conversion7C5F00 execute unchanged; no function result is substituted.",
+            "Existing NativeFixture executes constructor matrix block6D1DC5..6D1E1E with EBX zero; other constructor state is supplied.",
+            "world_input is integer VERA world pixels; native absolute tactical Y is world Y minus15. Incoming point is world minus camera (and Y bias), not plus viewport.",
+            "6D2280 does not read886FA0/4; independently supplied viewport globals are controls, not an extra arithmetic offset.",
+            "Supplied B0CE30 is signed upper X; supplied B0CE2C plus B0CE34 is signed upper Y. Equality rejects. Negative lower coordinates are admitted by this body.",
+            "Invalid B0CE08/0C/10 values are explicit fixture markers, not claimed constructor defaults. Invalid controls are separate from arithmetic outputs.",
+            "Each call resets stack/registers and checks output guards, return pointer and two-argument stack cleanup. Valid paths require original multiply and both conversion calls.",
+            "x87 control word0E7F follows the existing fixture; the recorded preconversion matrix f32 bits are actual native stores under that rounding mode.",
+            "No map lookup, current Cell bits, full ProcessClickCoords, Windows input, fractional zoom, normal map load or rendered tooltip is executed.",
+        ], substitutions=[],
+        entry_points={"plane_inverse": PLANE_INVERSE,
+                      "matrix_initializer": MATRIX_INITIALIZER[0],
+                      "matrix_multiply": 0x5AFB80,
+                      "x87_integer_conversion": 0x7C5F00},
+    )
+
+
 if __name__ == "__main__":
-    finish_vectors(generate, Path(__file__).with_suffix("") / "vectors.json", provenance=metadata)
+    args = sys.argv[1:]
+    if "--plane" in args:
+        args.remove("--plane")
+        finish_vectors(generate_plane, Path(__file__).with_suffix("") / "plane_vectors.json",
+                       provenance=plane_metadata, argv=args)
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix("") / "vectors.json",
+                       provenance=metadata, argv=args)

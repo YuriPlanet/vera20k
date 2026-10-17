@@ -876,6 +876,19 @@ rows, reordered/repeated steps, wrong integer types and any time discrepancy fai
 validation. The wrapper retains the validated transcript as
 `capture.presentation_clock`; it does not reconstruct a missing transcript.
 
+Version2/3 profiles may set `observe_tooltips: true` to add an exact `tooltip`
+projection to every presentation-clock draw. Omitted or false preserves the
+historical row shape; unsolicited or missing projections fail validation.
+This passively reads the existing cursor/camera, input gates, plane coordinate,
+Cell ground bit and active tooltip (ID, text, captured cursor and shown time).
+It sends no input and does not arm, reveal or force a tooltip. Active text is
+bounded to256 Unicode characters; integer coordinates retain their signed
+native-width bounds. Ordinary monotone draws reject a shown time later than
+their consumed tooltip clock. Load-segment captures retain the u64 field bound
+without assuming presentation state resets with the simulation clock. The
+projection shares the100000-draw budget and does not add simulation observation
+samples.
+
 The required v4 `render.neutral_input` has exactly
 `{"static_default_cursor":true,"camera_input_idle":true}`. Rust verifies these
 prerequisites and render readiness on every draw before publishing the final

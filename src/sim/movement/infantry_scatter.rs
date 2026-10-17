@@ -420,7 +420,7 @@ impl Simulation {
             && super::navcom::nav_target_coordinate(
                 requested,
                 Some(id),
-                &self.substrate.entities,
+                self,
                 self.resolved_terrain.as_ref(),
                 Some((rules, &self.interner)),
             )
@@ -438,7 +438,7 @@ impl Simulation {
             let Ok(point) = super::navcom::nav_target_coordinate(
                 requested,
                 Some(id),
-                &self.substrate.entities,
+                self,
                 self.resolved_terrain.as_ref(),
                 Some((rules, &self.interner)),
             ) else {
@@ -663,7 +663,7 @@ impl Simulation {
                 let point = super::navcom::nav_target_coordinate(
                     requested,
                     Some(id),
-                    &self.substrate.entities,
+                    self,
                     self.resolved_terrain.as_ref(),
                     Some((rules, &self.interner)),
                 )?;
@@ -678,7 +678,7 @@ impl Simulation {
                 let coord = super::navcom::nav_target_coordinate(
                     requested,
                     Some(id),
-                    &self.substrate.entities,
+                    self,
                     self.resolved_terrain.as_ref(),
                     Some((rules, &self.interner)),
                 )?;
@@ -708,7 +708,7 @@ impl Simulation {
         let here = super::ground_pose::object_get_coords(actor, terrain);
         let Some(there) = super::ground_pose::target_get_coords(
             crate::sim::combat::TargetKind::from(requested),
-            &self.substrate.entities,
+            self,
             cells.as_ref(),
         ) else {
             return false;

@@ -276,7 +276,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             let before = super::super::nav_target_coordinate(
                 target,
                 requester.map(|_| 1),
-                &sim.substrate.entities,
+                &sim,
                 None,
                 Some((&rules, &sim.interner)),
             )
@@ -291,7 +291,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             let result = super::super::nav_target_coordinate(
                 NavTargetRef::Building { id: 2 },
                 requester.map(|_| 1),
-                &restored.substrate.entities,
+                &restored,
                 None,
                 Some((&rules, &restored.interner)),
             )

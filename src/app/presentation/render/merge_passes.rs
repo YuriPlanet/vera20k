@@ -627,5 +627,9 @@ mod projectile_submission_gpu_tests;
 mod packed_material_gpu_tests;
 
 #[cfg(test)]
+#[path = "infantry_berserk_gpu_tests.rs"]
+mod infantry_berserk_gpu_tests;
+
+#[cfg(test)]
 #[path = "projectile_voxel_gpu_tests.rs"]
 mod projectile_voxel_gpu_tests;

@@ -274,10 +274,7 @@ impl GuardHost for WorldGuard<'_> {
 
     /// TarCom `+0x2B4`, as `Mission_Guard @ 0x0041A5C0` reads it (`0x0041A822`).
     fn target(&mut self) -> bool {
-        crate::sim::combat::target_present(
-            self.entity().attack_target.target(),
-            &self.sim.substrate.entities,
-        )
+        crate::sim::combat::target_present(self.entity().attack_target.target(), self.sim)
     }
 
     fn attack_bridge_unit(&mut self) {

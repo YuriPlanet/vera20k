@@ -103,7 +103,7 @@ impl Simulation {
         let coord = crate::sim::movement::nav_target_coordinate(
             destination,
             Some(id),
-            &self.substrate.entities,
+            self,
             self.resolved_terrain.as_ref(),
             Some((rules, &self.interner)),
         )

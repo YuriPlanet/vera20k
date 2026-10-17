@@ -110,8 +110,15 @@ impl TerrainObjectState {
     /// Terrain retains Object5F5F40/5F6B90/5F4260. Its live admitted
     /// lifecycle represents Marked; Limbo removes that membership.
     pub(crate) fn height(&self, terrain: Option<&ResolvedTerrainGrid>) -> i32 {
-        let coord = self.world_coord();
         let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        self.height_in_query(cells.as_ref())
+    }
+
+    pub(crate) fn height_in_query(
+        &self,
+        cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    ) -> i32 {
+        let coord = self.world_coord();
         crate::sim::movement::air_movement::object_height_in_query(
             crate::sim::components::DriveCoord {
                 x: coord.x,
@@ -119,14 +126,35 @@ impl TerrainObjectState {
                 z: coord.z,
             },
             false,
-            cells.as_ref(),
+            cells,
         )
     }
 
     pub(crate) fn is_in_air(&self, terrain: Option<&ResolvedTerrainGrid>) -> bool {
+        let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        self.is_high_flying_in_query(cells.as_ref())
+    }
+
+    /// Object+50/5F6B60: the Marked guard precedes the live ground query.
+    pub(crate) fn is_low_flying_in_query(
+        &self,
+        cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    ) -> bool {
         crate::sim::movement::air_movement::object_flight_predicate(
             self.is_live(),
-            || self.height(terrain),
+            || self.height_in_query(cells),
+            false,
+        )
+    }
+
+    /// Object+54/5F6B90, retaining the caller's canonical/isolated policy.
+    pub(crate) fn is_high_flying_in_query(
+        &self,
+        cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    ) -> bool {
+        crate::sim::movement::air_movement::object_flight_predicate(
+            self.is_live(),
+            || self.height_in_query(cells),
             true,
         )
     }
@@ -166,6 +194,14 @@ impl TerrainObjectState {
 
     pub fn is_live(&self) -> bool {
         self.lifecycle == TerrainObjectLifecycle::Live
+    }
+
+    /// Object+90 is independent of InLimbo+81. ObjectUnInit5F661F calls
+    /// TerrainLimbo before clearing Alive at5F6625. The represented lethal
+    /// finalizer makes that final state Destroyed; standalone Limbo retains
+    /// Alive, as ObjectCtor5F3930 does before its first Unlimbo.
+    pub(crate) fn object_alive(&self) -> bool {
+        self.lifecycle != TerrainObjectLifecycle::Destroyed
     }
 }
 

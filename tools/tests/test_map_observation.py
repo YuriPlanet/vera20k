@@ -58,6 +58,7 @@ class MapObservationTests(unittest.TestCase):
         self.gesture_receipts = []
         self.keyboard_bindings = []
         self.sidebar_frames = []
+        self.tooltip_frames = {}
         self.tactical_extent = None
         self.change = lambda manifest: None
         self.result = ChildResult(42, 0, False, b'child output\n', b'', ())
@@ -110,6 +111,10 @@ class MapObservationTests(unittest.TestCase):
                       'pixel_layout': 'BGRA8', 'surface_format': 'Bgra8UnormSrgb'},
             'native_comparator': 'NONE', 'parity_certification': 'NONE',
         }
+        if self.profile.get('observe_tooltips', False):
+            for row in manifest['render']['presentation_clock']['draws']:
+                row['tooltip'] = deepcopy(self.tooltip_frames.get(
+                    row['completed_steps'], self.tooltip_observation()))
         if 'cursor_position' in self.profile:
             manifest['render']['cursor_position'] = [float(value) for value in self.profile['cursor_position']]
         seen = set()
@@ -3871,6 +3876,114 @@ class MapObservationTests(unittest.TestCase):
         for ticks in (-1, 100_001):
             with self.subTest(ticks=ticks), self.assertRaises(ValidationError):
                 observation._presentation_clock(self.clock(1), ticks)
+
+    @staticmethod
+    def tooltip_observation():
+        return {'cursor_px': [-1, 480], 'camera_top_left': [-300.5, 1200.0],
+                'camera_zoom': 1.0, 'cursor_coordinates': False, 'captured': False,
+                'input_locked': False, 'camera_blocks_tooltip': False,
+                'plane_xyz': [-256, 128, 0], 'plane_cell': [-1, 0],
+                'ground_unshrouded': False, 'active': None}
+
+    def test_tooltip_projection_opt_in_reaches_capture_and_retained_run_validation(self):
+        self.profile.update(schema_version=observation.PROFILE_V3, observe_tooltips=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        shown = self.tooltip_observation()
+        shown['active'] = {'id': 500, 'text': 'Unrevealed Terrain',
+                           'cursor_px': [400, 200], 'shown_at_ms': 44}
+        self.tooltip_frames[3] = shown
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report)
+        rows = report['capture']['presentation_clock']['draws']
+        self.assertIsNone(rows[0]['tooltip']['active'])
+        self.assertEqual(rows[2]['tooltip'], shown)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_tooltip_profile_and_per_draw_opt_in_are_strict(self):
+        for schema in (observation.PROFILE_V2, observation.PROFILE_V3):
+            for enabled in (False, True):
+                observation._profile_extensions(dict(self.profile, schema_version=schema,
+                                                     observe_tooltips=enabled))
+        for enabled in (False, True):
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, schema_version=observation.PROFILE_V1,
+                                                     observe_tooltips=enabled))
+        for value in (None, 0, 1, 'true', [], {}):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_tooltips=value))
+        clock = self.clock(1)
+        for kwargs in ({}, {'observe_tooltips': False}):
+            self.assertEqual(observation._presentation_clock(clock, 1, **kwargs), clock)
+            extra = deepcopy(clock)
+            extra['draws'][0]['tooltip'] = self.tooltip_observation()
+            with self.assertRaises(ValidationError):
+                observation._presentation_clock(extra, 1, **kwargs)
+        with self.assertRaises(ValidationError):
+            observation._presentation_clock(clock, 1, observe_tooltips=True)
+        extra['draws'][0]['tooltip'] = None
+        with self.assertRaises(ValidationError):
+            observation._presentation_clock(extra, 1, observe_tooltips=True)
+
+    def test_tooltip_projection_rejects_malformed_payloads_and_numeric_types(self):
+        good = self.tooltip_observation()
+        changes = [lambda t: t.update(extra=True), lambda t: t.update(active=[])]
+        for key in good:
+            changes.append(lambda t, k=key: t.pop(k))
+        for key in ('cursor_coordinates', 'captured', 'input_locked',
+                    'camera_blocks_tooltip', 'ground_unshrouded'):
+            for value in (0, 1, None, 'false'):
+                changes.append(lambda t, k=key, v=value: t.update({k: v}))
+        for key in ('cursor_px', 'camera_top_left', 'plane_xyz', 'plane_cell'):
+            for value in (None, {}, 'point', [], [0], [0, 0, 0, 0]):
+                changes.append(lambda t, k=key, v=value: t.update({k: v}))
+        for key in ('cursor_px', 'plane_xyz', 'plane_cell'):
+            for value in (True, 0.0, '0', None, 1 << 32, -(1 << 32)):
+                changes.append(lambda t, k=key, v=value: t[k].__setitem__(0, v))
+        for value in (True, None, '1', float('inf'), float('-inf'), float('nan')):
+            changes.append(lambda t, v=value: t['camera_top_left'].__setitem__(0, v))
+            changes.append(lambda t, v=value: t.update(camera_zoom=v))
+        for value in (0, -1, -0.01):
+            changes.append(lambda t, v=value: t.update(camera_zoom=v))
+        for index, change in enumerate(changes):
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                malformed = deepcopy(good)
+                change(malformed)
+                observation._tooltip_projection(malformed, 'tooltip', 66)
+
+    def test_tooltip_active_shape_unicode_cap_and_monotone_clock_are_checked(self):
+        good = self.tooltip_observation()
+        active = {'id': (1 << 32) - 1, 'text': '界😀' * 128,
+                  'cursor_px': [-(1 << 31), (1 << 31) - 1], 'shown_at_ms': 66}
+        good['active'] = active
+        observation._tooltip_projection(good, 'tooltip', 66)
+        # The field schema admits empty strings; production poll owns whether
+        # an empty region ever constructs an active tip.
+        observation._tooltip_projection(dict(good, active=dict(active, text='')), 'tooltip', 66)
+        changes = [lambda a: a.update(extra=True), lambda a: a.update(text='界' * 257),
+                   lambda a: a.update(cursor_px=[0]), lambda a: a.update(cursor_px=[True, 0])]
+        for key in active:
+            changes.append(lambda a, k=key: a.pop(k))
+        for key in ('id', 'shown_at_ms'):
+            for value in (True, 0.0, '0', None, -1, 1 << 64):
+                changes.append(lambda a, k=key, v=value: a.update({k: v}))
+        changes.append(lambda a: a.update(id=1 << 32))
+        for value in (None, [], 1):
+            changes.append(lambda a, v=value: a.update(text=v))
+        for index, change in enumerate(changes):
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                malformed = deepcopy(active)
+                change(malformed)
+                observation._tooltip_projection(dict(good, active=malformed), 'tooltip', 66)
+        clock = self.clock(3)
+        for row in clock['draws']:
+            row['tooltip'] = deepcopy(good)
+        clock['draws'][0]['tooltip']['active']['shown_at_ms'] = 23
+        with self.assertRaisesRegex(ValidationError, 'later than its tooltip clock'):
+            observation._presentation_clock(clock, 3, observe_tooltips=True)
+        # Load-segment clock resets do not prove that retained presentation
+        # state was reset, so only the u64 type/range is asserted there.
+        observation._tooltip_projection(dict(good, active=dict(active, shown_at_ms=(1 << 64) - 1)),
+                                        'tooltip', None)
 
     def test_clock_schema_and_every_consumed_time_are_strict(self):
         changes = [lambda c: c.update(extra='unrecognized'),

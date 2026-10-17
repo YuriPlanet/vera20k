@@ -551,7 +551,7 @@ fn building_fire_facings(
         .map(|building| coords_xy(super::target_coords(building)));
     let target = snap
         .tar_com
-        .and_then(|target| super::resolve_target_coords(&target, entities));
+        .and_then(|target| super::resolve_target_coords(&target, world));
     let (Some(origin), Some(target)) = (origin, target.map(coords_xy)) else {
         // `0x0044D7F4..0x0044D7FF`: `((current >> 7) + 1) >> 1` as the high byte.
         let rounded = ((((u32::from(current) >> 7) + 1) >> 1) & 0xFF) << 8;
@@ -585,7 +585,7 @@ pub fn building_direction_to(
     target: TargetKind,
 ) -> Option<u16> {
     let obj = world.object_type(building.type_ref(), rules)?;
-    let target = super::resolve_target_coords(&target, &world.substrate.entities)?;
+    let target = super::resolve_target_coords(&target, world)?;
     let origin = coords_xy(super::target_coords(building));
     Some(facing16_between(
         aim_origin(origin, obj, firer_art(rules, obj)),

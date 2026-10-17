@@ -94,6 +94,7 @@ pub(crate) trait AoECellPrelude {
 
 struct AoEWallDamageHost<'borrow, 'prelude> {
     entities: &'borrow mut EntityStore,
+    target_terrain_objects: &'borrow BTreeMap<u64, TerrainObjectState>,
     #[cfg(any(test, feature = "test-support"))]
     trace: &'borrow mut Vec<CellTargetDetach>,
     prelude: &'borrow mut Option<&'prelude mut dyn AoECellPrelude>,
@@ -122,6 +123,7 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
         if let WallPointerTarget::Real(rx, ry) = target {
             expire_cell_target_references(
                 self.entities,
+                self.target_terrain_objects,
                 rx,
                 ry,
                 #[cfg(any(test, feature = "test-support"))]
@@ -369,8 +371,11 @@ pub(crate) fn apply_aoe_damage_with_terrain<O: Into<AoEDamageOrigin>>(
     let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
         rules, interner,
     ));
+    let no_terrain_objects = BTreeMap::new();
+    let target_terrain_objects = terrain_objects.map_or(&no_terrain_objects, |view| view.objects);
     apply_aoe_damage_with_terrain_and_scenario(
         entities,
+        target_terrain_objects,
         impact_rx,
         impact_ry,
         base_damage,
@@ -388,8 +393,11 @@ pub(crate) fn apply_aoe_damage_with_terrain<O: Into<AoEDamageOrigin>>(
 
 /// `Apply_area_damage` (`0x00489280`): collects its receiver records. Without an
 /// occupancy grid, every unlimboed, living object stands in for the cell lists.
+/// `target_terrain_objects` is the complete target authority, independent of
+/// optional Terrain receiver collection (fixtures may exclude those receivers).
 pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin>>(
     entities: &mut EntityStore,
+    target_terrain_objects: &BTreeMap<u64, TerrainObjectState>,
     impact_rx: u16,
     impact_ry: u16,
     base_damage: i32,
@@ -557,6 +565,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
         });
         route_wall_before_cell_objects(
             entities,
+            target_terrain_objects,
             wall_target,
             base_damage,
             warhead,
@@ -678,6 +687,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
 
 fn route_wall_before_cell_objects(
     entities: &mut EntityStore,
+    target_terrain_objects: &BTreeMap<u64, TerrainObjectState>,
     target: WallPointerTarget,
     raw_damage: i32,
     warhead: &WarheadType,
@@ -721,6 +731,7 @@ fn route_wall_before_cell_objects(
     let _wall_result = {
         let mut host = AoEWallDamageHost {
             entities,
+            target_terrain_objects,
             #[cfg(any(test, feature = "test-support"))]
             trace: &mut _result.cell_target_detaches,
             prelude: cell_prelude,
@@ -744,6 +755,7 @@ fn route_wall_before_cell_objects(
 /// first, and only then runs Restore when a mission was suspended.
 pub(crate) fn expire_cell_target_references(
     entities: &mut EntityStore,
+    terrain_objects: &BTreeMap<u64, TerrainObjectState>,
     rx: u16,
     ry: u16,
     #[cfg(any(test, feature = "test-support"))] trace: &mut Vec<CellTargetDetach>,
@@ -753,6 +765,7 @@ pub(crate) fn expire_cell_target_references(
         let saved_target_commits = entities.get(listener_id).is_some_and(|entity| {
             crate::sim::mission::concrete_effects::assign_target_commits(
                 entities,
+                terrain_objects,
                 entity.suspended_attack_target.target(),
             )
         });
@@ -1304,6 +1317,7 @@ mod tests {
             let mut prelude = RestampDummy { visits: Vec::new() };
             let result = apply_aoe_damage_with_terrain_and_scenario(
                 &mut EntityStore::new(),
+                &BTreeMap::new(),
                 0,
                 1,
                 1,
@@ -1393,6 +1407,7 @@ mod tests {
             let mut prelude = ObserveDummy::default();
             let result = apply_aoe_damage_with_terrain_and_scenario(
                 &mut entities,
+                &BTreeMap::new(),
                 20,
                 20,
                 1,
@@ -1514,6 +1529,7 @@ mod tests {
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
         let result = apply_aoe_damage_with_terrain_and_scenario(
             &mut entities,
+            &BTreeMap::new(),
             8,
             8,
             100,
@@ -1589,6 +1605,7 @@ mod tests {
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
         let _ = apply_aoe_damage_with_terrain_and_scenario(
             &mut EntityStore::new(),
+            &BTreeMap::new(),
             8,
             8,
             1,
@@ -2548,6 +2565,161 @@ mod tests {
         assert!(entities.get(40).unwrap().attack_target.target().is_none());
     }
 
+    /// Wall pointer expiry clears the Cell target before Restore asks the
+    /// shared6FCDB0 admission about its saved Object. Excluding Terrain from
+    /// AreaDamage's receiver list must not remove that Object from admission.
+    #[test]
+    fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
+        use crate::sim::combat::receiver_fixture::{FixturePolicy, FixtureTrace};
+        use crate::sim::world::Simulation;
+
+        for (label, health, lifecycle, present, collect_terrain, admitted) in [
+            (
+                "live excluded",
+                100,
+                TerrainObjectLifecycle::Live,
+                true,
+                false,
+                true,
+            ),
+            (
+                "live included",
+                100,
+                TerrainObjectLifecycle::Live,
+                true,
+                true,
+                true,
+            ),
+            (
+                "zero health",
+                0,
+                TerrainObjectLifecycle::Live,
+                true,
+                false,
+                false,
+            ),
+            (
+                "limbo",
+                100,
+                TerrainObjectLifecycle::Limbo,
+                true,
+                false,
+                true,
+            ),
+            (
+                "uninitialized",
+                100,
+                TerrainObjectLifecycle::Destroyed,
+                true,
+                false,
+                false,
+            ),
+            (
+                "missing",
+                100,
+                TerrainObjectLifecycle::Live,
+                false,
+                false,
+                false,
+            ),
+        ] {
+            let (rules, warhead, registry) =
+                wall_aoe_fixture("1", "WallAbsoluteDestroyer=yes\nWall=yes");
+            let mut world = Simulation::with_seed(5);
+            world.interner = test_interner();
+            world.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
+            let mut overlays = OverlayGrid::new(16, 16);
+            overlays.place_overlay(8, 8, 2, 0);
+            world.overlay_grid = Some(overlays);
+            world.receiver_fixture = Some(FixturePolicy {
+                current_tick: 0,
+                require_playfield_membership: false,
+                fog_enabled: false,
+                radiation_enabled: false,
+                sound_enabled: false,
+                terrain_collection: collect_terrain,
+                trace: FixtureTrace::default(),
+                deferred_tiberium: Vec::new(),
+                tail_effects: Vec::new(),
+                admitted_spawns: Vec::new(),
+            });
+
+            let saved = Some(TargetKind::Entity(100));
+            let mut listener = GameEntity::test_default(20, "MTNK", "Americans", 2, 2);
+            listener
+                .attack_target
+                .set_for_test(Some(TargetKind::Cell(8, 8)));
+            listener.suspended_attack_target.set_for_test(saved);
+            listener.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_known(MissionType::Attack),
+                suspended: MissionId::from_known(MissionType::Guard),
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(0),
+            });
+            world.substrate.entities.insert(listener);
+            if present {
+                // Explicit admission controls, not a simulated death/limbo
+                // transition. Terrain remains in its real owning store.
+                let type_ref = world.interner.intern("TREE01");
+                let mut tree = TerrainObjectState::for_test(100, type_ref, 9, 8);
+                tree.health = health;
+                tree.lifecycle = lifecycle;
+                world.production.terrain_objects.insert(100, tree);
+                world.production.terrain_object_cells.insert((9, 8), 100);
+            }
+            let warhead_ref = world.interner.intern("WH");
+            let result = super::super::world_receiver::collect_area(
+                &mut world,
+                &rules,
+                Some(&registry),
+                (8, 8),
+                1,
+                &warhead,
+                (super::super::RAD_NO_ATTACKER, None, warhead_ref),
+                Some(center_impact(0)),
+                0,
+            );
+
+            assert_eq!(
+                world.overlay_grid.as_ref().unwrap().cell(8, 8).overlay_id,
+                None,
+                "{label}"
+            );
+            let listener = world.substrate.entities.get(20).unwrap();
+            assert_eq!(
+                listener.attack_target.target(),
+                admitted.then_some(saved.unwrap()),
+                "{label}"
+            );
+            assert_eq!(
+                listener.mission.current(),
+                MissionId::from_known(MissionType::Guard),
+                "{label}"
+            );
+            assert_eq!(listener.mission.suspended(), MissionId::NONE, "{label}");
+            assert_eq!(
+                result.cell_target_detaches,
+                vec![CellTargetDetach {
+                    listener_id: 20,
+                    restored: true,
+                    cleared: true,
+                }],
+                "{label}: clear first, then Restore regardless of target admission"
+            );
+            assert_eq!(
+                result.receivers.iter().any(|receiver| matches!(
+                    receiver, AreaDamageReceiver::Terrain(event) if event.stable_id == 100
+                )),
+                collect_terrain,
+                "{label}: receiver inclusion is independent of target admission"
+            );
+        }
+    }
+
     #[test]
     fn bridge_impact_selects_the_deck_list_strictly_above_half_deck() {
         // Apply_area_damage48955E..48958D compares the exact impact against
@@ -2673,6 +2845,7 @@ mod tests {
             };
             let result = apply_aoe_damage_with_terrain_and_scenario(
                 &mut entities,
+                &BTreeMap::new(),
                 5,
                 5,
                 100,

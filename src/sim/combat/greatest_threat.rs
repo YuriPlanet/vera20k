@@ -2022,24 +2022,26 @@ fn evaluate_candidate(
         ScanRange::NoCutoff => true,
         ScanRange::CanFireAt => match ctx.terrain {
             Some(terrain) => {
-                let candidate_target = super::TargetKind::Entity(candidate.stable_id());
-                let src = super::in_range::fire_source_coords(
+                // EvaluateCandidate6F8178 already holds the actual Techno.
+                // Source and InRange share one native Cell/Dummy domain; pure
+                // scan fixtures need no synthetic World for this receiver.
+                let cells = NativeCellQuery::canonical(terrain);
+                let target = super::in_range::RangeTarget::Techno(candidate);
+                let src = super::in_range::fire_source_for_target(
                     ctx.scanner,
-                    &candidate_target,
+                    target,
                     selected.weapon,
-                    ctx.entities,
-                    terrain,
+                    &cells,
                     (ctx.rules, ctx.interner),
                 )?;
-                super::in_range::compute_in_range(
+                super::in_range::compute_range_target(
                     ctx.scanner,
                     src,
-                    &candidate_target,
+                    target,
                     selected.weapon,
                     ctx.rules,
                     ctx.interner,
-                    ctx.entities,
-                    terrain,
+                    &cells,
                     &ctx.los,
                 )
             }

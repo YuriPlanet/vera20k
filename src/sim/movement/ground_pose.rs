@@ -600,7 +600,7 @@ pub(crate) fn object_target_coords(
 /// Rescue4DE04E/4DE073 and AreaGuard4D6F00 pass this XYZ to their scanner.
 pub fn target_get_coords(
     target: crate::sim::combat::TargetKind,
-    entities: &crate::sim::entity_store::EntityStore,
+    world: &Simulation,
     cells: Option<&NativeCellQuery<'_>>,
 ) -> Option<DriveCoord> {
     match target {
@@ -608,11 +608,21 @@ pub fn target_get_coords(
             Some(super::navcom::target_cell_coord(rx, ry, cells))
         }
         crate::sim::combat::TargetKind::Entity(id) => {
-            let entity = entities.get(id)?;
-            Some(object_get_coords(
-                entity,
-                cells.map(NativeCellQuery::terrain),
-            ))
+            if let Some(entity) = world.substrate.entities.get(id) {
+                Some(object_get_coords(
+                    entity,
+                    cells.map(NativeCellQuery::terrain),
+                ))
+            } else {
+                // Terrain7F522C+48 inherits Object5F65A0: its constructor's
+                // retained Location survives ground changes and expiry.
+                let coord = world.production.terrain_objects.get(&id)?.world_coord();
+                Some(DriveCoord {
+                    x: coord.x,
+                    y: coord.y,
+                    z: coord.z,
+                })
+            }
         }
     }
 }
@@ -621,7 +631,7 @@ pub fn target_get_coords(
 /// structural bridge height. FireAt70BCB0 and planning Foot4D8560 share it.
 pub(crate) fn target_get_target_coords(
     target: crate::sim::combat::TargetKind,
-    entities: &crate::sim::entity_store::EntityStore,
+    world: &Simulation,
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> Option<DriveCoord> {
     match target {
@@ -633,9 +643,11 @@ pub(crate) fn target_get_target_coords(
                 z: coord.z,
             })
         }
-        crate::sim::combat::TargetKind::Entity(id) => {
-            Some(object_get_coords(entities.get(id)?, terrain))
-        }
+        crate::sim::combat::TargetKind::Entity(_) => target_get_coords(
+            target,
+            world,
+            terrain.map(NativeCellQuery::canonical).as_ref(),
+        ),
     }
 }
 
@@ -644,10 +656,10 @@ pub(crate) fn target_get_target_coords(
 /// target the raw Object+9C Location is returned, not its foundation center.
 pub(crate) fn current_destination_coords(
     entity: &crate::sim::game_entity::GameEntity,
-    entities: &crate::sim::entity_store::EntityStore,
+    world: &Simulation,
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> Option<DriveCoord> {
-    use crate::sim::{combat::TargetKind, components::NavTargetRef, mission::MissionType};
+    use crate::sim::{combat::TargetKind, mission::MissionType};
     let attacking = entity.mission.effective().known() == Some(MissionType::Attack);
     let target = if attacking {
         entity.attack_target.target()
@@ -656,18 +668,13 @@ pub(crate) fn current_destination_coords(
             .navigation
             .nav_com_aux()
             .or(entity.navigation.nav_com())
-            .map(|target| match target {
-                NavTargetRef::Cell { rx, ry } => TargetKind::Cell(rx, ry),
-                NavTargetRef::Entity { id }
-                | NavTargetRef::Object { id }
-                | NavTargetRef::Building { id } => TargetKind::Entity(id),
-            })
+            .map(TargetKind::from)
     } else {
         None
     };
     target.map_or_else(
         || Some(position_world_coord(&entity.position)),
-        |target| target_get_target_coords(target, entities, terrain),
+        |target| target_get_target_coords(target, world, terrain),
     )
 }
 
@@ -686,7 +693,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .map(NativeCellQuery::canonical);
-        let coords = |target| target_get_coords(target, &self.substrate.entities, cells.as_ref());
+        let coords = |target| target_get_coords(target, self, cells.as_ref());
         let from = coords(crate::sim::combat::TargetKind::Entity(id))?;
         let to = coords(target)?;
         let foundation = match target {

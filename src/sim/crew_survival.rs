@@ -467,6 +467,7 @@ impl Simulation {
                 let target = Some(crate::sim::combat::TargetKind::Entity(planter));
                 let commits = crate::sim::mission::concrete_effects::assign_target_commits(
                     &sim.substrate.entities,
+                    &sim.production.terrain_objects,
                     target,
                 );
                 if let Some(survivor) = sim.substrate.entities.get_mut(id) {

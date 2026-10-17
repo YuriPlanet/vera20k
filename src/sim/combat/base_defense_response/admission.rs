@@ -20,7 +20,7 @@ use super::ExistingTargetDisposition;
 /// or the protected Building's class-specific coordinate.
 pub(super) fn destination_cell(
     entity: &GameEntity,
-    entities: &EntityStore,
+    sim: &Simulation,
     terrain: Option<&ResolvedTerrainGrid>,
     rules: &RuleSet,
     interner: &StringInterner,
@@ -30,7 +30,7 @@ pub(super) fn destination_cell(
             id: entity.stable_id(),
         },
         None,
-        entities,
+        sim,
         terrain,
         Some((rules, interner)),
     )?;

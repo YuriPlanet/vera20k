@@ -484,10 +484,7 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn target(&mut self) -> bool {
-        crate::sim::combat::target_present(
-            self.entity().attack_target.target(),
-            &self.sim.substrate.entities,
-        )
+        crate::sim::combat::target_present(self.entity().attack_target.target(), self.sim)
     }
 
     fn nav_com(&mut self) -> bool {

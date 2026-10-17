@@ -561,7 +561,7 @@ pub(crate) fn nav_targets_same_receiver(left: Option<NavTargetRef>, right: NavTa
 pub(crate) fn nav_target_coordinate(
     target: NavTargetRef,
     requester: Option<u64>,
-    entities: &EntityStore,
+    world: &crate::sim::world::Simulation,
     terrain: Option<&ResolvedTerrainGrid>,
     rules: Option<(
         &crate::rules::ruleset::RuleSet,
@@ -582,9 +582,18 @@ pub(crate) fn nav_target_coordinate(
         | NavTargetRef::Object { id }
         | NavTargetRef::Building { id } => id,
     };
-    let entity = entities
-        .get(id)
-        .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"))?;
+    let entities = &world.substrate.entities;
+    let Some(entity) = entities.get(id) else {
+        // Terrain7F522C+4C is Object4104F0, which forwards virtual+48;
+        // the requester does not alter its retained coordinate.
+        let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        return super::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Entity(id),
+            world,
+            cells.as_ref(),
+        )
+        .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"));
+    };
     if entity.category() == crate::map::entities::EntityCategory::Structure {
         let (rules, interner) =
             rules.ok_or_else(|| format!("Building {id} navigation requires type data"))?;
@@ -623,7 +632,7 @@ impl crate::sim::world::Simulation {
         nav_target_coordinate(
             target,
             requester,
-            &self.substrate.entities,
+            self,
             self.resolved_terrain.as_ref(),
             Some((rules, &self.interner)),
         )

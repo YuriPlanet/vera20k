@@ -585,6 +585,7 @@ impl Simulation {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
                     entities: &mut self.substrate.entities,
+                    target_terrain_objects: &self.production.terrain_objects,
                     #[cfg(any(test, feature = "test-support"))]
                     detach_trace: &mut detach_trace,
                     radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
@@ -966,7 +967,10 @@ impl Simulation {
                 attacker_id,
                 target_id,
             } => {
-                if !self.substrate.entities.contains(*target_id) {
+                if self
+                    .resolve_event_token(Some(combat::TargetKind::Entity(*target_id)))
+                    .is_none()
+                {
                     return false;
                 }
                 // Both payloads deliver the same native Attack event. The
@@ -1507,7 +1511,7 @@ impl Simulation {
                 if crate::sim::movement::nav_target_coordinate(
                     transport_ref,
                     Some(*passenger_id),
-                    &self.substrate.entities,
+                    self,
                     self.resolved_terrain.as_ref(),
                     Some((rules, &self.interner)),
                 )
@@ -1766,7 +1770,7 @@ impl Simulation {
                                 id: *target_building_id,
                             },
                             Some(*attacker_id),
-                            &self.substrate.entities,
+                            self,
                             self.resolved_terrain.as_ref(),
                             Some((rules, &self.interner)),
                         )
@@ -1854,7 +1858,7 @@ impl Simulation {
                                 id: *target_building_id,
                             },
                             Some(*engineer_id),
-                            &self.substrate.entities,
+                            self,
                             self.resolved_terrain.as_ref(),
                             Some((rules, &self.interner)),
                         )
@@ -2255,9 +2259,15 @@ impl Simulation {
     /// `EventClass::Execute @ 0x004C6CB0`'s MEGAMISSION token tests of `+0x90`, `+0x6C` != 0
     /// and `+0x81` (target `0x004C7225..0x004C725D`, destination `0x004C7263..0x004C7299`).
     pub(crate) fn order_object_token_admits(&self, stable_id: u64) -> bool {
-        self.substrate.entities.get(stable_id).is_some_and(|e| {
+        if let Some(e) = self.substrate.entities.get(stable_id) {
             e.lifecycle.object_alive() && e.health.current() != 0 && !e.lifecycle.in_limbo()
-        })
+        } else {
+            // Event4C7225..725D reads Object lifetime/Health, not Techno RTTI.
+            self.production
+                .terrain_objects
+                .get(&stable_id)
+                .is_some_and(|target| target.is_live() && target.health != 0)
+        }
     }
 
     /// Whether a re-issued Enter order onto `destination_id` is the native
@@ -2338,7 +2348,8 @@ impl Simulation {
             return false;
         };
         let Some(target) = self.substrate.entities.get(target_id) else {
-            return false;
+            // Terrain+3C -> Object4104A0 returns null, so House4F9A90 is false.
+            return self.production.terrain_objects.contains_key(&target_id);
         };
         !are_houses_friendly(
             &self.house_alliances,
@@ -2354,7 +2365,10 @@ impl Simulation {
         token: Option<combat::TargetKind>,
     ) -> Option<combat::TargetKind> {
         token.filter(|token| match *token {
-            combat::TargetKind::Entity(id) => self.substrate.entities.contains(id),
+            combat::TargetKind::Entity(id) => {
+                self.substrate.entities.contains(id)
+                    || self.production.terrain_objects.contains_key(&id)
+            }
             combat::TargetKind::Cell(..) => true,
         })
     }

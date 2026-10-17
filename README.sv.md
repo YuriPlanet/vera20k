@@ -52,12 +52,7 @@ Denna uppdelning stöder deterministiskt spel.
 
 Pilarna visar dataflödet:
 
-```mermaid
-flowchart LR
-    App[Applikation] -->|Kommandon| Sim[Simulering]
-    Sim -->|Världstillstånd| App
-    App -->|Renderingsdata| Render[Rendering]
-```
+![Applikationen skickar kommandon till simuleringen, som returnerar världstillståndet; applikationen skickar renderingsdata till renderingen.](docs/images/architecture.sv.png)
 
 ## Bygg och kör
 

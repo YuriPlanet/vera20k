@@ -2940,6 +2940,23 @@ impl GeneralRules {
             ini.section(name)
                 .map_or_else(DifficultyRules::default, DifficultyRules::read_pass)
         });
+        // ReadAudioVisual6691E0 is independent of the ReadGeneral section
+        // gate.66B673..66B754 reads all three class lights and stores signed
+        // milliunits after the active x87 chop-toward-zero conversion.
+        // Original no-General GI control: infantry_berserk_body.json.
+        // Retained residual: a later AudioVisual pass with a missing key uses
+        // native signed integer /1000 defaults; this projection retains fractions.
+        let extra_unit_light = (audio_visual
+            .read_double("ExtraUnitLight", defaults.extra_unit_light as f64 / 1000.0)
+            * 1000.0) as i32;
+        let extra_infantry_light = (audio_visual.read_double(
+            "ExtraInfantryLight",
+            defaults.extra_infantry_light as f64 / 1000.0,
+        ) * 1000.0) as i32;
+        let extra_aircraft_light = (audio_visual.read_double(
+            "ExtraAircraftLight",
+            defaults.extra_aircraft_light as f64 / 1000.0,
+        ) * 1000.0) as i32;
         let Some(general) = ini.section("General") else {
             return Self {
                 message_delay_minutes,
@@ -2969,6 +2986,9 @@ impl GeneralRules {
                 paranoid,
                 psychic_reveal_activate_sound,
                 psychic_reveal_radius,
+                extra_unit_light,
+                extra_infantry_light,
+                extra_aircraft_light,
                 ..defaults
             };
         };
@@ -3582,19 +3602,9 @@ impl GeneralRules {
             wheeled_downhill: SimFixed::from_num(
                 general.read_double("WheeledDownhill", defaults.wheeled_downhill.to_num::<f64>()),
             ),
-            // RulesClass's AudioVisual pass stores these ReadDouble values as
-            // signed milliunits after the active x87 chop-toward-zero conversion.
-            extra_unit_light: (audio_visual
-                .read_double("ExtraUnitLight", defaults.extra_unit_light as f64 / 1000.0)
-                * 1000.0) as i32,
-            extra_infantry_light: (audio_visual.read_double(
-                "ExtraInfantryLight",
-                defaults.extra_infantry_light as f64 / 1000.0,
-            ) * 1000.0) as i32,
-            extra_aircraft_light: (audio_visual.read_double(
-                "ExtraAircraftLight",
-                defaults.extra_aircraft_light as f64 / 1000.0,
-            ) * 1000.0) as i32,
+            extra_unit_light,
+            extra_infantry_light,
+            extra_aircraft_light,
             close_enough: general.read_range("CloseEnough", defaults.close_enough),
             stray: general.read_range("Stray", defaults.stray),
             relaxed_stray: general.read_range("RelaxedStray", defaults.relaxed_stray),
@@ -7960,6 +7970,19 @@ CellSpread=0
         assert_eq!(parsed.extra_unit_light, 200);
         assert_eq!(parsed.extra_infantry_light, -125);
         assert_eq!(parsed.extra_aircraft_light, 333);
+
+        let without_general = GeneralRules::from_ini(&IniFile::from_str(
+            "[AudioVisual]\nExtraUnitLight=.2\nExtraInfantryLight=-.1259\nExtraAircraftLight=.3339\n",
+        ));
+        assert_eq!(without_general.extra_unit_light, parsed.extra_unit_light);
+        assert_eq!(
+            without_general.extra_infantry_light,
+            parsed.extra_infantry_light
+        );
+        assert_eq!(
+            without_general.extra_aircraft_light,
+            parsed.extra_aircraft_light
+        );
     }
 
     #[test]

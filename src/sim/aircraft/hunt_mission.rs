@@ -149,10 +149,7 @@ impl HuntHost for WorldHunt<'_> {
 
     fn target(&mut self) -> bool {
         let entity = self.sim.substrate.entities.get(self.id).unwrap();
-        crate::sim::combat::target_present(
-            entity.attack_target.target(),
-            &self.sim.substrate.entities,
-        )
+        crate::sim::combat::target_present(entity.attack_target.target(), self.sim)
     }
 
     fn greatest_threat(&mut self, mask: u32) -> Option<u64> {

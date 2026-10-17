@@ -5,8 +5,12 @@
 //! This sealed two-phase interface lets Mission authority prove availability
 //! before its first write and then commit an infallible, ordered transaction.
 
+use std::collections::BTreeMap;
+
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
+use crate::sim::entity_store::EntityStore;
+use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
@@ -181,6 +185,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
                 | NavTargetRef::Building { id },
             ) = destination
             && !sim.substrate.entities.contains(id)
+            && !sim.production.terrain_objects.contains_key(&id)
             // Building455D50 only archives the pointer; it never asks the
             // destination for a coordinate or otherwise dereferences it.
             && sim.substrate.entities.get(receiver).is_some_and(|actor| {
@@ -214,7 +219,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
             && crate::sim::movement::nav_target_coordinate(
                 destination,
                 Some(receiver),
-                &sim.substrate.entities,
+                sim,
                 sim.resolved_terrain.as_ref(),
                 Some((rules, &sim.interner)),
             )
@@ -353,7 +358,11 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         if changes && entity.airstrike_link() == Some(prepared.receiver) {
             sim.airstrike_clear_target(prepared.receiver, self.rules, self.frame_effects);
         }
-        let commits = assign_target_commits(&sim.substrate.entities, requested);
+        let commits = assign_target_commits(
+            &sim.substrate.entities,
+            &sim.production.terrain_objects,
+            requested,
+        );
         let entity = sim
             .substrate
             .entities
@@ -553,20 +562,31 @@ impl Simulation {
 /// retaliation that names a dying object leaves its receiver without a
 /// target. Techno+3CD also refuses the candidate (`0x006FCF10`); its stock
 /// surface-ship producer is Unit ReceiveDamage737E51, owned by world::sinking.
+/// Both borrowed stores are authoritative; the split permits synchronous wall
+/// expiry to use this same admission while other World fields are borrowed.
 pub(crate) fn assign_target_commits(
-    entities: &crate::sim::entity_store::EntityStore,
+    entities: &EntityStore,
+    terrain_objects: &BTreeMap<u64, TerrainObjectState>,
     requested: Option<TargetKind>,
 ) -> bool {
     match requested {
-        Some(TargetKind::Entity(id)) => entities.get(id).is_some_and(|target| {
-            target.lifecycle.object_alive()
-                && target.health.current() != 0
-                && !target.sinking.is_active()
-                && !(target.category() == crate::map::entities::EntityCategory::Infantry
-                    && target.mission_leaf.as_infantry().is_some_and(|leaf| {
-                        crate::sim::movement::infantry_action::in_death_sequence(leaf.doing())
-                    }))
-        }),
+        Some(TargetKind::Entity(id)) => {
+            if let Some(target) = entities.get(id) {
+                target.lifecycle.object_alive()
+                    && target.health.current() != 0
+                    && !target.sinking.is_active()
+                    && !(target.category() == crate::map::entities::EntityCategory::Infantry
+                        && target.mission_leaf.as_infantry().is_some_and(|leaf| {
+                            crate::sim::movement::infantry_action::in_death_sequence(leaf.doing())
+                        }))
+            } else {
+                // 6FCEF1..6FCF0E: Terrain has Object alive/Health, but no
+                // Foot bit, sinking state or Infantry death-action gate.
+                terrain_objects
+                    .get(&id)
+                    .is_some_and(|target| target.object_alive() && target.health != 0)
+            }
+        }
         Some(TargetKind::Cell(..)) | None => true,
     }
 }

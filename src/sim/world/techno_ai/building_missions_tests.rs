@@ -331,7 +331,7 @@ fn mission_attack_matches_the_original() {
             crate::sim::movement::turret::facing_toward_target(
                 entity,
                 &TargetKind::Entity(target),
-                &sim.substrate.entities,
+                &sim,
             )
             .unwrap()
         };

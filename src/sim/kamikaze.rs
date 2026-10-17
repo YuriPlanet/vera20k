@@ -323,12 +323,8 @@ impl Simulation {
                 .resolved_terrain
                 .as_ref()
                 .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-            crate::sim::movement::ground_pose::target_get_coords(
-                target,
-                &self.substrate.entities,
-                cells.as_ref(),
-            )
-            .map(|coord| [coord.x, coord.y])
+            crate::sim::movement::ground_pose::target_get_coords(target, self, cells.as_ref())
+                .map(|coord| [coord.x, coord.y])
         });
         push(
             &mut WorldHost {

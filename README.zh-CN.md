@@ -49,12 +49,7 @@ VERA20k 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 箭头表示数据流向：
 
-```mermaid
-flowchart LR
-    App[应用层] -->|指令| Sim[模拟层]
-    Sim -->|世界状态| App
-    App -->|绘制数据| Render[渲染层]
-```
+![应用层向模拟层发送指令并接收世界状态，再向渲染层发送绘制数据。](docs/images/architecture.zh-CN.png)
 
 ## 编译与运行
 

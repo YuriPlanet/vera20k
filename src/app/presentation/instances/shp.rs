@@ -475,11 +475,9 @@ pub(crate) fn build_shp_instances(
         } else {
             selected_palette_light
         };
-        // TechnoClass::DrawSHP's curtain arm (`0x0070631F..0x00706389`) on the
-        // body, bib and buildup, and the colour word DrawBody hands their
-        // blits (`0x0043D386..0x0043D544`), tested at the building's
-        // coordinate's cell. SHP vehicles' draws pass no colour word
-        // (`0x0073CE3E`, `0x0073CE7D`).
+        // The shared DrawSHP curtain intensity and the class caller's colour
+        // word have separate owners. Infantry tests the Location cell;
+        // Building's body/bib/buildup test the object's centre cell.
         let (body_tint, palette_light) = crate::app::presentation::lighting::techno_effect_light(
             entity,
             tint,
@@ -487,10 +485,15 @@ pub(crate) fn build_shp_instances(
             sim,
         );
         let colour_word = match state.rules() {
-            Some(rules) if entity.category() == EntityCategory::Structure => {
-                let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
-                crate::app::presentation::lighting::building_colour_word(entity, sim, rules, || {
-                    shrouded(((x / 256) as u16, (y / 256) as u16))
+            Some(rules) => {
+                crate::app::presentation::lighting::shp_colour_word(entity, sim, rules, || {
+                    let cell = if entity.category() == EntityCategory::Structure {
+                        let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+                        ((x / 256) as u16, (y / 256) as u16)
+                    } else {
+                        (pos.rx(), pos.ry())
+                    };
+                    shrouded(cell)
                 })
             }
             _ => 0,
@@ -557,8 +560,18 @@ pub(crate) fn build_shp_instances(
                 [0.0, 0.0],
             )
         };
-        // DrawBody's pieces blit with flags 0x6E00.
-        let body_policy = BlitPolicy::opaque(SpriteEncoding::Plain);
+        let Some(parent) = ground_order.object_draw(stable_id, SpriteEncoding::Plain) else {
+            continue;
+        };
+        // Building DrawBody's pieces use 0x6E00 (Z read/write), whose raw
+        // leaf drops the word. Infantry518F90 uses 0x2E00 (Z read only),
+        // whose raw and RLE leaves both OR it. The retained mobile parent
+        // already owns that policy; use the same parent below for emission.
+        let body_policy = if entity.category() == EntityCategory::Structure {
+            BlitPolicy::opaque(SpriteEncoding::Plain)
+        } else {
+            parent.policy
+        };
         let body = entry.map(|entry| {
             let instance = SpriteInstance {
                 position: [sx + entry.offset_x, sy + entry.offset_y],
@@ -600,10 +613,7 @@ pub(crate) fn build_shp_instances(
                     instance,
                 });
             }
-        } else if let Some((target, instance)) = body
-            && let Some(parent) =
-                ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
-        {
+        } else if let Some((target, instance)) = body {
             ground_objects.push(PlannedObjectInstance::object(
                 parent,
                 vec![ObjectPieceInstance {
@@ -688,10 +698,7 @@ pub(crate) fn build_shp_instances(
             }
         }
 
-        if entity.category() == EntityCategory::Structure
-            && let Some(parent) =
-                ground_order.object_draw(entity.stable_id(), SpriteEncoding::Plain)
-        {
+        if entity.category() == EntityCategory::Structure {
             ground_objects.push(PlannedObjectInstance::building(parent, building_pieces));
         }
     }
@@ -1238,7 +1245,7 @@ fn emit_building_anims(
 /// AnimClass::DrawIt's colour word for the anim `anim`
 /// (`0x004233EE..0x00423630`): a building slot anim (its `+0x118`, set by
 /// CreateAnimForSlot at `0x0045199B`) takes
-/// [`crate::app::presentation::lighting::building_colour_word`] of the first
+/// [`crate::app::presentation::lighting::shp_colour_word`] of the first
 /// building among the ground objects of the cell under its coordinate
 /// (`0x00565730`, `0x0047C520`; off the map, the Dummy, which holds none),
 /// with that cell's shroud; any other anim none. The lookup is read, not
@@ -1276,7 +1283,7 @@ fn anim_colour_word(
         )
         .and_then(|id| sim.entities().get(id))
         .map_or(0, |building| {
-            crate::app::presentation::lighting::building_colour_word(building, sim, rules, || {
+            crate::app::presentation::lighting::shp_colour_word(building, sim, rules, || {
                 shrouded(cell)
             })
         })
@@ -1479,7 +1486,7 @@ pub(crate) fn resolve_object_shp_frame(
             .and(entity.attack_target.target())
             .and_then(|target| {
                 let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-                crate::sim::movement::turret::facing_toward_target(entity, &target, sim.entities())
+                crate::sim::movement::turret::facing_toward_target(entity, &target, sim)
             })
             .map_or(facing, |direction| (direction >> 8) as u8);
         // Native EAX remains signed. A negative/wide result cannot alias an

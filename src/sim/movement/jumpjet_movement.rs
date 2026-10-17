@@ -831,7 +831,7 @@ impl Simulation {
         let input = match super::navcom::nav_target_coordinate(
             requested,
             Some(id),
-            &self.substrate.entities,
+            self,
             Some(terrain),
             Some((rules, &self.interner)),
         ) {

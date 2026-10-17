@@ -2,6 +2,7 @@ use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::intern::test_interner;
+use crate::sim::world::Simulation;
 
 const TEST_GRID: u16 = 16;
 /// Terrain floor used by every raised-ground case here. Chosen because two
@@ -188,29 +189,29 @@ fn impact_rules() -> RuleSet {
 
 #[test]
 fn ordinary_cell_launch_uses_terrain_ground_leptons() {
-    let entities = EntityStore::new();
+    let world = Simulation::new();
     let flat = terrain_at_level(0);
     let raised = terrain_at_level(RAISED_LEVEL);
 
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Cell(7, 9), &entities, Some(&raised)),
+        attack_world_z_leptons(TargetKind::Cell(7, 9), &world, Some(&raised)),
         208,
         "a non-bridge Cell+58 aim is its ground surface in leptons"
     );
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Cell(7, 9), &entities, Some(&flat)),
+        attack_world_z_leptons(TargetKind::Cell(7, 9), &world, Some(&flat)),
         0,
         "level-0 ground is still zero — that is the value, not the fallback"
     );
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Cell(7, 9), &entities, None),
+        attack_world_z_leptons(TargetKind::Cell(7, 9), &world, None),
         0,
         "no loaded map means no cell to read"
     );
     assert_eq!(
         attack_world_z_leptons(
             TargetKind::Cell(TEST_GRID + 5, TEST_GRID + 5),
-            &entities,
+            &world,
             Some(&raised)
         ),
         0,
@@ -246,25 +247,25 @@ fn impact_z_byte_saturates_in_the_signed_domain_the_projection_decodes() {
 
 #[test]
 fn entity_launch_uses_the_object_coordinate() {
-    let mut entities = EntityStore::new();
+    let mut world = Simulation::new();
     let mut on_deck = GameEntity::test_default(1, "MTNK", "Americans", 7, 9);
     on_deck.position.set_z_for_test(6);
     on_deck.set_on_bridge(true);
-    entities.insert(on_deck);
+    world.substrate.entities.insert(on_deck);
     let terrain = terrain_at_level(RAISED_LEVEL);
 
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Entity(1), &entities, Some(&terrain)),
+        attack_world_z_leptons(TargetKind::Entity(1), &world, Some(&terrain)),
         624,
         "the object-owned bridge layer raises its ground coordinate"
     );
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Entity(1), &entities, None),
+        attack_world_z_leptons(TargetKind::Entity(1), &world, None),
         624,
         "the mapless fallback already includes the object layer"
     );
     assert_eq!(
-        attack_world_z_leptons(TargetKind::Entity(404), &entities, Some(&terrain)),
+        attack_world_z_leptons(TargetKind::Entity(404), &world, Some(&terrain)),
         0,
         "a vanished target contributes nothing"
     );

@@ -53,12 +53,7 @@ Bu ayrım deterministik oynanışı destekler.
 
 Oklar veri akışını gösterir:
 
-```mermaid
-flowchart LR
-    App[Uygulama] -->|Komutlar| Sim[Simülasyon]
-    Sim -->|Dünya durumu| App
-    App -->|Çizim verileri| Render[Görüntüleme]
-```
+![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](docs/images/architecture.tr.png)
 
 ## Derleme ve çalıştırma
 

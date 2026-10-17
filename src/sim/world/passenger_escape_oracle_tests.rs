@@ -265,6 +265,7 @@ fn scene(input: &Value) -> Scene {
             // A target to drop: Assign_Target(NULL) is the only writer here.
             let commits = crate::sim::mission::concrete_effects::assign_target_commits(
                 &sim.substrate.entities,
+                &sim.production.terrain_objects,
                 Some(TargetKind::Entity(attacker)),
             );
             crate::sim::mission::concrete_effects::represented_assign_target_admitted(

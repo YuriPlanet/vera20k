@@ -59,7 +59,7 @@ pub(crate) const SCREEN_Y_PER_LEPTON: f32 = 30.0 / 256.0;
 /// It is load-bearing that both helpers carry it: pulling the tile helper down
 /// to the original's absolute row without pulling this one down in the same
 /// edit re-opens the half-tile bug this constant was added to close.
-const WORLD_ROW_BIAS_PX: i32 = 15;
+pub(crate) const WORLD_ROW_BIAS_PX: i32 = 15;
 
 /// Raw-bit scale of the I16F16 sub-cell representation.
 const SIM_FIXED_SCALE: i64 = 1 << 16;

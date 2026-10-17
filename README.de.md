@@ -53,12 +53,7 @@ Diese Trennung unterstützt einen deterministischen Spielablauf.
 
 Die Pfeile zeigen den Datenfluss:
 
-```mermaid
-flowchart LR
-    App[Anwendung] -->|Befehle| Sim[Simulation]
-    Sim -->|Weltzustand| App
-    App -->|Zeichendaten| Render[Rendering]
-```
+![Die Anwendung sendet Befehle an die Simulation, die den Weltzustand zurückgibt; die Anwendung sendet Zeichendaten an das Rendering.](docs/images/architecture.de.png)
 
 ## Kompilieren und starten
 

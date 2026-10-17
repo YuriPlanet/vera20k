@@ -518,3 +518,7 @@ fn restart_production(
 #[cfg(test)]
 #[path = "ai_build_need_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ai_build_need_retail_tests.rs"]
+mod retail_tests;

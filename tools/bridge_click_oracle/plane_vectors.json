@@ -1,0 +1,848 @@
+{
+  "cases": [
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        0,
+        0,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x0",
+        "0x0",
+        "0x0"
+      ],
+      "name": "origin",
+      "native_client_input": [
+        0,
+        0
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        15
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        12,
+        4,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x414ccd35",
+        "0x408888ce",
+        "0x0"
+      ],
+      "name": "positive_pixel",
+      "native_client_input": [
+        1,
+        1
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        1,
+        16
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -12,
+        -4,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0xc14ccd35",
+        "0xc08888ce",
+        "0x0"
+      ],
+      "name": "negative_pixel",
+      "native_client_input": [
+        -1,
+        -1
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        -1,
+        14
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        4,
+        524,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x408888ce",
+        "0x44033375",
+        "0x0"
+      ],
+      "name": "mixed_signs",
+      "native_client_input": [
+        -61,
+        31
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        -61,
+        46
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        247,
+        247,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x437777f5",
+        "0x437777f5",
+        "0x0"
+      ],
+      "name": "positive_cell_edge_before",
+      "native_client_input": [
+        0,
+        29
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        44
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        256,
+        256,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x43800041",
+        "0x43800041",
+        "0x0"
+      ],
+      "name": "positive_cell_edge",
+      "native_client_input": [
+        0,
+        30
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        45
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        264,
+        264,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x43844487",
+        "0x43844487",
+        "0x0"
+      ],
+      "name": "positive_cell_edge_after",
+      "native_client_input": [
+        0,
+        31
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        46
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -264,
+        -264,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0xc3844487",
+        "0xc3844487",
+        "0x0"
+      ],
+      "name": "negative_cell_edge_before",
+      "native_client_input": [
+        0,
+        -31
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        -16
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -256,
+        -256,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0xc3800041",
+        "0xc3800041",
+        "0x0"
+      ],
+      "name": "negative_cell_edge",
+      "native_client_input": [
+        0,
+        -30
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        -15
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -247,
+        -247,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0xc37777f5",
+        "0xc37777f5",
+        "0x0"
+      ],
+      "name": "negative_cell_edge_after",
+      "native_client_input": [
+        0,
+        -29
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        0,
+        -14
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        21376,
+        17792,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x46a70054",
+        "0x468b0046",
+        "0x0"
+      ],
+      "name": "interior_center",
+      "native_client_input": [
+        420,
+        2295
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        420,
+        2310
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        196353,
+        65536,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x483fc061",
+        "0x47800041",
+        "0x0"
+      ],
+      "name": "east_map_extent",
+      "native_client_input": [
+        15330,
+        15345
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        15330,
+        15360
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        65536,
+        196353,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x47800041",
+        "0x483fc061",
+        "0x0"
+      ],
+      "name": "west_map_extent",
+      "native_client_input": [
+        -15330,
+        15345
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        -15330,
+        15360
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        0,
+        -261890,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x0",
+        "0xc87fc082",
+        "0x0"
+      ],
+      "name": "mixed_cancellation",
+      "native_client_input": [
+        30690,
+        -15345
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        30690,
+        -15330
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        8558,
+        -8558,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x4605bbff",
+        "0xc605bbff",
+        "0x0"
+      ],
+      "name": "f32_integer_boundary_positive",
+      "native_client_input": [
+        2006,
+        0
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        2006,
+        15
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -8558,
+        8558,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0xc605bbff",
+        "0x4605bbff",
+        "0x0"
+      ],
+      "name": "f32_integer_boundary_negative",
+      "native_client_input": [
+        -2006,
+        0
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        -2006,
+        15
+      ]
+    },
+    {
+      "camera": [
+        217,
+        1981
+      ],
+      "expected_xyz": [
+        21376,
+        17792,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x46a70054",
+        "0x468b0046",
+        "0x0"
+      ],
+      "name": "camera_offset",
+      "native_client_input": [
+        203,
+        314
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        0
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        420,
+        2310
+      ]
+    },
+    {
+      "camera": [
+        217,
+        1981
+      ],
+      "expected_xyz": [
+        21376,
+        17792,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x46a70054",
+        "0x468b0046",
+        "0x0"
+      ],
+      "name": "viewport_offset",
+      "native_client_input": [
+        203,
+        314
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        120,
+        40
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        420,
+        2310
+      ]
+    },
+    {
+      "camera": [
+        -219,
+        -1979
+      ],
+      "expected_xyz": [
+        21376,
+        17792,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x46a70054",
+        "0x468b0046",
+        "0x0"
+      ],
+      "name": "negative_camera",
+      "native_client_input": [
+        639,
+        4274
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        -120,
+        -40
+      ],
+      "window_width_top_height": [
+        32768,
+        0,
+        32768
+      ],
+      "world_input": [
+        420,
+        2310
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        2726,
+        -2726,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x452a66bd",
+        "0xc52a66bd",
+        "0x0"
+      ],
+      "name": "upper_x_before",
+      "native_client_input": [
+        639,
+        0
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        20
+      ],
+      "window_width_top_height": [
+        640,
+        20,
+        480
+      ],
+      "world_input": [
+        639,
+        15
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -123456789,
+        987654321,
+        -31415926
+      ],
+      "name": "upper_x_equal",
+      "native_client_input": [
+        640,
+        0
+      ],
+      "native_exit": "invalid_upper_bound",
+      "supplied_invalid_xyz": [
+        -123456789,
+        987654321,
+        -31415926
+      ],
+      "viewport": [
+        0,
+        20
+      ],
+      "window_width_top_height": [
+        640,
+        20,
+        480
+      ],
+      "world_input": [
+        640,
+        15
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        4258,
+        4258,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0x45851154",
+        "0x45851154",
+        "0x0"
+      ],
+      "name": "upper_y_before",
+      "native_client_input": [
+        0,
+        499
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        20
+      ],
+      "window_width_top_height": [
+        640,
+        20,
+        480
+      ],
+      "world_input": [
+        0,
+        514
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -123456789,
+        987654321,
+        -31415926
+      ],
+      "name": "upper_y_equal",
+      "native_client_input": [
+        0,
+        500
+      ],
+      "native_exit": "invalid_upper_bound",
+      "supplied_invalid_xyz": [
+        -123456789,
+        987654321,
+        -31415926
+      ],
+      "viewport": [
+        0,
+        20
+      ],
+      "window_width_top_height": [
+        640,
+        20,
+        480
+      ],
+      "world_input": [
+        0,
+        515
+      ]
+    },
+    {
+      "camera": [
+        0,
+        0
+      ],
+      "expected_xyz": [
+        -140,
+        -132,
+        0
+      ],
+      "matrix_result_f32_bits": [
+        "0xc30ccd14",
+        "0xc3044487",
+        "0x0"
+      ],
+      "name": "no_lower_bounds",
+      "native_client_input": [
+        -1,
+        -16
+      ],
+      "native_exit": "plane",
+      "viewport": [
+        0,
+        20
+      ],
+      "window_width_top_height": [
+        640,
+        20,
+        480
+      ],
+      "world_input": [
+        -1,
+        -1
+      ]
+    }
+  ],
+  "inverse_matrix_bits": "ce888840ce8808410000000000000000ce8888c0ce880841000000000000000000000000000000000000803f00000000",
+  "plane_entry": "0x6d2280",
+  "source": "unicorn/gamemd.exe",
+  "world_y_bias": 15
+}
