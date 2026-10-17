@@ -728,13 +728,28 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         );
         crate::sim::passenger::begin_boarding(tank, hover);
     }
-    spin.sim.sound_events.clear();
-    crate::sim::passenger::tick_passenger_system(
-        &mut spin.sim,
-        &spin.rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+    assert_eq!(
+        crate::sim::radio::transmit(
+            &mut spin.sim,
+            spin.tank,
+            hover,
+            crate::sim::radio::RadioMessage::Hello,
+            crate::sim::radio::RadioPayload::default(),
+            Some(&spin.rules),
+            crate::sim::world::FrameEffects::default(),
+        ),
+        crate::sim::radio::RadioResponse::Roger,
     );
+    spin.sim.sound_events.clear();
+    spin.sim
+        .per_cell_process(
+            spin.tank,
+            crate::sim::movement::PerCellReason::Arrival,
+            Some(&spin.rules),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
     let tank = spin.sim.substrate.entities.get(spin.tank).unwrap();
     assert!(tank.passenger_role.is_inside_transport());
     assert_eq!((tank.gattling.stage(), tank.gattling.value()), (0, 0));

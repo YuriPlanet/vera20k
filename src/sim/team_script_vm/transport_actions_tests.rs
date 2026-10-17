@@ -946,6 +946,24 @@ impl OracleTeam {
                     entity.category(),
                     EntityCategory::Infantry | EntityCategory::Aircraft
                 );
+            // The oracle records Assign_Destination's argument, not the
+            // class setter body. Unit741C4F..741CCC parks a contactless
+            // Unit Enter target in +500 and clears its archive/NavCom.
+            // Derive that continuation from the native row's inputs;
+            // movement/boarding integration is covered by transport_unload.
+            let pending_entry = if member["class"] == "unit"
+                && !flag(&member["radio"])
+                && mission[index] == Some(MissionType::Enter as i32)
+            {
+                destination[index]
+                    .as_ref()
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|target| target as usize)
+                    .filter(|&target| row["members"][target]["class"] == "unit")
+                    .map(|target| self.members[target])
+            } else {
+                None
+            };
             if !skip_orders {
                 let nav = match &destination[index] {
                     None => flag(&member["nav"]).then(|| NavTargetRef::cell(1, 1)),
@@ -958,7 +976,12 @@ impl OracleTeam {
                     }
                     Some(target) => Some(NavTargetRef::object(self.members[slot(target)])),
                 };
-                assert_eq!(entity.navigation.nav_com(), nav, "{at}: NavCom");
+                assert_eq!(entity.pending_entry(), pending_entry, "{at}: pending entry");
+                assert_eq!(
+                    entity.navigation.nav_com(),
+                    nav.filter(|_| pending_entry.is_none()),
+                    "{at}: NavCom"
+                );
                 assert_eq!(
                     entity.attack_target.target(),
                     (!untargeted[index]).then_some(crate::sim::combat::TargetKind::Cell(2, 2)),
@@ -999,13 +1022,16 @@ impl OracleTeam {
                 );
             }
             let [x, y, z] = point(&member["xyz"]);
-            let archive = row["archive"][index].as_str().map(|_| {
-                if loading && cells.contains(&[x, y, z]) {
-                    crate::sim::combat::TargetKind::Cell((x / 256) as u16, (y / 256) as u16)
-                } else {
-                    ORACLE_ARCHIVE
-                }
-            });
+            let archive = row["archive"][index]
+                .as_str()
+                .filter(|_| pending_entry.is_none())
+                .map(|_| {
+                    if loading && cells.contains(&[x, y, z]) {
+                        crate::sim::combat::TargetKind::Cell((x / 256) as u16, (y / 256) as u16)
+                    } else {
+                        ORACLE_ARCHIVE
+                    }
+                });
             assert_eq!(entity.archive_target(), archive, "{at}: archive");
         }
     }
