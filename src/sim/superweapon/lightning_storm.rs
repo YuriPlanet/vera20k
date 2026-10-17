@@ -507,7 +507,7 @@ impl StormCell {
 /// `0x0053A1F5`), which is constructed there with the row `(0, 1, 0x600, 0,
 /// 0)` and listed as manifesting and present. (The coordinate is compared with
 /// the zero coordinate `0x00A9FA30` first, which a cell centre never is.)
-pub(super) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
+pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
     let target = StormCell::of(&get_cellclass_fallback(
         sim.resolved_terrain.as_ref(),
         i32::from(cell.0),

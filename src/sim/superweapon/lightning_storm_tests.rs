@@ -1434,7 +1434,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
 /// Retail rules with the storm's SHP frame counts bound (`WCCLOUD1..3`,
 /// `WCLBOLT1..3`, `EXPLOLB`) and `WCLBOLT1.SHP`'s height (108x370), which
 /// sets the clouds' height.
-fn retail_rules() -> Option<RuleSet> {
+pub(crate) fn retail_rules() -> Option<RuleSet> {
     let mut rules = retail_rules_binding(&[
         ("WCCLOUD1", 59),
         ("WCCLOUD2", 60),
