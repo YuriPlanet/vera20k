@@ -1084,7 +1084,10 @@ use crate::sim::world::Simulation;
 // 389 -> 390: saved RulesClass AV ambient rate/step retain original raw fields.
 // 390 -> 391: retained ColorAdd slots and four AudioVisual selectors are
 // serialized with the existing processed Rules owner; older layouts lack them.
-const SNAPSHOT_VERSION: u32 = 391;
+// 391 -> 392: Unit transport entry runs after locomotor arrival. Earlier
+// cargo can retain an active pre-boarding Drive track; resuming it after
+// unload returns the passenger to the old shore. Do not migrate that state.
+const SNAPSHOT_VERSION: u32 = 392;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4626,7 +4629,8 @@ mod tests {
         // 388 -> 389: particle owner-relative offsets have native semantics.
         // 389 -> 390: retained AV ambient rate/step fields in saved Rules.
         // 390 -> 391: retained ColorAdd slots and AudioVisual selectors.
-        assert_eq!(super::SNAPSHOT_VERSION, 391);
+        // 391 -> 392: reject cargo with the old mid-track boarding semantics.
+        assert_eq!(super::SNAPSHOT_VERSION, 392);
     }
 
     #[test]

@@ -1009,7 +1009,7 @@ pub(crate) fn set_pending_entry(sim: &mut Simulation, id: u64, depot: Option<u64
 }
 
 /// `FootClass::TryEnterTransport @ 0x0070D7E0` (the name is a lead; it serves
-/// every `Unit+0x500` pending entry) for a pending depot, called from
+/// every `Unit+0x500` pending entry), called from
 /// `FootClass::AI` (0x004DAEDC) whenever vt+0x1D8 (the warp-in) is clear:
 /// - the depot no longer alive (`+0x90`, 0x0070D7F2) drops the entry;
 /// - HELLO (0x0070D815): NEGATORY while the depot's slot is held, and the
@@ -1037,16 +1037,23 @@ pub(crate) fn try_pending_entry(
     else {
         return;
     };
-    if !sim
+    let Some(target) = sim
         .substrate
         .entities
         .get(depot)
-        .is_some_and(|depot| depot.is_object_alive())
-    {
+        .filter(|target| target.is_object_alive())
+    else {
         if let Some(unit) = sim.substrate.entities.get_mut(id) {
             unit.pending_entry.clear();
         }
         return;
+    };
+    //70D846 passes the actual Techno target. Preserve the established
+    //Building representation for depots, and admit mobile Unit targets.
+    let destination = if target.category() == crate::map::entities::EntityCategory::Structure {
+        crate::sim::components::NavTargetRef::building(depot)
+    } else {
+        crate::sim::components::NavTargetRef::object(depot)
     };
     if radio::transmit(
         sim,
@@ -1085,7 +1092,7 @@ pub(crate) fn try_pending_entry(
         // its own (`AircraftClass::Assign_Destination` sets it).
         let _ = sim.assign_destination_represented(
             id,
-            Some(crate::sim::components::NavTargetRef::Building { id: depot }),
+            Some(destination),
             Some(rules),
             None,
             frame_effects,

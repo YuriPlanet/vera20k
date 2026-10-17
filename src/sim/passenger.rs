@@ -794,9 +794,9 @@ pub(crate) fn begin_boarding(foot: &mut GameEntity, target: u64) {
     }
 }
 
-/// Advance passenger boarding each tick. For entities with `boarding_state`, check if they arrived at
-/// the transport's cell. If so, execute boarding. If the transport is
-/// destroyed or full, cancel boarding.
+/// Advance legacy building-entry adapters and retire invalid boarding orders.
+/// Mobile passengers attach in their class PerCell arrival, not this late
+/// frame phase; a still-live pending entry can be waiting on a radio slot.
 ///
 /// Nothing unloads here: a garrison's Unload is the building's mission
 /// (`BuildingClass::Mission_Unload @ 0x0044D880`, `sim::world::techno_ai`)
@@ -845,9 +845,9 @@ pub fn tick_passenger_system(
     }
 }
 
-/// Infantry's mobile Enter is dispatched by PerCell519630, not by a later
-/// frame phase. The legacy phase retains building/Unit adapters and retires
-/// invalidated Boarding state; it cannot attach mobile infantry.
+/// Mobile Enter is dispatched by Infantry PerCell519630 or Unit739EC0,
+/// not by a later frame phase. The legacy phase retains building adapters
+/// and retires invalidated Boarding state; it cannot attach mobile passengers.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BoardingVisit {
     CellArrival,
@@ -924,11 +924,17 @@ pub(crate) fn process_boarding_passenger(
             passenger.navigation.nav_com(),
             crate::sim::components::NavTargetRef::object(transport_id),
         );
+        // Unit741CB8 parks a mobile destination in Foot+500 until the
+        // shared pending-entry owner70D7E0 establishes its radio contact.
+        let pending_destination = passenger.pending_entry() == Some(transport_id);
         let entering =
             passenger.mission.effective().known() == Some(crate::sim::mission::MissionType::Enter);
         let enter_pending =
             passenger.mission.queued().known() == Some(crate::sim::mission::MissionType::Enter);
-        if !matches_destination || (!entering && !enter_pending) {
+        // Foot70D8F0 parks a busy waiter on Move while retaining +500.
+        // Only the canonical pending owner/retask can cancel that wait;
+        // the temporary mission does not retire its boarding adapter.
+        if !pending_destination && (!matches_destination || (!entering && !enter_pending)) {
             sim.substrate
                 .entities
                 .get_mut(pax_id)
@@ -937,10 +943,17 @@ pub(crate) fn process_boarding_passenger(
                 .clear_carrier_relation();
             return BoardingOutcome::Waiting;
         }
-        if !entering {
+        if !entering || !matches_destination {
             return BoardingOutcome::Waiting;
         }
-        if visit == BoardingVisit::LegacyPhase && passenger.category() == EntityCategory::Infantry {
+        if visit == BoardingVisit::LegacyPhase {
+            return BoardingOutcome::Waiting;
+        }
+        // Unit73A6AC requires Is_On_Radio65AD50 before asking CanEnter.
+        // Foot70D7E0 owns HELLO; a physical cell match cannot replace it.
+        if passenger.category() == EntityCategory::Unit
+            && !passenger.radio_contacts.contains(transport_id)
+        {
             return BoardingOutcome::Waiting;
         }
     }

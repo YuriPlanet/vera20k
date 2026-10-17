@@ -872,22 +872,23 @@ impl Simulation {
         //
         // The Enter arm docks with a `DockUnload=` refinery the same way: a
         // miner's refinery order (`Command::MinerReturn`). Its other arms are
-        // not ported — a Unit destination (`0x00741C80..0x00741CCC`),
-        // `UnitAbsorb=` (`0x00741CE5..0x00741D0D`), a busy `Bunker=`
+        // not ported — `UnitAbsorb=` (`0x00741CE5..0x00741D0D`), a busy `Bunker=`
         // (`0x00741D49..0x00741D68`) and a non-building Techno
         // (`0x00741E35..0x00741E86`); Units reach those through the Boarding
         // and bunker adapters.
-        let original_building = match requested {
+        let requested_object = match requested {
             NavTargetRef::Building { id }
             | NavTargetRef::Entity { id }
             | NavTargetRef::Object { id } => self
                 .substrate
                 .entities
                 .get(id)
-                .filter(|building| building.category() == EntityCategory::Structure)
-                .map(|_| id),
+                .map(|target| (id, target.category())),
             _ => None,
         };
+        let original_building = requested_object
+            .filter(|(_, category)| *category == EntityCategory::Structure)
+            .map(|(id, _)| id);
         let enter_building = original_building.and_then(|building| {
             let object =
                 self.object_type(self.substrate.entities.get(building)?.type_ref(), rules)?;
@@ -899,6 +900,26 @@ impl Simulation {
         });
         let mut destination = Some(requested);
         let mut depot_fast_return = false;
+        // Steam gamemd3e81a617,741C4F..741CCC: an Enter Unit target
+        // without a radio contact goes into Foot+500, not straight into
+        // NavCom. Foot70D7E0 owns HELLO/CanEnter on the next object turn.
+        // Reuse that pending-entry owner for vehicles as well as depots.
+        let mobile_target = requested_object
+            .filter(|(_, category)| *category == EntityCategory::Unit)
+            .map(|(id, _)| id);
+        if let Some(target) = mobile_target
+            && self.substrate.entities.get(id).is_some_and(|unit| {
+                (unit.mission.effective().known() == Some(MissionType::Enter)
+                    || unit.mission.queued().known() == Some(MissionType::Enter))
+                    && unit.radio_contacts.is_empty()
+            })
+        {
+            if let Some(unit) = self.substrate.entities.get_mut(id) {
+                unit.pending_entry.install(target);
+                unit.set_archive_target(None);
+            }
+            destination = None;
+        }
         if let Some((building, unit_repair, dock_unload)) = enter_building {
             let enter_without_contact = self.substrate.entities.get(id).is_some_and(|unit| {
                 (unit.mission.effective().known() == Some(MissionType::Enter)

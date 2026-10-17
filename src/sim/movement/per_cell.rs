@@ -195,6 +195,54 @@ impl Simulation {
             if self.unit_dock_now(id, rules, registry, effects) {
                 return;
             }
+            // Steam gamemd3e81a617, Unit73A64A..73A793: Enter attaches
+            // at PerCell2, before clearance, sight, Ready and Foot's tail.
+            // Drive4B20CD..4B2115 retires its track before this callback;
+            // attaching in the late passenger pass concealed a moving Unit
+            // whose old head resumed when another shore unloaded it.
+            if let Some(transport) = self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.passenger_role.boarding_transport_id())
+                && self
+                    .substrate
+                    .entities
+                    .get(transport)
+                    .is_some_and(|target| target.category() == EntityCategory::Unit)
+            {
+                match crate::sim::passenger::process_boarding_passenger(
+                    self,
+                    rules,
+                    id,
+                    crate::sim::passenger::BoardingVisit::CellArrival,
+                    registry,
+                    effects,
+                ) {
+                    crate::sim::passenger::BoardingOutcome::Boarded => return,
+                    crate::sim::passenger::BoardingOutcome::Refused => {
+                        //73A796..73A7CF: null destination, deferred Guard,
+                        //then forced Scatter(NULL,1,1), returning before Foot.
+                        self.assign_null_destination(id, Some(rules), registry, effects);
+                        if let Some(entity) = self.substrate.entities.get_mut(id) {
+                            crate::sim::mission::authority::queue_entity_mission_deferred(
+                                entity,
+                                MissionId::from_known(MissionType::Guard),
+                            );
+                        }
+                        let _ = self.scatter(
+                            id,
+                            None,
+                            super::ScatterFlags::new(true, true),
+                            rules,
+                            registry,
+                            effects,
+                        );
+                        return;
+                    }
+                    crate::sim::passenger::BoardingOutcome::Waiting => {}
+                }
+            }
             self.unit_per_cell_factory_clearance(id, rules, registry, effects);
         }
         // 0x0073AC52..0x0073ACAE: ReReveal then UpdateReveal and the
@@ -202,10 +250,10 @@ impl Simulation {
         // before Ready/Commence. Evidence: shroud_frontier_moving.json.
         // RESIDUAL: native returns
         // before them from arms VERA runs elsewhere or not at all: the
-        // `Grinding=`, `UnitAbsorb=` and transport entries, their failure
+        // `Grinding=` and `UnitAbsorb=` entries, their failure
         // tail (`0x0073A796`), and Guard's map exit (`0x0073AC0E..
-        // 0x0073AC4F`). Trigger: a unit arriving to board a transport or
-        // to leave the map (VERA boards in the passenger pass and has no
+        // 0x0073AC4F`). Trigger: a unit arriving to enter a building or
+        // to leave the map (VERA retains building entry adapters and has no
         // grinder). Effect: VERA reveals one more footprint, at that cell,
         // and its cells stay revealed.
         if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {

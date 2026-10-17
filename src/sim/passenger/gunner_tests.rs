@@ -335,10 +335,21 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
             },
             Some(rules),
         ));
+        // Unit741CB8 parks a contactless mobile destination in +500;
+        // Foot70D7E0 performs HELLO/CanEnter before restoring live NavCom.
+        assert_eq!(entity(&sim, passenger).pending_entry(), Some(transport));
+        assert_eq!(entity(&sim, passenger).navigation.nav_com(), None);
+        crate::sim::docking::building_dock::try_pending_entry(
+            &mut sim,
+            rules,
+            passenger,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(entity(&sim, passenger).pending_entry(), None);
         assert_eq!(
             entity(&sim, passenger).navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::object(transport)),
-            "{passenger_type}: Unit boarding must retain its live transport"
+            "{passenger_type}: admitted Unit entry keeps its live transport"
         );
         for _ in 0..600 {
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);

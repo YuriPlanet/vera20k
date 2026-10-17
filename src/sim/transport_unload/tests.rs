@@ -320,6 +320,103 @@ impl Fixture {
     }
 }
 
+/// Drive4B20CD..4B2115 retires the arrival track before Unit PerCell739EC0
+/// can attach a vehicle (73A6E8..73A793). Boarding at a cell boundary in the
+/// late passenger phase instead retains that track across Limbo/Unlimbo.
+#[test]
+fn driven_vehicle_boards_at_arrival_and_unloads_at_the_moved_transport() {
+    let mut fx = Fixture::new(|_, _| false);
+    fx.rules = rules_with_patch("[LCRF]\nSizeLimit=6\n");
+    check_vehicle_transport_trip(fx, "LCRF", "BGGY");
+}
+
+#[test]
+fn retail_soviet_transport_unloads_driven_tank_at_the_new_shore() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut fx = Fixture::new(|_, _| false);
+    fx.rules = retail.rules;
+    check_vehicle_transport_trip(fx, "SAPC", "HTNK");
+}
+
+fn check_vehicle_transport_trip(mut fx: Fixture, carrier_type: &str, passenger_type: &str) {
+    let transport = fx.spawn(carrier_type, 16, 16, 0);
+    // Concurrent orders exercise the pending-entry wait while another
+    // passenger owns the carrier's radio slot, not just an idle carrier.
+    let passengers = [
+        fx.spawn(passenger_type, 12, 16, 0),
+        fx.spawn(passenger_type, 12, 18, 0),
+    ];
+    for passenger in passengers {
+        assert!(fx.apply(Command::EnterTransport {
+            passenger_id: passenger,
+            transport_id: transport,
+        }));
+    }
+    for _ in 0..600 {
+        fx.tick();
+        if passengers.iter().all(|&id| !fx.revealed(id)) {
+            break;
+        }
+    }
+    let cargo = fx.cargo_ids(transport);
+    assert_eq!(
+        cargo.len(),
+        passengers.len(),
+        "both queued vehicles boarded"
+    );
+    for passenger in passengers {
+        assert!(cargo.contains(&passenger));
+        let passenger_entity = fx.sim.substrate.entities.get(passenger).unwrap();
+        assert_eq!(
+            passenger_entity
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .track_valid(crate::sim::movement::track_process::TrackFamily::Drive,),
+            Some(false),
+            "boarding must follow track completion, not physical cell crossing"
+        );
+    }
+
+    assert!(fx.apply(Command::Move {
+        entity_id: transport,
+        target_rx: 26,
+        target_ry: 26,
+    }));
+    for _ in 0..600 {
+        fx.tick();
+        if fx.cell(transport) == (26, 26)
+            && !crate::sim::movement::motion_query::is_moving(
+                fx.sim.substrate.entities.get(transport).unwrap(),
+            )
+            .expect("transport locomotor motion query")
+        {
+            break;
+        }
+    }
+    assert_eq!(fx.cell(transport), (26, 26), "transport moved with cargo");
+    assert!(fx.apply(Command::UnloadPassengers {
+        transport_id: transport
+    }));
+    assert_eq!(
+        fx.run_until_revealed(&passengers, 300).len(),
+        passengers.len()
+    );
+    for _ in 0..120 {
+        fx.tick();
+    }
+    for passenger in passengers {
+        let unloaded = fx.cell(passenger);
+        assert!(
+            unloaded.0.abs_diff(26) <= 3 && unloaded.1.abs_diff(26) <= 3,
+            "passenger must remain by the exit, not return to the boarding cell: {unloaded:?}"
+        );
+    }
+    assert!(fx.cargo_ids(transport).is_empty());
+}
+
 /// Techno6F6ED2 and Foot4D72F4 are required inside the admitted Unlimbo,
 /// before the ejected passenger receives its Move. Native reader712452
 /// and nine-slot4FA2E0 arithmetic are saved in astar_threat_inputs.json;
