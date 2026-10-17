@@ -99,6 +99,10 @@ history follows both authored106 actions through House/Strip and local receive.
 It reuses the existing Factory fixture with explicit campaign layers; terrain,
 played-world and OS/service priors do not certify full campaign startup.
 
+``--nuke-strike`` reads selected physical inputs from VERA20K_TRIGGER_NUKE_INPUTS
+(or --inputs): six HighExpR records, isolated95 launch controls and a full native
+Bullet constructor/Fire/descent history to the NUKE impact entry.
+
 ``--do-explosion`` always reads fresh physical retail inputs. Its two map
 branches share only an in-memory snapshot from that invocation; serialized
 native-state caches are unsupported.
@@ -7277,6 +7281,261 @@ def do_explosion_metadata():
             init_theater=0x5349C0,rules_reset=0x6686C0,rules_process=0x668BF0,weapon_ctor=0x771C70,weapon_read=0x772080,
             weapon_find_or_allocate=0x772FA0,map_process=0x687744,action42=0x6E2390))
 
+
+def nuke_strike_retail(root):
+    """Physical map row selection plus the unchanged TAction constructor/reader."""
+    raw = (root / 'HighExpR.yro').read_bytes()
+    candidates = [(key, value) for key, value in mix(raw).items()
+                  if b'[Basic]' in value or b'[Map]' in value]
+    assert len(candidates) == 1
+    entry_hash, map_raw = candidates[0]
+    assert map_raw == (root / 'HighExpR.map').read_bytes()
+    data = sections(map_raw)
+    fixture = ActionFixture()
+    actions = []
+    for trigger_id, row in data['Actions'].items():
+        tokens = row.split(',')
+        assert len(tokens) == 1 + 8 * int(tokens[0])
+        for ordinal in range(int(tokens[0])):
+            fields = tokens[1 + ordinal * 8:1 + (ordinal + 1) * 8]
+            if int(fields[0]) != 95:
+                continue
+            raw_action = ','.join(fields)
+            materialized = fixture.read_action(raw_action)
+            assert materialized['kind'] == 95
+            actions.append(dict(trigger_id=trigger_id, trigger=data['Triggers'][trigger_id],
+                event=data['Events'][trigger_id], ordinal=ordinal, raw=raw_action,
+                materialized=materialized,
+                waypoint_raw=data['Waypoints'][str(materialized['waypoint'])]))
+    fixture.check_code()
+    assert len(actions) == 6
+    return dict(archive=dict(name='HighExpR.yro',sha256=hashlib.sha256(raw).hexdigest()),
+        map=dict(entry_hash=entry_hash,sha256=hashlib.sha256(map_raw).hexdigest(),bytes=len(map_raw)),
+        actions=actions)
+
+
+def nuke_strike_sources(root):
+    required = ('RULESMD.INI','ARTMD.INI','MPBattleMD.ini','HighExpR.yro',
+                'HighExpR.map','Hills.map','DRAGON.SHP','NKMSLDN.SHP')
+    result = []
+    for name in (*required,'LANGRULE.INI'):
+        path = root / name
+        if not path.is_file():
+            if name != 'LANGRULE.INI':
+                raise FileNotFoundError(path)
+            result.append(dict(file=name,absent=True))
+            continue
+        raw = path.read_bytes()
+        result.append(dict(file=name,bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest()))
+    return result
+
+
+def nuke_strike_dispatch_case(name,cell,wp,*,flags=0,ground=0,damage=600,
+                              weapon_speed=10,incoming_house=False,fire_accepts=True):
+    """Original Execute95/factory/math; Construct and Fire are explicit ABI sinks."""
+    from tools import superweapon_oracle as s
+    e=s.Emu();action=s.BASE+0x50000;scene=e.read32(s.SCENARIO_PTR)
+    e.write32(action+0x2C,95);e.write32(action+0x44,wp)
+    e.uc.mem_write(scene+0x632+wp*4,struct.pack('<hh',*cell))
+    e.write32(s.WEAPON_TYPES,s.ITEMS);e.write32(s.ITEMS+8,s.WEAPON)
+    e.write32(s.WEAPON+0xA0,s.BULLET_TYPE);e.write32(s.WEAPON+0xA4,damage)
+    e.write32(s.WEAPON+0xA8,weapon_speed);e.write32(s.WEAPON+0xAC,s.WARHEAD)
+    e.write32(s.CELL+0x140,flags);e.write32(0xB0E6D4,416)
+    e.write32(s.BULLET,s.BULLET_VT);e.write32(s.BULLET_VT+0x1F0,s.STUB_FIRE)
+    rngs={'scenario':scene+0x218,'main':0x886B88,'mapgen':0xABE890}
+    for pointer in rngs.values():e.invoke(0x65C6D0,ecx=pointer,args=[31])
+    state=lambda:{key:bytes(e.uc.mem_read(pointer,0x3F4)) for key,pointer in rngs.items()}
+    before=state();visits=[]
+    def observer(u,pc,_size,_data):
+        if pc in (0x6DD8B0,0x6DD9DA,0x6E3410,0x68BCC0,0x46B050,0x46B260,0x65C780,0x65C7E0):
+            visits.append(f'{pc:08X}')
+    e.uc.hook_add(UC_HOOK_CODE,observer)
+    def ground_fn(m):m.events.append(['ground',s.read_coord(m,m.arg(0))]);return ground
+    def cell_lookup(m):m.events.append(['cell_lookup',s.read_cell(m,m.arg(0))]);return s.CELL
+    def coord_lookup(m):m.events.append(['coord_lookup',s.read_coord(m,m.arg(0))]);return s.CELL
+    def find_weapon(m):
+        m.events.append(['weapon_type',s.read_name(m,m.uc.reg_read(UC_X86_REG_ECX))]);return 2
+    def co_create(m):m.write32(m.arg(4),s.BULLET);m.events.append(['co_create']);return 0
+    def construct(m):
+        assert m.uc.reg_read(UC_X86_REG_ECX)==s.BULLET
+        m.events.append(['construct',dict(projectile=m.arg(0)==s.BULLET_TYPE,
+            target_cell=m.arg(1)==s.CELL,owner=m.arg(2),damage=s.i32(m.arg(3)),
+            warhead=m.arg(4)==s.WARHEAD,speed=s.i32(m.arg(5)),bright=m.arg(6)&255)])
+    def fire(m):
+        assert m.uc.reg_read(UC_X86_REG_ECX)==s.BULLET
+        bits=struct.unpack('<QQQ',m.uc.mem_read(m.arg(1),24))
+        m.events.append(['fire',dict(origin=s.read_coord(m,m.arg(0)),
+            velocity_bits=[f'{value:016x}' for value in bits],accepts=fire_accepts)])
+        return int(fire_accepts)
+    e.hook(0x578080,ground_fn,4);e.hook(0x5657A0,cell_lookup,4);e.hook(0x565730,coord_lookup,4)
+    e.hook(0x773030,find_weapon,0)
+    e.write32(0x7E15FC,s.STUBS+0x1D0);e.hook(s.STUBS+0x1D0,co_create,0x14)
+    e.hook(0x4664C0,construct,0x1C);e.hook(s.STUB_FIRE,fire,8)
+    originals=[(address,bytes(e.uc.mem_read(address,size))) for address,size in (
+        (0x6DD8B0,0x37A0),(0x6E3410,0x1D5),(0x46B050,0x64),(0x46B260,13),
+        (0x68BCC0,20),(0x4CACB0,128),(0x4CAD00,128))]
+    returned=e.invoke(0x6DD8B0,ecx=action,args=[s.HOUSE if incoming_house else 0,0,0,0],
+        required=[0x6DD9DA,0x6E3410,0x68BCC0,0x46B050,0x46B260])&255
+    after=state();assert before==after
+    assert originals==[(address,bytes(e.uc.mem_read(address,len(raw)))) for address,raw in originals]
+    return dict(name=name,input=dict(cell=list(cell),waypoint=wp,flags=flags,ground=ground,
+        damage=damage,weapon_speed=weapon_speed,incoming_house=incoming_house,fire_accepts=fire_accepts),
+        result=returned,events=e.events,installed_weapon=e.read32(s.BULLET+0x130)==s.WEAPON,
+        native_visits=visits,rng_hashes_before={key:hashlib.sha256(raw).hexdigest() for key,raw in before.items()},
+        rng_hashes_after={key:hashlib.sha256(raw).hexdigest() for key,raw in after.items()},code_unchanged=True)
+
+
+def nuke_strike_flight(root):
+    """Real Bullet activation, Configure, Fire and complete AI visits to impact."""
+    from tools.projectile_oracle import guided_step as g
+    from tools.projectile_oracle.bridge_render_art_state import ArtStateReader
+    from tools.projectile_oracle.bridge_render_inputs import lexical
+    from tools.projectile_oracle.ifv_impact import (
+        initialize_effect_world,initialize_effect_registries,retirement_transport)
+    from tools.projectile_oracle.ifv_launch import (
+        bullet_activation_transport,bullet_addref_transport)
+    from tools.native_oracle import initialize_empty_windows_seh,image_bytes
+    from tools.native_inspect import selected_ranges
+    art,_=lexical((root/'ARTMD.INI').read_bytes(),
+        {'AAHeatSeeker2','DRAGON','FV','GiantNukeDown','NKMSLDN'})
+    # create owns original Bullet/Cell/Homing initializers and the existing
+    # small allocated flat-cell table, not HighExpR topography.
+    m=ArtStateReader(art,root=root)
+    m,_,cells,_=g.create(False,reader=m);u=m.u
+    initialize_effect_registries(m)
+    initialize_effect_world(m,cells,map_size=(32,32))
+    # Explicit native map Size prior. Without Map+F4, ordinary Bullet AI
+    # correctly culls the otherwise allocated target outside its map.
+    u.mem_write(0x87F7E8+0xF4,dwords(32,32))
+    weapon=m.invoke(0x772FA0,m.cstring('NukePayload'));layers=[]
+    for name in ('RULESMD.INI','LANGRULE.INI','MPBattleMD.ini','HighExpR.map'):
+        path=root/name
+        if not path.is_file():continue
+        cached,_=lexical(path.read_bytes(),{'NukePayload','GiantNukeDown','NUKE'})
+        m.rules_cache(cached);m.invoke(0x772080,weapon,(RULES,))
+        projectile=m.read32(weapon+0xA0)
+        m.read_layer(projectile,cached);m.invoke(0x7729F0,weapon)
+        warhead=m.read32(weapon+0xAC);m.invoke(0x75D3A0,warhead,(RULES,))
+        layers.append(dict(file=name,keys=cached,damage=g.i32(u,weapon+0xA4),
+            weapon_speed=g.i32(u,weapon+0xA8),warhead=m.string(warhead+0x24),
+            projectile=m.string(projectile+0x24),
+            vertical=bool(u.mem_read(projectile+0x2C0,1)[0]),
+            acceleration=g.i32(u,projectile+0x2D0),
+            detonation_altitude=g.i32(u,projectile+0x2BC)))
+    scenario=m.read32(0xA8B230)
+    u.mem_write(scenario+0x632+4,struct.pack('<hh',16,20))
+    u.mem_write(0xB0E6D4,dwords(416));u.mem_write(0xA8ED84,dwords(0))
+    action=m.alloc(0x94);u.mem_write(action,bytes(0x94))
+    u.mem_write(action+0x2C,dwords(95));u.mem_write(action+0x44,dwords(1))
+    initialize_empty_windows_seh(u)
+    for pointer in (scenario+0x218,0x886B88,0xABE890):
+        m.invoke(0x65C6D0,pointer,(31,))
+    rng=lambda:CampaignReader.rng_state(SimpleNamespace(u=u,scenario=scenario))
+    before_rng=rng();before_id=g.i32(u,scenario+0x214)
+    originals=selected_ranges(image_bytes(),None,None,code_only=True)
+    events=[];bullets=[];frames=[];visits=set()
+    def observe(_u,pc,_size,_data):
+        if bullet_activation_transport(m,pc,events):return
+        if bullet_addref_transport(m,pc,events):return
+        if retirement_transport(m,pc,events):return
+        if pc==0x6E34E1:bullets.append(u.reg_read(UC_X86_REG_EAX))
+        if pc in (0x6DD9DA,0x6E3410,0x46B050,0x6C5090,0x466380,
+                  0x4664C0,0x468670,0x467E53,0x65C780,0x65C7E0):
+            visits.add(f'{pc:08X}')
+    hook=u.hook_add(UC_HOOK_CODE,observe)
+    try:
+        returned=m.invoke(0x6DD8B0,action,(0,0,0,0))&255
+        assert returned==1 and len(bullets)==1
+        bullet=bullets[0]
+        launch=dict(position=g.xyz(u,bullet+0x9C),fire_coord=g.xyz(u,bullet+0x134),
+            target_coord=g.xyz(u,bullet+0x140),velocity=g.vec(u,bullet+0xE8),
+            maximum_speed=g.i32(u,bullet+0x110),damage=g.i32(u,bullet+0x6C),
+            source_is_null=m.read32(bullet+0xB0)==0,
+            weapon=m.string(m.read32(bullet+0x130)+0x24),
+            warhead=m.string(m.read32(bullet+0x128)+0x24),
+            alive=bool(u.mem_read(bullet+0x90,1)[0]),
+            last_cell=list(struct.unpack('<hh',u.mem_read(bullet+0x14C,4))),
+            arm_timer=[g.i32(u,bullet+0xC4),g.i32(u,bullet+0xCC)],
+            native_id_delta=g.i32(u,scenario+0x214)-before_id)
+        for frame in range(1,450):
+            u.mem_write(0xA8ED84,dwords(frame));u.mem_write(SP,dwords(RET_MAGIC))
+            u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ECX,bullet)
+            run_checked(u,0x4666E0,(RET_MAGIC,0x467E53),count=500000,
+                context=dict(case='trigger95_descending_payload',frame=frame))
+            impact=u.reg_read(UC_X86_REG_EIP)==0x467E53
+            frames.append(dict(frame=frame,position=g.xyz(u,bullet+0x9C),
+                velocity_bits=g.vec(u,bullet+0xE8)['bits'],impact_entry=impact))
+            if impact:break
+        assert frames[-1]['impact_entry'],'did not reach native NUKE impact entry'
+        after_rng=rng();assert before_rng==after_rng
+        assert all(bytes(u.mem_read(row['address'],len(row['bytes'])))==row['bytes'] for row in originals)
+        required={'006DD9DA','006E3410','0046B050','006C5090','00466380','004664C0','00468670','00467E53'}
+        assert required<=visits
+        return dict(input=dict(map_size=[32,32],flat_level=6,flat_slope=0,
+            target_cell=[16,20],waypoint=1,binary_frame=0,rng_seed=31),
+            result=returned,layers=layers,launch=launch,frames=frames,
+            native_visits=sorted(visits),platform_events=events,
+            rng_hashes_before={key:hashlib.sha256(bytes.fromhex(raw)).hexdigest() for key,raw in before_rng.items()},
+            rng_hashes_after={key:hashlib.sha256(bytes.fromhex(raw)).hexdigest() for key,raw in after_rng.items()},
+            code_unchanged=True)
+    finally:u.hook_del(hook)
+
+
+def nuke_strike_generate(root):
+    from tools.native_oracle import image_sha256
+    previous=os.environ.get('VERA20K_PROJECTILE_RENDER_ASSETS')
+    os.environ['VERA20K_PROJECTILE_RENDER_ASSETS']=str(root)
+    try:
+        sources=nuke_strike_sources(root)
+        retail=nuke_strike_retail(root)
+        rows=[]
+        for action in retail['actions']:
+            packed=int(action['waypoint_raw'])
+            rows.append(nuke_strike_dispatch_case(action['trigger_id'],
+                (packed%1000,packed//1000),action['materialized']['waypoint']))
+        for flags in (0,0x100,0x400,0x500):
+            rows.append(nuke_strike_dispatch_case('elevated_bridge_'+hex(flags),
+                (67,19),1,flags=flags,ground=416))
+        rows.append(nuke_strike_dispatch_case('signed_cell_negative',(-2,-32768),17,
+            ground=-104,damage=-17,weapon_speed=255,incoming_house=True))
+        rows.append(nuke_strike_dispatch_case('fire_refused',(67,19),1,fire_accepts=False))
+        return dict(schema_version=1,native_sha256=image_sha256(),sources=sources,
+            retail=retail,dispatch_controls=rows,production_flight=nuke_strike_flight(root))
+    finally:
+        if previous is None:os.environ.pop('VERA20K_PROJECTILE_RENDER_ASSETS',None)
+        else:os.environ['VERA20K_PROJECTILE_RENDER_ASSETS']=previous
+
+
+def nuke_strike_source_paths():
+    return dict(SOURCE_PATHS,**{name:Path(__file__).parents[2]/path for name,path in {
+        'superweapon_transport':'tools/superweapon_oracle.py',
+        'generic_emulator':'tools/ai_base_building_oracle.py',
+        'guided_world':'tools/projectile_oracle/guided_step.py',
+        'impact_world':'tools/projectile_oracle/ifv_impact.py',
+        'bullet_platform':'tools/projectile_oracle/ifv_launch.py',
+        'bullet_reader':'tools/projectile_oracle/bridge_render_inputs.py',
+        'bullet_art':'tools/projectile_oracle/bridge_render_art_state.py',
+    }.items()})
+
+
+def nuke_strike_metadata():
+    return provenance(scope='Original Execute95/factory/launch arithmetic controls plus selected physical HighExpR records and a real descending NukePayload from full construct/Fire through202 BulletAI calls to NUKE impact entry; no full map or downstream detonation parity claim.',
+        assumptions=[
+            'Six Action95 records are selected from physical HighExpR.yro inner map and materialized by original6DD000/6DD5B0. Archive/inner-map identities and exact raw records are retained. Source order is preserved; the host supplies the moment of each action call rather than running the complete Trigger/Tag scheduler.',
+            'Twelve isolated controls execute original6DD8B0 case95/6E3410, GetWaypoint68BCC0, factory46B050, SetWeapon46B260 and sine/cosine arithmetic. Explicit shells supply Weapon Damage/WH/projectile, incoming House and flat ground/bridge flags. The hard-coded50/brightfalse/sourceNULL, coordinate lifting, scale-100 velocity and ignored Fire refusal are native outputs. These control inputs600/10 are supplied scalars, not the map350/converted-speed values.',
+            'The separate production control reuses guided_step.create and impact world owners: actual Bullet/Cell/Homing/effect initializers, explicit32x32 Map Size at+F4 and existing world size storage, mapped flat level6/slope0 cells, no actors/overlays/live bridges, GameActive1 and supplied waypoint1=(16,20). Native map geometry is a declared crop, not HighExpR terrain. Earlier unrelated HoverMissile/Hills setup initializes the common fixture; selected NukePayload/GiantNukeDown/NUKE are then read in RULESMD, optionalLANGRULE, MPBattleMD and HighExpR order.',
+            'Unique selected physical lexical strings feed existing native INI cache transport; original Weapon772080/postpass7729F0, BulletType46BEE0 and Warhead75D3A0 execute. Full physical INI/archive startup and original Rules discovery/reset chronology are excluded. The unused stored Weapon Speed is therefore recorded as a component-history output, not certified complete-game speed.',
+            'Original Bullet activation46B050 reaches registered factory6C5090, constructor466380, Configure4664C0, SetWeapon46B260 and whole Fire468670 including original Unlimbo/coordinate placement. Full BulletAI runs once per host-supplied frame until467E53 before the NUKE impact block. No native arithmetic/timer/RNG/gameplay branch is replaced in that production segment; all three RNG streams are seeded natively31 immediately before95 and compared after this bounded history.',
+            'Downstream ScreenNukeFlash/NUKEBALL, delayed detonation/AreaDamage, receiver callbacks, radiation, retirement and rendered nuclear output are outside this new corpus. Existing tools/superweapon_oracle sections nuke_impact/nuke_wait/nuke_flash and projectile/combat owners provide separately bounded evidence; this sample does not prove their entire combined lifecycle or all map targets.',
+        ],substitutions=[
+            'Isolated controls record Ground578080/Cell5657A0/565730/WeaponLookup773030/CoCreate/Construct4664C0/Fire as explicit ABI boundaries; full production control removes those gameplay sinks and reuses existing physical asset IO, allocation/CRT/TLS/COM-activation/Windows atomic/readability transports. Original code bytes remain unchanged.',
+            'ArtStateReader retains its existing unrelated voxel-loading boundary after scalar reads. Exact physical SHP bytes are supplied by existing Reader IO. No device renderer/audio or whole native startup is run.',
+        ],entry_points=dict(action_execute=0x6DD8B0,action95=0x6E3410,waypoint=0x68BCC0,
+            bullet_factory=0x46B050,registered_factory=0x6C5090,bullet_constructor=0x466380,
+            configure=0x4664C0,set_weapon=0x46B260,bullet_fire=0x468670,bullet_ai=0x4666E0,
+            impact_entry=0x467E53))
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -7304,9 +7563,15 @@ if __name__=='__main__':
     selected_modes.add_argument('--chrono-reinforcement', action='store_true')
     selected_modes.add_argument('--tech-level', action='store_true')
     selected_modes.add_argument('--do-explosion', action='store_true')
+    selected_modes.add_argument('--nuke-strike', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.do_explosion:
+    if selected.nuke_strike:
+        inputs_root=selected.inputs or Path(os.environ.get('VERA20K_TRIGGER_NUKE_INPUTS',''))
+        finish_vectors(lambda:nuke_strike_generate(inputs_root),
+            Path(__file__).with_name('trigger_nuke_strike.json'),
+            provenance=nuke_strike_metadata,argv=remaining,source_paths=nuke_strike_source_paths())
+    elif selected.do_explosion:
         if os.environ.get('VERA20K_NATIVE_STATE_CACHE'):
             selector.error('VERA20K_NATIVE_STATE_CACHE is no longer supported; unset it to read fresh retail inputs')
         if selected.inputs is not None:

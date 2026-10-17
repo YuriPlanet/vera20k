@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Execute95/factory/launch arithmetic controls plus selected physical HighExpR records and a real descending NukePayload from full construct/Fire through202 BulletAI calls to NUKE impact entry; no full map or downstream detonation parity claim.",
+  "assumptions": [
+    "Six Action95 records are selected from physical HighExpR.yro inner map and materialized by original6DD000/6DD5B0. Archive/inner-map identities and exact raw records are retained. Source order is preserved; the host supplies the moment of each action call rather than running the complete Trigger/Tag scheduler.",
+    "Twelve isolated controls execute original6DD8B0 case95/6E3410, GetWaypoint68BCC0, factory46B050, SetWeapon46B260 and sine/cosine arithmetic. Explicit shells supply Weapon Damage/WH/projectile, incoming House and flat ground/bridge flags. The hard-coded50/brightfalse/sourceNULL, coordinate lifting, scale-100 velocity and ignored Fire refusal are native outputs. These control inputs600/10 are supplied scalars, not the map350/converted-speed values.",
+    "The separate production control reuses guided_step.create and impact world owners: actual Bullet/Cell/Homing/effect initializers, explicit32x32 Map Size at+F4 and existing world size storage, mapped flat level6/slope0 cells, no actors/overlays/live bridges, GameActive1 and supplied waypoint1=(16,20). Native map geometry is a declared crop, not HighExpR terrain. Earlier unrelated HoverMissile/Hills setup initializes the common fixture; selected NukePayload/GiantNukeDown/NUKE are then read in RULESMD, optionalLANGRULE, MPBattleMD and HighExpR order.",
+    "Unique selected physical lexical strings feed existing native INI cache transport; original Weapon772080/postpass7729F0, BulletType46BEE0 and Warhead75D3A0 execute. Full physical INI/archive startup and original Rules discovery/reset chronology are excluded. The unused stored Weapon Speed is therefore recorded as a component-history output, not certified complete-game speed.",
+    "Original Bullet activation46B050 reaches registered factory6C5090, constructor466380, Configure4664C0, SetWeapon46B260 and whole Fire468670 including original Unlimbo/coordinate placement. Full BulletAI runs once per host-supplied frame until467E53 before the NUKE impact block. No native arithmetic/timer/RNG/gameplay branch is replaced in that production segment; all three RNG streams are seeded natively31 immediately before95 and compared after this bounded history.",
+    "Downstream ScreenNukeFlash/NUKEBALL, delayed detonation/AreaDamage, receiver callbacks, radiation, retirement and rendered nuclear output are outside this new corpus. Existing tools/superweapon_oracle sections nuke_impact/nuke_wait/nuke_flash and projectile/combat owners provide separately bounded evidence; this sample does not prove their entire combined lifecycle or all map targets."
+  ],
+  "substitutions": [
+    "Isolated controls record Ground578080/Cell5657A0/565730/WeaponLookup773030/CoCreate/Construct4664C0/Fire as explicit ABI boundaries; full production control removes those gameplay sinks and reuses existing physical asset IO, allocation/CRT/TLS/COM-activation/Windows atomic/readability transports. Original code bytes remain unchanged.",
+    "ArtStateReader retains its existing unrelated voxel-loading boundary after scalar reads. Exact physical SHP bytes are supplied by existing Reader IO. No device renderer/audio or whole native startup is run."
+  ],
+  "entry_points": {
+    "action_execute": "0x006DD8B0",
+    "action95": "0x006E3410",
+    "waypoint": "0x0068BCC0",
+    "bullet_factory": "0x0046B050",
+    "registered_factory": "0x006C5090",
+    "bullet_constructor": "0x00466380",
+    "configure": "0x004664C0",
+    "set_weapon": "0x0046B260",
+    "bullet_fire": "0x00468670",
+    "bullet_ai": "0x004666E0",
+    "impact_entry": "0x00467E53"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --nuke-strike",
+  "payload_sha256": "d3f2e19840f0764a935d9092a8adf122bec5a35bfef13f356ae0c410ec289494"
+}
