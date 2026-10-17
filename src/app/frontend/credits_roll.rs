@@ -259,6 +259,16 @@ pub(crate) struct CreditsRollSession {
     /// it is inactive nothing is drawn or copied to the screen
     /// (`0x004C3D8A`, `0x004C46AA`), so that frame stays up.
     pub(crate) last_drawn: Vec<SpriteInstance>,
+    pub(crate) return_to: CreditsReturn,
+}
+
+/// The shell Show_Credits returns to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CreditsReturn {
+    /// State `0xF` recreates Movies & Credits `0x101`.
+    MoviesAndCredits,
+    /// A won campaign's EndOfGame leaves Main_Game for the main menu.
+    MainMenu,
 }
 
 /// Line x inside the 520 px box: left at the box, centered at

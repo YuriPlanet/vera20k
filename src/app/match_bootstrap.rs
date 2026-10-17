@@ -4,6 +4,7 @@
 //! sessions, reads the ordinary Windows seed once, and observes an already
 //! initialized `Simulation` without mutating it.
 
+use crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT;
 use crate::sim::world::{Simulation, SimulationRngState};
 use crate::skirmish_launch::{LaunchStartPosition, SKIRMISH_AI_SLOT_COUNT, SkirmishLaunchSession};
 
@@ -83,7 +84,18 @@ pub struct PreparedMatchStartup {
 pub struct PreparedCampaignStartup {
     campaign_index: usize,
     campaign: crate::rules::campaigns::CampaignDefinition,
+    /// Scenario+0x125C, the map Start_Scenario reads. A new campaign copies
+    /// the campaign's Scenario (`0x00683AF8`); a won mission passes the map
+    /// MapSelect chose (`0x00685C4E`).
+    scenario: String,
+    /// Scenario+0x1254 for this start. A new campaign starts after
+    /// BattleControlTerminated6865B0, whose reset matches the ctor's 1; a won
+    /// mission increments it before Start_Scenario (`0x00685AAF`).
+    mission_counter: i32,
     difficulty: i32,
+    /// The globals `0x004C6180` saved from the won mission; `0x004C6210`
+    /// writes them back once Start_Scenario has read the next map.
+    carried_globals: Option<[bool; SCENARIO_GLOBAL_COUNT]>,
     pub seed: MatchSeed,
 }
 
@@ -96,8 +108,42 @@ impl PreparedCampaignStartup {
         &self.campaign
     }
 
+    pub fn scenario(&self) -> &str {
+        &self.scenario
+    }
+
+    pub fn mission_counter(&self) -> i32 {
+        self.mission_counter
+    }
+
     pub fn difficulty(&self) -> i32 {
         self.difficulty
+    }
+
+    pub fn carried_globals(&self) -> Option<&[bool; SCENARIO_GLOBAL_COUNT]> {
+        self.carried_globals.as_ref()
+    }
+
+    /// The won mission's Start_Scenario (`0x00685C4E`): the same campaign
+    /// index, the map MapSelect chose, the incremented mission counter and
+    /// the saved globals. Difficulty is Options.Difficulty again.
+    pub fn next_mission(
+        &self,
+        scenario: String,
+        mission_counter: i32,
+        difficulty: i32,
+        carried_globals: [bool; SCENARIO_GLOBAL_COUNT],
+        clock: &mut impl MatchSeedClock,
+    ) -> Self {
+        Self {
+            campaign_index: self.campaign_index,
+            campaign: self.campaign.clone(),
+            scenario,
+            mission_counter,
+            difficulty,
+            carried_globals: Some(carried_globals),
+            seed: read_match_seed(clock),
+        }
     }
 }
 
@@ -111,8 +157,11 @@ pub fn prepare_campaign_startup(
     let campaign = campaigns.get(campaign_index)?.clone();
     Some(PreparedCampaignStartup {
         campaign_index,
+        scenario: campaign.scenario().to_owned(),
         campaign,
+        mission_counter: 1,
         difficulty,
+        carried_globals: None,
         seed: read_match_seed(clock),
     })
 }
@@ -133,7 +182,7 @@ pub enum LoadingStartup {
 impl LoadingStartup {
     pub fn selected_map_file(&self) -> &str {
         match self {
-            Self::Campaign(startup) => startup.campaign().scenario(),
+            Self::Campaign(startup) => startup.scenario(),
             Self::Accepted(startup) => startup.session.selected_map_file(),
             Self::UnverifiedLegacy { session, .. } => {
                 session.selected_map_file.as_deref().unwrap_or("auto")

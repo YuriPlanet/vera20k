@@ -769,6 +769,9 @@ struct TriggerActionContext {
     input: TagEventInput,
 }
 
+/// Scenario global variables: SetGlobal689670 rejects indices from 0x32.
+pub const SCENARIO_GLOBAL_COUNT: usize = 50;
+
 impl Simulation {
     /// Validate this owner's retained identities before the restore coordinator
     /// publishes a candidate. No map re-read or live constructor runs on load.
@@ -2462,10 +2465,17 @@ impl Simulation {
         result
     }
 
+    /// The 50 Scenario global values, read as the campaign carry-over record
+    /// copies their bytes (`0x004C6187..0x004C61A1`).
+    pub fn global_variables(&self) -> [bool; SCENARIO_GLOBAL_COUNT] {
+        std::array::from_fn(|index| self.trigger_runtime.globals_set.contains(&(index as u32)))
+    }
+
     /// Shared Scenario SetGlobal689670/SetLocal689910 mutation, including
     /// Tag timer resets. Trigger and Team scripts use this same owner.
     pub fn set_trigger_variable(&mut self, global: bool, index: i32, set: bool) -> bool {
-        if !(0..if global { 50 } else { 100 }).contains(&index) {
+        let count = if global { SCENARIO_GLOBAL_COUNT } else { 100 };
+        if !(0..count as i32).contains(&index) {
             return false;
         }
         let values = if global {

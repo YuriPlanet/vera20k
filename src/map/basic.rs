@@ -45,6 +45,17 @@ pub struct BasicSection {
     /// 0x0068A271..0x0068A289`, `Set_Defaults` false at `0x00683899`): the
     /// AI triggers of `AIMD.INI` never qualify (`sim::ai_team_creation`).
     pub ignore_global_ai_triggers: Option<bool>,
+    /// Scenario+0x34AC (`0x0068A11A`): a won mission ends the campaign.
+    pub end_of_game: Option<bool>,
+    /// Scenario+0x34AF (`0x0068A1EE`): a won mission returns to the shell.
+    pub one_time_only: Option<bool>,
+    /// Scenario+0x34B0 (`0x0068A20C`): MapSelect takes NextScenario instead
+    /// of the MAPSELMD stage following the current map.
+    pub skip_map_select: Option<bool>,
+    /// Scenario+0x1448 movie (`ReadMovie` at `0x0068A0A2`), after the score.
+    pub post_score: Option<String>,
+    /// Scenario+0x144C movie (`ReadMovie` at `0x0068A0C0`), before MapSelect.
+    pub pre_map_select: Option<String>,
 }
 
 /// Parsed flags from a map's `[SpecialFlags]` section.
@@ -140,6 +151,15 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         free_radar: section.read_bool_value("FreeRadar"),
         // ReadBool with the current Scenario+0x34B4 as default (`0x0068A284`).
         ignore_global_ai_triggers: section.read_bool_value("IgnoreGlobalAITriggers"),
+        end_of_game: section.read_bool_value("EndOfGame"),
+        one_time_only: section.read_bool_value("OneTimeOnly"),
+        skip_map_select: section.read_bool_value("SkipMapSelect"),
+        post_score: section
+            .is_present("PostScore")
+            .then(|| section.read_string("PostScore", "", 128)),
+        pre_map_select: section
+            .is_present("PreMapSelect")
+            .then(|| section.read_string("PreMapSelect", "", 128)),
     }
 }
 

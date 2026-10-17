@@ -33,6 +33,9 @@ pub(crate) enum MovieReturn {
     /// TAction10's5BF260 call returns to the same tactical world. The shared
     /// fullscreen owner holds media/audio; the screen gate stops new frames.
     RunningScenario,
+    /// A won campaign mission's PostScore/PreMapSelect/FinalMovie
+    /// (`0x00685928..0x006859E9`) continues its victory tail.
+    CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
 }
 
 /// The name Play_Movie resolves: truncated at the first `.`.
