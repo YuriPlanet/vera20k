@@ -139,9 +139,14 @@ pub fn terrain_shadow_key(name: &str, frame: u8) -> OverlaySpriteKey {
 /// ([`crate::rules::building_rubble::RubbleArt`]).
 pub fn rubble_key(shp: &str, frame: u16) -> OverlaySpriteKey {
     OverlaySpriteKey {
-        name: format!("__rubble::{}", shp.to_uppercase()),
+        name: rubble_image_name(shp),
         frame: frame as u8,
     }
+}
+
+/// Shared image namespace for rubble body and Cell shadow atlases.
+pub(crate) fn rubble_image_name(shp: &str) -> String {
+    format!("__rubble::{}", shp.to_uppercase())
 }
 
 /// Build the canonical OverlayAtlas key for a smudge SHP.

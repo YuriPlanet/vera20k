@@ -97,7 +97,7 @@ pub use world_orders::UnitRepairAction;
 mod shroud_refresh;
 mod track_cell_recalc;
 #[cfg(any(test, feature = "test-support"))]
-use object_turn::unit_body_counter_admitted;
+use object_turn::foot_body_counter_admitted;
 mod projectile_collision;
 mod substrate;
 mod techno_ai;

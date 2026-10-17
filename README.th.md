@@ -101,6 +101,14 @@ cargo run --release --bin vera20k
 
 ผลงานที่ร่วมพัฒนาใช้สัญญาอนุญาต GPLv3 เช่นเดียวกับส่วนอื่นของโครงการ และไม่ต้องลงนาม CLA
 
+## สนับสนุนโครงการ <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/PayPal-Donate-0070BA?style=flat&amp;logo=paypal&amp;logoColor=white" alt="สนับสนุน VERA20k ผ่าน PayPal" height="20" align="middle"></a>
+
+[สนับสนุน VERA20k ผ่าน PayPal](https://paypal.me/vera20k) เงินบริจาคทั้งหมดที่ได้รับจะจัดสรรให้
+ผู้มีส่วนร่วมตาม[บัญชีบันทึกผลงาน TIBTRE](https://github.com/YuriPlanet/tibtre-ledger)
+
+ผู้มีส่วนร่วมรับเงินได้ผ่าน PayPal, UnionPay (จีน), Alipay, Vipps, การโอนเงินผ่านธนาคารแบบ SEPA
+หรือ Bitcoin
+
 ## เครดิตและข้อกฎหมาย
 
 ขอบคุณ OpenRA, XCC Mixer, วิกิ ModEnc, Project Perfect Mod, EA ที่เผยแพร่ซอร์สโค้ดของ

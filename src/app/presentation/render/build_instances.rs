@@ -211,7 +211,7 @@ pub(super) fn build_world_instances(
     let mut bridge_body: Vec<SpriteInstance> = Vec::new();
     let mut bridge_body_shadow: Vec<SpriteInstance> = Vec::new();
     instances::bridges::build_bridge_body_instances(state, sw, sh, &mut bridge_body);
-    instances::bridges::build_bridge_shadow_instances(state, sw, sh, &mut bridge_body_shadow);
+    instances::bridges::build_bridge_shadow_instances(state, &mut bridge_body_shadow);
     // Both bridge passes retain native cell sweeps; accepted pixels write Z.
 
     // Smudges: static crater/scorch decals on top of terrain, under entities.

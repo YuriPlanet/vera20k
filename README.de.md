@@ -108,6 +108,15 @@ im Spiel bist. Miss die Leistung mit `--release`.
 
 Beiträge stehen wie das übrige Projekt unter der GPLv3; ein CLA gibt es nicht.
 
+## Unterstützen <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/PayPal-Donate-0070BA?style=flat&amp;logo=paypal&amp;logoColor=white" alt="Unterstütze VERA20k über PayPal" height="20" align="middle"></a>
+
+[Unterstütze VERA20k über PayPal](https://paypal.me/vera20k). Alle eingegangenen Spenden werden
+gemäß dem [TIBTRE-Beitragsverzeichnis](https://github.com/YuriPlanet/tibtre-ledger) an
+Mitwirkende verteilt.
+
+Auszahlungen an Mitwirkende erfolgen über PayPal, UnionPay (China), Alipay, Vipps,
+SEPA-Überweisung oder Bitcoin.
+
 ## Danksagung und Rechtliches
 
 Danke an OpenRA, XCC Mixer, das ModEnc-Wiki, Project Perfect Mod, EA für die Veröffentlichung

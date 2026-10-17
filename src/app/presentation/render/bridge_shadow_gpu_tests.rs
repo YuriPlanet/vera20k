@@ -185,10 +185,10 @@ fn retail_wall_shadow_atlas_covers_physical_material_domains() {
             let frame = shp.frames.get(half + usize::from(state));
             let drawable =
                 frame.is_some_and(|frame| frame.frame_width != 0 && frame.frame_height != 0);
-            let entry = atlas.shadow_entry(name, state);
+            let entry = atlas.shadow_entry(name, u16::from(state));
             assert_eq!(entry.is_some(), drawable, "{name} {winner} state{state}");
             assert!(
-                atlas.body_entry(name, state).is_none(),
+                atlas.body_entry(name, u16::from(state)).is_none(),
                 "Wall body belongs to OverlayAtlas"
             );
             if let Some(entry) = entry {
@@ -236,21 +236,45 @@ impl RetailBridgeFixture {
             std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
         let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
         let mode = IniFile::from_bytes(assets.get_ref("MPBattleMD.ini").unwrap()).unwrap();
+        let map = packet["inputs"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|source| {
+                let name = source["name"].as_str().unwrap();
+                name.ends_with(".MAP").then(|| {
+                    let bytes = assets.get_ref(name).expect("physical scenario layer");
+                    assert_eq!(
+                        crate::util::sha256::sha256_hex(bytes),
+                        source["sha256"].as_str().unwrap(),
+                        "scenario rules must use the native packet's physical map"
+                    );
+                    IniFile::from_bytes(bytes).unwrap()
+                })
+            });
         let (mut rules, rules_ini, art, _) =
             crate::app::loading::init_helpers::load_rules_with_merged_ini(
                 &assets,
                 Some(&mode),
-                None,
+                map.as_ref(),
             )
             .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
         let registry = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art));
         let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        if packet["inputs"]["building"].is_object() {
+            // The same loader order as the app: theater archives precede the
+            // existing catalog's physical BuildingType image binding.
+            rules.bind_building_rubble_assets(&assets, theater.extension, "TEMPERATE");
+        }
         for source in packet["inputs"]["sources"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|source| source["name"].as_str().unwrap().ends_with(".tem"))
+            .filter(|source| {
+                let name = source["name"].as_str().unwrap().to_ascii_lowercase();
+                name.ends_with(".tem") || name.ends_with(".shp")
+            })
         {
             assert_eq!(
                 crate::util::sha256::sha256_hex(
@@ -260,10 +284,19 @@ impl RetailBridgeFixture {
                 "GPU fixture and original caller must use the same physical SHP"
             );
         }
-        let names: BTreeMap<_, _> = ["BRIDGE1", "BRIDGE2", "BRIDGEB1", "BRIDGEB2"]
+        let mut names: BTreeMap<_, _> = ["BRIDGE1", "BRIDGE2", "BRIDGEB1", "BRIDGEB2"]
             .into_iter()
             .map(|name| (registry.id_for_name(name).unwrap(), name.to_owned()))
             .collect();
+        if let Some(index) = packet["inputs"]["rubble_overlay"]["index"].as_u64() {
+            let id = registry.id_for_name("RUBBLE_OVERLAY").unwrap();
+            assert_eq!(u64::from(id), index);
+            names.insert(id, registry.name(id).unwrap().to_owned());
+        }
+        if packet["inputs"]["crate_overlay"].is_object() {
+            let id = registry.id_for_name("CRATE").unwrap();
+            names.insert(id, registry.name(id).unwrap().to_owned());
+        }
         Self {
             assets,
             theater,
@@ -275,6 +308,7 @@ impl RetailBridgeFixture {
     }
 
     fn atlas(&self, gpu: &Gpu, batch: &BatchRenderer) -> BridgeAtlas {
+        let rubble_arts: Vec<_> = self.rules.building_rubble_arts().cloned().collect();
         build_bridge_atlas(
             &gpu.device,
             &gpu.queue,
@@ -288,6 +322,7 @@ impl RetailBridgeFixture {
             &self.registry,
             &self.rules_ini,
             self.rules.art(),
+            &rubble_arts,
         )
         .unwrap()
     }
@@ -304,9 +339,21 @@ impl RetailBridgeFixture {
             |cells| cells.as_array().unwrap().iter().collect(),
         );
         let coords = |cell: &Value, axis: usize| cell["coords"][axis].as_u64().unwrap() as u16;
+        let first = cells[0];
+        let (rx, ry) = (coords(first, 0), coords(first, 1));
+        let flags = self
+            .registry
+            .flags(
+                self.registry
+                    .id_for_name(first["type"].as_str().unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+        let is_rubble = flags.is_rubble && !flags.crate_type;
+        let is_crate = flags.crate_type;
         let mut terrain = test_grid(
             cells.iter().map(|c| coords(c, 0)).max().unwrap() + 1,
-            cells.iter().map(|c| coords(c, 1)).max().unwrap() + 1,
+            cells.iter().map(|c| coords(c, 1)).max().unwrap() + 1 + u16::from(is_rubble),
             test_flat_cell,
         );
         for cell_input in &cells {
@@ -322,8 +369,69 @@ impl RetailBridgeFixture {
                     .unwrap(),
             );
         }
-        let first = cells[0];
-        let (rx, ry) = (coords(first, 0), coords(first, 1));
+        let mut interner = crate::sim::intern::StringInterner::new();
+        let mut overlay_entries = Vec::new();
+        let mut live_grid = None;
+        if is_rubble {
+            let overlay_id = self
+                .registry
+                .id_for_name(first["type"].as_str().unwrap())
+                .unwrap();
+            // Supplied post-destruction Cell fields, not a building-death
+            // replay. The ordinary paid lifecycle is validated separately.
+            // A 1x2 foundation has two overlay anchors but only its origin
+            // records the BuildingType; the second cell must not duplicate it.
+            for y in [ry, ry + 1] {
+                terrain.cell_mut(rx, y).unwrap().level = first["level"].as_i64().unwrap() as u8;
+                overlay_entries.push(crate::map::overlay::OverlayEntry {
+                    rx,
+                    ry: y,
+                    overlay_id,
+                    frame: first["state"].as_u64().unwrap() as u8,
+                });
+            }
+            let mut grid = crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
+                &overlay_entries,
+                terrain.width(),
+                terrain.height(),
+            );
+            if first["clear_rubble_type"] != true {
+                let type_id = interner.intern(input["building_type"].as_str().unwrap());
+                grid.cell_mut(rx, ry).rubble_building_type = Some(type_id);
+            }
+            if first["overlay_id"].as_i64() == Some(-1) {
+                // Preserve the published anchors while the real overlay owner
+                // erases live identity/type: stale entries cannot resurrect it.
+                assert_eq!(grid.clear_overlay(rx, ry), Some(overlay_id));
+            }
+            live_grid = Some(grid);
+        } else if is_crate {
+            for cell in &cells {
+                overlay_entries.push(crate::map::overlay::OverlayEntry {
+                    rx: coords(cell, 0),
+                    ry: coords(cell, 1),
+                    overlay_id: self
+                        .registry
+                        .id_for_name(cell["type"].as_str().unwrap())
+                        .unwrap(),
+                    frame: cell["state"].as_u64().unwrap() as u8,
+                });
+            }
+            let mut grid = crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
+                &overlay_entries,
+                terrain.width(),
+                terrain.height(),
+            );
+            for cell in &cells {
+                if cell["overlay_id"].as_i64() == Some(-1) {
+                    assert!(
+                        grid.clear_overlay(coords(cell, 0), coords(cell, 1))
+                            .is_some()
+                    );
+                }
+            }
+            live_grid = Some(grid);
+        }
         // These original caller cases supply the unraised cell screen point.
         // Align the existing isometric projection with that seam. The actual
         // bridge builder must apply the live signed height, flags and frame.
@@ -343,9 +451,10 @@ impl RetailBridgeFixture {
                 &terrain,
                 atlas,
                 &self.names,
-                &[],
-                None,
-                None,
+                &overlay_entries,
+                live_grid.as_ref(),
+                (is_rubble || is_crate).then_some(&self.registry),
+                is_rubble.then_some((&self.rules, &interner)),
                 camera.world_origin_y,
                 camera.world_height,
                 camera.camera_pos[0],
@@ -368,9 +477,12 @@ impl RetailBridgeFixture {
                 &mut instances,
             ),
         }
+        let admitted = input["expect_no_draw"] != true
+            && input["expect_clipped"] != true
+            && input["overlay_id"].as_i64() != Some(-1);
         assert_eq!(
             instances.len(),
-            cells.len(),
+            if admitted { cells.len() } else { 0 },
             "original caller admits {}",
             input["name"]
         );
@@ -428,6 +540,7 @@ fn assert_native_cell_sweep_order(
         atlas,
         &fixture.names,
         &[],
+        None,
         None,
         None,
         -100.0,
@@ -532,6 +645,319 @@ fn retail_bridge_caller_matches_native_color_and_depth_attachments() {
     eprintln!(
         "{} full original bridge caller/shape rows matched production atlas, live-cell builder, GPU color and depth in both sRGB formats",
         packet["rows"].as_array().unwrap().len()
+    );
+}
+
+/// Physical stock loader and the ordinary Mark FF byte, with no BuildingType
+/// supplied. This is a production-owner regression, not an RGB/Z oracle.
+#[test]
+#[ignore = "requires GPU and retail assets; ordinary CRATE live FF shadow admission and removal"]
+fn retail_crate_live_mark_ff_emits_shadow_and_live_removal_wins() {
+    let packet = crate::test_fixture::json("tools/spatial_oracle/crate_shadow_render.json");
+    let mut fixture = RetailBridgeFixture::load(packet);
+    let id = fixture.registry.id_for_name("CRATE").unwrap();
+    let flags = fixture.registry.flags(id).unwrap();
+    assert!(flags.crate_type && !flags.wall && !flags.is_rubble);
+    assert_eq!(
+        crate::rules::overlay_types::native_mark_overlay_data(flags),
+        255
+    );
+    fixture.names.insert(id, "CRATE".to_owned());
+    let bytes = fixture
+        .assets
+        .get_ref("CRATE.TEM")
+        .expect("activated physical temperate crate");
+    let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).unwrap();
+    assert_eq!(shp.frames.len(), 2);
+    let frame = &shp.frames[1];
+    assert_eq!(
+        [
+            frame.frame_x,
+            frame.frame_y,
+            frame.frame_width,
+            frame.frame_height
+        ],
+        [29, 37, 30, 18]
+    );
+    assert_eq!(frame.pixels.iter().filter(|&&v| v != 0).count(), 199);
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let atlas = fixture.atlas(&gpu, &batch);
+    let mut input = packet["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "live_ff")
+        .unwrap()["input"]
+        .clone();
+    assert_eq!(
+        input["state"],
+        crate::rules::overlay_types::native_mark_overlay_data(flags)
+    );
+    let (_, instances) = fixture.instances(&input, &atlas, [192, 160], BridgeFrameKind::Shadow);
+    assert_eq!(
+        instances.len(),
+        1,
+        "native Crate forces data0 despite live Mark FF"
+    );
+    let entry = atlas
+        .shadow_entry("CRATE", 0)
+        .expect("own-image half plus forced zero");
+    assert_eq!(entry.pixel_size, [30.0, 18.0]);
+    assert!(
+        atlas.body_entry("CRATE", 0).is_none(),
+        "body retains the existing OverlayAtlas owner"
+    );
+    input["overlay_id"] = Value::from(-1);
+    let (_, removed) = fixture.instances(&input, &atlas, [192, 160], BridgeFrameKind::Shadow);
+    assert!(
+        removed.is_empty(),
+        "live clear defeats the retained published anchor"
+    );
+}
+
+fn assert_native_shadow_rows(
+    fixture: &RetailBridgeFixture,
+    gpu: &Gpu,
+    batch: &BatchRenderer,
+    atlas: &BridgeAtlas,
+    format: wgpu::TextureFormat,
+    size: [u32; 2],
+    rows: &[&Value],
+    building_type: Option<&str>,
+) {
+    let mut renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, batch);
+    let color = gpu.target(size, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    let mut pool = InstanceBufferPool::new();
+    for row in rows {
+        let mut input = row["input"].clone();
+        if let Some(building_type) = building_type {
+            input["building_type"] = Value::from(building_type);
+        }
+        let (camera, instances) = fixture.instances(&input, atlas, size, BridgeFrameKind::Shadow);
+        if row["name"] == "repeat" {
+            assert_eq!(instances.len(), 2);
+            assert_eq!(row["steps"].as_array().unwrap().len(), 2);
+        }
+        batch.write_camera(&gpu.queue, camera);
+        renderer.prepare(&gpu.device, &color, &dv, camera);
+        pool.upload_on_device(
+            &gpu.device,
+            &gpu.queue,
+            "cell-shadow-native-row",
+            &instances,
+        );
+        let background = input["background"].as_u64().unwrap() as u16;
+        let old_z = input["old_z"].as_u64().unwrap() as u16;
+        let initial = encoded(background, format).repeat((size[0] * size[1]) as usize);
+        gpu.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &color,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &initial,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size[0] * 4),
+                rows_per_image: Some(size[1]),
+            },
+            extent(size),
+        );
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
+        let clip = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
+        draw_bridge_shadows(
+            &mut encoder,
+            &cv,
+            &dv,
+            &mut renderer,
+            clip,
+            batch,
+            pool.get("cell-shadow-native-row"),
+            &instances,
+            Some(&atlas.texture),
+        );
+        let reads = [
+            gpu.read(&mut encoder, &color),
+            gpu.read(&mut encoder, &depth),
+        ];
+        let output = gpu.finish(encoder, &reads, size);
+        crate::render::terrain_draw_gpu_tests::assert_native_color_and_depth(
+            &output, row, format, size,
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires GPU and retail assets; native CRATE live FF and data0 through Cell shadow atlas and submission"]
+fn retail_crate_shadow_matches_native_color_depth_and_clear_controls() {
+    let packet = crate::test_fixture::json("tools/spatial_oracle/crate_shadow_render.json");
+    let size = [
+        packet["surface"]["width"].as_u64().unwrap() as u32,
+        packet["surface"]["height"].as_u64().unwrap() as u32,
+    ];
+    let fixture = RetailBridgeFixture::load(packet);
+    let rows: Vec<_> = packet["rows"].as_array().unwrap().iter().collect();
+    assert_eq!(rows.len(), 12);
+    let ff = rows.iter().find(|row| row["name"] == "live_ff").unwrap();
+    let zero = rows.iter().find(|row| row["name"] == "data_zero").unwrap();
+    assert_eq!(
+        ff["draws"], zero["draws"],
+        "native Crate overrides FF before frame selection"
+    );
+    assert_eq!(ff["output"], zero["output"]);
+    for key in ["calls", "rectangles"] {
+        assert_eq!(
+            packet["outer_admission"]["positive"][key],
+            packet["outer_admission"]["supplied_zero_data"][key],
+            "native outer Crate data0 selection: {key}"
+        );
+    }
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let atlas = fixture.atlas(&gpu, &batch);
+        assert!(atlas.shadow_entry("CRATE", 0).is_some());
+        assert!(atlas.body_entry("CRATE", 0).is_none());
+        assert_native_shadow_rows(&fixture, &gpu, &batch, &atlas, format, size, &rows, None);
+        // The original outer sweep demands a positive-area intersection. Put
+        // its observed own-image shadow rectangle exactly at the right edge.
+        let rect = packet["outer_admission"]["positive"]["rectangles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|rect| rect["piece"] == "shadow")
+            .unwrap();
+        let mut edge = ff["input"].clone();
+        edge["cell_point"][0] = Value::from(
+            edge["cell_point"][0].as_i64().unwrap() + i64::from(size[0])
+                - rect["rect"][0].as_i64().unwrap(),
+        );
+        edge["expect_clipped"] = Value::Bool(true);
+        let (_, instances) = fixture.instances(&edge, &atlas, size, BridgeFrameKind::Shadow);
+        assert!(
+            instances.is_empty(),
+            "touching viewport boundary has zero area"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires GPU and retail assets; native CAHSE05 rubble through production catalog, Cell shadow atlas and submission"]
+fn retail_rubble_shadow_matches_native_color_depth_and_clear_controls() {
+    let packet =
+        crate::test_fixture::json("tools/spatial_oracle/building_rubble_shadow_render.json");
+    let size = [
+        packet["surface"]["width"].as_u64().unwrap() as u32,
+        packet["surface"]["height"].as_u64().unwrap() as u32,
+    ];
+    let fixture = RetailBridgeFixture::load(packet);
+    let building_type = packet["inputs"]["building"]["name"].as_str().unwrap();
+    let art = fixture.rules.building_rubble_art(building_type).unwrap();
+    assert_eq!(
+        u64::from(art.shadow_frame),
+        packet["shapes"][0]["frame"].as_u64().unwrap(),
+        "production catalog selects the original own-image shadow frame"
+    );
+    let supported: Vec<_> = packet["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| {
+            // These controls replace native BuildingType fields directly.
+            // This physical stock fixture keeps the actual layered CAHSE05:
+            // its LeaveRubble is true and it has no custom ART Rubble shape.
+            // In particular, do not invent support for the custom arm that
+            // writes outputs but returns false at 0045F229.
+            row["name"] != "leave_rubble_false" && row["name"] != "custom_rubble_false"
+        })
+        .collect();
+    assert_eq!(supported.len(), 13);
+    let own_image = supported
+        .iter()
+        .find(|row| row["name"] == "own_image")
+        .unwrap();
+    let shadow_calls = |outer: &Value| {
+        outer["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|call| call["piece"] == "shadow")
+            .count()
+    };
+    assert_eq!(shadow_calls(&packet["outer_admission"]["positive"]), 1);
+    assert_eq!(
+        shadow_calls(&packet["outer_admission"]["supplied_out_of_range_data"]),
+        0
+    );
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let atlas = fixture.atlas(&gpu, &batch);
+        let image_name = crate::render::overlay_atlas::rubble_image_name(&art.shp);
+        assert!(atlas.shadow_entry(&image_name, art.shadow_frame).is_some());
+        assert!(atlas.shadow_entry("RUBBLE_OVERLAY", 0).is_some());
+        assert!(atlas.shadow_entry("RUBBLE_OVERLAY", 255).is_none());
+        assert_native_shadow_rows(
+            &fixture,
+            &gpu,
+            &batch,
+            &atlas,
+            format,
+            size,
+            &supported,
+            Some(building_type),
+        );
+
+        let mut input = own_image["input"].clone();
+        input["building_type"] = Value::from(building_type);
+        input["state"] = Value::from(255);
+        input["expect_no_draw"] = Value::Bool(true);
+        let (_, instances) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
+        assert!(
+            instances.is_empty(),
+            "original outer sweep refuses proxy frame256"
+        );
+
+        // Move the original positive proxy rectangle exactly to the viewport's
+        // right boundary. Positive-width intersection is required even when
+        // the selected building shadow itself extends back into the viewport.
+        let rect = packet["outer_admission"]["positive"]["rectangles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|rect| rect["piece"] == "shadow")
+            .unwrap();
+        let mut input = own_image["input"].clone();
+        input["building_type"] = Value::from(building_type);
+        input["cell_point"][0] = Value::from(
+            input["cell_point"][0].as_i64().unwrap() + i64::from(size[0])
+                - rect["rect"][0].as_i64().unwrap(),
+        );
+        input["expect_clipped"] = Value::Bool(true);
+        let (_, instances) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
+        assert!(
+            instances.is_empty(),
+            "native proxy rectangle owns outer admission"
+        );
+    }
+    eprintln!(
+        "13 supported native rubble rows matched physical catalog/atlas, origin-only Cell emitter and GPU color/Z in both sRGB formats; custom/false-LeaveRubble overrides excluded"
     );
 }
 
@@ -899,6 +1325,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
                 &atlas,
                 &fixture.names,
                 &[],
+                None,
                 None,
                 None,
                 view.world_origin_y,

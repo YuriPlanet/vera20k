@@ -251,6 +251,7 @@ pub(crate) fn build_overlay_presentation(
             overlay_registry,
             rules_ini,
             art_registry,
+            &rubble_arts,
         )
     });
 

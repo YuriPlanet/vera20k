@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 // (`rules::animation_sequence`, F04); sim re-exports the types so runtime
 // consumers and serialized components keep their existing paths.
 pub use crate::rules::animation_sequence::{
-    FacingSlots, LoopMode, SequenceDef, SequenceKind, SequenceSet, ShpVehicleCadence,
+    FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet,
     default_building_sequences, default_infantry_sequences,
 };
 
@@ -293,9 +293,10 @@ fn resolve_shp_frame_parts(
 }
 
 /// `FootClass+0x538`, the persistent body-animation counter. Unit SHP and
-/// voxel drawing reduce it against the selected model's frame count. It
+/// Unit/Aircraft voxel drawing reduce it against the selected model's frame count.
+/// MoveSound also consumes its delta; this is serialized and hashed state. It
 /// advances on absolute binary-frame cadence in `FootClass::AI`
-/// (`0x004DA886..0x004DAA01`, [`tick_unit_body_frame_counter`]) and never
+/// (`0x004DA886..0x004DAA01`, [`tick_foot_body_frame_counter`]) and never
 /// resets on a visual transition or deployment. It is a native dword, so the
 /// increment wraps.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -322,7 +323,7 @@ impl BodyFrameCounter {
     }
 }
 
-/// Advance the persistent Unit body counter at FootClass's post-Process
+/// Advance the persistent Foot body counter at FootClass's post-Process
 /// point for the current absolute binary frame.
 ///
 /// The moving branch deliberately does not guard a zero `WalkRate`: retail
@@ -330,24 +331,20 @@ impl BodyFrameCounter {
 /// is different — zero is its documented branch-off switch and performs no
 /// division. The counter itself is a native dword, so increment wraps.
 ///
-/// RESIDUAL: `FootClass::AI`'s increment (`0x004DA886..0x004DAA01`) runs for
-/// every Foot; only its hover-attack arm asks for a Unit. VERA advances the
-/// counter for Units alone. Trigger: a moving aircraft or infantryman.
-/// Effect: an aircraft whose HVA has more than one frame stays on frame 0
-/// (`AircraftClass::Draw_It` reads `+0x538` too, `0x004145B0`); on retail only
-/// SPYP's has two. No retail InfantryType or AircraftType sets `IdleRate=` or
-/// `DeployToLand=`, so the move-sound tail sees no increment while one stands
-/// still. Frequency: each spy plane flight. Risk: the drawn frame only.
-pub(crate) fn tick_unit_body_frame_counter(
+/// The same Foot entry is reached by Unit73647B, Infantry51BC9F and
+/// Aircraft414DA3. Only the HoverAttack arm asks for a Unit; the ordinary
+/// moving/idle/DeployToLand arms serve every Foot. Original concrete-class
+/// controls: tools/spatial_oracle/unit_simple_deploy.json.
+pub(crate) fn tick_foot_body_frame_counter(
     entity: &mut crate::sim::game_entity::GameEntity,
     rules: Option<crate::sim::movement::SpeedRules<'_>>,
-    cadence: ShpVehicleCadence,
+    cadence: FootBodyCadence,
     hover_attack: bool,
     deploy_to_land: bool,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) {
-    if entity.category() != crate::map::entities::EntityCategory::Unit
+    if !entity.category().is_foot()
         || entity.death.is_dying()
         || !entity.lifecycle.object_alive()
         || entity.lifecycle.in_limbo()
@@ -368,7 +365,10 @@ pub(crate) fn tick_unit_body_frame_counter(
     // excludes that hover-attack walk arm; it does not suppress IdleRate.
     let moving = crate::sim::movement::motion_query::is_moving_now(entity, rules, binary_frame);
     let walking = moving
-        || (entity.attack_target.target().is_some() && hover_attack && !entity.is_fully_deployed());
+        || (entity.category() == crate::map::entities::EntityCategory::Unit
+            && entity.attack_target.target().is_some()
+            && hover_attack
+            && !entity.is_fully_deployed());
     let due = (walking && (binary_frame as i32) % cadence.walk_rate == 0)
         || (cadence.idle_rate != 0 && !moving && (binary_frame as i32) % cadence.idle_rate == 0)
         // GetHeight (vt+0x1C8) at `0x004DA9CD`.

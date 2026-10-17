@@ -2354,7 +2354,7 @@ pub(crate) fn load_map_from_initial(
     // Full_Init686D35 processes the campaign's scenario-basename INI before
     // resetting Rules. It is optional and distinct from MISSIONMD loading art.
     let campaign_named_ini = if let Some(campaign) = campaign.as_ref() {
-        let mut name = PathBuf::from(campaign.campaign().scenario());
+        let mut name = PathBuf::from(campaign.scenario());
         name.set_extension("INI");
         let name = name.to_string_lossy();
         if asset_manager.resolve_ref(&name).is_some() {
@@ -2444,9 +2444,7 @@ pub(crate) fn load_map_from_initial(
             map_data: &map_data,
             house_roster: &house_roster,
             difficulty: campaign.difficulty(),
-            // A new campaign starts after BattleControlTerminated6865B0,
-            // whose mission-counter reset matches Scenario's constructor 1.
-            mission_counter: 1,
+            mission_counter: campaign.mission_counter(),
         }
     };
     let scenario_descriptor = crate::sim::scenario_session::ScenarioDescriptor {
@@ -2456,7 +2454,7 @@ pub(crate) fn load_map_from_initial(
             .or_else(|| {
                 campaign
                     .as_ref()
-                    .map(|startup| startup.campaign().scenario().to_owned())
+                    .map(|startup| startup.scenario().to_owned())
             })
             .or_else(|| map_data.basic.name.clone())
             .unwrap_or_default(),

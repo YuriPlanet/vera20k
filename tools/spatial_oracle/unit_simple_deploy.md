@@ -1,4 +1,4 @@
-# Unit simple deployment
+# Unit simple deployment and shared Foot body counter
 
 Original executable: `gamemd.exe`, SHA-256
 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
@@ -15,7 +15,7 @@ VERA20K_SIMPLE_DEPLOY_ASSETS=/path/to/extract \
 ```
 
 The extract directory must contain unchanged `artmd.ini`, `schpdepl.shp`,
-`schp.hva` and `schd.hva`. The normal production `asset extract` tool supplies
+`schp.hva`, `schd.hva` and `spyp.hva`. The normal production `asset extract` tool supplies
 these files. Output pins their identities; no Rust values generate goldens.
 
 ## State and trigger
@@ -198,6 +198,69 @@ and stationary. Final fallback increments every admitted airborne DeployToLand
 tick. All increment arms reject warp-in, warp-out and Foot `+6AD`. The common
 counter wraps; native drawing alone applies the selected model's modulus.
 `body_cadence` pins 66 post-Process cases including negative frames and overflow.
+
+### Concrete Aircraft and Infantry admission
+
+`foot_class_cadence` adds bounded controls through the same
+`run_foot_counter_slice`; the 66 legacy rows and their supplied motion boundary
+remain unchanged. The new rows install the original concrete vtable, the
+appropriate type home and the real locomotor constructor in the existing
+Unit/refinery fixture. They do not construct a complete actor or execute
+Process, movement producers or a world scheduler.
+
+Aircraft constructor `413D87` installs vtable `7E22A4`; its `+2C` slot calls
+`41C180` and returns RTTI2. Infantry constructor `517ACC` installs `7EB058`,
+whose `+2C` calls `523340` and returns RTTI15. Unit's `7F5C70+2C` calls
+`746E20` and returns RTTI1. Their actual type getters execute: Aircraft
+`41C200` reads `+6C4`, whereas Infantry `51FAF0` reads `+6C0`; Infantry's
+`+6C4` is Doing. Foot's `4DA88E..4DA89E` converts only RTTI1 to the Unit
+pointer used at `4DA8ED..4DA8F3`. That test belongs only to the target /
+HoverAttack / Unit-IsDeployed arm. Ordinary moving, idle and DeployToLand
+counter paths remain shared. Non-Unit hover controls assert that original
+Unit predicate `746D80` is never called.
+
+The Fly rows construct `4CC9A0`. It installs ILocomotion at complete object
+`+4`, vptr `7E89F4`; its `+80` slot is original `4CCAC0`. The latter reads
+the interface pointer at entry stack `+4`, loads binary64 **interface+44 =
+complete Fly+48**, compares it with original zero at `7E2800`, returns AL and
+pops its four-byte receiver. The retained movement-request byte, destination
+and target speed do not supply this answer. Finite nonzero speeds are true;
+both signed zeroes are false. Declared Q16-exact current-speed priors include
+one quantum and half speed. No callback supplies IsMovingNow or a counter
+delta in these new rows.
+
+The Infantry rows construct original Walk `75AA90` and execute its real
+`+80` query `75AB40`: request, positive Foot speed fraction and a nonnull
+retained head are independent component inputs. They cover each refusal,
+ordinary moving cadence, idle cadence and the non-Unit HoverAttack refusal.
+The paired Unit controls retain the existing stopped Drive query and its
+actual deployed byte. Existing signed-frame and wrap controls remain, and
+the Aircraft controls also cover the native signed-frame/counter boundaries,
+warp-in, warp-out and locomotor swap. All new rows require unchanged native
+text/vtables, all three seeded RNG states, locomotor/type bytes and actor
+bytes outside `+538`. The inherited lifecycle observer boundaries must be
+unvisited. No timer, RNG draw or detach belongs to this counter slice; the
+adjacent MoveSound tail is outside it and retains its own existing owner.
+
+`aircraft_draw_frames` executes original `4145B0..4145C0`, after selected
+model admission: persistent `+538`, selected Type+B4 HVA header and signed
+`CDQ; IDIV [HVA+8]`. Its seven signed-counter controls use the frame count
+from unchanged physical SPYP.HVA (two frames/four sections). They complement
+the 56 existing Unit body/turret/disguise/deployed-model rows; the latter
+remain exact. The file header count at `+16` is copied to the declared native
+loaded-header field `+8`; native HVA loading and model admission are not
+executed by this arithmetic slice. The common production frame consumer is
+`app/presentation/instances/units.rs::unit_animation_frames`.
+
+Aircraft has a separate positive shadow suffix: `4148A0` calls Foot
+`4DB0D0`, then Techno `706BD0`, whose actual-type `NoShadow` check is at
+`706BF3`. Fly's HasShadow slot returns true. The `+538` remainder contributes
+to its cache key, while original uncached shadow `707280` starts HVA frame
+zero and takes the separate `ShadowIndex` section. The body-counter and
+signed-remainder controls do not certify that shadow's geometry, cache,
+matrix, admission, positioning or pixels. VERA's existing absent Aircraft
+shadow remains a separate rendering mechanism; these controls establish no
+whole Aircraft draw or native whole-flight RGB parity.
 
 The legacy Rust deploy-state consumers in SpawnManager and cloak were unrelated:
 SpawnManager `6B737C` tests Foot `+6AD`, while cloak head `6FB757..6FB79B` and

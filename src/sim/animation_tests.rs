@@ -282,7 +282,7 @@ impl Gsi1306Speed {
 
 #[test]
 fn gsi_13_06_body_counter_uses_absolute_precommit_binary_frame_phase() {
-    let cadence = ShpVehicleCadence {
+    let cadence = FootBodyCadence {
         walk_rate: 4,
         idle_rate: 8,
     };
@@ -290,13 +290,13 @@ fn gsi_13_06_body_counter_uses_absolute_precommit_binary_frame_phase() {
     let speed = Gsi1306Speed::new();
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
         let mut entity = gsi_13_06_active_shp_unit("DRON", kind);
-        tick_unit_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 3);
+        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 3);
         assert_eq!(entity.body_frame_counter.get(), 0);
-        tick_unit_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 4);
+        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 4);
         assert_eq!(entity.body_frame_counter.get(), 1);
-        tick_unit_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 5);
+        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 5);
         assert_eq!(entity.body_frame_counter.get(), 1);
-        tick_unit_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 8);
+        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 8);
         assert_eq!(entity.body_frame_counter.get(), 2);
     }
 }
@@ -306,10 +306,10 @@ fn gsi_13_06_body_counter_wraps_and_survives_moving_idle_transitions() {
     let speed = Gsi1306Speed::new();
     let mut entity = gsi_13_06_active_shp_unit("DRON", LocomotorKind::Drive);
     entity.body_frame_counter.set_for_test(u32::MAX);
-    tick_unit_body_frame_counter(
+    tick_foot_body_frame_counter(
         &mut entity,
         speed.rules(),
-        ShpVehicleCadence {
+        FootBodyCadence {
             walk_rate: 1,
             idle_rate: 8,
         },
@@ -336,10 +336,10 @@ fn gsi_13_06_body_counter_wraps_and_survives_moving_idle_transitions() {
         ));
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
     }
-    tick_unit_body_frame_counter(
+    tick_foot_body_frame_counter(
         &mut entity,
         speed.rules(),
-        ShpVehicleCadence {
+        FootBodyCadence {
             walk_rate: 4,
             idle_rate: 8,
         },
@@ -357,7 +357,7 @@ fn gsi_13_06_body_counter_wraps_and_survives_moving_idle_transitions() {
 
 #[test]
 fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
-    let cadence = ShpVehicleCadence {
+    let cadence = FootBodyCadence {
         walk_rate: 1,
         idle_rate: 1,
     };
@@ -395,7 +395,7 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
 
     for (name, mut entity) in variants {
         entity.body_frame_counter.set_for_test(17);
-        tick_unit_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 1);
+        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 1);
         assert_eq!(entity.body_frame_counter.get(), 17, "{name}");
     }
 }
@@ -416,10 +416,10 @@ fn gsi_13_06_draw_and_cadence_use_distinct_movement_predicates() {
             !crate::sim::movement::motion_query::is_moving_now(&entity, speed.rules(), 4),
             "slot-32 Is_Moving_Now also requires positive applied speed"
         );
-        tick_unit_body_frame_counter(
+        tick_foot_body_frame_counter(
             &mut entity,
             speed.rules(),
-            ShpVehicleCadence {
+            FootBodyCadence {
                 walk_rate: 4,
                 idle_rate: 0,
             },
@@ -455,10 +455,10 @@ fn gsi_13_06_positive_fraction_below_get_current_speed_threshold_is_idle() {
             !crate::sim::movement::motion_query::is_moving_now(&entity, speed.rules(), 1),
             "{name} slot +0x80 requires truncated GetCurrentSpeed > 0"
         );
-        tick_unit_body_frame_counter(
+        tick_foot_body_frame_counter(
             &mut entity,
             speed.rules(),
-            ShpVehicleCadence {
+            FootBodyCadence {
                 walk_rate: 1,
                 idle_rate: 0,
             },
@@ -566,11 +566,7 @@ fn gsi_13_06_shp_movement_predicates_read_the_locomotor() {
     }
 }
 
-fn gsi_13_06_shp_set(
-    walk_frames: u16,
-    stand_start: u16,
-    cadence: ShpVehicleCadence,
-) -> SequenceSet {
+fn gsi_13_06_shp_set(walk_frames: u16, stand_start: u16, cadence: FootBodyCadence) -> SequenceSet {
     let mut set = SequenceSet::new();
     set.set_shp_vehicle_cadence(cadence);
     set.insert(
@@ -609,7 +605,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
     let dlph = gsi_13_06_shp_set(
         6,
         48,
-        ShpVehicleCadence {
+        FootBodyCadence {
             walk_rate: 4,
             idle_rate: 8,
         },
@@ -623,7 +619,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
     let sqd = gsi_13_06_shp_set(
         20,
         160,
-        ShpVehicleCadence {
+        FootBodyCadence {
             walk_rate: 2,
             idle_rate: 4,
         },
@@ -634,7 +630,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
-    let dron = gsi_13_06_shp_set(6, 48, ShpVehicleCadence::native_defaults());
+    let dron = gsi_13_06_shp_set(6, 48, FootBodyCadence::native_defaults());
     assert_eq!(
         resolve_shp_vehicle_body_frame(&dron, 0, 99, false, false),
         Some(49),
@@ -1450,7 +1446,7 @@ fn animation_catalog_covers_unspawned_registered_shp_types() {
     );
     assert_eq!(
         vehicle.shp_vehicle_cadence(),
-        Some(ShpVehicleCadence {
+        Some(FootBodyCadence {
             walk_rate: 3,
             idle_rate: 2,
         }),
@@ -1710,10 +1706,10 @@ fn unit_body_counter_matches_original_foot_cadence() {
                     1,
                 )));
             }
-            tick_unit_body_frame_counter(
+            tick_foot_body_frame_counter(
                 &mut entity,
                 speed.rules(),
-                ShpVehicleCadence {
+                FootBodyCadence {
                     walk_rate: integer("walk_rate", 1),
                     idle_rate: integer("idle_rate", 0),
                 },
@@ -1727,6 +1723,120 @@ fn unit_body_counter_matches_original_foot_cadence() {
                 row["counter"].as_u64().unwrap(),
                 "{input}, voxel={voxel}, {layer:?}"
             );
+        }
+    }
+}
+
+#[test]
+fn foot_body_counter_matches_original_concrete_classes() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::movement::locomotion::piggyback::{LocomotorRuntimePayload, WalkRuntime};
+
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_simple_deploy.json",
+    ))
+    .unwrap();
+    let rows = corpus["foot_class_cadence"].as_array().unwrap();
+    assert_eq!(rows.len(), 22);
+    let speed = Gsi1306Speed::new();
+    for row in rows {
+        let input = &row["input"];
+        let flag = |key: &str| input[key].as_bool().unwrap_or(false);
+        let integer =
+            |key: &str, fallback: i32| input[key].as_i64().map_or(fallback, |value| value as i32);
+        let mut entity = match input["category"].as_str().unwrap() {
+            "unit" => {
+                let mut entity = gsi_13_06_active_shp_unit("DRON", LocomotorKind::Drive);
+                entity.foot_speed.set_speed_fraction(SIM_ZERO);
+                entity.set_unit_simple_deploy_for_test(flag("deployed"), false, false);
+                entity
+            }
+            category => {
+                let (category, type_name, kind) = match category {
+                    "aircraft" => (EntityCategory::Aircraft, "SPYP", LocomotorKind::Fly),
+                    "infantry" => (EntityCategory::Infantry, "E1", LocomotorKind::Walk),
+                    _ => unreachable!("original concrete Foot control"),
+                };
+                let mut entity = GameEntity::test_default_of_category(
+                    23_001, type_name, "Soviet", 5, 5, category,
+                );
+                entity.lifecycle.set_in_limbo_for_test(false);
+                let mut loco = LocomotorState::for_test_kind(kind);
+                match kind {
+                    LocomotorKind::Fly => loco
+                        .fly_runtime_mut()
+                        .unwrap()
+                        .set_current_speed(SimFixed::from_bits(integer("current_speed_q16", 0))),
+                    LocomotorKind::Walk => {
+                        let v = input["head"].as_array().unwrap();
+                        let head = DriveCoord {
+                            x: v[0].as_i64().unwrap() as i32,
+                            y: v[1].as_i64().unwrap() as i32,
+                            z: v[2].as_i64().unwrap() as i32,
+                        };
+                        loco.set_runtime_payload_for_test(LocomotorRuntimePayload::Walk(
+                            WalkRuntime::for_test(
+                                (head != DriveCoord { x: 0, y: 0, z: 0 }).then_some(head),
+                                None,
+                                flag("moving"),
+                                false,
+                            ),
+                        ));
+                        entity
+                            .foot_speed
+                            .set_speed_fraction(SimFixed::from_bits(integer(
+                                "speed_fraction_q16",
+                                0,
+                            )));
+                    }
+                    _ => unreachable!(),
+                }
+                entity.locomotor = Some(loco);
+                entity
+            }
+        };
+        entity
+            .body_frame_counter
+            .set_for_test(integer("counter", 0) as u32);
+        if flag("target") {
+            entity
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(42)));
+        }
+        entity.lift.set_swap_active_for_test(flag("locomotor_swap"));
+        if flag("warp_out") {
+            entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+        }
+        if flag("warp_in") {
+            entity.install_teleport_state_for_test(Some(TeleportState::for_test(
+                TeleportPhase::ChronoDelay,
+                8,
+                8,
+                1,
+            )));
+        }
+        tick_foot_body_frame_counter(
+            &mut entity,
+            speed.rules(),
+            FootBodyCadence {
+                walk_rate: integer("walk_rate", 1),
+                idle_rate: integer("idle_rate", 0),
+            },
+            flag("hover_attack"),
+            flag("deploy_to_land"),
+            None,
+            integer("frame", 0) as u32,
+        );
+        assert_eq!(
+            u64::from(entity.body_frame_counter.get()),
+            row["counter"].as_u64().unwrap(),
+            "{input}"
+        );
+        for stream in ["main", "scenario", "mapgen"] {
+            assert_eq!(row["invariants"]["rng_unchanged"][stream], true, "{input}");
+        }
+        if entity.category() != EntityCategory::Unit {
+            assert_eq!(row["observed"]["unit_deployed_calls"], 0, "{input}");
         }
     }
 }

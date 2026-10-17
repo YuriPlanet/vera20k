@@ -703,7 +703,13 @@ fn build_cell_overlay_instances(
             .copied()
             .unwrap_or(0);
         let (screen_x, screen_y) = terrain::iso_to_screen(entry.rx, entry.ry, z);
-        let screen_y: f32 = screen_y + track_y_offset;
+        let live_flags = input
+            .terrain
+            .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
+            .map_or(0, |cell| cell.bridge_facts.raw_flags);
+        let screen_y: f32 = screen_y
+            + track_y_offset
+            + super::bridges::cell_overlay_y_offset(live_overlay_id, live_flags, live_overlay_data);
 
         // No LocalSize gate: gamemd draws overlays on border filler cells like
         // any other; camera/geometry admission precedes per-pixel shroud.
@@ -848,7 +854,11 @@ pub(crate) fn build_overlay_instances(
                 .as_ref()
                 .map(|runtime| &runtime.simulation.interner),
             tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
-            terrain: state.terrain_template(),
+            terrain: state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .and_then(|runtime| runtime.simulation.resolved_terrain.as_ref()),
             heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
             scenario_lighting: state
@@ -1564,6 +1574,7 @@ mod tests {
             crate::rules::building_rubble::RubbleArt {
                 shp: "ruin.shp".into(),
                 body_frame: 3,
+                shadow_frame: 7,
             },
         );
         let mut interner = crate::sim::intern::StringInterner::new();

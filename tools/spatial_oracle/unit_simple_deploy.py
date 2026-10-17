@@ -1,7 +1,8 @@
-"""Original Unit simple-deployer lifecycle and independently read retail ART.
+"""Original Unit deployment, shared Foot counters and physical retail art.
 
 Set VERA20K_SIMPLE_DEPLOY_ASSETS to an asset extract directory containing
-artmd.ini and schpdepl.shp. Run --write to publish, --check to reproduce.
+artmd.ini, schpdepl.shp and SCHP/SCHD/SPYP HVA files. Run --write to publish,
+--check to reproduce.
 Uses the shared refinery Unit/map fixture, AnimType ART reader, and Jumpjet
 state fixture. No complete Windows game, renderer or AnimClass AI claim.
 """
@@ -14,15 +15,17 @@ from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
     UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
+    UC_X86_REG_FPCW,
 )
 from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance, run_checked
 from tools.rules_oracle.bridge_anim_inputs import Reader, read_types
 from tools.rules_oracle.bridge_child_sound import sections
 from tools.spatial_oracle.building_body_rules import INI, TYPE as READER_TYPE, SP as READER_SP
+from tools.spatial_oracle.crate_speed_effect import VTABLES, TYPE_VTABLES
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.refinery_dock import make_dock_fixture, cell, cell_xy
 from tools.spatial_oracle.unit_entry import EXTRA
-from tools.spatial_oracle.unit_scatter_state import ACTOR, TYPE, SP
+from tools.spatial_oracle.unit_scatter_state import ACTOR, TYPE, LOCO, SP
 from tools.spatial_oracle.unit_source_scatter import SCENARIO
 
 ASSETS = Path(os.environ.get('VERA20K_SIMPLE_DEPLOY_ASSETS', 'target/asset/simple-deploy/extract'))
@@ -45,7 +48,7 @@ def retail_art():
     keys = sections(raw)['SCHPDEPL']
     row = read_types(ASSETS, {'SCHPDEPL': keys}, ['SCHPDEPL'])[0]
     hva = []
-    for name in ['schp.hva', 'schd.hva']:
+    for name in ['schp.hva', 'schd.hva', 'spyp.hva']:
         data = asset(name).read_bytes()
         frames, parts = struct.unpack_from('<2I', data, 16)
         hva.append(dict(name=name, sha256=hashlib.sha256(data).hexdigest(),
@@ -370,6 +373,198 @@ def body_cadence(art):
     return rows
 
 
+def foot_class_cadence(art):
+    """Actual concrete dispatch and motion queries in the shared counter slice.
+
+    The inherited VM owns the map, imports and supplied Foot prefix. These
+    rows change that prefix's concrete vptr/type home and construct the real
+    Fly/Walk; they do not execute actor constructors or locomotor Process.
+    """
+    common = dict(category='aircraft', family='fly', frame=1, walk_rate=1,
+                  idle_rate=0, counter=0, target=False, hover_attack=False,
+                  deployed=False, deploy_to_land=False, current_speed_q16=32768)
+    cases = [
+        dict(name='aircraft_zero', current_speed_q16=0, frame=0),
+        dict(name='aircraft_negative_zero', current_speed_q16=0, negative_zero=True),
+        dict(name='aircraft_frame_zero', frame=0),
+        dict(name='aircraft_frame_one'),
+        dict(name='aircraft_frame_two', frame=2),
+        dict(name='aircraft_small_speed_negative_frame', current_speed_q16=1, frame=-1),
+        dict(name='aircraft_negative_speed', current_speed_q16=-32768),
+        dict(name='aircraft_signed_min_frame', frame=-2147483648),
+        dict(name='aircraft_signed_counter_wrap', counter=2147483647),
+        dict(name='aircraft_full_counter_wrap', counter=4294967295),
+        dict(name='aircraft_hover_is_not_unit', current_speed_q16=0,
+             target=True, hover_attack=True),
+    ]
+    cases += [dict(name=f'aircraft_{flag}', **{flag: True})
+              for flag in ('warp_in', 'warp_out', 'locomotor_swap')]
+    walk = dict(category='infantry', family='walk', frame=3, walk_rate=3,
+                moving=True, speed_fraction_q16=65536, head=[2944, 2688, 0])
+    cases += [
+        dict(walk, name='infantry_walk'),
+        dict(walk, name='infantry_zero_fraction', speed_fraction_q16=0),
+        dict(walk, name='infantry_no_request', moving=False),
+        dict(walk, name='infantry_null_head', head=[0, 0, 0]),
+        dict(walk, name='infantry_idle', frame=4, moving=False, idle_rate=4),
+        dict(walk, name='infantry_hover_is_not_unit', moving=False,
+             target=True, hover_attack=True),
+    ]
+    cases += [dict(name=f'unit_hover_deployed_{deployed}', category='unit',
+                   family='drive', current_speed_q16=0, target=True,
+                   hover_attack=True, deployed=deployed) for deployed in (False, True)]
+    layouts = {'unit': (0x6C4, 0x746E20, 1),
+               'aircraft': (0x6C4, 0x41C180, 2),
+               'infantry': (0x6C0, 0x523340, 15)}
+    rows = []
+    for override in cases:
+        case = common | override
+        m = Unit(case, art)
+        u = m.u
+        category, family = case['category'], case['family']
+        type_offset, rtti_entry, expected_rtti = layouts[category]
+        u.mem_write(ACTOR, dwords(VTABLES[category]))
+        u.mem_write(TYPE, dwords(TYPE_VTABLES[category]))
+        u.mem_write(ACTOR + type_offset, dwords(TYPE))
+        if category == 'infantry':
+            u.mem_write(ACTOR + 0x6C4, dwords(-1))  # Doing, not the type pointer.
+        else:
+            u.mem_write(ACTOR + 0x6E0, bytes([case['deployed']]))
+        assert m.read32(VTABLES[category] + 0x2C) == rtti_entry
+        u.mem_write(TYPE + 0x294, dwords(case['walk_rate'], case['idle_rate']))
+        u.mem_write(TYPE + 0x390, bytes([case['hover_attack']]))
+        u.mem_write(ACTOR + 0x2B4, dwords(ACTOR if case['target'] else 0))
+        # Original Techno+270 = BeingWarpedOut; +271 = WarpingIn.
+        u.mem_write(ACTOR + 0x270, bytes([case.get('warp_out', False),
+                                        case.get('warp_in', False)]))
+        u.mem_write(ACTOR + 0x6AD, bytes([case.get('locomotor_swap', False)]))
+        u.mem_write(ACTOR + 0x538, dwords(case['counter']))
+        u.mem_write(0xA8ED84, dwords(case['frame']))
+        speed_bits = None
+        if family in ('fly', 'walk'):
+            m.call(0x4CC9A0 if family == 'fly' else 0x75AA90, LOCO, [])
+            u.mem_write(LOCO + 0xC, dwords(ACTOR))
+            u.mem_write(LOCO + 0x14, dwords(1))
+            u.mem_write(ACTOR + 0x674, dwords(LOCO + 4))
+            if family == 'fly':
+                speed = case['current_speed_q16'] / 65536
+                if case.get('negative_zero', False):
+                    assert speed == 0
+                    speed = -0.0
+                raw = struct.pack('<d', speed)
+                u.mem_write(LOCO + 0x48, raw)  # interface+44, full Fly+48.
+                speed_bits = raw.hex()
+                expected_moving_entry = 0x4CCAC0
+                assert m.read32(LOCO + 4) == 0x7E89F4
+            else:
+                u.mem_write(LOCO + 0x34, bytes([case['moving']]))
+                u.mem_write(LOCO + 0x28, dwords(*case['head']))
+                u.mem_write(0xB45BE8, dwords(0, 0, 0))
+                raw = struct.pack('<d', case['speed_fraction_q16'] / 65536)
+                u.mem_write(ACTOR + 0x578, raw)
+                speed_bits = raw.hex()
+                expected_moving_entry = 0x75AB40
+                assert m.read32(LOCO + 4) == 0x7F69F8
+        else:
+            assert family == 'drive'
+            expected_moving_entry = 0x4AFC20
+        interface = m.read32(ACTOR + 0x674)
+        moving_entry = m.read32(m.read32(interface) + 0x80)
+        assert moving_entry == expected_moving_entry
+        rngs = {'main': 0x886B88, 'scenario': SCENARIO + 0x218, 'mapgen': 0xABE890}
+        for pointer in rngs.values():
+            m.call(0x65C6D0, pointer, [31])
+        rng_before = {name: bytes(u.mem_read(pointer, 0x3F4))
+                      for name, pointer in rngs.items()}
+        fpcw_before = u.reg_read(UC_X86_REG_FPCW)
+        assert fpcw_before == 0x0E7F
+        text_before = bytes(u.mem_read(0x401000, 0x3E0000))
+        tables_before = {p: bytes(u.mem_read(p, 0x600)) for p in VTABLES.values()}
+        owner_before = bytearray(u.mem_read(ACTOR, 0x700))
+        loco_before = bytes(u.mem_read(LOCO, 0x100))
+        type_before = bytes(u.mem_read(TYPE, 0x1000))
+        observed = dict(rtti_entry=f'0x{rtti_entry:08X}', rtti=None,
+                        moving_entry=f'0x{moving_entry:08X}', moving_answers=[],
+                        unit_deployed_calls=0, increment_visits=0, rng_calls=[])
+
+        def observe(_u, address, _size, _data):
+            if address == 0x4DA895:
+                observed['rtti'] = u.reg_read(UC_X86_REG_EAX)
+            elif address == moving_entry:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                assert m.read32(sp + 4) == interface
+            elif address in (0x4DA8C1, 0x4DA973):
+                observed['moving_answers'].append(bool(u.reg_read(UC_X86_REG_EAX) & 255))
+            elif address == 0x746D80:
+                assert category == 'unit', 'Non-Unit called Unit::IsDeployed'
+                observed['unit_deployed_calls'] += 1
+            elif address == 0x4DA9FB:
+                observed['increment_visits'] += 1
+            elif address in (0x65C780, 0x65C7E0):
+                observed['rng_calls'].append(f'0x{address:08X}')
+
+        handle = u.hook_add(UC_HOOK_CODE, observe)
+        m.events = []
+        try:
+            run_foot_counter_slice(u, ACTOR, SP)
+        finally:
+            u.hook_del(handle)
+        assert observed['rtti'] == expected_rtti
+        assert not observed['rng_calls'] and not m.events
+        assert u.reg_read(UC_X86_REG_ESP) == SP
+        assert u.reg_read(UC_X86_REG_FPCW) == fpcw_before
+        owner_after = bytearray(u.mem_read(ACTOR, 0x700))
+        owner_before[0x538:0x53C] = owner_after[0x538:0x53C]
+        assert owner_before == owner_after
+        assert loco_before == bytes(u.mem_read(LOCO, 0x100))
+        assert type_before == bytes(u.mem_read(TYPE, 0x1000))
+        rng_unchanged = {name: before == bytes(u.mem_read(rngs[name], 0x3F4))
+                         for name, before in rng_before.items()}
+        assert all(rng_unchanged.values())
+        assert text_before == bytes(u.mem_read(0x401000, 0x3E0000))
+        assert all(raw == bytes(u.mem_read(p, len(raw))) for p, raw in tables_before.items())
+        rows.append(dict(input=case, counter=m.read32(ACTOR + 0x538),
+                         speed_binary64_le=speed_bits, observed=observed,
+                         invariants=dict(rng_unchanged=rng_unchanged,
+                                         owner_except_counter_unchanged=True,
+                                         locomotor_and_type_unchanged=True,
+                                         native_text_and_vtables_unchanged=True,
+                                         stack_unchanged=True,
+                                         fpcw=fpcw_before)))
+    return rows
+
+
+def aircraft_draw_frames(art):
+    """Original signed body remainder, after admitted model selection only."""
+    m = Unit(dict(deploy_to_land=False), art['result'])
+    u = m.u
+    hva = EXTRA + 0x2C000
+    physical = next(row for row in art['physical_hva'] if row['name'] == 'spyp.hva')
+    u.mem_write(ACTOR, dwords(VTABLES['aircraft']))
+    u.mem_write(ACTOR + 0x6C4, dwords(TYPE))
+    u.mem_write(TYPE + 0xB4, dwords(hva))
+    # The native loaded HVA header's frame count is at+8, whereas the file
+    # header's is at+16. Physical values are copied; no HVA loader is claimed.
+    u.mem_write(hva, dwords(0, physical['sections'], physical['frames']))
+    rows = []
+    text_before = bytes(u.mem_read(0x4145B0, 0x10))
+    for counter in (0, 1, 2, 2147483647, -2147483648, -2147483647, -1):
+        u.mem_write(ACTOR + 0x538, dwords(counter))
+        for reg, value in ((UC_X86_REG_EBP, ACTOR), (UC_X86_REG_ESI, TYPE),
+                           (UC_X86_REG_ESP, SP)):
+            u.reg_write(reg, value)
+        before = bytes(u.mem_read(ACTOR, 0x700))
+        run_checked(u, 0x4145B0, 0x4145C0, count=20,
+                    required_addresses=(0x4145B0, 0x4145BD))
+        remainder = struct.unpack('<i', dwords(u.reg_read(UC_X86_REG_EDX)))[0]
+        assert u.reg_read(UC_X86_REG_ESP) == SP
+        assert before == bytes(u.mem_read(ACTOR, 0x700))
+        assert text_before == bytes(u.mem_read(0x4145B0, 0x10))
+        rows.append(dict(body_counter=counter, body_frame=remainder))
+    assert not m.events
+    return rows
+
+
 def tube_admission(art):
     m = Unit({}, art)
     positions = [(10, 10), (10, 9), (10, 8), (10, 7), (9, 10), (8, 10), (7, 10)]
@@ -454,23 +649,27 @@ def generate():
                 mission_timelines=mission_timelines(art['result']), jumpjet=jumpjet_landing(),
                 ownership=ownership_and_admission(art['result']), draw_frames=draw_frames(art),
                 body_cadence=body_cadence(art['result']), tube_admission=tube_admission(art['result']),
-                animation_constructor=animation_constructor())
+                animation_constructor=animation_constructor(),
+                foot_class_cadence=foot_class_cadence(art['result']),
+                aircraft_draw_frames=aircraft_draw_frames(art))
 
 
 def metadata():
     return provenance(
-        scope='Original simple-deployer update/undeploy and whole Unit Mission_Unload simple branch; shared Stage tick cadence; native retail SCHPDEPL ART prerequisites and reader controls; Jumpjet hold/descend selection',
+        scope='Original simple-deployer update/undeploy and whole Unit Mission_Unload simple branch; shared Stage and concrete Foot body cadence; retail SCHPDEPL ART prerequisites/readers and SCHP/SCHD/SPYP HVA identities; Aircraft signed body remainder; Jumpjet hold/descend selection',
         assumptions=[
             'Real Unit vtable and stopped Drive/map fixture inherited from refinery_dock. Unit and Techno constructors are not run by lifecycle rows; flags, stages and animation references are explicit inputs.',
             'Lifecycle AnimType rate/start/end inputs come from original AnimType427530/427D00 over unchanged physical ARTMD and SCHPDEPL.SHP, not Rust. Report remains -1 in an empty native sound registry; playback is not claimed.',
             'Timers and signed/wrapping thresholds execute original instructions. Timelines run Mission_Unload then shared Stage6FABC4 once per frame, matching native TechnoAI order; this is a component cadence with literal1 return, not complete world scheduler execution.',
             'DeployDir rows execute original constructor prefix and AudioVisual reader block. DeployingAnim history executes the original rules block and original AnimType factory. Cached INI objects are supplied; no physical INI loader/layer orchestration claim.',
-            'Jumpjet rows reuse jumpjet_states declared corridor and supplied callback boundaries. They execute original handlers, not a full deployment flight.'],
+            'Jumpjet rows reuse jumpjet_states declared corridor and supplied callback boundaries. They execute original handlers, not a full deployment flight.',
+            'foot_class_cadence reuses Unit/refinery storage with supplied actual Aircraft/Infantry/Unit vptrs and type homes; original concrete RTTI/getters execute. Fly4CC9A0 or Walk75AA90 constructs the locomotor. Finite Q16-exact retained current speed or Walk request/fraction/head is declared; actor constructors, Process and ordinary movement producers do not execute. Native text/vtables, all three seeded RNG states and all actor bytes except+538 must remain unchanged.',
+            'aircraft_draw_frames executes only4145B0..4145C0 with selected type/HVA header supplied. Its frame/section counts come from physical SPYP.HVA; model selection, loaded HVA matrices, shadows and raster output are not certified.'],
         substitutions=[
             'Anim allocation returns fixed mapped storage. AnimConstructor421EA0 and SetOwner424B50 are argument observers; no substitute animation AI is executed. GetRemapColour705D70 supplies a palette sentinel.',
             'NearbyLocation703590 records exact owner/anchor and supplies cell11,10; SetDestination741970 records the resulting original MapGetCell pointer and flag without locomotor work. Nearby search and post-undeploy flight are not certified.',
             'DrawVoxel selector/frame slice73B494..73B50E executes with supplied visibility/disguise callbacks. Body counts come from unchanged physical SCHP/SCHD HVA headers; disguise count3 and turret count4 are explicit arithmetic controls. No rasterization or HVA matrix loader claim.',
-            'Foot body-counter slice4DA886..4DAA01 begins after admitted Process/alive checks. Its IsMovingNow callback is supplied; Unit/type/warp/deployed/height readers execute. No separate voxel timing model is used.',
+            'Legacy body_cadence slice4DA886..4DAA01 begins after admitted Process/alive checks and supplies IsMovingNow. New foot_class_cadence rows execute actual Fly4CCAC0/Walk75AB40/Drive4AFC20 queries with declared retained inputs; no movement answer or counter delta is substituted. Unit/type/warp/deployed/height readers execute. No separate voxel timing model is used.',
             'Separate animation_constructor rows reuse anim_bouncer_launch.Machine and execute full original421EA0 with original-read SCHPDEPL bytes. Its declared Map/mark/display/Start sinks remain: animation Start/audio playback and later AnimAI are not executed.',
             'Inherited refinery fixture substitutes only Interlocked imports before these observer boundaries. QueueMission/Commence/FootUnload and the full simple-deployer receivers execute unchanged.'],
         entry_points={'deploy': DEPLOY, 'undeploy': UNDEPLOY, 'mission_unload': UNLOAD,
@@ -480,7 +679,10 @@ def metadata():
                       'jumpjet_hold': 0x54BD30, 'jumpjet_descend': 0x54C550,
                       'anim_pointer_expired': 0x710410, 'deploy_admission': 0x700D50,
                       'draw_voxel_selector': 0x73B494, 'foot_body_counter': 0x4DA886,
-                      'tube_neighborhood': 0x484AE0, 'body_rate_reader': 0x712222})
+                      'tube_neighborhood': 0x484AE0, 'body_rate_reader': 0x712222,
+                      'fly_constructor': 0x4CC9A0, 'fly_is_moving_now': 0x4CCAC0,
+                      'walk_constructor': 0x75AA90, 'walk_is_moving_now': 0x75AB40,
+                      'aircraft_body_remainder': 0x4145B0})
 
 
 if __name__ == '__main__':

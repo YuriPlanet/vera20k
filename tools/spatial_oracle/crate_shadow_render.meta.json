@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original ordinary CRATE Cell47F6A0 body0 and47F510 shadow1 on physical CRATE.TEM, including same-surface body then shadow; actual47FDE0 bounds/Tactical intersection with real rawFF versus supplied0, signed levels/clip/depth/repeat/erased identity. No full native map, Mark, RNG, pickup or scene claim.",
+  "assumptions": [
+    "Existing archive/lexical INI/PaletteReader/Overlay constructor/full reader/theater binding/Cell LightConvert/shape/raster/surface owners are reused, with no second VM, decoder or expected pixel math added. Physical expansion RULESMD, MPBattleMD and stock XMP03T4 layers execute for CRATE; fixed ARTMD supplies Theater=yes. Optional LANGRULE is physically absent. Original constructor Cratefalse and each native reader retained flag/image are recorded.",
+    "Cell52,120, level4, flags0, rawFF and liveCRATE179 match separately observed ordinary stock production; local projected point66,130, clip192x160/viewport0, A127, unity Cell brightness1000, backgroundFFFF and oldZFFFF are explicit component priors. Original scenario creation/Mark/pickup/RNG/timers/slot lifecycle are excluded. Mark5FD105 instruction-level evidence establishes rawFF; this component does not execute that producer.",
+    "Original47F510 Crate+2AA arm precedes rubble and forces selected data0 before signed image half+data; original47FDE0 independently forces0 before actual shape bounds. RawFF versus supplied0 must produce identical draw args, pixels/depth and outer Tactical admission. Original47F6A0 crate arm separately forces bodyframe0. No hybrid overlay flags are represented as stock.",
+    "Actual47FDE0 bounds, projection and Tactical intersection run with existing supplied sparse lookup/map admission and draw sinks. Erased identity uses original Tactical live overlay admission, never a direct -1 Cell caller. Original shadow stencil199 comes from admitted native output, not a host source-image decoder; composed visible changes are observed separately and need not equal199.",
+    "Signed0/6/-1 levels, left/all clipping, repeat and one-row near/equal/far oldZ are supplied controls; candidate/scanline come from original positive leaf arguments. Actual body0 then shadow1 execute on SAME color/Z/A and physical CellConvert without reset. No body/shadow math or composed-pixel rule is injected. No gameplay RNG draw, gameplay timer write or detach call occurs in this rendering component."
+  ],
+  "substitutions": [
+    "Existing allocator/TLS/archive-resource transport and supplied scene/Cell/A/Z/surface priors only. Original reached Cell body/shadow/draw-offset, shape/getters/selector/rowwalker/pixel leaves execute unchanged. Only the Tactical suffix uses its documented map admission/sparse lookup/draw recording transports; original rectangles/projection/intersection execute."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "cell_shadow": "0x0047F510",
+    "shadow_bounds": "0x0047FDE0",
+    "cell_draw_offset": "0x00480110",
+    "shape": "0x004AED70",
+    "overlay_constructor": "0x005FE250",
+    "overlay_reader": "0x005FE770",
+    "theater_binding": "0x005FE620",
+    "rle_selector": "0x00490E50",
+    "rowwalker": "0x00437A10",
+    "body_leaf": "0x004990E0",
+    "shadow_leaf": "0x00497390",
+    "tactical_sweeps_begin": "0x006D6E5B",
+    "tactical_sweeps_end": "0x006D71D3"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --crate",
+  "payload_sha256": "571924c763c02c01c813a99d7d60640bc41f19d6a84be68bd0d8e0f8eee1c8de"
+}

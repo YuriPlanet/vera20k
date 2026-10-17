@@ -7,19 +7,21 @@
     1,
     33621247
   ],
-  "scope": "Original simple-deployer update/undeploy and whole Unit Mission_Unload simple branch; shared Stage tick cadence; native retail SCHPDEPL ART prerequisites and reader controls; Jumpjet hold/descend selection",
+  "scope": "Original simple-deployer update/undeploy and whole Unit Mission_Unload simple branch; shared Stage and concrete Foot body cadence; retail SCHPDEPL ART prerequisites/readers and SCHP/SCHD/SPYP HVA identities; Aircraft signed body remainder; Jumpjet hold/descend selection",
   "assumptions": [
     "Real Unit vtable and stopped Drive/map fixture inherited from refinery_dock. Unit and Techno constructors are not run by lifecycle rows; flags, stages and animation references are explicit inputs.",
     "Lifecycle AnimType rate/start/end inputs come from original AnimType427530/427D00 over unchanged physical ARTMD and SCHPDEPL.SHP, not Rust. Report remains -1 in an empty native sound registry; playback is not claimed.",
     "Timers and signed/wrapping thresholds execute original instructions. Timelines run Mission_Unload then shared Stage6FABC4 once per frame, matching native TechnoAI order; this is a component cadence with literal1 return, not complete world scheduler execution.",
     "DeployDir rows execute original constructor prefix and AudioVisual reader block. DeployingAnim history executes the original rules block and original AnimType factory. Cached INI objects are supplied; no physical INI loader/layer orchestration claim.",
-    "Jumpjet rows reuse jumpjet_states declared corridor and supplied callback boundaries. They execute original handlers, not a full deployment flight."
+    "Jumpjet rows reuse jumpjet_states declared corridor and supplied callback boundaries. They execute original handlers, not a full deployment flight.",
+    "foot_class_cadence reuses Unit/refinery storage with supplied actual Aircraft/Infantry/Unit vptrs and type homes; original concrete RTTI/getters execute. Fly4CC9A0 or Walk75AA90 constructs the locomotor. Finite Q16-exact retained current speed or Walk request/fraction/head is declared; actor constructors, Process and ordinary movement producers do not execute. Native text/vtables, all three seeded RNG states and all actor bytes except+538 must remain unchanged.",
+    "aircraft_draw_frames executes only4145B0..4145C0 with selected type/HVA header supplied. Its frame/section counts come from physical SPYP.HVA; model selection, loaded HVA matrices, shadows and raster output are not certified."
   ],
   "substitutions": [
     "Anim allocation returns fixed mapped storage. AnimConstructor421EA0 and SetOwner424B50 are argument observers; no substitute animation AI is executed. GetRemapColour705D70 supplies a palette sentinel.",
     "NearbyLocation703590 records exact owner/anchor and supplies cell11,10; SetDestination741970 records the resulting original MapGetCell pointer and flag without locomotor work. Nearby search and post-undeploy flight are not certified.",
     "DrawVoxel selector/frame slice73B494..73B50E executes with supplied visibility/disguise callbacks. Body counts come from unchanged physical SCHP/SCHD HVA headers; disguise count3 and turret count4 are explicit arithmetic controls. No rasterization or HVA matrix loader claim.",
-    "Foot body-counter slice4DA886..4DAA01 begins after admitted Process/alive checks. Its IsMovingNow callback is supplied; Unit/type/warp/deployed/height readers execute. No separate voxel timing model is used.",
+    "Legacy body_cadence slice4DA886..4DAA01 begins after admitted Process/alive checks and supplies IsMovingNow. New foot_class_cadence rows execute actual Fly4CCAC0/Walk75AB40/Drive4AFC20 queries with declared retained inputs; no movement answer or counter delta is substituted. Unit/type/warp/deployed/height readers execute. No separate voxel timing model is used.",
     "Separate animation_constructor rows reuse anim_bouncer_launch.Machine and execute full original421EA0 with original-read SCHPDEPL bytes. Its declared Map/mark/display/Start sinks remain: animation Start/audio playback and later AnimAI are not executed.",
     "Inherited refinery fixture substitutes only Interlocked imports before these observer boundaries. QueueMission/Commence/FootUnload and the full simple-deployer receivers execute unchanged."
   ],
@@ -40,7 +42,13 @@
     "draw_voxel_selector": "0x0073B494",
     "foot_body_counter": "0x004DA886",
     "tube_neighborhood": "0x00484AE0",
-    "body_rate_reader": "0x00712222"
+    "body_rate_reader": "0x00712222",
+    "fly_constructor": "0x004CC9A0",
+    "fly_is_moving_now": "0x004CCAC0",
+    "walk_constructor": "0x0075AA90",
+    "walk_is_moving_now": "0x0075AB40",
+    "aircraft_body_remainder": "0x004145B0"
   },
-  "payload_sha256": "28cc0297bc12be6e816334fecb1277fcb3650efa625f22f668757945817bb338"
+  "replay_command": "python -m tools.spatial_oracle.unit_simple_deploy",
+  "payload_sha256": "cad66bb95270215f30996b915a3410903e95d1ef769371e1c0770fdbd1ed0efc"
 }

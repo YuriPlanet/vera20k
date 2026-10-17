@@ -618,7 +618,10 @@ enum BodyDraw {
 /// that signed remainder is zero, a Unit's turret takes Techno+148 modulo its
 /// own HVA count; an aircraft draws its main voxel alone. Negative remainders
 /// retain their bits in the atlas key; invalid frame indices have no sprite.
-/// Native vectors: tools/spatial_oracle/unit_simple_deploy.json draw_frames.
+/// Native vectors: tools/spatial_oracle/unit_simple_deploy.json draw_frames
+/// and aircraft_draw_frames. Aircraft also includes this remainder in its
+/// shadow cache key (414728); its shadow uses HVA frame0 and ShadowIndex
+/// separately. Aircraft shadow rendering remains open in issue1102.
 fn unit_animation_frames(
     entity: &crate::sim::game_entity::GameEntity,
     model: &str,

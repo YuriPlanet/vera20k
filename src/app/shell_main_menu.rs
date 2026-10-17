@@ -343,6 +343,9 @@ impl App {
     /// while its simulation is still alive, hand the scenario stream back to the
     /// offline shell, retaining the runtime and presentation resources.
     pub(super) fn leave_mission_result_screen(state: &mut AppState) {
+        // A won campaign mission continues in GameExit::Victory instead of
+        // returning to the shell; read it before the teardown below.
+        let campaign_victory = Self::take_campaign_victory(state);
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
@@ -358,7 +361,10 @@ impl App {
         state.frontend.screen = GameScreen::MainMenu;
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
-        Self::resume_shell_after_match(state);
+        match campaign_victory {
+            Some(victory) => Self::advance_campaign_victory(state, victory),
+            None => Self::resume_shell_after_match(state),
+        }
     }
 
     /// Where the shell resumes after a match: a Skirmish game re-enters a new

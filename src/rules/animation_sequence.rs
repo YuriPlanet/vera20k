@@ -212,17 +212,18 @@ pub struct SequenceSet {
     /// per-entity animation state; the persistent native state is the Foot
     /// body-frame counter on `GameEntity`.
     #[serde(default)]
-    shp_vehicle_cadence: Option<ShpVehicleCadence>,
+    shp_vehicle_cadence: Option<FootBodyCadence>,
 }
 
-/// Rules-owned divisors consumed by the SHP Unit body-counter path.
+/// Rules-owned divisors consumed by the shared Foot body counter.
+/// SHP Unit sequence configuration also retains these same divisors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct ShpVehicleCadence {
+pub struct FootBodyCadence {
     pub walk_rate: i32,
     pub idle_rate: i32,
 }
 
-impl ShpVehicleCadence {
+impl FootBodyCadence {
     pub const fn native_defaults() -> Self {
         Self {
             walk_rate: 1,
@@ -231,7 +232,7 @@ impl ShpVehicleCadence {
     }
 }
 
-impl Default for ShpVehicleCadence {
+impl Default for FootBodyCadence {
     fn default() -> Self {
         Self::native_defaults()
     }
@@ -276,11 +277,11 @@ impl SequenceSet {
 
     /// Mark this as a UnitClass SHP frame layout and attach its rules-owned
     /// cadence. The frame blocks themselves remain art-owned `SequenceDef`s.
-    pub fn set_shp_vehicle_cadence(&mut self, cadence: ShpVehicleCadence) {
+    pub fn set_shp_vehicle_cadence(&mut self, cadence: FootBodyCadence) {
         self.shp_vehicle_cadence = Some(cadence);
     }
 
-    pub fn shp_vehicle_cadence(&self) -> Option<ShpVehicleCadence> {
+    pub fn shp_vehicle_cadence(&self) -> Option<FootBodyCadence> {
         self.shp_vehicle_cadence
     }
 
@@ -356,7 +357,7 @@ pub(crate) fn build_animation_sequence_catalog(
         {
             continue;
         }
-        let cadence = ShpVehicleCadence {
+        let cadence = FootBodyCadence {
             walk_rate: object.walk_rate,
             idle_rate: object.idle_rate,
         };

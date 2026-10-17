@@ -271,7 +271,7 @@ impl App {
     /// media2. The portable installed-archive owner supplies their map bytes.
     /// Native Windows drive prompt/remount limits are recorded beside the
     /// original comparison in tools/input_oracle/campaign_start.md.
-    fn start_campaign_scenario(
+    pub(super) fn start_campaign_scenario(
         state: &mut AppState,
         request: crate::app::loading::pump::LoadingRequest,
     ) {

@@ -1,4 +1,4 @@
-//! Bridge instance emission — body, shadow, deck-variant overrides.
+//! Cell overlay shadow sweep and high-bridge body instances.
 //!
 //! Reads live CellClass bridge fields and ordinary overlay-grid state, emitting sprite
 //! instances for the bridge body and body shadow passes per the
@@ -10,6 +10,7 @@
 //! - Part of the app layer — may depend on everything.
 //! - Read-only access to sim state via `AppState`.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::app::AppState;
@@ -55,10 +56,19 @@ fn compute_bridge_body_shp_frame(state: u8, rx: u16, ry: u16) -> u8 {
     }
 }
 
-fn bridge_anchor_y_offset(state_byte: u8) -> f32 {
-    match state_byte {
-        9..=17 => BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17,
-        _ => BRIDGE_BODY_Y_OFFSET_STATE_0_TO_8,
+/// State-dependent Y term in CellClass::Get_Draw_Offset480110.
+/// Projection owns signed level/camera; the atlas owns OverlayType Y bias.
+/// The unraised EF identity has its own -15 term, independently of IsRubble.
+pub(super) fn cell_overlay_y_offset(overlay: u8, flags: u32, state: u8) -> f32 {
+    if flags & crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF != 0 {
+        match state {
+            9..=17 => BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17,
+            _ => BRIDGE_BODY_Y_OFFSET_STATE_0_TO_8,
+        }
+    } else if overlay == crate::sim::overlay_grid::RUBBLE_OVERLAY_INDEX {
+        -15.0 // original480144..48014D
+    } else {
+        0.0
     }
 }
 
@@ -111,7 +121,11 @@ pub fn build_bridge_body_instances_inner(
         }
 
         let frame = compute_bridge_body_shp_frame(cell.bridge_facts.state_byte, rx, ry);
-        let y_offset = bridge_anchor_y_offset(cell.bridge_facts.state_byte);
+        let y_offset = cell_overlay_y_offset(
+            overlay,
+            cell.bridge_facts.raw_flags,
+            cell.bridge_facts.state_byte,
+        );
         let z = cell.level;
         let (sx, sy) = terrain::iso_to_screen(rx, ry, z);
         let sy = sy + y_offset;
@@ -119,7 +133,7 @@ pub fn build_bridge_body_instances_inner(
             continue;
         }
 
-        let Some(spr) = atlas.body_entry(name, frame) else {
+        let Some(spr) = atlas.body_entry(name, u16::from(frame)) else {
             log::warn!("bridge body atlas miss: name={name} frame={frame} cell=({rx},{ry})");
             continue;
         };
@@ -215,6 +229,10 @@ pub(crate) fn build_bridge_shadow_instances_inner(
     overlay_entries: &[crate::map::overlay::OverlayEntry],
     live_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    rubble_types: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
     origin_y: f32,
     world_height: f32,
     cam_x: f32,
@@ -230,8 +248,11 @@ pub(crate) fn build_bridge_shadow_instances_inner(
             let name = overlay_names.get(&overlay)?;
             is_high_bridge_body_identity(overlay, name).then_some((
                 cell,
-                name,
+                overlay,
+                Cow::Borrowed(name.as_str()),
+                u16::from(cell.bridge_facts.state_byte),
                 cell.bridge_facts.state_byte,
+                None,
             ))
         })
         .collect();
@@ -246,64 +267,99 @@ pub(crate) fn build_bridge_shadow_instances_inner(
         else {
             continue;
         };
-        if !registry
-            .and_then(|registry| registry.flags(overlay))
-            .is_some_and(|flags| flags.wall)
-        {
+        let Some(flags) = registry.and_then(|registry| registry.flags(overlay)) else {
             continue;
-        }
+        };
         let Some(name) = overlay_names.get(&overlay) else {
             continue;
         };
-        // High identities are already emitted above with their retained bridge
-        // geometry, even when layered rules give the same type a Wall flag.
+        // High identities are already represented by their retained geometry.
         if is_high_bridge_body_identity(overlay, name) {
             continue;
         }
         let Some(cell) = terrain.cell(entry.rx, entry.ry) else {
             continue;
         };
-        cells.push((cell, name, frame));
+        // Native47F5DA tests Crate before IsRubble. A crate uses its own
+        // image, independently of any recorded BuildingType.
+        if flags.is_rubble && !flags.crate_type {
+            let Some(type_id) = live_cell.and_then(|cell| cell.rubble_building_type) else {
+                continue;
+            };
+            let Some((rules, interner)) = rubble_types else {
+                continue;
+            };
+            let Some(art) = rules.building_rubble_art(interner.resolve(type_id)) else {
+                continue;
+            };
+            // Tactical6D70CF -> Cell47FDE0 uses the overlay image's own
+            // shadow rectangle BEFORE Cell47F65C selects building art.
+            // Out-of-range retained data or a missing proxy must stay silent.
+            let Some(proxy) = atlas.shadow_entry(name, u16::from(frame)) else {
+                continue;
+            };
+            cells.push((
+                cell,
+                overlay,
+                Cow::Owned(crate::render::overlay_atlas::rubble_image_name(&art.shp)),
+                art.shadow_frame,
+                frame,
+                Some(proxy),
+            ));
+        } else if flags.wall || flags.crate_type {
+            cells.push((
+                cell,
+                overlay,
+                Cow::Borrowed(name.as_str()),
+                // BOTH drawing47F5E2 and outer bounds47FE3F force0 for
+                // Crate, despite live Mark dataFF; this same selected entry
+                // supplies the crop for viewport admission and drawing.
+                u16::from(if flags.crate_type { 0 } else { frame }),
+                frame,
+                None,
+            ));
+        }
     }
     // The native shadow sweep descends diagonals, advancing X within each.
     // Neither elevation, atlas frame nor the compatibility depth scalar owns
     // the order in which an overlap reads the previous color and Z stores.
-    cells.sort_unstable_by_key(|(cell, _, _)| {
+    cells.sort_unstable_by_key(|(cell, _, _, _, _, _)| {
         (
             std::cmp::Reverse(u32::from(cell.rx) + u32::from(cell.ry)),
             cell.rx,
         )
     });
-    for (cell, name, frame) in cells {
+    for (cell, overlay, name, frame, raw_state, proxy) in cells {
         let (rx, ry) = (cell.rx, cell.ry);
-        let Some(spr) = atlas.shadow_entry(name, frame) else {
+        let Some(spr) = atlas.shadow_entry(&name, frame) else {
             continue;
         };
         let (mut sx, mut sy) = terrain::iso_to_screen(rx, ry, cell.level);
+        sy += cell_overlay_y_offset(overlay, cell.bridge_facts.raw_flags, raw_state);
         if cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF != 0 {
-            sy += bridge_anchor_y_offset(frame);
-            if (9..=17).contains(&frame) {
+            if (9..=17).contains(&raw_state) {
                 sx += BRIDGE_SHADOW_EW_DX as f32;
                 sy += BRIDGE_SHADOW_EW_DY as f32;
             }
+        }
+        // Tactical6D70D0 -> 47FDE0 -> 421B60 requires positive intersection.
+        // A crate uses the same forced-data0 crop for this gate and drawing;
+        // rubble additionally has an independent overlay-image proxy.
+        let intersects_view = |entry: &crate::render::overlay_atlas::OverlaySpriteEntry| {
+            let x = sx + TILE_WIDTH / 2.0 + entry.offset_x;
+            let y = sy + TILE_HEIGHT / 2.0 + entry.offset_y;
+            x + entry.pixel_size[0] > cam_x
+                && x < cam_x + sw
+                && y + entry.pixel_size[1] > cam_y
+                && y < cam_y + sh
+        };
+        if proxy.is_some_and(|proxy| !intersects_view(proxy)) || !intersects_view(spr) {
+            continue;
         }
         let position = [
             sx + TILE_WIDTH / 2.0 + spr.offset_x,
             sy + TILE_HEIGHT / 2.0 + spr.offset_y,
         ];
-        if !in_view(
-            position[0],
-            position[1],
-            spr.pixel_size[0],
-            spr.pixel_size[1],
-            cam_x,
-            cam_y,
-            sw,
-            sh,
-            0.0,
-        ) {
-            continue;
-        }
         let z_adjust = crate::render::native_z::ground_anchored_z_adjust(
             i32::from(cell.level as i8),
             crate::render::native_z::SHP_DRAW_Z_ADJUST_PX,
@@ -321,12 +377,7 @@ pub(crate) fn build_bridge_shadow_instances_inner(
     }
 }
 
-pub(crate) fn build_bridge_shadow_instances(
-    state: &AppState,
-    sw: f32,
-    sh: f32,
-    out: &mut Vec<SpriteInstance>,
-) {
+pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<SpriteInstance>) {
     let Some(sim) = state
         .match_state
         .sim_runtime
@@ -352,6 +403,8 @@ pub(crate) fn build_bridge_shadow_instances(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     );
+    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+    let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
     build_bridge_shadow_instances_inner(
         terrain,
         atlas,
@@ -359,12 +412,13 @@ pub(crate) fn build_bridge_shadow_instances(
         state.match_state.match_presentation.overlays.as_slice(),
         sim.overlay_grid.as_ref(),
         state.overlay_registry(),
+        state.rules().map(|rules| (rules, &sim.interner)),
         origin_y,
         world_height,
         cam_x,
         cam_y,
-        sw,
-        sh,
+        width as f32 / zoom,
+        height as f32 / zoom,
         out,
     );
 }
@@ -374,16 +428,141 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rubble_origin_emits_its_building_shadow_in_the_cell_sweep() {
+        use crate::map::overlay::OverlayEntry;
+        use crate::render::overlay_atlas::OverlaySpriteEntry;
+        use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry};
+
+        struct Atlas {
+            proxy: OverlaySpriteEntry,
+            building: OverlaySpriteEntry,
+        }
+        impl BridgeAtlasLookup for Atlas {
+            fn body_entry(&self, _: &str, _: u16) -> Option<&OverlaySpriteEntry> {
+                None
+            }
+            fn shadow_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
+                match (name, frame) {
+                    ("RUBBLE", 0) => Some(&self.proxy),
+                    ("__rubble::CTHSE05.SHP", 7) => Some(&self.building),
+                    _ => None,
+                }
+            }
+        }
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=RUBBLE\n[RUBBLE]\nIsRubble=yes\n"),
+            None,
+        );
+        let terrain = crate::map::resolved_terrain::test_grid(
+            8,
+            8,
+            crate::map::resolved_terrain::test_flat_cell,
+        );
+        let mut interner = crate::sim::intern::StringInterner::new();
+        let building = interner.intern("CAHSE05");
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=CAHSE05\n",
+        ))
+        .unwrap();
+        rules.set_building_rubble_art_for_test(
+            "CAHSE05",
+            crate::rules::building_rubble::RubbleArt {
+                shp: "CTHSE05.SHP".into(),
+                body_frame: 3,
+                shadow_frame: 7,
+            },
+        );
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
+        let entries: Vec<_> = [(4, 4), (4, 5)]
+            .into_iter()
+            .map(|(rx, ry)| {
+                grid.cell_mut(rx, ry).overlay_id = Some(0);
+                OverlayEntry {
+                    rx,
+                    ry,
+                    overlay_id: 0,
+                    frame: 0,
+                }
+            })
+            .collect();
+        grid.cell_mut(4, 4).rubble_building_type = Some(building);
+        let atlas = Atlas {
+            proxy: OverlaySpriteEntry {
+                uv_origin: [0.0; 2],
+                uv_size: [1.0; 2],
+                pixel_size: [29.0, 15.0],
+                offset_x: -4.0,
+                offset_y: -7.0,
+            },
+            building: OverlaySpriteEntry {
+                uv_origin: [0.0; 2],
+                uv_size: [1.0; 2],
+                pixel_size: [74.0, 37.0],
+                offset_x: -50.0,
+                offset_y: 1.0,
+            },
+        };
+        let emit = |grid: &crate::sim::overlay_grid::OverlayGrid, viewport: [f32; 4]| {
+            let mut out = Vec::new();
+            build_bridge_shadow_instances_inner(
+                &terrain,
+                &atlas,
+                &BTreeMap::from([(0, "RUBBLE".into())]),
+                &entries,
+                Some(&grid),
+                Some(&registry),
+                Some((&rules, &interner)),
+                0.0,
+                5000.0,
+                viewport[0],
+                viewport[1],
+                viewport[2],
+                viewport[3],
+                &mut out,
+            );
+            out
+        };
+        let viewport = [-1000.0, -1000.0, 4000.0, 4000.0];
+        let out = emit(&grid, viewport);
+        // Original 47F641..47F696 admits IsRubble only at Cell+40's
+        // recorded building type; the other foundation cell has no draw.
+        assert_eq!(
+            out.len(),
+            1,
+            "the destroyed building's origin owns its shadow"
+        );
+        grid.cell_mut(4, 4).rubble_building_type = None;
+        assert!(emit(&grid, viewport).is_empty(), "cleared origin type");
+        grid.cell_mut(4, 4).rubble_building_type = Some(building);
+        grid.cell_mut(4, 4).overlay_id = None;
+        assert!(emit(&grid, viewport).is_empty(), "erased live overlay");
+        grid.cell_mut(4, 4).overlay_id = Some(0);
+        grid.cell_mut(4, 4).overlay_data = 255;
+        assert!(
+            emit(&grid, viewport).is_empty(),
+            "retained data misses the proxy frame"
+        );
+        grid.cell_mut(4, 4).overlay_data = 0;
+        let cell = terrain.cell(4, 4).unwrap();
+        let point = crate::map::terrain::iso_to_screen(4, 4, cell.level);
+        let outside_proxy = [point.0 + 30.0 - 45.0, point.1 + 15.0 - 10.0, 10.0, 100.0];
+        assert!(
+            emit(&grid, outside_proxy).is_empty(),
+            "building stencil overlap cannot bypass native rock-proxy admission"
+        );
+    }
+
+    #[test]
     fn live_walls_and_high_bridges_share_native_shadow_sweep_order() {
         use crate::map::overlay::OverlayEntry;
         use crate::render::overlay_atlas::OverlaySpriteEntry;
         use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry};
-        struct Atlas(std::cell::RefCell<Vec<(String, u8)>>);
+        struct Atlas(std::cell::RefCell<Vec<(String, u16)>>);
         impl BridgeAtlasLookup for Atlas {
-            fn body_entry(&self, _: &str, _: u8) -> Option<&OverlaySpriteEntry> {
+            fn body_entry(&self, _: &str, _: u16) -> Option<&OverlaySpriteEntry> {
                 None
             }
-            fn shadow_entry(&self, name: &str, frame: u8) -> Option<&OverlaySpriteEntry> {
+            fn shadow_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
                 self.0.borrow_mut().push((name.into(), frame));
                 None
             }
@@ -430,6 +609,7 @@ mod tests {
             &entries,
             Some(&grid),
             Some(&registry),
+            None,
             0.0,
             5000.0,
             -1000.0,
@@ -456,14 +636,14 @@ mod tests {
         use crate::render::overlay_atlas::OverlaySpriteEntry;
         struct Atlas {
             entry: OverlaySpriteEntry,
-            frames: std::cell::RefCell<Vec<u8>>,
+            frames: std::cell::RefCell<Vec<u16>>,
         }
         impl BridgeAtlasLookup for Atlas {
-            fn body_entry(&self, _: &str, frame: u8) -> Option<&OverlaySpriteEntry> {
+            fn body_entry(&self, _: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
                 self.frames.borrow_mut().push(frame);
                 Some(&self.entry)
             }
-            fn shadow_entry(&self, _: &str, _: u8) -> Option<&OverlaySpriteEntry> {
+            fn shadow_entry(&self, _: &str, _: u16) -> Option<&OverlaySpriteEntry> {
                 None
             }
         }
@@ -514,7 +694,7 @@ mod tests {
             let draw = &row["draws"][0];
             assert_eq!(
                 *atlas.frames.borrow(),
-                vec![draw["frame"].as_u64().unwrap() as u8],
+                vec![draw["frame"].as_u64().unwrap() as u16],
                 "{}",
                 row["name"]
             );
@@ -554,18 +734,18 @@ mod tests {
 
         struct MockAtlas {
             entry: OverlaySpriteEntry,
-            body_queries: std::cell::RefCell<Vec<(String, u8)>>,
-            shadow_queries: std::cell::RefCell<Vec<(String, u8)>>,
+            body_queries: std::cell::RefCell<Vec<(String, u16)>>,
+            shadow_queries: std::cell::RefCell<Vec<(String, u16)>>,
         }
         impl BridgeAtlasLookup for MockAtlas {
-            fn body_entry(&self, name: &str, frame: u8) -> Option<&OverlaySpriteEntry> {
+            fn body_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
                 self.body_queries
                     .borrow_mut()
                     .push((name.to_string(), frame));
                 (name == "HIGHANCHOR" && frame == 1).then_some(&self.entry)
             }
 
-            fn shadow_entry(&self, name: &str, frame: u8) -> Option<&OverlaySpriteEntry> {
+            fn shadow_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
                 self.shadow_queries
                     .borrow_mut()
                     .push((name.to_string(), frame));
@@ -611,6 +791,7 @@ mod tests {
             &atlas,
             &overlay_names,
             &[],
+            None,
             None,
             None,
             0.0,

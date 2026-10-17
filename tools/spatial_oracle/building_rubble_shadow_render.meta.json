@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original Cell47F6A0/BuildingType45F160 body frame3 followed by Cell47F510/BuildingType45F1D0 shadow frame7 on the same surface, sharing Cell480110 on physical CAHSE05/CTHSE05; actual SROCK01.TEM outer Cell shadow bounds/Tactical intersection; original RGB565/Z raster and supplied level/clip/depth/admission/clear controls. No native building death, whole map load, GPU or scene claim.",
+  "assumptions": [
+    "Existing physical archive, lexical INI, PaletteReader, full native constructors/readers, Cell Convert, SHP metadata/selector/rowwalker/leaves and RGB565/Z surface owners are reused. No host image decoder or expected raster arithmetic. Physical RULESMD, MPBattleMD and XMP03T4 CAHSE05 and RUBBLE_OVERLAY layers execute; selected optional LANGRULE is physically absent; ART is fixed.",
+    "Original BuildingType constructor and full reader run in the existing raster VM with native foundation/Rules/registry prerequisites used by placement_render.prepare. Actual own-image getter and physical CTHSE05 bytes must match. Cell overlay/type pointer/data0, signed level5, ground projected point, clip, prior color/Z and A127 are supplied component inputs. Level0/6/-1 and admission fields are explicit contrasts. Fatal damage/rubble publication/map initialization remain separate evidence.",
+    "Actual RUBBLE_OVERLAY binds Image=SROCK01, ART Theater=yes and physical SROCK01.TEM. Its two-frame image and frame1 nonempty crop supply the ORIGINAL47FDE0 outer shadow bounds. Original Tactical suffix executes these actual bounds, projection and rectangle intersection; map-bound admission/sparse lookup/draw sinks retain existing traversal substitutions. A supplied data255 control asks out-of-range frame256, produces empty bounds and no shadow call. Production data0 must be separately observed, never inferred from these priors.",
+    "Original47F510 calls45F1D0: LeaveRubble, nonnull Cell type, own-image count half greater than3 select half+3. CustomRubble writes outputs but returns false. Selected admission field mutations are supplied contrasts, not alternate retail reader results. Erased overlay uses native Tactical admission, never a -1 direct caller.",
+    "Additional same-surface composition executes original47F6A0/45F160 body frame3 on fresh color/Z/A, then original47F510/45F1D0 shadow frame7 without resetting the framebuffer or changing the physical ISO Cell Convert. Actual body and shadow draw points must agree; both include original480110 literal-overlayEF minus15Y admission. Actual body/combined color and depth outputs are retained. There is no host image decoder, body math or composed-pixel rule.",
+    "Positive stencil runs come from native output at oldZ65535. Near/equal/far candidate and one-scanline clip come from an original positive leaf. Original calls and shape args/crop, signed comparison, destination darkening, depth stores, repeat and clipping run unchanged. No RNG draw, gameplay timer write or detach call belongs to this selected rendering component."
+  ],
+  "substitutions": [
+    "Existing allocator/TLS/archive-resource services and supplied scene/Cell/A/Z/surface priors. No reached Cell, BuildingType rubble getter, shape/selector/rowwalker or shadow leaf is substituted. Tactical suffix uses supplied map admission/sparse Cell lookup and actual draw sinks, while native bounds/projection/intersection execute."
+  ],
+  "entry_points": {
+    "cell_shadow": "0x0047F510",
+    "rubble_shadow": "0x0045F1D0",
+    "shadow_bounds": "0x0047FDE0",
+    "cell_draw_offset": "0x00480110",
+    "shape": "0x004AED70",
+    "building_constructor": "0x0045DD90",
+    "building_reader": "0x0045FE50",
+    "cell_body": "0x0047F6A0",
+    "rubble_body": "0x0045F160",
+    "rle_selector": "0x00490E50",
+    "rowwalker": "0x00437A10",
+    "plain_shadow_leaf": "0x00493830",
+    "rle_shadow_leaf": "0x00497390",
+    "tactical_sweeps_begin": "0x006D6E5B",
+    "tactical_sweeps_end": "0x006D71D3"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --rubble",
+  "payload_sha256": "20cc8a274977643f227d29dcae3490889823e1e608dad596a1a64a4abb3e3a74"
+}

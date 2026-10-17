@@ -172,6 +172,7 @@ impl Probe {
                     registry,
                     &rules_ini,
                     rules.art(),
+                    &[],
                 )
                 .expect("production Cell shadow atlas");
                 let renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
@@ -328,6 +329,7 @@ impl Probe {
                     entries,
                     scene.sim().overlay_grid.as_ref(),
                     Some(&scene.runtime.resources.overlay_registry),
+                    None,
                     camera.world_origin_y,
                     camera.world_height,
                     camera.camera_pos[0],

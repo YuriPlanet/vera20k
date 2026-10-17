@@ -2,6 +2,133 @@
 
 use super::*;
 
+/// Rules ctor667371/66737B/667385 initializes +14F8/+14FC/+1500, then
+/// ReadGeneral uses the retained integers as ReadInt5276D0 defaults. These
+/// are instruction-derived reader expectations, not native timing goldens.
+#[test]
+fn survivor_divisors_follow_native_defaults_and_retained_rules_passes() {
+    use crate::rules::ruleset::{GeneralRules, RuleSet};
+
+    let values = |rules: &GeneralRules| {
+        [
+            rules.allied_survivor_divisor,
+            rules.soviet_survivor_divisor,
+            rules.third_survivor_divisor,
+        ]
+    };
+    let published = |processed: &ProcessedRulesLayers| {
+        values(&RuleSet::from_processed_rules(processed).unwrap().general)
+    };
+    assert_eq!(values(&GeneralRules::default()), [200, 100, 300]);
+    let mut layers = RulesLayerStack::new(IniFile::empty());
+    assert_eq!(published(&layers.process().unwrap()), [200, 100, 300]);
+    let irrelevant = RulesLayerStack::new(IniFile::from_str("[General]\nName=Defaults\n"));
+    assert_eq!(published(&irrelevant.process().unwrap()), [200, 100, 300]);
+    for (kind, text, expected) in [
+        (
+            RulesLayerKind::LangRule,
+            "[General]\nAlliedSurvivorDivisor=500\nSovietSurvivorDivisor=250\nThirdSurvivorDivisor=750\n",
+            [500, 250, 750],
+        ),
+        (
+            RulesLayerKind::GameMode,
+            "[General]\nSovietSurvivorDivisor=-17\n",
+            [500, -17, 750],
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nAlliedSurvivorDivisor=\nSovietSurvivorDivisor=$nothex\nThirdSurvivorDivisor=invalid\n",
+            [500, -17, 0],
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nAlliedsurvivorDivisor=99\nSovietSurvivorDivisor=12tail\n",
+            [500, 12, 0],
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nAlliedSurvivorDivisor=0\nSovietSurvivorDivisor=noth\n",
+            [0, 12, 0],
+        ),
+    ] {
+        layers.push(kind, IniFile::from_str(text));
+        assert_eq!(published(&layers.process().unwrap()), expected, "{text}");
+    }
+
+    let processed = layers.process().unwrap();
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let mut retained: NativeRulesRegistryState =
+        bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+    for reset in [false, true] {
+        if reset {
+            retained = retained.destructive_reset();
+        }
+        let next = RulesLayerStack::new(IniFile::from_str("[General]\nName=Next scene\n"))
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+            .unwrap();
+        assert_eq!(published(&next), [0, 12, 0]);
+        let (_, trace) = next.into_ini_and_native_type_construction_trace();
+        retained = trace.into_registry_state_discarding_events();
+    }
+}
+
+#[test]
+fn survivor_divisor_histories_change_simulation_config_hash_independently() {
+    use crate::rules::ruleset::RuleSet;
+
+    let continued = |divisors: [i32; 3]| {
+        let initial = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[General]\nPrismSupportModifier=0\nAlliedSurvivorDivisor={}\n\
+             SovietSurvivorDivisor={}\nThirdSurvivorDivisor={}\n",
+            divisors[0], divisors[1], divisors[2]
+        )))
+        .process()
+        .unwrap();
+        let (_, trace) = initial.into_ini_and_native_type_construction_trace();
+        let next = RulesLayerStack::new(IniFile::from_str(
+            "[General]\nPrismSupportModifier=0\nName=Next scene\n",
+        ))
+        .process_with_fixed_art_and_registry_state(
+            &IniFile::empty(),
+            trace.into_registry_state_discarding_events(),
+        )
+        .unwrap();
+        RuleSet::from_processed_rules(&next).unwrap()
+    };
+    let baseline = continued([200, 100, 300]);
+    let mut omitted = Vec::new();
+    for (index, key) in [
+        "AlliedSurvivorDivisor",
+        "SovietSurvivorDivisor",
+        "ThirdSurvivorDivisor",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut divisors = [200, 100, 300];
+        divisors[index] += 1;
+        let changed = continued(divisors);
+        assert_eq!(baseline.source_ini_hash(), changed.source_ini_hash());
+        assert_eq!(
+            baseline.general.prism_support,
+            changed.general.prism_support
+        );
+        assert_eq!(
+            [
+                changed.general.allied_survivor_divisor,
+                changed.general.soviet_survivor_divisor,
+                changed.general.third_survivor_divisor,
+            ],
+            divisors
+        );
+        if baseline.simulation_config_hash() == changed.simulation_config_hash() {
+            omitted.push(key);
+        }
+    }
+    assert!(omitted.is_empty(), "effective hash omits {omitted:?}");
+}
+
 /// Instruction-derived reader regression: Building460F87 keeps the current
 /// triple on missing/blank keys; only a reached Building body can read it.
 #[test]

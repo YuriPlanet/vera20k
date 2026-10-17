@@ -112,6 +112,9 @@ pub(crate) use self::wall_placement::stamp_wall_with_autofill;
 mod tests;
 
 #[cfg(test)]
+mod industrial_plant_retail_tests;
+
+#[cfg(test)]
 #[path = "production_queue_tests.rs"]
 mod queue_tests;
 

@@ -1474,13 +1474,14 @@ pub struct GeneralRules {
 
     // -- Survivor spawning on sell/destroy --
     /// Divisor to compute survivor count for Allied buildings (AlliedSurvivorDivisor= in [General]).
-    /// Survivor count = sell_refund / divisor (rounded down, min 0). Default 500.
+    /// RulesClass667371 default200; HowManySurvivors451330 clamps the
+    /// signed refund/divisor quotient to1..5 (zero divisor suppresses crew).
     pub allied_survivor_divisor: i32,
     /// Divisor to compute survivor count for Soviet buildings (SovietSurvivorDivisor= in [General]).
-    /// Default 250.
+    /// RulesClass66737B default100; stock RULESMD explicitly supplies250.
     pub soviet_survivor_divisor: i32,
     /// Divisor to compute survivor count for Third-side (Yuri) buildings (ThirdSurvivorDivisor= in [General]).
-    /// YR addition. Default 750.
+    /// RulesClass667385 default300; stock RULESMD explicitly supplies750.
     pub third_survivor_divisor: i32,
     /// `AlliedCrew=`/`SovietCrew=`/`ThirdCrew=` (Rules `+0xF78/+0xF7C/+0xF80`),
     /// `Technician=` (`+0xF6C`) and `Engineer=` (`+0xF70`): the InfantryTypes
@@ -2111,6 +2112,10 @@ impl PrismSupportRules {
     }
 }
 
+/// RulesClass665650, stores667371/66737B/667385 at+14F8/+14FC/+1500.
+/// Original gamemd SHA1cdd1180; ReadGeneral670C13..670C6C keeps prior values.
+pub(crate) const DEFAULT_SURVIVOR_DIVISORS: [i32; 3] = [200, 100, 300];
+
 impl Default for GeneralRules {
     fn default() -> Self {
         Self {
@@ -2390,9 +2395,9 @@ impl Default for GeneralRules {
             chrono_range_minimum: 0,
             purifier_bonus_ppm: 250_000,
             ai_virtual_purifiers: [4, 2, 0],
-            allied_survivor_divisor: 500,
-            soviet_survivor_divisor: 250,
-            third_survivor_divisor: 750,
+            allied_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[0],
+            soviet_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[1],
+            third_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[2],
             allied_crew: None,
             soviet_crew: None,
             third_crew: None,
@@ -3563,9 +3568,12 @@ impl GeneralRules {
                 .read_int_list("AIVirtualPurifiers")
                 .and_then(|values| values.get(..3)?.try_into().ok())
                 .unwrap_or([4, 2, 0]),
-            allied_survivor_divisor: general.read_int("AlliedSurvivorDivisor", 500),
-            soviet_survivor_divisor: general.read_int("SovietSurvivorDivisor", 250),
-            third_survivor_divisor: general.read_int("ThirdSurvivorDivisor", 750),
+            allied_survivor_divisor: general
+                .read_int("AlliedSurvivorDivisor", defaults.allied_survivor_divisor),
+            soviet_survivor_divisor: general
+                .read_int("SovietSurvivorDivisor", defaults.soviet_survivor_divisor),
+            third_survivor_divisor: general
+                .read_int("ThirdSurvivorDivisor", defaults.third_survivor_divisor),
             allied_crew: general.read_name("AlliedCrew", 0x80).map(str::to_owned),
             soviet_crew: general.read_name("SovietCrew", 0x80).map(str::to_owned),
             third_crew: general.read_name("ThirdCrew", 0x80).map(str::to_owned),
@@ -4098,6 +4106,11 @@ impl RuleSet {
             rules.general.parachute_max_fall_rate,
             rules.general.no_parachute_max_fall_rate,
         ) = processed.fall_rate_controls();
+        [
+            rules.general.allied_survivor_divisor,
+            rules.general.soviet_survivor_divisor,
+            rules.general.third_survivor_divisor,
+        ] = processed.survivor_divisors();
         let mut weapon_name_counts = HashMap::<String, usize>::new();
         for (name, ..) in processed.weapon_states() {
             *weapon_name_counts
@@ -5419,7 +5432,7 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v18".hash(&mut hasher);
+        b"rules-simulation-config-v19".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // Global construction order changes which category106 mutates when
         // IDs coincide. Current TechLevels can also differ after retained
@@ -5453,6 +5466,12 @@ impl RuleSet {
             .hash(&mut hasher);
         self.general.ambient_change_step.hash(&mut hasher);
         self.general.prism_support.hash(&mut hasher);
+        // Earlier Rules passes retain these signed divisors even when the
+        // current source stack omits them; sale crew and its RNG consumers
+        // must not be presented as the same effective configuration.
+        self.general.allied_survivor_divisor.hash(&mut hasher);
+        self.general.soviet_survivor_divisor.hash(&mut hasher);
+        self.general.third_survivor_divisor.hash(&mut hasher);
         self.general.patrol_scan_minutes.hash(&mut hasher);
         self.general.default_mirage_disguises.hash(&mut hasher);
         if self

@@ -289,6 +289,366 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
             "{row}"
         );
     }
+
+    // Aircraft4145B0..4145C0 consumes this same retained Foot counter,
+    // using the selected model's physical HVA header for signed IDIV.
+    frame_counts.insert(
+        ("SPYP".to_string(), VxlLayer::Composite, 0),
+        physical_frames("spyp.hva"),
+    );
+    let mut aircraft = crate::sim::game_entity::GameEntity::test_default_of_category(
+        2,
+        "SPYP",
+        "Russians",
+        10,
+        10,
+        EntityCategory::Aircraft,
+    );
+    let rows = native["aircraft_draw_frames"].as_array().unwrap();
+    assert_eq!(rows.len(), 7);
+    for row in rows {
+        aircraft
+            .body_frame_counter
+            .set_for_test(row["body_counter"].as_i64().unwrap() as u32);
+        let (body, _) = unit_animation_frames(&aircraft, "SPYP", 0, &frame_counts);
+        assert_eq!(
+            body as i32,
+            row["body_frame"].as_i64().unwrap() as i32,
+            "Aircraft selected SPYP HVA: {row}"
+        );
+    }
+}
+
+/// Ordinary NARADR charge/launch supplies the stored counters; point, facing,
+/// light, camera and A/Z are frozen render inputs. This checks the production
+/// atlas, body-frame consumer, Display lowering and Batch backend, not the
+/// full AppState builder/merge replay or original voxel/final-frame pixels.
+/// Aircraft's positive ground-shadow mechanism remains separate (#1102).
+#[test]
+#[ignore = "requires GPU and retail assets; ordinary SpyPlane flight counters reach both physical HVA atlas frames and the production voxel backend"]
+fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
+    use crate::app::presentation::render::draw_plan_lowering::lower_object_instances;
+    use crate::assets::{hva_file::HvaFile, pal_file::Palette, vxl_file::VxlFile};
+    use crate::render::batch::{BatchRenderer, InstanceBufferPool};
+    use crate::render::palette_light::PaletteLight;
+    use crate::render::palette_textures::PaletteSet;
+    use crate::render::shroud_buffer::ShroudBuffer;
+    use crate::render::tactical_draw_plan::SpriteEncoding;
+    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
+    use crate::render::unit_atlas::build_unit_atlas;
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::world::{FrameEffects, TickLane};
+    use crate::util::sha256::sha256_hex;
+
+    let Some((root, assets)) = retail_assets() else {
+        return;
+    };
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_simple_deploy.json");
+    let source = native["retail_art"]["physical_hva"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "spyp.hva")
+        .unwrap();
+    let hva_bytes = assets.get_ref("SPYP.HVA").unwrap();
+    assert_eq!(hva_bytes.len() as u64, source["bytes"]);
+    assert_eq!(sha256_hex(hva_bytes), source["sha256"]);
+    let hva = HvaFile::from_bytes(hva_bytes).unwrap();
+    assert_eq!(u64::from(hva.frame_count), source["frames"]);
+    assert_eq!(u64::from(hva.section_count), source["sections"]);
+    let vxl_bytes = assets.get_ref("SPYP.VXL").unwrap();
+    assert_eq!(vxl_bytes.len(), 125_084);
+    assert_eq!(
+        sha256_hex(vxl_bytes),
+        "f20bd6b2eda9633921a18f75c241d8894f22da8a825b58b6d249b8f7f63d7d9a"
+    );
+    let vxl = VxlFile::from_bytes(vxl_bytes).unwrap();
+    assert_eq!(
+        vxl.limbs.iter().map(|limb| &limb.name).collect::<Vec<_>>(),
+        hva.section_names.iter().collect::<Vec<_>>()
+    );
+    assert!(vxl.limbs.iter().all(|limb| !limb.voxels.is_empty()));
+
+    let profile = crate::test_fixture::json("tools/map_observation.spy-plane.example.json");
+    let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
+        serde_json::from_value(profile["launch"].clone()).unwrap();
+    let map_name = crate::test_fixture::checkout_root()
+        .join(launch.selected_map_file.as_deref().unwrap())
+        .to_string_lossy()
+        .into_owned();
+    launch.selected_map_file = Some(map_name.clone());
+    let mut scene = crate::headless_scenario::load_session(
+        &root,
+        &map_name,
+        profile["seed"].as_u64().unwrap() as u32,
+        launch,
+    )
+    .unwrap();
+    scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
+    let owner = scene.sim().session.current_house.unwrap();
+    let sw_type_id = scene.sim().interner.get("SpyPlaneSpecial").unwrap();
+    let ready = |sim: &Simulation| {
+        sim.super_weapons
+            .get(&owner)
+            .and_then(|supers| supers.get(&sw_type_id))
+            .is_some_and(|instance| instance.is_ready)
+    };
+    for _ in 0..4000 {
+        if ready(scene.sim()) {
+            break;
+        }
+        scene
+            .runtime
+            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+    }
+    assert!(
+        ready(scene.sim()),
+        "stock NARADR must naturally charge its Super"
+    );
+    let launch_tick = scene.sim().session.tick + 1;
+    scene.runtime.simulation.queue_command(CommandEnvelope::new(
+        owner,
+        launch_tick,
+        Command::LaunchSuperWeapon {
+            sw_type_id,
+            target_rx: 61,
+            target_ry: 61,
+        },
+    ));
+    let mut samples = Vec::new();
+    for _ in 0..200 {
+        let commands = scene.runtime.simulation.take_due_commands();
+        scene
+            .runtime
+            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+        let sim = scene.sim();
+        let Some(plane) = sim
+            .entities()
+            .values()
+            .find(|entity| sim.interner.resolve(entity.type_ref()) == "SPYP")
+        else {
+            continue;
+        };
+        assert_eq!(plane.category(), EntityCategory::Aircraft);
+        if plane.body_frame_counter.get() == 0
+            || !crate::sim::movement::motion_query::is_moving_now(
+                plane,
+                None,
+                sim.session.binary_frame,
+            )
+        {
+            continue;
+        }
+        let band = entity_draw_band(sim.display_layers(), plane.stable_id()).unwrap();
+        let parent = NativeDisplayOrder::from_display(sim.display_layers())
+            .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
+            .unwrap();
+        samples.push((plane.clone(), band, parent, sim.session.binary_frame));
+        if samples.len() == 2 {
+            break;
+        }
+    }
+    assert_eq!(
+        samples.len(),
+        2,
+        "ordinary flight must advance the Foot counter"
+    );
+    assert_eq!(samples[0].0.body_frame_counter.get(), 1);
+    assert_eq!(samples[1].0.body_frame_counter.get(), 2);
+    assert_eq!(samples[1].3, samples[0].3.wrapping_add(1));
+    let sim = scene.sim();
+    let before = sim.state_hash();
+    let rules = &scene.runtime.resources.rules;
+    let mut entities = crate::sim::entity_store::EntityStore::new();
+    entities.insert(samples[0].0.clone());
+    let gpu = Gpu::new();
+    let atlas_batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let atlas = build_unit_atlas(
+        &gpu.device,
+        &gpu.queue,
+        &atlas_batch,
+        &entities,
+        &assets,
+        Some(rules),
+        None,
+        Some(&sim.interner),
+    )
+    .expect("physical SPYP atlas");
+    assert_eq!(
+        atlas.frame_counts[&("SPYP".to_string(), VxlLayer::Composite, 0)],
+        hva.frame_count
+    );
+    let palette = Palette::from_bytes(assets.get_ref("UNITTEM.PAL").unwrap()).unwrap();
+    let global_palette = Palette::from_bytes(assets.get_ref("UNITSNO.PAL").unwrap()).unwrap();
+    let palettes = PaletteSet::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &palette,
+        &global_palette,
+        &rules.house_color_ramps,
+        &[],
+    );
+    let size = [320, 240];
+    let mut source_frames = Vec::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        batch.write_camera(&gpu.queue, camera(size));
+        let fog = ShroudBuffer::fixture(
+            &gpu.device,
+            &gpu.queue,
+            size,
+            [0.; 2],
+            &vec![127; (size[0] * size[1]) as usize],
+        );
+        batch.bind_shroud(&gpu.device, Some(&fog));
+        let mut outputs = Vec::new();
+        for (plane, band, parent, binary_frame) in &samples {
+            let (model, body) = unit_body_draw(
+                plane,
+                &sim.interner,
+                Some(rules),
+                *band,
+                *binary_frame,
+                crate::render::draw_state::ObserverDrawContext::default(),
+            )
+            .unwrap();
+            assert_eq!(model, "SPYP");
+            assert_eq!(body, BodyDraw::Composite);
+            let (frame, _) = unit_animation_frames(plane, &model, 0, &atlas.frame_counts);
+            let original = native["aircraft_draw_frames"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| {
+                    row["body_counter"].as_i64().unwrap()
+                        == i64::from(plane.body_frame_counter.get())
+                })
+                .unwrap();
+            assert_eq!(i64::from(frame), original["body_frame"].as_i64().unwrap());
+            let entry = atlas
+                .get(&UnitSpriteKey {
+                    type_id: model.into_owned(),
+                    turret_index: 0,
+                    facing: 0,
+                    layer: VxlLayer::Composite,
+                    frame,
+                    slope_type: 0,
+                    barrel_pitch: 0,
+                })
+                .unwrap();
+            let texture = atlas.page_texture(entry.page).unwrap();
+            if source_frames.len() < 2 {
+                let indices = gpu.read_uint_texels(
+                    &texture.view,
+                    [
+                        (entry.uv_origin[0] * texture.width as f32).round() as u32,
+                        (entry.uv_origin[1] * texture.height as f32).round() as u32,
+                    ],
+                    entry.pixel_size.map(|value| value as u32),
+                );
+                assert!(indices.iter().any(|&index| index != 0));
+                source_frames.push((entry.pixel_size, [entry.offset_x, entry.offset_y], indices));
+            }
+            let mut pieces = Vec::new();
+            push_unit_sprite(
+                UnitTextureSource::Stable(entry.page),
+                SpriteInstance {
+                    position: [160. + entry.offset_x, 120. + entry.offset_y],
+                    size: entry.pixel_size,
+                    uv_origin: entry.uv_origin,
+                    uv_size: entry.uv_size,
+                    tint: [1.; 3],
+                    alpha: 1.,
+                    palette_light: PaletteLight::color_scheme([1000; 3], 1000),
+                    z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, false),
+                    ..Default::default()
+                },
+                &mut pieces,
+            );
+            let layers =
+                lower_object_instances(vec![PlannedObjectInstance::object(*parent, pieces)]);
+            let layer = &layers[parent.layer.0 as usize];
+            assert_eq!(layer.owners, [plane.stable_id()]);
+            assert_eq!(layer.runs.len(), 1);
+            let run = &layer.runs[0];
+            assert_eq!(run.target, ObjectTexture::UnitAtlasPage(entry.page));
+            let mut pool = InstanceBufferPool::new();
+            pool.upload_on_device(&gpu.device, &gpu.queue, "spy_plane_hva", &layer.instances);
+            let color = gpu.target(size, format);
+            let cv = color.create_view(&Default::default());
+            let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+            let dv = depth.create_view(&Default::default());
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            clear(
+                &mut encoder,
+                &cv,
+                &dv,
+                u16::MAX,
+                wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+            );
+            {
+                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                    &mut encoder,
+                    &cv,
+                    &dv,
+                );
+                batch.draw_voxel_sprites_range(
+                    &mut pass,
+                    texture,
+                    &palettes.bind_group,
+                    pool.get("spy_plane_hva").unwrap().0,
+                    run.start,
+                    run.count,
+                    run.render_z,
+                );
+            }
+            let reads = [
+                gpu.read(&mut encoder, &color),
+                gpu.read(&mut encoder, &depth),
+            ];
+            let output = gpu.finish(encoder, &reads, size);
+            assert!(
+                output[0]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|pixel| *pixel != encoded(u16::MAX, format))
+            );
+            for pixel in output[1].as_chunks::<4>().0 {
+                assert_eq!(
+                    crate::render::native_z::stored_z(f32::from_le_bytes(*pixel)),
+                    u16::MAX
+                );
+            }
+            for pixel in gpu.read_float_texels(fog.gpu_source().0, [0, 0], size) {
+                assert_eq!((pixel[0] * 255.).round() as u8, 127, "A unchanged");
+            }
+            assert_eq!(
+                sim.state_hash(),
+                before,
+                "presentation must preserve the live simulation"
+            );
+            outputs.push(output[0].clone());
+        }
+        assert_ne!(
+            outputs[0], outputs[1],
+            "the retained Foot counter must change the physical SPYP body pixels: {format:?}"
+        );
+    }
+    assert_ne!(
+        source_frames[0], source_frames[1],
+        "the two physical HVA frames must upload different body sprites"
+    );
 }
 
 /// The deployed override follows disguise in both DrawIt and DrawVoxelBody;

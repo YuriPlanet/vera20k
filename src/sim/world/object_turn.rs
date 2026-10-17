@@ -11,13 +11,13 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::movement::{self, teleport_movement};
 
-/// Whether this Unit visit reaches FootClass's SHP body-counter cadence.
+/// Whether this Foot visit reaches the shared body-counter cadence.
 ///
 /// An entry-active TubeMovement owns the UnitClass AI call and returns before
 /// FootClass AI. Tube state armed later during an ordinary Foot visit does not
 /// retroactively suppress work already reached by that visit, so only the
 /// entry snapshot belongs in this admission predicate.
-pub(super) fn unit_body_counter_admitted(tube_active_at_entry: bool) -> bool {
+pub(super) fn foot_body_counter_admitted(tube_active_at_entry: bool) -> bool {
     !tube_active_at_entry
 }
 
@@ -932,19 +932,19 @@ impl Simulation {
             return Ok(outcome);
         }
 
-        // FootClass advances the Unit body counter immediately after
+        // FootClass advances its shared body counter immediately after
         // this object's locomotor Process, against the still-current
         // absolute binary frame, inside the Process admission
         // (`0x004DA81A` bypasses both). The global frame commits only after
         // the complete live-object pass.
-        if process.admitted && unit_body_counter_admitted(tube_active_at_entry) {
-            let unit_body_cadence = sim.substrate.entities.get(stable_id).and_then(|entity| {
-                if entity.category() != EntityCategory::Unit {
+        if process.admitted && foot_body_counter_admitted(tube_active_at_entry) {
+            let foot_body_cadence = sim.substrate.entities.get(stable_id).and_then(|entity| {
+                if !entity.category().is_foot() {
                     return None;
                 }
                 let object = sim.interner.object_type(entity.type_ref(), rules?)?;
                 Some((
-                    crate::sim::animation::ShpVehicleCadence {
+                    crate::sim::animation::FootBodyCadence {
                         walk_rate: object.walk_rate,
                         idle_rate: object.idle_rate,
                     },
@@ -953,9 +953,9 @@ impl Simulation {
                 ))
             });
             if let (Some((cadence, hover_attack, deploy_to_land)), Some(entity)) =
-                (unit_body_cadence, sim.substrate.entities.get_mut(stable_id))
+                (foot_body_cadence, sim.substrate.entities.get_mut(stable_id))
             {
-                crate::sim::animation::tick_unit_body_frame_counter(
+                crate::sim::animation::tick_foot_body_frame_counter(
                     entity,
                     rules.map(|rules| {
                         crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)

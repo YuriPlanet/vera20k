@@ -126,7 +126,7 @@ impl FreshScenarioLoadContextDescriptor {
             if accepted_rmg_start_staging.is_some() {
                 anyhow::bail!("random-map start staging cannot enter a campaign load");
             }
-            if campaign.campaign().scenario().is_empty() {
+            if campaign.scenario().is_empty() {
                 anyhow::bail!("campaign catalog entry has no Scenario");
             }
             return Ok(Self {

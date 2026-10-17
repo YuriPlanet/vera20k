@@ -172,14 +172,14 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         .get();
     let object = rules.object("SQD").unwrap();
     let (_, draws) = crate::sim::rng::trace_draws(|| {
-        crate::sim::animation::tick_unit_body_frame_counter(
+        crate::sim::animation::tick_foot_body_frame_counter(
             sim.substrate.entities.get_mut(id).unwrap(),
             Some(crate::sim::movement::SpeedRules::new(
                 rules,
                 &sim.interner,
                 &sim.houses,
             )),
-            crate::sim::animation::ShpVehicleCadence {
+            crate::sim::animation::FootBodyCadence {
                 walk_rate: object.walk_rate,
                 idle_rate: object.idle_rate,
             },

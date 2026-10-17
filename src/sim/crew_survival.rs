@@ -50,13 +50,13 @@
 //!   Frequency: every Soviet Nuclear Reactor death. Risk: survivor count,
 //!   marks and the Scenario stream after them. Needs a breakpoint at
 //!   `0x004400D4` (kill a NANRCT) to confirm Update reaches that arm.
-//! - A sale's crew Unlimboes at the Z its request carries, 0
-//!   (`0x0044A6C6`); VERA's survivor request carries the cell's level.
-//!   Infantry51E01B compares that raw input before the shared type clamp
-//!   (`0x005247D0`) raises a below-floor coordinate. Trigger: selling a
-//!   crewed building on raised ground. Effect: the class placement arm and
-//!   its occupation result may differ; final below-floor Z is clamped in
-//!   both engines. Not executed (the sale oracle map is flat).
+//! - Sale44A6ED's CellPlace481180 overwrites the literal request Z0 with
+//!   ground height at the original within-cell(128,164), before44A72D
+//!   Unlimbo. VERA's caller uses the coarse cell floor. Flat foundations,
+//!   including raised ones, agree. On a sloped foundation where that request
+//!   floor exceeds the selected subcell floor, native can retain the higher
+//!   Z through the type clamp5247D0; VERA can drop it. No executed slope
+//!   control establishes that wider path.
 //! - A dying unit's passengers ([`Simulation::release_dying_unit_passengers`]):
 //!   - A computer passenger of a unit in a Team joins it (`TeamClass::
 //!     Add_Member @ 0x006EA500`) instead of Hunting, and KillPassengers

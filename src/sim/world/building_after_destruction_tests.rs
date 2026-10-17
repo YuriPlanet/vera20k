@@ -81,6 +81,7 @@ fn rules() -> RuleSet {
         RubbleArt {
             shp: "BOTH.SHP".into(),
             body_frame: 3,
+            shadow_frame: 7,
         },
     );
     rules.set_building_rubble_art_for_test(
@@ -88,6 +89,7 @@ fn rules() -> RuleSet {
         RubbleArt {
             shp: "RUIN.SHP".into(),
             body_frame: 3,
+            shadow_frame: 7,
         },
     );
     rules

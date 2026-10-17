@@ -923,6 +923,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Process-resident Rules+14F8/+14FC/+1500, Allied/Soviet/Third order.
+    pub(crate) fn survivor_divisors(&self) -> [i32; 3] {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_survivor_divisors
+    }
+
     /// Consume only the typed-reader compatibility projection and deliberately
     /// discard the native constructor/registry receipt.
     ///
@@ -1132,6 +1139,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_safety_altitude: i32,
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
+    rules_survivor_divisors: [i32; 3],
     rules_line_trail_override: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
@@ -1166,6 +1174,7 @@ impl Default for NativeRulesRegistryState {
             // RulesClass ctor666163/66616D initializes +7B8/+7BC.
             rules_parachute_max_fall_rate: -3,
             rules_no_parachute_max_fall_rate: -100,
+            rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_line_trail_override: [0; 3],
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
@@ -1327,6 +1336,7 @@ impl NativeRulesRegistryState {
             rules_safety_altitude: self.rules_safety_altitude,
             rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
+            rules_survivor_divisors: self.rules_survivor_divisors,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
@@ -1581,6 +1591,7 @@ struct RulesPassProcessor {
     rules_safety_altitude: i32,
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
+    rules_survivor_divisors: [i32; 3],
     rules_line_trail_override: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
@@ -1620,6 +1631,7 @@ impl Default for RulesPassProcessor {
                 .rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: NativeRulesRegistryState::default()
                 .rules_no_parachute_max_fall_rate,
+            rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_line_trail_override: NativeRulesRegistryState::default()
                 .rules_line_trail_override,
             rules_prism_support: PrismSupportRules::default(),
@@ -1653,6 +1665,7 @@ impl RulesPassProcessor {
             rules_safety_altitude: registry_state.rules_safety_altitude,
             rules_parachute_max_fall_rate: registry_state.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
+            rules_survivor_divisors: registry_state.rules_survivor_divisors,
             rules_line_trail_override: registry_state.rules_line_trail_override,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
@@ -2102,6 +2115,16 @@ impl RulesPassProcessor {
             "NoParachuteMaxFallRate",
             self.rules_no_parachute_max_fall_rate,
         );
+        // ReadGeneral670C13..670C6C: ReadInt5276D0 in side order, current
+        // signed values as defaults, no clamp. Full_Init6876AC ->6686C0
+        // resets Types, not these RulesClass fields. Original SHA1cdd1180.
+        for (value, key) in self.rules_survivor_divisors.iter_mut().zip([
+            "AlliedSurvivorDivisor",
+            "SovietSurvivorDivisor",
+            "ThirdSurvivorDivisor",
+        ]) {
+            *value = section.read_int(key, *value);
+        }
         // ReadGeneral's Prism block (`0x0067114F..0x006711B8`), current values
         // as defaults; RulesClass keeps them across Full_Init's reset.
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
@@ -3140,6 +3163,7 @@ impl RulesPassProcessor {
                     rules_safety_altitude: self.rules_safety_altitude,
                     rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
+                    rules_survivor_divisors: self.rules_survivor_divisors,
                     rules_line_trail_override: self.rules_line_trail_override,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,

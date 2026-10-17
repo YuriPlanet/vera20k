@@ -501,7 +501,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     let installation = match startup {
         crate::app::match_bootstrap::LoadingStartup::Campaign(prepared) => {
-            state.match_state.startup.acknowledge_campaign(
+            let installed = state.match_state.startup.acknowledge_campaign(
                 &prepared,
                 state
                     .match_state
@@ -509,7 +509,21 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .as_ref()
                     .map(|rt| &rt.simulation),
                 matches!(state.frontend.screen, GameScreen::Loading),
-            )
+            );
+            // GameExit::Victory restores the won mission's globals after
+            // Start_Scenario (`0x00685D7A`): CarryOver4C6210 writes each one
+            // through SetGlobal689670 in index order.
+            if installed.is_ok()
+                && let Some(globals) = prepared.carried_globals()
+                && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            {
+                for (index, &set) in globals.iter().enumerate() {
+                    runtime
+                        .simulation
+                        .set_trigger_variable(true, index as i32, set);
+                }
+            }
+            installed
         }
         crate::app::match_bootstrap::LoadingStartup::Accepted(prepared) => {
             state.match_state.startup.acknowledge(

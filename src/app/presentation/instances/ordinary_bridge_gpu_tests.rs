@@ -261,6 +261,7 @@ impl Probe {
                 registry,
                 &rules_ini,
                 rules.art(),
+                &[],
             )
             .unwrap();
             let renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
@@ -818,6 +819,7 @@ impl Probe {
             entries,
             scene.sim().overlay_grid.as_ref(),
             Some(&scene.runtime.resources.overlay_registry),
+            None,
             view.world_origin_y,
             view.world_height,
             view.camera_pos[0],
@@ -992,5 +994,337 @@ fn retail_starting_mtnk_low_concrete_bridge_matches_native_raster() {
         seen.len(),
         5,
         "two positive bodies and three native empty-body witnesses"
+    );
+}
+
+/// Original Cell47F6A0 body followed by Cell47F510 shadow on the same RGB/Z
+/// surface, including Cell480110's literal EF elevation adjustment. Only the
+/// post-destruction Cell fields are supplied here; ordinary paid destruction
+/// and its publication/cleanup are a separate production lifecycle witness.
+#[test]
+#[ignore = "requires physical retail XMP03T4 and GPU; CAHSE05 rubble body then shadow through native Cell RGB/Z"]
+fn retail_rubble_body_then_shadow_matches_native_raster() {
+    assert_retail_cell_body_then_shadow(crate::test_fixture::json(
+        "tools/spatial_oracle/building_rubble_shadow_render.json",
+    ));
+}
+
+/// The natural crate's post-Mark Cell byte is FF. This component fixture
+/// supplies that live state and unity lighting, then submits the actual body
+/// and shadow owners on the same attachments; it is not a native world replay.
+#[test]
+#[ignore = "requires physical retail XMP03T4 and GPU; CRATE body then shadow through native Cell RGB/Z"]
+fn retail_crate_body_then_shadow_matches_native_raster() {
+    assert_retail_cell_body_then_shadow(crate::test_fixture::json(
+        "tools/spatial_oracle/crate_shadow_render.json",
+    ));
+}
+
+fn assert_retail_cell_body_then_shadow(packet: &Value) {
+    let body = &packet["composition"]["body"];
+    let combined = &packet["composition"]["body_then_shadow"];
+    let input = &body["input"];
+    assert!(
+        body.is_object() && combined.is_object(),
+        "native composition rows"
+    );
+    for key in [
+        "coords",
+        "cell_point",
+        "level",
+        "flags",
+        "state",
+        "type",
+        "clip",
+    ] {
+        assert_eq!(
+            input[key], combined["input"][key],
+            "same Cell and surface: {key}"
+        );
+    }
+    assert_eq!(input["background"], 65535);
+    assert_eq!(input["old_z"], 65535);
+    assert_eq!(input["viewport_y"], 0);
+    let size = [
+        packet["surface"]["width"].as_u64().unwrap() as u32,
+        packet["surface"]["height"].as_u64().unwrap() as u32,
+    ];
+    let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
+    let scene = crate::headless_scenario::load(&root, "XMP03T4.MAP", 1).unwrap();
+    let sim = scene.sim();
+    let before = sim.state_hash();
+    let rules = &scene.runtime.resources.rules;
+    let registry = &scene.runtime.resources.overlay_registry;
+    let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mode = IniFile::from_bytes(assets.get_ref("MPBattleMD.ini").unwrap()).unwrap();
+    let (_, rules_ini, _, _) = crate::app::loading::init_helpers::load_rules_with_merged_ini(
+        &assets,
+        Some(&mode),
+        Some(&scene.map.ini),
+    )
+    .unwrap();
+    assert_eq!(scene.map.header.theater, "TEMPERATE");
+    let theater = crate::map::theater::load_theater(&mut assets, &scene.map.header.theater)
+        .expect("activate the physical theater before asset lookup");
+    for source in packet["inputs"]["sources"].as_array().unwrap() {
+        let name = source["name"].as_str().unwrap();
+        assert_eq!(
+            sha256_hex(assets.get_ref(name).unwrap()),
+            source["sha256"].as_str().unwrap(),
+            "{name}"
+        );
+    }
+    let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
+    let coord = (
+        input["coords"][0].as_u64().unwrap() as u16,
+        input["coords"][1].as_u64().unwrap() as u16,
+    );
+    let overlay_id = registry
+        .id_for_name(input["type"].as_str().unwrap())
+        .unwrap();
+    let flags = registry.flags(overlay_id).unwrap();
+    let is_rubble = flags.is_rubble && !flags.crate_type;
+    let type_id = if is_rubble {
+        let building = packet["inputs"]["building"]["name"].as_str().unwrap();
+        let art = rules
+            .building_rubble_art(building)
+            .expect("production scenario bound rubble art");
+        assert_eq!(art.shp.to_ascii_lowercase(), "cthse05.shp");
+        Some(
+            sim.interner
+                .get(building)
+                .expect("actual map building type"),
+        )
+    } else {
+        assert!(flags.crate_type && !flags.wall);
+        assert_eq!(
+            input["state"],
+            crate::rules::overlay_types::native_mark_overlay_data(flags)
+        );
+        assert_eq!(input["state"], 255);
+        None
+    };
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let entries: Vec<_> = (coord.1..=coord.1 + u16::from(is_rubble))
+        .map(|ry| {
+            let cell = terrain.cell(coord.0, ry).unwrap();
+            assert_eq!(cell.level, input["level"].as_u64().unwrap() as u8);
+            assert_eq!(
+                cell.bridge_facts.raw_flags,
+                input["flags"].as_u64().unwrap() as u32
+            );
+            OverlayEntry {
+                rx: coord.0,
+                ry,
+                overlay_id,
+                frame: input["state"].as_u64().unwrap() as u8,
+            }
+        })
+        .collect();
+    // Supplied post-Mark/post-death Cell fields through the existing live
+    // owner. Only rubble has a BuildingType or an adjacent foundation cell.
+    let mut live_grid = crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
+        &entries,
+        terrain.width(),
+        terrain.height(),
+    );
+    live_grid.cell_mut(coord.0, coord.1).rubble_building_type = type_id;
+    if is_rubble {
+        assert!(
+            live_grid
+                .cell_mut(coord.0, coord.1 + 1)
+                .rubble_building_type
+                .is_none()
+        );
+    }
+    let names = crate::render::overlay_assets::render_overlay_names(registry);
+    let heights = terrain.build_height_map();
+    let convert = &packet["inputs"]["cell_convert"];
+    assert_eq!(convert["rgb"], json!([1000, 1000, 1000]));
+    assert_eq!(convert["cell_brightness"], json!([1000, 1000, 1000]));
+    assert_eq!(convert["shade_count"], 53);
+    assert_eq!(convert["source_palette"], "ISOTEM.PAL");
+    assert_eq!(convert["destination_palette"], "TEMPERAT.PAL");
+    let mut lighting = CellLightGrid::new();
+    let rgb = std::array::from_fn(|i| convert["rgb"][i].as_u64().unwrap() as f32 / 1000.0);
+    for entry in &entries {
+        lighting.insert_profiled_light(
+            (entry.rx, entry.ry),
+            rgb,
+            convert["cell_brightness"][0].as_u64().unwrap() as f32 / 1000.0,
+        );
+    }
+    // The native component prior is unity CellISOConvert and neutral A127,
+    // rather than XMP03T4's actual ambient or its full tactical composition.
+    // BatchRenderer's existing unbound-shroud source supplies neutral A127.
+    let scenario_lighting = crate::sim::scenario_session::ScenarioLightingState::default();
+    // Align the existing isometric projection with the native unraised Cell
+    // point. Height and literal EF displacement remain the production owners'.
+    let point = crate::map::terrain::iso_to_screen(coord.0, coord.1, 0);
+    let mut view = camera(size);
+    view.camera_pos = [
+        point.0 - input["cell_point"][0].as_i64().unwrap() as f32,
+        point.1 - input["cell_point"][1].as_i64().unwrap() as f32,
+    ];
+    let clip = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let atlas = build_overlay_atlas_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            &entries,
+            &[],
+            &[],
+            &assets,
+            &theater.iso_palette,
+            &theater.unit_palette,
+            &theater.tiberium_palette,
+            theater.extension,
+            &scene.map.header.theater,
+            registry,
+            &rules.tiberium_types,
+            &rules.crate_rules,
+            &rules_ini,
+            rules.art(),
+            None,
+            &rubble_arts,
+        )
+        .expect("physical rubble body atlas");
+        let shadow_atlas = build_bridge_atlas(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            &names,
+            &assets,
+            &theater.iso_palette,
+            &theater.unit_palette,
+            theater.extension,
+            &scene.map.header.theater,
+            registry,
+            &rules_ini,
+            rules.art(),
+            &rubble_arts,
+        )
+        .expect("physical rubble shadow atlas and overlay proxy");
+        let mut instances = Vec::new();
+        let mut policies = Vec::new();
+        build_cell_overlay_instances(
+            &CellOverlayInputs {
+                entries: &entries,
+                atlas: &atlas,
+                names: &names,
+                live_grid: Some(&live_grid),
+                registry: Some(registry),
+                rules: Some(rules),
+                interner: Some(&sim.interner),
+                tiberium_types: Some(&rules.tiberium_types),
+                terrain: Some(terrain),
+                heights: &heights,
+                lighting: &lighting,
+                scenario_lighting: &scenario_lighting,
+                camera: view.camera_pos,
+                viewport: size.map(|v| v as f32),
+                origin_y: view.world_origin_y,
+                world_height: view.world_height,
+            },
+            &mut instances,
+            &mut policies,
+        );
+        assert_eq!(instances.len(), 1, "one live Cell publishes body art");
+        assert_eq!(policies, [RenderZPolicy::ReadWrite]);
+        let mut shadows = Vec::new();
+        crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+            terrain,
+            &shadow_atlas,
+            &names,
+            &entries,
+            Some(&live_grid),
+            Some(registry),
+            is_rubble.then_some((rules, &sim.interner)),
+            view.world_origin_y,
+            view.world_height,
+            view.camera_pos[0],
+            view.camera_pos[1],
+            size[0] as f32,
+            size[1] as f32,
+            &mut shadows,
+        );
+        assert_eq!(
+            shadows.len(),
+            1,
+            "one live Cell publishes a shadow without a duplicate foundation"
+        );
+        batch.write_camera(&gpu.queue, view);
+        let mut pool = InstanceBufferPool::new();
+        pool.upload_on_device(&gpu.device, &gpu.queue, "overlay", &instances);
+        pool.upload_on_device(&gpu.device, &gpu.queue, "bridge-shadow", &shadows);
+        let color = gpu.target(size, format);
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let cv = color.create_view(&Default::default());
+        let dv = depth.create_view(&Default::default());
+        let mut renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        renderer.prepare(&gpu.device, &color, &dv, view);
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            input["old_z"].as_u64().unwrap() as u16,
+            wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+        );
+        {
+            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                &mut encoder,
+                &cv,
+                &dv,
+            );
+            pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
+            crate::app::presentation::render::draw_pooled_overlay_bodies(
+                &mut pass,
+                &batch,
+                &pool,
+                Some(&atlas),
+                "overlay",
+                &policies,
+            );
+        }
+        // Copies are encoded before the shadow edits the SAME attachments.
+        let mut reads = vec![
+            gpu.read(&mut encoder, &color),
+            gpu.read(&mut encoder, &depth),
+        ];
+        renderer.note_external_passes(&mut encoder, 1);
+        crate::app::presentation::render::draw_bridge_shadows(
+            &mut encoder,
+            &cv,
+            &dv,
+            &mut renderer,
+            clip,
+            &batch,
+            pool.get("bridge-shadow"),
+            &shadows,
+            Some(&shadow_atlas.texture),
+        );
+        reads.extend([
+            gpu.read(&mut encoder, &color),
+            gpu.read(&mut encoder, &depth),
+        ]);
+        let output = gpu.finish(encoder, &reads, size);
+        assert_native_color_and_depth(&output[..2], body, format, size);
+        assert_native_color_and_depth(&output[2..], combined, format, size);
+        assert_ne!(
+            output[0], output[2],
+            "native shadow visibly edits the body surface"
+        );
+    }
+    assert_eq!(
+        sim.state_hash(),
+        before,
+        "presentation fixture cannot mutate the loaded scenario"
     );
 }

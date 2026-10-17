@@ -1199,10 +1199,10 @@ fn idle_squid_body_counter_starts_move_sound() {
         .unwrap()
         .body_frame_counter
         .get();
-    crate::sim::animation::tick_unit_body_frame_counter(
+    crate::sim::animation::tick_foot_body_frame_counter(
         sim.substrate.entities.get_mut(1).unwrap(),
         None,
-        crate::sim::animation::ShpVehicleCadence {
+        crate::sim::animation::FootBodyCadence {
             walk_rate: object.walk_rate,
             idle_rate: object.idle_rate,
         },
@@ -6903,8 +6903,8 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
 #[test]
 fn gsi_13_06_shp_counter_admission_uses_only_tube_state_at_unit_ai_entry() {
     // Post-Process tube state must not retroactively suppress this Foot visit.
-    assert!(unit_body_counter_admitted(false));
-    assert!(!unit_body_counter_admitted(true));
+    assert!(foot_body_counter_admitted(false));
+    assert!(!foot_body_counter_admitted(true));
 }
 
 #[test]

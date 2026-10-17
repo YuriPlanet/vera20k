@@ -647,16 +647,16 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
     let mut frames = 0;
     let mut snapshots = 0;
     let mut overfly = None;
+    let mut saw_body_counter_advance = false;
     while sim.substrate.entities.contains(plane) {
         sim.sound_events.clear();
         step(&mut sim, &rules);
         frames += 1;
         snapshots += camera_sounds(&sim);
-        let current = sim
-            .substrate
-            .entities
-            .get(plane)
-            .map(|entity| entity.mission.current());
+        let current = sim.substrate.entities.get(plane).map(|entity| {
+            saw_body_counter_advance |= entity.body_frame_counter.get() != 0;
+            entity.mission.current()
+        });
         if overfly.is_none() && current == Some(MissionId::from_known(MissionType::SpyplaneOverfly))
         {
             overfly = Some(revealed(&sim));
@@ -665,6 +665,10 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
         assert!(frames < 3000, "the plane never left");
     }
     let at_overfly = overfly.expect("no Overfly");
+    assert!(
+        saw_body_counter_advance,
+        "Aircraft414DA3 reaches Foot4DA886: the flying SPYP body counter must advance"
+    );
     assert!(snapshots > 0, "no snapshot");
     assert!(sim.fog.is_cell_revealed(americans, TARGET.0, TARGET.1));
     // Overfly photographs on past the target, silently.

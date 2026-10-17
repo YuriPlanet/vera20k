@@ -352,7 +352,11 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // Snapshot385 retains native Drive+64 in the existing payload hash, including
 // its false value. This Rust ratchet includes that state byte; the fixture
 // keeps its separate replay, gameplay and absolute RNG expectations.
-const SLICE6_BASELINE_HASH: u64 = 0x2E0A_9E18_D6B8_59CD;
+// Foot4DA886, reached by Infantry51BC9F as well as Unit73647B, now advances
+// the moving E1's existing+538 counter seven times in this fixture. That
+// retained counter already hashes; this Rust replay ratchet moves without
+// a schema or RNG change. It is not a native whole-world golden.
+const SLICE6_BASELINE_HASH: u64 = 0x0BF9_930E_7650_1F0F;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

@@ -107,6 +107,15 @@ Ghidra, затем переносят его поведение на Rust и п�
 
 Вклады распространяются под лицензией GPLv3, как и весь проект; подписывать CLA не нужно.
 
+## Поддержка проекта <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/PayPal-Donate-0070BA?style=flat&amp;logo=paypal&amp;logoColor=white" alt="Поддержать VERA20k через PayPal" height="20" align="middle"></a>
+
+[Поддержать VERA20k через PayPal](https://paypal.me/vera20k). Все полученные пожертвования
+распределяются между участниками проекта согласно
+[журналу вкладов TIBTRE](https://github.com/YuriPlanet/tibtre-ledger).
+
+Участники получают выплаты через PayPal, UnionPay (Китай), Alipay, Vipps,
+банковский перевод SEPA или Bitcoin.
+
 ## Благодарности и правовая информация
 
 Спасибо OpenRA, XCC Mixer, вики ModEnc, Project Perfect Mod, EA за публикацию исходного кода

@@ -1,4 +1,34 @@
 {
+  "aircraft_draw_frames": [
+    {
+      "body_counter": 0,
+      "body_frame": 0
+    },
+    {
+      "body_counter": 1,
+      "body_frame": 1
+    },
+    {
+      "body_counter": 2,
+      "body_frame": 0
+    },
+    {
+      "body_counter": 2147483647,
+      "body_frame": 1
+    },
+    {
+      "body_counter": -2147483648,
+      "body_frame": 0
+    },
+    {
+      "body_counter": -2147483647,
+      "body_frame": -1
+    },
+    {
+      "body_counter": -1,
+      "body_frame": -1
+    }
+  ],
   "animation_constructor": [
     {
       "events": [
@@ -1591,6 +1621,957 @@
       "turret_frame": 3,
       "unloading_class": true,
       "visible": true
+    }
+  ],
+  "foot_class_cadence": [
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 0,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 0,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_zero",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "0000000000000000"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 0,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_negative_zero",
+        "negative_zero": true,
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "0000000000000080"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 0,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_frame_zero",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_frame_one",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 2,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_frame_two",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 1,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": -1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_small_speed_negative_frame",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000f03e"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": -32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_negative_speed",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e0bf"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": -2147483648,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_signed_min_frame",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 2147483648,
+      "input": {
+        "category": "aircraft",
+        "counter": 2147483647,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_signed_counter_wrap",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 4294967295,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_full_counter_wrap",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 0,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": true,
+        "idle_rate": 0,
+        "name": "aircraft_hover_is_not_unit",
+        "target": true,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "0000000000000000"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_warp_in",
+        "target": false,
+        "walk_rate": 1,
+        "warp_in": true
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "name": "aircraft_warp_out",
+        "target": false,
+        "walk_rate": 1,
+        "warp_out": true
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "aircraft",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "fly",
+        "frame": 1,
+        "hover_attack": false,
+        "idle_rate": 0,
+        "locomotor_swap": true,
+        "name": "aircraft_locomotor_swap",
+        "target": false,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x004CCAC0",
+        "rng_calls": [],
+        "rtti": 2,
+        "rtti_entry": "0x0041C180",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000e03f"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "infantry",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "walk",
+        "frame": 3,
+        "head": [
+          2944,
+          2688,
+          0
+        ],
+        "hover_attack": false,
+        "idle_rate": 0,
+        "moving": true,
+        "name": "infantry_walk",
+        "speed_fraction_q16": 65536,
+        "target": false,
+        "walk_rate": 3
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          true
+        ],
+        "moving_entry": "0x0075AB40",
+        "rng_calls": [],
+        "rtti": 15,
+        "rtti_entry": "0x00523340",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000f03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "infantry",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "walk",
+        "frame": 3,
+        "head": [
+          2944,
+          2688,
+          0
+        ],
+        "hover_attack": false,
+        "idle_rate": 0,
+        "moving": true,
+        "name": "infantry_zero_fraction",
+        "speed_fraction_q16": 0,
+        "target": false,
+        "walk_rate": 3
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x0075AB40",
+        "rng_calls": [],
+        "rtti": 15,
+        "rtti_entry": "0x00523340",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "0000000000000000"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "infantry",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "walk",
+        "frame": 3,
+        "head": [
+          2944,
+          2688,
+          0
+        ],
+        "hover_attack": false,
+        "idle_rate": 0,
+        "moving": false,
+        "name": "infantry_no_request",
+        "speed_fraction_q16": 65536,
+        "target": false,
+        "walk_rate": 3
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x0075AB40",
+        "rng_calls": [],
+        "rtti": 15,
+        "rtti_entry": "0x00523340",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000f03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "infantry",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "walk",
+        "frame": 3,
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "hover_attack": false,
+        "idle_rate": 0,
+        "moving": true,
+        "name": "infantry_null_head",
+        "speed_fraction_q16": 65536,
+        "target": false,
+        "walk_rate": 3
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x0075AB40",
+        "rng_calls": [],
+        "rtti": 15,
+        "rtti_entry": "0x00523340",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000f03f"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "infantry",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "walk",
+        "frame": 4,
+        "head": [
+          2944,
+          2688,
+          0
+        ],
+        "hover_attack": false,
+        "idle_rate": 4,
+        "moving": false,
+        "name": "infantry_idle",
+        "speed_fraction_q16": 65536,
+        "target": false,
+        "walk_rate": 3
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          false,
+          false
+        ],
+        "moving_entry": "0x0075AB40",
+        "rng_calls": [],
+        "rtti": 15,
+        "rtti_entry": "0x00523340",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000f03f"
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "infantry",
+        "counter": 0,
+        "current_speed_q16": 32768,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "walk",
+        "frame": 3,
+        "head": [
+          2944,
+          2688,
+          0
+        ],
+        "hover_attack": true,
+        "idle_rate": 0,
+        "moving": false,
+        "name": "infantry_hover_is_not_unit",
+        "speed_fraction_q16": 65536,
+        "target": true,
+        "walk_rate": 3
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x0075AB40",
+        "rng_calls": [],
+        "rtti": 15,
+        "rtti_entry": "0x00523340",
+        "unit_deployed_calls": 0
+      },
+      "speed_binary64_le": "000000000000f03f"
+    },
+    {
+      "counter": 1,
+      "input": {
+        "category": "unit",
+        "counter": 0,
+        "current_speed_q16": 0,
+        "deploy_to_land": false,
+        "deployed": false,
+        "family": "drive",
+        "frame": 1,
+        "hover_attack": true,
+        "idle_rate": 0,
+        "name": "unit_hover_deployed_False",
+        "target": true,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 1,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x004AFC20",
+        "rng_calls": [],
+        "rtti": 1,
+        "rtti_entry": "0x00746E20",
+        "unit_deployed_calls": 1
+      },
+      "speed_binary64_le": null
+    },
+    {
+      "counter": 0,
+      "input": {
+        "category": "unit",
+        "counter": 0,
+        "current_speed_q16": 0,
+        "deploy_to_land": false,
+        "deployed": true,
+        "family": "drive",
+        "frame": 1,
+        "hover_attack": true,
+        "idle_rate": 0,
+        "name": "unit_hover_deployed_True",
+        "target": true,
+        "walk_rate": 1
+      },
+      "invariants": {
+        "fpcw": 3711,
+        "locomotor_and_type_unchanged": true,
+        "native_text_and_vtables_unchanged": true,
+        "owner_except_counter_unchanged": true,
+        "rng_unchanged": {
+          "main": true,
+          "mapgen": true,
+          "scenario": true
+        },
+        "stack_unchanged": true
+      },
+      "observed": {
+        "increment_visits": 0,
+        "moving_answers": [
+          false
+        ],
+        "moving_entry": "0x004AFC20",
+        "rng_calls": [],
+        "rtti": 1,
+        "rtti_entry": "0x00746E20",
+        "unit_deployed_calls": 1
+      },
+      "speed_binary64_le": null
     }
   ],
   "jumpjet": [
@@ -20975,6 +21956,14 @@
         "name": "schd.hva",
         "sections": 1,
         "sha256": "dbc01391ee3c85f2c197223252fc2c1dc3efdd770bfb2c532a022f616cf16bb7"
+      },
+      {
+        "bytes": 472,
+        "file_header24_hex": "443a5c524132585c4d4f44454c535c000200000004000000",
+        "frames": 2,
+        "name": "spyp.hva",
+        "sections": 4,
+        "sha256": "f7ff67fcd8d4723778e59a4620d73d79e0ed13f9b78041043a8b0365fdc0629a"
       }
     ],
     "result": {

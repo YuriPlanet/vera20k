@@ -26,8 +26,9 @@ enum StartupPhase {
         receipt: Box<RustL0Receipt>,
     },
     /// The ordinary campaign load installed its selected Scenario. Session
-    /// remains the authority for campaign state; this token owns admission only.
-    CampaignInstalled,
+    /// remains the authority for campaign state; this token owns admission and
+    /// the campaign index a won mission starts its next map with (`0x00685C47`).
+    CampaignInstalled(Box<PreparedCampaignStartup>),
     /// A validated saved world replaced the outgoing one.
     Restored,
 }
@@ -97,10 +98,8 @@ impl MatchStartup {
             || session.tick != 0
             || session.binary_frame != 0
             || session.seed != u64::from(startup.seed.value)
-            || !session
-                .map_name
-                .eq_ignore_ascii_case(startup.campaign().scenario())
-            || session.campaign_mission_counter().is_none()
+            || !session.map_name.eq_ignore_ascii_case(startup.scenario())
+            || session.campaign_mission_counter() != Some(startup.mission_counter())
             || session
                 .campaign_house_difficulties()
                 .is_none_or(|(player, computer)| {
@@ -112,12 +111,19 @@ impl MatchStartup {
                 "campaign map load did not install its selected tick-zero Scenario".to_string(),
             );
         }
-        self.phase = StartupPhase::CampaignInstalled;
+        self.phase = StartupPhase::CampaignInstalled(Box::new(startup.clone()));
         Ok(())
     }
 
     pub(crate) fn campaign_installed(&self) -> bool {
-        matches!(self.phase, StartupPhase::CampaignInstalled)
+        self.installed_campaign().is_some()
+    }
+
+    pub(crate) fn installed_campaign(&self) -> Option<&PreparedCampaignStartup> {
+        match &self.phase {
+            StartupPhase::CampaignInstalled(startup) => Some(startup),
+            _ => None,
+        }
     }
 
     pub(crate) fn restored(&self) -> bool {
