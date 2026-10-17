@@ -141,18 +141,26 @@ def prepare_terrain(m):
         boundary='Original Urban General/ordinal projection and TMP lazy IO; selected141 registration and prefix sum supplied. Physical neighbor tile/levels, but empty-overlay live priors and unused slope0 fields, not a natural GoldSt ore-neighbor/queue or whole map bootstrap claim.')
 
 
+def prepare_dirty_tracking(m, width, height, column, row, *, capacity=16):
+    """Existing supplied radar backing/dirty storage, actual native writers."""
+    u = m.u
+    buffer, dirty = m.alloc(width * height * 3), m.alloc(capacity * 4)
+    u.mem_write(MAP + 0x1220, dwords(0))
+    u.mem_write(MAP + 0x1224, dwords(0x7EB6D4, dirty, capacity, 1, 0, 10))
+    u.mem_write(MAP + 0x123C, dwords(buffer, width, height))
+    u.mem_write(MAP + 0x1274, dwords(0))
+    u.mem_write(MAP + 0x1490, dwords(column))
+    u.mem_write(MAP + 0x1498, dwords(row))
+    return dict(width=width,height=height,column=column,row=row,capacity=capacity)
+
+
 def depletion(m, types):
     u = m.u
     inputs = prepare_terrain(m)
     # Explicit component radar geometry, independent of whole-map bounds boot.
     width, height, column, row = 173, 113, 10, 100
-    buffer, dirty = m.alloc(width * height * 3), m.alloc(64)
-    u.mem_write(MAP + 0x1220, dwords(0))
-    u.mem_write(MAP + 0x1224, dwords(0x7EB6D4, dirty, 16, 1, 0, 10))
-    u.mem_write(MAP + 0x123C, dwords(buffer, width, height))
-    u.mem_write(MAP + 0x1274, dwords(0))
-    u.mem_write(MAP + 0x1490, dwords(column))
-    u.mem_write(MAP + 0x1498, dwords(row))
+    prepare_dirty_tracking(m,width,height,column,row)
+    buffer = m.read32(MAP + 0x123C)
     left, right = m.alloc(4), m.alloc(4)
     bounds, result = m.alloc(16), m.alloc(16)
     u.mem_write(bounds, dwords(0, 0, width, height))

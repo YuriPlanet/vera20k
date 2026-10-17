@@ -552,8 +552,16 @@ pub struct ObjectType {
     pub voice_select_deactivated: Vec<String>,
     /// Sound ID played when this unit is ordered to move.
     pub voice_move: Option<String>,
-    /// Sound ID played when this unit is ordered to attack.
-    pub voice_attack: Option<String>,
+    /// VoiceAttack vector at TechnoType+484/count+494. Ctor710DEF..710E26
+    /// creates an empty vector;712C5B..712CC5 uses ReadSoundList525430 with
+    /// current-list retention. The fixed SOUNDMD binder preserves every
+    /// resolved entry, including order/duplicates. Source: attack_order_voice.
+    voice_attack: Vec<String>,
+    /// Primary, primary-elite, secondary, secondary-elite voice IDs at
+    /// +580/+584/+588/+58C. Ctor710F55..710F68 sets -1;713679..713775
+    /// reads each exact key through ReadString128/Voc7514D0, retaining a
+    /// valid current ID on missing/empty/unknown text.
+    voice_attack_overrides: [Option<String>; 4],
     /// Registered scalar `VoiceHarvest=` (TechnoType+57C). Constructor710F4F
     /// starts at -1; ReadINI71363D..713696 reads ReadString128 then Voc7514D0.
     /// The fixed SOUNDMD reader retains the prior valid slot across passes.
@@ -1179,6 +1187,9 @@ pub struct ObjectType {
     /// Whether this unit has normal TechnoType `Crusher=yes` capability.
     /// Distinct from `OmniCrusher=` and MovementZone crusher names.
     pub crusher: bool,
+    /// TechnoType+D2B: ctor711500 sets true; ReadINI7153DA..7153F5
+    /// reads TiltsWhenCrushes with the current byte as its Bool default.
+    pub tilts_when_crushes: bool,
     /// Whether this unit can crush non-Crushable targets (only Battle Fortress).
     /// Default: false. Parsed from `OmniCrusher=` in rules.ini.
     pub omni_crusher: bool,
@@ -1648,9 +1659,14 @@ pub struct ObjectType {
     /// Constructor default UNCHECKED; every stock author writes it explicitly.
     pub overpowerable: bool,
 
-    /// Whether this unit shows an `Attack` cursor even on friendly targets.
-    /// Parsed from `AttackCursorOnFriendlies=yes` in rules.ini.
-    /// Used by Desolator and Boris whose weapons affect friendlies.
+    /// TechnoType+6C0: ctor71117B=false, ReadBool71523D reads
+    /// `AttackFriendlies` with the retained byte as default, no clamp.
+    attack_friendlies: bool,
+
+    /// TechnoType+6C1: ctor711181=false, ReadBool71525E reads
+    /// `AttackCursorOnFriendlies` with the retained byte as default.
+    /// Stock IVAN/CIVAN use it; the IvanBomb/Passengers exception belongs
+    /// to What_Action, not this immutable rule projection.
     pub attack_cursor_on_friendlies: bool,
 
     /// Whether this infantry uses the `Enter`/sabotage cursor instead of
@@ -1972,6 +1988,10 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub const fn attacks_friendlies(&self) -> bool {
+        self.attack_friendlies
+    }
+
     /// Signed PipWrap configuration, before the draw caller's division.
     pub const fn pip_wrap(&self) -> i32 {
         self.pip_wrap
@@ -2047,6 +2067,36 @@ impl ObjectType {
 
     pub fn voice_harvest(&self) -> Option<&str> {
         self.voice_harvest.as_deref()
+    }
+
+    pub fn voice_attack(&self) -> &[String] {
+        &self.voice_attack
+    }
+
+    /// VoiceAttack7090F8..70914A reads primary for index0, otherwise
+    /// secondary; its caller supplies the raw750010 elite predicate.
+    pub fn voice_attack_override(&self, weapon_index: i32, elite: bool) -> Option<&str> {
+        self.voice_attack_overrides[usize::from(weapon_index != 0) * 2 + usize::from(elite)]
+            .as_deref()
+    }
+
+    /// Bind the existing native type reader's list and scalar slots against
+    /// the one fixed catalog and its reached processed-section history.
+    pub(crate) fn bind_attack_voice_references(
+        &mut self,
+        section: Option<&IniSection>,
+        sounds: &SoundRegistry,
+    ) {
+        self.voice_attack = section.map_or_else(Vec::new, |section| {
+            sounds.read_rules_sound_list(section, "VoiceAttack")
+        });
+        self.voice_attack_overrides = [
+            "VoicePrimaryWeaponAttack",
+            "VoicePrimaryEliteWeaponAttack",
+            "VoiceSecondaryWeaponAttack",
+            "VoiceSecondaryEliteWeaponAttack",
+        ]
+        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key)));
     }
 
     pub fn voice_deploy(&self) -> Option<&str> {
@@ -2376,14 +2426,6 @@ impl ObjectType {
                 .is_present(key)
                 .then(|| section.read_double(key, 0.0))
         };
-        // These remaining legacy voice keys are sound lists (ReadSoundList
-        // 525430), but currently retain only the first sound. VoiceSelect,
-        // VoiceSpecialAttack and MoveSound use the complete list below.
-        let first_sound = |key: &str| {
-            section
-                .read_sound_list(key)
-                .and_then(|sounds| sounds.first().map(|sound| sound.to_string()))
-        };
         // `GuardRange=` and `AirRangeBonus=` are ReadRange whole leptons
         // (`0x007122B3`, `0x007147A9`), kept here as cells; `None` marks an
         // absent key.
@@ -2607,8 +2649,16 @@ impl ObjectType {
                 .read_sound_list("VoiceSelectDeactivated")
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
                 .unwrap_or_default(),
-            voice_move: first_sound("VoiceMove"),
-            voice_attack: first_sound("VoiceAttack"),
+            // Legacy VoiceMove still represents only its first list entry;
+            // its broader retained-list migration remains with that owner.
+            voice_move: section
+                .read_sound_list("VoiceMove")
+                .and_then(|sounds| sounds.first().map(|sound| sound.to_string())),
+            voice_attack: section
+                .read_sound_list("VoiceAttack")
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                .unwrap_or_default(),
+            voice_attack_overrides: [const { None }; 4],
             voice_harvest: None,
             voice_deploy: None,
             voice_undeploy: None,
@@ -2884,6 +2934,7 @@ impl ObjectType {
             crushable: section.read_bool("Crushable", category == ObjectCategory::Infantry),
             deployed_crushable: section.read_bool("DeployedCrushable", true),
             crusher: section.read_bool("Crusher", false),
+            tilts_when_crushes: section.read_bool("TiltsWhenCrushes", true),
             omni_crusher: section.read_bool("OmniCrusher", false),
             omni_crush_resistant: section.read_bool("OmniCrushResistant", false),
             immune_to_radiation: section.read_bool("ImmuneToRadiation", false),
@@ -3073,6 +3124,7 @@ impl ObjectType {
             produce_cash_amount: section.read_int("ProduceCashAmount", 0),
             produce_cash_delay: section.read_int("ProduceCashDelay", 0),
             overpowerable: section.read_bool("Overpowerable", false),
+            attack_friendlies: section.read_bool("AttackFriendlies", false),
             attack_cursor_on_friendlies: section.read_bool("AttackCursorOnFriendlies", false),
             sabotage_cursor: section.read_bool("SabotageCursor", false),
             c4: section.read_bool("C4", false),
@@ -5789,6 +5841,24 @@ mod tests {
         let section = ini.section("MTNK").unwrap();
         let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
         assert!(!obj.crusher);
+    }
+
+    /// TechnoType ctor711500/default and ReadINI7153DA..7153F5.
+    #[test]
+    fn crush_tilt_reader_preserves_native_true_default_and_explicit_no() {
+        for (line, expected) in [
+            ("", true),
+            ("TiltsWhenCrushes=no", false),
+            ("TiltsWhenCrushes=yes", true),
+        ] {
+            let ini = IniFile::from_str(&format!("[MTNK]\nSpeed=7\n{line}\n"));
+            let object = ObjectType::from_ini_section(
+                "MTNK",
+                ini.section("MTNK").unwrap(),
+                ObjectCategory::Vehicle,
+            );
+            assert_eq!(object.tilts_when_crushes, expected);
+        }
     }
 
     #[test]

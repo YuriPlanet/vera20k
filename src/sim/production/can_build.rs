@@ -66,7 +66,7 @@ pub(crate) enum CanBuild {
 /// - `TechLevel=-1` refuses;
 /// - `RequiresStolenThirdTech=`, `RequiresStolenSovietTech=` or
 ///   `RequiresStolenAlliedTech=` (`+0xD9B`, `+0xD9C`, `+0xD9D`) refuses
-///   unless the house stole that tech (module residual);
+///   unless the house stole that tech;
 /// - `RequiredHouses=` (`+0xDA0`) without the house's bit refuses;
 /// - `ForbiddenHouses=` (`+0xDA4`) with it refuses;
 /// - with super weapons off (`0xA8B263`), a BuildingType whose

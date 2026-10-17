@@ -141,6 +141,37 @@ pub fn replay(row: &Value) -> Replay {
     } else {
         infiltrator
     };
+    if let Some(gains) = row["initial_gains"].as_array() {
+        assert_eq!(gains.len(), 5);
+        let house = sim.houses.get_mut(&infiltrator).unwrap();
+        for (slot, side) in [(0, 2), (1, 1), (2, 0)] {
+            if int(&gains[slot]) != 0 {
+                house.steal_tech(side);
+            }
+        }
+        if int(&gains[3]) != 0 {
+            house.grant_veteran_infantry();
+        }
+        if int(&gains[4]) != 0 {
+            house.grant_veteran_units();
+        }
+        for (slot, kind) in ["T0", "T1", "T2"].into_iter().enumerate() {
+            assert_eq!(
+                house.has_stolen_tech_for(rules.object(kind).unwrap()),
+                int(&gains[slot]) != 0,
+                "{}: supplied prior stolen gain",
+                row["name"],
+            );
+        }
+        assert_eq!(house.veteran_infantry(), int(&gains[3]) != 0);
+        assert_eq!(house.veteran_units(), int(&gains[4]) != 0);
+    }
+    // Match the native settled input AFTER installing prior gains. Neither
+    // constructor nor earlier gain requests may satisfy the measured write.
+    for house in sim.houses.values_mut() {
+        house.take_tech_recheck();
+        assert!(!house.tech_recheck_pending());
+    }
     sim.infiltrate_building(building, spy, &rules);
     Replay {
         sim,
@@ -164,6 +195,16 @@ fn infiltrate_matches_the_original() {
             infiltrator,
         } = replay(&row);
         let (victim, spy) = (&sim.houses[&owner], &sim.houses[&infiltrator]);
+        assert_eq!(
+            victim.tech_recheck_pending(),
+            int(&expected["owner"]["recheck_tech"]) != 0,
+            "{name}: victim House tech request"
+        );
+        assert_eq!(
+            spy.tech_recheck_pending(),
+            int(&expected["infiltrator"]["recheck_tech"]) != 0,
+            "{name}: infiltrator House tech request"
+        );
         assert_eq!(
             [victim.economy.credits(), victim.economy.spent_credits()],
             [

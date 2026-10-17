@@ -380,6 +380,7 @@ impl Simulation {
                     stored_head,
                     cell(current),
                     true,
+                    false,
                     rules,
                     registry,
                     observe,
@@ -500,6 +501,7 @@ impl Simulation {
                 },
                 previous,
                 false,
+                family == TrackFamily::Drive,
                 rules,
                 registry,
                 observe,
@@ -612,6 +614,7 @@ impl Simulation {
                 chosen,
                 cell(current),
                 false,
+                false,
                 rules,
                 registry,
                 observe,
@@ -687,6 +690,7 @@ impl Simulation {
         coord: DriveCoord,
         previous_track_cell: (u16, u16),
         terminal: bool,
+        paid_drive_point: bool,
         rules: Option<&RuleSet>,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
@@ -717,6 +721,18 @@ impl Simulation {
             &self.interner,
         );
         observe(self, id, TrackWorldEvent::SetCoords);
+        // Drive4B17DC SetLocation precedes the selected Cell lookup4B1800.
+        // Keep that identity across Mark(DOWN), which may stamp the shared
+        // Dummy again. Only a crossing paid Drive point reaches4B1999;
+        // terminal/residual placements and same-cell points skip this arm.
+        let pre_entry_cell = if crossing && paid_drive_point {
+            self.resolved_terrain.as_ref().map(|terrain| {
+                crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
+                    .lookup((selected_cell.0 as i16, selected_cell.1 as i16))
+            })
+        } else {
+            None
+        };
         let grid = self.path_grid.as_deref();
         if crossing && let Some(entity) = self.substrate.entities.get_mut(id) {
             if !terminal {
@@ -766,6 +782,43 @@ impl Simulation {
                 &mut |sim, id| observe(sim, id, TrackWorldEvent::MarkPut),
                 effects,
             );
+        }
+        if let Some(target) = pre_entry_cell {
+            // Drive4B1999..4B19FA, after Mark(DOWN)4B1993 and before
+            // SetHeight/track continuation. Type+D2B is TiltsWhenCrushes;
+            // target+44/+2A8 is the live overlay/Wall, not a navigation head.
+            let wall = self
+                .cell_overlay(target)
+                .overlay_id
+                .and_then(|overlay| registry?.flags(overlay))
+                .is_some_and(|flags| flags.wall);
+            let tilt = wall
+                && self.substrate.entities.get(id).is_some_and(|entity| {
+                    entity
+                        .locomotor
+                        .as_ref()
+                        .and_then(|loco| loco.drive_straight())
+                        == Some(true)
+                        && rules
+                            .and_then(|rules| self.interner.object_type(entity.type_ref(), rules))
+                            .is_some_and(|object| {
+                                object.tilts_when_crushes
+                                    && (object.crusher
+                                        || crate::sim::combat::veterancy::has_weapon_ability(
+                                            entity.veterancy.rank_kind(),
+                                            object,
+                                            crate::rules::object_type::Ability::Crusher,
+                                        ))
+                            })
+                });
+            if tilt && let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity
+                    .rocking
+                    .get_or_insert_with(Default::default)
+                    .set_vel_forwards_native(crate::util::native_x87::NativeF32Bits::from_bits(
+                        0xbd4c_cccd,
+                    ));
+            }
         }
     }
 

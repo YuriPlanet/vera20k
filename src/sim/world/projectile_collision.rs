@@ -292,10 +292,13 @@ impl ProjectileCollisionWorld<'_> {
             {
                 let building = self.building(&cell);
                 obstacle = building.is_some()
-                    || self
-                        .overlay(&cell)
-                        .0
-                        .is_some_and(|id| matches!(id, 2 | 26 | 243));
+                    || matches!(
+                        crate::sim::cell_kernel::wall_connection_step(
+                            self.overlay(&cell).0.map_or(-1, i32::from),
+                            -1,
+                        ),
+                        crate::sim::cell_kernel::WallConnectionStep::Return(true)
+                    );
                 if let Some(id) = building {
                     let exempt = self
                         .entities

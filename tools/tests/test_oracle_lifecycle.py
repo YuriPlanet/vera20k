@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -41,13 +42,21 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 from tools import native_oracle
-operation, module = sys.argv[1:]
+operation, module, *arguments = sys.argv[1:]
 with ExitStack() as stack:
     guards = [stack.enter_context(patch.object(owner, name,
               side_effect=RuntimeError('forbidden lifecycle operation: ' + name)))
               for owner, name in ((native_oracle, 'image_bytes'),
                                   (native_oracle, 'run_checked'),
                                   (Path, 'write_text'), (Path, 'write_bytes'))]
+    if operation == 'retired-cache' or module == 'tools.spatial_oracle.trigger_action_values':
+        import pickle
+        guards.extend(stack.enter_context(patch.object(owner, name,
+                      side_effect=RuntimeError('forbidden cache operation: ' + name)))
+                      for owner, name in ((native_oracle, 'configured_gamemd'),
+                                          (native_oracle, 'image_sha256'),
+                                          (Path, 'read_bytes'),
+                                          (pickle, 'load'), (pickle, 'loads')))
     if module == 'tools.control_group_text_oracle':
         original_import = __import__
         def reject_optional_runtime(name, *args, **kwargs):
@@ -62,23 +71,29 @@ with ExitStack() as stack:
     if operation == 'import':
         importlib.import_module(module)
     else:
-        sys.argv = [module, '--help']
+        sys.argv = [module, *(arguments or ['--help'])]
         try:
             runpy.run_module(module, run_name='__main__')
         except SystemExit as error:
-            if error.code not in (None, 0):
+            allowed = (2,) if operation == 'retired-cache' else (None, 0)
+            if error.code not in allowed:
                 raise
+        else:
+            if operation == 'retired-cache':
+                raise AssertionError('retired cache setting must be rejected')
     for guard in guards:
         guard.assert_not_called()
 '''
 
 
 class OracleLifecycleTests(unittest.TestCase):
-    def check_lifecycle(self, operation, module, optimized):
+    def check_lifecycle(self, operation, module, optimized, *, arguments=(), environment=None):
         command = [sys.executable] + (['-O'] if optimized else [])
+        child_environment = absent_retail_environment()
+        child_environment.update(environment or {})
         result = subprocess.run(
-            command + ['-c', GUARDED_LIFECYCLE, operation, module],
-            cwd=ROOT, env=absent_retail_environment(), capture_output=True,
+            command + ['-c', GUARDED_LIFECYCLE, operation, module, *arguments],
+            cwd=ROOT, env=child_environment, capture_output=True,
             text=True, timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -88,6 +103,7 @@ class OracleLifecycleTests(unittest.TestCase):
                        else ('--check', '--write', '--output'))
             for option in options:
                 self.assertIn(option, result.stdout)
+        return result
 
     def test_imports_are_inert_without_retail_in_normal_and_optimized_python(self):
         for optimized in (False, True):
@@ -100,6 +116,33 @@ class OracleLifecycleTests(unittest.TestCase):
             for module in PRODUCERS:
                 with self.subTest(module=module, optimized=optimized):
                     self.check_lifecycle('help', module, optimized)
+
+    def test_explosion_rejects_retired_cache_before_inputs_deserialization_or_publication(self):
+        module = 'tools.spatial_oracle.trigger_action_values'
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'untrusted.pickle'
+            original = b'untrusted checkpoint must not be read'
+            checkpoint.write_bytes(original)
+            for optimized in (False, True):
+                for option in ('--check', '--write', '--wr', '--wri'):
+                    with self.subTest(optimized=optimized, option=option):
+                        result = self.check_lifecycle(
+                            'retired-cache', module, optimized,
+                            arguments=('--do-explosion', option),
+                            environment={'VERA20K_NATIVE_STATE_CACHE': directory},
+                        )
+                        self.assertIn('VERA20K_NATIVE_STATE_CACHE is no longer supported',
+                                      result.stderr)
+                        self.assertEqual(checkpoint.read_bytes(), original)
+
+    def test_explosion_help_without_cache_never_reads_inputs_or_writes(self):
+        for optimized in (False, True):
+            with self.subTest(optimized=optimized):
+                self.check_lifecycle(
+                    'help', 'tools.spatial_oracle.trigger_action_values', optimized,
+                    arguments=('--do-explosion', '--help'),
+                    environment={'VERA20K_NATIVE_STATE_CACHE': ''},
+                )
 
 
 if __name__ == '__main__':

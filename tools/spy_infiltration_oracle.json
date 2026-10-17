@@ -5,6 +5,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -22,6 +23,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -74,6 +76,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -91,6 +94,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -139,6 +143,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -156,6 +161,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -208,6 +214,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -225,6 +232,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -273,6 +281,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -290,6 +299,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -330,6 +340,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -347,6 +358,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -391,6 +403,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -408,6 +421,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -452,6 +466,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -469,6 +484,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -513,6 +529,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -530,6 +547,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -574,6 +592,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -591,6 +610,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -626,6 +646,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -643,6 +664,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -691,6 +713,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -708,6 +731,7 @@
             1000
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -752,6 +776,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -769,6 +794,7 @@
             1000
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -821,6 +847,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -838,6 +865,7 @@
             1000
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -882,6 +910,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -899,6 +928,7 @@
             1000
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -934,6 +964,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -951,6 +982,7 @@
             1000
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -999,6 +1031,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -1016,6 +1049,7 @@
             0
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1064,6 +1098,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -1081,6 +1116,7 @@
             -30
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1133,6 +1169,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -1150,6 +1187,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1202,6 +1240,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             1,
@@ -1219,6 +1258,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1271,6 +1311,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             1,
             0,
@@ -1288,6 +1329,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1340,6 +1382,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             1,
             0,
@@ -1357,6 +1400,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1405,6 +1449,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -1422,6 +1467,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1466,6 +1512,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -1483,6 +1530,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1535,6 +1583,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -1552,6 +1601,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1596,6 +1646,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -1613,6 +1664,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1648,6 +1700,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -1665,6 +1718,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -1713,6 +1767,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -1730,6 +1785,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -1790,6 +1846,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -1807,6 +1864,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -1867,6 +1925,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -1884,6 +1943,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -1940,6 +2000,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -1957,6 +2018,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -2004,6 +2066,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2021,6 +2084,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -2081,6 +2145,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2098,6 +2163,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -2158,6 +2224,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2175,6 +2242,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -2235,6 +2303,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2252,6 +2321,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -2312,6 +2382,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2329,6 +2400,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -2389,6 +2461,7 @@
         ],
         "infiltrator": {
           "balance": 1000,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2406,6 +2479,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 500
         }
       },
@@ -2450,6 +2524,7 @@
         ],
         "infiltrator": {
           "balance": 1000,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2467,6 +2542,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 500
         }
       },
@@ -2515,6 +2591,7 @@
         ],
         "infiltrator": {
           "balance": 1000,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2532,6 +2609,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 500
         }
       },
@@ -2576,6 +2654,7 @@
         ],
         "infiltrator": {
           "balance": 1000,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2593,6 +2672,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 500
         }
       },
@@ -2628,6 +2708,7 @@
         "events": [],
         "infiltrator": {
           "balance": 1000,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2645,6 +2726,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 500
         }
       },
@@ -2693,6 +2775,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2710,6 +2793,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -2758,6 +2842,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2775,6 +2860,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -2823,6 +2909,7 @@
         ],
         "infiltrator": {
           "balance": 475,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2840,6 +2927,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": -50
         }
       },
@@ -2888,6 +2976,7 @@
         ],
         "infiltrator": {
           "balance": 999,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2905,6 +2994,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 499
         }
       },
@@ -2953,6 +3043,7 @@
         ],
         "infiltrator": {
           "balance": 800,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -2970,6 +3061,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 300
         }
       },
@@ -3018,6 +3110,7 @@
         ],
         "infiltrator": {
           "balance": 733,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -3035,6 +3128,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 233
         }
       },
@@ -3083,6 +3177,7 @@
         ],
         "infiltrator": {
           "balance": 1500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -3100,6 +3195,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 1000
         }
       },
@@ -3148,6 +3244,7 @@
         ],
         "infiltrator": {
           "balance": 2500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -3165,6 +3262,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 1000
         }
       },
@@ -3213,6 +3311,7 @@
         ],
         "infiltrator": {
           "balance": 1073742323,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -3230,6 +3329,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 1073741823
         }
       },
@@ -3278,6 +3378,7 @@
         ],
         "infiltrator": {
           "balance": 112,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -3295,6 +3396,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": -388
         }
       },
@@ -3343,6 +3445,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3360,6 +3463,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3404,6 +3508,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3421,6 +3526,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3473,6 +3579,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3490,6 +3597,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3534,6 +3642,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3551,6 +3660,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3586,6 +3696,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3603,6 +3714,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3651,6 +3763,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3668,6 +3781,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3712,6 +3826,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3729,6 +3844,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3781,6 +3897,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3798,6 +3915,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3842,6 +3960,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3859,6 +3978,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3894,6 +4014,7 @@
         "events": [],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -3911,6 +4032,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -3955,6 +4077,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -3972,6 +4095,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -4016,6 +4140,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4033,6 +4158,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -4077,6 +4203,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4094,6 +4221,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -4146,6 +4274,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4163,6 +4292,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -4215,6 +4345,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4232,6 +4363,7 @@
             1000
           ],
           "recheck_power": 1,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -4284,6 +4416,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 1,
           "stolen": [
             0,
             0,
@@ -4301,6 +4434,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -4361,6 +4495,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4378,6 +4513,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         },
         "super": {
@@ -4438,6 +4574,7 @@
         ],
         "infiltrator": {
           "balance": 1000,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4455,6 +4592,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 500
         }
       },
@@ -4499,6 +4637,7 @@
         ],
         "infiltrator": {
           "balance": 500,
+          "recheck_tech": 0,
           "stolen": [
             0,
             0,
@@ -4516,6 +4655,7 @@
             0
           ],
           "recheck_power": 0,
+          "recheck_tech": 0,
           "spent": 0
         }
       },
@@ -4540,6 +4680,504 @@
         "build_tech": false,
         "factory": null,
         "power": -150,
+        "radar": false,
+        "side": 0,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [
+          [
+            "radar_event",
+            9,
+            [
+              37,
+              52
+            ]
+          ],
+          [
+            "eva",
+            "EVA_BuildingInfiltrated"
+          ],
+          [
+            "eva",
+            "EVA_NewTechnologyAcquired"
+          ]
+        ],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 1,
+          "stolen": [
+            0,
+            0,
+            1
+          ],
+          "veteran": [
+            0,
+            0
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "initial_gains": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "local": "infiltrator",
+      "name": "BuildTech side 0, gain already true and recheck clear",
+      "own": false,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": true,
+        "factory": null,
+        "power": 0,
+        "radar": false,
+        "side": 0,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [
+          [
+            "radar_event",
+            9,
+            [
+              37,
+              52
+            ]
+          ],
+          [
+            "eva",
+            "EVA_BuildingInfiltrated"
+          ],
+          [
+            "eva",
+            "EVA_NewTechnologyAcquired"
+          ]
+        ],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 1,
+          "stolen": [
+            0,
+            1,
+            0
+          ],
+          "veteran": [
+            0,
+            0
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "initial_gains": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "local": "infiltrator",
+      "name": "BuildTech side 1, gain already true and recheck clear",
+      "own": false,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": true,
+        "factory": null,
+        "power": 0,
+        "radar": false,
+        "side": 1,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [
+          [
+            "radar_event",
+            9,
+            [
+              37,
+              52
+            ]
+          ],
+          [
+            "eva",
+            "EVA_BuildingInfiltrated"
+          ],
+          [
+            "eva",
+            "EVA_NewTechnologyAcquired"
+          ]
+        ],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 1,
+          "stolen": [
+            1,
+            0,
+            0
+          ],
+          "veteran": [
+            0,
+            0
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "initial_gains": [
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "local": "infiltrator",
+      "name": "BuildTech side 2, gain already true and recheck clear",
+      "own": false,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": true,
+        "factory": null,
+        "power": 0,
+        "radar": false,
+        "side": 2,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [
+          [
+            "radar_event",
+            9,
+            [
+              37,
+              52
+            ]
+          ],
+          [
+            "eva",
+            "EVA_BuildingInfiltrated"
+          ],
+          [
+            "eva",
+            "EVA_NewTechnologyAcquired"
+          ]
+        ],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 1,
+          "stolen": [
+            0,
+            0,
+            0
+          ],
+          "veteran": [
+            0,
+            1
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "initial_gains": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "local": "infiltrator",
+      "name": "unit factory, gain already true and recheck clear",
+      "own": false,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": false,
+        "factory": "unit",
+        "power": 0,
+        "radar": false,
+        "side": 0,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [
+          [
+            "radar_event",
+            9,
+            [
+              37,
+              52
+            ]
+          ],
+          [
+            "eva",
+            "EVA_BuildingInfiltrated"
+          ],
+          [
+            "eva",
+            "EVA_NewTechnologyAcquired"
+          ]
+        ],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 1,
+          "stolen": [
+            0,
+            0,
+            0
+          ],
+          "veteran": [
+            1,
+            0
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "initial_gains": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "local": "infiltrator",
+      "name": "infantry factory, gain already true and recheck clear",
+      "own": false,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": false,
+        "factory": "infantry",
+        "power": 0,
+        "radar": false,
+        "side": 0,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 0,
+          "stolen": [
+            0,
+            0,
+            0
+          ],
+          "veteran": [
+            0,
+            0
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "local": "owner",
+      "name": "own BuildTech: no gain or recheck",
+      "own": true,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": true,
+        "factory": null,
+        "power": 0,
+        "radar": false,
+        "side": 1,
+        "storage": 0,
+        "super_weapon": false
+      }
+    },
+    {
+      "expected": {
+        "events": [],
+        "infiltrator": {
+          "balance": 500,
+          "recheck_tech": 0,
+          "stolen": [
+            0,
+            0,
+            0
+          ],
+          "veteran": [
+            0,
+            0
+          ]
+        },
+        "owner": {
+          "balance": 1000,
+          "blackout": [
+            0,
+            0
+          ],
+          "recheck_power": 0,
+          "recheck_tech": 0,
+          "spent": 0
+        }
+      },
+      "frame": 1200,
+      "infiltrator": {
+        "balance": 500
+      },
+      "local": "owner",
+      "name": "own infantry factory: no gain or recheck",
+      "own": true,
+      "owner": {
+        "balance": 1000,
+        "spy_sat": false
+      },
+      "radar_accepted": true,
+      "rules": {
+        "blackout": 1000,
+        "percent": ".5"
+      },
+      "super": null,
+      "type": {
+        "build_tech": false,
+        "factory": "infantry",
+        "power": 0,
         "radar": false,
         "side": 0,
         "storage": 0,

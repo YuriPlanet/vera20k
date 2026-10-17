@@ -1,0 +1,6398 @@
+{
+  "inputs": {
+    "art_source_lines": [
+      {
+        "key": "Cameo",
+        "line": 4059,
+        "section": "CAFNCB",
+        "value": "SBAGICON"
+      },
+      {
+        "key": "Foundation",
+        "line": 4060,
+        "section": "CAFNCB",
+        "value": "1x1"
+      },
+      {
+        "key": "ToOverlay",
+        "line": 4061,
+        "section": "CAFNCB",
+        "value": "CAFNCB"
+      },
+      {
+        "key": "DamageLevels",
+        "line": 4062,
+        "section": "CAFNCB",
+        "value": "2"
+      },
+      {
+        "key": "NewTheater",
+        "line": 4063,
+        "section": "CAFNCB",
+        "value": "yes"
+      },
+      {
+        "key": "DemandLoad",
+        "line": 4064,
+        "section": "CAFNCB",
+        "value": "true"
+      },
+      {
+        "key": "Cameo",
+        "line": 4067,
+        "section": "CAFNCW",
+        "value": "SBAGICON"
+      },
+      {
+        "key": "Foundation",
+        "line": 4068,
+        "section": "CAFNCW",
+        "value": "1x1"
+      },
+      {
+        "key": "ToOverlay",
+        "line": 4069,
+        "section": "CAFNCW",
+        "value": "CAFNCW"
+      },
+      {
+        "key": "DamageLevels",
+        "line": 4070,
+        "section": "CAFNCW",
+        "value": "2"
+      },
+      {
+        "key": "NewTheater",
+        "line": 4071,
+        "section": "CAFNCW",
+        "value": "yes"
+      },
+      {
+        "key": "DemandLoad",
+        "line": 4072,
+        "section": "CAFNCW",
+        "value": "true"
+      },
+      {
+        "key": "Cameo",
+        "line": 6723,
+        "section": "CAKRMW",
+        "value": "SBAGICON"
+      },
+      {
+        "key": "Foundation",
+        "line": 6724,
+        "section": "CAKRMW",
+        "value": "1x1"
+      },
+      {
+        "key": "ToOverlay",
+        "line": 6725,
+        "section": "CAKRMW",
+        "value": "CAKRMW"
+      },
+      {
+        "key": "DamageLevels",
+        "line": 6726,
+        "section": "CAKRMW",
+        "value": "2"
+      },
+      {
+        "key": "NewTheater",
+        "line": 6727,
+        "section": "CAKRMW",
+        "value": "yes"
+      },
+      {
+        "key": "DemandLoad",
+        "line": 6728,
+        "section": "CAKRMW",
+        "value": "true"
+      }
+    ],
+    "cell_convert": {
+      "cell_brightness": [
+        1000,
+        1000,
+        1000
+      ],
+      "destination_palette": "TEMPERAT.PAL",
+      "palette_dispatch": "RGB565/MMX",
+      "palette_table_sha256": "bf0d68b4865df9bc5ee172e23d45f797c4b38dd0c009e18742da221c358971e0",
+      "palettes": [
+        {
+          "address": "00ABBED0",
+          "expanded_sha256": "51c6e6d83b799236db38ec16eb22b7ff9784b9fc62f2ace2c5b6df1cc98f2df8",
+          "name": "ISOTEM.PAL",
+          "sha256": "5d6e40fcd11a592a31494c635d93c21796cfe86a2743f0258b1f7d0aff850795"
+        },
+        {
+          "address": "00885780",
+          "expanded_sha256": "7622cc7b8c27c79b9f1b4f8c582ea961c46e3a47d6b7add66ecb8f58cef67a22",
+          "name": "TEMPERAT.PAL",
+          "sha256": "5903b69868b84f494cfbb4e7100398015ef9775b37726019a0d7b5fb6cb33b55"
+        }
+      ],
+      "reached": [
+        "0048EBF0",
+        "0054508F",
+        "00555DA0",
+        "00556090",
+        "007DE200"
+      ],
+      "rgb": [
+        1000,
+        1000,
+        1000
+      ],
+      "shade_count": 53,
+      "source_palette": "ISOTEM.PAL"
+    },
+    "current_player": {
+      "boundary": "Supplied current Player/House index1; actual selected physical Colors reader and paired native ColorScheme constructors. Full House construction/ownership is excluded.",
+      "color_scheme": {
+        "color_index": 1,
+        "expanded_palette_sha256": "b487e5c9faccfdf490de7026ef6522871db695a8c0ffe790c9fe44752190055e",
+        "hsv": [
+          25,
+          255,
+          255
+        ],
+        "lexical": "25,255,255",
+        "name": "LightGold",
+        "palette": {
+          "bytes": 768,
+          "name": "UNITTEM.PAL",
+          "sha256": "ed785e62eed291480f3198dd44f6b656ebe3a9b75e9f641944d710abc6bde3e3"
+        },
+        "rulesmd_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "shade_count": 53,
+        "table_sha256": "a72bd10f4c57d2bbb48453a9773d96dae77010d79c6aec86fbef728c27a969a4"
+      }
+    },
+    "layers": [
+      {
+        "admitted": 1,
+        "asset_loads": [
+          {
+            "bytes": 19544,
+            "header8_hex": "0000440042004000",
+            "name": "CTFNCB.SHP",
+            "sha256": "eefb4005b5a0e9c352cb255bb736b7cf6e5552d4ac58591a2b5eb9277779ac5d"
+          },
+          {
+            "bytes": 0,
+            "header8_hex": null,
+            "name": "CAFNCB.SHP",
+            "sha256": null
+          }
+        ],
+        "crate": 0,
+        "file": "RULESMD.INI",
+        "image_name": "CAFNCB",
+        "image_present": false,
+        "index": 203,
+        "land": 0,
+        "name": "CAFNCB",
+        "physical_keys": {
+          "AIBuildThis": "no",
+          "Adjacent": "4",
+          "Armor": "wood",
+          "BaseNormal": "no",
+          "BuildCat": "Combat",
+          "Cost": "25",
+          "CrushSound": "WallCrushBlack",
+          "Crushable": "yes",
+          "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+          "Insignificant": "yes",
+          "Name": "Fence Black",
+          "Nominal": "yes",
+          "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+          "Points": "1",
+          "Prerequisite": "BARRACKS",
+          "Repairable": "false",
+          "Selectable": "no",
+          "Sight": "0",
+          "Strength": "100",
+          "TechLevel": "-1",
+          "ThreatPosed": "0",
+          "UIName": "Name:CAFNCB",
+          "Wall": "yes"
+        },
+        "source_lines": [
+          {
+            "key": "UIName",
+            "line": 16407,
+            "section": "CAFNCB",
+            "value": "Name:CAFNCB"
+          },
+          {
+            "key": "Name",
+            "line": 16408,
+            "section": "CAFNCB",
+            "value": "Fence Black"
+          },
+          {
+            "key": "BuildCat",
+            "line": 16409,
+            "section": "CAFNCB",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 16410,
+            "section": "CAFNCB",
+            "value": "100"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 16411,
+            "section": "CAFNCB",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 16412,
+            "section": "CAFNCB",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 16413,
+            "section": "CAFNCB",
+            "value": "WallCrushBlack"
+          },
+          {
+            "key": "Crushable",
+            "line": 16414,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Wall",
+            "line": 16415,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 16416,
+            "section": "CAFNCB",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 16417,
+            "section": "CAFNCB",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 16418,
+            "section": "CAFNCB",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 16419,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 16420,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 16421,
+            "section": "CAFNCB",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 16422,
+            "section": "CAFNCB",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 16423,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 16424,
+            "section": "CAFNCB",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 16425,
+            "section": "CAFNCB",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 16426,
+            "section": "CAFNCB",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 16427,
+            "section": "CAFNCB",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 16429,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 16430,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "UIName",
+            "line": 16434,
+            "section": "CAFNCW",
+            "value": "Name:CAFNCW"
+          },
+          {
+            "key": "Name",
+            "line": 16435,
+            "section": "CAFNCW",
+            "value": "Fence White"
+          },
+          {
+            "key": "BuildCat",
+            "line": 16436,
+            "section": "CAFNCW",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 16437,
+            "section": "CAFNCW",
+            "value": "100"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 16438,
+            "section": "CAFNCW",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 16439,
+            "section": "CAFNCW",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 16440,
+            "section": "CAFNCW",
+            "value": "WallCrushWhite"
+          },
+          {
+            "key": "Crushable",
+            "line": 16441,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Wall",
+            "line": 16442,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 16443,
+            "section": "CAFNCW",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 16444,
+            "section": "CAFNCW",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 16445,
+            "section": "CAFNCW",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 16446,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 16447,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 16448,
+            "section": "CAFNCW",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 16449,
+            "section": "CAFNCW",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 16450,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 16451,
+            "section": "CAFNCW",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 16452,
+            "section": "CAFNCW",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 16453,
+            "section": "CAFNCW",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 16454,
+            "section": "CAFNCW",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 16456,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 16457,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "UIName",
+            "line": 22038,
+            "section": "CAKRMW",
+            "value": "Name:CAKRMW"
+          },
+          {
+            "key": "Name",
+            "line": 22039,
+            "section": "CAKRMW",
+            "value": "Kremlen Walls"
+          },
+          {
+            "key": "BuildCat",
+            "line": 22040,
+            "section": "CAKRMW",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 22041,
+            "section": "CAKRMW",
+            "value": "300"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 22042,
+            "section": "CAKRMW",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 22043,
+            "section": "CAKRMW",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 22044,
+            "section": "CAKRMW",
+            "value": "WallCrushKremlin"
+          },
+          {
+            "key": "Crushable",
+            "line": 22045,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "Wall",
+            "line": 22046,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 22047,
+            "section": "CAKRMW",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 22048,
+            "section": "CAKRMW",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 22049,
+            "section": "CAKRMW",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 22050,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 22051,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 22052,
+            "section": "CAKRMW",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 22053,
+            "section": "CAKRMW",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 22054,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 22055,
+            "section": "CAKRMW",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 22056,
+            "section": "CAKRMW",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 22057,
+            "section": "CAKRMW",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 22058,
+            "section": "CAKRMW",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 22060,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 22061,
+            "section": "CAKRMW",
+            "value": "no"
+          }
+        ],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 1,
+        "asset_loads": [
+          {
+            "bytes": 19304,
+            "header8_hex": "0000440042004000",
+            "name": "CTFNCW.SHP",
+            "sha256": "c58f5e221d2d836a7399b8ac2e353c180e9fb2ac69a7d19a609f9082796d5999"
+          },
+          {
+            "bytes": 0,
+            "header8_hex": null,
+            "name": "CAFNCW.SHP",
+            "sha256": null
+          }
+        ],
+        "crate": 0,
+        "file": "RULESMD.INI",
+        "image_name": "CAFNCW",
+        "image_present": false,
+        "index": 204,
+        "land": 0,
+        "name": "CAFNCW",
+        "physical_keys": {
+          "AIBuildThis": "no",
+          "Adjacent": "4",
+          "Armor": "wood",
+          "BaseNormal": "no",
+          "BuildCat": "Combat",
+          "Cost": "25",
+          "CrushSound": "WallCrushWhite",
+          "Crushable": "yes",
+          "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+          "Insignificant": "yes",
+          "Name": "Fence White",
+          "Nominal": "yes",
+          "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+          "Points": "1",
+          "Prerequisite": "BARRACKS",
+          "Repairable": "false",
+          "Selectable": "no",
+          "Sight": "0",
+          "Strength": "100",
+          "TechLevel": "-1",
+          "ThreatPosed": "0",
+          "UIName": "Name:CAFNCW",
+          "Wall": "yes"
+        },
+        "source_lines": [
+          {
+            "key": "UIName",
+            "line": 16407,
+            "section": "CAFNCB",
+            "value": "Name:CAFNCB"
+          },
+          {
+            "key": "Name",
+            "line": 16408,
+            "section": "CAFNCB",
+            "value": "Fence Black"
+          },
+          {
+            "key": "BuildCat",
+            "line": 16409,
+            "section": "CAFNCB",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 16410,
+            "section": "CAFNCB",
+            "value": "100"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 16411,
+            "section": "CAFNCB",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 16412,
+            "section": "CAFNCB",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 16413,
+            "section": "CAFNCB",
+            "value": "WallCrushBlack"
+          },
+          {
+            "key": "Crushable",
+            "line": 16414,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Wall",
+            "line": 16415,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 16416,
+            "section": "CAFNCB",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 16417,
+            "section": "CAFNCB",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 16418,
+            "section": "CAFNCB",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 16419,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 16420,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 16421,
+            "section": "CAFNCB",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 16422,
+            "section": "CAFNCB",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 16423,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 16424,
+            "section": "CAFNCB",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 16425,
+            "section": "CAFNCB",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 16426,
+            "section": "CAFNCB",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 16427,
+            "section": "CAFNCB",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 16429,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 16430,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "UIName",
+            "line": 16434,
+            "section": "CAFNCW",
+            "value": "Name:CAFNCW"
+          },
+          {
+            "key": "Name",
+            "line": 16435,
+            "section": "CAFNCW",
+            "value": "Fence White"
+          },
+          {
+            "key": "BuildCat",
+            "line": 16436,
+            "section": "CAFNCW",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 16437,
+            "section": "CAFNCW",
+            "value": "100"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 16438,
+            "section": "CAFNCW",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 16439,
+            "section": "CAFNCW",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 16440,
+            "section": "CAFNCW",
+            "value": "WallCrushWhite"
+          },
+          {
+            "key": "Crushable",
+            "line": 16441,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Wall",
+            "line": 16442,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 16443,
+            "section": "CAFNCW",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 16444,
+            "section": "CAFNCW",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 16445,
+            "section": "CAFNCW",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 16446,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 16447,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 16448,
+            "section": "CAFNCW",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 16449,
+            "section": "CAFNCW",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 16450,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 16451,
+            "section": "CAFNCW",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 16452,
+            "section": "CAFNCW",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 16453,
+            "section": "CAFNCW",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 16454,
+            "section": "CAFNCW",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 16456,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 16457,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "UIName",
+            "line": 22038,
+            "section": "CAKRMW",
+            "value": "Name:CAKRMW"
+          },
+          {
+            "key": "Name",
+            "line": 22039,
+            "section": "CAKRMW",
+            "value": "Kremlen Walls"
+          },
+          {
+            "key": "BuildCat",
+            "line": 22040,
+            "section": "CAKRMW",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 22041,
+            "section": "CAKRMW",
+            "value": "300"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 22042,
+            "section": "CAKRMW",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 22043,
+            "section": "CAKRMW",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 22044,
+            "section": "CAKRMW",
+            "value": "WallCrushKremlin"
+          },
+          {
+            "key": "Crushable",
+            "line": 22045,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "Wall",
+            "line": 22046,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 22047,
+            "section": "CAKRMW",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 22048,
+            "section": "CAKRMW",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 22049,
+            "section": "CAKRMW",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 22050,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 22051,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 22052,
+            "section": "CAKRMW",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 22053,
+            "section": "CAKRMW",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 22054,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 22055,
+            "section": "CAKRMW",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 22056,
+            "section": "CAKRMW",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 22057,
+            "section": "CAKRMW",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 22058,
+            "section": "CAKRMW",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 22060,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 22061,
+            "section": "CAKRMW",
+            "value": "no"
+          }
+        ],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 1,
+        "asset_loads": [
+          {
+            "bytes": 103624,
+            "header8_hex": "000062003c006000",
+            "name": "CTKRMW.SHP",
+            "sha256": "3b2d34b8c336ec11af002f67d0f2afc4a3085a26b27eaaa4f38c8f765f2c95c7"
+          },
+          {
+            "bytes": 0,
+            "header8_hex": null,
+            "name": "CAKRMW.SHP",
+            "sha256": null
+          }
+        ],
+        "crate": 0,
+        "file": "RULESMD.INI",
+        "image_name": "CAKRMW",
+        "image_present": false,
+        "index": 240,
+        "land": 0,
+        "name": "CAKRMW",
+        "physical_keys": {
+          "AIBuildThis": "no",
+          "Adjacent": "4",
+          "Armor": "wood",
+          "BaseNormal": "no",
+          "BuildCat": "Combat",
+          "Cost": "25",
+          "CrushSound": "WallCrushKremlin",
+          "Crushable": "no",
+          "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+          "Insignificant": "yes",
+          "Name": "Kremlen Walls",
+          "Nominal": "yes",
+          "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+          "Points": "1",
+          "Prerequisite": "BARRACKS",
+          "Repairable": "false",
+          "Selectable": "no",
+          "Sight": "0",
+          "Strength": "300",
+          "TechLevel": "-1",
+          "ThreatPosed": "0",
+          "UIName": "Name:CAKRMW",
+          "Wall": "yes"
+        },
+        "source_lines": [
+          {
+            "key": "UIName",
+            "line": 16407,
+            "section": "CAFNCB",
+            "value": "Name:CAFNCB"
+          },
+          {
+            "key": "Name",
+            "line": 16408,
+            "section": "CAFNCB",
+            "value": "Fence Black"
+          },
+          {
+            "key": "BuildCat",
+            "line": 16409,
+            "section": "CAFNCB",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 16410,
+            "section": "CAFNCB",
+            "value": "100"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 16411,
+            "section": "CAFNCB",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 16412,
+            "section": "CAFNCB",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 16413,
+            "section": "CAFNCB",
+            "value": "WallCrushBlack"
+          },
+          {
+            "key": "Crushable",
+            "line": 16414,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Wall",
+            "line": 16415,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 16416,
+            "section": "CAFNCB",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 16417,
+            "section": "CAFNCB",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 16418,
+            "section": "CAFNCB",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 16419,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 16420,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 16421,
+            "section": "CAFNCB",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 16422,
+            "section": "CAFNCB",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 16423,
+            "section": "CAFNCB",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 16424,
+            "section": "CAFNCB",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 16425,
+            "section": "CAFNCB",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 16426,
+            "section": "CAFNCB",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 16427,
+            "section": "CAFNCB",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 16429,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 16430,
+            "section": "CAFNCB",
+            "value": "no"
+          },
+          {
+            "key": "UIName",
+            "line": 16434,
+            "section": "CAFNCW",
+            "value": "Name:CAFNCW"
+          },
+          {
+            "key": "Name",
+            "line": 16435,
+            "section": "CAFNCW",
+            "value": "Fence White"
+          },
+          {
+            "key": "BuildCat",
+            "line": 16436,
+            "section": "CAFNCW",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 16437,
+            "section": "CAFNCW",
+            "value": "100"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 16438,
+            "section": "CAFNCW",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 16439,
+            "section": "CAFNCW",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 16440,
+            "section": "CAFNCW",
+            "value": "WallCrushWhite"
+          },
+          {
+            "key": "Crushable",
+            "line": 16441,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Wall",
+            "line": 16442,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 16443,
+            "section": "CAFNCW",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 16444,
+            "section": "CAFNCW",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 16445,
+            "section": "CAFNCW",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 16446,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 16447,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 16448,
+            "section": "CAFNCW",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 16449,
+            "section": "CAFNCW",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 16450,
+            "section": "CAFNCW",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 16451,
+            "section": "CAFNCW",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 16452,
+            "section": "CAFNCW",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 16453,
+            "section": "CAFNCW",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 16454,
+            "section": "CAFNCW",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 16456,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 16457,
+            "section": "CAFNCW",
+            "value": "no"
+          },
+          {
+            "key": "UIName",
+            "line": 22038,
+            "section": "CAKRMW",
+            "value": "Name:CAKRMW"
+          },
+          {
+            "key": "Name",
+            "line": 22039,
+            "section": "CAKRMW",
+            "value": "Kremlen Walls"
+          },
+          {
+            "key": "BuildCat",
+            "line": 22040,
+            "section": "CAKRMW",
+            "value": "Combat"
+          },
+          {
+            "key": "Strength",
+            "line": 22041,
+            "section": "CAKRMW",
+            "value": "300"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 22042,
+            "section": "CAKRMW",
+            "value": "BARRACKS"
+          },
+          {
+            "key": "Armor",
+            "line": 22043,
+            "section": "CAKRMW",
+            "value": "wood"
+          },
+          {
+            "key": "CrushSound",
+            "line": 22044,
+            "section": "CAKRMW",
+            "value": "WallCrushKremlin"
+          },
+          {
+            "key": "Crushable",
+            "line": 22045,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "Wall",
+            "line": 22046,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "TechLevel",
+            "line": 22047,
+            "section": "CAKRMW",
+            "value": "-1"
+          },
+          {
+            "key": "Adjacent",
+            "line": 22048,
+            "section": "CAKRMW",
+            "value": "4"
+          },
+          {
+            "key": "Sight",
+            "line": 22049,
+            "section": "CAKRMW",
+            "value": "0"
+          },
+          {
+            "key": "Nominal",
+            "line": 22050,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "Selectable",
+            "line": 22051,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "Owner",
+            "line": 22052,
+            "section": "CAKRMW",
+            "value": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "Cost",
+            "line": 22053,
+            "section": "CAKRMW",
+            "value": "25"
+          },
+          {
+            "key": "Insignificant",
+            "line": 22054,
+            "section": "CAKRMW",
+            "value": "yes"
+          },
+          {
+            "key": "Points",
+            "line": 22055,
+            "section": "CAKRMW",
+            "value": "1"
+          },
+          {
+            "key": "Repairable",
+            "line": 22056,
+            "section": "CAKRMW",
+            "value": "false"
+          },
+          {
+            "key": "Explosion",
+            "line": 22057,
+            "section": "CAKRMW",
+            "value": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 22058,
+            "section": "CAKRMW",
+            "value": "0"
+          },
+          {
+            "key": "BaseNormal",
+            "line": 22060,
+            "section": "CAKRMW",
+            "value": "no"
+          },
+          {
+            "key": "AIBuildThis",
+            "line": 22061,
+            "section": "CAKRMW",
+            "value": "no"
+          }
+        ],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 0,
+        "asset_loads": [],
+        "crate": 0,
+        "file": "MPBattleMD.ini",
+        "image_name": "CAFNCB",
+        "image_present": false,
+        "index": 203,
+        "land": 0,
+        "name": "CAFNCB",
+        "physical_keys": null,
+        "source_lines": [],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 0,
+        "asset_loads": [],
+        "crate": 0,
+        "file": "MPBattleMD.ini",
+        "image_name": "CAFNCW",
+        "image_present": false,
+        "index": 204,
+        "land": 0,
+        "name": "CAFNCW",
+        "physical_keys": null,
+        "source_lines": [],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 0,
+        "asset_loads": [],
+        "crate": 0,
+        "file": "MPBattleMD.ini",
+        "image_name": "CAKRMW",
+        "image_present": false,
+        "index": 240,
+        "land": 0,
+        "name": "CAKRMW",
+        "physical_keys": null,
+        "source_lines": [],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 0,
+        "asset_loads": [],
+        "crate": 0,
+        "file": "XMP03T4.MAP",
+        "image_name": "CAFNCB",
+        "image_present": false,
+        "index": 203,
+        "land": 0,
+        "name": "CAFNCB",
+        "physical_keys": null,
+        "source_lines": [],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 0,
+        "asset_loads": [],
+        "crate": 0,
+        "file": "XMP03T4.MAP",
+        "image_name": "CAFNCW",
+        "image_present": false,
+        "index": 204,
+        "land": 0,
+        "name": "CAFNCW",
+        "physical_keys": null,
+        "source_lines": [],
+        "tiberium": 0,
+        "wall": 1
+      },
+      {
+        "admitted": 0,
+        "asset_loads": [],
+        "crate": 0,
+        "file": "XMP03T4.MAP",
+        "image_name": "CAKRMW",
+        "image_present": false,
+        "index": 240,
+        "land": 0,
+        "name": "CAKRMW",
+        "physical_keys": null,
+        "source_lines": [],
+        "tiberium": 0,
+        "wall": 1
+      }
+    ],
+    "lighting": {
+      "ambient_percent": 100,
+      "blue_percent": 87,
+      "green_percent": 100,
+      "ground_units": 0,
+      "level_units": 28,
+      "red_percent": 100
+    },
+    "material_sources": [
+      "ctfncb.shp",
+      "unittem.pal"
+    ],
+    "native_cpu_source": {
+      "map_payload_match": true,
+      "seed": 0,
+      "source": {
+        "cell": [
+          43,
+          81
+        ],
+        "data": 5,
+        "flags": 0,
+        "ground_object": false,
+        "land": 0,
+        "level": 4,
+        "neighbors": 3,
+        "overlay": 203,
+        "slope": 0,
+        "subtile": 0,
+        "tile": 140,
+        "wall_owner": -1,
+        "zone": 1
+      },
+      "type_reader_match": true
+    },
+    "overlay_theater": {
+      "caller": "004AD065..004AD071",
+      "entry": "005FE620",
+      "loads": [
+        {
+          "bytes": 19544,
+          "header8_hex": "0000440042004000",
+          "name": "CTFNCB.SHP",
+          "sha256": "eefb4005b5a0e9c352cb255bb736b7cf6e5552d4ac58591a2b5eb9277779ac5d"
+        },
+        {
+          "bytes": 19304,
+          "header8_hex": "0000440042004000",
+          "name": "CTFNCW.SHP",
+          "sha256": "c58f5e221d2d836a7399b8ac2e353c180e9fb2ac69a7d19a609f9082796d5999"
+        },
+        {
+          "bytes": 103624,
+          "header8_hex": "000062003c006000",
+          "name": "CTKRMW.SHP",
+          "sha256": "3b2d34b8c336ec11af002f67d0f2afc4a3085a26b27eaaa4f38c8f765f2c95c7"
+        }
+      ],
+      "theater": 0
+    },
+    "physical_art": {
+      "CAFNCB": {
+        "Cameo": "SBAGICON",
+        "DamageLevels": "2",
+        "DemandLoad": "true",
+        "Foundation": "1x1",
+        "NewTheater": "yes",
+        "ToOverlay": "CAFNCB"
+      },
+      "CAFNCW": {
+        "Cameo": "SBAGICON",
+        "DamageLevels": "2",
+        "DemandLoad": "true",
+        "Foundation": "1x1",
+        "NewTheater": "yes",
+        "ToOverlay": "CAFNCW"
+      },
+      "CAKRMW": {
+        "Cameo": "SBAGICON",
+        "DamageLevels": "2",
+        "DemandLoad": "true",
+        "Foundation": "1x1",
+        "NewTheater": "yes",
+        "ToOverlay": "CAKRMW"
+      }
+    },
+    "registry_prefix": [
+      "GASAND",
+      "CYCL",
+      "GAWALL",
+      "BARB",
+      "WOOD",
+      "DUMMY",
+      "DUMMY2",
+      "DUMMY3",
+      "DUMMY4",
+      "DUMMY5",
+      "DUMMY6",
+      "DUMMY7",
+      "DUMMY8",
+      "DUMMY9",
+      "DUMMY10",
+      "DUMMY11",
+      "DUMMY12",
+      "V16",
+      "V17",
+      "V18",
+      "DUMMY13",
+      "DUMMY14",
+      "FENC",
+      "DUMMY15",
+      "BRIDGE1",
+      "BRIDGE2",
+      "NAWALL",
+      "GEM01",
+      "GEM02",
+      "GEM03",
+      "GEM04",
+      "GEM05",
+      "GEM06",
+      "GEM07",
+      "GEM08",
+      "GEM09",
+      "GEM10",
+      "GEM11",
+      "GEM12",
+      "TRACKS01",
+      "TRACKS02",
+      "TRACKS03",
+      "TRACKS04",
+      "TRACKS05",
+      "TRACKS06",
+      "TRACKS07",
+      "TRACKS08",
+      "TRACKS09",
+      "TRACKS10",
+      "TRACKS11",
+      "TRACKS12",
+      "TRACKS13",
+      "TRACKS14",
+      "TRACKS15",
+      "TRACKS16",
+      "TRACKTUNNEL01",
+      "TRACKTUNNEL02",
+      "TRACKTUNNEL03",
+      "TRACKTUNNEL04",
+      "RAILBRDG1",
+      "RAILBRDG2",
+      "CRAT01",
+      "CRAT02",
+      "CRAT03",
+      "CRAT04",
+      "CRAT0A",
+      "CRAT0B",
+      "CRAT0C",
+      "DRUM01",
+      "DRUM02",
+      "PALET01",
+      "PALET02",
+      "PALET03",
+      "PALET04",
+      "LOBRDG01",
+      "LOBRDG02",
+      "LOBRDG03",
+      "LOBRDG04",
+      "LOBRDG05",
+      "LOBRDG06",
+      "LOBRDG07",
+      "LOBRDG08",
+      "LOBRDG09",
+      "LOBRDG10",
+      "LOBRDG11",
+      "LOBRDG12",
+      "LOBRDG13",
+      "LOBRDG14",
+      "LOBRDG15",
+      "LOBRDG16",
+      "LOBRDG17",
+      "LOBRDG18",
+      "LOBRDG19",
+      "LOBRDG20",
+      "LOBRDG21",
+      "LOBRDG22",
+      "LOBRDG23",
+      "LOBRDG24",
+      "LOBRDG25",
+      "LOBRDG26",
+      "LOBRDG27",
+      "LOBRDG28",
+      "TIB01",
+      "TIB02",
+      "TIB03",
+      "TIB04",
+      "TIB05",
+      "TIB06",
+      "TIB07",
+      "TIB08",
+      "TIB09",
+      "TIB10",
+      "TIB11",
+      "TIB12",
+      "TIB13",
+      "TIB14",
+      "TIB15",
+      "TIB16",
+      "TIB17",
+      "TIB18",
+      "TIB19",
+      "TIB20",
+      "LOBRDGE1",
+      "LOBRDGE2",
+      "LOBRDGE3",
+      "LOBRDGE4",
+      "DUMMYOLD",
+      "TIB2_01",
+      "TIB2_02",
+      "TIB2_03",
+      "TIB2_04",
+      "TIB2_05",
+      "TIB2_06",
+      "TIB2_07",
+      "TIB2_08",
+      "TIB2_09",
+      "TIB2_10",
+      "TIB2_11",
+      "TIB2_12",
+      "TIB2_13",
+      "TIB2_14",
+      "TIB2_15",
+      "TIB2_16",
+      "TIB2_17",
+      "TIB2_18",
+      "TIB2_19",
+      "TIB2_20",
+      "TIB3_01",
+      "TIB3_02",
+      "TIB3_03",
+      "TIB3_04",
+      "TIB3_05",
+      "TIB3_06",
+      "TIB3_07",
+      "TIB3_08",
+      "TIB3_09",
+      "TIB3_10",
+      "TIB3_11",
+      "TIB3_12",
+      "TIB3_13",
+      "TIB3_14",
+      "TIB3_15",
+      "TIB3_16",
+      "TIB3_17",
+      "TIB3_18",
+      "TIB3_19",
+      "TIB3_20",
+      "USELESS",
+      "SROCK01",
+      "SROCK02",
+      "SROCK03",
+      "SROCK04",
+      "SROCK05",
+      "TROCK01",
+      "TROCK02",
+      "TROCK03",
+      "TROCK04",
+      "TROCK05",
+      "VEINHOLEDUMMY",
+      "CRATE",
+      "FENCE01",
+      "FENCE02",
+      "FENCE03",
+      "FENCE04",
+      "FENCE05",
+      "FENCE06",
+      "FENCE07",
+      "FENCE08",
+      "FENCE09",
+      "FENCE10",
+      "FENCE11",
+      "FENCE12",
+      "FENCE13",
+      "FENCE14",
+      "FENCE15",
+      "FENCE16",
+      "FENCE17",
+      "FENCE18",
+      "FENCE19",
+      "FENCE20",
+      "FENCE21",
+      "FENCE22",
+      "GAWRONG",
+      "CAFNCB",
+      "CAFNCW",
+      "LOBRDB01",
+      "LOBRDB02",
+      "LOBRDB03",
+      "LOBRDB04",
+      "LOBRDB05",
+      "LOBRDB06",
+      "LOBRDB07",
+      "LOBRDB08",
+      "LOBRDB09",
+      "LOBRDB10",
+      "LOBRDB11",
+      "LOBRDB12",
+      "LOBRDB13",
+      "LOBRDB14",
+      "LOBRDB15",
+      "LOBRDB16",
+      "LOBRDB17",
+      "LOBRDB18",
+      "LOBRDB19",
+      "LOBRDB20",
+      "LOBRDB21",
+      "LOBRDB22",
+      "LOBRDB23",
+      "LOBRDB24",
+      "LOBRDB25",
+      "LOBRDB26",
+      "LOBRDB27",
+      "LOBRDB28",
+      "LOBRDGB1",
+      "LOBRDGB2",
+      "LOBRDGB3",
+      "LOBRDGB4",
+      "BRIDGEB1",
+      "BRIDGEB2",
+      "RUBBLE_OVERLAY",
+      "CAKRMW"
+    ],
+    "shape_aliases": [],
+    "sources": [
+      {
+        "bytes": 19544,
+        "inner": "isotemp.mix",
+        "inner_sha256": "68a1c51c4e21ba76556d7aa460fd9fe034858f7b916769aa8166b40b9ce9c1d4",
+        "name": "ctfncb.shp",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "eefb4005b5a0e9c352cb255bb736b7cf6e5552d4ac58591a2b5eb9277779ac5d"
+      },
+      {
+        "bytes": 19304,
+        "inner": "isotemp.mix",
+        "inner_sha256": "68a1c51c4e21ba76556d7aa460fd9fe034858f7b916769aa8166b40b9ce9c1d4",
+        "name": "ctfncw.shp",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "c58f5e221d2d836a7399b8ac2e353c180e9fb2ac69a7d19a609f9082796d5999"
+      },
+      {
+        "bytes": 103624,
+        "inner": "isotemp.mix",
+        "inner_sha256": "68a1c51c4e21ba76556d7aa460fd9fe034858f7b916769aa8166b40b9ce9c1d4",
+        "name": "ctkrmw.shp",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "3b2d34b8c336ec11af002f67d0f2afc4a3085a26b27eaaa4f38c8f765f2c95c7"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "palette.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "e85c535002573b5f95f7c361c4bdb95ee43e4914ddc926afda9ace995c54242b"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "anim.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "341e85171041e7c8be53d5533d96a9bf86b402d9d67335713369354aaa5707af"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "temperat.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "5903b69868b84f494cfbb4e7100398015ef9775b37726019a0d7b5fb6cb33b55"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "isotem.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "5d6e40fcd11a592a31494c635d93c21796cfe86a2743f0258b1f7d0aff850795"
+      },
+      {
+        "bytes": 768,
+        "inner": "cache.mix",
+        "inner_sha256": "fa98851394eb2bbdfdf672c6d99aa9db8b18eca9f28426b6ce8c22a35926188e",
+        "name": "unittem.pal",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "ed785e62eed291480f3198dd44f6b656ebe3a9b75e9f641944d710abc6bde3e3"
+      },
+      {
+        "bytes": 336535,
+        "inner": "localmd.mix",
+        "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "name": "ARTMD.INI",
+        "outer": "ra2md.mix",
+        "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      {
+        "bytes": 295,
+        "inner": "localmd.mix",
+        "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "name": "MPBattleMD.ini",
+        "outer": "ra2md.mix",
+        "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "bytes": 25269,
+        "inner": "localmd.mix",
+        "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+        "name": "TEMPERATMD.INI",
+        "outer": "ra2md.mix",
+        "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+        "sha256": "bf656852ad19636068f2dde6f9ddd1440ecf0e13e6e4de6cd7fb179a3592549d"
+      },
+      {
+        "bytes": 156269,
+        "inner": null,
+        "inner_sha256": "ff4138ba95f7efd8bded14342fc9082b99c47e43c25ab18236e4eea141b488e9",
+        "name": "XMP03T4.MAP",
+        "outer": "multimd.mix",
+        "outer_sha256": "ff4138ba95f7efd8bded14342fc9082b99c47e43c25ab18236e4eea141b488e9",
+        "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      {
+        "bytes": 743215,
+        "inner": null,
+        "name": "RULESMD.INI",
+        "outer": "expandmd01.mix",
+        "outer_sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "bytes": 192104,
+        "inner": null,
+        "kind": "loose",
+        "name": "GoldSt.mmx",
+        "outer": null,
+        "sha256": "846a51b4d2f98f751f3e1550712def3ee20de56c39f69d751f619a7add124c24"
+      },
+      {
+        "bytes": 1872,
+        "inner": "isotemp.mix",
+        "inner_sha256": "68a1c51c4e21ba76556d7aa460fd9fe034858f7b916769aa8166b40b9ce9c1d4",
+        "name": "clat09.tem",
+        "outer": "ra2.mix",
+        "outer_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+        "sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+      }
+    ],
+    "theater": {
+      "before": 0,
+      "caller": "0x687631..0x68764F",
+      "default": 0,
+      "field": "Scenario+0x1258",
+      "key": "Theater",
+      "lookup": "0x48DBE0",
+      "map_sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e",
+      "reader": "0x475870",
+      "section": "Map",
+      "source_value": "TEMPERATE",
+      "value": 0
+    },
+    "tmp": {
+      "boundary": "Native selected theater scalar/string reads and full TMP constructor/lazy loader; sparse selected primary registry is supplied.",
+      "file_io": [
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat09.tem",
+          "pc": "0x0065CC59",
+          "phase": "authored_fence_tmp_load",
+          "prepared_physical_winner": true,
+          "result": 1,
+          "sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat09.tem",
+          "pc": "0x0065CC59",
+          "phase": "authored_fence_tmp_load",
+          "prepared_physical_winner": true,
+          "result": 2,
+          "sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat09.tem",
+          "pc": "0x0065CBBB",
+          "phase": "authored_fence_tmp_load",
+          "prepared_physical_winner": true,
+          "result": 3,
+          "sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat09.tem",
+          "pc": "0x0065CC59",
+          "phase": "authored_fence_tmp_load",
+          "prepared_physical_winner": true,
+          "result": 4,
+          "sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+        },
+        {
+          "bytes": 1872,
+          "kind": "CreateFile",
+          "name": "clat09.tem",
+          "pc": "0x0065CBBB",
+          "phase": "authored_fence_tmp_load",
+          "prepared_physical_winner": true,
+          "result": 5,
+          "sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+        },
+        {
+          "kind": "ReadFile",
+          "name": "clat09.tem",
+          "offset_after": 1872,
+          "offset_before": 0,
+          "pc": "0x0065CD5D",
+          "phase": "authored_fence_tmp_load",
+          "reported_bytes": 1872,
+          "source_sha256": "f74e23c100bb30d79c4677d1fcb1519d34b0201617b128f9ea7d517f251111e4"
+        }
+      ],
+      "mapping": {
+        "base": 132,
+        "boundary": "Native INI scalar/string reads; prefix accumulation is the supplied selected theater registration boundary.",
+        "file_name": "clat",
+        "section": "TileSet0014",
+        "tile_id": 140,
+        "tiles_in_set": 16
+      },
+      "name": "clat09.tem"
+    }
+  },
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "rows": [
+    {
+      "canvas": [
+        68,
+        66
+      ],
+      "draws": [
+        {
+          "brightness": 1112,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 19968,
+          "frame": 5,
+          "gradient": 2,
+          "point": [
+            126,
+            63
+          ],
+          "raw_args": [
+            604490832,
+            5,
+            268959728,
+            553652256,
+            19968,
+            0,
+            -62,
+            2,
+            1112,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "z_adjust": -62,
+          "zshape_argument": 0
+        }
+      ],
+      "image_name": "CAFNCB",
+      "input": {
+        "background": 65535,
+        "cell_point": [
+          96,
+          120
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          43,
+          81
+        ],
+        "flags": 0,
+        "level": 4,
+        "name": "initial_source",
+        "old_z": 65535,
+        "overlay_id": 203,
+        "repeat": 1,
+        "state": 5,
+        "type": "CAFNCB",
+        "viewport_y": 0
+      },
+      "leaf_rows": [
+        {
+          "candidate": 32614,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 60,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32615,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 61,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32615,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 62,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32615,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 63,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32616,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 64,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32616,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 65,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32616,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 66,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32617,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 67,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32617,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 68,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32617,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 69,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32618,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 70,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32618,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 71,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32618,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 72,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32619,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 73,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32619,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 74,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32619,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 75,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32620,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 76,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32620,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 77,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32620,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 78,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32621,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 79,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32621,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 80,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32621,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 81,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32622,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 82,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32622,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 83,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32622,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 84,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        }
+      ],
+      "lighting_output": {
+        "bottom_scalar": 1224,
+        "cell_normalized_rgb": [
+          1000,
+          1000,
+          870
+        ],
+        "common_scalar": 1112,
+        "convert_rgb_key": [
+          992,
+          992,
+          864
+        ],
+        "top_scalar": 1112
+      },
+      "name": "initial_source",
+      "native_cell": {
+        "cell": [
+          43,
+          81
+        ],
+        "data": 5,
+        "flags": 0,
+        "ground_object": false,
+        "land": 0,
+        "level": 4,
+        "neighbors": 3,
+        "overlay": 203,
+        "slope": 0,
+        "subtile": 0,
+        "tile": 140,
+        "wall_owner": -1,
+        "zone": 1
+      },
+      "native_rect": [
+        19,
+        30,
+        30,
+        25
+      ],
+      "output": {
+        "color_sha256": "9bed816e0086bedeb1930c15abaea9c3760ef19887b68b07b25902e8e382d2d3",
+        "depth_sha256": "fb30a8016e163275bed9384278f17825c2ac606bdc2a11271af7e7f1e18e517d",
+        "runs": [
+          [
+            140,
+            60,
+            1,
+            12710,
+            32614
+          ],
+          [
+            138,
+            61,
+            1,
+            12710,
+            32615
+          ],
+          [
+            140,
+            61,
+            1,
+            0,
+            32615
+          ],
+          [
+            136,
+            62,
+            1,
+            12710,
+            32615
+          ],
+          [
+            138,
+            62,
+            1,
+            0,
+            32615
+          ],
+          [
+            140,
+            62,
+            1,
+            0,
+            32615
+          ],
+          [
+            134,
+            63,
+            1,
+            12710,
+            32615
+          ],
+          [
+            136,
+            63,
+            1,
+            0,
+            32615
+          ],
+          [
+            138,
+            63,
+            1,
+            0,
+            32615
+          ],
+          [
+            139,
+            63,
+            2,
+            12710,
+            32615
+          ],
+          [
+            132,
+            64,
+            1,
+            12710,
+            32616
+          ],
+          [
+            134,
+            64,
+            1,
+            0,
+            32616
+          ],
+          [
+            136,
+            64,
+            1,
+            0,
+            32616
+          ],
+          [
+            137,
+            64,
+            2,
+            12710,
+            32616
+          ],
+          [
+            139,
+            64,
+            2,
+            0,
+            32616
+          ],
+          [
+            130,
+            65,
+            1,
+            12710,
+            32616
+          ],
+          [
+            132,
+            65,
+            1,
+            0,
+            32616
+          ],
+          [
+            134,
+            65,
+            1,
+            0,
+            32616
+          ],
+          [
+            135,
+            65,
+            2,
+            12710,
+            32616
+          ],
+          [
+            137,
+            65,
+            2,
+            0,
+            32616
+          ],
+          [
+            140,
+            65,
+            1,
+            0,
+            32616
+          ],
+          [
+            128,
+            66,
+            1,
+            12710,
+            32616
+          ],
+          [
+            130,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            132,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            133,
+            66,
+            2,
+            12710,
+            32616
+          ],
+          [
+            135,
+            66,
+            2,
+            0,
+            32616
+          ],
+          [
+            138,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            140,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            126,
+            67,
+            1,
+            12710,
+            32617
+          ],
+          [
+            128,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            130,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            131,
+            67,
+            2,
+            12710,
+            32617
+          ],
+          [
+            133,
+            67,
+            2,
+            0,
+            32617
+          ],
+          [
+            136,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            138,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            140,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            124,
+            68,
+            1,
+            12710,
+            32617
+          ],
+          [
+            126,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            128,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            129,
+            68,
+            2,
+            12710,
+            32617
+          ],
+          [
+            131,
+            68,
+            2,
+            0,
+            32617
+          ],
+          [
+            134,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            136,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            138,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            140,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            122,
+            69,
+            1,
+            12710,
+            32617
+          ],
+          [
+            124,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            126,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            127,
+            69,
+            2,
+            12710,
+            32617
+          ],
+          [
+            129,
+            69,
+            2,
+            0,
+            32617
+          ],
+          [
+            132,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            134,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            136,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            138,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            139,
+            69,
+            1,
+            12710,
+            32617
+          ],
+          [
+            140,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            120,
+            70,
+            1,
+            12710,
+            32618
+          ],
+          [
+            122,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            124,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            125,
+            70,
+            2,
+            12710,
+            32618
+          ],
+          [
+            127,
+            70,
+            2,
+            0,
+            32618
+          ],
+          [
+            130,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            132,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            134,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            136,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            137,
+            70,
+            1,
+            12710,
+            32618
+          ],
+          [
+            138,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            140,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            118,
+            71,
+            1,
+            12710,
+            32618
+          ],
+          [
+            120,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            122,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            123,
+            71,
+            2,
+            12710,
+            32618
+          ],
+          [
+            125,
+            71,
+            2,
+            0,
+            32618
+          ],
+          [
+            128,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            130,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            132,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            134,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            135,
+            71,
+            1,
+            12710,
+            32618
+          ],
+          [
+            136,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            138,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            116,
+            72,
+            1,
+            12710,
+            32618
+          ],
+          [
+            118,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            120,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            121,
+            72,
+            2,
+            12710,
+            32618
+          ],
+          [
+            123,
+            72,
+            2,
+            0,
+            32618
+          ],
+          [
+            126,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            128,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            130,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            132,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            133,
+            72,
+            1,
+            12710,
+            32618
+          ],
+          [
+            134,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            136,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            114,
+            73,
+            1,
+            12710,
+            32619
+          ],
+          [
+            116,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            118,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            119,
+            73,
+            2,
+            12710,
+            32619
+          ],
+          [
+            121,
+            73,
+            2,
+            0,
+            32619
+          ],
+          [
+            124,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            126,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            128,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            130,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            131,
+            73,
+            1,
+            12710,
+            32619
+          ],
+          [
+            132,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            134,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            112,
+            74,
+            1,
+            12710,
+            32619
+          ],
+          [
+            114,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            116,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            117,
+            74,
+            2,
+            12710,
+            32619
+          ],
+          [
+            119,
+            74,
+            2,
+            0,
+            32619
+          ],
+          [
+            122,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            124,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            126,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            128,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            129,
+            74,
+            1,
+            12710,
+            32619
+          ],
+          [
+            130,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            132,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            112,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            114,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            115,
+            75,
+            2,
+            12710,
+            32619
+          ],
+          [
+            117,
+            75,
+            2,
+            0,
+            32619
+          ],
+          [
+            120,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            122,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            124,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            126,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            127,
+            75,
+            1,
+            12710,
+            32619
+          ],
+          [
+            128,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            130,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            112,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            113,
+            76,
+            2,
+            12710,
+            32620
+          ],
+          [
+            115,
+            76,
+            2,
+            0,
+            32620
+          ],
+          [
+            118,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            120,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            122,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            124,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            125,
+            76,
+            1,
+            12710,
+            32620
+          ],
+          [
+            126,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            128,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            111,
+            77,
+            2,
+            12710,
+            32620
+          ],
+          [
+            113,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            114,
+            77,
+            1,
+            32,
+            32620
+          ],
+          [
+            116,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            118,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            120,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            122,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            123,
+            77,
+            1,
+            12710,
+            32620
+          ],
+          [
+            124,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            126,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            111,
+            78,
+            2,
+            0,
+            32620
+          ],
+          [
+            114,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            116,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            118,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            120,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            121,
+            78,
+            1,
+            12710,
+            32620
+          ],
+          [
+            122,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            124,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            112,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            114,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            116,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            118,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            119,
+            79,
+            1,
+            12710,
+            32621
+          ],
+          [
+            120,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            122,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            112,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            114,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            116,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            117,
+            80,
+            1,
+            12710,
+            32621
+          ],
+          [
+            118,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            120,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            112,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            114,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            115,
+            81,
+            1,
+            12710,
+            32621
+          ],
+          [
+            116,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            118,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            112,
+            82,
+            1,
+            0,
+            32622
+          ],
+          [
+            113,
+            82,
+            1,
+            12710,
+            32622
+          ],
+          [
+            114,
+            82,
+            1,
+            0,
+            32622
+          ],
+          [
+            116,
+            82,
+            1,
+            0,
+            32622
+          ],
+          [
+            111,
+            83,
+            1,
+            12710,
+            32622
+          ],
+          [
+            112,
+            83,
+            1,
+            0,
+            32622
+          ],
+          [
+            114,
+            83,
+            1,
+            0,
+            32622
+          ],
+          [
+            112,
+            84,
+            1,
+            0,
+            32622
+          ]
+        ]
+      },
+      "reached": [
+        "00437A10",
+        "0047F6A0",
+        "00480110",
+        "00490E50",
+        "004990E0",
+        "004AED70",
+        "005FDCC0",
+        "0069E740",
+        "0069E7E0",
+        "0069E900"
+      ]
+    },
+    {
+      "canvas": [
+        68,
+        66
+      ],
+      "draws": [
+        {
+          "brightness": 1112,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 19968,
+          "frame": 21,
+          "gradient": 2,
+          "point": [
+            126,
+            63
+          ],
+          "raw_args": [
+            604490832,
+            21,
+            268959728,
+            553652256,
+            19968,
+            0,
+            -62,
+            2,
+            1112,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "z_adjust": -62,
+          "zshape_argument": 0
+        }
+      ],
+      "image_name": "CAFNCB",
+      "input": {
+        "background": 65535,
+        "cell_point": [
+          96,
+          120
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          43,
+          80
+        ],
+        "flags": 0,
+        "level": 4,
+        "name": "partial_neighbor",
+        "old_z": 65535,
+        "overlay_id": 203,
+        "repeat": 1,
+        "state": 21,
+        "type": "CAFNCB",
+        "viewport_y": 0
+      },
+      "leaf_rows": [
+        {
+          "candidate": 32615,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 61,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32615,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 62,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32615,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 63,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32616,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 64,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32616,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 65,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32616,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 66,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32617,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 67,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32617,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 68,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32617,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 69,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32618,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 70,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32618,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 71,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32618,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 72,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32619,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 73,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32619,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 74,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32619,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 75,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32620,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 76,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32620,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 77,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32620,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 78,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32621,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 79,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32621,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 80,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32621,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 81,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32622,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 82,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32622,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 83,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32622,
+          "count": 30,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 111,
+          "y": 84,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        }
+      ],
+      "lighting_output": {
+        "bottom_scalar": 1224,
+        "cell_normalized_rgb": [
+          1000,
+          1000,
+          870
+        ],
+        "common_scalar": 1112,
+        "convert_rgb_key": [
+          992,
+          992,
+          864
+        ],
+        "top_scalar": 1112
+      },
+      "name": "partial_neighbor",
+      "native_cell": {
+        "cell": [
+          43,
+          80
+        ],
+        "data": 21,
+        "flags": 0,
+        "ground_object": false,
+        "land": 0,
+        "level": 4,
+        "neighbors": 2,
+        "overlay": 203,
+        "slope": 0,
+        "subtile": 0,
+        "tile": 140,
+        "wall_owner": -1,
+        "zone": 1
+      },
+      "native_rect": [
+        19,
+        31,
+        30,
+        24
+      ],
+      "output": {
+        "color_sha256": "7191d943d7d5f978fb11a71eff5e6a5646c0b1b1c7d8505acdc5c9f89c6f6034",
+        "depth_sha256": "d1fead02a2cac9478c36715737306883ed7dbd423a28a8a93a3d1a5191be4a10",
+        "runs": [
+          [
+            136,
+            61,
+            1,
+            12710,
+            32615
+          ],
+          [
+            140,
+            61,
+            1,
+            12710,
+            32615
+          ],
+          [
+            136,
+            62,
+            1,
+            0,
+            32615
+          ],
+          [
+            140,
+            62,
+            1,
+            0,
+            32615
+          ],
+          [
+            136,
+            63,
+            1,
+            0,
+            32615
+          ],
+          [
+            140,
+            63,
+            1,
+            0,
+            32615
+          ],
+          [
+            131,
+            64,
+            1,
+            12710,
+            32616
+          ],
+          [
+            133,
+            64,
+            1,
+            12710,
+            32616
+          ],
+          [
+            136,
+            64,
+            1,
+            0,
+            32616
+          ],
+          [
+            137,
+            64,
+            1,
+            12710,
+            32616
+          ],
+          [
+            138,
+            64,
+            3,
+            0,
+            32616
+          ],
+          [
+            131,
+            65,
+            1,
+            0,
+            32616
+          ],
+          [
+            133,
+            65,
+            1,
+            0,
+            32616
+          ],
+          [
+            134,
+            65,
+            1,
+            12710,
+            32616
+          ],
+          [
+            135,
+            65,
+            3,
+            0,
+            32616
+          ],
+          [
+            140,
+            65,
+            1,
+            0,
+            32616
+          ],
+          [
+            131,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            133,
+            66,
+            2,
+            0,
+            32616
+          ],
+          [
+            136,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            138,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            140,
+            66,
+            1,
+            0,
+            32616
+          ],
+          [
+            127,
+            67,
+            1,
+            12710,
+            32617
+          ],
+          [
+            130,
+            67,
+            1,
+            12710,
+            32617
+          ],
+          [
+            131,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            133,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            136,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            138,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            140,
+            67,
+            1,
+            0,
+            32617
+          ],
+          [
+            127,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            130,
+            68,
+            2,
+            0,
+            32617
+          ],
+          [
+            133,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            136,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            138,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            139,
+            68,
+            1,
+            12710,
+            32617
+          ],
+          [
+            140,
+            68,
+            1,
+            0,
+            32617
+          ],
+          [
+            122,
+            69,
+            1,
+            12710,
+            32617
+          ],
+          [
+            124,
+            69,
+            1,
+            12710,
+            32617
+          ],
+          [
+            127,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            129,
+            69,
+            1,
+            12710,
+            32617
+          ],
+          [
+            130,
+            69,
+            2,
+            0,
+            32617
+          ],
+          [
+            133,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            136,
+            69,
+            1,
+            0,
+            32617
+          ],
+          [
+            137,
+            69,
+            1,
+            12710,
+            32617
+          ],
+          [
+            138,
+            69,
+            3,
+            0,
+            32617
+          ],
+          [
+            122,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            124,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            127,
+            70,
+            3,
+            0,
+            32618
+          ],
+          [
+            131,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            133,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            136,
+            70,
+            3,
+            0,
+            32618
+          ],
+          [
+            140,
+            70,
+            1,
+            0,
+            32618
+          ],
+          [
+            120,
+            71,
+            1,
+            12710,
+            32618
+          ],
+          [
+            122,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            124,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            127,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            129,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            131,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            133,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            136,
+            71,
+            1,
+            0,
+            32618
+          ],
+          [
+            116,
+            72,
+            1,
+            12710,
+            32618
+          ],
+          [
+            118,
+            72,
+            1,
+            12710,
+            32618
+          ],
+          [
+            120,
+            72,
+            5,
+            0,
+            32618
+          ],
+          [
+            126,
+            72,
+            1,
+            12710,
+            32618
+          ],
+          [
+            127,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            129,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            131,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            132,
+            72,
+            1,
+            12710,
+            32618
+          ],
+          [
+            133,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            136,
+            72,
+            1,
+            0,
+            32618
+          ],
+          [
+            112,
+            73,
+            1,
+            12710,
+            32619
+          ],
+          [
+            116,
+            73,
+            1,
+            12710,
+            32619
+          ],
+          [
+            118,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            119,
+            73,
+            1,
+            12710,
+            32619
+          ],
+          [
+            120,
+            73,
+            3,
+            0,
+            32619
+          ],
+          [
+            124,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            126,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            129,
+            73,
+            1,
+            0,
+            32619
+          ],
+          [
+            130,
+            73,
+            1,
+            12710,
+            32619
+          ],
+          [
+            131,
+            73,
+            2,
+            0,
+            32619
+          ],
+          [
+            112,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            114,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            115,
+            74,
+            1,
+            12710,
+            32619
+          ],
+          [
+            116,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            117,
+            74,
+            1,
+            12710,
+            32619
+          ],
+          [
+            118,
+            74,
+            3,
+            0,
+            32619
+          ],
+          [
+            122,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            124,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            126,
+            74,
+            1,
+            0,
+            32619
+          ],
+          [
+            127,
+            74,
+            2,
+            12710,
+            32619
+          ],
+          [
+            129,
+            74,
+            3,
+            0,
+            32619
+          ],
+          [
+            112,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            113,
+            75,
+            1,
+            12710,
+            32619
+          ],
+          [
+            114,
+            75,
+            5,
+            0,
+            32619
+          ],
+          [
+            120,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            122,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            124,
+            75,
+            1,
+            0,
+            32619
+          ],
+          [
+            125,
+            75,
+            1,
+            12710,
+            32619
+          ],
+          [
+            126,
+            75,
+            3,
+            0,
+            32619
+          ],
+          [
+            112,
+            76,
+            3,
+            0,
+            32620
+          ],
+          [
+            116,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            118,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            120,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            122,
+            76,
+            1,
+            0,
+            32620
+          ],
+          [
+            124,
+            76,
+            3,
+            0,
+            32620
+          ],
+          [
+            111,
+            77,
+            1,
+            12710,
+            32620
+          ],
+          [
+            112,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            114,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            116,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            118,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            120,
+            77,
+            1,
+            0,
+            32620
+          ],
+          [
+            121,
+            77,
+            1,
+            12710,
+            32620
+          ],
+          [
+            122,
+            77,
+            3,
+            0,
+            32620
+          ],
+          [
+            111,
+            78,
+            2,
+            0,
+            32620
+          ],
+          [
+            114,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            116,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            118,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            120,
+            78,
+            3,
+            0,
+            32620
+          ],
+          [
+            124,
+            78,
+            1,
+            0,
+            32620
+          ],
+          [
+            112,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            114,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            116,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            117,
+            79,
+            1,
+            12710,
+            32621
+          ],
+          [
+            118,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            120,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            122,
+            79,
+            1,
+            0,
+            32621
+          ],
+          [
+            112,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            114,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            116,
+            80,
+            3,
+            0,
+            32621
+          ],
+          [
+            120,
+            80,
+            1,
+            0,
+            32621
+          ],
+          [
+            112,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            113,
+            81,
+            1,
+            12710,
+            32621
+          ],
+          [
+            114,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            116,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            118,
+            81,
+            1,
+            0,
+            32621
+          ],
+          [
+            112,
+            82,
+            3,
+            0,
+            32622
+          ],
+          [
+            111,
+            83,
+            2,
+            0,
+            32622
+          ],
+          [
+            112,
+            84,
+            1,
+            0,
+            32622
+          ]
+        ]
+      },
+      "reached": [
+        "00437A10",
+        "0047F6A0",
+        "00480110",
+        "00490E50",
+        "004990E0",
+        "004AED70",
+        "005FDCC0",
+        "0069E740",
+        "0069E7E0",
+        "0069E900"
+      ]
+    },
+    {
+      "canvas": [
+        68,
+        66
+      ],
+      "draws": [
+        {
+          "brightness": 1112,
+          "clip": [
+            0,
+            0,
+            192,
+            160
+          ],
+          "flags": 19968,
+          "frame": 1,
+          "gradient": 2,
+          "point": [
+            126,
+            63
+          ],
+          "raw_args": [
+            604490832,
+            1,
+            268959728,
+            553652256,
+            19968,
+            0,
+            -62,
+            2,
+            1112,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "z_adjust": -62,
+          "zshape_argument": 0
+        }
+      ],
+      "image_name": "CAFNCB",
+      "input": {
+        "background": 65535,
+        "cell_point": [
+          96,
+          120
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          43,
+          79
+        ],
+        "flags": 0,
+        "level": 4,
+        "name": "changed_endpoint",
+        "old_z": 65535,
+        "overlay_id": 203,
+        "repeat": 1,
+        "state": 1,
+        "type": "CAFNCB",
+        "viewport_y": 0
+      },
+      "leaf_rows": [
+        {
+          "candidate": 32623,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 60,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32623,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 61,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32623,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 62,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32624,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 63,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32624,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 64,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32624,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 65,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32625,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 66,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32625,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 67,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32625,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 68,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32626,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 69,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32626,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 70,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32626,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 71,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32627,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 72,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32627,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 73,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32627,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 74,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32628,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 75,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32628,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 76,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        },
+        {
+          "candidate": 32628,
+          "count": 15,
+          "leaf": "rle_body",
+          "skip": 0,
+          "x": 126,
+          "y": 77,
+          "zshape_address": 9028968,
+          "zshape_values": [
+            0
+          ]
+        }
+      ],
+      "lighting_output": {
+        "bottom_scalar": 1224,
+        "cell_normalized_rgb": [
+          1000,
+          1000,
+          870
+        ],
+        "common_scalar": 1112,
+        "convert_rgb_key": [
+          992,
+          992,
+          864
+        ],
+        "top_scalar": 1112
+      },
+      "name": "changed_endpoint",
+      "native_cell": {
+        "cell": [
+          43,
+          79
+        ],
+        "data": 1,
+        "flags": 0,
+        "ground_object": false,
+        "land": 0,
+        "level": 4,
+        "neighbors": 1,
+        "overlay": 203,
+        "slope": 0,
+        "subtile": 0,
+        "tile": 140,
+        "wall_owner": -1,
+        "zone": 1
+      },
+      "native_rect": [
+        34,
+        30,
+        15,
+        18
+      ],
+      "output": {
+        "color_sha256": "c510f9ca5a0b4957246c1872d7b1fbdc8bec754e3ccc03f07130a5e4fc18c16a",
+        "depth_sha256": "0fe0835cb5224bd92231d6415cfc13f79d75e9f421f5f300770879ff1a0ca65d",
+        "runs": [
+          [
+            140,
+            60,
+            1,
+            12710,
+            32623
+          ],
+          [
+            138,
+            61,
+            1,
+            12710,
+            32623
+          ],
+          [
+            140,
+            61,
+            1,
+            0,
+            32623
+          ],
+          [
+            136,
+            62,
+            1,
+            12710,
+            32623
+          ],
+          [
+            138,
+            62,
+            1,
+            0,
+            32623
+          ],
+          [
+            140,
+            62,
+            1,
+            0,
+            32623
+          ],
+          [
+            134,
+            63,
+            1,
+            12710,
+            32624
+          ],
+          [
+            136,
+            63,
+            1,
+            0,
+            32624
+          ],
+          [
+            138,
+            63,
+            1,
+            0,
+            32624
+          ],
+          [
+            139,
+            63,
+            2,
+            12710,
+            32624
+          ],
+          [
+            132,
+            64,
+            1,
+            12710,
+            32624
+          ],
+          [
+            134,
+            64,
+            1,
+            0,
+            32624
+          ],
+          [
+            136,
+            64,
+            1,
+            0,
+            32624
+          ],
+          [
+            137,
+            64,
+            2,
+            12710,
+            32624
+          ],
+          [
+            139,
+            64,
+            2,
+            0,
+            32624
+          ],
+          [
+            130,
+            65,
+            1,
+            12710,
+            32624
+          ],
+          [
+            132,
+            65,
+            1,
+            0,
+            32624
+          ],
+          [
+            134,
+            65,
+            1,
+            0,
+            32624
+          ],
+          [
+            135,
+            65,
+            2,
+            12710,
+            32624
+          ],
+          [
+            137,
+            65,
+            2,
+            0,
+            32624
+          ],
+          [
+            140,
+            65,
+            1,
+            0,
+            32624
+          ],
+          [
+            128,
+            66,
+            1,
+            12710,
+            32625
+          ],
+          [
+            130,
+            66,
+            1,
+            0,
+            32625
+          ],
+          [
+            132,
+            66,
+            1,
+            0,
+            32625
+          ],
+          [
+            133,
+            66,
+            2,
+            12710,
+            32625
+          ],
+          [
+            135,
+            66,
+            2,
+            0,
+            32625
+          ],
+          [
+            138,
+            66,
+            1,
+            0,
+            32625
+          ],
+          [
+            140,
+            66,
+            1,
+            0,
+            32625
+          ],
+          [
+            126,
+            67,
+            1,
+            12710,
+            32625
+          ],
+          [
+            128,
+            67,
+            1,
+            0,
+            32625
+          ],
+          [
+            130,
+            67,
+            1,
+            0,
+            32625
+          ],
+          [
+            131,
+            67,
+            2,
+            12710,
+            32625
+          ],
+          [
+            133,
+            67,
+            2,
+            0,
+            32625
+          ],
+          [
+            136,
+            67,
+            1,
+            0,
+            32625
+          ],
+          [
+            138,
+            67,
+            1,
+            0,
+            32625
+          ],
+          [
+            140,
+            67,
+            1,
+            0,
+            32625
+          ],
+          [
+            126,
+            68,
+            1,
+            0,
+            32625
+          ],
+          [
+            128,
+            68,
+            1,
+            0,
+            32625
+          ],
+          [
+            129,
+            68,
+            2,
+            12710,
+            32625
+          ],
+          [
+            131,
+            68,
+            2,
+            0,
+            32625
+          ],
+          [
+            134,
+            68,
+            1,
+            0,
+            32625
+          ],
+          [
+            136,
+            68,
+            1,
+            0,
+            32625
+          ],
+          [
+            138,
+            68,
+            1,
+            0,
+            32625
+          ],
+          [
+            140,
+            68,
+            1,
+            0,
+            32625
+          ],
+          [
+            126,
+            69,
+            1,
+            0,
+            32626
+          ],
+          [
+            127,
+            69,
+            2,
+            12710,
+            32626
+          ],
+          [
+            129,
+            69,
+            2,
+            0,
+            32626
+          ],
+          [
+            132,
+            69,
+            1,
+            0,
+            32626
+          ],
+          [
+            134,
+            69,
+            1,
+            0,
+            32626
+          ],
+          [
+            136,
+            69,
+            1,
+            0,
+            32626
+          ],
+          [
+            138,
+            69,
+            1,
+            0,
+            32626
+          ],
+          [
+            139,
+            69,
+            1,
+            12710,
+            32626
+          ],
+          [
+            140,
+            69,
+            1,
+            0,
+            32626
+          ],
+          [
+            126,
+            70,
+            1,
+            12710,
+            32626
+          ],
+          [
+            127,
+            70,
+            2,
+            0,
+            32626
+          ],
+          [
+            130,
+            70,
+            1,
+            0,
+            32626
+          ],
+          [
+            132,
+            70,
+            1,
+            0,
+            32626
+          ],
+          [
+            134,
+            70,
+            1,
+            0,
+            32626
+          ],
+          [
+            136,
+            70,
+            1,
+            0,
+            32626
+          ],
+          [
+            137,
+            70,
+            1,
+            12710,
+            32626
+          ],
+          [
+            138,
+            70,
+            1,
+            0,
+            32626
+          ],
+          [
+            140,
+            70,
+            1,
+            0,
+            32626
+          ],
+          [
+            126,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            128,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            130,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            132,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            134,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            135,
+            71,
+            1,
+            12710,
+            32626
+          ],
+          [
+            136,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            138,
+            71,
+            1,
+            0,
+            32626
+          ],
+          [
+            126,
+            72,
+            1,
+            0,
+            32627
+          ],
+          [
+            128,
+            72,
+            1,
+            0,
+            32627
+          ],
+          [
+            130,
+            72,
+            1,
+            0,
+            32627
+          ],
+          [
+            132,
+            72,
+            1,
+            0,
+            32627
+          ],
+          [
+            133,
+            72,
+            1,
+            12710,
+            32627
+          ],
+          [
+            134,
+            72,
+            1,
+            0,
+            32627
+          ],
+          [
+            136,
+            72,
+            1,
+            0,
+            32627
+          ],
+          [
+            126,
+            73,
+            1,
+            0,
+            32627
+          ],
+          [
+            128,
+            73,
+            1,
+            0,
+            32627
+          ],
+          [
+            130,
+            73,
+            1,
+            0,
+            32627
+          ],
+          [
+            131,
+            73,
+            1,
+            12710,
+            32627
+          ],
+          [
+            132,
+            73,
+            1,
+            0,
+            32627
+          ],
+          [
+            134,
+            73,
+            1,
+            0,
+            32627
+          ],
+          [
+            126,
+            74,
+            1,
+            0,
+            32627
+          ],
+          [
+            128,
+            74,
+            1,
+            0,
+            32627
+          ],
+          [
+            129,
+            74,
+            1,
+            12710,
+            32627
+          ],
+          [
+            130,
+            74,
+            1,
+            0,
+            32627
+          ],
+          [
+            132,
+            74,
+            1,
+            0,
+            32627
+          ],
+          [
+            126,
+            75,
+            1,
+            0,
+            32628
+          ],
+          [
+            127,
+            75,
+            1,
+            12710,
+            32628
+          ],
+          [
+            128,
+            75,
+            1,
+            0,
+            32628
+          ],
+          [
+            130,
+            75,
+            1,
+            0,
+            32628
+          ],
+          [
+            126,
+            76,
+            1,
+            0,
+            32628
+          ],
+          [
+            128,
+            76,
+            1,
+            0,
+            32628
+          ],
+          [
+            126,
+            77,
+            1,
+            0,
+            32628
+          ]
+        ]
+      },
+      "reached": [
+        "00437A10",
+        "0047F6A0",
+        "00480110",
+        "00490E50",
+        "004990E0",
+        "004AED70",
+        "005FDCC0",
+        "0069E740",
+        "0069E7E0",
+        "0069E900"
+      ]
+    },
+    {
+      "draws": [],
+      "input": {
+        "background": 65535,
+        "cell_point": [
+          96,
+          120
+        ],
+        "clip": [
+          0,
+          0,
+          192,
+          160
+        ],
+        "coords": [
+          43,
+          81
+        ],
+        "flags": 0,
+        "level": 4,
+        "name": "removed_source",
+        "old_z": 65535,
+        "overlay_id": -1,
+        "repeat": 1,
+        "state": 0,
+        "type": "CAFNCB",
+        "viewport_y": 0
+      },
+      "leaf_rows": [],
+      "lighting_output": {
+        "bottom_scalar": 1224,
+        "cell_normalized_rgb": [
+          1000,
+          1000,
+          870
+        ],
+        "common_scalar": 1112,
+        "convert_rgb_key": [
+          992,
+          992,
+          864
+        ],
+        "top_scalar": 1112
+      },
+      "name": "removed_source",
+      "native_cell": {
+        "cell": [
+          43,
+          81
+        ],
+        "data": 0,
+        "flags": 0,
+        "ground_object": false,
+        "land": 0,
+        "level": 4,
+        "neighbors": 0,
+        "overlay": -1,
+        "slope": 0,
+        "subtile": 0,
+        "tile": 140,
+        "wall_owner": -1,
+        "zone": 0
+      },
+      "native_rect": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "native_traversal": {
+        "calls": [],
+        "cells_per_diagonal": 3,
+        "end": "006D71D3",
+        "entry": "006D6E5B",
+        "max_diagonal": 2,
+        "origin": [
+          43,
+          81
+        ]
+      },
+      "output": {
+        "color_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "depth_sha256": "b8950b5aa548301df35d9f33f872c439c35067b8c8a6510093271c88d1972fcd",
+        "runs": []
+      }
+    }
+  ],
+  "surface": {
+    "a_uniform": true,
+    "a_value": 127,
+    "baseline": 32768,
+    "bytes_per_pixel": 2,
+    "height": 160,
+    "width": 192
+  }
+}

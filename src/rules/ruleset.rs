@@ -1165,6 +1165,11 @@ pub struct GeneralRules {
     /// then Voc FindIndex7514D0, retaining the prior ID on missing, empty or
     /// unresolved text. The fixed SOUNDMD binder owns name resolution.
     pub guard_sound: Option<String>,
+    /// Rules+230, VoiceIFVRepair. Ctor665976 starts at -1;
+    /// AudioVisual669D63..669DA7 uses ReadString128/Voc7514D0, retaining
+    /// the current ID on missing/empty/unknown text. Fixed SOUNDMD binding
+    /// supplies the name. Native controls: spatial_oracle/attack_order_voice.
+    voice_ifv_repair: Option<String>,
     /// Rules+1D4: constructor6658F2=-1; AudioVisual6696C0..6696FF reads
     /// StartPlanningModeSound with ReadString128 and Voc Find7514D0,
     /// retaining the prior ID on a missing or invalid name.
@@ -2306,6 +2311,7 @@ impl Default for GeneralRules {
             gui_move_out_sound: None,
             generic_click_sound: None,
             guard_sound: None,
+            voice_ifv_repair: None,
             start_planning_mode_sound: None,
             end_planning_mode_sound: None,
             add_planning_mode_command_sound: None,
@@ -2774,6 +2780,10 @@ impl GeneralRules {
 
     pub fn incoming_message_sound(&self) -> Option<&str> {
         self.incoming_message_sound.as_deref()
+    }
+
+    pub fn voice_ifv_repair(&self) -> Option<&str> {
+        self.voice_ifv_repair.as_deref()
     }
 
     pub fn message_char_typed_sound(&self) -> Option<&str> {
@@ -3397,6 +3407,7 @@ impl GeneralRules {
                 .map(str::to_owned),
             // The fixed sound registry binds these readers below, including
             // current-ID retention through the actual Rules pass history.
+            voice_ifv_repair: None,
             incoming_message_sound: None,
             message_char_typed_sound: None,
             message_delay_minutes,
@@ -4258,6 +4269,9 @@ impl RuleSet {
         self.general.guard_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "GuardSound"));
+        self.general.voice_ifv_repair = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "VoiceIFVRepair"));
         // Original ReadAudioVisual order: Start6696C0, End66970A, Add669B25.
         // The processed section owns pass history; the fixed catalog owns IDs.
         self.general.start_planning_mode_sound = ini
@@ -4289,6 +4303,7 @@ impl RuleSet {
             let section = ini.section(&object.id);
             object.bind_scalar_sound_references(section, sounds);
             object.bind_deploy_voice_references(section, sounds);
+            object.bind_attack_voice_references(section, sounds);
             object.voice_select = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "VoiceSelect")
             });
@@ -5535,7 +5550,8 @@ impl RuleSet {
         // Rules text is identical. Empty versus nonempty vectors gates Main
         // draws; list order/duplicates select the sound. Hash effective lists
         // in canonical type order, independently of registry insertion order.
-        b"resolved-type-sound-lists-v2".hash(&mut hasher);
+        b"resolved-type-sound-lists-v3".hash(&mut hasher);
+        self.general.voice_ifv_repair().hash(&mut hasher);
         self.object_list
             .iter()
             .map(|object| {
@@ -5547,6 +5563,10 @@ impl RuleSet {
                         &object.move_sound,
                         &object.voice_special_attack,
                         &object.voice_feedback,
+                        object.voice_attack(),
+                        std::array::from_fn::<_, 4, _>(|slot| {
+                            object.voice_attack_override((slot / 2) as i32, slot % 2 != 0)
+                        }),
                     ),
                 )
             })

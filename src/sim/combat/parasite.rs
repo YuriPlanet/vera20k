@@ -213,6 +213,12 @@ impl FootParasite {
         self.eater
     }
 
+    /// Foot+694's infestation test in What_Action700370..70038B. Queries
+    /// never expose or mutate the retained parasite-owner identity.
+    pub fn is_infested(&self) -> bool {
+        self.eater.is_some()
+    }
+
     /// The frame before which parasite shots at this Foot are refused.
     pub(crate) fn launch_lock(&self) -> u32 {
         self.launch_lock

@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary MTNK allied-object action/cursor/LeftUp boundaries, shared attack grants, Move voice admission and bounded Infantry Ivan consumer on the existing bunker action VM. Whole action functions and full Move/event/audio lifecycles remain partial.",
+  "assumptions": [
+    "Original Unit/UnitType vtables and supplied live actor/type/House/weapon state reuse run(). This is not native constructor/scenario/INI execution. Ordinary actor/target represent stock MTNK: Selectable/LegalTarget=true, AttackFriendlies/AttackCursorOnFriendlies=false, positive weapon sign corresponding to105mm/AP; no disguise/transport/deploy/EMP/bunker/berserk. Other-grant and same-index/unowned controls are explicit input boundaries, not stock MTNK configuration/lifecycle claims.",
+    "Original ctor710AF0 stores AttackFriendlies+6C0=false at71117B and AttackCursorOnFriendlies+6C1=false at711181. Reader712170 admits through ObjectType5F92D0; selected current-default ReadBool5295F0 calls71523D and71525E store715242/715263 from exact keys843620/843604. LegalTarget current-default reader5F94AE/store5F94C2 retains constructor5F7168=true. No clamp. Physical RULESMD/LANGRULE-if-present/MPBattleMD/XMP03T4 have no MTNK overrides of these fields. Fixed ART is not layered and does not decide these action gates.",
+    "MTNK physical selected keys Primary=105mm,105mm.Warhead=AP,VoiceMove=GenAllVehicleMove. Warhead IvanBomb+157 and Sonic+14B false for ordinary AP; explicit controls supply each branch and target Type.Passengers+5E0 / target Foot+694 pointer. They do not execute IvanBomb or parasite creation/cleanup. grant_controls execute complete Techno6FFEC0 only: the rejected passenger-capacity case would subsequently enter a separate Unit transport mechanism absent from this ordinary fixture. No transport verdict is substituted. Other special target/disguise/terrain/LegalTarget and arbitrary RTTI routes remain partial.",
+    "House pointers, signed indices and directional+5788 alliance masks are declared inputs. Original4F9A90 executes target+3C=6F9DC0 real owner; same pointer/index or asking-House bit decides. Target+38=6F9DB0 returns real owner index for70058D..59B; no disguised-owner result is substituted.",
+    "LeftUp4AB9B0 executes from entry to original selection/dispatch boundary. UnitClickedAction738890 re-queries native action and executes Foot4D74E0. NoMove2 reaches4D78BA before navigation coordinates, nearby-cell search or command enqueue; it can issue Move and is not a no-command result. Instruction4D7C76..7CBA emits mission2 with the chosen destination. No destination or movement/RNG result is invented.",
+    "Voice controls execute in that same VM, with supplied list+468 and fixture-relative sound IDs; MTNK name binding is physical but original type/sound readers and full catalog IDs are outside this bounded action fixture. Reuse shared gen_rng_vectors.seeded_struct/draws for original seed/continuation. Three RNG states have equal supplied native seed. The original Foot Move producer4D7C76..7CBA runs with declared ESI=actor, EDI=chosen target Object, EAX=null planning Cell after the spatial choice seam. It produces mission2/NULL attack target and enters complete6FFBE0 prefix; nonplanning637AA0 executes unchanged and control stops6FFDA5 before target/event codecs. This component does not assert that the bounded Foot receiver produced that destination.",
+    "VoiceMove708FC0 consumes one actual Main65C780 draw for every nonempty list including singleton/-1. Original QueueVoice708D90 then tests global enable, selected ID!=-1 and real House50B6F0 before storing+4F0. QueueMegaMission6FFBE0 tests enable BEFORE calling VoiceMove, so disabled caller spends zero. Direct disabled VoiceMove is a separate ordering control. Scenario and MapGen remain byte-identical. No OS audio playback claim.",
+    "infantry_bomb_controls reuse the same action VM, then supply actual Infantry7EB058/InfantryType7EB610 vtables, EDI=actor, ESI=ordinary target and EBP=canonical base action at original51EB24. The real51E3B0 saved-register/local stack shape supports its unchanged RET8 epilogue. Native House50B6F0, Ivan Type+EAE, target+88 ObjectType getter, Bombable+22E and attachedBomb+38 execute without substituted virtual answers. BaseAction5/localIvan/Bombable/noBomb returns53; nonbombable or bombed returns54. Rejected House/Ivan/base-action admission stops BEFORE51EB81 and records final action=null plus unchanged base action: no final Infantry-tail outcome is invented. Whole Infantry51E3B0 prefix/ability/transport/lifecycle and scalar native reader execution remain excluded. AttackFriendlies=true/AttackCursorOnFriendlies=false are declared canonical-admission priors; this consumer does not read those grant bytes again. No RNG, action-timer or detach entry occurs.",
+    "Action/cursor/LeftUp-prefix/receiver controls reach no RNG draw, timer write or detach. Full LeftUp dispatch later clears822CF2 after every actor/restores1 (4AE852/85F), restarts action-line timer70D150 to25 at4ABFAE, and dispatches through existing Move/event/voice owners. These later effects are instruction evidence, not a whole-window execution claim."
+  ],
+  "substitutions": [
+    "Reuse unchanged historical run() substitutions: singleton SelectBest, supplied keyboard, revealed flat Cell/map/height/playfield/terrain, weapon slot/damage, range and FireError. Original House alliance/owner queries, complete DetermineAction/class action bodies, Display cursor switch, LeftUp prefix, UnitClickedAction/Foot prefix, VoiceMove/RNG/QueueVoice/House admission execute; no native instructions are patched.",
+    "The mock Display virtual48 remains an observed cursor setter sink with palette/empty-waypoint storage. UI cursor SHP/glyph raster is outside the fixture. Original text hash is checked before/after every shared-VM continuation."
+  ],
+  "entry_points": {
+    "determine_action": "0x00692610",
+    "unit_object": "0x0073FD50",
+    "foot_object": "0x004DDED0",
+    "techno_object": "0x006FFEC0",
+    "is_ally_by_object": "0x004F9A90",
+    "display_cursor": "0x004AAE90",
+    "left_up": "0x004AB9B0",
+    "left_up_dispatch": "0x004AE750",
+    "unit_clicked_object": "0x00738890",
+    "foot_clicked_object": "0x004D74E0",
+    "navigation_coordinate_boundary": "0x004D78BA",
+    "move_argument_producer": "0x004D7C76",
+    "clicked_mission": "0x006FFBE0",
+    "order_voice_gate": "0x006FFCBD",
+    "voice_move": "0x00708FC0",
+    "queue_voice": "0x00708D90",
+    "house_player_control_query": "0x0050B6F0",
+    "rng_raw": "0x0065C780",
+    "infantry_bomb_consumer": "0x0051EB24",
+    "infantry_bomb_tail_boundary": "0x0051EB81"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --allied-objects",
+  "payload_sha256": "51feb522679424ad904882fac04da40a0de27359ae97bbd2dbcc7a8d861a4f16"
+}

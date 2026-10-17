@@ -9,8 +9,9 @@
 //! - The gate question and the Unit setter run their Rust owners; their
 //!   oracle events are not compared, their effects are (destination, NavCom,
 //!   timers).
-//! - Drive+64 (the straight byte) is not represented (track_fresh residual);
-//!   its rows still compare the selector it forces.
+//! - Drive+64 compares the retained fresh-selection byte independently of
+//!   its selector. Ship's distinct +64 producer/reader remains outside this
+//!   selected Drive pre-entry wall-tilt integration.
 //! - The speed rows set flat Cell levels, the Clear and Road rows, the four
 //!   `[General]` slope keys and the Foot's health, then compare the published
 //!   target (a double natively, 16 fraction bits here; every oracle value is
@@ -293,6 +294,11 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
             .and_then(|l| l.selected_drive_runtime())
             .and_then(|r| r.retained())
             .unwrap();
+        assert_eq!(
+            d.straight(),
+            state["straight"] == 1,
+            "native Drive+64: {row}"
+        );
         (
             d.destination(),
             d.head_to(),

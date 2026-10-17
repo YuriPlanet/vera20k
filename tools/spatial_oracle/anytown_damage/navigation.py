@@ -46,7 +46,7 @@ class Navigation(Geometry):
   call(0x42A6D0,this=0x87E8B8)
   call(0x42AC00,this=0x87E8B8,args=(MAP+0xEC,))
   call(0x42C1C0,this=0x87E8B8)
- def __init__(self,r,t,tiles,*,case=None,create_actor=True,actor_coord=(87,53),actor_height=4,admission_cells=None,stages=None,scenario_theater=None,cell_inputs_only=False,terrain_inputs_only=False,ore_lifecycle=False):
+ def __init__(self,r,t,tiles,*,case=None,create_actor=True,actor_coord=(87,53),actor_height=4,admission_cells=None,stages=None,scenario_theater=None,cell_inputs_only=False,terrain_inputs_only=False,runtime_lifecycle=False,wall_overlay_packs=False):
   assert not (cell_inputs_only and terrain_inputs_only)
   self.create_actor=create_actor;self.actor_coord=actor_coord;self.actor_height=actor_height
   self.admission_cells=admission_cells if admission_cells is not None else [(87,53),(86,54),(87,54),(88,54),(87,55),(85,54),(89,54)]
@@ -62,9 +62,10 @@ class Navigation(Geometry):
   u.mem_map(0x44000000,0x800000);u.mem_map(0x48000000,0x8000000)
   for a,n in [(0xA83D80,24),(0xA8E318,24),(0x8B4150,24),(0xB0F4E8,24),(0xB0EDC0,0x1000),(0x89EA40,12*36)]:u.mem_write(a,bytes(r.u.mem_read(a,n)))
   u.mem_write(0x8871E0,dwords(r.rules));u.mem_write(MAP+0x68,dwords(BASE,self.side*self.side,PLANE));u.mem_write(BASE,b'\x07\x00\x00\x00'*(self.side*self.side))
+  wall_sources={c for c,v in physical.items() if wall_overlay_packs and v['overlay'] is not None and r.u.mem_read(r.overlay_ptrs[v['overlay']]+0x2A8,1)[0]}
   self.activity='cell_ctor'
   for c,p in self.ptrs.items():
-   self.call(0x47BBF0,this=p,count=2000);v=physical[c];u.mem_write(p+0x24,packed(*c));u.mem_write(p+0x38,dwords(v['tile']));u.mem_write(p+0x44,dwords(v['overlay'] if v['overlay'] is not None else -1));u.mem_write(p+0x11A,bytes([v['subtile'],v['level']]));u.mem_write(p+0x11E,bytes([v['frame']]));u.mem_write(p+0x119,bytes([v['ice']]))
+   self.call(0x47BBF0,this=p,count=2000);v=physical[c];u.mem_write(p+0x24,packed(*c));u.mem_write(p+0x38,dwords(v['tile']));u.mem_write(p+0x44,dwords(v['overlay'] if v['overlay'] is not None and c not in wall_sources else -1));u.mem_write(p+0x11A,bytes([v['subtile'],v['level']]));u.mem_write(p+0x11E,bytes([0 if c in wall_sources else v['frame']]));u.mem_write(p+0x119,bytes([v['ice']]))
   self.call(0x47BBF0,this=DUMMY,count=2000)
   self.tile_image_getter=sr.u32(u,0x7ECC48+0x9C)
   self.activity='tile_ctor';u.mem_write(0xA8ED28,dwords(0x7EB6D4,0x44000000,t['count'],1,0,10));u.mem_write(0xB0F670,dwords(0x7EB6D4,self.allocate(4096*4),4096,1,0,10))
@@ -100,8 +101,8 @@ class Navigation(Geometry):
    self.cell_inputs_rng=dict(before=cell_rng_before,after={k:sr.rng_state(u,p) for k,p in self.rngs.items()})
    self.initial_cells=self.cell_plane();self.trace.clear();self.writes.clear();self.pending.clear();self.reached={};self.activity='cell_inputs'
    return
-  if ore_lifecycle:
-   # Opt-in live ore prerequisites, before any Terrain/Object registration.
+  if runtime_lifecycle:
+   # Opt-in runtime object prerequisites, before any Terrain/Object registration.
    # Keep the populated IsoTile/Abstract owner; initialize only missing vectors.
    from tools.spatial_oracle.bridge_constructor import OriginalBridgeConstructor
    abstract=bytes(u.mem_read(0xB0F670,24))
@@ -115,6 +116,43 @@ class Navigation(Geometry):
    sp=STACK_BASE+STACK_SIZE-0x1000
    u.mem_write(sp+0x64,dwords(geometry));u.reg_write(UC_X86_REG_ESP,sp);u.reg_write(UC_X86_REG_EBX,MAP)
    run_checked(u,0x5662AC,0x56633E,count=100000)
+  if wall_overlay_packs:
+   assert runtime_lifecycle
+   # Preserve the selected existing AP reader's declared Session input for
+   # original OverlayPack's nonzero-mode crate admission gate.
+   u.mem_write(0xA8B238,bytes(r.u.mem_read(0xA8B238,4)))
+   from tools.spatial_oracle.bridge_constructor import OriginalBridgeConstructor
+   OriginalBridgeConstructor.prepare_deferred_services(u)
+   # MainPrepareSession enables original Object::Unlimbo before ReadScenario
+   # places authored objects; this must precede the first wall constructor.
+   self.game_active=[u.mem_read(0xA8E9A0,1)[0]]
+   run_checked(u,0x52D9D7,0x52D9DE)
+   self.game_active.append(u.mem_read(0xA8E9A0,1)[0])
+   # Real nested ReadScenario/FullInit counter producers, before authored
+   # overlays and before Terrain. No host supplies a nonzero admission result.
+   self.scenario_init=[sr.u32(u,0xA8E7AC)]
+   assert self.scenario_init==[0]
+   sp=STACK_BASE+STACK_SIZE-0x1000
+   u.reg_write(UC_X86_REG_ESP,sp);run_checked(u,0x68467C,0x68468A)
+   self.scenario_init.append(sr.u32(u,0xA8E7AC))
+   u.reg_write(UC_X86_REG_EBX,0);u.reg_write(UC_X86_REG_ESI,0);u.reg_write(UC_X86_REG_ECX,0)
+   run_checked(u,0x686B35,0x686B55)
+   self.scenario_init.append(sr.u32(u,0xA8E7AC))
+   # These same native graph owners establish the initialized caches needed by
+   # actual wall Mark's synchronous connectivity/hierarchy edits.
+   self.finish_graphs()
+   self.activity='authored_walls';self.wall_stamp_receipts=[]
+   for xy in sorted(wall_sources,key=lambda c:(c[1],c[0])):
+    p=self.ptrs[xy];v=physical[xy]
+    before=dict(overlay=sr.i32(u,p+0x44),data=u.mem_read(p+0x11E,1)[0],neighbors=u.mem_read(p+0x122,1)[0])
+    admission=OriginalBridgeConstructor.construct_authored(self,xy,v['overlay'])
+    self.wall_stamp_receipts.append(dict(cell=list(xy),requested=v['overlay'],before=before,admission=admission,
+      overlay=sr.i32(u,p+0x44),data=u.mem_read(p+0x11E,1)[0],owner=sr.i32(u,p+0x50),neighbors=u.mem_read(p+0x122,1)[0]))
+   selected=next(row for row in self.wall_stamp_receipts if row['cell']==[43,81])
+   assert selected['overlay']==203,selected
+   for xy,v in sorted(physical.items(),key=lambda row:(row[0][1],row[0][0])):
+    OriginalBridgeConstructor.apply_authored_data(self,xy,v['frame'])
+   self.call(0x725C70,this=0,count=10000000)
   self.activity='terrain_place';self.terrain_placement=[]
   u.mem_write(0xA8E988,dwords(0x7EB6D4,self.allocate(1024*4),1024,1,0,10))
   for key,name,line in sections['Terrain']:
@@ -179,6 +217,9 @@ class Navigation(Geometry):
   return result
  def state(self):return dict(rng={k:sr.rng_state(self.uc,p) for k,p in self.rngs.items()},movement_admissions=self.movement_admissions() if self.create_actor else [],navigation=self.nav_snapshot(),graphs=self.graph_snapshot(),dummy=self.dummy_snapshot(),cells=self.cell_plane())
  def observe(self,u,a,n,d):
+  # Optional composed observation must see original entry registers/stack
+  # before an inherited presentation/OS seam updates ESP or EIP.
+  if observer:=getattr(self,'entry_observer',None):observer(u,a,n,d)
   if self.phase!='measure':return super().observe(u,a,n,d)
   if self.range_pending and a==self.range_pending[-1][0]:
    _,row=self.range_pending.pop();row['result']=u.reg_read(UC_X86_REG_EAX)
@@ -194,7 +235,9 @@ class Navigation(Geometry):
   if a in (0x47D2B0,0x47CA80,0x483C80,0x5FDD20,0x547370,0x71C110,0x47E8A0):
    self.counters[f'{self.activity}:{a:08X}']+=1
    if a==0x47D2B0:return
+  if a==0x6551C0 and getattr(self,'wall_live',False):return
   if a==0x421EA0:
+   if getattr(self,'wall_live',False):raise AssertionError(('uncovered live wall animation',hex(a)))
    if getattr(self,'ore_live',False):
     self.ore_animation_reached=True;raise AssertionError(('uncovered live ore animation',hex(a)))
    sp=u.reg_read(UC_X86_REG_ESP);self.counters[f'{self.activity}:animation_constructor_boundary']+=1;self.ret(28,u.reg_read(UC_X86_REG_ECX));return

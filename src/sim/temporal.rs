@@ -528,15 +528,15 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let structure = match entity.category() {
-            EntityCategory::Unit if object.harvester => false,
+        match entity.category() {
+            EntityCategory::Unit if object.harvester => {}
             EntityCategory::Structure
                 if !object.insignificant && !object.is_1x1_with_undeploy() =>
             {
-                true
+                // HouseNotify owns the deployed-miner subtype.
             }
             _ => return,
-        };
+        }
         // The radar cell is the victim's GetCoords (vt+0x48): a building's
         // foundation centre (`0x00447AC0`; NotifyUnderAttack `0x004F94AE`,
         // `0x004F950E`, `0x004F956A`).
@@ -550,10 +550,9 @@ impl Simulation {
             rx,
             ry,
             owner: entity.owner(),
-            miner: !structure,
-            structure,
+            victim_type: entity.type_ref(),
         };
-        self.dispatch_under_attack_events(&[event]);
+        self.dispatch_under_attack_events(&[event], rules);
     }
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not

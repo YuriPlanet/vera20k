@@ -784,6 +784,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
         DriveCoord::cell(10, 9, 0),
         (10, 10),
         false,
+        false,
         None,
         None,
         &mut |sim, id, event| {
@@ -2888,5 +2889,109 @@ fn a_unit_entering_a_bunker_ahead_of_it_queues_nothing() {
             on_bunker.then_some(MissionType::Guard),
             "on the bunker {on_bunker}"
         );
+    }
+}
+
+/// Original Drive4B1999..4B19FA stores BD4CCCCD after a crossing paid
+/// point's Mark(DOWN), before SetHeight or any terminal PerCell. The existing
+/// paid-loop fixture supplies admission/budget; this is not a natural route.
+#[test]
+fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::util::native_x87::NativeF32Bits;
+
+    for (straight, crusher, tilts, wall, overlay, remove_at_mark, expected) in [
+        (true, true, true, true, true, false, true),
+        (false, true, true, true, true, false, false),
+        (true, false, true, true, true, false, false),
+        (true, true, false, true, true, false, false),
+        (true, true, true, false, true, false, false),
+        (true, true, true, true, false, false, false),
+        (true, true, true, true, true, true, false),
+    ] {
+        let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 8);
+        let ini = IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nCrusher={}\nTiltsWhenCrushes={}\n\
+             [OverlayTypes]\n0=FENCE\n[FENCE]\nWall={}\nCrushable=yes\nStrength=100\n",
+            if crusher { "yes" } else { "no" },
+            if tilts { "yes" } else { "no" },
+            if wall { "yes" } else { "no" },
+        ));
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let registry = OverlayTypeRegistry::from_ini(&ini, None);
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_flat_ground_grid(33),
+        );
+        let mut grid = OverlayGrid::new(33, 33);
+        // A uniform synthetic overlay input keeps the test about the existing
+        // paid receiver, independently of which native raw point first crosses.
+        if overlay {
+            for y in 0..33 {
+                for x in 0..33 {
+                    grid.place_overlay(x, y, 0, 0);
+                }
+            }
+        }
+        sim.overlay_grid = Some(grid);
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        let loco = entity.locomotor.as_mut().unwrap();
+        assert!(loco.store_drive_straight(straight));
+        // As in the existing crossing test, the first real paid point crosses.
+        assert!(loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(10, 7, 0)),));
+        let mut rocking = crate::sim::rocking::RockingState::default();
+        rocking.set_angle_sideways(SimFixed::lit("0.125"));
+        rocking.set_angle_forwards_for_test(SimFixed::lit("0.25"));
+        rocking.set_vel_sideways_for_test(SimFixed::lit("0.125"));
+        rocking.set_vel_forwards_native(NativeF32Bits::from_bits(0x3e80_0000));
+        let before = rocking.native_bits();
+        entity.rocking = Some(rocking);
+        let mut marked = false;
+        let mut per_cell = 0;
+        let moved = sim.run_track_points_observed(
+            invocation,
+            budget,
+            Some(&rules),
+            Some(&registry),
+            &mut |sim, id, event| {
+                if event == TrackWorldEvent::MarkPut {
+                    marked = true;
+                    assert_eq!(
+                        sim.substrate
+                            .entities
+                            .get(id)
+                            .unwrap()
+                            .rocking
+                            .as_ref()
+                            .unwrap()
+                            .native_bits(),
+                        before,
+                        "pre-entry tilt runs only after Mark(DOWN) returns"
+                    );
+                    if remove_at_mark {
+                        let entity = sim.substrate.entities.get(id).unwrap();
+                        sim.overlay_grid
+                            .as_mut()
+                            .unwrap()
+                            .clear_overlay(entity.position.rx(), entity.position.ry());
+                    }
+                }
+                per_cell += usize::from(event == TrackWorldEvent::PerCell);
+            },
+        );
+        assert_eq!(moved, 1);
+        assert!(marked);
+        assert_eq!(per_cell, 0, "physical crossing is not terminal PerCell");
+        let actual = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .rocking
+            .as_ref()
+            .unwrap()
+            .native_bits();
+        assert_eq!(&actual[..3], &before[..3]);
+        assert_eq!(actual[3], if expected { 0xbd4c_cccd } else { before[3] });
     }
 }

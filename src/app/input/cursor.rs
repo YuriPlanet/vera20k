@@ -483,7 +483,7 @@ fn what_action_on_cell(
 /// 4. Engineer repairing: selected Engineer hovering damaged friendly building.
 /// 5. Infantry boarding: selected infantry hovering friendly transport (Passengers>0).
 /// 6. Infantry garrisoning: selected Occupier infantry hovering friendly CanBeOccupied building.
-/// 7. AttackCursorOnFriendlies: selected unit attacks friendlies, treat as attack target.
+/// 7. Admitted friendly Attack: consume the shared Techno grant and class action.
 /// 8. Harvester docking: selected miner hovering a friendly refinery that admits it (action 3).
 /// 9. Generic friendly/enemy/in-range/out-of-range fallback.
 pub(super) fn capability_cursor_for_hover(
@@ -667,39 +667,31 @@ pub(super) fn capability_cursor_for_hover(
             return CursorFeedbackKind::Enter;
         }
 
-        // 7. AttackCursorOnFriendlies — treat friendly targets as attack targets.
-        //    Not over the lone selected object itself, which takes its self
-        //    action first.
-        if sel_obj.attack_cursor_on_friendlies
-            && !single_self
+        // 7. Consume the admitted action, including AttackFriendlies and the
+        //    qualified weapon grants. Infantry51EB24..7E's Ivan consumer does
+        //    not require AttackCursorOnFriendlies a second time. A lone
+        //    selected object over itself takes its self action first.
+        if !single_self
             && matches!(
                 hover.kind,
                 HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
             )
+            && let Some(rules) = rules
+            && super::context_order::attack_action(
+                sim,
+                rules,
+                best_id,
+                &combat::TargetKind::Entity(hover.stable_id),
+                false,
+                overlay_registry,
+            ) == super::context_order::AttackAction::Attack
         {
-            if let Some(rules) = rules {
-                use super::context_order::AttackAction;
-                match super::context_order::attack_action(
-                    sim,
-                    rules,
-                    best_id,
-                    &combat::TargetKind::Entity(hover.stable_id),
-                    false,
-                    overlay_registry,
-                ) {
-                    AttackAction::None => return CursorFeedbackKind::Default,
-                    AttackAction::NoMove => return CursorFeedbackKind::Invalid,
-                    AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
-                    AttackAction::Rally => return CursorFeedbackKind::Move,
-                    AttackAction::Attack => {}
-                }
-            }
             let in_range = attack_cursor_is_in_range(
                 sim,
                 best_id,
                 &combat::TargetKind::Entity(hover.stable_id),
                 selected.len(),
-                rules,
+                Some(rules),
                 overlay_registry,
             );
             let kind = if in_range {
@@ -770,9 +762,35 @@ pub(super) fn capability_cursor_for_hover(
         return CursorFeedbackKind::Invalid;
     }
     match hover.kind {
-        HoverTargetKind::FriendlyUnit => CursorFeedbackKind::FriendlyUnit,
-        HoverTargetKind::FriendlyStructure => CursorFeedbackKind::FriendlyStructure,
-        HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure => {
+        HoverTargetKind::FriendlyUnit
+        | HoverTargetKind::FriendlyStructure
+        | HoverTargetKind::EnemyUnit
+        | HoverTargetKind::EnemyStructure => {
+            // The ordinary Unit object's class tail is shared with click
+            // dispatch. Another allied House is not an own-object Select:
+            // Techno70059B -> Unit7403EB answers NoMove. Other friendly
+            // class routes retain their existing capability/selection paths
+            // until their own What_Action wrappers are audited. Ivan's
+            // admitted Attack was handled above; its refused attack still
+            // follows the shared Select/NoMove tail instead of inventing one.
+            let friendly = matches!(
+                hover.kind,
+                HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
+            );
+            if friendly
+                && !best_is_ivan
+                && !best_id.is_some_and(|id| {
+                    sim.entities()
+                        .get(id)
+                        .is_some_and(|actor| actor.category() == EntityCategory::Unit)
+                })
+            {
+                return if hover.kind == HoverTargetKind::FriendlyUnit {
+                    CursorFeedbackKind::FriendlyUnit
+                } else {
+                    CursorFeedbackKind::FriendlyStructure
+                };
+            }
             if let (Some(rules), Some(id)) = (rules, best_id) {
                 use super::context_order::AttackAction;
                 match super::context_order::attack_action(
@@ -789,6 +807,12 @@ pub(super) fn capability_cursor_for_hover(
                     AttackAction::Rally => return CursorFeedbackKind::Move,
                     AttackAction::Attack => {}
                 }
+            } else if friendly {
+                return if hover.kind == HoverTargetKind::FriendlyUnit {
+                    CursorFeedbackKind::FriendlyUnit
+                } else {
+                    CursorFeedbackKind::FriendlyStructure
+                };
             }
             let in_range = best_id.is_some_and(|id| {
                 attack_cursor_is_in_range(
@@ -801,7 +825,10 @@ pub(super) fn capability_cursor_for_hover(
                 )
             });
             let kind = if in_range {
-                if hover.kind == HoverTargetKind::EnemyUnit {
+                if matches!(
+                    hover.kind,
+                    HoverTargetKind::FriendlyUnit | HoverTargetKind::EnemyUnit
+                ) {
                     CursorFeedbackKind::EnemyUnit
                 } else {
                     CursorFeedbackKind::EnemyStructure

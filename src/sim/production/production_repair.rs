@@ -30,9 +30,8 @@
 //! - The wrench byte (`+0x6DE`: set when a repair starts below Strength,
 //!   flipped by every repair step) is read only by the Building CRC
 //!   (`0x00454260`); VERA does not keep it.
-//! - Presentation: ToggleRepair's flash for the owner's player (vt+0x148 =
-//!   `0x00456E00` -> `TechnoClass::Flash(7)`) and the repair step's redraw
-//!   byte (`+0x80`, from `BuildingClass::GetCurrentFrame 0x0043EF90`).
+//! - Presentation: the repair step's redraw byte (`+0x80`, from
+//!   `BuildingClass::GetCurrentFrame 0x0043EF90`).
 //! - Combat order: native fire and its damage land inside each attacker's
 //!   own LogicVector visit, VERA's in the combat phase after the object
 //!   pass. Trigger: a repairing building under fire. Effect: a hit landing
@@ -193,8 +192,9 @@ pub enum RepairControl {
 
 /// `BuildingClass::ToggleRepair @ 0x00446FF0`. After the control changes the
 /// repair byte: a repair switched on at exactly Strength (`CMP/JNZ`,
-/// `0x0044705B`) plays `[AudioVisual] ScoldSound=`; one switched on below it
-/// announces `EVA_Repairing` (`0x004470B7`) and, like a repair switched off,
+/// `0x0044705B`) plays `[AudioVisual] ScoldSound=`; one switched on at any
+/// other health flashes for the owner's player and announces `EVA_Repairing`
+/// (`0x004470B7`) and, like a repair switched off,
 /// plays `GenericClick=` — each at the building's Location (`VocClass::PlayAt
 /// 0x007509E0`) and only for the owner's player (`HouseClass::IsHumanPlayer
 /// @ 0x0050B6F0`; the app applies that gate). Returns whether the building
@@ -205,13 +205,10 @@ pub fn toggle_repair(
     id: u64,
     control: RepairControl,
 ) -> bool {
-    let Some(strength) = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
-        .map(|object| object.strength)
-    else {
+    let Some((strength, owner_is_player)) = sim.substrate.entities.get(id).and_then(|entity| {
+        sim.object_type(entity.type_ref(), rules)
+            .map(|object| (object.strength, sim.house_is_human_player(entity.owner())))
+    }) else {
         return false;
     };
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
@@ -233,6 +230,13 @@ pub fn toggle_repair(
         rules.general.scold_sound.clone()
     } else {
         if entity.repairing.on {
+            // ToggleRepair447082..447091: House50B6F0 admits Building
+            // vt+148 Flash(7), before EVA/GenericClick. Reuse the shared
+            // disguise/countdown owner, not a separate repair flash timer.
+            // Original call arguments: building_repair.json toggle events.
+            if owner_is_player {
+                entity.flash_building(7);
+            }
             sim.sound_events.push(SimSoundEvent::Repairing { owner });
         }
         rules.general.generic_click_sound.clone()

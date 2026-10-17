@@ -5,6 +5,8 @@
 //! array (`render::radar::events`); the world only publishes the request.
 
 use super::{SimSoundEvent, Simulation};
+use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{UnderAttackEvent, UnitLostEvent};
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -23,6 +25,13 @@ fn ally(sim: &mut Simulation, asker: &str, other: &str) {
         .entry(asker.to_ascii_uppercase())
         .or_default()
         .insert(other.to_ascii_uppercase());
+}
+
+fn warning_rules() -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GAPOWR\n[VehicleTypes]\n0=HARV\n[HARV]\nHarvester=yes\n",
+    ))
+    .unwrap()
 }
 
 fn unit_lost_requests(sim: &mut Simulation) -> Vec<(InternedId, RadarEventRequest)> {
@@ -97,14 +106,16 @@ fn unit_lost_requests_radar_type_seven_for_human_owners_only() {
 fn under_attack_own_line_requests_the_base_or_miner_radar_type() {
     let mut sim = Simulation::new();
     let human = house(&mut sim, "Americans", true);
-    let ping = |rx: u16, miner: bool| UnderAttackEvent {
+    let rules = warning_rules();
+    let base = sim.intern("GAPOWR");
+    let miner = sim.intern("HARV");
+    let ping = |rx: u16, victim_type: InternedId| UnderAttackEvent {
         rx,
         ry: 10,
         owner: human,
-        miner,
-        structure: !miner,
+        victim_type,
     };
-    sim.dispatch_under_attack_events(&[ping(10, false), ping(12, false), ping(30, true)]);
+    sim.dispatch_under_attack_events(&[ping(10, base), ping(12, base), ping(30, miner)], &rules);
     let requests: Vec<RadarEventRequest> = sim
         .sound_events
         .drain(..)
@@ -135,20 +146,22 @@ fn ally_under_attack_reaches_human_allies_of_the_victim_house() {
     let friend = house(&mut sim, "Russians", false);
     let stranger = house(&mut sim, "Germans", false);
     let other_human = house(&mut sim, "British", true);
+    let rules = warning_rules();
+    let base = sim.intern("GAPOWR");
+    let miner = sim.intern("HARV");
     ally(&mut sim, "Russians", "Americans");
     ally(&mut sim, "Americans", "Germans");
 
-    let ping = |owner: InternedId, rx: u16, structure: bool| UnderAttackEvent {
+    let ping = |owner: InternedId, rx: u16, victim_type: InternedId| UnderAttackEvent {
         rx,
         ry: 10,
         owner,
-        miner: !structure,
-        structure,
+        victim_type,
     };
 
     // The friend's building: the human hears the ally line; British does not
     // (Russians never listed them).
-    sim.dispatch_under_attack_events(&[ping(friend, 10, true)]);
+    sim.dispatch_under_attack_events(&[ping(friend, 10, base)], &rules);
     assert_eq!(
         ally_line_requests(&mut sim),
         vec![(
@@ -160,18 +173,18 @@ fn ally_under_attack_reaches_human_allies_of_the_victim_house() {
 
     // A one-way alliance from the human to the stranger is not enough: the
     // victim's own bitfield decides.
-    sim.dispatch_under_attack_events(&[ping(stranger, 40, true)]);
+    sim.dispatch_under_attack_events(&[ping(stranger, 40, base)], &rules);
     assert!(ally_line_requests(&mut sim).is_empty());
 
     // The friend's harvester: `UnitClass::ReceiveDamage` has no ally branch.
-    sim.dispatch_under_attack_events(&[ping(friend, 60, false)]);
+    sim.dispatch_under_attack_events(&[ping(friend, 60, miner)], &rules);
     assert!(ally_line_requests(&mut sim).is_empty());
 
     // A passive victim house (`HouseType+0x1A6`) is skipped in MP modes.
     sim.houses.get_mut(&friend).unwrap().multiplay_passive = true;
-    sim.dispatch_under_attack_events(&[ping(friend, 90, true)]);
+    sim.dispatch_under_attack_events(&[ping(friend, 90, base)], &rules);
     assert!(ally_line_requests(&mut sim).is_empty());
     sim.session.game_mode_nonzero = false;
-    sim.dispatch_under_attack_events(&[ping(friend, 120, true)]);
+    sim.dispatch_under_attack_events(&[ping(friend, 120, base)], &rules);
     assert_eq!(ally_line_requests(&mut sim).len(), 1);
 }

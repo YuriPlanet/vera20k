@@ -98,6 +98,10 @@ retail/scalar readers and the existing reset owner. A bounded ALL05 paid ORCA
 history follows both authored106 actions through House/Strip and local receive.
 It reuses the existing Factory fixture with explicit campaign layers; terrain,
 played-world and OS/service priors do not certify full campaign startup.
+
+``--do-explosion`` always reads fresh physical retail inputs. Its two map
+branches share only an in-memory snapshot from that invocation; serialized
+native-state caches are unsupported.
 """
 from pathlib import Path
 import hashlib
@@ -7207,44 +7211,13 @@ def explosion_weapon_fields(m):
         scope='One real appended Weapon; complete original771C70/772080 on ordered cache controls. These custom controls exclude physical loading and full Rules Process.')
 
 
-def retained_campaign_root(m,inputs,map_names):
-    """Run (or, while debugging, resume) the full physical Rules root.
-
-    VERA20K_NATIVE_STATE_CACHE names a scratch directory. Its pickles are keyed
-    by the binary, physical catalog, maps and root-phase tool sources; later
-    phases always execute. A cached run may only --write to a scratch --output.
-    """
-    import os
-    from tools import oracle_sources
-    from tools.native_oracle import image_sha256
-    cache=os.environ.get('VERA20K_NATIVE_STATE_CACHE')
-    if not cache:
-        return m.campaign_root(map_names)
-    tools_root=Path(__file__).parents[1]
-    sources=oracle_sources.source_identity({name:tools_root/path for name,path in {
-        'registry':'rules_oracle/weapon_speed_order.py','campaign':'input_oracle/campaign_start.py',
-        'reader':'rules_oracle/bridge_anim_inputs.py','lists':'rules_oracle/bridge_anim_lists.py',
-        'bullet':'projectile_oracle/bridge_render_inputs.py','platform':'spatial_oracle/engineer_repair_admission.py',
-        'palette':'projectile_oracle/bridge_render_inputs_palette.py',
-        'emulator':'native_oracle.py','mix':'sidebar_oracle/stock.py'}.items()})
-    key=hashlib.sha256(json.dumps([image_sha256(),inputs.receipt()['catalog'],list(map_names),sources],
-        sort_keys=True,default=str).encode()).hexdigest()[:24]
-    path=Path(cache)/f'campaign-root-{key}.pickle'
-    if path.is_file():
-        print('RESUMED native campaign root from',path,flush=True)
-        return m.load_state(path)
-    root=m.campaign_root(map_names)
-    Path(cache).mkdir(parents=True,exist_ok=True);m.save_state(path,root)
-    return root
-
-
 def do_explosion_generate(*,receipt_path=None):
     """Two independent physical map Process branches from one full root state."""
     from tools.rules_oracle.weapon_speed_order import RetailRulesInputs,retail_history
     from tools.native_oracle import image_sha256
     inputs=RetailRulesInputs(configured_gamemd().parent);m=retail_history(inputs);failure=None
     try:
-        root=retained_campaign_root(m,inputs,('ALL06UMD.MAP','SOV03UMD.MAP'))
+        root=m.campaign_root(('ALL06UMD.MAP','SOV03UMD.MAP'))
         common=m.snapshot();maps=[]
         for name,trigger in (('ALL06UMD.MAP','048BB6BC'),('SOV03UMD.MAP','0B3BE93C')):
             m.restore(common);registry=m.map_process(root['pointers'][name],name)
@@ -7334,14 +7307,10 @@ if __name__=='__main__':
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
     if selected.do_explosion:
+        if os.environ.get('VERA20K_NATIVE_STATE_CACHE'):
+            selector.error('VERA20K_NATIVE_STATE_CACHE is no longer supported; unset it to read fresh retail inputs')
         if selected.inputs is not None:
             selector.error('--do-explosion reads configured physical MD assets, not --inputs')
-        reference=Path(__file__).with_name('trigger_do_explosion.json')
-        if os.environ.get('VERA20K_NATIVE_STATE_CACHE') and '--write' in remaining:
-            output=argparse.ArgumentParser(add_help=False)
-            output.add_argument('--output',type=Path,default=reference)
-            if output.parse_known_args(remaining)[0].output.resolve()==reference.resolve():
-                selector.error('a resumed native state may only --write to a scratch --output')
         receipt_path=os.environ.get('VERA20K_TRIGGER_EXPLOSION_RECEIPTS') if '--write' in remaining else None
         finish_vectors(lambda:do_explosion_generate(receipt_path=receipt_path),
             Path(__file__).with_name('trigger_do_explosion.json'),provenance=do_explosion_metadata,

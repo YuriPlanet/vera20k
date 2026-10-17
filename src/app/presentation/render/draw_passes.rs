@@ -610,23 +610,6 @@ pub(super) fn dispatch_draw_passes(
         bomb_clock_tex,
         "bomb_clocks",
     );
-    // The repair wrench follows the bomb clock in `DrawExtras`.
-    let repair_wrench_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .and_then(|o| o.repair_wrench())
-        .map(|wrench| wrench.texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        repair_wrench_tex,
-        "repair_wrenches",
-    );
-    // The self-heal status pip `DrawPipScalePips` draws after the strip
-    // (pips.shp frames 0x0D / 0x14).
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
     drop(pass);

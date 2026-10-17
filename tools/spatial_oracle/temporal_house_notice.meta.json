@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original first-head Temporal71AF20 -> HouseNotify4F93E0 for stock YAREFN, then original LetGo71ABC0",
+  "assumptions": [
+    "Existing Temporal Fixture supplies target/attacker objects and declared house roles; no full object/scenario constructors or shot producer. Houses have explicit indices0/1, mode5, player pointer and empty Tag list. Other-manager/captive slots and all21 animation pointers are NULL.",
+    "Selected physical RULESMD, optional LANGRULE, Battle and Hills use the existing lexical owner and original scalar/name readers. ART Foundation is unlayered and ReadFoundation474DA0 executes. Stock SMIN pointer identity is supplied, excluding UnitType registry allocation/full type reader closure.",
+    "Original House branch, Building GetCoords447AC0, foundation dimensions45EC90/45ECA0, precheck457620/465D40 and animation-empty pause/resume4521C0/452210 execute. First-head and prepared second-attacker/777 priors are explicit. Timer priors990/0/16 and frame1000 are component inputs, not game cadence.",
+    "Each of Scenario/Main/MapGen is originally seeded3 after fixture transport; full1012-byte states are observed uninterrupted through start/release. Temporal+2C timer has no active reader/writer and remains a documented unrepresented Rust field.",
+    "Existing Sound reader retains its two Explosion entries then reads the physical siren, so siren/sample numeric IDs are fixture-relative. Original Rules constructor and selected669C9A..669CE2 sound-reference read execute across actual layers. Whole original EVA753000 reads the fixed470 entries; selected type/priority/side strings are observed through753380/7534E0, excluding playback."
+  ],
+  "substitutions": [
+    "Inherited GetTechnoType/WhatAmI and invulnerability virtuals return declared type/RTTI/flags; Mark and Deselect are observed sinks. No GetCoords or Building precheck result is supplied in this profile.",
+    "CreateRadarEvent65FA70 records type/cell and returns the declared radar_accepts boolean; actual dedup/lifetime/outline remains the existing client owner. EVA752700 and Voc750920 record literal/type/priority or resolved fixture sound ID/pan/volume/handle, returning with native RET4/RET8. No cue/device RNG or audible parity is claimed.",
+    "Existing native INI/allocator/TLS transport replaces physical INI IO. Sound AddSample4015C0 maps physical gexp06a/gexpshaa/ubase to declared fixture ordinals0/1/2; no sample decode/AudioIndex/device output. Fixed EVA reader reuses its existing paused-stream shell and bounded allocator."
+  ],
+  "entry_points": {
+    "initiate_warp": "0x0071AF20",
+    "can_warp_target": "0x0071AE50",
+    "let_go": "0x0071ABC0",
+    "house_notify": "0x004F93E0",
+    "building_coords": "0x00447AC0",
+    "precheck": "0x00457620",
+    "read_foundation": "0x00474DA0",
+    "pause": "0x004521C0",
+    "resume": "0x00452210",
+    "seed_rng": "0x0065C6D0",
+    "siren_reference": "0x00669C9A",
+    "eva_read": "0x00753000"
+  },
+  "replay_command": "python -m tools.spatial_oracle.temporal_initiate_warp --house-notice",
+  "payload_sha256": "56866687d509ba6d50f8e06ac70a0b0a59635debd8ec2af4cc91737cb9f946da"
+}

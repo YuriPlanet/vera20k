@@ -72,6 +72,48 @@ def decode_iso_cells(section):
 
 
 class RenderDepthFixtureTests(unittest.TestCase):
+    def test_attack_voice_has_clear_stock_targets_and_no_gameplay_overrides(self):
+        for target in ('unit', 'building'):
+            with self.subTest(target=target):
+                ini = parse_ini(build_fixture(attack_order_voice=target))
+                cells = decode_iso_cells(ini['IsoMapPack5'])
+                self.assertEqual(len(ini['Units']), 2)
+                self.assertEqual(len(ini['Structures']), 1)
+                self.assertEqual(ini['Units']['0'].split(',')[:5],
+                                 ['Americans', 'MTNK', '256', '48', '48'])
+                unit = ini['Units']['1'].split(',')
+                plant = ini['Structures']['0'].split(',')
+                near = unit if target == 'unit' else plant
+                far = plant if target == 'unit' else unit
+                self.assertEqual(near[3:5], ['52' if target == 'unit' else '51', '48'])
+                self.assertEqual(far[3:5], ['60', '60'])
+                self.assertEqual((unit[0:3], plant[0:3]),
+                                 (['Computer1', 'MTNK', '256'],
+                                  ['Computer1', 'GAPOWR', '256']))
+                for entity in (unit, plant):
+                    self.assertEqual(cells[int(entity[3]), int(entity[4])], (0, 0, 0))
+                for section in ('General', 'MTNK', 'GAPOWR', '105mm', 'AudioVisual'):
+                    self.assertNotIn(section, ini)
+                self.assertTrue(all(value == 255 for value in decode_overlay_section(ini['OverlayPack'])))
+        with self.assertRaises(ValueError):
+            build_fixture(attack_order_voice='unit', building_repair=True)
+
+    def test_building_repair_has_clear_stock_damage_and_repair_actors(self):
+        ini = parse_ini(build_fixture(building_repair=True))
+        stock = parse_ini(build_fixture(building_brackets=True))
+        self.assertEqual(ini['Structures'], stock['Structures'])
+        self.assertEqual(ini['Units']['0'], stock['Units']['0'])
+        attacker = ini['Units']['1'].split(',')
+        self.assertEqual(attacker[:5], ['Americans', 'MTNK', '256', '48', '44'])
+        cells = decode_iso_cells(ini['IsoMapPack5'])
+        self.assertEqual(cells[48, 44], (0, 0, 0))
+        self.assertNotIn('General', ini)
+        self.assertNotIn('GAPOWR', ini)
+        self.assertNotIn('MTNK', ini)
+        self.assertTrue(all(value == 255 for value in decode_overlay_section(ini['OverlayPack'])))
+        with self.assertRaises(ValueError):
+            build_fixture(building_repair=True, walls_only=True)
+
     def test_existing_fixture_modes_keep_their_authored_bytes(self):
         # Captured from HEAD's generator before the separate --cliff-back mode.
         # Preserve both map payloads, including compression and entity order.

@@ -648,3 +648,54 @@ House grant/revoke and self-heal simulation timing remain their existing
 owners; only an admitted counter prior is exercised here. The separate damaged
 first-six-frame601 material branch remains an explicit residual, not an extra
 draw: original70A626 chooses one600 or601 call.
+
+`--repair-wrench` adds ordinary repairing GAPOWR to the same Building-health
+runtime and phase recorder. It preserves every historical mode and sidecar.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.shroud --repair-wrench --check
+```
+
+`repair_wrench.json` supplies `readers`, physical inputs, the actual MOUSEPAL N1
+palette, `raster_controls` and `composition_controls` to the shared status GPU
+consumer. The existing palette owner optionally executes original startup
+52C136..52C1EA, including physical MOUSEPAL copy/expansion and complete Convert
+construction; original45E98D..45E9A3 loads WRENCH.SHP. Archive hashes identify
+candidate inputs; normal STOCK_DIGITAL AssetManager checks independently gate
+winner and loose-override precedence. This fixture does not emulate archive
+search. Existing PALETTE N53 remains available for health in complete Extras.
+
+Component `input.entry_boundary="extras_prefix"` starts actual6F5190 and stops
+before6F534E, after its wrench branch, or at the earlier sinking return. It
+executes the real RTTI/repair-byte/Cell487950 gates,459EF0 render coordinates,
+Tactical projection, SpeedNormalize/frame arithmetic and every4AED70/493DF0
+pixel store. It does not treat this prefix as whole DrawExtras. The frame0 and
+frame6 controls, A127/63/2/0, oldZ0 and actual viewport clipping establish E00
+A-consuming/no-Z stores with the N1 table. N1 produces identical colors for all
+four A controls. Selected/hover/other-owner inputs retain the wrench; repair-off,
+sinking and shrouded-cell inputs suppress it. Cell flags08 alone are admitted,
+which differs from a UI reveal-and-gap approximation. These are declared
+render-consumer priors, not native repair, ownership or vision lifecycles.
+
+Complete composition rows execute Behind, whole first Extras, actual admitted
+43CEA0→43D290 body and whole late Extras. Wrench precedes bracket/rank/health
+inside each Extras. Physical TMP ground, GGPOWR body, BUILDNGZ and ColorScheme
+reuse their existing native owners; GAPOWR has NULL BibShape. The neighbor is
+another stock GAPOWR two cells east, with disjoint 2×2 foundations, traversed
+after the repairing actor in both supplied parent phases. Sparse ground and
+before-late color/Z samples plus final pixels are the GPU seam; body crop hashes
+and actual body-admission records identify the executed interval. This is not a
+GPU body comparison or whole Display traversal. `body_overwritten_wrench_pixels`
+and `overwritten_wrench_pixels` expose actual positive overwritten stores,
+including later-neighbor status over the earlier wrench. Their values come only
+from original execution, rather than inferred geometry overlap.
+
+Full Rules/BuildingType constructors and45FE50 readers consume RULESMD,
+LANGRULE when present, selected MPBattleMD and XMP03T4; ARTMD is fixed. The new
+mode additionally records native constructor/layer Strength, Cost, Repairable
+and ClickRepairable. The supplied private Building repair byte belongs to the
+existing repair owner; command admission, Flash7, payment, healing and every stop
+remain its production lifecycle tests. Drawing itself writes no actor/timer,
+consumes no RNG and calls no detach. Arbitrary Building types, missing resources,
+large foundations, other status families and whole function/class coverage stay
+OPEN/PARTIAL.

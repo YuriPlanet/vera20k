@@ -321,7 +321,8 @@ impl SelectionOverlay {
             )
         });
         // WRENCH.SHP by name (`0x0045E99E` into `[0x0089DDC8]`), drawn
-        // through the same convert.
+        // through the same Init52C1D8 MOUSEPAL N1 Convert. Per-parent Extras
+        // selects its packed E00 material; keep raw frame origins/indices here.
         let repair_wrench = assets.and_then(|assets| {
             CenteredShapeStrip::from_assets_on_device(
                 device,

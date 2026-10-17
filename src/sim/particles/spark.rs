@@ -279,7 +279,13 @@ pub(super) fn classify_collision_kind(
     }
     if facts.accepted_building {
         Ok(Some(SparkCollisionKind::Building))
-    } else if matches!(facts.wall_overlay_id, Some(0x02) | Some(0x1a) | Some(0xf3)) {
+    } else if matches!(
+        crate::sim::cell_kernel::wall_connection_step(
+            facts.wall_overlay_id.map_or(-1, i32::from),
+            -1
+        ),
+        crate::sim::cell_kernel::WallConnectionStep::Return(true)
+    ) {
         Ok(Some(SparkCollisionKind::Wall))
     } else {
         Ok(None)

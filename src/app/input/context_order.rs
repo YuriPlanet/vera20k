@@ -97,6 +97,67 @@ pub(crate) enum AttackAction {
     Rally,
 }
 
+/// The allied-object part of Techno6FFEC0's unforced attack admission,
+/// 700314..7003D4. All consumers ask this through the existing action owner.
+/// IsAlly reads the real owner and the asking House's directional mask;
+/// display friendliness alone cannot decide whether to attack or select.
+fn friendly_attack_is_admitted(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    target_id: u64,
+) -> bool {
+    use crate::sim::combat::combat_weapon;
+
+    let Some(actor) = sim.entities().get(actor_id) else {
+        return false;
+    };
+    let Some(target) = sim.entities().get(target_id) else {
+        return false;
+    };
+    if !combat_weapon::is_ally_by_object(
+        Some(&sim.house_alliances),
+        &sim.interner,
+        actor.owner(),
+        target.owner(),
+    ) {
+        return true;
+    }
+    let Some(kind) = sim.interner.object_type(actor.type_ref(), rules) else {
+        return false;
+    };
+    if kind.attacks_friendlies() {
+        return true;
+    }
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    let weapon = combat_weapon::select_weapon_against_in_query(
+        rules,
+        actor,
+        kind,
+        &combat_weapon::attacker_facts(actor, kind),
+        Some(&TargetKind::Entity(target_id)),
+        sim.entities(),
+        &sim.interner,
+        cells.as_ref(),
+        Some(&sim.house_alliances),
+    )
+    .and_then(|(_, weapon)| weapon);
+    let ivan_transport = weapon
+        .as_ref()
+        .is_some_and(|weapon| weapon.warhead.ivan_bomb)
+        && sim
+            .interner
+            .object_type(target.type_ref(), rules)
+            .is_some_and(|target| target.passengers > 0);
+    (kind.attack_cursor_on_friendlies && !ivan_transport)
+        || (weapon.as_ref().is_some_and(|weapon| weapon.warhead.sonic)
+            && target.category() != EntityCategory::Structure
+            && target.parasite.is_infested())
+}
+
 /// The attack rung of the actor's What_Action and the tail it falls to.
 ///
 /// Object target (`TechnoClass::What_Action_OnObject @ 0x006FFEC0`): the
@@ -123,13 +184,12 @@ pub(crate) enum AttackAction {
 /// the original DetermineAction/Unit/Foot/Techno and Display action corpus
 /// in tools/spatial_oracle/bunker_attack_action.json.
 ///
-/// RESIDUAL (#605): the rung's admission (`0x00700255..0x0070043E`) is not
+/// The real-owner ally gate and its shared weapon/type grants are handled by
+/// [`friendly_attack_is_admitted`]. A different allied House therefore takes
+/// the identity-sensitive tail, then the existing class postprocessing.
+///
+/// RESIDUAL (#605): the rest of admission (`0x00700255..0x0070043E`) is not
 /// ported as one gate. Unforced, native also leaves the rung for:
-/// - an allied object (`Is_Ally_ByObject @ 0x004F9A90`), unless the actor
-///   holds a friendly-fire grant: `AttackFriendlies=` (`+0x6C0`),
-///   `AttackCursorOnFriendlies=` (`+0x6C1`) unless an `IvanBomb=` weapon
-///   meets a `Passengers=` type, or a `Sonic=` weapon over an infected Foot
-///   (`+0x694`);
 /// - an object disguised to the actor's house (vt+0xC8), unless that grant
 ///   holds, `[Rules+0xD6C]` is set, its type is `PermaDisguise=` (`+0xD30`),
 ///   its `+0x1EC`/`+0x1F4` timer runs, or it wears no house (vt+0xD0) and the
@@ -137,11 +197,10 @@ pub(crate) enum AttackAction {
 /// - a type that is not `LegalTarget=` (`+0x231`), unless that terrain test
 ///   passes.
 ///
-/// VERA's callers ask the rung only over another house's object, or over a
-/// friend for `AttackCursorOnFriendlies=` ([`friendly_bomb_ivans`] keeps its
-/// own Passengers test). Trigger: a disguised Spy or Mirage Tank under the
-/// cursor, or a Sonic weapon over an infected friend. Effect: VERA's rung
-/// answers where native's tail does, or the reverse. Occasional.
+/// Active YR Battle authors AttackCursorOnDisguise=yes, and SPY also authors
+/// PermaDisguise=yes: an ordinary stock Spy/Mirage is not evidence of a missed
+/// rejection. A layer disabling those grants or a non-LegalTarget type still
+/// requires the remaining admission. Those conditional paths remain open.
 pub(crate) fn attack_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -160,7 +219,11 @@ pub(crate) fn attack_action(
     let armed = crate::sim::combat::combat_weapon::is_armed(actor, kind);
     let infiltrator = actor.category() == EntityCategory::Infantry && kind.infiltrate;
     let admitted = match target {
-        TargetKind::Entity(_) => human && (armed || infiltrator),
+        TargetKind::Entity(target_id) => {
+            human
+                && (armed || infiltrator)
+                && (forced || friendly_attack_is_admitted(sim, rules, actor_id, *target_id))
+        }
         TargetKind::Cell(..) => human,
     };
     let mut action = if admitted
@@ -699,53 +762,30 @@ fn restore_selection_dispatch_order(queued: &mut [CommandEnvelope], selected: &[
 /// mission *it* resolved, not an order-wide line. If that first object resolved
 /// no order (its action mapped to a cursor-only code) nothing is spoken.
 fn emit_resolved_order_voice(state: &mut AppState, speaker_id: u64, queued: &[CommandEnvelope]) {
-    let Some(voice_field) = queued
+    let Some(envelope) = queued
         .iter()
         .find(|env| command_actor_id(&env.payload) == Some(speaker_id))
-        .and_then(|env| order_voice_key(&env.payload))
     else {
         return;
     };
-    emit_entity_order_voice(state, speaker_id, voice_field);
-}
-
-/// Resolve one `Voice*` slot on an object type, with the native fallbacks.
-///
-/// The capture and enter slots are the two with a fallback in gamemd, and they
-/// chain: `0x00708DCB CMP [type+0x55C],-1 ; JZ 0x00708DF1` sends an absent
-/// `VoiceCapture=` to the Enter-voice method at `0x00709020`, which reads
-/// `VoiceEnter=` (`TechnoTypeClass+0x558`) and, when *that* is the `-1`
-/// sentinel too (`0x0070902B CMP [EAX+0x558],-1 ; JZ 0x00709051`), calls
-/// `[vtable+0x368]` — `0x00708FC0` for the BuildingClass-family vtable at
-/// `0x007E3EBC` (`read_memory 0x007E4224` → `0x00708FC0`). That body is **not**
-/// silence: it reads the `VoiceMove=` sound list at `TechnoTypeClass+0x468`
-/// (`0x00712AB6 LEA EDI,[EBP+0x468]` in `TechnoTypeClass::ReadINI` passes key
-/// `"VoiceMove"` at `0x008442C0` to `CCINIClass::ReadSoundList @ 0x00525430`),
-/// skips only when its count at `+0x478` is zero
-/// (`0x00708FD6 TEST ECX,ECX ; JZ 0x00709014`), and otherwise queues
-/// `items[rand % count]` through `[vtable+0x354]`.
-///
-/// VERA models `VoiceMove=` as one id, not a list. No stock type authors a
-/// comma-separated `VoiceMove=` (0 of 148 occurrences in `ini/rulesmd.ini`),
-/// so the pick is observationally identical on retail; the `rand % count` draw
-/// native spends on RNG instance `0x00886B88` (`0x00708FE1 CALL 0x0065C780`)
-/// has no VERA counterpart. Recorded, not landed.
-fn voice_id_for_key<'a>(
-    obj: &'a crate::rules::object_type::ObjectType,
-    voice_field: &str,
-) -> Option<&'a str> {
-    match voice_field {
-        "VoiceMove" => obj.voice_move.as_deref(),
-        "VoiceAttack" => obj.voice_attack.as_deref(),
-        "VoiceHarvest" => obj.voice_harvest(),
-        "VoiceCapture" => obj
-            .voice_capture
-            .as_deref()
-            .or(obj.voice_enter.as_deref())
-            .or(obj.voice_move.as_deref()),
-        "VoiceEnter" => obj.voice_enter.as_deref().or(obj.voice_move.as_deref()),
+    let Some(voice_field) = order_voice_key(&envelope.payload) else {
+        return;
+    };
+    //6FFCEA..6FFCEF passes the committed Attack argument to VoiceAttack,
+    // before event encoding. A Move destination and the actor's old TarCom
+    // are different owners; neither supplies this argument.
+    let target = match &envelope.payload {
+        Command::Attack { target_id, .. } | Command::ForceAttack { target_id, .. } => {
+            Some(TargetKind::Entity(*target_id))
+        }
+        Command::ForceAttackCell {
+            target_rx,
+            target_ry,
+            ..
+        } => Some(TargetKind::Cell(*target_rx, *target_ry)),
         _ => None,
-    }
+    };
+    emit_entity_order_voice(state, speaker_id, voice_field, target);
 }
 
 /// Play one entity's voice line for the given `Voice*` INI key.
@@ -753,7 +793,12 @@ fn voice_id_for_key<'a>(
 /// The superseded app-layer order-voice helper always spoke the lowest-`stable_id` selected
 /// entity; retail speaks the object that resolved the order, so order resolution
 /// needs to name the speaker explicitly.
-fn emit_entity_order_voice(state: &mut AppState, speaker_id: u64, voice_field: &str) {
+fn emit_entity_order_voice(
+    state: &mut AppState,
+    speaker_id: u64,
+    voice_field: &str,
+    target: Option<TargetKind>,
+) {
     if voice_field == "VoiceSpecialAttack" {
         if let Some(runtime) = state.match_state.sim_runtime.as_mut()
             && let Some(event) =
@@ -768,30 +813,19 @@ fn emit_entity_order_voice(state: &mut AppState, speaker_id: u64, voice_field: &
         }
         return;
     }
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
         return;
     };
-    let Some(rules) = state.rules() else {
-        return;
-    };
-    let Some(entity) = sim.entities().get(speaker_id) else {
-        return;
-    };
-    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
-        return;
-    };
-    let Some(id) = crate::sim::world::Simulation::queue_voice_request(
-        voice_id_for_key(obj, voice_field),
+    let Some(id) = runtime.simulation.order_voice_request(
+        &runtime.resources.rules,
+        speaker_id,
+        voice_field,
+        target,
         state.match_state.input.selection_voice_enabled,
-        sim.house_is_human_player(entity.owner()),
     ) else {
         return;
     };
+
     let event = if voice_field == "VoiceAttack" {
         crate::audio::events::GameSoundEvent::UnitAttackOrder {
             speaker_id,
@@ -1979,7 +2013,25 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     return finish_order(state, queued, speaker_id);
                 }
             }
-            if select_friendly_clicks && clicked_friendly && context_actions_enabled {
+            // Ordinary Unit What_Action distinguishes a different allied
+            // House from an own object. Preserve Shift's earlier toggle-select
+            // answer and the existing other-class capability routes. The
+            // shared release below, not display friendliness, decides Select
+            // versus dispatch for this Unit route.
+            let friendly_unit_action = clicked_friendly
+                && hover.as_ref().is_some_and(|target| {
+                    cursor_owner(sim, &resources.rules, &current_objects, target.stable_id)
+                        .and_then(|id| sim.entities().get(id))
+                        .is_some_and(|actor| actor.category() == EntityCategory::Unit)
+                });
+            if select_friendly_clicks
+                && clicked_friendly
+                && context_actions_enabled
+                && (!friendly_unit_action
+                    || modifier == OrderModifier::Shift
+                    || consumed_building_action
+                    || consumed_attack_action)
+            {
                 return if consumed_building_action || consumed_attack_action {
                     finish_order(state, queued, speaker_id)
                 } else {
@@ -2010,19 +2062,23 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 .filter(|target| {
                     !force_move
                         && (force_fire
+                            || (select_friendly_clicks
+                                && friendly_unit_action
+                                && matches!(
+                                    modifier,
+                                    OrderModifier::Normal | OrderModifier::AttackMove
+                                ))
                             || matches!(
                                 target.kind,
                                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
                             ))
                 })
                 .map(|target| target.stable_id);
-            // VERA-internal: force-fire on a shrouded cell is rejected here.
-            // gamemd equivalent CONTRADICTS this — the FootClass shroud wrapper
-            // around What_Action_OnCell explicitly preserves the force-fire
-            // action code through the shroud, and the function this gate's old
-            // comment cited as a "shroud check" is in fact the waypoint lookup.
-            // Left in place because removing it changes click routing; recorded
-            // as a DRIFT for its own slice. Computed once outside the loop.
+            // Foot4DDDE0's hidden-cell wrapper rewrites a nonzero action
+            // except GuardArea0x33 to Move when MoveToShroud and the playfield
+            // admit it, otherwise NoMove (4DDE8F..4DDEB0). It does not preserve
+            // Attack5. The ordinary MTNK fall-through below takes Move; other
+            // class/shroud combinations remain part of the shared-cell audit.
             if let Some(target_id) = attack_target {
                 if matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove) {
                     match object_click_release(
@@ -2452,10 +2508,9 @@ fn object_click_release(
 }
 
 /// The selected Crazy Ivans whose click on the own or allied `target` plants a
-/// bomb. AttackCursorOnFriendlies (stock: IVAN and CIVAN only) grants Attack
-/// on a friend without passengers (`TechnoClass::What_Action_OnObject`,
-/// 0x00700314..0x007003D6), the rung must answer Attack, its ILLEGAL test
-/// included ([`attack_action`], which the cursor asks too), the Ivan makes it
+/// bomb. The canonical Techno grant and ILLEGAL test must already answer
+/// Attack ([`attack_action`], which the cursor asks too). Infantry51EB24..7E
+/// consumes that answer without repeating its type/weapon grants; the Ivan makes it
 /// IvanBomb ([`ivan_bomb_refused`], 0x0051EB24), and
 /// `FootClass::ClickedAction_Object` (0x004D74E0) sends that as Attack. A
 /// bombed friend stays a selection click. A lone selected Ivan over himself
@@ -2472,7 +2527,7 @@ fn friendly_bomb_ivans(
 ) -> Vec<u64> {
     let bombable = sim.entities().get(target).is_some_and(|entity| {
         let obj = sim.interner.object_type(entity.type_ref(), rules);
-        !ivan_bomb_refused(entity, obj) && obj.is_some_and(|o| o.passengers == 0)
+        !ivan_bomb_refused(entity, obj)
     });
     if !bombable {
         return Vec::new();
@@ -2485,7 +2540,7 @@ fn friendly_bomb_ivans(
                 && sim.entities().get(id).is_some_and(|e| {
                     sim.interner
                         .object_type(e.type_ref(), rules)
-                        .is_some_and(|o| o.ivan && o.attack_cursor_on_friendlies)
+                        .is_some_and(|o| o.ivan)
                 })
                 && attack_action(
                     sim,
@@ -3377,80 +3432,15 @@ mod tests {
         );
     }
 
-    /// A capture order takes the type's own `VoiceCapture=` slot
-    /// (`0x00708DC0` reads `TechnoTypeClass+0x55C` and queues it through
-    /// `TechnoClass::Queue_Voice @ 0x00708D90`) and only falls through to
-    /// `VoiceEnter=` when the key is the `-1` sentinel. Before this, every
-    /// stock engineer capture spoke the Enter line.
-    ///
-    /// The chain does not end at `VoiceEnter=`: an absent one sends
-    /// `0x00709020` to `[vtable+0x368]` = `0x00708FC0`, which draws from the
-    /// `VoiceMove=` list at `TechnoTypeClass+0x468` and is silent only when
-    /// that list is empty.
     #[test]
-    fn capture_speaks_the_capture_slot_and_falls_back_to_enter() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::object_type::{ObjectCategory, ObjectType};
-
+    fn capture_orders_dispatch_the_capture_voice_key() {
         assert_eq!(
             order_voice_key(&Command::CaptureBuilding {
                 engineer_id: 1,
                 target_building_id: 2,
             }),
-            Some("VoiceCapture"),
-            "capture has its own slot, it does not share the Enter slot"
+            Some("VoiceCapture")
         );
-
-        let object = |body: &str| {
-            let ini = IniFile::from_str(body);
-            ObjectType::from_ini_section(
-                "ENGINEER",
-                ini.section("ENGINEER").unwrap(),
-                ObjectCategory::Infantry,
-            )
-        };
-
-        // Stock Allied engineer: both keys present, capture wins.
-        let stock = object(
-            "[ENGINEER]\nVoiceMove=EngAllMove\nVoiceEnter=EngAllMove\n\
-             VoiceCapture=EngAllAttackCommand\n",
-        );
-        assert_eq!(
-            voice_id_for_key(&stock, "VoiceCapture"),
-            Some("EngAllAttackCommand")
-        );
-        assert_eq!(
-            voice_id_for_key(&stock, "VoiceEnter"),
-            Some("EngAllMove"),
-            "an ordinary Enter order is unaffected"
-        );
-
-        // `VoiceCapture=` absent: `0x00708DCB` falls through to the Enter slot.
-        let no_capture = object("[ENGINEER]\nVoiceMove=EngAllMove\nVoiceEnter=EngAllMove\n");
-        assert_eq!(
-            voice_id_for_key(&no_capture, "VoiceCapture"),
-            Some("EngAllMove")
-        );
-
-        // Neither key: `0x0070902B` sends the Enter slot to `[vtable+0x368]`
-        // = `0x00708FC0`, which draws from the `VoiceMove=` list at
-        // `TechnoTypeClass+0x468`. Native does NOT go silent here.
-        let neither = object("[ENGINEER]\nVoiceMove=EngAllMove\n");
-        assert_eq!(
-            voice_id_for_key(&neither, "VoiceCapture"),
-            Some("EngAllMove")
-        );
-        assert_eq!(
-            voice_id_for_key(&neither, "VoiceEnter"),
-            Some("EngAllMove"),
-            "the Enter slot itself falls through to the move list"
-        );
-
-        // Silence needs the move list empty too — `0x00708FD6 TEST ECX,ECX ;
-        // JZ 0x00709014` is the only exit that plays nothing.
-        let nothing = object("[ENGINEER]\nStrength=100\n");
-        assert_eq!(voice_id_for_key(&nothing, "VoiceCapture"), None);
-        assert_eq!(voice_id_for_key(&nothing, "VoiceEnter"), None);
     }
 
     fn chord_rules() -> crate::rules::ruleset::RuleSet {
@@ -4813,3 +4803,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         );
     }
 }
+
+#[cfg(test)]
+#[path = "allied_object_action_tests.rs"]
+mod allied_object_action_tests;

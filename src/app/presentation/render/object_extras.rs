@@ -1,4 +1,4 @@
-//! Replay rank, health, scale pips and building lines in Tactical Extras order.
+//! Replay wrench, rank, health, scale pips and building lines in Extras order.
 //! Other status families retain their existing owners and open parity bounds.
 use super::draw_plan_lowering::{ObjectExtrasRun, ObjectLayerPass};
 use crate::app::presentation::sidebar_render::begin_main_load_pass;
@@ -29,7 +29,7 @@ pub(super) fn draw_object_extras(
             continue;
         }
         // Adjacent status parents share one attachment pass; each keeps its
-        // rank->border->fill->scale->self-heal->group order. Lines fence Z.
+        // wrench->rank->border->fill->scale->self-heal->group order. Lines fence Z.
         let start = next;
         while matches!(
             layer.extras_runs.get(next),
@@ -73,6 +73,7 @@ pub(super) fn draw_status_runs(
     while next < runs.len() {
         let end = rank_run_end(runs, next);
         let ObjectExtrasRun::Status {
+            wrench,
             rank,
             background,
             fills,
@@ -86,6 +87,12 @@ pub(super) fn draw_status_runs(
             unreachable!("line parents fence status attachment passes");
         };
         if let (Some(overlay), Some(buffer)) = (overlay, buffer) {
+            if let (Some(index), Some(shape)) = (wrench, overlay.repair_wrench()) {
+                //6F5340 uses Init52C1D8's MOUSEPAL N1 Convert, E00/493DF0.
+                // The producer supplies its palette; this existing material
+                // consumes A and bypasses Z for both native Extras visits.
+                batch.draw_passthrough_range(&mut pass, shape.texture(), buffer, *index, 1);
+            }
             if let (Some(index), Some(shape)) = (rank, overlay.pips()) {
                 batch.draw_passthrough_range(
                     &mut pass,
@@ -158,6 +165,7 @@ pub(super) fn draw_status_runs(
 /// increasing instance order preserves the retained Display order.
 fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     let ObjectExtrasRun::Status {
+        wrench: None,
         rank: Some(first),
         background: None,
         fills,
@@ -179,6 +187,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     }
     let mut end = start + 1;
     while let Some(ObjectExtrasRun::Status {
+        wrench: None,
         rank: Some(index),
         background: None,
         fills,
@@ -209,6 +218,7 @@ mod tests {
     fn rank(index: u32) -> ObjectExtrasRun {
         ObjectExtrasRun::Status {
             parent: u64::from(index),
+            wrench: None,
             rank: Some(index),
             background: None,
             fills: index + 1..index + 1,
@@ -242,11 +252,16 @@ mod tests {
         if let ObjectExtrasRun::Status { self_heal, .. } = &mut marker {
             *self_heal = Some(25);
         }
+        let mut repairing = rank(27);
+        if let ObjectExtrasRun::Status { wrench, .. } = &mut repairing {
+            *wrench = Some(28);
+        }
         let runs = [
             rank(0),
             rank(1),
             ObjectExtrasRun::Status {
                 parent: 2,
+                wrench: None,
                 rank: Some(2),
                 background: Some(3),
                 fills: 4..5,
@@ -258,6 +273,7 @@ mod tests {
             rank(5),
             ObjectExtrasRun::Status {
                 parent: 6,
+                wrench: None,
                 rank: None,
                 background: None,
                 fills: 6..7,
@@ -276,6 +292,7 @@ mod tests {
             rank(10),
             ObjectExtrasRun::Status {
                 parent: 11,
+                wrench: None,
                 rank: Some(11),
                 background: None,
                 fills: 12..12,
@@ -291,6 +308,8 @@ mod tests {
             rank(23),
             marker,
             rank(26),
+            repairing,
+            rank(28),
         ];
         for (start, end) in [
             (0, 2),
@@ -307,6 +326,8 @@ mod tests {
             (14, 15),
             (15, 16),
             (16, 17),
+            (17, 18),
+            (18, 19),
         ] {
             assert_eq!(rank_run_end(&runs, start), end, "run {start}");
         }

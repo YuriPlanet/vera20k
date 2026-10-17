@@ -83,10 +83,9 @@ pub struct TiberiumReductionRequest {
     pub amount: i32,
 }
 
-/// A "your asset is being shot" ping: a Structure or harvester took damage
-/// this tick.
+/// An admitted building/harvester warning from damage or a first Temporal head.
 ///
-/// Native has two producers and neither tests the attacker's house:
+/// Damage producers do not test the attacker's house:
 /// `BuildingClass::ReceiveDamage @ 0x00442230`'s retaliation block calls
 /// `HouseClass::NotifyUnderAttack` for a living building hit by a source
 /// object with a non-zero result, unless its type is `Insignificant=`
@@ -94,20 +93,17 @@ pub struct TiberiumReductionRequest {
 /// ([`crate::sim::world::Simulation::building_hit_response`]); own-fire on an
 /// own building announces. `UnitClass::ReceiveDamage 0x007384B9..0x00738530`
 /// pings a `Harvester=` unit on any non-zero, non-fatal result with or
-/// without a source.
+/// without a source. `TemporalClass::InitiateWarp 0x0071AFBC..0x0071B0CA`
+/// admits the same types when its first head attaches. The House dispatcher
+/// owns their warning subtype; producers retain the victim type even if later
+/// damage delivery removes the object before dispatch.
 #[derive(Debug, Clone, Copy)]
 pub struct UnderAttackEvent {
     pub rx: u16,
     pub ry: u16,
     /// The VICTIM's owner — the player whose radar/EVA should react.
     pub owner: InternedId,
-    /// True for the ore-miner line: a `Harvester=` unit, or (via
-    /// `NotifyUnderAttack 0x004F9491..0x004F94A3`) a building whose type has
-    /// `UndeploysInto=` and `ResourceGatherer=yes` — the deployed slave miner.
-    pub miner: bool,
-    /// True when produced by the building path, which is the only one that
-    /// reaches `NotifyUnderAttack`'s ally branch.
-    pub structure: bool,
+    pub victim_type: InternedId,
 }
 
 /// `TechnoClass::Death_Announcement @ 0x004D98C0` input: a non-building

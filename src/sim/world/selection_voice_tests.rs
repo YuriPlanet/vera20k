@@ -232,8 +232,9 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
                 );
             }
             let enabled = receipt["voice_enabled"].as_u64().unwrap() != 0;
-            let (request, draws) =
-                trace_draws(|| sim.default_order_voice_request(&rules, id, enabled));
+            let (request, draws) = trace_draws(|| {
+                sim.order_voice_request(&rules, id, "VoiceSpecialAttack", None, enabled)
+            });
             if let Some(sound) = request {
                 assert!(
                     receipt["queue_calls"]

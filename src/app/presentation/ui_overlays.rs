@@ -654,90 +654,20 @@ fn repair_wrench_frame(frame: i32, options: &crate::sim::game_options::GameOptio
     frame % cycle * 6 / (cycle - 1)
 }
 
-/// The repair wrench, `TechnoClass::DrawExtras @ 0x006F5190`
-/// (0x006F5253..0x006F5345): over a building being drawn whose repair byte
-/// (`+0x6E8`) is set, whoever owns it, and whose cell is not shrouded
-/// (`0x00487950`), WRENCH.SHP frame [`repair_wrench_frame`] of the frame the
-/// draw sees, centered (flags `0xE00`) on the render point (the building's
-/// art anchor, as the bomb clock's). Drawn after the bomb clock and before
-/// the veterancy chevrons (0x006F5382), as there.
-pub(crate) fn build_repair_wrench_instances(
-    state: &AppState,
-    sw: f32,
-    sh: f32,
-) -> Vec<SpriteInstance> {
-    let (Some(sim), Some(overlay)) = (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.selection_overlay,
-    ) else {
-        return Vec::new();
-    };
-    let Some(wrench) = overlay.repair_wrench() else {
-        return Vec::new();
-    };
-    let Ok(index) = usize::try_from(repair_wrench_frame(
-        sim.session.binary_frame as i32,
-        &sim.session.game_options,
-    )) else {
-        return Vec::new();
-    };
-    let ignore_visibility = state.match_state.sandbox_full_visibility;
-    let local = preferred_local_owner_name(state).and_then(|name| sim.interner.get(&name));
-    let mut instances = Vec::new();
-    for entity in sim.entities().values() {
-        if entity.category() != EntityCategory::Structure
-            || !entity.repairing.is_on()
-            || entity.lifecycle.in_limbo()
-        {
-            continue;
-        }
-        if !ignore_visibility {
-            let Some(local) = local else {
-                continue;
-            };
-            let (rx, ry) = (entity.position.rx(), entity.position.ry());
-            if !sim.fog.is_cell_revealed(local, rx, ry)
-                || sim.fog.is_cell_gap_covered(local, rx, ry)
-            {
-                continue;
-            }
-        }
-        let point = crate::render::locomotor_visual::screen_position(entity);
-        let point = crate::render::locomotor_visual::building_art_anchor(point.0, point.1);
-        let Some(instance) = wrench.instance(index, point, 0.0006) else {
-            continue;
-        };
-        if in_view(
-            instance.position[0],
-            instance.position[1],
-            instance.size[0],
-            instance.size[1],
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-            sw,
-            sh,
-            48.0,
-        ) {
-            instances.push(instance);
-        }
-    }
-    instances
-}
-
 /// Frame-local screen viewport for Techno status emission.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StatusViewport {
     pub camera: [f32; 2],
     pub size: [f32; 2],
+    /// Existing sandbox view policy; ordinary retail views ask the Cell owner.
+    pub ignore_visibility: bool,
 }
 
-/// One Display parent's rank, health and pip commands in native Extras order.
+/// One Display parent's wrench, rank, health and pip commands in Extras order.
 #[derive(Debug, Default)]
 pub(crate) struct TechnoExtras {
+    ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
+    pub wrench: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
     pub background: Option<SpriteInstance>,
     /// Plain600 PIPS commands: health followed by any garrison occupants.
@@ -750,7 +680,7 @@ pub(crate) struct TechnoExtras {
     pub group: ControlGroupStatusOverlayInstances,
 }
 
-/// One Techno DrawExtras6F5190 parent, rank prefix then health6F64A0.
+/// One Techno DrawExtras6F5190 parent, wrench prefix, rank, then health6F64A0.
 /// Rank70A990 precedes the selected/hovered health gate at6F5388. It uses
 /// the shared cloak/disguise and raw Veterancy owners, with opaque status art.
 /// Ordinary MTNK is executed in procedural_drawing_oracle/unit_rank.json;
@@ -779,6 +709,57 @@ pub(crate) fn techno_extras_for_parent(
     // admission remains the existing shared owner, independent of selection.
     if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() {
         return strip;
+    }
+    //6F5253..5345 precedes the observer/selection/health gates. The same
+    // frame-local command is replayed in both native Building Extras visits.
+    if entity.category() == EntityCategory::Structure
+        && entity.repairing.is_on()
+        && (viewport.ignore_visibility
+            || local_owner
+                .and_then(|name| sim.interner.get(name))
+                .zip(sim.resolved_terrain.as_ref())
+                .is_some_and(|(viewer, terrain)| {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+                    !crate::sim::vision::cell_is_shrouded(
+                        &sim.fog,
+                        &cells,
+                        viewer,
+                        (entity.position.rx(), entity.position.ry()),
+                    )
+                }))
+        && let Some(wrench) = overlay.repair_wrench()
+        && let Ok(frame) = usize::try_from(repair_wrench_frame(
+            sim.session.binary_frame as i32,
+            &sim.session.game_options,
+        ))
+    {
+        // Building459EF0 is its render point, distinct from foundation-centre
+        // GetCoords447AC0 used by the health/line callers below.
+        let location = crate::sim::movement::ground_pose::object_location(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        );
+        let (render, _) =
+            crate::sim::movement::ground_pose::building_render_order_parts(location, false, false);
+        let point = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
+        if let Some(mut instance) = wrench.instance(frame, point, 0.0) {
+            // Init52C1D8 constructs MOUSEPAL with N1. E00/493DF0 reads A,
+            // whose row offsets are all zero for N1; neither reads nor writes Z.
+            instance.palette_light = crate::render::palette_light::PaletteLight::plain(1, 1000);
+            if in_view(
+                instance.position[0],
+                instance.position[1],
+                instance.size[0],
+                instance.size[1],
+                viewport.camera[0],
+                viewport.camera[1],
+                viewport.size[0],
+                viewport.size[1],
+                48.0,
+            ) {
+                strip.wrench = Some(instance);
+            }
+        }
     }
     let Some(observer) = admitted_techno_observer(sim, entity, local_owner, rules) else {
         return strip;

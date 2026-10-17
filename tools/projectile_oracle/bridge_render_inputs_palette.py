@@ -55,6 +55,21 @@ def initialize(m, *, ordinary=False, early_temperat=False):
   assert u.reg_read(UC_X86_REG_ESP)==SP
  return m
 
+def initialize_mouse(m):
+ """Original MOUSEPAL startup on this already initialized PaletteReader.
+
+ Existing callers retain their allocation/startup order. The caller supplies
+ immutable MOUSEPAL.PAL bytes through this owner's existing file transport;
+ original load/copy/byte expansion and the complete N1 Convert run unchanged.
+ """
+ u=m.u
+ u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_EBX,0)
+ run_checked(u,0x52C136,0x52C1EA,count=100000000,timeout_us=120000000,
+  required_addresses=(0x52C142,0x52C194,0x52C1D8,0x48E740,0x4BBB00,0x48EBF0))
+ assert u.reg_read(UC_X86_REG_ESP)==SP
+ convert=m.read32(0x87F6C8);assert convert and m.read32(convert+0x16C)==1
+ return m
+
 def color_scheme_palette(name='LightGold', *, owner=None, physical_assets=None):
  """Native selected temperate palette expansion and whole ColorScheme ctor.
 

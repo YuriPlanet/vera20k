@@ -17,8 +17,7 @@ use crate::app::presentation::sidebar_render::{
 };
 use crate::app::presentation::ui_overlays::{
     build_bomb_clock_instances, build_building_radius_ring_instances,
-    build_control_group_status_instances, build_repair_wrench_instances,
-    build_software_cursor_instances,
+    build_control_group_status_instances, build_software_cursor_instances,
 };
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
@@ -69,7 +68,6 @@ pub(super) struct DebugInstances {
 pub(super) struct UiInstances {
     pub radius_ring: Vec<SpriteInstance>,
     pub bomb_clock: Vec<SpriteInstance>,
-    pub repair_wrench: Vec<SpriteInstance>,
     pub software_cursor: Vec<SpriteInstance>,
     pub drag: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
@@ -314,6 +312,7 @@ pub(super) fn build_world_instances(
                             state.match_state.input.camera_y,
                         ],
                         size: [sw, sh],
+                        ignore_visibility: state.match_state.sandbox_full_visibility,
                     },
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
@@ -637,7 +636,6 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstances {
     let radius_ring: Vec<SpriteInstance> = build_building_radius_ring_instances(state, sw, sh);
     let bomb_clock = build_bomb_clock_instances(state, sw, sh);
-    let repair_wrench = build_repair_wrench_instances(state, sw, sh);
     let software_cursor = build_software_cursor_instances(state);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
@@ -730,7 +728,6 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
     UiInstances {
         radius_ring,
         bomb_clock,
-        repair_wrench,
         software_cursor,
         drag,
         placement,

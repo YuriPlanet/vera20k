@@ -1096,17 +1096,6 @@ pub fn recalc_overlay_passability(
     cleared_resource_for_slope || projection_changed
 }
 
-/// A request to damage a wall overlay at a specific cell.
-///
-/// Native `DestroyOverlay` receives the weapon's raw signed damage. Literal
-/// `-1` is the forced-destruction sentinel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct WallDamageEvent {
-    pub rx: u16,
-    pub ry: u16,
-    pub damage: i32,
-}
-
 /// Ordered writes produced by one `DestroyOverlay` call, including its inline
 /// recursive cardinal chain and fixed post-destruction cleanup fan-out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1753,9 +1742,19 @@ fn recompute_wall_connectivity_target(
         ) else {
             continue;
         };
-        if native_runtime_overlay_target_state(grid, resolved_terrain, neighbor).0
-            == Some(overlay_id)
-        {
+        let neighbor_id = native_runtime_overlay_target_state(grid, resolved_terrain, neighbor).0;
+        let connects = match crate::sim::cell_kernel::wall_connection_step(
+            neighbor_id.map_or(-1, i32::from),
+            i32::from(overlay_id),
+        ) {
+            crate::sim::cell_kernel::WallConnectionStep::Return(connected) => connected,
+            // Existing residual: this cleanup view does not implement native
+            //480552..620's Building/Gate list arms for requested0/2/26. Retain
+            // its prior false answer there; CAFNCB203 resolves in the prefix.
+            crate::sim::cell_kernel::WallConnectionStep::GdiBuildings
+            | crate::sim::cell_kernel::WallConnectionStep::NodBuildings => false,
+        };
+        if connects {
             connectivity |= 1 << bit;
         }
     }

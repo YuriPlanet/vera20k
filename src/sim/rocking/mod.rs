@@ -97,6 +97,21 @@ impl RockingState {
         self.vel_sideways = velocity;
     }
 
+    /// Drive4B19F7 replaces Techno+334 with its binary32 pre-crush rate.
+    pub(crate) fn set_vel_forwards_native(&mut self, velocity: NativeF32Bits) {
+        self.vel_forwards = velocity;
+    }
+
+    /// Unit73B05B..73B06E, after Cell480CB0(-1) regardless of its return:
+    /// FADD binary32 constant7F4E38 (+0.02), then FSTP Techno+334.
+    /// Original numeric controls: unit_per_cell_overlay.json.
+    pub(crate) fn recoil_after_overlay_crush(&mut self) {
+        self.vel_forwards = store(X::add(
+            load(self.vel_forwards),
+            load(NativeF32Bits::from_bits(0x3ca3_d70a)),
+        ));
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {
         self.angle_forwards = fixed_word(angle);

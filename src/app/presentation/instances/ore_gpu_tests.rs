@@ -1,6 +1,6 @@
-//! Original flat resource Cell raster through the production ordinary overlay
-//! atlas, live identity/frame owner and submission. The lifecycle check uses a
-//! real retail map and the bound runtime's ordinary HarvestCell command.
+//! Original Cell rasters through the production ordinary overlay
+//! atlas, live identity/frame owner and submission. Lifecycle checks use real
+//! retail maps and the bound runtime's ordinary harvest, growth and fire paths.
 use super::{CellOverlayInputs, build_cell_overlay_instances};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::headless_scenario::HeadlessScenario;
@@ -47,15 +47,43 @@ impl Probe {
         .unwrap();
         let theater =
             crate::map::theater::load_theater(&mut assets, &scene.map.header.theater).unwrap();
+        let material_sources = packet["inputs"]["material_sources"].as_array();
+        if let Some(materials) = material_sources {
+            assert!(!materials.is_empty());
+            for material in materials {
+                assert!(
+                    packet["inputs"]["sources"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|source| {
+                            source["name"]
+                                .as_str()
+                                .unwrap()
+                                .eq_ignore_ascii_case(material.as_str().unwrap())
+                        }),
+                    "native material source {material}"
+                );
+            }
+        }
         for source in packet["inputs"]["sources"].as_array().unwrap() {
             let name = source["name"].as_str().unwrap();
-            if (name.to_ascii_lowercase().starts_with("tib")
-                && name
-                    .to_ascii_lowercase()
-                    .ends_with(&format!(".{}", theater.extension)))
-                || name.eq_ignore_ascii_case("urban.pal")
-                || name.eq_ignore_ascii_case("temperat.pal")
-            {
+            let selected = material_sources.map_or_else(
+                || {
+                    (name.to_ascii_lowercase().starts_with("tib")
+                        && name
+                            .to_ascii_lowercase()
+                            .ends_with(&format!(".{}", theater.extension)))
+                        || name.eq_ignore_ascii_case("urban.pal")
+                        || name.eq_ignore_ascii_case("temperat.pal")
+                },
+                |materials| {
+                    materials
+                        .iter()
+                        .any(|material| material.as_str().unwrap().eq_ignore_ascii_case(name))
+                },
+            );
+            if selected {
                 assert_eq!(
                     crate::util::sha256::sha256_hex(assets.get_ref(name).unwrap()),
                     source["sha256"].as_str().unwrap(),
@@ -216,8 +244,19 @@ impl Probe {
                 &mut instances,
                 &mut policies,
             );
+            if input["overlay_id"].as_i64() == Some(-1) {
+                assert!(
+                    instances.is_empty(),
+                    "live erased Cell suppresses its retained entry"
+                );
+            }
             let mut pool = InstanceBufferPool::new();
-            pool.upload_on_device(&self.gpu.device, &self.gpu.queue, "ore-native", &instances);
+            pool.upload_on_device(
+                &self.gpu.device,
+                &self.gpu.queue,
+                "cell-overlay-native",
+                &instances,
+            );
             batch.write_camera(&self.gpu.queue, camera);
             let color = self.gpu.target(self.size, *format);
             let depth = self
@@ -265,7 +304,7 @@ impl Probe {
                     batch,
                     &pool,
                     Some(atlas),
-                    "ore-native",
+                    "cell-overlay-native",
                     &policies,
                 );
             }
@@ -279,13 +318,166 @@ impl Probe {
         assert_eq!(
             scene.sim().state_hash(),
             hash_before,
-            "ore presentation is read-only"
+            "ordinary overlay presentation is read-only"
         );
     }
 }
 
 fn packet() -> &'static Value {
     crate::test_fixture::json("tools/spatial_oracle/ore_render.json")
+}
+
+/// A normal stock AP command supplies the wall states; original Cell47F6A0
+/// rasters independently supply their expected material, color and depth.
+/// The CPU packet's independent seed/impact history is not a World timing oracle.
+#[test]
+#[ignore = "requires physical retail XMP03T4 and GPU; ordinary fence fire publication and native wall rasters with live A"]
+fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
+    use crate::app::presentation::overlay_index::OverlayRenderIndex;
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let profile = crate::test_fixture::json("tools/map_observation.authored-fence.example.json");
+    let native = crate::test_fixture::json("tools/spatial_oracle/wall_render.json");
+    let launch: crate::skirmish_launch::SkirmishLaunchSession =
+        serde_json::from_value(profile["launch"].clone()).unwrap();
+    let map_name = launch.selected_map_file.as_deref().unwrap().to_owned();
+    let selected =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, &map_name, &assets)
+            .unwrap();
+    let source = native["inputs"]["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|source| {
+            source["name"]
+                .as_str()
+                .unwrap()
+                .eq_ignore_ascii_case(&map_name)
+        })
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(selected.source).unwrap()["source_sha256"],
+        source["sha256"]
+    );
+    let mut scene = crate::headless_scenario::load_session(
+        &root,
+        &map_name,
+        profile["seed"].as_u64().unwrap() as u32,
+        launch,
+    )
+    .unwrap();
+    scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
+    let owner = scene.sim().session.current_house.unwrap();
+    assert_eq!(profile["commands"].as_array().unwrap().len(), 1);
+    assert_eq!(profile["commands"][0]["issue_after_step"], 0);
+    let command: Command =
+        serde_json::from_value(profile["commands"][0]["payload"].clone()).unwrap();
+    let Command::ForceAttackCell { attacker_id, .. } = command else {
+        panic!("ordinary Cell attack profile");
+    };
+    let tank = scene.sim().entities().get(attacker_id).unwrap();
+    assert_eq!(scene.sim().resolve(tank.type_ref()), "MTNK");
+    assert_eq!(tank.owner(), owner);
+    let order = CommandEnvelope::new(owner, 0, command);
+    let rows = native["rows"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    let coords = |row: &Value| {
+        (
+            row["input"]["coords"][0].as_u64().unwrap() as u16,
+            row["input"]["coords"][1].as_u64().unwrap() as u16,
+        )
+    };
+    let mut entries = OverlayRenderIndex::default();
+    entries.replace_from_source(scene.map.overlays.clone());
+    assert!(
+        scene
+            .runtime
+            .simulation
+            .prepare_fog_view_for("VERA-OBSERVER")
+    );
+    let hash = scene.sim().state_hash();
+    let mut probe = Probe::new(&scene, native, coords(&rows[0]), Some(owner));
+    assert_eq!(
+        scene.sim().state_hash(),
+        hash,
+        "atlas/A/light preparation is read-only"
+    );
+    let mut seen = std::collections::BTreeSet::new();
+    for step in 0..=profile["ticks"].as_u64().unwrap() {
+        for (index, row) in rows.iter().enumerate() {
+            if seen.contains(&index) {
+                continue;
+            }
+            let at = coords(row);
+            let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            if live.overlay_id.map_or(-1, i64::from) != row["input"]["overlay_id"].as_i64().unwrap()
+                || u64::from(live.overlay_data) != row["input"]["state"].as_u64().unwrap()
+            {
+                continue;
+            }
+            let cell = scene
+                .sim()
+                .resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(at.0, at.1)
+                .unwrap();
+            assert_eq!(
+                i64::from(cell.level),
+                row["input"]["level"].as_i64().unwrap()
+            );
+            assert_eq!(cell.slope_type, 0);
+            let crop: Vec<_> = entries
+                .iter()
+                .filter(|entry| (entry.rx, entry.ry) == at)
+                .cloned()
+                .collect();
+            assert_eq!(crop.len(), 1, "unique retained source slot at {at:?}");
+            if let Some(id) = live.overlay_id {
+                assert_eq!((crop[0].overlay_id, crop[0].frame), (id, live.overlay_data));
+            }
+            assert!(
+                scene
+                    .runtime
+                    .simulation
+                    .prepare_fog_view_for("VERA-OBSERVER")
+            );
+            probe.compare(&scene, &crop, row);
+            seen.insert(index);
+        }
+        if seen.len() == rows.len() {
+            break;
+        }
+        if step == profile["ticks"].as_u64().unwrap() {
+            break;
+        }
+        let output = scene
+            .runtime
+            .advance_frame(
+                if step == 0 {
+                    std::slice::from_ref(&order)
+                } else {
+                    &[]
+                },
+                22,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(output.tick.frame_committed);
+        entries.remove_cells(&output.overlay_removals);
+        entries.upsert_occupied(output.overlay_updates);
+    }
+    assert_eq!(
+        seen.len(),
+        rows.len(),
+        "ordinary fire must reach each independent native raster witness; saw {seen:?}"
+    );
 }
 
 /// Cell483710/487190's ordinary source gain reaches the same retained index,

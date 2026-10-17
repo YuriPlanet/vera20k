@@ -262,25 +262,6 @@ def _retail_history_class():
    self.platform.files=copy.deepcopy(state['files']);self.native_events=copy.deepcopy(state['native_events'])
    self.registry_events=copy.deepcopy(state['registry_events']);self.phase_visits=copy.deepcopy(state['phase_visits'])
    self.pending_registry={};self.check_code()
-  def save_state(self,path,extra):
-   """Scratch debugging checkpoint of a returned phase; never reference data.
-
-   Pickles the whole VM snapshot plus lazily admitted IO bytes and the
-   request receipt, so a resumed run reports the same physical inputs.
-   """
-   import pickle
-   state=dict(self.snapshot(),extra=extra,assets=dict(self.assets),
-    prepared=dict(self.platform.prepared_files),requests=dict(self.inputs.requests))
-   Path(path).write_bytes(pickle.dumps(state,protocol=pickle.HIGHEST_PROTOCOL))
-  def load_state(self,path):
-   import pickle
-   state=pickle.loads(Path(path).read_bytes())
-   mapped=[(a,b) for a,b,_ in self.u.mem_regions()]
-   for address,raw in state['memory']:
-    if not any(a<=address<=b for a,b in mapped):self.u.mem_map(address,len(raw))
-   self.restore(state);self.assets=dict(state['assets']);self.inputs.requests=dict(state['requests'])
-   self.platform.configure_transport(prepared_files=state['prepared'])
-   return state['extra']
   def original_type_initializers(self):
    entries=list(struct.unpack('<28I',self.u.mem_read(0x813248,28*4)))
    entries.extend((0x40F490,0x40FB30,0x5F6FF0,0x725350,0x725750,0x68C330))

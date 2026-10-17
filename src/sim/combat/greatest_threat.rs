@@ -773,9 +773,10 @@ impl ScanContext<'_> {
     }
 
     /// The walks pass an ally on for an `AttackFriendlies=` scanner
-    /// (TechnoType `+0x6C0`; no retail type sets it and VERA does not read
-    /// it), a berserk one or a controlled transport's passenger: the aircraft
-    /// walks (`0x006F9B99..0x006F9BD2`, `0x006F91FB..0x006F9267`) and, with
+    /// (TechnoType `+0x6C0`; parsed but not yet consumed by this scanner,
+    /// and no retail type sets it), a berserk one or a controlled transport's
+    /// passenger: the aircraft walks (`0x006F9B99..0x006F9BD2`,
+    /// `0x006F91FB..0x006F9267`) and, with
     /// [`Self::scans_allies`], [`Self::offers`].
     fn attacks_allies(&self) -> bool {
         self.berserk || self.controller_house.is_some()
@@ -836,8 +837,8 @@ impl ScanContext<'_> {
     /// `candidate`.
     fn ally_arm_refuses(&self, candidate: &GameEntity, candidate_obj: &ObjectType) -> bool {
         // `0x006F7EDA..0x006F7F1C`: an `AttackFriendlies=` scanner, an
-        // `InfantryClass+0x6D8` infantryman (neither represented), a berserk
-        // one or a controlled transport's passenger skips its own house's
+        // `InfantryClass+0x6D8` infantryman (both scanner arms unported),
+        // a berserk one or a controlled transport's passenger skips its own house's
         // test; the passenger refuses what the controller's house allies
         // (`0x006F7FE9..0x006F7FFB`).
         if self.berserk || self.controller_house.is_some() {
@@ -1983,9 +1984,10 @@ fn evaluate_candidate(
     // self test (`0x006F8001`). A healer (retail: an IFV carrying an engineer,
     // `[FV] Weapon2=RepairBullet`) takes a damaged ally.
     //
-    // RESIDUAL — `AttackFriendlies=` (TechnoType `+0x6C0`) and
-    // `InfantryClass+0x6D8` are not represented. Natively the first scanner
-    // takes allies as it takes enemies; no retail type sets it. The second's
+    // RESIDUAL — this scanner does not consume the parsed `AttackFriendlies=`
+    // (TechnoType `+0x6C0`); `InfantryClass+0x6D8` is not represented.
+    // Natively the first scanner takes allies as it takes enemies; no retail
+    // type sets it. The second's
     // cell walk stops at the first Techno (`0x006F8ADC`) and no walk offers it
     // an ally, so an ally at the head of a cell's list hides the enemies
     // behind it, where VERA steps past the ally. Trigger: a map trigger or

@@ -2182,7 +2182,10 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         ),
         (8, 5)
     );
-    assert!(result.consequences.effects().under_attack_events[0].structure);
+    assert_eq!(
+        result.consequences.effects().under_attack_events[0].victim_type,
+        listener.type_ref()
+    );
     assert!(!fatal.substrate.occupancy.contains_entity(8, 5, 10));
     let attacker = fatal.substrate.entities.get(20).unwrap();
     assert!(!attacker.radio_contacts.contains(10));

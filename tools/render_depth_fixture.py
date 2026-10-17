@@ -6,6 +6,8 @@ Usage:
     python tools/render_depth_fixture.py target/depth-comparison/depth-walls.map --walls-only
     python tools/render_depth_fixture.py target/depth-comparison/depth-cliff-back.map --cliff-back
     python tools/render_depth_fixture.py target/depth-comparison/building-brackets.map --building-brackets
+    python tools/render_depth_fixture.py target/depth-comparison/building-repair.map --building-repair
+    python tools/render_depth_fixture.py target/depth-comparison/attack-voice.map --attack-order-voice unit
 
 This writes only the requested map. It neither edits game configuration nor
 launches either engine. The cliff fixture deliberately focuses on one cliff
@@ -132,12 +134,17 @@ C = 48
 
 
 def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
-                  building_brackets: bool = False) -> str:
+                  building_brackets: bool = False, building_repair: bool = False,
+                  attack_order_voice: str | None = None) -> str:
     """Keep comparison geometry stable within each selectable scene."""
     cliff_x0, cliff_y0 = C - 8, C - 2   # 2 wide, 3 tall
-    if sum((walls_only, cliff_back, building_brackets)) > 1:
+    if attack_order_voice not in (None, 'unit', 'building'):
+        raise ValueError('Choose a unit or building attack target')
+    if sum((walls_only, cliff_back, building_brackets, building_repair,
+            attack_order_voice is not None)) > 1:
         raise ValueError('Choose one comparison mode')
-    walls_only = walls_only or building_brackets
+    building_brackets = building_brackets or building_repair
+    walls_only = walls_only or building_brackets or attack_order_voice is not None
 
     def high(x, y):
         return y <= x + 6  # Raised ground north-west of the cliff line.
@@ -236,6 +243,25 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             for i, (x, y) in enumerate(((C, C), (C - 2, C + 1), (C + 2, C - 1)))
         ]
         units = [f'0=Computer1,MTNK,256,{C+12},{C+12},64,Guard,None,0,-1,0,-1,1,1']
+        if building_repair:
+            # A normal local attacker can damage the stock plant before Stop
+            # and a retained Repair-button click. No HP, weapon or rate patch.
+            units.append(f'1=Americans,MTNK,256,{C},{C-4},64,Guard,None,0,-1,0,-1,1,1')
+        infantry = []
+        overlay[:] = b'\xff' * len(overlay)
+        overlay_data[:] = bytes(len(overlay_data))
+    if attack_order_voice:
+        # One near hostile target and one distant survivor keep ordinary
+        # Attack/Stop and target-death observations separate from victory.
+        # Both scenes use untouched retail types, health, weapons and voices.
+        # Keep a building's foundation-centre target comfortably in range.
+        near, far = (C + (4 if attack_order_voice == 'unit' else 3), C), (C + 12, C + 12)
+        unit_cell, plant_cell = (near, far) if attack_order_voice == 'unit' else (far, near)
+        structures = [f'0=Computer1,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
+        units = [
+            f'0=Americans,MTNK,256,{C},{C},64,Guard,None,0,-1,0,-1,1,1',
+            f'1=Computer1,MTNK,256,{unit_cell[0]},{unit_cell[1]},192,Guard,None,0,-1,0,-1,1,1',
+        ]
         infantry = []
         overlay[:] = b'\xff' * len(overlay)
         overlay_data[:] = bytes(len(overlay_data))
@@ -245,7 +271,7 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
     cliff_rules = '\n[General]\nCliffBackImpassability=0\n' if cliff_back else ''
     # Match normal Battle's AI slot, so the distant voxel also prevents an
     # empty-house victory from ending sustained selection captures.
-    bracket_house_slot = '\n2=Computer1' if building_brackets else ''
+    bracket_house_slot = '\n2=Computer1' if building_brackets or attack_order_voice else ''
     bracket_house = '''\n[Computer1]
 Country=YuriCountry
 PlayerControl=no
@@ -255,10 +281,10 @@ Credits=0
 Edge=South
 Allies=Computer1
 Color=DarkRed
-''' if building_brackets else ''
+''' if building_brackets or attack_order_voice else ''
 
     return f'''[Basic]
-Name=Depth Continuation - {'Building Brackets' if building_brackets else 'Cliff Back Edge' if cliff_back else 'Walls and Cliff'}
+Name=Depth Continuation - {'Attack Voice ' + attack_order_voice if attack_order_voice else 'Building Repair' if building_repair else 'Building Brackets' if building_brackets else 'Cliff Back Edge' if cliff_back else 'Walls and Cliff'}
 NewINIFormat=4
 Player=Americans
 HomeCell={(C + 1) * 1000 + (C - 5)}
@@ -357,9 +383,19 @@ def main() -> None:
         '--building-brackets', action='store_true',
         help='Use stock selected-building and neighboring-body positions on clear ground',
     )
+    modes.add_argument(
+        '--building-repair', action='store_true',
+        help='Add a stock local tank to the building scene for damage, Stop and paid repair',
+    )
+    modes.add_argument(
+        '--attack-order-voice', choices=('unit', 'building'),
+        help='Use a stock local tank, one nearby enemy target and a distant enemy survivor',
+    )
     args = parser.parse_args()
     mission = build_fixture(walls_only=args.walls_only, cliff_back=args.cliff_back,
-                            building_brackets=args.building_brackets)
+                            building_brackets=args.building_brackets,
+                            building_repair=args.building_repair,
+                            attack_order_voice=args.attack_order_voice)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(mission, encoding='ascii')
     print(f'Wrote {args.output} ({len(mission)} characters)')

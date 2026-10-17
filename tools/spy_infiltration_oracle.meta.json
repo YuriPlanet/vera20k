@@ -10,7 +10,9 @@
   "scope": "BuildingClass::Infiltrate on synthetic houses, building type, rules and one Super: every arm, their order, the local-player and radar-event gates of the radar event and the EVA lines. The Super has no anim and no custom charge time (+0x24 = -1).",
   "assumptions": [
     "GameMode 1, so IsPlayer compares each house with PlayerPtr.",
-    "Both houses hold no silo storage (+0x2FC) and a capacity (+0x310) of 200, so Spend_Money never drains buildings."
+    "Both houses hold no silo storage (+0x2FC) and a capacity (+0x310) of 200, so Spend_Money never drains buildings.",
+    "Each supplied House explicitly starts with RecheckTechTree+1FC=0. Optional initial_gains supplies five2BC..2C0 bytes in native Third/Soviet/Allied/veteranInfantry/veteranUnit order. Whole Infiltrate owns its unconditional gain/recheck writes, including repeat gains.",
+    "This is isolated4571E0. Real519FF8 caller, Capture mission RNG/timer, Tag48, UnInit/expiry/Limbo/scalar cleanup and later House suffix/4456D0/retained-sidebar insertion are separate production integration responsibilities. The leaf has no direct RNG or detach; Super/blackout timer effects execute in their selected arms."
   ],
   "substitutions": [
     "MapClass::Reset_Shroud 0x577AB0, CreateRadarEvent 0x65FA70 (answered per row) and VoxClass::PlayEVA 0x752700 are recorded stubs.",
@@ -20,5 +22,5 @@
     "infiltrate": "0x004571E0"
   },
   "replay_command": "python -m tools.spy_infiltration_oracle",
-  "payload_sha256": "bf4124e7f5ca1b259d0214e6b5bbb935cd54116a96436b3169899af4d2098084"
+  "payload_sha256": "fdc7c750a6e0edd3cf1402d4e6731c90112a1fad50ff8009cecb257278a89484"
 }

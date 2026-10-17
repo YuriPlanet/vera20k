@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary selected MTNK Attack acknowledgement: native retained type/sound readers, accepted mission1 prefix, unchanged primary-only selector, complete VoiceAttack and QueueVoice; bounded shared scalar/FV/absence controls.",
+  "assumptions": [
+    "Selected original per-layer constructor/read blocks use the existing BulletReader runtime/cache. Full UnitType7470D0, WeaponType771C70 and Rules665650 constructors execute. Original section-count admission526810 guards selected reads; whole type/file readers are excluded. Physical RULESMD then optional LANGRULE then MPBattleMD then XMP03T4 are selected by existing weapon_laser.physical_layers. Fixed SOUNDMD is not layered. ART has no effect on these voice decisions.",
+    "VoiceAttack vector+484/default empty reads at712C5B..712CC5. Four signed scalar slots580/584/588/58C default-1 at710F55..710F68, current-default named Voc reads713679..713775. Rules+230 defaults-1 at665976, exact AudioVisual VoiceIFVRepair reader669D63..669DA7; selected physical IFVMove binds through the same Sound owner. SoundList keys and sample names are physical; registry/sample numeric IDs are fixture-relative, excluding complete catalog/audio device/PCM.",
+    "Existing run() is the sole action/Display VM. Actual reader values are copied by value into its supplied live Unit/type/House prior, not transplanted pointers. Action/Display initialization retains its historical environmental/damage/range seams; only the measured voice continuation releases the existing selector seam. No whole Unit constructor, target creation, complete mission/event encoding or playback claim.",
+    "Ordinary undeployed MTNK uses original746CD0->6F3330, stock TurretCount0/IsGattlingfalse, original41BFB0 false and SecondaryNULL; it returns primary0 before any target reads. Target labels MTNK/GAPOWR are explicit object/vtable priors, not full constructors/target-reader claims. Actor raw veterancy and pending777 are supplied consumer state. Scalar-secondary controls use original DeployFire index prior explicitly; they do not claim stock MTNK secondary/deploy lifecycle.",
+    "Original Foot4D769F attack admission/argument producer executes with ESI=actor and the existing local stack target slot supplied. It produces mission1/target/NULL destination/planning and enters6FFBE0. This is not the complete Unit/Foot ClickedAction wrapper. Original637AA0 planning query/enable gate run; stop6FFDA5 precedes event encoding. Nonhuman rejection enters direct7090A0: ordinary Foot command admission would reject it. Direct controls separate enable-before-call from reached QueueVoice rejection. Whole7090A0, native GetWeapon/rawelite/IsTypeFV, Main65C780, QueueVoice/House50B6F0 execute. Weapon Damage is+A4; AmbientDamage is+98. Negative Damage literalFV selects Rules+230 without a Main draw when bound. An unbound repair ID bypasses all four valid weapon overrides and falls to the generic list/Main at7090EB->70914A. Its type-name/weapon/mode is a consumer boundary, not full IFV repair/transport lifecycle. Missing-warhead controls show voice does not require resolving a Warhead.",
+    "NULL target with primary-only selector and slot.weaponNULL are distinct from selected index-1: original GetWeapon returnsNULL slot and7090C0 faults before queue/RNG. The explicit fault control stops on that native dereference; no fallback is invented. Shared seed/continuation owner records complete Main states/raw/next4; Scenario/MapGen unchanged. No measured action-timer start or detach call. Later LeftUp action-line timer/voice-enable changes remain existing input owner effects."
+  ],
+  "substitutions": [
+    "Reuse historical singleton selection, keyboard/map/height/shroud/playfield/terrain/range/FireError and mock Display cursor sink. Measured primary-only SelectWeapon and all voice/RNG/queue bodies have no return substitution. Native instruction bytes/vtables remain immutable; original text hash checked before/after continuations.",
+    "Reuse BulletReader, Sound.make_ini and mtnk_attack.sound_inputs for selected physical SoundList/Defaults/type/source-order cache and original name binding. AudioIndex sample-name resolution uses their existing local-index transport. No second VM/cache/parser/RNG/voice binder implementation is introduced."
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "weapon_type_ctor": "0x00771C70",
+    "rules_ctor": "0x00665650",
+    "voice_list_reader": "0x00712C5B",
+    "weapon_voice_readers": "0x00713679",
+    "voice_ifv_repair_reader": "0x00669D63",
+    "sound_types": "0x007510D0",
+    "sound_lookup": "0x007514D0",
+    "accepted_order": "0x006FFBE0",
+    "voice_enable_gate": "0x006FFCBD",
+    "unit_select_weapon": "0x00746CD0",
+    "techno_select_weapon": "0x006F3330",
+    "get_weapon": "0x0070E140",
+    "voice_attack": "0x007090A0",
+    "queue_voice": "0x00708D90",
+    "main_raw": "0x0065C780"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --attack-order-voice",
+  "payload_sha256": "d77407804d1ec7b6d0a682334def58295c75f37dafdcfaa838c43f5413937c9a"
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical XMP03T4 CAFNCB independent stock AP Cell-center AreaDamage histories through actual wall damage, connectivity, retained122, Recalc/navigation/radar/expiry. Not a normal whole-shot/World RNG or native attacker target-release oracle.",
+  "assumptions": [
+    "Existing BulletReader unused-color registry prerequisite is reused: selected Cannon Color is physically absent; this placeholder is unrelated to actual wall raster ColorScheme. Existing full physical Navigation runtime and same Inputs reader; opt-in full Rules ctor, selected physical Overlay ART/readers and actual Map caller Overlay InitTheater5FE620 and existing MTNK/105mm/Cannon/AP readers. All actual authored Wall admissions execute original decoded5FD41A..5FD508 after Cell/TMP initialization and before Terrain, under original ScenarioInit producers; actual second data-pass5FD61A..5FD646 follows. Source id/frame/122 is not injected.",
+    "Existing native connectivity/hierarchy initialize and update the actual physical cache. Original CellSpread561910 and existing process initializer entries execute. Original counter-exit/Main zero and active-game store execute; independent stock-reader Session GameMode5/seed0 or31 and null attacker are explicit inputs. Original map/archive loading, authored Building/Techno placement and full Scenario bootstrap excluded.",
+    "Full489280,480CB0,480630,480510,47D2B0,56D460/56D5A0/584550,6551C0,7258D0/70D4A0 and725C70 execute. Empty Techno/listener registry remains explicit: actual wall expiry entry does not establish ordinary native MTNK target clearance. Normal World integration is a separate consumer.",
+    "Actual full3 RNG states/request/raw order, changed Cell/122/owner/zone/material, callback order and native admission readbacks retained. Live wall animation boundary fails closed. Two stock independent seed histories, no altered random word or supplied damage/admission return."
+  ],
+  "substitutions": [
+    "Existing successful bounded allocation/free, CRT/TLS/cache/physical asset transport and Windows SEH/checked pointer service. Empty tactical extents and screen/shroud presentation sinks remain; radar dirty body runs on shared supplied storage. No wall/area/Recalc/navigation/expiry result is supplied."
+  ],
+  "entry_points": {
+    "area_damage": "0x00489280",
+    "wall_damage": "0x00480CB0",
+    "cleanup": "0x00480630",
+    "connection": "0x00480510",
+    "map_identity": "0x005FD41A",
+    "map_data": "0x005FD61A",
+    "recalc": "0x0047D2B0",
+    "pointer_expiry": "0x007258D0",
+    "detach": "0x0070D4A0",
+    "main_counter_zero": "0x0048CDF0",
+    "active_game": "0x0052D9D7",
+    "cell_spread_init": "0x00561910"
+  },
+  "replay_command": "python -m tools.spatial_oracle.anytown_damage.mtnk_attack --authored-fence",
+  "payload_sha256": "cc4654ff7ad5693dc200564cba60bd51cda2a957ed733f50ee24c4b261069bf9"
+}
