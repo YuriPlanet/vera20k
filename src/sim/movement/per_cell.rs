@@ -735,7 +735,8 @@ impl Simulation {
     ///
     /// Mobile Enter executes the shared passenger owner at51A3A0..51A485,
     /// before C4 and the Teleport caller's NULL destination, despite warp-in.
-    /// RESIDUAL: other Capture branches, Eaten, building Enter and the C4 cell
+    /// Eaten51973C runs after the occupier arm and before ordinary Capture.
+    /// RESIDUAL: other Capture branches, building Enter and the C4 cell
     /// arm (`0x0051973C..0x0051A9E8`) are not dispatched from here. Some have
     /// ports with their own owners (`capture_manager`, `passenger`); native
     /// runs them before the Foot body, with some early returns, which also
@@ -753,6 +754,12 @@ impl Simulation {
         if reason == PerCellReason::Arrival
             && let Some(rules) = rules
             && self.infantry_per_cell_occupy(id, rules, registry, effects)?
+        {
+            return Ok(false);
+        }
+        if reason == PerCellReason::Arrival
+            && let Some(rules) = rules
+            && self.infantry_per_cell_eaten(id, rules, registry, effects)
         {
             return Ok(false);
         }

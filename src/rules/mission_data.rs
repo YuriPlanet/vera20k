@@ -63,7 +63,8 @@ pub enum MissionType {
     Sticky = 6,
     Enter = 7,
     Capture = 8,
-    /// TS-legacy; occupies index 9 and shifts every later index by one.
+    /// Grinder approach. Script60 queues this mission; PerCell consumes the
+    /// arriving Foot (4DFA70, Infantry51973C).
     Eaten = 9,
     Harvest = 10,
     AreaGuard = 11,

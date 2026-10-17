@@ -105,8 +105,10 @@
 //!   into its old house's bunker; what native ChangeOwner does to radio
 //!   contacts is unverified (the DOCKING arm's head, `0x0043C7E9..0x0043C882`,
 //!   has no house test).
-//! - The grinder seek (vt+0x33C `0x004DFA70`, script action 60,
-//!   DecideUnitFate's choice 2) is not ported.
+//! - Script60's grinder seek (vt+0x33C `0x004DFA70`) and Infantry's
+//!   Eaten arrival51973C..519948 use the shared navigation, refund, Tag,
+//!   sound, animation and UnInit owners below. Unit's separate grinder
+//!   arrival and DecideUnitFate's choice2 remain unintegrated.
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -228,6 +230,152 @@ fn garrison_seek_reissues(pick: u64, nav_com: Option<NavTargetRef>, mission: Mis
 }
 
 impl Simulation {
+    /// Foot PutInGrinder4DFA70..4DFB6D, original Steam gamemd
+    /// SHA2563e81a617..08600. No radio admission, latch or reissue gate:
+    /// walk House+98 backwards, keep the first strict nearest, set its
+    /// destination, then Queue(Eaten9,0). Distance shares the existing port.
+    pub(crate) fn foot_enter_grinder(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(foot) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let walk = self.walk_from_last(foot, self.house_grinders(foot.owner(), rules));
+        let Some(best) = pick_nearest_admitted(walk, |_| true) else {
+            return false;
+        };
+        let _ = self.assign_destination_represented(
+            id,
+            Some(NavTargetRef::object(best)),
+            Some(rules),
+            registry,
+            effects,
+        );
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Eaten),
+            0,
+            self.session.binary_frame,
+            &LiveReadyInputProvider { rules },
+        );
+        true
+    }
+
+    /// Infantry PerCell51973C..519948, before the ordinary Capture arm.
+    /// Effective Eaten and the first ground Building matching NavCom OR
+    /// TarCom admit this transaction, even if its type is not Grinding.
+    /// Original Steam gamemd SHA2563e81a617..08600, instruction-level reading.
+    pub(crate) fn infantry_per_cell_eaten(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::world::{SimSoundEvent, UninitContext};
+
+        let Some(foot) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if foot.mission.effective().known() != Some(MissionType::Eaten) {
+            return false;
+        }
+        let Some(building_id) = self.substrate.occupancy.first_building_on_layer(
+            foot.position.rx(),
+            foot.position.ry(),
+            MovementLayer::Ground,
+        ) else {
+            return false;
+        };
+        let nav_matches = matches!(foot.navigation.nav_com(),
+            Some(NavTargetRef::Object { id } | NavTargetRef::Building { id }
+                | NavTargetRef::Entity { id }) if id == building_id);
+        if !nav_matches && foot.attack_target.target() != Some(TargetKind::Entity(building_id)) {
+            return false;
+        }
+        let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
+        let entry_world = crate::sim::anim_class::AnimWorldCoord {
+            x: coordinate.x,
+            y: coordinate.y,
+            z: coordinate.z,
+        };
+        let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+        self.dispatch_object_tag_event(building_id, 1, Some(id), None, context);
+
+        //519790..519865: VoiceDie (local human only), then DieSound.
+        //Playback may draw Main too, so flush before selecting the next list.
+        for voice in [true, false] {
+            if let Some(foot) = self.substrate.entities.get(id)
+                && let Some(object) = self.object_type(foot.type_ref(), rules)
+                && (!voice || self.house_is_human_player(foot.owner()))
+                && let Some(sound_id) = crate::sim::combat::select_death_sound(
+                    if voice {
+                        &object.voice_die
+                    } else {
+                        &object.die_sounds
+                    },
+                    &self.main_rng,
+                )
+            {
+                self.sound_events
+                    .push(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
+                effects.flush_sound(self, Some(rules));
+            }
+        }
+        //51986A reads the victim's refund for ITS owner;519874 credits the
+        //building's current owner. Neither health nor the grinder's costs enter.
+        if let Some(refund) = crate::sim::production::techno_refund(self, rules, id)
+            && let Some(owner) = self
+                .substrate
+                .entities
+                .get(building_id)
+                .map(GameEntity::owner)
+        {
+            crate::sim::credit_income::add_credits(self, owner, refund);
+        }
+        self.dispatch_object_tag_event(id, 48, Some(id), None, context);
+        if let Some(building) = self.substrate.entities.get(building_id)
+            && let Some(object) = self.object_type(building.type_ref(), rules)
+            && object.grinding
+        {
+            let damaged = building.building_art.anim_slots()[3].map(|_| {
+                crate::sim::building_art::requested_damage_state(
+                    building.health,
+                    object.strength,
+                    rules.general.condition_yellow,
+                )
+            });
+            if let Some(sound_id) = rules.general.enter_grinder_sound.clone()
+                && let Some(foot) = self.substrate.entities.get(id)
+            {
+                let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
+                self.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                    sound_id,
+                    crate::sim::anim_class::AnimWorldCoord {
+                        x: coordinate.x,
+                        y: coordinate.y,
+                        z: coordinate.z,
+                    },
+                ));
+                effects.flush_sound(self, Some(rules));
+            }
+            //5198CE gates the animation switch on the existing Active3
+            //instance, not on the presence of a SpecialAnim declaration.
+            if let Some(damaged) = damaged {
+                self.clear_building_anim_slot(building_id, 3);
+                self.set_building_anim_slot(building_id, 10, damaged, false, 0, rules);
+            }
+        }
+        self.uninit_with_context(id, context);
+        true
+    }
+
     /// Bio Reactor Unload's `IsHuman` gate (`House+0x1EC` at `0x0044DBE6`) and
     /// passenger latch clear. Computer-owned passengers retain the seek byte.
     pub(crate) fn clear_human_absorber_seek_on_unload(&mut self, stable_id: u64) {
@@ -541,3 +689,7 @@ pub(crate) fn set_should_enter_nearest_occupiable_for_test(entity: &mut GameEnti
 #[cfg(test)]
 #[path = "building_entry_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "grinder_tests.rs"]
+mod grinder_tests;

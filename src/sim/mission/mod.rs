@@ -12,6 +12,7 @@
 pub(crate) mod authority;
 pub(crate) mod capture;
 pub(crate) mod concrete_effects;
+pub(crate) mod eaten;
 pub(crate) mod enter;
 pub mod control;
 pub(crate) mod leaf;

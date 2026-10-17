@@ -549,6 +549,14 @@ impl Simulation {
         rules.cost_of(object, self.house_cost_factors(owner).as_ref())
     }
 
+    /// House+0x98, the grinders, in registration order. Grinding+16AD
+    /// appends at441283..4412D1 and448ECB..448F19; ChangeOwner4487E6..
+    /// 44882E and expiry4FBA99..4FBABB stable-remove. Like the absorber
+    /// list, this is the existing House+68 registry filtered by type.
+    pub(crate) fn house_grinders(&self, owner: InternedId, rules: &RuleSet) -> Vec<u64> {
+        self.house_buildings_where(owner, rules, |object| object.grinding)
+    }
+
     /// House+0xB0, the absorbers (Items `+0xB4`, Count `+0xC0`), in vector
     /// order. Unlimbo appends a `UnitAbsorb=`/`InfantryAbsorb=` building
     /// (Type `+0x16AE`/`+0x16AF`, `0x004412D4..0x00441335`) ahead of its

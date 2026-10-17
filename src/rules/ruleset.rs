@@ -804,6 +804,10 @@ pub struct GeneralRules {
     /// @ 0x00519630` (`0x0051A298..0x0051A30A`). `None` is the constructor's
     /// invalid Voc index; the fixed SOUNDMD binder resolves the name.
     pub enter_bio_reactor_sound: Option<String>,
+    /// Rules+268: ReadAudioVisual66A10B..66A141 resolves the exact-case
+    /// EnterGrinderSound through the fixed Voc catalog, retaining the prior
+    /// index on absent/empty/unknown values. Constructor default is -1.
+    pub enter_grinder_sound: Option<String>,
     /// `[AudioVisual] UpgradeVeteranSound=` — `RulesClass::ReadAudioVisual @
     /// 0x006691E0` resolves it to a Voc index at `RulesClass+0x228`
     /// (`0x00669CFD..0x00669D27`); `TechnoClass::AI_Update` plays that index
@@ -2256,6 +2260,7 @@ impl Default for GeneralRules {
             cloak_sound: None,
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
+            enter_grinder_sound: None,
             upgrade_veteran_sound: None,
             upgrade_elite_sound: None,
             slaves_free_sound: None,
@@ -3304,6 +3309,7 @@ impl GeneralRules {
             // Keep the constructor's invalid index until that owner binds it.
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
+            enter_grinder_sound: None,
             upgrade_veteran_sound: audio_visual
                 .read_name("UpgradeVeteranSound", 0x80)
                 .map(str::to_owned),
@@ -4300,6 +4306,9 @@ impl RuleSet {
         self.general.enter_bio_reactor_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "EnterBioReactorSound"));
+        self.general.enter_grinder_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "EnterGrinderSound"));
         self.general.sinking_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));

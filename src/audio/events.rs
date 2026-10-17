@@ -557,8 +557,8 @@ impl GameSoundEvent {
 ///
 /// **`[AudioVisual]` keys with a verified native consumer but no VERA producer
 /// yet**, all read by `RulesClass::ReadAudioVisual @ 0x006691E0`:
-/// - `EnterGrinderSound`/`LeaveGrinderSound` (`+0x268`/`+0x26C`) have no VERA
-///   consumer.
+/// - `LeaveGrinderSound` (`+0x26C`) has no VERA producer. Infantry Eaten
+///   arrival (`0x005198AD..0x005198C9`) emits `EnterGrinderSound` via `VocAt`.
 /// - The seven `Crate*Sound` keys (`+0x1E4`..`+0x1FC`): `sim/crates` places
 ///   and regenerates crates but nothing picks one up, so there is no VERA
 ///   producer to hang them on. The gap is a crate-pickup gap, not an audio one.
