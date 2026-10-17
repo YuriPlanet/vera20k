@@ -1,0 +1,319 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v3",
+  "launch": {
+    "mode": {
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "player_name": "VERA-OBSERVER",
+    "local": {
+      "country": "Iraq",
+      "country_random": false,
+      "color_index": 0,
+      "color_random": false,
+      "start_position": {
+        "Position": 0
+      },
+      "team": {
+        "Team": 0
+      }
+    },
+    "opponents": [
+      {
+        "country": "France",
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": {
+          "Team": 0
+        },
+        "difficulty": "Easy"
+      },
+      {
+        "country": "America",
+        "country_random": false,
+        "color_index": 2,
+        "color_random": false,
+        "start_position": {
+          "Position": 2
+        },
+        "team": {
+          "Team": 1
+        },
+        "difficulty": "Easy"
+      }
+    ],
+    "options": {
+      "starting_credits": 50000,
+      "unit_count": 0,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": true,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": true,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    },
+    "selected_map_file": "XMP03T4.MAP",
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": true
+        },
+        {
+          "slot_index": 1,
+          "valid": true
+        },
+        {
+          "slot_index": 2,
+          "valid": false
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 6200,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 900,
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": {
+            "type_id": "SMCV",
+            "owner": "VERA-OBSERVER"
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 70,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NAPOWR"
+        }
+      }
+    },
+    {
+      "issue_after_step": 650,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NAPOWR",
+          "rx": 31,
+          "ry": 89
+        }
+      }
+    },
+    {
+      "issue_after_step": 720,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NAHAND"
+        }
+      }
+    },
+    {
+      "issue_after_step": 1200,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NAHAND",
+          "rx": 31,
+          "ry": 85
+        }
+      }
+    },
+    {
+      "issue_after_step": 1210,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NAREFN"
+        }
+      }
+    },
+    {
+      "issue_after_step": 2900,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NAREFN",
+          "rx": 26,
+          "ry": 83
+        }
+      }
+    },
+    {
+      "issue_after_step": 3020,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NARADR"
+        }
+      }
+    },
+    {
+      "issue_after_step": 3900,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NARADR",
+          "rx": 30,
+          "ry": 92
+        }
+      }
+    },
+    {
+      "issue_after_step": 4350,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "SellBuilding": {
+          "entity_id": {
+            "type_id": "NARADR",
+            "owner": "VERA-OBSERVER",
+            "cell": [
+              30,
+              92
+            ]
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 4800,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NARADR"
+        }
+      }
+    },
+    {
+      "issue_after_step": 5800,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NARADR",
+          "rx": 30,
+          "ry": 92
+        }
+      }
+    }
+  ],
+  "observe_owners": [
+    "VERA-OBSERVER"
+  ],
+  "camera_cell": [
+    30,
+    88
+  ],
+  "terrain_cells": [],
+  "observe_types": [
+    "NARADR"
+  ],
+  "observe_sidebar_steps": [
+    0,
+    69,
+    649,
+    719,
+    1199,
+    1209,
+    2899,
+    3019,
+    3021,
+    3899,
+    3901,
+    4000,
+    4200,
+    4349,
+    4351,
+    4400,
+    4500,
+    4700,
+    4799,
+    4801,
+    5799,
+    5801,
+    5900,
+    6200
+  ],
+  "cursor_position": [
+    100,
+    100
+  ],
+  "gestures": [
+    {
+      "issue_after_step": 1,
+      "gesture": {
+        "kind": "sidebar",
+        "target": {
+          "kind": "tab",
+          "tab": "building"
+        }
+      }
+    }
+  ],
+  "observe_audio": {
+    "sound_ids": [
+      "RadarOn",
+      "RadarOff"
+    ],
+    "max_events": 4,
+    "max_samples_per_event": 262144,
+    "completion_tail_ms": 4000,
+    "coordinate_request_scope": "watched"
+  }
+}

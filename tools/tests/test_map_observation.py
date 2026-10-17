@@ -856,6 +856,30 @@ class MapObservationTests(unittest.TestCase):
                                  2 + (len(rows) if rows is not None else 0))
                 self.assertEqual(observed, retained, 'validation must not drive or rewrite requests')
 
+    def test_watched_coordinate_scope_is_explicit_and_rejects_unwatched_receipt_rows(self):
+        self.audio_profile()
+        request = {'request_id': 1, 'sound_id': 'SquidMove',
+                   'source_world_pixels': [30.0, -15.0], 'source_cell': [0, 1], 'suspend_depth': 0}
+        state = {'main_rng_cursor': [0, 103], 'scenario_rng_cursor': [0, 103],
+                 'actors': [], 'coordinate_requests': [request]}
+        # Historical/default scope retains all coordinate owners.
+        self.assertEqual(observation._sound_state(state, 'sound', profile=self.profile), 3)
+        self.profile['observe_audio']['coordinate_request_scope'] = 'watched'
+        observation._profile_extensions(self.profile)
+        self.assertEqual(observation._sound_state(state, 'sound', profile=self.profile), 3)
+        for name in ('Ambient', None):
+            bad = deepcopy(state)
+            bad['coordinate_requests'][0]['sound_id'] = name
+            with self.assertRaises(ValidationError):
+                observation._sound_state(bad, 'sound', profile=self.profile)
+        for scope in (None, False, 'unknown'):
+            bad = deepcopy(self.profile)
+            bad['observe_audio']['coordinate_request_scope'] = scope
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(bad)
+        self.profile['observe_audio']['coordinate_request_scope'] = 'all'
+        observation._profile_extensions(self.profile)
+
     def test_coordinate_request_rows_reject_forged_owners_coordinates_and_depths(self):
         request = {'request_id': 1, 'sound_id': 'Cue', 'source_world_pixels': [30.0, -15.0],
                    'source_cell': [0, 65535], 'suspend_depth': 0}

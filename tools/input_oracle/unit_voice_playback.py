@@ -411,8 +411,9 @@ class VoiceHistory(GIMoveHistory):
         if reap:
             self.audio(milliseconds + 34)
             reaped = self.snapshot()
-            require(reaped['coordinate_request_count'] == 0,
-                    'Naturally finished retained-coordinate requests were not reaped')
+            if self.coordinate_profile:
+                require(reaped['coordinate_request_count'] == 0,
+                        'Naturally finished retained-coordinate requests were not reaped')
         return dict(ended_before_main=ended, after_main_reap=reaped, last_worker_ms=milliseconds,
             pcm_observation={k: v for k, v in observer.state.items() if k != 'fixture'},
             all_native_rng_requests=self.f.draws, all_raw_advances=self.f.advances)
@@ -1453,6 +1454,355 @@ def stock_e1_feedback_metadata():
         input_environment=['VERA20K_STOCK_E1_FEEDBACK_INPUTS'])
 
 
+RADAR_FIELDS = {'RadarOn': 0x6F0, 'RadarOff': 0x6F4}
+RADAR_OBJECT = 0x87F7E8
+
+
+def radar_references(m, rules):
+    return {name: signed(m.u, rules + offset) for name, offset in RADAR_FIELDS.items()}
+
+
+def read_radar_references(m, rules, values):
+    """Observe the two original retained-default reads, including their prefix.
+
+    66AAC0 shares the prior+6EC store and 66AB48 schedules the next128-byte
+    read before the selected Off store66AB4D. The stop66AB53 therefore leaves
+    that one original push on the stack; it is not a whole-function return.
+    """
+    m.make_ini(values)
+    u, reads, pending = m.u, [], {}
+
+    def probe(_u, pc, _size, _data):
+        if pc == 0x528A10:
+            sp = _u.reg_read(UC_X86_REG_ESP)
+            section, key, default, destination, capacity = struct.unpack(
+                '<5I', _u.mem_read(sp + 4, 20))
+            row = dict(section=m.string(section), key=m.string(key),
+                default=m.string(default), capacity=capacity,
+                call_pc=m.read32(sp) - 5, destination=destination)
+            reads.append(row)
+            pending[m.read32(sp)] = row
+        if pc in (0x66AAEE, 0x66AB30):
+            row = pending.pop(pc)
+            row.update(result=_u.reg_read(UC_X86_REG_EAX),
+                       buffer=m.string(row.pop('destination')))
+        if pc == 0x7514D0:
+            sp = _u.reg_read(UC_X86_REG_ESP)
+            row = reads[-1]
+            row['voc_find_input'] = m.string(_u.reg_read(UC_X86_REG_ECX))
+            pending[m.read32(sp)] = row
+        elif pc in (0x66AAFB, 0x66AB3D):
+            pending.pop(pc)
+            reads[-1]['voc_find_result'] = struct.unpack(
+                '<i', dwords(_u.reg_read(UC_X86_REG_EAX)))[0]
+
+    before, prefix = radar_references(m, rules), m.read32(rules + 0x6EC)
+    hook = u.hook_add(UC_HOOK_CODE, probe)
+    try:
+        u.mem_write(SP, bytes(0x300))
+        for register, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_ESI, rules),
+                                (UC_X86_REG_EDI, INI), (UC_X86_REG_EAX, prefix)):
+            u.reg_write(register, value)
+        run_checked(u, 0x66AAC0, 0x66AB53, required_addresses=(0x528A10,))
+        require(u.reg_read(UC_X86_REG_ESP) == SP - 4,
+                'Radar reference stop lost the original scheduled push')
+        require(m.read32(SP - 4) == 128 and m.read32(rules + 0x6EC) == prefix,
+                'Radar reference prefix/adjacent store differs')
+        require(not pending and [row['key'] for row in reads] == ['RadarOn', 'RadarOff'],
+                'Radar reference observation did not return both actual readers')
+    finally:
+        u.hook_del(hook)
+    return dict(before=before, after=radar_references(m, rules), reads=reads,
+        adjacent_6ec=prefix, returned_sp_delta=-4)
+
+
+def radar_audio_inputs(root):
+    """Opt-in composition; historical GI preparation and catalogue stay intact."""
+    m, inherited = prepare(root)
+    physical_sound = sections((root / 'SOUNDMD.INI').read_bytes())
+    selected = {name: physical_sound[name] for name in ('Defaults', *RADAR_FIELDS)}
+    selected['SoundList'] = {key: value for key, value in physical_sound['SoundList'].items()
+                             if value in RADAR_FIELDS}
+    m.make_ini(selected)
+    m.invoke(0x7510D0, INI)
+    sounds = []
+    for name in RADAR_FIELDS:
+        index = m.invoke(0x7514D0, m.cstring(name))
+        require(index < m.read32(0xB1D388), 'Physical radar sound is not registered: ' + name)
+        pointer = m.read32(m.read32(m.read32(0xB1D37C) + index * 4))
+        sounds.append(dict(name=name, index=index,
+            fields={key: m.read32(pointer + offset) for key, offset in {
+                'control': 0x10, 'type': 0x14, 'volume_fixed16': 0x1C,
+                'priority': 0x40, 'limit': 0x48, 'delay_low': 0x58,
+                'delay_high': 0x5C, 'fshift_low': 0x60, 'fshift_high': 0x64,
+                'vshift': 0x68, 'sample_count': 0x134}.items()},
+            sample_indices=[m.read32(pointer + 0xB4 + 4 * i)
+                            for i in range(m.read32(pointer + 0x134))]))
+    typ = m.alloc(0x2000)
+    m.invoke(0x45DD90, typ, (m.cstring('NARADR'),))
+    m.types['NARADR'] = typ
+
+    def provider_fields():
+        return dict(radar=bool(m.u.mem_read(typ + 0x16A4, 1)[0]),
+            spy_sat=bool(m.u.mem_read(typ + 0x16A5, 1)[0]),
+            strength=signed(m.u, typ + 0xA0))
+
+    constructor, provider_constructor = radar_references(m, m.rules), provider_fields()
+    layers = []
+    map_name = os.environ.get('VERA20K_RADAR_AUDIO_MAP', 'XMP03T4.MAP')
+    require(Path(map_name).name == map_name, 'Radar map must name a file in the physical cache')
+    for filename in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', map_name):
+        path = root / filename
+        if not path.exists():
+            require(filename == 'LANGRULE.INI', 'Missing physical radar input: ' + str(path))
+            layers.append(dict(file=filename, absent=True))
+            continue
+        physical = sections(path.read_bytes())
+        values = {name: physical[name] for name in ('AudioVisual', 'NARADR') if name in physical}
+        read = read_radar_references(m, m.rules, values)
+        # Actual retained Radar/SpySat blocks, followed by the independent
+        # Strength block. Full NARADR image/ART loading is deliberately absent.
+        m.make_ini(values)
+        for register, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, typ),
+                (UC_X86_REG_ESI, typ + 0x24), (UC_X86_REG_EDI, INI), (UC_X86_REG_ECX, INI)):
+            m.u.reg_write(register, value)
+        run_checked(m.u, 0x45FF53, 0x45FF85, required_addresses=(0x5295F0,))
+        for register, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, typ + 0x24),
+                (UC_X86_REG_EBX, typ), (UC_X86_REG_ESI, INI), (UC_X86_REG_EDI, INI)):
+            m.u.reg_write(register, value)
+        run_checked(m.u, 0x5F94D3, 0x5F94F3)
+        layers.append(dict(file=filename, absent=False,
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(), input=values,
+            provider=provider_fields(), **read))
+    control_rules = m.alloc(0x5000)
+    m.invoke(0x665650, control_rules)
+    controls = []
+    stock = {name: sections((root / 'RULESMD.INI').read_bytes())['AudioVisual'][name]
+             for name in RADAR_FIELDS}
+    for name, values in (
+        ('cold_missing', {}),
+        ('cold_unknown', {'AudioVisual': {key: 'AbsentRadarReference' for key in RADAR_FIELDS}}),
+        ('stock_pair', {'AudioVisual': stock}),
+        ('retained_missing', {}),
+        ('retained_empty', {'AudioVisual': {key: '' for key in RADAR_FIELDS}}),
+        ('retained_unknown', {'AudioVisual': {key: 'AbsentRadarReference' for key in RADAR_FIELDS}}),
+        ('mixed_case_names', {'AudioVisual': {key: value.swapcase() for key, value in stock.items()}}),
+        ('wrong_key_case', {'AudioVisual': {key.lower(): stock['RadarOff'] for key in RADAR_FIELDS}}),
+        ('wrong_section_case', {'audiovisual': stock}),
+        *((f'capacity_{size}', {'AudioVisual': {key: 'x' * size for key in RADAR_FIELDS}})
+          for size in (127, 128, 129)),
+        ('accepted_replacement', {'AudioVisual': {'RadarOn': stock['RadarOff']}}),
+        ('unknown_after_replacement', {'AudioVisual': {'RadarOn': 'AbsentRadarReference'}}),
+    ):
+        controls.append(dict(name=name, initial=constructor, input=values,
+                             **read_radar_references(m, control_rules, values)))
+    return m, dict(reference_constructor=constructor, provider_constructor=provider_constructor,
+        reference_layers=layers, reader_controls=controls, sound_sections=selected, sounds=sounds,
+        inherited_preparation_layers=inherited['layers'])
+
+
+class RadarAudioHistory(VoiceHistory):
+    """Radar/House observation on the existing joined audio world."""
+    WATCH = dict(VoiceHistory.WATCH)
+    WATCH.update({0x508DF0: ('HouseRadarUpdate', 0), 0x656DE0: ('RadarAvailable', 0),
+        0x656DF0: ('SetRadarAvailable', 4), 0x656CB0: ('SetRadarMode', 8),
+        0x656BE0: ('RadarDirection', 8), 0x405190: ('AllocateEvent', 0),
+        0x4052F0: ('StopEvent', 0), 0x4060F0: ('BindHandle', 4)})
+
+    def __init__(self, m, name, *, fixture):
+        self.input_owner, self.radar_writes = m, []
+        super().__init__(m, name, fixture=fixture, actor_count=0)
+        self.u.hook_add(UC_HOOK_MEM_WRITE, self.radar_written)
+
+    def snapshot(self):
+        result = super().snapshot()
+        u, r, p = self.u, self.r, RADAR_OBJECT
+        result['radar'] = dict(available=bool(u.mem_read(p + 0x14D8, 1)[0]),
+            mode=signed(u, p + 0x14B0), pending_mode=signed(u, p + 0x14B4),
+            phase=signed(u, p + 0x14AC), frame=signed(u, p + 0x14FC),
+            timer=self.ints(p + 0x1500, 3), handle=self.ints(p + 0x14C0, 4))
+        result['house'] = dict(pointer=er.HOUSE, current_house=r(0xA83D4C),
+            radar_dirty=u.mem_read(er.HOUSE + 0x5779, 1)[0],
+            outage_timer=self.ints(er.HOUSE + 0x2B0, 3),
+            power=self.ints(er.HOUSE + 0x53A4, 2))
+        return result
+
+    def observe(self, u, pc, size, data):
+        super().observe(u, pc, size, data)
+        if pc == 0x750920:
+            row = self.events[-1]
+            index = struct.unpack('<i', dwords(row['this']))[0]
+            row.update(sound_index=index, sound=sound_name(self.input_owner, index),
+                pan=u.reg_read(UC_X86_REG_EDX), volume_f32_bits=row['args'][0], handle=row['args'][1])
+
+    def radar_written(self, u, _access, address, size, value, _data):
+        ranges = ((RADAR_OBJECT + 0x14AC, RADAR_OBJECT + 0x150C, 'radar'),
+                  (er.HOUSE + 0x5779, er.HOUSE + 0x577A, 'house_radar_dirty'),
+                  (er.HOUSE + 0x2B0, er.HOUSE + 0x2BC, 'house_outage_timer'))
+        for start, end, owner in ranges:
+            if address < end and address + size > start:
+                self.radar_writes.append(dict(phase=self.phase, pc=u.reg_read(UC_X86_REG_EIP),
+                    owner=owner, address=address, size=size, value=value,
+                    before=bytes(u.mem_read(address, size)).hex()))
+                return
+
+
+def radar_audio_row(m, name, *, mode, local=True, unbound=None):
+    f = er.EngineerJoinedFixture(m, seed=31, arena_size=0x400000)
+    f.building('NARADR', er.BLD, er.BLD_ITEMS)
+    current_house = er.HOUSE
+    if not local:
+        current_house = f.second_house_prior()
+        f.house_prior(current_house)
+        f.u.mem_write(er.BLD + 0x21C, dwords(er.HOUSE))
+    f.house_prior(er.HOUSE, (er.BLD,))
+    f.u.mem_write(0xA83D4C, dwords(current_house))
+    f.u.mem_write(0xA8B238, dwords(5))
+    f.u.mem_write(0xA8B538, dwords(0))
+    f.u.mem_write(f.read32(0xA8B230) + 0x34A4, b'\0')
+    f.u.mem_write(er.HOUSE + 0x2B0, dwords(-1, 0, 0))
+    # An admitted powered provider is an input to508DF0, not a substitute for
+    # its scan. Cached1/1 is an explicit power prior, not retail Power parsing.
+    f.u.mem_write(er.HOUSE + 0x53A4, dwords(1, 1))
+    for offset, value in ((0x74, 1), (0x81, 0), (0x41B, 1), (0x660, 0), (0x270, 0)):
+        f.u.mem_write(er.BLD + offset, bytes([value]))
+    f.u.mem_write(er.BLD + 0x504, dwords(0))
+    f.u.mem_write(er.BLD + 0xAC, dwords(5, -1, -1))
+    f.u.mem_write(RADAR_OBJECT + 0x14AC, dwords(0, mode, 0))
+    f.u.mem_write(RADAR_OBJECT + 0x14D8, b'\0')
+    f.u.mem_write(RADAR_OBJECT + 0x14FC, dwords(0, -1, 0, 0))
+    bc.invoke(f.u, 0x405BE0, RADAR_OBJECT + 0x14C0)
+    if unbound is not None:
+        for key, offset in RADAR_FIELDS.items():
+            f.u.mem_write(f.rules + offset, dwords(unbound[key]))
+    h = RadarAudioHistory(m, name, fixture=f)
+    streams = {0x886B88: 'main', f.read32(0xA8B230) + 0x218: 'scenario', 0xABE890: 'mapgen'}
+
+    def requests(rows):
+        return [dict(stream=streams[row['this']], **{key: value for key, value in row.items()
+            if key not in ('this', 'frame')}) for row in rows]
+
+    def advances(rows):
+        return [dict(stream=streams[row['this']], **{key: value for key, value in row.items()
+            if key not in ('this', 'frame')}) for row in rows]
+
+    def calls(rows):
+        keys = ('kind', 'pc', 'this', 'args', 'pan', 'sound_index', 'sound', 'handle',
+                'volume_f32_bits', 'returned_eax', 'return_pc')
+        return [{key: row[key] for key in keys if key in row} for row in rows
+                if row.get('pc') in h.WATCH]
+
+    initial = h.snapshot()
+    setup = dict(requests=requests(f.draws), raw_advances=advances(f.advances))
+    phases = []
+    for label, online in (('no_provider', False), ('gain', True), ('same_value', True),
+                           ('loss', False), ('reversal', True)):
+        before = h.snapshot()
+        f.u.mem_write(er.BLD + 0x660, bytes([online]))
+        f.u.mem_write(er.HOUSE + 0x5779, b'\1')
+        call_start, draw_start, raw_start, write_start = (
+            len(h.events), len(f.draws), len(f.advances), len(h.radar_writes))
+        returned = h.invoke(label, 0x508DF0, er.HOUSE)
+        phases.append(dict(label=label, input=dict(online=online), before=before,
+            after=h.snapshot(), returned_eax=returned, calls=calls(h.events[call_start:]),
+            requests=requests(f.draws[draw_start:]), raw_advances=advances(f.advances[raw_start:]),
+            native_writes=h.radar_writes[write_start:]))
+    audio_start, draw_start, raw_start, call_start = (
+        len(h.boundaries), len(f.draws), len(f.advances), len(h.events))
+    if local and unbound is None:
+        natural = h.natural_coordinate_end()
+        pcm = natural['pcm_observation']
+        require(pcm['callbacks'] and all('returned_output_bytes' in row for row in pcm['callbacks'])
+                and all('reported_source_bytes' in row for row in pcm['sample_reads'])
+                and all('returned_output_bytes' in row for row in pcm['blocks']),
+                'Native PCM observation did not return')
+        # Channel+158 -> backend and cached AudioIndex entries, not a digest
+        # or guessed clip length, identify each literal returned callback.
+        backends = {}
+        for boundary in h.boundaries[audio_start:]:
+            for state in (boundary['before'], boundary['after']):
+                for event in state['events']:
+                    if 'backend' in event:
+                        identity = dict(sound=event['sound_name'], event=event['pointer'],
+                            serial=event['serial'], samples=event['loaded_sample_identities'])
+                        pointer = event['backend']['pointer']
+                        require(pointer not in backends or backends[pointer] == identity,
+                                'Backend reuse requires a separate event-lifetime PCM projection')
+                        backends[pointer] = identity
+        pcm_rows = []
+        for backend in sorted({row['backend'] for row in pcm['callbacks']}):
+            require(backend in backends, 'PCM backend has no native event/sample association')
+            callbacks = [row for row in pcm['callbacks'] if row['backend'] == backend]
+            raw = b''.join(bytes.fromhex(row['output_bytes_hex']) for row in callbacks)
+            pcm_rows.append(dict(backend=backend, **backends[backend], bytes=len(raw),
+                sha256=hashlib.sha256(raw).hexdigest(),
+                nonzero_i16_samples=sum(value != 0 for (value,) in struct.iter_unpack('<h', raw)),
+                callbacks=[{key: row[key] for key in ('entry_pc', 'return_pc', 'phase',
+                    'returned_output_bytes', 'consumed_source_bytes', 'output_sha256')} for row in callbacks]))
+        playback = dict(pcm_by_backend=pcm_rows, ended_before_main=natural['ended_before_main'],
+            after_main_reap=natural['after_main_reap'], last_worker_ms=natural['last_worker_ms'])
+    else:
+        h.audio(1033)
+        h.audio(1034)
+        playback = dict(pcm_by_backend=[], ended_before_main=h.snapshot(),
+                        after_main_reap=h.snapshot(), last_worker_ms=None)
+    require(not h.snapshot()['events'], 'Native radar one-shots did not retire')
+    playback.update(phases=h.boundaries[audio_start:], calls=calls(h.events[call_start:]),
+        requests=requests(f.draws[draw_start:]), raw_advances=advances(f.advances[raw_start:]))
+    require(not h.pending and not f.pending and f.code_unchanged(), 'Native radar history did not return unchanged')
+    return dict(name=name, prior=dict(mode=mode, phase=0, available=False, local=local,
+        reference_case='cold_missing' if unbound is not None else 'layered_stock',
+        provider=dict(type='NARADR', online=False, marked=True, limbo=False,
+            discovery=True, emp=0, warped=False, mission=5, queued=-1),
+        seed=31), initial=initial, setup=setup, phases=phases, playback=playback,
+        final=h.snapshot(), original_code_unchanged=True), h.streams
+
+
+def radar_audio_generate():
+    root = Path(os.environ['VERA20K_RADAR_AUDIO_INPUTS'])
+    m, retail = radar_audio_inputs(root)
+    rows, states = [], {}
+    cold = next(row['after'] for row in retail['reader_controls'] if row['name'] == 'cold_missing')
+    for name, mode, local, refs in (('constructor_mode0', 0, True, None),
+        ('ordinary_mode1', 1, True, None), ('remote_house', 1, False, None),
+        ('cold_unbound_references', 0, True, cold)):
+        row, streams = radar_audio_row(m, name, mode=mode, local=local, unbound=refs)
+        rows.append(row)
+        states.update(streams)
+    return dict(schema_version=1, retail=retail, rows=rows, complete_rng_states=states,
+        physical=[dict(name=path.name, bytes=path.stat().st_size,
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+            for path in sorted(root.iterdir()) if path.is_file()])
+
+
+def radar_audio_metadata():
+    require(set(source_paths()) <= set(GUARDED), 'Native radar producer imported unguarded dependencies')
+    result = provenance(scope='Ordinary local NARADR provider prior through original House radar '
+        'assessment, availability/mode/direction setters, fixed RadarOn/Off references, '
+        'NULL-handle pooled requests, physical PCM and natural endpoint/service retirement.',
+        assumptions=[
+            'Existing prepare/EngineerJoinedFixture/VoiceHistory own the reader VM, runtime VM, source-order INI nodes, constructors, actual fixed registry and sorted physical AudioIndex, all three RNG states, pool/worker and PCM observations. No second parser/VM/scheduler/audio transport is introduced.',
+            'Original Radar/SpySat and Strength scalar reader blocks consume physical RULESMD, optional LANGRULE, MPBattleMD and selected XMP03T4 map layers. Historical prepare still runs its Hills/E1 prerequisite reads. Full NARADR resource loading/placement is excluded.',
+            'RadarOn/Off66AAC0..66AB53 includes the original prior6EC store and scheduled push128 before Off66AB4D. Exact ReadString/Find inputs and outputs establish cold/default/history/case/capacity controls; a stopped interior reader is not called a whole AudioVisual execution.',
+            'Original652960 instructions establish mode0/phase0/availabilityfalse priors. Whole508DF0,656DF0,656CB0 and656BE0 execute without supplying their decisions. Mode1 is a separate admitted UI prior; no ordinary direction frame/timer progression or movie mode is claimed.',
+            'Each runtime fixture uses its original seed31 setup once and retains uninterrupted Main/Scenario/MapGen buffers, exact requests and inline raw advances through all controls and audio service. No per-phase reseeding or empty-list inference substitutes for those observations.',
+            'Backend identity from actual channel+158 and native cached AudioIndex identity associate literal PCM callback results with each selected pool event. PCM is projected to lengths/digests/nonzero counts; existing decoder corpora own detailed codec arithmetic.'],
+        substitutions=[
+            'Supplied admitted own Building/member, online/mark/discovery/limbo/mission/EMP/warp fields and cached House power1/1/outage-free prior. Ordinary placement, provider completion/sale, power production and complete House/frame scheduling are excluded.',
+            'Cold-unbound runtime references copy the actual preceding native cold-missing reader result, not hand-selected cue IDs. NULL-handle On/Off are independent original pool events; reversal does not bind or stop them through Radar14C0.',
+            'Existing supplied clear Cells/House/map/listener and original stream reservations with declared empty ThemeControl bound the world. Only selected physical sound sections are loaded; fixture-relative Voc indices are not retail absolute ordinals.',
+            'Canonical NativeAudioPlatform supplies immutable files and explicit single-thread Win32/DirectSound clock/status/cursor inputs. Original worker Stop/endpoint and later service own completion/retirement; hardware concurrency, audible equivalence, SpySat and movie/deferred-mode playback are excluded.'],
+        entry_points=dict(rules_constructor=0x665650, radar_reference_reader=0x66AAC0,
+            sound_registry=0x7510D0, sound_lookup=0x7514D0, audio_index=0x4011C0,
+            building_type_constructor=0x45DD90, radar_type_reader=0x45FF53,
+            house_radar=0x508DF0, radar_get=0x656DE0, radar_set=0x656DF0,
+            radar_mode=0x656CB0, radar_direction=0x656BE0, play_sound=0x750920,
+            service=0x406F70, worker=0x4095B0, pcm_raw=0x409D90, pcm_ima=0x409DE0,
+            endpoint=0x405A00, sound_pool=0x4041D0))
+    return dict(result, command='python -m tools.input_oracle.unit_voice_playback --radar-availability-audio --check',
+        input_environment=['VERA20K_RADAR_AUDIO_INPUTS', 'VERA20K_RADAR_AUDIO_MAP'])
+
+
 def generate():
     root = Path(os.environ['VERA20K_UNIT_VOICE_INPUTS'])
     m, retail = prepare(root)
@@ -1499,7 +1849,11 @@ def metadata():
 if __name__ == '__main__':
     GUARDED = source_paths()
     argv = list(sys.argv[1:])
-    if '--stock-e1-feedback' in argv:
+    if '--radar-availability-audio' in argv:
+        argv.remove('--radar-availability-audio')
+        finish_vectors(radar_audio_generate, HERE / 'radar_availability_audio.json',
+                       provenance=radar_audio_metadata, argv=argv, source_paths=GUARDED)
+    elif '--stock-e1-feedback' in argv:
         argv.remove('--stock-e1-feedback')
         finish_vectors(stock_e1_feedback_generate, HERE / 'stock_e1_feedback.json',
                        provenance=stock_e1_feedback_metadata, argv=argv, source_paths=GUARDED)

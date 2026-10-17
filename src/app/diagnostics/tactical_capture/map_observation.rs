@@ -43,9 +43,36 @@ struct MapAudioProfile {
     max_events: usize,
     max_samples_per_event: usize,
     completion_tail_ms: u64,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    coordinate_request_scope: Option<MapCoordinateRequestScope>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum MapCoordinateRequestScope {
+    All,
+    Watched,
 }
 
 impl MapAudioProfile {
+    /// Filter only the passive coordinate-node projection. Playback, pool
+    /// admission and the final whole-pool census remain untouched.
+    fn retain_coordinate_requests(&self, rows: &mut Vec<Value>) {
+        if self.coordinate_request_scope == Some(MapCoordinateRequestScope::Watched) {
+            rows.retain(|row| {
+                row["sound_id"].as_str().is_some_and(|name| {
+                    self.sound_ids
+                        .iter()
+                        .any(|id| id.eq_ignore_ascii_case(name))
+                })
+            });
+        }
+    }
+
     fn config(&self) -> PcmObservationConfig {
         PcmObservationConfig {
             sound_ids: self.sound_ids.clone(),
@@ -969,9 +996,17 @@ fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
                 "active": entity.move_sound.is_active(), "countdown": entity.move_sound.countdown(),
                 "gattling_stage": entity.gattling.stage(), "gattling_value": entity.gattling.value()}))
     }).collect::<Vec<_>>();
+    let mut coordinate_requests = state
+        .audio
+        .sfx_player
+        .as_ref()
+        .map(|sfx| sfx.coordinate_sound_observation());
+    if let (Some(audio), Some(rows)) = (&profile.observe_audio, &mut coordinate_requests) {
+        audio.retain_coordinate_requests(rows);
+    }
     let snapshot = json!({"main_rng_cursor": [rng.main.index_a, rng.main.index_b],
         "scenario_rng_cursor": [rng.scenario.index_a, rng.scenario.index_b], "actors": actors,
-        "coordinate_requests": state.audio.sfx_player.as_ref().map(|sfx| sfx.coordinate_sound_observation())});
+        "coordinate_requests": coordinate_requests});
     ensure!(
         sound_state_sample_count(&snapshot) <= MAX_OBSERVATION_SAMPLES,
         "sound state exceeds sample budget"
@@ -4132,6 +4167,33 @@ mod tests {
                 MAX_OBSERVATION_SAMPLES - available + accepted * 3
             );
             assert_eq!(restored.sample_count, frames.sample_count);
+        }
+    }
+
+    #[test]
+    fn coordinate_sound_scope_keeps_legacy_all_and_selects_only_watched_ids() {
+        let config = json!({"sound_ids": ["RadarOn"], "max_events": 4,
+            "max_samples_per_event": 262144, "completion_tail_ms": 4000});
+        let mut audio: MapAudioProfile = serde_json::from_value(config.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&audio).unwrap(), config);
+        let rows = vec![
+            json!({"request_id": 1, "sound_id": "rAdArOn"}),
+            json!({"request_id": 2, "sound_id": "Ambient"}),
+            json!({"request_id": 3, "sound_id": null}),
+        ];
+        let mut retained = rows.clone();
+        audio.retain_coordinate_requests(&mut retained);
+        assert_eq!(retained, rows);
+        audio.coordinate_request_scope = Some(MapCoordinateRequestScope::All);
+        audio.retain_coordinate_requests(&mut retained);
+        assert_eq!(retained, rows);
+        audio.coordinate_request_scope = Some(MapCoordinateRequestScope::Watched);
+        audio.retain_coordinate_requests(&mut retained);
+        assert_eq!(retained, rows[..1]);
+        for invalid in [Value::Null, json!(false), json!("unknown")] {
+            let mut config = config.clone();
+            config["coordinate_request_scope"] = invalid;
+            assert!(serde_json::from_value::<MapAudioProfile>(config).is_err());
         }
     }
 

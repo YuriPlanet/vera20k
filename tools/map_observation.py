@@ -450,8 +450,11 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
     ticks = _bounded_int(profile.get('ticks'), 'profile.ticks', 0, 100_000)
     if 'observe_audio' in profile:
         audio = require_object(profile['observe_audio'], 'profile.observe_audio')
-        require_exact_keys(audio, ('sound_ids', 'max_events', 'max_samples_per_event', 'completion_tail_ms'),
+        require_exact_keys(audio, ('sound_ids', 'max_events', 'max_samples_per_event', 'completion_tail_ms',
+                                   *(('coordinate_request_scope',) if 'coordinate_request_scope' in audio else ())),
                            'profile.observe_audio')
+        if 'coordinate_request_scope' in audio and audio['coordinate_request_scope'] not in ('all', 'watched'):
+            raise ValidationError('profile.observe_audio.coordinate_request_scope must be all or watched')
         ids = require_array(audio['sound_ids'], 'profile.observe_audio.sound_ids')
         if (not 1 <= len(ids) <= 16 or any(type(value) is not str or not value.isascii() or not 1 <= len(value) <= 128
                                            for value in ids) or len({value.upper() for value in ids}) != len(ids)):
@@ -1929,7 +1932,7 @@ def _segment_clock(step: int, segments: list, *, after_inputs=False, gesture_ord
     return step, step
 
 
-def _sound_state(value: Any, label: str) -> int:
+def _sound_state(value: Any, label: str, *, profile: Mapping[str, Any] | None = None) -> int:
     state = require_object(value, label)
     require_exact_keys(state, ('main_rng_cursor', 'scenario_rng_cursor', 'actors',
                               *(('coordinate_requests',) if 'coordinate_requests' in state else ())), label)
@@ -1942,6 +1945,10 @@ def _sound_state(value: Any, label: str) -> int:
         for index, value in enumerate(requests):
             at = f'{label}.coordinate_requests[{index}]'
             request = require_object(value, at)
+            if profile is not None and profile['observe_audio'].get('coordinate_request_scope') == 'watched':
+                watched = {name.translate(ASCII_UPPER) for name in profile['observe_audio']['sound_ids']}
+                if type(request.get('sound_id')) is not str or request['sound_id'].translate(ASCII_UPPER) not in watched:
+                    raise ValidationError(f'{at}.sound_id is outside the declared watched scope')
             raw_fields = ('coordinate_leptons', 'flags')
             observes_raw = any(key in request for key in raw_fields)
             require_exact_keys(request, ('request_id', 'sound_id', 'source_world_pixels',
@@ -2026,7 +2033,7 @@ def _load_segments(value: Any, profile: Mapping[str, Any]) -> list:
         if any(row['after'][key] >= row['before'][key] for key in row['before']):
             raise ValidationError(f'{row_label} must retain an actual restored earlier clock')
         if 'observe_audio' in profile:
-            _sound_state(row['restored_audio_state'], f'{row_label}.restored_audio_state')
+            _sound_state(row['restored_audio_state'], f'{row_label}.restored_audio_state', profile=profile)
         previous.append(row)
     return list(transitions)
 
@@ -2466,7 +2473,7 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
     if gesture_input:
         sample_count += _gesture_observations(observations['gesture_input'], profile, segments)
     if 'observe_audio' in profile:
-        sample_count += sum(_sound_state(row['restored_audio_state'], 'restored_audio_state')
+        sample_count += sum(_sound_state(row['restored_audio_state'], 'restored_audio_state', profile=profile)
                             for row in segments)
     if sidebar:
         sample_count += _sidebar_frames(observations['sidebar'], profile)
@@ -2546,7 +2553,7 @@ def _observations(value: Any, profile: Mapping[str, Any], final: Mapping[str, An
             sample_count += _input_observation(row['input'], f'{row_label}.input',
                                                 local_input=_observes_local_input(profile))
         if 'observe_audio' in profile:
-            sample_count += _sound_state(row['audio_state'], f'{row_label}.audio_state')
+            sample_count += _sound_state(row['audio_state'], f'{row_label}.audio_state', profile=profile)
             if any(actor['stable_id'] not in present for actor in row['audio_state']['actors']):
                 raise ValidationError('sound-state actor is absent from the observed actor frame')
         if docking_state:

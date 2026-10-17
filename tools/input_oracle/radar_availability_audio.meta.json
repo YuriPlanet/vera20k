@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary local NARADR provider prior through original House radar assessment, availability/mode/direction setters, fixed RadarOn/Off references, NULL-handle pooled requests, physical PCM and natural endpoint/service retirement.",
+  "assumptions": [
+    "Existing prepare/EngineerJoinedFixture/VoiceHistory own the reader VM, runtime VM, source-order INI nodes, constructors, actual fixed registry and sorted physical AudioIndex, all three RNG states, pool/worker and PCM observations. No second parser/VM/scheduler/audio transport is introduced.",
+    "Original Radar/SpySat and Strength scalar reader blocks consume physical RULESMD, optional LANGRULE, MPBattleMD and selected XMP03T4 map layers. Historical prepare still runs its Hills/E1 prerequisite reads. Full NARADR resource loading/placement is excluded.",
+    "RadarOn/Off66AAC0..66AB53 includes the original prior6EC store and scheduled push128 before Off66AB4D. Exact ReadString/Find inputs and outputs establish cold/default/history/case/capacity controls; a stopped interior reader is not called a whole AudioVisual execution.",
+    "Original652960 instructions establish mode0/phase0/availabilityfalse priors. Whole508DF0,656DF0,656CB0 and656BE0 execute without supplying their decisions. Mode1 is a separate admitted UI prior; no ordinary direction frame/timer progression or movie mode is claimed.",
+    "Each runtime fixture uses its original seed31 setup once and retains uninterrupted Main/Scenario/MapGen buffers, exact requests and inline raw advances through all controls and audio service. No per-phase reseeding or empty-list inference substitutes for those observations.",
+    "Backend identity from actual channel+158 and native cached AudioIndex identity associate literal PCM callback results with each selected pool event. PCM is projected to lengths/digests/nonzero counts; existing decoder corpora own detailed codec arithmetic."
+  ],
+  "substitutions": [
+    "Supplied admitted own Building/member, online/mark/discovery/limbo/mission/EMP/warp fields and cached House power1/1/outage-free prior. Ordinary placement, provider completion/sale, power production and complete House/frame scheduling are excluded.",
+    "Cold-unbound runtime references copy the actual preceding native cold-missing reader result, not hand-selected cue IDs. NULL-handle On/Off are independent original pool events; reversal does not bind or stop them through Radar14C0.",
+    "Existing supplied clear Cells/House/map/listener and original stream reservations with declared empty ThemeControl bound the world. Only selected physical sound sections are loaded; fixture-relative Voc indices are not retail absolute ordinals.",
+    "Canonical NativeAudioPlatform supplies immutable files and explicit single-thread Win32/DirectSound clock/status/cursor inputs. Original worker Stop/endpoint and later service own completion/retirement; hardware concurrency, audible equivalence, SpySat and movie/deferred-mode playback are excluded."
+  ],
+  "entry_points": {
+    "rules_constructor": "0x00665650",
+    "radar_reference_reader": "0x0066AAC0",
+    "sound_registry": "0x007510D0",
+    "sound_lookup": "0x007514D0",
+    "audio_index": "0x004011C0",
+    "building_type_constructor": "0x0045DD90",
+    "radar_type_reader": "0x0045FF53",
+    "house_radar": "0x00508DF0",
+    "radar_get": "0x00656DE0",
+    "radar_set": "0x00656DF0",
+    "radar_mode": "0x00656CB0",
+    "radar_direction": "0x00656BE0",
+    "play_sound": "0x00750920",
+    "service": "0x00406F70",
+    "worker": "0x004095B0",
+    "pcm_raw": "0x00409D90",
+    "pcm_ima": "0x00409DE0",
+    "endpoint": "0x00405A00",
+    "sound_pool": "0x004041D0"
+  },
+  "command": "python -m tools.input_oracle.unit_voice_playback --radar-availability-audio --check",
+  "input_environment": [
+    "VERA20K_RADAR_AUDIO_INPUTS",
+    "VERA20K_RADAR_AUDIO_MAP"
+  ],
+  "replay_command": "python -m tools.input_oracle.unit_voice_playback --radar-availability-audio",
+  "payload_sha256": "ff5b9249be445404d9ca57ca87c5c7103b47a95bc0e98c17599337b42598a6ff"
+}

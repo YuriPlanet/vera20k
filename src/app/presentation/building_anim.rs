@@ -420,8 +420,30 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
     };
     state.match_state.match_presentation.has_radar = new_has_radar;
 
-    if let Some(ref mut ra) = state.match_state.match_presentation.radar_anim {
-        ra.set_has_radar(new_has_radar);
+    let cue = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .and_then(|radar| radar.set_has_radar(new_has_radar));
+    if let Some(cue) = cue {
+        use crate::render::radar::anim::RadarAvailabilityCue;
+        let sound = state.rules().and_then(|rules| match cue {
+            RadarAvailabilityCue::On => rules.general.radar_on.as_ref(),
+            RadarAvailabilityCue::Off => rules.general.radar_off.as_ref(),
+        });
+        if let Some(sound_id) = sound.cloned() {
+            // House508DF0→656DF0/656BE0→750920: EDX2000, volume1.0,
+            // NULL handle. The common pool owns both one-shots through a
+            // reversal; neither cue is bound to the housing/movie handle.
+            // Source: tools/input_oracle/radar_availability_audio.md.
+            state.match_state.match_audio.sound_events.push(
+                crate::audio::events::GameSoundEvent::VocAt {
+                    sound_id,
+                    source: None,
+                },
+            );
+        }
     }
 }
 

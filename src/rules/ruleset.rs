@@ -1168,6 +1168,14 @@ pub struct GeneralRules {
     /// then Voc FindIndex7514D0, retaining the prior ID on missing, empty or
     /// unresolved text. The fixed SOUNDMD binder owns name resolution.
     pub guard_sound: Option<String>,
+    /// Rules+6F0/+6F4: constructor66600F/666015 starts at -1;
+    /// AudioVisual66AAC0..66AB53 reads exact RadarOn then RadarOff through
+    /// ReadString128/Voc7514D0, retaining the prior fixed-catalog ID on
+    /// missing, empty or unknown names. Radar656BE0 requests them centered,
+    /// full-volume and without a retained handle on ordinary direction changes.
+    /// Source: tools/input_oracle/radar_availability_audio.md and its consumed corpus.
+    pub radar_on: Option<String>,
+    pub radar_off: Option<String>,
     /// Rules+230, VoiceIFVRepair. Ctor665976 starts at -1;
     /// AudioVisual669D63..669DA7 uses ReadString128/Voc7514D0, retaining
     /// the current ID on missing/empty/unknown text. Fixed SOUNDMD binding
@@ -2314,6 +2322,8 @@ impl Default for GeneralRules {
             gui_move_out_sound: None,
             generic_click_sound: None,
             guard_sound: None,
+            radar_on: None,
+            radar_off: None,
             voice_ifv_repair: None,
             start_planning_mode_sound: None,
             end_planning_mode_sound: None,
@@ -3378,6 +3388,8 @@ impl GeneralRules {
                 .map(str::to_owned),
             // Native constructor -1; resolved by the fixed SOUNDMD binder.
             guard_sound: None,
+            radar_on: None,
+            radar_off: None,
             start_planning_mode_sound: None,
             end_planning_mode_sound: None,
             add_planning_mode_command_sound: None,
@@ -4275,6 +4287,14 @@ impl RuleSet {
         self.general.guard_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "GuardSound"));
+        // Original66AAC0..66AB53: fixed process catalog, exact keys and
+        // current-ID retention across the existing processed read history.
+        self.general.radar_on = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "RadarOn"));
+        self.general.radar_off = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "RadarOff"));
         self.general.voice_ifv_repair = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "VoiceIFVRepair"));

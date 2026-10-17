@@ -62,6 +62,8 @@ mod coordinate_sound_tests;
 #[cfg(test)]
 mod gattling_loop_tests;
 #[cfg(test)]
+mod radar_availability_tests;
+#[cfg(test)]
 mod unit_voice_lifecycle_tests;
 #[cfg(test)]
 mod unit_voice_tests;

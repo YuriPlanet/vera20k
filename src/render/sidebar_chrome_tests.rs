@@ -486,7 +486,7 @@ fn retail_radar_histories_match_original_4912b0_stores() {
                         1,
                         "one native draw per history step"
                     );
-                    radar.set_has_radar(frame > previous);
+                    let _ = radar.set_has_radar(frame > previous);
                     assert!(radar.advance_draw((step as u64 - 1) * 64));
                 }
                 let bytes: Vec<u8> = radar

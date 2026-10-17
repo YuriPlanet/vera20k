@@ -319,6 +319,24 @@ and the u32 caller `flags`. The reader accepts them as a bounded pair and
 does not derive them from projected pixels. Historical rows may omit both;
 their omission supplies no raw coordinate or flags evidence.
 
+Optional `observe_audio.coordinate_request_scope` selects `all` (the
+historical default) or `watched`. The latter keeps only coordinate nodes whose
+resolved sound ID matches `sound_ids` in each passive frame snapshot. This
+bounds a long focused run without retaining every unrelated map ambience
+node. Unbound nodes are excluded in that scope. Playback and final whole-pool,
+channel and coordinate-node counts remain global; an empty filtered list does
+not establish an empty global registry. Old executables require the historical
+four-field audio profile.
+
+`map_observation.radar-availability-audio.example.json` follows an ordinary
+paid Soviet opening on XMP03T4, sells the completed NARADR, then builds and
+places its replacement. Its RadarOn/RadarOff filter observes the registered
+centered one-shots from House508DF0 through Radar656DF0/656BE0; the housing
+owner suppresses equal availability updates and source hydration is silent.
+Inspect actual payment, placement and sale results alongside sample identity,
+PCM and event/channel retirement. The observation does not certify native
+whole-world scheduling, device mixing or speaker output.
+
 The production SfxPlayer enables the recorder at accepted L0. Its existing
 decoder, arbiter, Player, gain/pause/stop processing and device mixer still own
 playback. A forwarding Source observes the Player output that the production
