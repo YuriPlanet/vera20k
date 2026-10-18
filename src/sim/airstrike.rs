@@ -507,6 +507,52 @@ impl Simulation {
                 .is_some_and(|e| e.is_object_alive() && e.health.current() > 0)
     }
 
+    /// Tactical6D47FB..6D48D4 reads the owning manager and current Building
+    /// target, irrespective of active/busy or remaining aircraft. Source is
+    /// GetFLH(0,zero); target is GetCoords(+48), without TargetCoordOffset.
+    /// Presentation owns the planning/Health gate and clock-driven wobble.
+    /// No RNG draw, timer write or detach; isolate the shared fallback Cell.
+    pub fn airstrike_designation_coordinates(
+        &self,
+        owner: u64,
+        rules: &RuleSet,
+    ) -> Option<[crate::sim::components::DriveCoord; 2]> {
+        use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
+        use crate::sim::movement::ground_pose::object_get_coords;
+        let source = self.substrate.entities.get(owner)?;
+        if source.airstrike.link != Some(owner) {
+            return None;
+        }
+        let target = self
+            .substrate
+            .entities
+            .get(source.airstrike.manager.as_ref()?.target?)?;
+        if target.category() != EntityCategory::Structure {
+            return None;
+        }
+        let obj = self.object_type(source.type_ref(), rules)?;
+        self.effective_shared_cell_dummy().detached(|| {
+            let from = fire_coordinate(
+                self,
+                rules,
+                &FireSource::of_entity(source),
+                obj,
+                0,
+                source.weapon_burst.index() as u8,
+                crate::rules::flh::Flh::default(),
+            )
+            .coord;
+            Some([
+                crate::sim::components::DriveCoord {
+                    x: from.x,
+                    y: from.y,
+                    z: from.z,
+                },
+                object_get_coords(target, self.resolved_terrain.as_ref()),
+            ])
+        })
+    }
+
     pub fn airstrike_tint_active(&self, target: u64) -> bool {
         self.substrate
             .entities

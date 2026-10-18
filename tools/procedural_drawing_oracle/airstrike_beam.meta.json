@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Tactical6D47FB airstrike branch,705860 and4BEAC0 RGB565 pixels",
+  "assumptions": [
+    "Prepared source Infantry/Building manager fields,primary FLH80,0,100 and source pose; no complete Scenario/lifecycle replay.",
+    "Direct cases supply explicit endpoints,160x120 RGB565 destination,ABuffer andZBuffer; original line color RNG,geometry,clipping and pixel bodies execute."
+  ],
+  "substitutions": [
+    "Existing Rally memory-surface methods replace DirectDraw storage/locking; IsDSurface uses native4C1AB0. No gameplay .text patches.",
+    "Windows timeGetTime supplies the explicit wall_ms value. Main RNG is seeded using the existing native-fixture seed owner."
+  ],
+  "entry_points": {
+    "tactical": "0x006D47FB",
+    "beam": "0x00705860",
+    "line": "0x004BEAC0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.airstrike_beam",
+  "payload_sha256": "9310f6799e7c11d0a95ea53989067d348b8ec27167dc4a18b709659740f16725"
+}

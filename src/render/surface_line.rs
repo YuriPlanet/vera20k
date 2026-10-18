@@ -19,6 +19,8 @@ pub(crate) struct SurfaceLineViewport {
 /// geometry and color. LaserDraw and EBolt feed the same ordered pixel owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceLineBlend {
+    /// Surface4BEAC0: old destination/RGB intensity mix, followed by A.
+    Mix { rgb: [u8; 3], strength: i32 },
     /// 4BDF00 pre-scales its RGB by the retained float then admits any >7.
     Add([u8; 3]),
     /// 4BFD30 receives an already packed surface word.
@@ -41,6 +43,11 @@ pub(crate) struct SurfaceLine {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceDraw {
+    /// Opaque XSurface stores, already resolved to logical surface rectangles.
+    OpaqueRect {
+        rect: [i32; 4],
+        word: u16,
+    },
     Line(SurfaceLine),
     /// Wave3 DrawMagBeam7602E0: displaced background with strict u16 Z,
     /// without A or WriteZ, at this parent's retained Display slot.

@@ -2,6 +2,7 @@
 //! builders, sidebar rendering, building/fire/light/chute animation runtimes,
 //! UI overlays, selection brackets, target lines, and the overlay render index.
 
+pub(crate) mod airstrike_lines;
 pub(crate) mod building_anim;
 pub(crate) mod combat_lights;
 pub(crate) mod detail;

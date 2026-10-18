@@ -120,6 +120,7 @@ pub(crate) fn build_target_line_instances(
     rules: Option<&RuleSet>,
     palette_bytes: Option<&[u8]>,
     viewport: TacticalViewport,
+    mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
 ) -> Vec<SpriteInstance> {
     // Tactical6D4729..6D472F skips selected Foot4DC060 while PlanMgr is
     // active. Otherwise its solid strokes cover the animated planning path.
@@ -130,18 +131,21 @@ pub(crate) fn build_target_line_instances(
     let Some(sim) = sim else {
         return Vec::new();
     };
-    if !line_state.is_selected_action_active(sim.session.binary_frame) {
+    let colors = line_state
+        .is_selected_action_active(sim.session.binary_frame)
+        .then(|| {
+            palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
+        })
+        .flatten()
+        .map(|palette| {
+            [
+                action_line_color(&palette, 3),
+                action_line_color(&palette, 8),
+            ]
+        });
+    if colors.is_none() && after_entity.is_none() {
         return Vec::new();
     }
-    let Some(palette) =
-        palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
-    else {
-        return Vec::new();
-    };
-    let colors = [
-        action_line_color(&palette, 3),
-        action_line_color(&palette, 8),
-    ];
 
     let cells = sim.resolved_terrain.as_ref().map(NativeCellQuery::isolated);
     let mut lines = Vec::new();
@@ -154,17 +158,36 @@ pub(crate) fn build_target_line_instances(
     // Tactical6D4750 walks the construction-ordered Techno array, not the
     // CurrentObjects selection vector or the Logic active-object order.
     // EntityStore's monotonic stable IDs retain that represented order.
+    let mut instances = Vec::new();
     for entity in sim.entities().values() {
-        let Some(line) = selected_action_line_for_entity(entity, sim, rules, cells.as_ref()) else {
-            continue;
-        };
-        lines.push(ProjectedActionLine {
-            start: project(line.start),
-            end: project(line.end),
-            kind: line.kind,
-        });
+        if let Some(colors) = colors
+            && let Some(line) = selected_action_line_for_entity(entity, sim, rules, cells.as_ref())
+        {
+            let projected = ProjectedActionLine {
+                start: project(line.start),
+                end: project(line.end),
+                kind: line.kind,
+            };
+            if after_entity.is_some() {
+                instances.extend(build_selected_action_line_instances(
+                    &[projected],
+                    colors,
+                    viewport,
+                ));
+            } else {
+                lines.push(projected);
+            }
+        }
+        if let Some(callback) = after_entity.as_mut() {
+            callback(entity.stable_id(), &mut instances);
+        }
     }
-    build_selected_action_line_instances(&lines, colors, viewport)
+    if after_entity.is_some() {
+        return instances;
+    }
+    colors.map_or_else(Vec::new, |colors| {
+        build_selected_action_line_instances(&lines, colors, viewport)
+    })
 }
 
 /// Compose this call's already projected lines in Tactical6D4750 Techno order.
@@ -699,6 +722,52 @@ mod tests {
     }
 
     #[test]
+    fn relationship_interleave_visits_technos_when_action_lines_are_disabled_but_not_planning() {
+        let sim = sim_with_selected_unit_that_has_attack_and_move();
+        let mut state = TargetLineState::default();
+        state.set_unit_action_lines_enabled(false);
+        let mut visits = Vec::new();
+        let mut callback = |id, instances: &mut Vec<SpriteInstance>| {
+            assert!(instances.is_empty());
+            visits.push(id);
+        };
+        assert!(
+            build_target_line_instances(
+                &state,
+                false,
+                Some(&sim),
+                None,
+                None,
+                test_viewport(),
+                Some(&mut callback)
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            visits,
+            sim.entities()
+                .iter_sorted()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>()
+        );
+        visits.clear();
+        let mut callback = |id, _: &mut Vec<SpriteInstance>| visits.push(id);
+        assert!(
+            build_target_line_instances(
+                &state,
+                true,
+                Some(&sim),
+                None,
+                None,
+                test_viewport(),
+                Some(&mut callback)
+            )
+            .is_empty()
+        );
+        assert!(visits.is_empty());
+    }
+
+    #[test]
     fn unit_action_lines_option_disables_selected_timer() {
         let mut state = active_line_state_for_tick(100);
         state.set_unit_action_lines_enabled(false);
@@ -763,8 +832,16 @@ mod tests {
         let rules = rules_with_factory_and_non_factory();
 
         assert!(
-            build_target_line_instances(&state, false, Some(&sim), None, None, test_viewport())
-                .is_empty()
+            build_target_line_instances(
+                &state,
+                false,
+                Some(&sim),
+                None,
+                None,
+                test_viewport(),
+                None,
+            )
+            .is_empty()
         );
         assert!(
             !build_factory_rally_line_instances(
@@ -789,7 +866,8 @@ mod tests {
                 None,
                 None,
                 None,
-                test_viewport()
+                test_viewport(),
+                None,
             )
             .is_empty()
         );

@@ -72,6 +72,7 @@ pub(super) struct UiInstances {
     pub drag: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
     pub target_line: Vec<SpriteInstance>,
+    pub tactical_line_calls: Vec<crate::app::presentation::airstrike_lines::TacticalLineCall>,
     pub factory_rally_first: Vec<SpriteInstance>,
     pub factory_rally_second: Vec<SpriteInstance>,
 }
@@ -699,6 +700,34 @@ pub(super) fn build_ui_instances(state: &AppState) -> UiInstances {
     };
     // Shared native logical viewport; both overlays scale the raster before
     // the UI passthrough draw, so fractional zoom cannot pad individual pixels.
+    let mut designations = std::collections::HashMap::new();
+    if !state.match_state.input.planning.active()
+        && let Some(runtime) = state.match_state.sim_runtime.as_ref()
+    {
+        let sim = &runtime.simulation;
+        for (id, entity) in sim.entities().iter_sorted() {
+            if entity.health.current() != 0
+                && let Some(coords) =
+                    sim.airstrike_designation_coordinates(id, &runtime.resources.rules)
+            {
+                designations.insert(id, coords);
+            }
+        }
+    }
+    let interleave_enabled = !designations.is_empty();
+    // Surface commands keep logical pixels; the shared GPU owner applies zoom.
+    let line_view = crate::app::presentation::target_lines::TacticalViewport {
+        zoom: if interleave_enabled { 1. } else { view.zoom },
+        ..view
+    };
+    let mut tactical_line_calls = Vec::new();
+    let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
+        use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
+        drain_opaque(&mut tactical_line_calls, instances, camera);
+        if let Some(coords) = designations.remove(&id) {
+            tactical_line_calls.push(TacticalLineCall::Designation(coords));
+        }
+    };
     let (mut target_line, planning_highlights) = planning_lines::build(state, view);
     target_line.extend(
         crate::app::presentation::target_lines::build_target_line_instances(
@@ -714,7 +743,12 @@ pub(super) fn build_ui_instances(state: &AppState) -> UiInstances {
                 .process_assets
                 .manager()
                 .and_then(|assets| assets.get_ref("palette.pal")),
-            view,
+            line_view,
+            if interleave_enabled {
+                Some(&mut after_entity)
+            } else {
+                None
+            },
         ),
     );
     target_line.extend(planning_highlights);
@@ -766,6 +800,7 @@ pub(super) fn build_ui_instances(state: &AppState) -> UiInstances {
         drag,
         placement,
         target_line,
+        tactical_line_calls,
         factory_rally_first,
         factory_rally_second,
     }

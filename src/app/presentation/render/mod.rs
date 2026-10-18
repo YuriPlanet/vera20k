@@ -333,16 +333,25 @@ pub(crate) fn render_game(
     // Tactical6D4669 LaserDraw550240 precedes6D466E EBolt, then6D4673
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
+    let mut main = crate::app::state::process_main_draws(
+        state.match_state.sim_runtime.as_mut(),
+        &mut state.frontend.frontend_main_rng,
+    );
     let bolt_lines = {
-        let mut main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.as_mut(),
-            &mut state.frontend.frontend_main_rng,
-        );
         presentation.lasers.composite(&mut main);
         presentation
             .electric_bolts
             .composite(viewport, palette, &mut main)
     };
+    // Tactical6D48F1 follows Laser/Bolt Main requests and interleaves the
+    // opaque action stores with each owning Airstrike designation. Uploads
+    // consume these resolved commands and cannot take further random draws.
+    let tactical_draws = crate::app::presentation::airstrike_lines::composite(
+        &ui.tactical_line_calls,
+        times.radar_ms as u32,
+        &main,
+        viewport,
+    );
     let sim = state
         .match_state
         .sim_runtime
@@ -398,6 +407,18 @@ pub(crate) fn render_game(
                 presentation.in_game_options.detail_level != 0
             }
         },
+        &mut alpha,
+    );
+    let tactical_lines = terrain.prepare_surface_lines(
+        &gpu.device,
+        &gpu.queue,
+        std::iter::empty(),
+        tactical_draws.iter().copied(),
+        &[],
+        &[],
+        &[],
+        viewport,
+        |_| false,
         &mut alpha,
     );
     for layer in &mut world.object_layers {
@@ -461,6 +482,7 @@ pub(crate) fn render_game(
             object_layers: &world.object_layers,
             building_status_text: &world.building_status_text,
             surface_effects,
+            tactical_lines,
             persistent_lights,
             sidebar_unavailable: &sidebar.unavailable,
             sidebar_flash: &sidebar.flash,

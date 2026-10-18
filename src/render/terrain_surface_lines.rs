@@ -4,7 +4,7 @@
 //!independent pairs share a snapshot/resolve, never a pass per pixel.
 
 use super::TerrainDrawRenderer;
-use crate::render::line_trail::{LineTrailSegment, rasterize};
+use crate::render::line_trail::{LineTrailSegment, ProjectedLine, rasterize};
 use crate::render::surface_line::{
     SurfaceDraw, SurfaceLine, SurfaceLineBlend, SurfaceLineViewport,
 };
@@ -15,6 +15,12 @@ use crate::render::surface_line::{
 pub(crate) struct SurfaceLineBatch {
     start: usize,
     end: usize,
+}
+
+impl SurfaceLineBatch {
+    pub(crate) fn is_empty(self) -> bool {
+        self.start == self.end
+    }
 }
 
 #[repr(C)]
@@ -49,6 +55,24 @@ fn raster_draw(
 ) -> Result<(), crate::render::wave_geometry::MagneticRasterError> {
     use crate::render::surface_line::{antialiased_line, ellipse, rasterize_z_clipped};
     let line = match draw {
+        SurfaceDraw::OpaqueRect { rect, word } => {
+            let logical = size.map(|v| (v as f32 / viewport.zoom).ceil() as i32);
+            let [x, y, w, h] = crate::util::rect::clip_rect(rect, [0, 0, logical[0], logical[1]]);
+            for py in y..y + h {
+                for px in x..x + w {
+                    emit(&[(
+                        [px, py],
+                        Operation {
+                            rgb: u32::from(word),
+                            mode: 4,
+                            ..Default::default()
+                        },
+                    )]);
+                }
+            }
+            return Ok(());
+        }
+
         SurfaceDraw::MagneticWave(wave) => {
             let logical_size = size.map(|v| (v as f32 / viewport.zoom).ceil() as i32);
             // Native exactness is zoom1. Other zooms expand the same logical
@@ -170,39 +194,56 @@ fn raster_draw(
         );
         return Ok(());
     }
-    let (rgb, mode) = match line.blend {
-        SurfaceLineBlend::Add(rgb) => (packed_rgb(rgb), 1),
-        SurfaceLineBlend::Replace(word) => (u32::from(word), 2),
+    let (rgb, mode, strength) = match line.blend {
+        SurfaceLineBlend::Mix { rgb, strength } => (packed_rgb(rgb), 0, strength),
+        SurfaceLineBlend::Add(rgb) => (packed_rgb(rgb), 1, 0),
+        SurfaceLineBlend::Replace(word) => (u32::from(word), 2, 0),
         SurfaceLineBlend::Antialiased { .. } => unreachable!(),
     };
-    rasterize_z_clipped(
-        line.from,
-        line.to,
-        line.z_adjust,
-        viewport.clip,
-        viewport.z_origin_y,
-        |pixel| {
-            //4BDF00 advances A only with Y; packed4BFD30 advances both axes.
-            let sample = if mode == 1 {
-                [pixel.clipped_start_x, pixel.point[1]]
-            } else {
-                pixel.point
-            };
-            let a = alpha(sample);
-            if a != 0 {
-                emit(&[(
-                    pixel.point,
-                    Operation {
-                        z: u32::from(pixel.z),
-                        rgb,
-                        alpha: u32::from(a),
-                        mode,
-                        ..Default::default()
-                    },
-                )]);
-            }
-        },
-    );
+    let emit_pixel = |pixel: crate::render::surface_line::LinePixel| {
+        //4BDF00 advances A only with Y; packed4BFD30 advances both axes.
+        let sample = if mode == 1 {
+            [pixel.clipped_start_x, pixel.point[1]]
+        } else {
+            pixel.point
+        };
+        let a = alpha(sample);
+        if a != 0 {
+            emit(&[(
+                pixel.point,
+                Operation {
+                    z: u32::from(pixel.z),
+                    rgb,
+                    strength,
+                    alpha: u32::from(a),
+                    mode,
+                    ..Default::default()
+                },
+            )]);
+        }
+    };
+    if mode == 0 {
+        rasterize(
+            ProjectedLine {
+                from: line.from,
+                to: line.to,
+                z_adjust: line.z_adjust,
+                strength,
+            },
+            viewport.clip,
+            viewport.z_origin_y,
+            emit_pixel,
+        );
+    } else {
+        rasterize_z_clipped(
+            line.from,
+            line.to,
+            line.z_adjust,
+            viewport.clip,
+            viewport.z_origin_y,
+            emit_pixel,
+        );
+    }
     Ok(())
 }
 #[repr(C)]
@@ -552,29 +593,19 @@ impl TerrainDrawRenderer {
             prepare_draw(&mut self.surface_lines, draw, &mut alpha);
         }
         for &segment in segments {
-            rasterize(
-                segment.project(viewport.camera),
-                viewport.clip,
-                viewport.z_origin_y,
-                |pixel| {
-                    let a = alpha(pixel.point);
-                    if a != 0 {
-                        store(
-                            &mut self.surface_lines,
-                            &[(
-                                pixel.point,
-                                Operation {
-                                    z: u32::from(pixel.z),
-                                    strength: segment.strength,
-                                    rgb: packed_rgb(segment.color),
-                                    alpha: u32::from(a),
-                                    mode: 0,
-                                    ..Default::default()
-                                },
-                            )],
-                        );
-                    }
-                },
+            let line = segment.project(viewport.camera);
+            prepare_draw(
+                &mut self.surface_lines,
+                SurfaceDraw::Line(SurfaceLine {
+                    from: line.from,
+                    to: line.to,
+                    z_adjust: line.z_adjust,
+                    blend: SurfaceLineBlend::Mix {
+                        rgb: segment.color,
+                        strength: line.strength,
+                    },
+                }),
+                &mut alpha,
             );
         }
         //Tactical6D4678 draws RadBeam after trails and before selected radials.

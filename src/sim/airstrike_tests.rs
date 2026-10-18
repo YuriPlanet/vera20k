@@ -453,3 +453,83 @@ fn a_different_target_is_admitted_before_same_target_recharge() {
     assert!(m.busy);
     assert_eq!(m.target, Some(other));
 }
+
+#[test]
+fn designation_coordinates_follow_the_existing_sortie_target_through_departure_and_clear() {
+    let Some(mut f) = Fixture::new() else { return };
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none()
+    );
+    assert_eq!(
+        f.rules.object("BORIS").unwrap().weapon_list[1].as_deref(),
+        Some("Flare")
+    );
+    let flare = f.rules.weapon("Flare").unwrap();
+    assert!(flare.is_line && flare.is_house_color && !flare.is_laser);
+    f.hit(f.boris, f.target);
+    let before = f.sim.rng_state();
+    let first = f
+        .sim
+        .airstrike_designation_coordinates(f.boris, &f.rules)
+        .unwrap();
+    assert_eq!(f.sim.rng_state(), before);
+    assert_eq!(
+        first[1],
+        crate::sim::movement::ground_pose::object_get_coords(
+            f.sim.substrate.entities.get(f.target).unwrap(),
+            f.sim.resolved_terrain.as_ref()
+        )
+    );
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.target, &f.rules)
+            .is_none(),
+        "borrowed marker link is not the manager owner"
+    );
+    let aircraft = f.sim.airstrike_manager(f.boris).unwrap().aircraft.clone();
+    for id in aircraft {
+        assert!(
+            f.sim
+                .airstrike_designation_coordinates(id, &f.rules)
+                .is_none()
+        );
+        f.sim.airstrike_remove_aircraft(f.boris, id);
+    }
+    assert!(!f.sim.airstrike_manager(f.boris).unwrap().active);
+    assert_eq!(
+        f.sim.airstrike_designation_coordinates(f.boris, &f.rules),
+        Some(first)
+    );
+    let next = f
+        .sim
+        .spawn_object("GAPOWR", "Russians", 18, 12, 0, &f.rules)
+        .unwrap();
+    f.hit(f.boris, next);
+    assert_ne!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .unwrap()[1],
+        first[1]
+    );
+    f.sim
+        .airstrike_clear_target(f.boris, Some(&f.rules), FrameEffects::default());
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none()
+    );
+    let unit = f
+        .sim
+        .spawn_object("HTNK", "Russians", 20, 12, 0, &f.rules)
+        .unwrap();
+    f.hit(f.boris, unit);
+    assert_eq!(f.sim.airstrike_manager(f.boris).unwrap().target, Some(unit));
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none(),
+        "nonbuilding manager target has no Tactical beam"
+    );
+}

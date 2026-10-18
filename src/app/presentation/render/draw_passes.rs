@@ -30,6 +30,7 @@ pub(super) struct DrawPassData<'a> {
     pub building_status_text:
         &'a crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
+    pub tactical_lines: crate::render::terrain_draw::SurfaceLineBatch,
     pub persistent_lights: std::ops::Range<usize>,
     pub sidebar_unavailable: &'a [SpriteInstance],
     pub sidebar_flash: &'a [SpriteInstance],
@@ -676,6 +677,17 @@ pub(super) fn dispatch_draw_passes(
         bracket_tex,
         "target_lines",
     );
+    //6D4750..6D48F1: when Airstrike beams exist, the same ordered surface
+    // batch contains action rectangles and the beams between object visits.
+    if !data.tactical_lines.is_empty() {
+        drop(pass);
+        state
+            .renderer
+            .terrain_draw_renderer
+            .draw_surface_lines(encoder, view, data.tactical_lines);
+        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
     // Cell47EC90 flags20600 -> plain Convert/RLE4960A0: opaque stores,
     // world camera, neither A nor Z reads/writes. The shared neutral-A surface
     // binding and passthrough pipeline implement that material directly.
@@ -1116,6 +1128,8 @@ mod tests {
         let combat_lights = source_offset("for record in data.persistent_lights.clone()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
+        let tactical_lines =
+            source_offset(".draw_surface_lines(encoder, view, data.tactical_lines)");
         let status = source_offset("super::object_extras::draw_object_extras(");
         let placement = source_offset("pool.get(\"placement\")");
         let sparkle = source_offset("pool.get(\"cell_sparkles\")");
@@ -1141,6 +1155,8 @@ mod tests {
         assert!(first_rally < combat_lights);
         assert!(combat_lights < second_rally);
         assert!(second_rally < target_lines);
+        assert!(target_lines < tactical_lines);
+        assert!(tactical_lines < placement);
         // Unit vt110 DrawExtras completes inside6D8DB0, before6D4664.
         assert!(status < combat_lights);
         assert!(status < placement);
