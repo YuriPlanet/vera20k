@@ -64,7 +64,7 @@ Color=Grey
 
 
 [Units]
-0=VERA-OBSERVER,V3,256,42,48,64,Guard,None,0,-1,0,-1,1,1
+0=<human player>,V3,256,42,48,64,Guard,None,0,-1,0,-1,1,1
 
 [Infantry]
 

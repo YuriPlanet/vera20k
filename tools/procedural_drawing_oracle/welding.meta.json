@@ -65,6 +65,6 @@
     "check": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map <ordinary-ifv-welding.map> --welding-map <ordinary-ifv-full-health.map> --check",
     "write": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map <ordinary-ifv-welding.map> --welding-map <ordinary-ifv-full-health.map> --write"
   },
-  "replay_command": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map \"$HOME\"/Documents/vera20k-dev/techno-active-retail/C24-ifv-welding-production-controls/ordinary-ifv-welding.map --welding-map \"$HOME\"/Documents/vera20k-dev/techno-active-retail/C24-ifv-welding-production-controls/ordinary-ifv-full-health.map",
-  "payload_sha256": "6e0ef73fdf67a33fc7b78ae9b79d790688d905b53da78cac0d310bb13c9b6781"
+  "replay_command": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map target/ordinary-ifv-welding.map --welding-map target/ordinary-ifv-full-health.map",
+  "payload_sha256": "fa6399a78462898aa3f32064def4929896fa246c0a24014f116d7ca4fad5cb1a"
 }

@@ -1059,8 +1059,13 @@ fn native_terrain_instances(
     })
 }
 
-/// Build persistent WaveClass polygon edges from simulation registration state.
-pub(crate) fn build_weapon_wave_instances(state: &AppState) -> Vec<SpriteInstance> {
+/// Attach native magnetic destination edits to retained Display parents.
+/// Sonic's existing outline fallback remains a separate presentation residual.
+pub(crate) fn build_weapon_wave_instances(
+    state: &AppState,
+    objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
+    order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
+) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
     let Some(sim) = state
         .match_state
@@ -1073,15 +1078,31 @@ pub(crate) fn build_weapon_wave_instances(state: &AppState) -> Vec<SpriteInstanc
     let observer = crate::app::input::commands::preferred_local_owner(state)
         .as_deref()
         .and_then(|owner| sim.interner.get(owner));
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ]
+    .map(|value| value.floor() as i32);
+    for (id, draw) in
+        crate::app::presentation::fire_effects::build_magnetic_wave_draws(sim, observer, camera)
+    {
+        use crate::app::presentation::render::draw_plan_lowering::{
+            ObjectBodyDraw, PlannedObjectInstance,
+        };
+        let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
+            continue;
+        };
+        let mut planned = PlannedObjectInstance::object(parent, Vec::new());
+        planned.body_draw = Some(ObjectBodyDraw::Surface(
+            crate::render::surface_line::SurfaceDraw::MagneticWave(draw),
+        ));
+        objects.push(planned);
+    }
     for wave in crate::app::presentation::fire_effects::build_weapon_wave_visuals(sim, observer) {
-        let projected: Vec<[f32; 2]> = crate::render::wave_geometry::draw_order(wave.geometry)
+        let projected: Vec<[f32; 2]> = wave
+            .polygon
             .into_iter()
-            .map(|point| {
-                let (x, y) = crate::map::terrain::lepton_to_screen(glam::IVec3::new(
-                    point.x, point.y, point.z,
-                ));
-                [x, y]
-            })
+            .map(|[x, y]| [x as f32, y as f32])
             .collect();
         instances.extend(crate::render::wave_geometry::build_wave_instances(
             &projected, wave.tint, 1.0, 0.00045,

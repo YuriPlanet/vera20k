@@ -13,6 +13,34 @@ use crate::sim::world::{FrameEffects, Simulation};
 #[path = "aircraft_release.rs"]
 mod aircraft_release;
 
+/// FireAt6FF4CC..6FF647 has one exclusive effect ladder. Sonic's earlier
+/// Wave creation is independent; these flags select the later alternative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FireAtEffect {
+    None,
+    Laser,
+    ElectricBolt,
+    RadiationBeam,
+    RadiationEruption,
+    MagneticWave,
+}
+
+pub(crate) fn fire_at_effect(weapon: &crate::rules::weapon_type::WeaponType) -> FireAtEffect {
+    if weapon.is_laser {
+        FireAtEffect::Laser
+    } else if weapon.is_electric_bolt {
+        FireAtEffect::ElectricBolt
+    } else if weapon.is_rad_beam {
+        FireAtEffect::RadiationBeam
+    } else if weapon.is_rad_eruption {
+        FireAtEffect::RadiationEruption
+    } else if weapon.is_mag_beam {
+        FireAtEffect::MagneticWave
+    } else {
+        FireAtEffect::None
+    }
+}
+
 /// How far one fire routine got.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct FireReach {
@@ -1772,6 +1800,10 @@ pub(super) fn emit_admitted_fire(
     // Logic vector behind this shot's bullet.
     if let Some(event) = out.fire_events.last().cloned() {
         crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
+        // Sonic6FF470 precedes the independent later-effect ladder.
+        if weapon.is_sonic && callbacks_enabled(world) {
+            world.commit_fired_wave(rules, &event, 0);
+        }
     }
     // 6FF4CC..6FF54B: successful FireAt only, after burst advance and before
     // ammo/RevealOnFire. SpawnLaser recomputes its own current GetFLH.
@@ -1786,6 +1818,15 @@ pub(super) fn emit_admitted_fire(
     );
     super::electric_bolt::fired(world, rules, snap.stable_id, snap.target, weapon);
     super::radiation_beam::fired(world, rules, snap.stable_id, snap.target, weapon);
+    // Mag6FF5F5..6FF650 admits at most one linked Wave. The native Unit
+    // constructor/update can reverse its endpoints before returning here.
+    if fire_at_effect(weapon) == FireAtEffect::MagneticWave
+        && world.active_wave_id(snap.stable_id).is_none()
+        && callbacks_enabled(world)
+        && let Some(event) = out.fire_events.last().cloned()
+    {
+        world.commit_fired_wave(rules, &event, 3);
+    }
     // `0x006FF656`: DecreaseAmmo (vt+0x390). Only an aircraft holds Ammo here,
     // and `AircraftClass`'s slot is a bare RET (`0x0041B900`).
     // `0x006FF66C`, after DecreaseAmmo (`0x006FF656`): RevealOnFire.
@@ -2024,6 +2065,7 @@ struct FireCommitBoundary {
     damage_start: usize,
     explosion_start: usize,
     smudge_start: usize,
+    #[cfg(any(test, feature = "test-support"))]
     fire_event_start: usize,
 }
 
@@ -2033,6 +2075,7 @@ impl FireCommitBoundary {
             damage_start: emit.damage_events.len(),
             explosion_start: emit.effects.explosion_effects.len(),
             smudge_start: emit.effects.smudge_spawn_requests.len(),
+            #[cfg(any(test, feature = "test-support"))]
             fire_event_start: emit.fire_events.len(),
         }
     }
@@ -2046,11 +2089,13 @@ impl FireCommitBoundary {
         emit: &mut CombatEmit,
         under_attack_events: &mut Vec<UnderAttackEvent>,
     ) {
+        #[cfg(any(test, feature = "test-support"))]
+        let fire_event_start = self.fire_event_start;
         let Self {
             damage_start,
             explosion_start,
             smudge_start,
-            fire_event_start,
+            ..
         } = self;
         let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
         let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
@@ -2074,13 +2119,14 @@ impl FireCommitBoundary {
         );
         under_attack_events.append(&mut pings);
         commit_fire_bookkeeping(world, rules, emit, overlay_registry, run.effects());
-        let wave_fire_events = emit.fire_events[fire_event_start..].to_vec();
-        for event in &wave_fire_events {
-            {
-                if callbacks_enabled(world) {
-                    world.commit_fired_wave(rules, event);
-                }
-            }
+        #[cfg(any(test, feature = "test-support"))]
+        for event in &emit.fire_events[fire_event_start..] {
+            world.trace_lifecycle_for_test(
+                crate::sim::world::LifecycleTestEvent::CombatFireEffectsCommitted {
+                    attacker_id: event.attacker_id,
+                    scenario_rng_state: world.scenario_rng.state(),
+                },
+            );
         }
     }
 }

@@ -111,13 +111,15 @@
     "Computer1"
   ],
   "observe_types": [
-    "HTNK",
-    "NAIRON"
+    "HTNK"
   ],
   "commands": [],
   "camera_cell": [
     37,
     37
   ],
-  "observe_super_weapons": true
+  "cursor_position": [
+    720,
+    556
+  ]
 }

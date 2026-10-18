@@ -57,23 +57,21 @@ Allies=VERA-OBSERVER,Neutral
 Color=Grey
 
 [Waypoints]
-0=37037
+0=34033
 1=62062
 
 [Structures]
-0=Computer1,NATECH,256,55,62,0,None,0,0,1,0,0,None,None,None,0,0
-1=Computer1,NAPOWR,256,66,56,0,None,0,0,1,0,0,None,None,None,0,0
-2=Computer1,NAPOWR,256,66,52,0,None,0,0,1,0,0,None,None,None,0,0
-3=Computer1,NAWEAP,256,56,56,0,None,0,0,1,0,0,None,None,None,0,0
-4=VERA-OBSERVER,NACNST,256,32,33,0,None,0,0,1,0,0,None,None,None,0,0
-5=Computer1,NAYARD,256,52,48,0,None,0,0,1,0,0,None,None,None,0,0
-6=VERA-OBSERVER,NAYARD,256,31,45,0,None,0,0,1,0,0,None,None,None,0,0
+0=Computer,NATECH,256,55,62,0,None,0,0,1,0,0,None,None,None,0,0
+1=Computer,NAPOWR,256,66,56,0,None,0,0,1,0,0,None,None,None,0,0
+2=Computer,NAPOWR,256,66,52,0,None,0,0,1,0,0,None,None,None,0,0
+3=Computer,NAWEAP,256,56,56,0,None,0,0,1,0,0,None,None,None,0,0
+4=Computer,NAYARD,256,52,48,0,None,0,0,1,0,0,None,None,None,0,0
 
 [Units]
-0=Computer1,DRED,256,48,46,64,Guard,None,0,-1,0,-1,1,1
-1=Computer1,HYD,256,46,45,64,Guard,None,0,-1,0,-1,1,1
-2=Computer1,HYD,256,46,50,64,Guard,None,0,-1,0,-1,1,1
-3=Computer1,SQD,256,44,48,64,Guard,None,0,-1,0,-1,1,1
+0=Computer,DRED,256,48,46,64,Guard,None,0,-1,0,-1,1,1
+1=Computer,HYD,256,46,45,64,Guard,None,0,-1,0,-1,1,1
+2=Computer,HYD,256,46,50,64,Guard,None,0,-1,0,-1,1,1
+3=Computer,SQD,256,44,48,64,Guard,None,0,-1,0,-1,1,1
 
 [Infantry]
 

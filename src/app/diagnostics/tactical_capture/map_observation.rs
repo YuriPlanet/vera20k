@@ -6884,95 +6884,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn nuclear_missile_example_launches_the_charged_silo_at_the_neutral_tanks() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.nuclear-missile.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, Some(true));
-        // The silo's Super charges for 9000 frames from the first step; the
-        // id is the one its `observe_super_weapons` row reports.
-        let [command] = profile.commands() else {
-            panic!("one launch");
-        };
-        assert_eq!(command.issue_after_step, 9010);
-        assert!(matches!(
-            command.payload,
-            Command::LaunchSuperWeapon {
-                target_rx: 41,
-                target_ry: 63,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn iron_curtain_example_curtains_a_tank_under_fire() {
-        use crate::map::entities::EntityCategory;
-        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
-        use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
-
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.iron-curtain.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, Some(true));
-        // Resolve the example's named actors and weapon through the same owner
-        // as input scheduling, independently of entity/interner allocation order.
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=HTNK\n[HTNK]\nStrength=400\n\
-             [SuperWeaponTypes]\n0=IronCurtainSpecial\n\
-             [IronCurtainSpecial]\nType=IronCurtain\n",
-        ))
-        .unwrap();
-        let mut sim = Simulation::new();
-        sim.interner.intern("earlier-loaded-type");
-        sim.intern_rule_type_ids(&rules);
-        let owner = sim.interner.intern("VERA-OBSERVER");
-        let type_ref = sim.interner.get("HTNK").unwrap();
-        for (id, ry) in [(71, 54), (93, 58)] {
-            let mut entity = GameEntity::new_at_frame_zero_for_test(
-                id,
-                44,
-                ry,
-                0,
-                0,
-                owner,
-                Health::new(400),
-                type_ref,
-                EntityCategory::Unit,
-                0,
-                4,
-                true,
-            );
-            entity.lifecycle.set_in_limbo_for_test(false);
-            sim.entities_mut().insert(entity);
+    /// A skirmish never admits the human's authored Structures (`0x0044F8CB`),
+    /// so a computer scene's observer orders only build its base the native
+    /// way: deploy the starting MCV and place ordinary production.
+    fn assert_observer_only_builds(profile: &MapCaptureProfile) {
+        for command in profile.commands() {
+            assert_eq!(command.owner, "VERA-OBSERVER");
+            assert!(matches!(
+                command.payload,
+                Command::DeployMcv { .. }
+                    | Command::QueueProduction { .. }
+                    | Command::PlaceReadyBuilding { .. }
+            ));
         }
-        let [attack, launch] = profile.commands() else {
-            panic!("an attack and a launch");
-        };
-        assert_eq!(
-            (attack.issue_after_step, launch.issue_after_step),
-            (4440, 4510)
-        );
-        assert_eq!(
-            attack.resolve(&sim, &rules).unwrap().0,
-            Command::ForceAttack {
-                attacker_id: 93,
-                target_id: 71
-            }
-        );
-        assert_eq!(
-            launch.resolve(&sim, &rules).unwrap().0,
-            Command::LaunchSuperWeapon {
-                sw_type_id: sim.interner.get("IronCurtainSpecial").unwrap(),
-                target_rx: 44,
-                target_ry: 54,
-            }
-        );
     }
 
     #[test]
@@ -6982,9 +6906,17 @@ mod tests {
         ))
         .unwrap();
         profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, Some(true));
-        // The computer's Strategy tick fires its charged silo.
-        assert!(profile.commands().is_empty());
+        // Every observed House's twelve Super rows would spend the sample
+        // budget long before the 9000-frame charge; the yard's health shows
+        // the strike.
+        assert_eq!(profile.observe_super_weapons, None);
+        // The observer deploys its starting MCV into the targeted yard; the
+        // computer's Strategy tick fires its charged silo.
+        let [deploy] = profile.commands() else {
+            panic!("one deploy");
+        };
+        assert_eq!(deploy.issue_after_step, 0);
+        assert!(matches!(deploy.payload, Command::DeployMcv { .. }));
     }
 
     #[test]
@@ -6994,7 +6926,7 @@ mod tests {
         ))
         .unwrap();
         profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, Some(true));
+        assert_eq!(profile.observe_super_weapons, None);
         // The computer's Strategy tick aims its charged Dominator.
         assert!(profile.commands().is_empty());
     }
@@ -7008,9 +6940,9 @@ mod tests {
             let profile: MapCaptureProfile =
                 serde_json::from_str(crate::test_fixture::text(path)).unwrap();
             profile.validate().unwrap();
-            assert_eq!(profile.observe_super_weapons, Some(true));
+            assert_eq!(profile.observe_super_weapons, None);
             // A computer team's script fires the charged Super.
-            assert!(profile.commands().is_empty());
+            assert_observer_only_builds(&profile);
         }
     }
 
@@ -7029,70 +6961,10 @@ mod tests {
                 profile.launch.opponents[0].difficulty,
                 crate::skirmish_launch::AiDifficulty::Normal
             );
-            // A computer team's script orders the spawners' attacks.
-            assert!(profile.commands().is_empty());
+            // A computer team's script orders the spawners' attacks on the
+            // targets the observer builds.
+            assert_observer_only_builds(&profile);
         }
-    }
-
-    #[test]
-    fn computer_force_shield_example_answers_the_observers_nuke() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.ai-force-shield.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, Some(true));
-        // The observer's nuke on the computer's yard alerts the computer,
-        // whose Strategy tick fires its charged Force Shield there.
-        let [command] = profile.commands() else {
-            panic!("one launch");
-        };
-        assert_eq!(command.issue_after_step, 9010);
-        assert!(matches!(
-            command.payload,
-            Command::LaunchSuperWeapon {
-                target_rx: 56,
-                target_ry: 56,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn chronosphere_example_warps_the_source_block_with_a_tactical_click() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.chronosphere.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, Some(true));
-        // The Chronosphere charges for 6300 frames from the first step; its
-        // launch selects the Chrono Warp, and the click at the view's centre
-        // (`camera_cell`) fires it.
-        let [command] = profile.commands() else {
-            panic!("one launch");
-        };
-        assert_eq!(command.issue_after_step, 6310);
-        assert!(matches!(
-            command.payload,
-            Command::LaunchSuperWeapon {
-                target_rx: 41,
-                target_ry: 63,
-                ..
-            }
-        ));
-        let [gesture] = profile.gestures() else {
-            panic!("one click");
-        };
-        assert_eq!(gesture.issue_after_step, 6320);
-        assert!(matches!(
-            gesture.gesture,
-            MapGesture::Click {
-                position: [316, 284],
-                button: None
-            }
-        ));
-        assert_eq!(profile.camera_cell, Some([45, 55]));
     }
 
     #[test]

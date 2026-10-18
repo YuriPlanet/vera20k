@@ -43,12 +43,16 @@ def gib_bytes(value: str) -> int:
 # 16 GiB keeps the newest sessions of the worktrees active in the last hours.
 # The total budget fits this 228 GiB volume, which also holds Ghidra's database
 # and backups and captures: at 40 GiB free space settled near 28 GiB rather
-# than the 16 GiB reserve, which still trims whenever the volume runs short.
+# than the reserve, which still trims whenever the volume runs short.
+# The reserve covers one build and the writes beside it. In the receipts from
+# 2026-09-30 to 10-18, free space starting at 20 GiB or less fell at most
+# 7.2 GiB before the next pass. On 2026-10-18 the volume's 12-16 GiB free sat
+# below the former 16 GiB reserve for hours, blocking builds 12 GiB admits.
 @dataclass(frozen=True)
 class CachePolicy:
     cache_bytes: int = 40 * GIB
     incremental_bytes: int = 16 * GIB
-    min_free_bytes: int = 16 * GIB
+    min_free_bytes: int = 12 * GIB
 
     def __post_init__(self):
         if any(type(value) is not int or value < 0 for value in asdict(self).values()):
@@ -60,7 +64,7 @@ class CachePolicy:
                      for value, key, default in (
                          (cache, 'VERA20K_CACHE_GIB', '40'),
                          (incremental, 'VERA20K_INCREMENTAL_GIB', '16'),
-                         (free, 'VERA20K_MIN_FREE_GIB', '16'))))
+                         (free, 'VERA20K_MIN_FREE_GIB', '12'))))
 
 
 def _json(path: Path):
@@ -221,7 +225,7 @@ def register_locked(root: Path, store: Path, target: Path, artifacts=()):
     _write(path, data)
 
 
-def _owned_root(checkout: str, target: Path, store: Path) -> Path | None:
+def _owned_root(checkout: str, target: Path, store: Path, stores: dict) -> Path | None:
     from tools.cargo_run import build_store
     if not isinstance(checkout, str) or not Path(checkout).is_absolute():
         raise ValueError('Cache registry requires an absolute checkout')
@@ -232,7 +236,10 @@ def _owned_root(checkout: str, target: Path, store: Path) -> Path | None:
     checkout_path = Path(checkout).resolve()
     if not checkout_path.exists() or not target.exists():
         return None  # Never adopt an abandoned/unverifiable cache for deletion.
-    actual_store, namespace = build_store(checkout_path)
+    # Labels share checkouts; each lookup runs Git once per inventory.
+    if checkout_path not in stores:
+        stores[checkout_path] = build_store(checkout_path)
+    actual_store, namespace = stores[checkout_path]
     if (actual_store.resolve() != store.resolve() or target.parent.name != 'owned-worktrees'
             or target.name != namespace):
         raise ValueError(f'Cache ownership mismatch: {target}')
@@ -245,7 +252,7 @@ def _owned_root(checkout: str, target: Path, store: Path) -> Path | None:
 
 def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None):
     from tools.cargo_run import HOST_PROFILES, preserved_manifest, build_store
-    roots, binaries, watched = set(), set(), {}
+    roots, binaries, watched, stores = set(), set(), {}, {}
     registry = store / 'cache-roots.json'
     if registry.exists():
         data = _json(registry)
@@ -255,7 +262,7 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
         for name, entry in data['roots'].items():
             if not isinstance(entry, dict):
                 raise ValueError('Malformed owned cache entry')
-            if path := _owned_root(entry.get('checkout'), Path(name), store):
+            if path := _owned_root(entry.get('checkout'), Path(name), store, stores):
                 roots.add(path)
                 declared = entry.get('profiles', [])
                 if not isinstance(declared, list):
@@ -280,7 +287,7 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
             # Schema-1 historical manifests did not necessarily record checkout.
             # Still verify/protect every executable; adopt only proven roots.
             if data.get('checkout') is not None:
-                if path := _owned_root(data['checkout'], target, store):
+                if path := _owned_root(data['checkout'], target, store, stores):
                     roots.add(path)
                     if profiles is not None:
                         for entry in entries:
@@ -325,7 +332,7 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
     # The current default root is safe to discover without a prior label.
     _, namespace = build_store(root)
     default = Path(os.environ.get('CARGO_TARGET_DIR', str(root / 'target'))).resolve()
-    if path := _owned_root(str(root), default / 'owned-worktrees' / namespace, store):
+    if path := _owned_root(str(root), default / 'owned-worktrees' / namespace, store, stores):
         roots.add(path)
     if profiles is not None:
         profiles.update(cache / profile for cache in roots for profile in HOST_PROFILES)
@@ -487,6 +494,7 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
     receipt['degraded_debug_inputs'] = {}
     receipt['inspection_cache'] = {'hits': 0, 'misses': 0, 'failure_hits': 0}
     try:
+        receipt['cache_state'] = _cache_state(root, store)
         (store / 'inspections').mkdir(parents=True, exist_ok=True)
         _plain(store / 'inspections')
         revision = _inspection_revision()
@@ -594,6 +602,7 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                                int(newest[session.parent][1] == session)))
             # Hottest sessions remain useful until cold caches cannot meet pressure.
             groups.sort(key=lambda group: (group[3], group[2], str(group[0][0])))
+            receipt['removable_groups'] = len(groups)
             selected, projected_free, projected_total, projected_incremental = [], dict(free), total, incremental
             projection = _CacheLinks(inventory, increments)
             for paths, is_incremental, age, _ in groups:
@@ -741,18 +750,67 @@ def trim(root: Path, policy: CachePolicy, timeout: float, *, dry_run=False) -> d
 AUTOMATIC_INTERVAL_SECONDS = 30 * 60
 
 
-def _last_applied_pass(store: Path) -> float | None:
-    """Finish time of the newest receipt that was not a dry run; None if unknown."""
+def _last_applied_pass(store: Path) -> tuple[Path, dict, float] | None:
+    """Newest receipt that was not a dry run, with its finish time; None if unknown."""
     directory = store / 'retention'
     try:
         names = [name for name in os.listdir(directory) if re.fullmatch(r'\d+-[0-9a-f]{8}\.json', name)]
         for name in sorted(names, key=lambda name: int(name.split('-')[0]), reverse=True):
             receipt = json.loads((directory / name).read_text())
             if receipt['dry_run'] is False:
-                return float(receipt['finished_unix'])
+                return directory / name, receipt, float(receipt['finished_unix'])
     except (OSError, ValueError, KeyError, TypeError):
         pass
     return None
+
+
+def _cache_state(root: Path, store: Path) -> str:
+    """Digest of every input that decides which files a pass may remove.
+
+    Removability depends on the registered roots and profiles, the protected
+    executables and the cache trees, never on the budgets or free space. Creating,
+    removing or relinking a cache file changes its directory's identity.
+    """
+    profiles = set()
+    roots, binaries, _ = _inputs(root, store, profiles=profiles)
+    state = [sorted(map(str, roots)), sorted(map(str, profiles)),
+             sorted((str(path), _identity(path)) for path in binaries)]
+    directories = []
+    for cache in sorted(roots):
+        _plain(cache)
+        pending = [cache]
+        while pending:
+            base = pending.pop()
+            info = base.lstat()
+            directories.append((str(base), info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns))
+            with os.scandir(base) as entries:
+                for entry in entries:
+                    # The directories _files walks: no links or reparse points.
+                    if entry.is_dir(follow_symlinks=False):
+                        path = Path(entry.path)
+                        if not getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
+                            pending.append(path)
+    state.append(sorted(directories))
+    return hashlib.sha256(json.dumps(state).encode()).hexdigest()
+
+
+def _futile_pass(root: Path, store: Path) -> Path | None:
+    """Receipt of a recent pass whose result a new pass would only repeat.
+
+    That pass found nothing removable, and nothing that decides removability has
+    changed since. The interval bounds trust in the digest, as for the budgets.
+    """
+    if (last := _last_applied_pass(store)) is None:
+        return None
+    path, receipt, finished = last
+    if (receipt.get('state') != 'trimmed' or receipt.get('errors') != []
+            or receipt.get('removable_groups') != 0
+            or not 0 <= time.time() - finished < AUTOMATIC_INTERVAL_SECONDS):
+        return None
+    try:
+        return path if receipt.get('cache_state') == _cache_state(root, store) else None
+    except (OSError, ValueError, subprocess.SubprocessError, UnicodeError):
+        return None
 
 
 def retention_due(store: Path, policy: CachePolicy, volumes) -> bool:
@@ -767,11 +825,19 @@ def retention_due(store: Path, policy: CachePolicy, volumes) -> bool:
             return True
     except OSError:
         return True
-    finished = _last_applied_pass(store)
-    return finished is None or not 0 <= time.time() - finished < AUTOMATIC_INTERVAL_SECONDS
+    last = _last_applied_pass(store)
+    return last is None or not 0 <= time.time() - last[2] < AUTOMATIC_INTERVAL_SECONDS
 
 
 def automatic_locked(root: Path, store: Path, policy: CachePolicy):
+    # Below the reserve every build requests a pass before and after Cargo. Once
+    # the rest of the cache is protected, each pass inventoried it again to remove
+    # nothing: on 2026-10-18 ten such passes of 78-140 s held the shared lock
+    # between 09:35 and 11:15 while builds queued. Admission still measures.
+    if futile := _futile_pass(root, store):
+        print(f'Cache retention: skipped; no removable cache since {futile}',
+              file=sys.stderr, flush=True)
+        return
     receipt = trim_locked(root, store, policy)
     print(f"Cache retention: {receipt['state']}, removed {receipt['removed_allocated_bytes']} "
           f"allocated bytes; {receipt['receipt_path']}", file=sys.stderr, flush=True)

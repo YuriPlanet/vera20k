@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -816,6 +817,29 @@ class CacheTests(unittest.TestCase):
         with patch.object(cache.shutil, 'disk_usage', side_effect=OSError('volume unavailable')):
             self.assertTrue(cache.retention_due(self.store, policy, volumes))
 
+    def test_automatic_pass_that_found_nothing_removable_repeats_only_after_a_change(self):
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 1 << 62)  # Every volume is short.
+        binary, _ = self.label()
+        kept = self.write('debug/deps/kept.rcgu.o')
+        receipts = self.store / 'retention'
+        def automatic():
+            with patch.object(cache, '_dependencies', return_value={kept}), \
+                 redirect_stderr(io.StringIO()):
+                cache.automatic_locked(self.root, self.store, policy)
+            return len(list(receipts.glob('*.json')))
+        self.assertEqual(automatic(), 1)
+        self.assertEqual(automatic(), 1)  # Same protected cache: no second inventory.
+        with patch.object(cache, 'AUTOMATIC_INTERVAL_SECONDS', 0):
+            self.assertEqual(automatic(), 2)
+        orphan = self.write('debug/deps/orphan.rcgu.o')  # A build added a removable file.
+        self.assertEqual(automatic(), 3)
+        self.assertFalse(orphan.exists())
+        self.assertEqual(automatic(), 4)  # That pass removed files; it was no evidence.
+        self.assertEqual(automatic(), 4)
+        shutil.rmtree(binary.parents[1])  # Retiring the label unprotects its object.
+        self.assertEqual(automatic(), 5)
+        self.assertFalse(kept.exists())
+
     def test_under_budget_never_invokes_expensive_dependency_inspection(self):
         self.label()
         orphan = self.write('debug/deps/orphan.rcgu.o')
@@ -897,6 +921,13 @@ class DebugDependencyTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_defaults_keep_a_twelve_gib_reserve(self):
+        with patch.dict(os.environ):
+            for key in ('VERA20K_CACHE_GIB', 'VERA20K_INCREMENTAL_GIB', 'VERA20K_MIN_FREE_GIB'):
+                os.environ.pop(key, None)
+            self.assertEqual(cache.CachePolicy.from_env(), cache.CachePolicy())
+            self.assertEqual(cache.CachePolicy().min_free_bytes, 12 * cache.GIB)
+
     def test_decimal_environment_and_cli_overrides_have_exact_integer_byte_values(self):
         with patch.dict(os.environ, {'VERA20K_CACHE_GIB': '1.5',
                                      'VERA20K_INCREMENTAL_GIB': '0',

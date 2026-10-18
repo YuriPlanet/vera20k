@@ -359,7 +359,6 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
     let bar_height_px = power_bar_budget_px(state);
 
     let anim = &mut state.match_state.match_presentation.power_bar_anim;
-    anim.set_max_segments(bar_height_px);
     match (
         state.match_state.sim_runtime.as_ref(),
         owner_name.as_deref(),
@@ -367,15 +366,15 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
         (Some(runtime), Some(owner)) => {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
+            let theoretical_total = || sim.theoretical_power_for_owner(rules, owner);
+            anim.fit_strip(bar_height_px, theoretical_total);
             let (produced, drained) = production::power_balance_for_owner(sim, rules, owner);
-            anim.update(
-                produced,
-                drained,
-                || sim.theoretical_power_for_owner(rules, owner),
-                wall_ms,
-            );
+            anim.update(produced, drained, theoretical_total, wall_ms);
         }
-        _ => anim.update(0, 0, || 0, wall_ms),
+        _ => {
+            anim.fit_strip(bar_height_px, || 0);
+            anim.update(0, 0, || 0, wall_ms);
+        }
     }
 }
 

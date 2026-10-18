@@ -67,11 +67,11 @@ Color=Grey
 
 
 [Units]
-0=VERA-OBSERVER,MTNK,256,38,48,64,Sleep,None,0,-1,0,-1,1,1
-1=Computer1,MTNK,256,64,64,64,Sleep,None,0,-1,0,-1,1,1
+0=<human player>,MTNK,256,38,48,64,Sleep,None,0,-1,0,-1,1,1
+1=Computer,MTNK,256,64,64,64,Sleep,None,0,-1,0,-1,1,1
 
 [Infantry]
-0=VERA-OBSERVER,E1,256,38,52,2,Sleep,64,None,0,-1,0,1,1
+0=<human player>,E1,256,38,52,2,Sleep,64,None,0,-1,0,1,1
 
 [OverlayPack]
 1=BQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP

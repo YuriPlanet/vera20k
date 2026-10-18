@@ -88,29 +88,34 @@ impl ObjectAiOutcome {
 }
 
 impl Simulation {
+    /// The existing Techno+324 link, including its native dying/deferred
+    /// interval. Readers must not reconstruct it from the Wave registry.
+    pub fn active_wave_id(&self, owner_id: u64) -> Option<u64> {
+        self.active_wave_links.get(&owner_id).copied()
+    }
+
     pub(crate) fn clear_active_wave_link(&mut self, wave_id: u64) {
         self.active_wave_links
             .retain(|_, linked_wave_id| *linked_wave_id != wave_id);
     }
 
-    pub(crate) fn wave_update_context(&self, wave_id: u64) -> crate::sim::wave::WaveUpdateContext {
+    pub(crate) fn wave_update_context(
+        &self,
+        wave: &crate::sim::wave::Wave,
+        rules: Option<&RuleSet>,
+    ) -> crate::sim::wave::WaveUpdateContext {
         use crate::sim::combat::TargetKind;
         use crate::sim::projectile::ProjectileCoord;
 
-        let Some(wave) = self.waves.get(wave_id) else {
-            return crate::sim::wave::WaveUpdateContext {
-                owner_position: None,
-                owner_current_target: None,
-                target_position: None,
-            };
-        };
         // WaveClass keeps raw owner/target pointers through the represented
         // dying interval. Only PointerExpired makes either identity null.
         let owner = wave
             .owner_id
             .and_then(|owner_id| self.substrate.entities.get(owner_id));
-        // The tracking distance reads the owner's Location (`0x00762BB4`).
-        // RESIDUAL: the geometry takes its FLH instead (vt+0xB0, `0x00762D49`).
+        // The tracking distance reads Location (`0x00762BB4`), independently
+        // of the GetFLH(0, null) geometry call (`0x00762AF0`). The ordinary
+        // production host supplies its current rules; rules-less test worlds
+        // retain their Location-only compatibility boundary.
         let owner_position = owner.map(|entity| {
             let location = crate::sim::movement::ground_pose::object_location(
                 entity,
@@ -119,6 +124,27 @@ impl Simulation {
             ProjectileCoord::new(location.x, location.y, location.z)
         });
         let owner_current_target = owner.and_then(|entity| entity.attack_target.target());
+        let owner_fire_coordinate = owner.and_then(|entity| {
+            let Some(rules) = rules else {
+                return owner_position;
+            };
+            let object = self.interner.object_type(entity.type_ref(), rules)?;
+            // GetFLH(0, null) still mirrors by the owner's current burst
+            // parity (+0x3B8, `0x006F3C82`), as FireAt's own call does.
+            let burst_index = (entity.weapon_burst.index() & 1) as u8;
+            Some(
+                crate::sim::combat::fire_coord::fire_coordinate(
+                    self,
+                    rules,
+                    &crate::sim::combat::fire_coord::FireSource::of_entity(entity),
+                    object,
+                    0,
+                    burst_index,
+                    crate::rules::flh::Flh::default(),
+                )
+                .coord,
+            )
+        });
         // The target's vt+0x58 (`0x00762BD1`, `0x00762D2C`), which an object
         // forwards to its GetCoords (`0x00410540`).
         let target_position = match wave.target_ref {
@@ -133,10 +159,20 @@ impl Simulation {
             Some(TargetKind::Cell(rx, ry)) => Some(self.wave_cell_target_position(rx, ry)),
             None => None,
         };
+        let target_is_unit = match wave.target_ref {
+            Some(TargetKind::Entity(id)) => self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Unit),
+            _ => false,
+        };
         crate::sim::wave::WaveUpdateContext {
             owner_position,
+            owner_fire_coordinate,
             owner_current_target,
             target_position,
+            target_is_unit,
         }
     }
 }
@@ -487,7 +523,8 @@ impl Simulation {
             return outcome;
         }
         if self.waves.get(id).is_some() {
-            let context = self.wave_update_context(id);
+            let context =
+                self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
             let terrain = self.resolved_terrain.as_ref();
             let (request, result) = self
                 .waves
@@ -1969,13 +2006,25 @@ mod tests {
                 retained,
             ),
         );
-        assert_eq!(sim.wave_update_context(3).target_position, Some(retained));
+        assert_eq!(
+            sim.wave_update_context(sim.waves.get(3).unwrap(), None)
+                .target_position,
+            Some(retained)
+        );
         let tree = sim.production.terrain_objects.get_mut(&2).unwrap();
         tree.health = 0;
         tree.lifecycle = TerrainObjectLifecycle::Limbo;
-        assert_eq!(sim.wave_update_context(3).target_position, Some(retained));
+        assert_eq!(
+            sim.wave_update_context(sim.waves.get(3).unwrap(), None)
+                .target_position,
+            Some(retained)
+        );
         sim.waves.pointer_expired(3, 2);
-        assert_eq!(sim.wave_update_context(3).target_position, None);
+        assert_eq!(
+            sim.wave_update_context(sim.waves.get(3).unwrap(), None)
+                .target_position,
+            None
+        );
     }
 
     /// Build a test entity of a specific category (`test_default` makes a Unit).

@@ -1,4 +1,4 @@
-//! Bracket, LaserDraw, EBolt and LineTrail edits on the existing snapshot/Z.
+//! Bracket, LaserDraw, EBolt, Wave and LineTrail edits on the shared snapshot/Z.
 //! Per-pixel operations retain registry/segment/raster order. Cross-pixel
 //!4BC750 pairs begin a dependency chunk when their inputs have prior writes;
 //!independent pairs share a snapshot/resolve, never a pass per pixel.
@@ -46,9 +46,37 @@ fn raster_draw(
     size: [u32; 2],
     alpha: &mut impl FnMut([i32; 2]) -> u16,
     emit: &mut impl FnMut(&[([i32; 2], Operation)]),
-) {
+) -> Result<(), crate::render::wave_geometry::MagneticRasterError> {
     use crate::render::surface_line::{antialiased_line, ellipse, rasterize_z_clipped};
     let line = match draw {
+        SurfaceDraw::MagneticWave(wave) => {
+            let logical_size = size.map(|v| (v as f32 / viewport.zoom).ceil() as i32);
+            // Native exactness is zoom1. Other zooms expand the same logical
+            // pixels and sample the corresponding logical pixel's center.
+            wave.rasterize(
+                viewport.clip,
+                logical_size,
+                logical_size[0],
+                viewport.z_origin_y,
+                |pixel| {
+                    let source = pixel
+                        .source
+                        .map(|v| ((v as f32 + 0.5) * viewport.zoom).floor() as i32);
+                    emit(&[(
+                        pixel.point,
+                        Operation {
+                            z: u32::from(pixel.candidate_z),
+                            strength: pixel.brightness,
+                            mode: 7,
+                            source_x: source[0],
+                            source_y: source[1],
+                            ..Default::default()
+                        },
+                    )]);
+                },
+            )?;
+            return Ok(());
+        }
         SurfaceDraw::Point(point) => {
             let screen = point.screen.to_array();
             let a = alpha(screen);
@@ -69,7 +97,7 @@ fn raster_draw(
                     },
                 )]);
             }
-            return;
+            return Ok(());
         }
         SurfaceDraw::Ellipse {
             center,
@@ -86,7 +114,7 @@ fn raster_draw(
                     },
                 )]);
             });
-            return;
+            return Ok(());
         }
         SurfaceDraw::Line(line) => line,
     };
@@ -140,7 +168,7 @@ fn raster_draw(
                 emit(&operations);
             },
         );
-        return;
+        return Ok(());
     }
     let (rgb, mode) = match line.blend {
         SurfaceLineBlend::Add(rgb) => (packed_rgb(rgb), 1),
@@ -175,6 +203,7 @@ fn raster_draw(
             }
         },
     );
+    Ok(())
 }
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -327,6 +356,15 @@ impl SurfaceLineGpu {
                     right = right.max(operation.gate_x.saturating_add(1).max(0) as u32);
                     bottom = bottom.max(operation.gate_y.saturating_add(1).max(0) as u32);
                 }
+                if operation.mode == 7 {
+                    //7601FB reads a displaced old word, which can lie outside
+                    //this chunk's output rect. Snapshot its actual address,
+                    //not an invented clamped neighbor or stale scratch word.
+                    left = left.min(operation.source_x.max(0) as u32);
+                    top = top.min(operation.source_y.max(0) as u32);
+                    right = right.max(operation.source_x.saturating_add(1).max(0) as u32);
+                    bottom = bottom.max(operation.source_y.saturating_add(1).max(0) as u32);
+                }
             }
             start = end;
         }
@@ -394,6 +432,11 @@ impl SurfaceLineGpu {
 }
 
 impl TerrainDrawRenderer {
+    #[cfg(test)]
+    pub(crate) fn set_surface_line_operation_limit(&mut self, limit: Option<usize>) {
+        self.surface_lines.test_operation_limit = limit;
+    }
+
     /// Recycle the derived upload ranges before preparing this composite.
     pub(crate) fn begin_surface_lines(&mut self) {
         self.surface_lines.active = 0;
@@ -453,7 +496,7 @@ impl TerrainDrawRenderer {
         // They read the same immutable Z and completed destination. Laser
         // colors and Bolt subdivision consumed Main for this composite;
         // rasterization, upload chunks and readback cannot request more draws.
-        let mut store = |operations: &[([i32; 2], Operation)]| {
+        let store = |gpu: &mut SurfaceLineGpu, operations: &[([i32; 2], Operation)]| {
             //4BD646/68F read BOTH old words before4BD85B/8C0 write either.
             //A cross-source pair cannot read another operation's in-chunk
             //result. Flush only its prior-write dependency or the size limit;
@@ -461,35 +504,52 @@ impl TerrainDrawRenderer {
             let dependency = track_dependencies
                 && operations
                     .iter()
-                    .any(|(point, op)| op.mode == 5 && self.surface_lines.written.contains(point));
-            if dependency
-                || self.surface_lines.work.len() + operations.len() > limit.max(operations.len())
-            {
-                self.surface_lines
-                    .upload(device, queue, viewport.zoom, size);
+                    .any(|(point, op)| op.mode == 5 && gpu.written.contains(point));
+            if dependency || gpu.work.len() + operations.len() > limit.max(operations.len()) {
+                gpu.upload(device, queue, viewport.zoom, size);
             }
             for &(point, operation) in operations {
-                self.surface_lines.work.push((point, operation));
+                gpu.work.push((point, operation));
                 if track_dependencies {
-                    self.surface_lines.written.insert(point);
+                    gpu.written.insert(point);
                 }
+            }
+        };
+        let prepare_draw = |gpu: &mut SurfaceLineGpu, draw: SurfaceDraw, alpha: &mut _| {
+            let magnetic = matches!(draw, SurfaceDraw::MagneticWave(_));
+            if magnetic {
+                // Even adjacent coalesced Surface bodies need the preceding
+                //Wave/object's completed destination, never a frame snapshot.
+                gpu.upload(device, queue, viewport.zoom, size);
+            }
+            let first = gpu.active;
+            if let Err(error) = raster_draw(draw, viewport, size, alpha, &mut |operations| {
+                store(gpu, operations)
+            }) {
+                // Roll back this whole Wave, including any size-driven
+                //uploads. Unsupported raw native memory domains are an
+                //explicit residual, not a clamp, partial beam or game crash.
+                gpu.active = first;
+                gpu.work.clear();
+                gpu.written.clear();
+                log::warn!("Wave3 unsupported native raster domain {error:?}: {draw:?}");
+            }
+            if magnetic {
+                // Native traversal is retained before size-driven chunks.
+                //Self/future-only reads cannot observe an earlier same-Wave
+                //write even when a chunk starts a fresh snapshot.
+                gpu.upload(device, queue, viewport.zoom, size);
             }
         };
         for laser in lasers {
             if laser.duration > 0 {
                 laser.lines(viewport.camera, high_detail(laser.color), |line| {
-                    raster_draw(
-                        SurfaceDraw::Line(line),
-                        viewport,
-                        size,
-                        &mut alpha,
-                        &mut store,
-                    );
+                    prepare_draw(&mut self.surface_lines, SurfaceDraw::Line(line), &mut alpha);
                 });
             }
         }
         for draw in draws {
-            raster_draw(draw, viewport, size, &mut alpha, &mut store);
+            prepare_draw(&mut self.surface_lines, draw, &mut alpha);
         }
         for &segment in segments {
             rasterize(
@@ -499,31 +559,34 @@ impl TerrainDrawRenderer {
                 |pixel| {
                     let a = alpha(pixel.point);
                     if a != 0 {
-                        store(&[(
-                            pixel.point,
-                            Operation {
-                                z: u32::from(pixel.z),
-                                strength: segment.strength,
-                                rgb: packed_rgb(segment.color),
-                                alpha: u32::from(a),
-                                mode: 0,
-                                ..Default::default()
-                            },
-                        )]);
+                        store(
+                            &mut self.surface_lines,
+                            &[(
+                                pixel.point,
+                                Operation {
+                                    z: u32::from(pixel.z),
+                                    strength: segment.strength,
+                                    rgb: packed_rgb(segment.color),
+                                    alpha: u32::from(a),
+                                    mode: 0,
+                                    ..Default::default()
+                                },
+                            )],
+                        );
                     }
                 },
             );
         }
         //Tactical6D4678 draws RadBeam after trails and before selected radials.
         for &draw in post_trail_draws {
-            raster_draw(draw, viewport, size, &mut alpha, &mut store);
+            prepare_draw(&mut self.surface_lines, draw, &mut alpha);
         }
         //Tactical6D467F follows Laser/EBolt/LineTrail/RadBeam, before the bandbox,
         //second rally and selected Foot action. Keep each object's ellipse/ray
         //stores interleaved in CurrentObjects encounter order.
         for &radial in radials {
             radial.draws(viewport.clip, |draw| {
-                raster_draw(draw, viewport, size, &mut alpha, &mut store)
+                prepare_draw(&mut self.surface_lines, draw, &mut alpha)
             });
         }
         self.surface_lines

@@ -26,6 +26,8 @@ mod build_instances;
 #[cfg(test)]
 mod building_bracket_gpu_tests;
 mod draw_passes;
+#[cfg(test)]
+mod magnetic_wave_gpu_tests;
 mod object_extras;
 #[cfg(test)]
 mod placement_gpu_tests;

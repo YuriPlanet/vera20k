@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v2",
+  "schema_version": "vera20k.map-observation-profile.v3",
   "launch": {
     "mode": {
       "id": 1,
@@ -115,9 +115,86 @@
     "DMISL",
     "NAYARD"
   ],
-  "commands": [],
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": {
+            "type_id": "SMCV",
+            "owner": "VERA-OBSERVER"
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 70,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NAPOWR"
+        }
+      }
+    },
+    {
+      "issue_after_step": 500,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NAPOWR",
+          "rx": 38,
+          "ry": 31
+        }
+      }
+    },
+    {
+      "issue_after_step": 510,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NAREFN"
+        }
+      }
+    },
+    {
+      "issue_after_step": 1850,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NAREFN",
+          "rx": 36,
+          "ry": 35
+        }
+      }
+    },
+    {
+      "issue_after_step": 1860,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "NAYARD"
+        }
+      }
+    },
+    {
+      "issue_after_step": 2550,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "NAYARD",
+          "rx": 31,
+          "ry": 45
+        }
+      }
+    }
+  ],
   "camera_cell": [
     33,
     47
+  ],
+  "cursor_position": [
+    720,
+    556
   ]
 }

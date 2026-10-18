@@ -319,11 +319,12 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
     }
 }
 
-/// Ordinary NARADR charge/launch supplies the stored counters; point, facing,
-/// light, camera and A/Z are frozen render inputs. This checks the production
-/// atlas, body-frame consumer, Display lowering and Batch backend, not the
-/// full AppState builder/merge replay or original voxel/final-frame pixels.
-/// Aircraft's positive ground-shadow mechanism remains separate (#1102).
+/// The computer's ordinary NARADR charge and launch supply the stored
+/// counters; point, facing, light, camera and A/Z are frozen render inputs.
+/// This checks the production atlas, body-frame consumer, Display lowering and
+/// Batch backend, not the full AppState builder/merge replay or original
+/// voxel/final-frame pixels. Aircraft's positive ground-shadow mechanism
+/// remains separate (#1102).
 #[test]
 #[ignore = "requires GPU and retail assets; ordinary SpyPlane flight counters reach both physical HVA atlas frames and the production voxel backend"]
 fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
@@ -369,7 +370,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
     );
     assert!(vxl.limbs.iter().all(|limb| !limb.voxels.is_empty()));
 
-    let profile = crate::test_fixture::json("tools/map_observation.spy-plane.example.json");
+    let profile = crate::test_fixture::json("tools/map_observation.ai-spy-plane.example.json");
     let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     let map_name = crate::test_fixture::checkout_root()
@@ -386,7 +387,9 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
-    let owner = scene.sim().session.current_house.unwrap();
+    // A skirmish never admits the human's authored radar (`0x0044F8CB`); the
+    // computer's stock NARADR charges this Super.
+    let owner = scene.sim().interner.get("Computer1").unwrap();
     let sw_type_id = scene.sim().interner.get("SpyPlaneSpecial").unwrap();
     let ready = |sim: &Simulation| {
         sim.super_weapons
@@ -413,8 +416,8 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         launch_tick,
         Command::LaunchSuperWeapon {
             sw_type_id,
-            target_rx: 61,
-            target_ry: 61,
+            target_rx: 59,
+            target_ry: 33,
         },
     ));
     let mut samples = Vec::new();

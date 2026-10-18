@@ -107,18 +107,20 @@
   "height": 600,
   "timeout_seconds": 900,
   "observe_owners": [
-    "VERA-OBSERVER",
     "Computer1"
   ],
   "observe_types": [
     "PDPLANE",
-    "E2",
-    "NACNST"
+    "E2"
   ],
   "commands": [],
   "camera_cell": [
     60,
     36
   ],
-  "observe_super_weapons": true
+  "observe_super_weapons": true,
+  "cursor_position": [
+    720,
+    556
+  ]
 }

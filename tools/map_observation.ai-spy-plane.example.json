@@ -107,7 +107,6 @@
   "height": 600,
   "timeout_seconds": 900,
   "observe_owners": [
-    "VERA-OBSERVER",
     "Computer1"
   ],
   "observe_types": [
@@ -119,5 +118,9 @@
     42,
     64
   ],
-  "observe_super_weapons": true
+  "observe_super_weapons": true,
+  "cursor_position": [
+    720,
+    556
+  ]
 }

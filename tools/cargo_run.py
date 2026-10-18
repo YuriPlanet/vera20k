@@ -539,7 +539,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--dry-run', action='store_true', help='Preview cache or saved/exported build retirement')
     parser.add_argument('--cache-gib', help='Total compiler cache budget (default/env: 32 GiB)')
     parser.add_argument('--incremental-gib', help='Incremental cache budget (default/env: 4 GiB)')
-    parser.add_argument('--min-free-gib', help='Minimum volume free-space target (default/env: 16 GiB)')
+    parser.add_argument('--min-free-gib', help='Minimum volume free-space target (default/env: 12 GiB)')
     parser.add_argument('--from-label', metavar='LABEL', help='Resolve from one preserved build label, not latest')
     parser.add_argument('--profile', choices=HOST_PROFILES, help='Required with --resolve; no fallback')
     parser.add_argument('--wait-seconds', type=float,

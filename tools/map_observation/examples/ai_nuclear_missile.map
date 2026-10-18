@@ -57,14 +57,13 @@ Allies=VERA-OBSERVER,Neutral
 Color=Grey
 
 [Waypoints]
-0=33059
+0=63041
 1=62062
 
 [Structures]
-0=Computer1,NAMISL,256,46,42,0,None,0,0,1,0,0,None,None,None,0,0
-1=Computer1,NAPOWR,256,40,44,0,None,0,0,1,0,0,None,None,None,0,0
-2=Computer1,NAPOWR,256,43,40,0,None,0,0,1,0,0,None,None,None,0,0
-3=VERA-OBSERVER,NACNST,256,40,62,0,None,0,0,1,0,0,None,None,None,0,0
+0=Computer,NAMISL,256,46,42,0,None,0,0,1,0,0,None,None,None,0,0
+1=Computer,NAPOWR,256,40,44,0,None,0,0,1,0,0,None,None,None,0,0
+2=Computer,NAPOWR,256,43,40,0,None,0,0,1,0,0,None,None,None,0,0
 
 [Units]
 
