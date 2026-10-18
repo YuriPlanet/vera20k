@@ -2378,21 +2378,13 @@ impl Simulation {
         self.initialize_cloak_after_unlimbo(new_sid, rules);
         self.add_unit_sensor_after_unlimbo(new_sid, rules, registry);
         self.mission_spawned_entities = true;
-        // 0x00739956: a Slave Miner's manager moves to its refinery (the
-        // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
-        // leaves; the refinery's own fresh slaves are freed.
-        self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
-        self.uninit_with_context(
-            stable_id,
-            super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
-        );
-
         if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
             // primary center, Computer_Paranoid, optional Recalc, node zero,
-            // BasePlan center, then the three independent House AI activation
-            // latches.
+            // BasePlan center, the three independent House AI activation
+            // latches, then MoveGroundForcesToBase (`0x00739926`). The block
+            // ends before the slave transfer and UnInit below.
             self.houses
                 .get_mut(&owner_id)
                 .expect("qualifying deploy owner remains registered")
@@ -2424,7 +2416,17 @@ impl Simulation {
             }
             house.base_plan_center = (rx, ry);
             house.enable_ai_deploy_latches();
+            self.move_ground_forces_to_base(owner_id, rules, registry, frame_effects);
         }
+
+        // 0x00739956: a Slave Miner's manager moves to its refinery (the
+        // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
+        // leaves; the refinery's own fresh slaves are freed.
+        self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
+        self.uninit_with_context(
+            stable_id,
+            super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+        );
 
         // UnitClass::Deploy 0x00739A19..0x00739A54 plays Type+0x56C
         // (DeploySound) at the source MCV's location, only after the yard's

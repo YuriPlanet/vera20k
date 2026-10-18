@@ -816,6 +816,7 @@ fn execute_step(
                     impact: false,
                     crash_latched: false,
                     bridge_state_changed: false,
+                    per_cell_error: None,
                 };
                 let phase = match label {
                     "state1_decision" => jumpjet_flight::state1_ascend(runtime, &mut host),
@@ -834,6 +835,7 @@ fn execute_step(
                 Some(registry),
                 crate::sim::world::FrameEffects::default(),
             )
+            .unwrap()
             .unwrap();
         }
         unknown => panic!("unrepresented native command {unknown}"),
@@ -905,6 +907,7 @@ fn stock_shad_state1_scatter_publishes_before_following_translate() {
                     Some(&registry),
                     crate::sim::world::FrameEffects::default()
                 )
+                .unwrap()
                 .is_some()
             );
         }

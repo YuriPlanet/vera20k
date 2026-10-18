@@ -1672,7 +1672,8 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 None,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
             assert_eq!(
                 sim.substrate
                     .entities

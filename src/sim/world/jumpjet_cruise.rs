@@ -8,7 +8,7 @@
 //!
 //! Native composed controls and coverage: tools/spatial_oracle/jumpjet_states.md.
 //! Other large mechanisms remain bounded: target-facing hold, radio/tag
-//! arrival side effects and Infantry touchdown's full class chain. The
+//! arrival side effects beyond the existing per-cell owner. The
 //! Magnetron's callbacks run through `sim::locomotor_lift`.
 //! Native Unit touchdown calls Cell PickupCrate481A00 at54C9F6 after phase0;
 //! the touchdown asks `Simulation::pickup_crate_at` after the tracker removal
@@ -50,6 +50,7 @@ struct CruiseHost<'a> {
     impact: bool,
     crash_latched: bool,
     bridge_state_changed: bool,
+    per_cell_error: Option<super::FrameAdvanceError>,
 }
 
 impl CruiseHost<'_> {
@@ -437,53 +438,63 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.rules
             .map(|rules| u16::from(rules.general.deploy_dir as u8) << 8)
     }
-    fn touchdown(&mut self, runtime: &mut JumpjetRuntime) {
+    fn touchdown(&mut self, runtime: &mut JumpjetRuntime) -> bool {
         self.touched_down = true;
         let id = self.stable_id;
         let rules = self.rules;
         let registry = self.registry;
         let frame_effects = self.frame_effects;
-        if self.owner_kind() == FlightOwnerKind::Unit {
-            runtime.with_owner_call(self.sim, id, |sim| {
-                // Unit739EC0 returns Ok(false); full Infantry bridge work remains
-                // with the object-turn caller until its own bounded chain.
-                sim.per_cell_process(
-                    id,
-                    crate::sim::movement::PerCellReason::Arrival,
-                    rules,
-                    registry,
-                    frame_effects,
-                )
-                .expect("Unit touchdown PerCell has no fallible arm");
-                sim.assign_null_destination(id, rules, registry, frame_effects);
-            });
+        let result = runtime.with_owner_call(self.sim, id, |sim| {
+            let changed = sim.per_cell_process(
+                id,
+                crate::sim::movement::PerCellReason::Arrival,
+                rules,
+                registry,
+                frame_effects,
+            )?;
+            sim.assign_null_destination(id, rules, registry, frame_effects);
+            Ok(changed)
+        });
+        match result {
+            Ok(changed) => self.bridge_state_changed |= changed,
+            Err(error) => {
+                self.per_cell_error = Some(error);
+                return false;
+            }
         }
-        // 0x0054C905..0x0054C95B: a live Foot neither in limbo nor falling
-        // releases its sight and takes it again where it landed, before the
-        // air slot and tracker leave it.
-        if self.sim.substrate.entities.get(id).is_some_and(|owner| {
+        // State4_Descend54C905..54C92C jumps to54CA7C after both callbacks
+        // for a dead, limbo or falling Foot. This is ObjectAlive, not Health.
+        // Evidence: retail gamemd.exe, tools.native_inspect at54C8CB..54CA83.
+        if !self.sim.substrate.entities.get(id).is_some_and(|owner| {
             owner.lifecycle.object_alive()
                 && !owner.lifecycle.in_limbo()
                 && !owner.is_falling_down()
         }) {
-            self.sim.refresh_object_sight(id, rules, 0);
+            return false;
         }
+        self.sim.refresh_object_sight(id, rules, 0);
         let location = self.location();
         let here = self.cell_of([location[0], location[1]]);
         if self.holds_air_slot_at(here) {
             self.release_air_slot_at(here);
         }
         self.sim.aircraft_tracker_remove(id);
+        true
+    }
+    fn finish_touchdown(&mut self, runtime: &mut JumpjetRuntime) {
+        let id = self.stable_id;
+        let location = self.location();
+        let here = self.cell_of([location[0], location[1]]);
         // 0x0054C9F6: CellClass::PickupCrate on the Foot's cell (vt+0x1BC)
         // after the tracker removal (0x0054C9DC); its answer is not read.
         let rules = self.rules;
         let registry = self.registry;
-        let _ = self
-            .sim
-            .pickup_crate_at(id, here, rules, registry, self.frame_effects);
-    }
-    fn finish_touchdown(&mut self) {
-        let id = self.stable_id;
+        let frame_effects = self.frame_effects;
+        // Publish phase0 before the crate's synchronous receivers, then keep
+        // their runtime writes. Native does not repeat the alive gate here.
+        runtime.with_owner_call(self.sim, id, |sim| {
+            let _ = sim.pickup_crate_at(id, here, rules, registry, frame_effects);
+        });
         let deploy_to_land = self.owner_kind() == FlightOwnerKind::Unit && self.type_flag_6ad();
         let owner = self.sim.substrate.entities.get_mut(id).unwrap();
         owner.lift.allow_end();
@@ -714,14 +725,14 @@ impl Simulation {
         rules: Option<&RuleSet>,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-    ) -> Option<AirMovementTickStats> {
+    ) -> Result<Option<AirMovementTickStats>, super::FrameAdvanceError> {
         if !self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(jumpjet_locomotor)
         {
-            return None;
+            return Ok(None);
         }
         let frame = self.session.binary_frame;
         let trig = TrigTable::embedded();
@@ -739,8 +750,12 @@ impl Simulation {
                 impact: false,
                 crash_latched: false,
                 bridge_state_changed: false,
+                per_cell_error: None,
             };
             let state = jumpjet_flight::process(runtime, &mut host);
+            if let Some(error) = host.per_cell_error {
+                return Err(error);
+            }
             let ended_cruise =
                 entry_state == STATE_TRANSLATE && matches!(state, STATE_HOLD | STATE_DESCEND);
             let entity = host.sim.substrate.entities.get_mut(stable_id).unwrap();
@@ -757,14 +772,14 @@ impl Simulation {
             {
                 log::debug!("infantry {stable_id} AirDeathStart: {cause}");
             }
-            AirMovementTickStats {
+            Ok(AirMovementTickStats {
                 arrivals: u32::from(host.touched_down || ended_cruise),
                 impact: host.impact,
                 touched_down: host.touched_down,
                 bridge_state_changed: host.bridge_state_changed,
-            }
-        })?;
-        Some(stats)
+            })
+        });
+        stats.transpose()
     }
 }
 
@@ -887,6 +902,247 @@ mod tests {
             .expect("Move_To on the fixture map");
     }
 
+    fn touchdown_crate_fixture() -> (Simulation, RuleSet, OverlayTypeRegistry) {
+        let mut sim = hovering_jumpjet(0x40);
+        let rules = crate::sim::crates::tests::crate_ruleset("");
+        let registry = crate::sim::crates::tests::crate_registry();
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        let wood = registry.id_for_name("WOOD").unwrap();
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(10, 10, wood, 0);
+        let owner = sim.interner.intern("Americans");
+        let type_ref = sim.interner.intern("JUMPJETUNIT");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+        );
+        let e = sim.substrate.entities.get_mut(1).unwrap();
+        e.set_owner_for_test(owner);
+        e.set_type_ref_for_test(type_ref);
+        e.lifecycle.set_in_limbo_for_test(false);
+        e.lifecycle.set_cell_marked(true);
+        e.position.put_z(0);
+        let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
+        *runtime = runtime
+            .clone()
+            .with_phase_for_test(STATE_DESCEND)
+            .with_moving_for_test(true)
+            .with_landing_latched_for_test(true)
+            .with_destination_for_test(DriveCoord::cell(10, 10, 0));
+        sim.aircraft_tracker_add(1);
+        sim.substrate.air_slots.set_holder((10, 10), Some(1));
+        (sim, rules, registry)
+    }
+
+    /// Supply an admitted State4 entry after Update. Owner callbacks remain
+    /// production calls, including the vanished-deck DropAsBomb below.
+    fn descend_once(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) -> i32 {
+        sim.with_jumpjet_process(1, |runtime, sim| {
+            let mut host = CruiseHost {
+                sim,
+                frame: 0,
+                trig: TrigTable::embedded(),
+                rules: Some(rules),
+                registry: Some(registry),
+                frame_effects: FrameEffects::default(),
+                stable_id: 1,
+                touched_down: false,
+                impact: false,
+                crash_latched: false,
+                bridge_state_changed: false,
+                per_cell_error: None,
+            };
+            let phase = jumpjet_flight::state4_descend(runtime, &mut host);
+            assert!(host.touched_down);
+            assert!(host.per_cell_error.is_none());
+            phase
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_jumpjet_that_starts_falling_at_touchdown_does_not_finish_landing() {
+        let (mut sim, rules, registry) = touchdown_crate_fixture();
+        let e = sim.substrate.entities.get_mut(1).unwrap();
+        e.on_bridge.store(true);
+        e.position
+            .put_z(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        e.drop_credit.set_being_manipulated_for_test(true);
+        let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
+        *runtime = runtime.clone().with_destination_for_test(DriveCoord::cell(
+            10,
+            10,
+            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
+        ));
+        assert_eq!(descend_once(&mut sim, &rules, &registry), STATE_DESCEND);
+        let e = sim.substrate.entities.get(1).unwrap();
+        assert!(
+            e.is_falling_down(),
+            "the actual PerCell callback started a fall"
+        );
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(10, 10).overlay_id,
+            registry.id_for_name("WOOD"),
+            "aborted touchdown must not collect its crate"
+        );
+        assert!(!e.lift.may_end());
+        assert!(e.drop_credit.being_manipulated());
+        assert!(
+            e.air_spatial_bucket().is_some(),
+            "the landing did not remove its tracker"
+        );
+    }
+
+    /// Supplied flags exercise each native54C905 gate independently; zero HP
+    /// deliberately keeps ObjectAlive set and is a successful control.
+    #[test]
+    fn touchdown_uses_object_lifecycle_flags_and_preserves_aborted_state() {
+        for (name, aborted) in [
+            ("dead", true),
+            ("limbo", true),
+            ("falling", true),
+            ("healthy", false),
+            ("health_zero", false),
+        ] {
+            let (mut sim, rules, registry) = touchdown_crate_fixture();
+            let e = sim.substrate.entities.get_mut(1).unwrap();
+            e.crash.set_crashing_for_test(true);
+            e.drop_credit.set_being_manipulated_for_test(true);
+            match name {
+                "dead" => e.lifecycle.set_object_alive_for_test(false),
+                "limbo" => e.lifecycle.set_in_limbo_for_test(true),
+                "falling" => e.set_falling_down_for_test(true),
+                "health_zero" => e.health.set_for_test(0),
+                _ => {}
+            }
+            let rng = sim.scenario_rng.native_state_hex();
+            let phase = descend_once(&mut sim, &rules, &registry);
+            let e = sim.substrate.entities.get(1).unwrap();
+            let runtime = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();
+            assert_eq!(
+                phase,
+                if aborted {
+                    STATE_DESCEND
+                } else {
+                    jumpjet_flight::STATE_GROUND
+                },
+                "{name}"
+            );
+            assert_eq!(
+                runtime.landing_latched(),
+                aborted,
+                "{name}: admission latch"
+            );
+            assert_eq!(e.lift.may_end(), !aborted, "{name}: lift-end permission");
+            assert_eq!(
+                e.drop_credit.being_manipulated(),
+                aborted,
+                "{name}: drop credit"
+            );
+            assert_eq!(e.crash.is_crashing(), aborted, "{name}: crash latch");
+            assert_eq!(e.air_spatial_bucket().is_some(), aborted, "{name}: tracker");
+            assert_eq!(
+                sim.substrate.air_slots.holder(10, 10),
+                aborted.then_some(1),
+                "{name}: slot"
+            );
+            assert_eq!(
+                sim.overlay_grid
+                    .as_ref()
+                    .unwrap()
+                    .cell(10, 10)
+                    .overlay_id
+                    .is_some(),
+                aborted,
+                "{name}: crate"
+            );
+            if aborted {
+                assert_eq!(
+                    sim.scenario_rng.native_state_hex(),
+                    rng,
+                    "{name}: no crate RNG"
+                );
+            }
+        }
+    }
+
+    /// The real Infantry PerCell garrison arm conceals an occupier. Its
+    /// landing must not consume the crate before that callback runs.
+    #[test]
+    fn an_infantry_concealed_by_its_touchdown_callback_leaves_the_crate() {
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::mission::{MissionId, MissionType};
+        let (mut sim, rules, registry) = super::super::entry_test_fixture::fixture_with_rules(
+            "[JUMPJET]\nOccupier=yes\nBalloonHover=no\nJumpjetNoWobbles=yes\n\
+             [BuildingTypes]\n1=TESTG\n[TESTG]\nStrength=1000\nFoundation=1x1\n\
+             CanBeOccupied=yes\nMaxNumberOccupants=10\n\
+             [OverlayTypes]\n239=WOOD\n[WOOD]\nCrate=yes\n",
+        );
+        let owner = sim.interner.intern("Americans");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+        );
+        let building = sim
+            .spawn_object("TESTG", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let id = sim
+            .spawn_object("JUMPJET", "Americans", 13, 15, 0, &rules)
+            .unwrap();
+        let wood = registry.id_for_name("WOOD").unwrap();
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(15, 15, wood, 0);
+        let e = sim.substrate.entities.get_mut(id).unwrap();
+        e.mission
+            .set_current_for_test(MissionId::from_known(MissionType::Capture), 0);
+        e.navigation
+            .set_nav_com_for_test(Some(NavTargetRef::object(building)));
+        let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
+        let mut flight = runtime.flight();
+        flight.set_target_height(0);
+        *runtime = runtime
+            .clone()
+            .with_phase_for_test(STATE_DESCEND)
+            .with_flight_for_test(flight)
+            .with_moving_for_test(true)
+            .with_landing_latched_for_test(true)
+            .with_destination_for_test(DriveCoord::cell(15, 15, 0));
+        sim.process_active_locomotor(
+            id,
+            Some(&rules),
+            super::super::techno_ai::ObjectAiCtx {
+                overlay_registry: Some(&registry),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let e = sim.substrate.entities.get(id).unwrap();
+        assert!(
+            e.lifecycle.in_limbo(),
+            "the PerCell garrison receiver concealed the infantry"
+        );
+        assert!(!e.lift.may_end());
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(15, 15).overlay_id,
+            Some(wood)
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .passengers(),
+            &[id]
+        );
+    }
+
     /// Park a Jumpjet with no order in a given native state and run the tick.
     fn idle_for(state: i32, balloon_hover: bool, frames: u32) -> Simulation {
         let mut sim = hovering_jumpjet(0x40);
@@ -911,7 +1167,8 @@ mod tests {
                 None,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
         }
         sim
     }
@@ -947,7 +1204,8 @@ mod tests {
                 None,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
         }
         let entity = sim.substrate.entities.get(1).expect("jumpjet");
         assert!(entity.position.exact_z_leptons().unwrap() >= 208);
@@ -1020,7 +1278,8 @@ mod tests {
             None,
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             sim.substrate.air_slots.holder(13, 10),
@@ -1062,12 +1321,14 @@ mod tests {
         order_east(&mut sim);
         for (index, expected) in frames.iter().enumerate() {
             sim.session.binary_frame = 1001 + index as u32;
-            let stats = sim.tick_air_movement_with_cell_lists_one(
-                1,
-                None,
-                None,
-                crate::sim::world::FrameEffects::default(),
-            );
+            let stats = sim
+                .tick_air_movement_with_cell_lists_one(
+                    1,
+                    None,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
             let entity = sim.substrate.entities.get(1).expect("jumpjet");
             let coord = position_world_coord(&entity.position);
             let native: Vec<i64> = expected["coord"]
@@ -1144,12 +1405,14 @@ mod tests {
         }
         sim.aircraft_tracker_add(1);
         sim.session.binary_frame = 1001;
-        let stats = sim.tick_air_movement_with_cell_lists_one(
-            1,
-            None,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        let stats = sim
+            .tick_air_movement_with_cell_lists_one(
+                1,
+                None,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
         assert!(!stats.impact);
         let jumpjet = sim.substrate.entities.get(1).expect("jumpjet");
         assert_eq!((jumpjet.position.rx(), jumpjet.position.ry()), (11, 10));
@@ -1179,6 +1442,13 @@ mod tests {
     #[test]
     fn a_null_destination_stops_at_the_cell_under_the_owner() {
         let mut sim = hovering_jumpjet(0x40);
+        // Ordinary touchdown requires an actor outside constructor limbo.
+        let owner = sim.interner.intern("Americans");
+        let type_ref = sim.interner.intern("JUMPJETUNIT");
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.set_owner_for_test(owner);
+        entity.set_type_ref_for_test(type_ref);
+        entity.lifecycle.set_in_limbo_for_test(false);
         order_east(&mut sim);
         for frame in 0..20 {
             sim.session.binary_frame = 1001 + frame;
@@ -1187,7 +1457,8 @@ mod tests {
                 None,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
         }
         let runtime = |sim: &Simulation| {
             sim.substrate
@@ -1221,7 +1492,8 @@ mod tests {
             None,
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         let stopped = runtime(&sim);
         assert!(stopped.moving(), "Stop_Moving keeps the moving byte");
         assert_eq!(
@@ -1242,7 +1514,8 @@ mod tests {
                 None,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
         }
         let landed = runtime(&sim);
         assert_eq!(landed.phase(), jumpjet_flight::STATE_GROUND);
@@ -1303,7 +1576,8 @@ mod tests {
                 Some(&rules),
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
             let (records, unused) = fresh_oracle_seam::finish();
             assert_eq!(
                 records,

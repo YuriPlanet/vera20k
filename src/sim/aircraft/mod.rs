@@ -38,11 +38,8 @@ mod team_strike_tests;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::world::{FrameEffects, ObjectAiCtx, Simulation};
-
-/// What every MissionClass stub returns (`MOV EAX, 0x1C2`).
-const MISSION_STUB_FRAMES: i32 = 450;
 
 /// Techno `+0x3D4` (VERA name; the native name is unconfirmed): the object
 /// was placed for a mission rather than for its owner to command. The
@@ -151,10 +148,7 @@ pub(crate) fn dispatch_mission(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
-    if entity.death.is_dying()
-        || entity.category() != EntityCategory::Aircraft
-        || !entity.mission.dispatch_timer().due(now)
-    {
+    if entity.category() != EntityCategory::Aircraft || !entity.mission_handler_due(now) {
         return false;
     }
     let registry = ctx.overlay_registry;

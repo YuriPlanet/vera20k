@@ -7,7 +7,7 @@ use super::{Simulation, can_acquire_target};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::authority::EntityReadyInputProvider;
-use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::util::direction_tables::CELL_DELTAS;
 
@@ -31,21 +31,19 @@ mod infantry_move_oracle_tests;
 #[path = "../infantry_fire_oracle_tests.rs"]
 mod infantry_fire_oracle_tests;
 
-/// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: an alive,
-/// positive-health Unit or Infantry (Mission5B306C..5B30AC admits only such a
-/// receiver; harvest_attack_return.json dead_source / zero_health_source pin
-/// direct receiver calls as well as the object-AI host) whose dispatch timer
-/// has run out (`MissionClass::AI @ 0x005B3060`). Every term is a pure read.
+/// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: a Unit or
+/// Infantry that passes `MissionClass::AI`'s gate
+/// ([`GameEntity::mission_handler_due`]; harvest_attack_return.json
+/// dead_source / zero_health_source pin direct receiver calls as well as the
+/// object-AI host).
+///
+/// [`GameEntity::mission_handler_due`]: crate::sim::game_entity::GameEntity::mission_handler_due
 fn foot_mission_handler_due(sim: &Simulation, id: u64, now: u32) -> bool {
     sim.substrate.entities.get(id).is_some_and(|entity| {
-        !entity.death.is_dying()
-            && entity.is_object_alive()
-            && super::mission_handlers_run(sim, id)
-            && matches!(
-                entity.category(),
-                EntityCategory::Unit | EntityCategory::Infantry
-            )
-            && entity.mission.dispatch_timer().due(now)
+        matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        ) && entity.mission_handler_due(now)
     })
 }
 
@@ -2292,17 +2290,9 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
     miner.is_full() && crate::sim::movement::motion_query::is_moving(entity) == Some(true)
 }
 
-/// The un-overridden `MissionClass` handler's return value, in frames.
-///
-/// Every base mission stub in the original is the same two instructions —
-/// load 450, return — so a slot no leaf class overrides does nothing and comes
-/// back in 30 seconds at 15 fps. It reads no INI: `[Sleep] Rate=1` would be 900
-/// frames and is dead data for this path.
-pub(super) const BASE_MISSION_HANDLER_FRAMES: i32 = 450;
-
 /// Which committed missions still sit on the un-overridden base handler for a
 /// given category, i.e. which ones re-arm with the flat
-/// [`BASE_MISSION_HANDLER_FRAMES`] and consume no RNG.
+/// [`MISSION_STUB_FRAMES`] and consume no RNG.
 ///
 /// Read directly out of the `UnitClass` and `InfantryClass` mission-handler
 /// vtable blocks (the slots holding the shared 450-frame stubs), so this is a
@@ -2322,7 +2312,7 @@ pub(super) fn base_mission_handler_delay(
 ) -> Option<i32> {
     let Some(mission) = mission else {
         // The `-1` idle sentinel takes the unsigned default arm.
-        return Some(BASE_MISSION_HANDLER_FRAMES);
+        return Some(MISSION_STUB_FRAMES);
     };
     let shared_base_stub = matches!(
         mission,
@@ -2345,7 +2335,7 @@ pub(super) fn base_mission_handler_delay(
     );
     // Repair is the one slot the two categories disagree on.
     let category_base_stub = category == EntityCategory::Infantry && mission == MissionType::Repair;
-    (shared_base_stub || category_base_stub).then_some(BASE_MISSION_HANDLER_FRAMES)
+    (shared_base_stub || category_base_stub).then_some(MISSION_STUB_FRAMES)
 }
 
 #[inline]

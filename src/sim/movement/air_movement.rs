@@ -275,9 +275,8 @@ pub struct AirMovementTickStats {
     /// A dead Fly's fall reached the ground this visit: Process ends in the
     /// impact (`Simulation::fly_crash_impact`), which its caller commits.
     pub impact: bool,
-    /// A Jumpjet touched down54C8F0. The native Unit host has already run
-    /// PerCell2 and class NULL synchronously; the Infantry caller continues
-    /// its still separate class path.
+    /// A Jumpjet reached touchdown54C8F0. Its host has already run PerCell2
+    /// and class NULL synchronously, even when their effects abort landing.
     pub touched_down: bool,
     /// A receiver Process ran synchronously (a dropped Jumpjet's impact)
     /// changed a bridge.

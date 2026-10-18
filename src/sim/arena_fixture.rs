@@ -57,44 +57,58 @@ pub(crate) fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Si
 /// land semantics. Ships enter through ordinary Unlimbo; no movement tuning
 /// or missing-terrain placement bypass is needed.
 pub fn rival_water_arena(rules: &RuleSet, seed: u64, size: u16) -> Simulation {
+    let mut sim = rival_arena_with_size(rules, seed, size);
+    flood(
+        &mut sim,
+        rules,
+        size,
+        (0..size).flat_map(|y| (0..size).map(move |x| (x, y))),
+    );
+    sim
+}
+
+/// Replace the arena's ground with clear ground whose `cells` are Water,
+/// with the production rules' land semantics, and rebuild navigation.
+pub fn flood(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    size: u16,
+    cells: impl IntoIterator<Item = (u16, u16)>,
+) {
     use crate::rules::terrain_rules::LandType;
 
-    let mut sim = rival_arena_with_size(rules, seed, size);
     let water = rules
         .terrain_rules
         .semantics_for_land_type(LandType::Water.as_index())
         .expect("Water land semantics");
     let mut terrain = clear_ground(size);
-    for y in 0..size {
-        for x in 0..size {
-            let cell = terrain.cell_mut(x, y).unwrap();
-            cell.land_type = LandType::Water.as_index();
-            cell.yr_cell_land_type = cell.land_type;
-            cell.terrain_class = water.terrain_class;
-            cell.speed_costs = water.speed_costs;
-            cell.is_water = water.water;
-            cell.is_cliff_like = water.cliff_like;
-            cell.is_rough = water.rough;
-            cell.is_road = water.road;
-            cell.ground_walk_blocked = water.ground_blocked;
-            cell.base_ground_walk_blocked = water.ground_blocked;
-            cell.base_build_blocked = !water.buildable;
-            cell.base_land_type = cell.land_type;
-            cell.base_yr_cell_land_type = cell.yr_cell_land_type;
-            cell.base_terrain_class = cell.terrain_class;
-            cell.base_speed_costs = cell.speed_costs;
-            cell.zone_type = crate::map::resolved_terrain::recalc_zone_type(
-                false,
-                None,
-                cell.land_type,
-                cell.speed_costs.wheel,
-                None,
-            );
-        }
+    for (x, y) in cells {
+        let cell = terrain.cell_mut(x, y).unwrap();
+        cell.land_type = LandType::Water.as_index();
+        cell.yr_cell_land_type = cell.land_type;
+        cell.terrain_class = water.terrain_class;
+        cell.speed_costs = water.speed_costs;
+        cell.is_water = water.water;
+        cell.is_cliff_like = water.cliff_like;
+        cell.is_rough = water.rough;
+        cell.is_road = water.road;
+        cell.ground_walk_blocked = water.ground_blocked;
+        cell.base_ground_walk_blocked = water.ground_blocked;
+        cell.base_build_blocked = !water.buildable;
+        cell.base_land_type = cell.land_type;
+        cell.base_yr_cell_land_type = cell.yr_cell_land_type;
+        cell.base_terrain_class = cell.terrain_class;
+        cell.base_speed_costs = cell.speed_costs;
+        cell.zone_type = crate::map::resolved_terrain::recalc_zone_type(
+            false,
+            None,
+            cell.land_type,
+            cell.speed_costs.wheel,
+            None,
+        );
     }
     sim.install_resolved_terrain_for_new_map(terrain);
     assert!(sim.rebuild_dynamic_navigation(rules));
-    sim
 }
 
 /// Install the arena on `sim`, with commands executing on the next tick, and

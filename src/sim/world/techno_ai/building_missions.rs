@@ -85,8 +85,8 @@
 //! ## Dependency rules
 //! - Part of sim/; sim/ never depends on render/, ui/, audio/, net/.
 
+use super::ObjectAiCtx;
 use super::target_scan::{can_fire_at, fire_error_at, select_weapon, weapon_at_index};
-use super::{ObjectAiCtx, mission_handlers_run};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::building_art::requested_damage_state;
@@ -96,7 +96,7 @@ use crate::sim::combat::fire_error::FireError;
 use crate::sim::combat::gattling::{StageCall, is_elite};
 use crate::sim::combat::{BuildingShot, fire_coord};
 use crate::sim::mission::authority::LiveReadyInputProvider;
-use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::projectile::ProjectilePayload;
 use crate::sim::world::Simulation;
 
@@ -207,11 +207,6 @@ impl BuildingDelayedFire {
     }
 }
 
-/// The MissionClass stubs a building's table holds for every mission it has
-/// no handler of its own for (`0x005B2E10..0x005B2FC0`; its Capture,
-/// Sabotage and Harvest slots jump to them, `0x0044B760`, `0x0044B770`):
-/// 450 frames.
-const DEFAULT_MISSION_DELAY: i32 = 450;
 /// An unarmed HasStupidGuardMode building's Guard return (`0x004497F4`).
 const STUPID_GUARD_DELAY: i32 = 100;
 /// The building anim slots of `ActiveAnim=` and `SpecialAnim=` (Building
@@ -278,11 +273,11 @@ pub(super) fn dispatch(
     };
     let current = entity.mission.current().known();
     let now = sim.session.binary_frame;
-    if !entity.mission.dispatch_timer().due(now) || !mission_handlers_run(sim, id) {
+    if !entity.mission_handler_due(now) {
         return;
     }
     if current == Some(MissionType::Selling) {
-        // Sell shares the same dispatch timer and Health gate as Construction.
+        // Sell shares the same gate as Construction.
         sim.visit_building_down(id, rules, ctx.overlay_registry, ctx.effects);
         return;
     }
@@ -314,8 +309,9 @@ pub(super) fn dispatch(
         },
         Some(MissionType::Missile) => super::building_missile::mission_missile(sim, id, rules),
         // Every other slot of the building's table, and no mission (above
-        // `0x1F`, `0x005B30BB`), is a MissionClass stub.
-        _ => DEFAULT_MISSION_DELAY,
+        // `0x1F`, `0x005B30BB`), is a MissionClass stub; its Capture, Sabotage
+        // and Harvest slots jump to them (`0x0044B760`, `0x0044B770`).
+        _ => MISSION_STUB_FRAMES,
     };
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.write_dispatch_epilogue(now as i32, delay);

@@ -28,3 +28,8 @@ pub use control::{MissionControl, MissionControlEntry};
 pub(crate) use leaf::MissionLeafState;
 pub use state::{MissionCom, MissionId};
 pub use timer::{MissionDispatchTimer, MissionTimer};
+
+/// What every `MissionClass` stub handler returns (`MOV EAX,0x1C2 ; RET`,
+/// `0x005B2E10..0x005B2FC0`): the frames until `MissionClass::AI` dispatches
+/// again. It reads no INI; `[Sleep] Rate=` never reaches a stub.
+pub(crate) const MISSION_STUB_FRAMES: i32 = 450;

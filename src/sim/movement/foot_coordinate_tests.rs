@@ -349,7 +349,8 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         None,
         None,
         crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .unwrap();
     let e = sim.substrate.entities.get(1).unwrap();
     let height =
         crate::sim::movement::air_movement::current_fly_height(e, sim.resolved_terrain.as_ref());

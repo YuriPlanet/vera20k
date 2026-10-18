@@ -733,9 +733,7 @@ fn techno_ai_shell(
             if !mission_counter_step(sim, id, rules, ctx, outcome) {
                 return;
             }
-            if let Some(rules) = rules
-                && mission_handlers_run(sim, id)
-            {
+            if let Some(rules) = rules {
                 outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
             }
             passive_acquire_step(sim, id, rules, ctx);
@@ -973,7 +971,6 @@ fn techno_ai_shell(
             // MissionClass::AI, inside this slot and before Fly Process
             // (FootClass::AI4DA530).
             if let Some(rules) = rules
-                && mission_handlers_run(sim, id)
                 && crate::sim::aircraft::dispatch_mission(sim, id, rules, ctx)
             {
                 sim.fire_requests.aircraft.insert(id);
@@ -1294,26 +1291,17 @@ fn mission_counter_step(
 /// answers true (`0x006FA23C`) and again after the bomb and the managers
 /// (`0x006FA735`), and `UnitClass::AI` before its fire update (`0x007365BB`).
 /// A crashing wreck and an authored zero-HP building keep it at Health 0:
-/// neither may skip its terminal AI by deriving this flag from Health. The
-/// separate Mission5B30A7 gate below still requires positive Health.
+/// neither may skip its terminal AI by deriving this flag from Health.
+/// `MissionClass::AI`'s gate ([`GameEntity::mission_handler_due`]) still
+/// requires positive Health.
 ///
 /// [`GameEntity::is_object_alive`]: crate::sim::game_entity::GameEntity::is_object_alive
+/// [`GameEntity::mission_handler_due`]: crate::sim::game_entity::GameEntity::mission_handler_due
 pub(crate) fn ai_alive(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
         .get(id)
         .is_some_and(|entity| entity.is_object_alive())
-}
-
-/// `MissionClass::AI @ 0x005B3060`'s last gate before a mission handler: Health
-/// above zero (`0x005B30A7`, signed). A crashing wreck is alive at Health 0, so
-/// its Techno AI runs but no handler does and its dispatch timer is not
-/// rewritten.
-fn mission_handlers_run(sim: &Simulation, id: u64) -> bool {
-    sim.substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.health.current() > 0)
 }
 
 /// `TechnoClass::AI_Update`'s leading common steps, in native order: the
@@ -1871,9 +1859,7 @@ fn unit_techno_bracket(
     // timer-gated, ending with the verified post-handler epilogue write
     // (start = current frame, delay = handler return). One committed-selector
     // match routes Harvest, Attack and the other represented Foot handlers.
-    if mission_handlers_run(sim, id)
-        && let Some(rules) = rules
-    {
+    if let Some(rules) = rules {
         outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
     }
     // `UnitClass::AI @ 0x007361A9..0x007361E9`: a draining Floating Disc
@@ -1955,7 +1941,9 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::mission::leaf::MissionLeafState;
     use crate::sim::mission::state::MissionTestFixture;
-    use crate::sim::mission::{MissionCom, MissionDispatchTimer, MissionId, MissionType};
+    use crate::sim::mission::{
+        MISSION_STUB_FRAMES, MissionCom, MissionDispatchTimer, MissionId, MissionType,
+    };
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
     use crate::sim::snapshot::GameSnapshot;
@@ -5115,7 +5103,7 @@ mod tests {
 
             assert_eq!(
                 dispatch_timer_of(&sim, 1),
-                MissionDispatchTimer::from_raw(0, BASE_MISSION_HANDLER_FRAMES),
+                MissionDispatchTimer::from_raw(0, MISSION_STUB_FRAMES),
                 "{category:?} on {mission:?} must re-arm the base handler's flat delay"
             );
             assert_eq!(

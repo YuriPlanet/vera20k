@@ -1832,6 +1832,16 @@ impl GameEntity {
         self.is_active() && (self.health.current() > 0 || self.crash.is_crashing())
     }
 
+    /// `MissionClass::AI @ 0x005B3060`'s gate before the mission handler, the
+    /// same for every class: IsAlive (`+0x90`, `0x005B306C`; while VERA defers
+    /// UnInit, [`Self::is_active`]), the dispatch timer run out (`+0xC8`,
+    /// `+0xD0`, `0x005B307A..0x005B30A1`) and Health above zero (`+0x6C`,
+    /// signed, `0x005B30A7`). A crashing wreck is alive at Health 0: its Techno
+    /// AI runs, but no handler does and its timer is not rewritten.
+    pub(crate) fn mission_handler_due(&self, now: u32) -> bool {
+        self.is_active() && self.mission.dispatch_timer().due(now) && self.health.current() > 0
+    }
+
     /// Infantry522510's Doing27..30 deployment predicate. Undeploy31 already
     /// accepts destinations; Units retain their distinct deployment controller.
     pub fn is_deployed(&self) -> bool {

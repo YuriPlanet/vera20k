@@ -584,6 +584,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
+            .unwrap()
             .impact
         {
             sim.fly_crash_impact(1, &rules, None, crate::sim::world::FrameEffects::default());
@@ -676,12 +677,14 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                     ),
                     RevealOutcome::Revealed { .. }
                 ));
-                let stats = sim.tick_air_movement_with_cell_lists_one(
-                    1,
-                    Some(&rules),
-                    None,
-                    crate::sim::world::FrameEffects::default(),
-                );
+                let stats = sim
+                    .tick_air_movement_with_cell_lists_one(
+                        1,
+                        Some(&rules),
+                        None,
+                        crate::sim::world::FrameEffects::default(),
+                    )
+                    .unwrap();
                 assert!(stats.impact, "{name}: impact frame {n}");
                 let entity = sim.substrate.entities.get(1).unwrap();
                 let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
@@ -718,12 +721,14 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                 assert!(calls.iter().any(|c| c["call"] == "fire_death_weapon"));
                 assert!(calls.iter().any(|c| c["call"] == "uninit"));
             } else {
-                let stats = sim.tick_air_movement_with_cell_lists_one(
-                    1,
-                    Some(&rules),
-                    None,
-                    crate::sim::world::FrameEffects::default(),
-                );
+                let stats = sim
+                    .tick_air_movement_with_cell_lists_one(
+                        1,
+                        Some(&rules),
+                        None,
+                        crate::sim::world::FrameEffects::default(),
+                    )
+                    .unwrap();
                 assert!(!stats.impact, "{name}: early impact at frame {n}");
                 let entity = sim.substrate.entities.get(1).unwrap();
                 let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
@@ -791,12 +796,14 @@ fn a_crash_fall_lists_the_wreck_in_its_impact_cell() {
     let start = sim.session.binary_frame;
     for n in 0..frames.len() {
         sim.session.binary_frame = start + n as u32;
-        let stats = sim.tick_air_movement_with_cell_lists_one(
-            1,
-            Some(&rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        let stats = sim
+            .tick_air_movement_with_cell_lists_one(
+                1,
+                Some(&rules),
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
         assert_eq!(stats.impact, n + 1 == frames.len(), "frame {n}");
     }
     let wreck = sim.substrate.entities.get(1).unwrap();
@@ -1523,7 +1530,8 @@ fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
             Some(&rules),
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         frame += 1;
     }
     let runtime = |sim: &Simulation| {
@@ -1553,7 +1561,8 @@ fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
         Some(&rules),
         None,
         crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .unwrap();
     let stopped = runtime(&sim);
     assert!(stopped.moving(), "Stop_Moving keeps the moving byte");
     assert_eq!(

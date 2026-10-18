@@ -304,17 +304,15 @@ impl Simulation {
                     locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
                 })
             });
-        let air =
-            self.tick_air_movement_with_cell_lists_one(stable_id, rules, overlay_registry, effects);
+        let air = self.tick_air_movement_with_cell_lists_one(
+            stable_id,
+            rules,
+            overlay_registry,
+            effects,
+        )?;
         process.bridge_state_changed |= air.bridge_state_changed;
-        let jumpjet_unit_touchdown = jumpjet
-            && self
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|entity| entity.category() == EntityCategory::Unit);
-        if air.touched_down && jumpjet_unit_touchdown {
-            // Jumpjet54C8F0/54C8FF now run Unit PerCell2 and the class NULL
+        if air.touched_down && jumpjet {
+            // Jumpjet54C8F0/54C8FF run the class PerCell2 and NULL
             // setter synchronously while the installed instance is phase4.
             process.per_cell_ran = true;
         } else if air.touched_down {
@@ -326,11 +324,6 @@ impl Simulation {
                 effects,
             )?;
             process.per_cell_ran = true;
-            if jumpjet {
-                //54C8CB..54C8EA already cleared the locomotor destination and
-                //moving byte;54C8FF calls the class NULL setter after PerCell.
-                self.assign_null_destination(stable_id, rules, overlay_registry, effects);
-            }
         }
         if !air.impact {
             return Ok(process);
