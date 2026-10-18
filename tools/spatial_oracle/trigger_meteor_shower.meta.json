@@ -1,0 +1,7 @@
+{
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "command": "RA2_DIR=/home/vera/ra2 PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/action58_controls.py",
+  "scope": "Execute58 original entry6E2C40 and full421EA0 constructor through existing anim_bouncer_launch.Machine, no instruction patches.",
+  "inputs": "Declared formed two AnimType profiles Elasticity0, MaxXY100, MinZ-50, no RandomRate, 16-frame SHP bounds; IsMeteor1. GetWaypoint, Ground208, Cell flags0, FindIndex and allocator are ABI seams. Constructor Start/Map/display retain existing VM seams; no effects, retail parser, renderer or full class-AI parity claim.",
+  "rng": "Hashes consume full native RNG-state lowercase hexadecimal ASCII. INT_MIN control edits supplied seed words."
+}

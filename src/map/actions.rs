@@ -256,18 +256,33 @@ fn materialize_waypoint_index(param_type: Option<&str>, token_8: Option<&str>) -
 
 /// TAction8 binds the retained Rules.DropZoneAnim; TAction41 resolves its
 /// numeric AnimType through the same native registry as runtime construction
-/// (6E2357). Both use the existing scheduler closure at load and restoration.
+/// (6E2357). TAction58 roots the two find-only meteor literals (6E2D11/1D).
+/// All use the existing scheduler closure at load and restoration.
 pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<String> {
     actions
         .values()
         .flat_map(|action| &action.entries)
-        .filter_map(|action| match action.kind {
-            8 => rules.general.drop_zone_anim.as_deref(),
-            41 => action
-                .literal_value()
-                .and_then(|index| rules.anim_type_name_by_index(index)),
-            _ => None,
+        .flat_map(|action| match action.kind {
+            58 => [
+                rules
+                    .anim_type_names
+                    .contains("METSMALL")
+                    .then_some("METSMALL"),
+                rules
+                    .anim_type_names
+                    .contains("METLARGE")
+                    .then_some("METLARGE"),
+            ],
+            8 => [rules.general.drop_zone_anim.as_deref(), None],
+            41 => [
+                action
+                    .literal_value()
+                    .and_then(|index| rules.anim_type_name_by_index(index)),
+                None,
+            ],
+            _ => [None, None],
         })
+        .flatten()
         .map(str::to_owned)
         .collect::<BTreeSet<_>>()
         .into_iter()

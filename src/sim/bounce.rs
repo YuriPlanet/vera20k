@@ -30,11 +30,70 @@
 use glam::{IVec3, Mat4, Vec3};
 use serde::{Deserialize, Serialize};
 
-use crate::sim::rng::SimRng;
+use crate::sim::rng::{SimRng, abs_before_modulo};
 use crate::util::native_quaternion::quaternion_to_matrix;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
 };
+
+/// Transient Anim4222FF..422433 launch values (Steam3e81a617..08600).
+/// Its literal70 lifetime is only an input to the initial displacement.
+pub(crate) struct MeteorLaunch {
+    pub start: IVec3,
+    pub velocity: [NativeF32Bits; 3],
+}
+
+/// The constructor draws Y, X, then the lifetime shortening. Reflect both
+/// stored float XY components when X < -Y. The third draw takes abs AFTER
+/// signed remainder20, unlike the first two: INT_MIN shortens by8, not -8.
+/// Original constructor/prefix controls pin axis pairing, reflection,
+/// ftol, signed origins, duration0 and constrained INT_MIN draws.
+pub(crate) fn meteor_launch(
+    origin: IVec3,
+    min_z: NativeF64Bits,
+    max_xy: NativeF64Bits,
+    rng: &mut SimRng,
+) -> Result<MeteorLaunch, NativeX87Error> {
+    let y_draw = rng.next_u32();
+    let x_draw = rng.next_u32();
+    let max_xy = X87Chop53::load_f64(max_xy)?;
+    let divisor = X87Chop53::ftol_i64(X87Chop53::add(max_xy, max_xy))? as i32;
+    let axis = |draw| {
+        X87Chop53::store_f32(X87Chop53::sub(
+            X87Chop53::load_i32(abs_before_modulo(draw, divisor)),
+            max_xy,
+        ))
+    };
+    let mut y = axis(y_draw)?;
+    let mut x = axis(x_draw)?;
+    let z = X87Chop53::store_f32(X87Chop53::load_f64(min_z)?)?;
+    if X87Chop53::compare(
+        X87Chop53::load_f32(x)?,
+        X87Chop53::neg(X87Chop53::load_f32(y)?),
+    ) == X87Ordering::Less
+    {
+        x = NativeF32Bits::from_bits(x.bits() ^ 0x8000_0000);
+        y = NativeF32Bits::from_bits(y.bits() ^ 0x8000_0000);
+    }
+    let duration = 70i32.wrapping_sub(rng.next_raw_abs_modulo(20) as i32);
+    let place = |coord, velocity| -> Result<i32, NativeX87Error> {
+        Ok(X87Chop53::ftol_i64(X87Chop53::sub(
+            X87Chop53::load_i32(coord),
+            X87Chop53::mul(
+                X87Chop53::load_i32(duration),
+                X87Chop53::load_f32(velocity)?,
+            ),
+        ))? as i32)
+    };
+    Ok(MeteorLaunch {
+        start: IVec3::new(
+            place(origin.x, x)?,
+            place(origin.y, y)?,
+            place(origin.z, z)?,
+        ),
+        velocity: [x, y, z],
+    })
+}
 
 /// The 0x50-byte physics body, field for field.
 ///
@@ -85,6 +144,17 @@ pub enum BounceOutcome {
 }
 
 impl BounceState {
+    /// Meteor tails42395C..423962 /74A7C8..74A7D4 add gravity BACK after
+    /// Update. Retain both float stores; bypassing gravity in the integrator
+    /// would lose the subtraction/addition rounding of the original.
+    pub(crate) fn compensate_meteor_gravity(&mut self) -> Result<(), NativeX87Error> {
+        self.velocity[2] = X87Chop53::store_f32(X87Chop53::add(
+            X87Chop53::load_f32(self.velocity[2])?,
+            X87Chop53::load_f64(self.gravity)?,
+        ))?;
+        Ok(())
+    }
+
     /// Fold the whole body, field bits in store order per axis. Every field
     /// is simulation state: the quaternions come off the shared stream in
     /// `Init` even though the physics never reads them back.

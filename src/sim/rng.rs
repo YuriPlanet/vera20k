@@ -10,6 +10,24 @@ use std::sync::{Arc, Mutex};
 use crate::rng_continuation::MapGenRngContinuation;
 use crate::util::native_random;
 
+/// One raw `Random__Next()` draw taken through native's `CDQ/XOR/SUB` absolute
+/// value and then `CDQ/IDIV`.
+///
+/// Typed selectors469D7A..469D81/702320..702339 and constructor axes
+/// 74957B..749621/42259B..4225F4 take the absolute value BEFORE division.
+/// INT_MIN retains its negative two's-complement value. This intentionally
+/// differs from [`SimRng::next_raw_abs_modulo`]'s remainder-first contract.
+///
+/// Native divisor0 and INT_MIN/-1 divide faults remain outside the supported
+/// arithmetic domain. Preserve existing compatibility recovery (zero for a
+/// zero divisor, wrapping remainder for overflow) rather than emulating traps.
+pub(crate) fn abs_before_modulo(draw: u32, divisor: i32) -> i32 {
+    if divisor == 0 {
+        return 0;
+    }
+    (draw as i32).wrapping_abs().wrapping_rem(divisor)
+}
+
 /// The `double` at `0x007E3570` that scales a `RandomRanged(0, 0x7ffffffe)`
 /// draw onto `[0, 1]` for a unit-interval probability gate (Spark spawns, the
 /// `CrewEscape=` roll). Raw bytes `00 00 40 00 00 00 00 3E`, i.e.

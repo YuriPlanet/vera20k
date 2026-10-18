@@ -1,0 +1,16 @@
+{
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "commands": [
+    "RA2_DIR=/home/vera/ra2 PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/constructors.py",
+    "RA2_DIR=/home/vera/ra2 PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/flight_controls.py",
+    "PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/pin_numeric.py"
+  ],
+  "scope": "Original Anim meteor constructor numeric path and compensation of Bounce.Update. Consumed by world/meteor_numeric_tests.rs. No source hash pins.",
+  "assumptions": [
+    "Full Anim421EA0 constructor through existing anim_bouncer_launch.Machine with supplied formed Type physics fields, zero spin, Map/Unlimbo/Display/Start seams; no native retail reader or effects/render parity claim.",
+    "Original Bounce439B00 and Coord4399A0 on existing supplied finite flat2 cell table/Dummy, then original class-specific FADD gravity tail. No whole class AI, expiry/effect/drawing comparison. No Python motion arithmetic.",
+    "Flight cell allocation is the supplied25x25 flat2 crop centered40,40; outside is native Dummy0. Scalar inputs are declared formed Type fields, not a native retail reader comparison.",
+    "RNG hashes are SHA256 of the complete lowercase native state hex string, including both cursors. Constrained rows supply original seeded-word edits, not expected arithmetic from Rust.",
+    "Flight velocity comparison admits only the existing Bounce flat-reflection signed-zero difference."
+  ]
+}

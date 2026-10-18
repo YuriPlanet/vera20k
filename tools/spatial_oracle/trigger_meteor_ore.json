@@ -1,0 +1,940 @@
+{
+  "schema": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "rows": [
+    {
+      "input": {
+        "seed": 1,
+        "radius": 0,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 1
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 1,
+            "density": 2
+          }
+        ],
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "586dac6834e378b0ee44d363ce3487866f12705fbc9615147a341fce1f13e155"
+      }
+    },
+    {
+      "input": {
+        "seed": 1,
+        "radius": 1,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 1
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": 1,
+            "density": 0
+          }
+        ],
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "842d50625262b0bb7d4443c9b29ffb5d4f6187f070eb102fb48a0df13c3bd0e5"
+      }
+    },
+    {
+      "input": {
+        "seed": 1,
+        "radius": 2,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "selected": 1
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 1,
+            "density": 0
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": 1,
+            "density": 1
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "overlay": 1,
+            "density": 2
+          }
+        ],
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "ca9caa6f7276cad0599d6b6a3bd65d8df6ac5fa9bf6ff3600cdb009ce84d69e8"
+      }
+    },
+    {
+      "input": {
+        "seed": 1,
+        "radius": 4,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              40,
+              41
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              39,
+              41
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              41,
+              41
+            ],
+            "selected": 0
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              40,
+              41
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              39,
+              41
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "overlay": 1,
+            "density": 0
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": 1,
+            "density": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 1,
+            "density": 2
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": 1,
+            "density": 0
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "overlay": 0,
+            "density": 1
+          },
+          {
+            "cell": [
+              41,
+              41
+            ],
+            "overlay": 0,
+            "density": 0
+          }
+        ],
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "3a9cf2da1d7e6c4e819633db488cca16f8f8737a4f7ccad222e786ccb016e227"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 0,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 3
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 3,
+            "density": 1
+          }
+        ],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "f04f3ddbbbc963c9ab693cef92909cb4f81582ce4f0d8ecd1f8bc663e4dcbe51"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 1,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 3
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": 3,
+            "density": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 0,
+            "density": 2
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": 3,
+            "density": 0
+          }
+        ],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "3d6362ca2eb609d42413aed020bdad9de809f95081fe45b56c10e5f22c17eeb7"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 2,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "selected": 3
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "overlay": 3,
+            "density": 1
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": 0,
+            "density": 2
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 3,
+            "density": 0
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": 1,
+            "density": 1
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "overlay": 3,
+            "density": 0
+          }
+        ],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "74c70dc92485c14f58bbca51e5651bc4602b5b5deaceef7bc40a1ada60a79b17"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 4,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              40,
+              41
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              39,
+              41
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              41
+            ],
+            "selected": 3
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              40,
+              41
+            ],
+            "overlay": 3,
+            "density": 1
+          },
+          {
+            "cell": [
+              39,
+              41
+            ],
+            "overlay": 0,
+            "density": 2
+          },
+          {
+            "cell": [
+              39,
+              40
+            ],
+            "overlay": 3,
+            "density": 0
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": 1,
+            "density": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": 3,
+            "density": 0
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": 0,
+            "density": 1
+          },
+          {
+            "cell": [
+              41,
+              40
+            ],
+            "overlay": 1,
+            "density": 0
+          },
+          {
+            "cell": [
+              41,
+              41
+            ],
+            "overlay": 3,
+            "density": 0
+          }
+        ],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "ba2dd22fd4128306af226f5d772de4a0a7d669698acd75146f0e12c6f537cd9e"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 1,
+        "spawn": false,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [],
+        "cells": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": -1,
+            "density": 0
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": -1,
+            "density": 0
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": -1,
+            "density": 0
+          }
+        ],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 1,
+        "spawn": true,
+        "ore": false,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [],
+        "cells": [],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 1,
+        "spawn": true,
+        "ore": true,
+        "above": true,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [],
+        "cells": [],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 1,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": true,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "selected": 0
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 1
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 3
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "selected": 1
+          }
+        ],
+        "cells": [
+          {
+            "cell": [
+              39,
+              39
+            ],
+            "overlay": -1,
+            "density": 0
+          },
+          {
+            "cell": [
+              40,
+              39
+            ],
+            "overlay": -1,
+            "density": 1
+          },
+          {
+            "cell": [
+              41,
+              39
+            ],
+            "overlay": -1,
+            "density": 2
+          }
+        ],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "a36a115da5bfc84832070caf12609193048538320ea6ed461ffbca8f9db1f13a"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": -1,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          10368,
+          10368,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [],
+        "cells": [],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d"
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "radius": 0,
+        "spawn": true,
+        "ore": true,
+        "above": false,
+        "refused": false,
+        "coord": [
+          -300,
+          -300,
+          0
+        ]
+      },
+      "expected": {
+        "construct": [],
+        "cells": [],
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d"
+      }
+    }
+  ]
+}

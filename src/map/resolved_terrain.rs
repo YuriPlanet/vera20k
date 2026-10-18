@@ -402,6 +402,16 @@ pub fn scheduler_anim_roots(
         .map(|name| name.trim().to_ascii_uppercase())
         .filter(|name| !name.is_empty()),
     );
+    //AnimAI42413B can create ore on a map that started without any. Its
+    //Overlay Mark's CellAnim must already use the ordinary bound Anim owner.
+    roots.extend(
+        (0..overlay_registry.len())
+            .filter_map(|index| u8::try_from(index).ok())
+            .filter_map(|id| overlay_registry.flags(id))
+            .filter(|flags| flags.tiberium)
+            .filter_map(|flags| flags.cell_anim.as_deref())
+            .map(str::to_ascii_uppercase),
+    );
     roots.into_iter().collect()
 }
 

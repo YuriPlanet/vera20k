@@ -1,0 +1,2203 @@
+{
+  "schema": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "rows": [
+    {
+      "input": {
+        "seed": 1,
+        "intensity": 0,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "7d71b52c5394465e9a8bc1ffd6f937a404fc77d41dcc859c182ab59ef5ebbaf0",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              8662,
+              10854,
+              3258
+            ],
+            "velocity_bits": [
+              1105199104,
+              3241148416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10561,
+              6893,
+              3058
+            ],
+            "velocity_bits": [
+              0,
+              1115684864,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5282,
+              7769,
+              3008
+            ],
+            "velocity_bits": [
+              1119485952,
+              1111228416,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 1,
+        "intensity": 1,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "67ab91675a8e7caad3660072c31ebf27e5425eb4a966ef9d29c859e669fd37dd",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              9082,
+              10784,
+              3258
+            ],
+            "velocity_bits": [
+              1105199104,
+              3241148416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10841,
+              6893,
+              3058
+            ],
+            "velocity_bits": [
+              0,
+              1115684864,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5212,
+              7839,
+              3008
+            ],
+            "velocity_bits": [
+              1119485952,
+              1111228416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9118,
+              11148,
+              3658
+            ],
+            "velocity_bits": [
+              1095761920,
+              3231711232,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7053,
+              6596,
+              3708
+            ],
+            "velocity_bits": [
+              1112539136,
+              1112539136,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              4741,
+              15132,
+              3558
+            ],
+            "velocity_bits": [
+              1118044160,
+              3264348160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              16016,
+              5016,
+              3258
+            ],
+            "velocity_bits": [
+              3266445312,
+              1119223808,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 1,
+        "intensity": 2,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "e7ef4acde0e49113820483d3556a13ed31c434f9b3582990b8be8e19db6ce5f7",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              8872,
+              10364,
+              3258
+            ],
+            "velocity_bits": [
+              1105199104,
+              3241148416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10421,
+              7313,
+              3058
+            ],
+            "velocity_bits": [
+              0,
+              1115684864,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5352,
+              8189,
+              3008
+            ],
+            "velocity_bits": [
+              1119485952,
+              1111228416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9048,
+              11008,
+              3658
+            ],
+            "velocity_bits": [
+              1095761920,
+              3231711232,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7333,
+              6246,
+              3708
+            ],
+            "velocity_bits": [
+              1112539136,
+              1112539136,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              4181,
+              15202,
+              3558
+            ],
+            "velocity_bits": [
+              1118044160,
+              3264348160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              16436,
+              5366,
+              3258
+            ],
+            "velocity_bits": [
+              3266445312,
+              1119223808,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8391,
+              5016,
+              3608
+            ],
+            "velocity_bits": [
+              1107296256,
+              1118830592,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9181,
+              5185,
+              3458
+            ],
+            "velocity_bits": [
+              1097859072,
+              1117126656,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10019,
+              8038,
+              2958
+            ],
+            "velocity_bits": [
+              1091567616,
+              1107296256,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5303,
+              15047,
+              2958
+            ],
+            "velocity_bits": [
+              1118306304,
+              3264610304,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 1,
+        "intensity": 3,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        "rng_after_sha256": "bdcf6ad6506d4f0f9ee5db44c1e84dd9a16c4682bf06fe405138ee3bdd9dacad",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              9082,
+              10994,
+              3258
+            ],
+            "velocity_bits": [
+              1105199104,
+              3241148416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              11471,
+              7173,
+              3058
+            ],
+            "velocity_bits": [
+              0,
+              1115684864,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6262,
+              7909,
+              3008
+            ],
+            "velocity_bits": [
+              1119485952,
+              1111228416,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8488,
+              11638,
+              3658
+            ],
+            "velocity_bits": [
+              1095761920,
+              3231711232,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7683,
+              5756,
+              3708
+            ],
+            "velocity_bits": [
+              1112539136,
+              1112539136,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              4111,
+              14992,
+              3558
+            ],
+            "velocity_bits": [
+              1118044160,
+              3264348160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              16926,
+              5996,
+              3258
+            ],
+            "velocity_bits": [
+              3266445312,
+              1119223808,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8391,
+              4806,
+              3608
+            ],
+            "velocity_bits": [
+              1107296256,
+              1118830592,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8831,
+              5255,
+              3458
+            ],
+            "velocity_bits": [
+              1097859072,
+              1117126656,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10789,
+              7828,
+              2958
+            ],
+            "velocity_bits": [
+              1091567616,
+              1107296256,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5303,
+              15047,
+              2958
+            ],
+            "velocity_bits": [
+              1118306304,
+              3264610304,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10625,
+              5731,
+              2858
+            ],
+            "velocity_bits": [
+              1092616192,
+              1119354880,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6615,
+              4074,
+              3708
+            ],
+            "velocity_bits": [
+              1109393408,
+              1116864512,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6423,
+              13063,
+              3358
+            ],
+            "velocity_bits": [
+              1117388800,
+              3255566336,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5103,
+              8482,
+              2858
+            ],
+            "velocity_bits": [
+              1118044160,
+              1101529088,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5540,
+              6982,
+              3008
+            ],
+            "velocity_bits": [
+              1117650944,
+              1116209152,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              10636,
+              5855,
+              3158
+            ],
+            "velocity_bits": [
+              3221225472,
+              1116864512,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 7,
+        "intensity": 0,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "dda58cefc5b6585593162a16f8cc2e5bae94ec23ba98567ce39bb41a2bf57158",
+        "rng_after_sha256": "d9afa4bd5ad3fb831d9ed3f9c38dfd7ba68f6185b48f01b99bf19386a19281b6",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4881,
+              13477,
+              3208
+            ],
+            "velocity_bits": [
+              1119223808,
+              3260284928,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              11088,
+              7910,
+              3708
+            ],
+            "velocity_bits": [
+              3241148416,
+              1108082688,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8588,
+              4752,
+              3158
+            ],
+            "velocity_bits": [
+              1104674816,
+              1119485952,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 7,
+        "intensity": 1,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "dda58cefc5b6585593162a16f8cc2e5bae94ec23ba98567ce39bb41a2bf57158",
+        "rng_after_sha256": "4c9f77e0413cd5c5e650952821a175ee330185e9a151a779ff63a79c4fb4105d",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4811,
+              13127,
+              3208
+            ],
+            "velocity_bits": [
+              1119223808,
+              3260284928,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              10878,
+              7700,
+              3708
+            ],
+            "velocity_bits": [
+              3241148416,
+              1108082688,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8658,
+              4472,
+              3158
+            ],
+            "velocity_bits": [
+              1104674816,
+              1119485952,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              3555,
+              5891,
+              3608
+            ],
+            "velocity_bits": [
+              1119748096,
+              1114636288,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7247,
+              9969,
+              3658
+            ],
+            "velocity_bits": [
+              1109655552,
+              1092616192,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5614,
+              12730,
+              2808
+            ],
+            "velocity_bits": [
+              1120141312,
+              3256614912,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              4706,
+              5340,
+              3158
+            ],
+            "velocity_bits": [
+              1119354880,
+              1118568448,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 7,
+        "intensity": 2,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "dda58cefc5b6585593162a16f8cc2e5bae94ec23ba98567ce39bb41a2bf57158",
+        "rng_after_sha256": "89dfaa99b2b8c4ccb6c893dd81ece2d3bc1ebac1de4eefb2b92aeb86a16c1ccc",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4321,
+              12987,
+              3208
+            ],
+            "velocity_bits": [
+              1119223808,
+              3260284928,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              10948,
+              7210,
+              3708
+            ],
+            "velocity_bits": [
+              3241148416,
+              1108082688,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8098,
+              4262,
+              3158
+            ],
+            "velocity_bits": [
+              1104674816,
+              1119485952,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              3835,
+              6241,
+              3608
+            ],
+            "velocity_bits": [
+              1119748096,
+              1114636288,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7107,
+              10039,
+              3658
+            ],
+            "velocity_bits": [
+              1109655552,
+              1092616192,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5684,
+              13150,
+              2808
+            ],
+            "velocity_bits": [
+              1120141312,
+              3256614912,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              4706,
+              5550,
+              3158
+            ],
+            "velocity_bits": [
+              1119354880,
+              1118568448,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5486,
+              9656,
+              3408
+            ],
+            "velocity_bits": [
+              1116733440,
+              1099431936,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              10303,
+              10168,
+              3658
+            ],
+            "velocity_bits": [
+              1094713344,
+              1090519040,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5214,
+              9806,
+              3408
+            ],
+            "velocity_bits": [
+              1117782016,
+              1097859072,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6634,
+              5390,
+              3658
+            ],
+            "velocity_bits": [
+              1112801280,
+              1118044160,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 7,
+        "intensity": 3,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "dda58cefc5b6585593162a16f8cc2e5bae94ec23ba98567ce39bb41a2bf57158",
+        "rng_after_sha256": "415dfc7ba0467abb4d713e3dcec7532fe8190e6748dc6db1edaec02f0e65cfb9",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4601,
+              13337,
+              3208
+            ],
+            "velocity_bits": [
+              1119223808,
+              3260284928,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              10108,
+              6930,
+              3708
+            ],
+            "velocity_bits": [
+              3241148416,
+              1108082688,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              7888,
+              4052,
+              3158
+            ],
+            "velocity_bits": [
+              1104674816,
+              1119485952,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              3205,
+              5751,
+              3608
+            ],
+            "velocity_bits": [
+              1119748096,
+              1114636288,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6967,
+              10039,
+              3658
+            ],
+            "velocity_bits": [
+              1109655552,
+              1092616192,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5544,
+              12940,
+              2808
+            ],
+            "velocity_bits": [
+              1120141312,
+              3256614912,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              3936,
+              5760,
+              3158
+            ],
+            "velocity_bits": [
+              1119354880,
+              1118568448,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              4996,
+              9446,
+              3408
+            ],
+            "velocity_bits": [
+              1116733440,
+              1099431936,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              10163,
+              9818,
+              3658
+            ],
+            "velocity_bits": [
+              1094713344,
+              1090519040,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5214,
+              10366,
+              3408
+            ],
+            "velocity_bits": [
+              1117782016,
+              1097859072,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5864,
+              5810,
+              3658
+            ],
+            "velocity_bits": [
+              1112801280,
+              1118044160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              9544,
+              7666,
+              3358
+            ],
+            "velocity_bits": [
+              1090519040,
+              1109393408,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5073,
+              11508,
+              2958
+            ],
+            "velocity_bits": [
+              1120403456,
+              3247964160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              8182,
+              12865,
+              3208
+            ],
+            "velocity_bits": [
+              1110179840,
+              3255304192,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9020,
+              7554,
+              3508
+            ],
+            "velocity_bits": [
+              1100480512,
+              1105723392,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9520,
+              5077,
+              3658
+            ],
+            "velocity_bits": [
+              1092616192,
+              1117388800,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              7059,
+              9400,
+              3358
+            ],
+            "velocity_bits": [
+              1109393408,
+              1088421888,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "intensity": 0,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "74c70dc92485c14f58bbca51e5651bc4602b5b5deaceef7bc40a1ada60a79b17",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              12287,
+              8229,
+              3658
+            ],
+            "velocity_bits": [
+              3252682752,
+              1106771968,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "intensity": 1,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "95a6f368351ec480a1194e68fffa2c57d8d6b9c8b64d562607433db808bbda43",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              12147,
+              8089,
+              3658
+            ],
+            "velocity_bits": [
+              3252682752,
+              1106771968,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7400,
+              9249,
+              2908
+            ],
+            "velocity_bits": [
+              1113325568,
+              1098907648,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6914,
+              5059,
+              3208
+            ],
+            "velocity_bits": [
+              1112539136,
+              1118568448,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6472,
+              13041,
+              3208
+            ],
+            "velocity_bits": [
+              1114636288,
+              3257663488,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5224,
+              14767,
+              2908
+            ],
+            "velocity_bits": [
+              1119617024,
+              3265658880,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "intensity": 2,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "bbcdda372476e615215aedd4ec889d4557a1ddeee49d6d362f36d65fb0bae25f",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              12287,
+              7949,
+              3658
+            ],
+            "velocity_bits": [
+              3252682752,
+              1106771968,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7890,
+              9459,
+              2908
+            ],
+            "velocity_bits": [
+              1113325568,
+              1098907648,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6634,
+              4779,
+              3208
+            ],
+            "velocity_bits": [
+              1112539136,
+              1118568448,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6472,
+              13461,
+              3208
+            ],
+            "velocity_bits": [
+              1114636288,
+              3257663488,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              4944,
+              14487,
+              2908
+            ],
+            "velocity_bits": [
+              1119617024,
+              3265658880,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7395,
+              11562,
+              3458
+            ],
+            "velocity_bits": [
+              1113325568,
+              3250585600,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              9932,
+              7448,
+              3008
+            ],
+            "velocity_bits": [
+              1082130432,
+              1112801280,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              11835,
+              7944,
+              3408
+            ],
+            "velocity_bits": [
+              3246915584,
+              1107820544,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              3768,
+              3129,
+              3708
+            ],
+            "velocity_bits": [
+              1120010240,
+              1120272384,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "intensity": 3,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "841c471831719ebdc8a572b98cf04c376a80c40622e25ab8da25bf5051dfc7d2",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              11447,
+              7739,
+              3658
+            ],
+            "velocity_bits": [
+              3252682752,
+              1106771968,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              8100,
+              9249,
+              2908
+            ],
+            "velocity_bits": [
+              1113325568,
+              1098907648,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6214,
+              4359,
+              3208
+            ],
+            "velocity_bits": [
+              1112539136,
+              1118568448,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6472,
+              13041,
+              3208
+            ],
+            "velocity_bits": [
+              1114636288,
+              3257663488,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              4524,
+              14067,
+              2908
+            ],
+            "velocity_bits": [
+              1119617024,
+              3265658880,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7185,
+              10932,
+              3458
+            ],
+            "velocity_bits": [
+              1113325568,
+              3250585600,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              9512,
+              7868,
+              3008
+            ],
+            "velocity_bits": [
+              1082130432,
+              1112801280,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              11835,
+              7524,
+              3408
+            ],
+            "velocity_bits": [
+              3246915584,
+              1107820544,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              3978,
+              2499,
+              3708
+            ],
+            "velocity_bits": [
+              1120010240,
+              1120272384,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5537,
+              14863,
+              2758
+            ],
+            "velocity_bits": [
+              1117782016,
+              3265134592,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10753,
+              5974,
+              3008
+            ],
+            "velocity_bits": [
+              3233808384,
+              1118044160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              6989,
+              10506,
+              2808
+            ],
+            "velocity_bits": [
+              1116995584,
+              3235905536,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9957,
+              8909,
+              3408
+            ],
+            "velocity_bits": [
+              1095761920,
+              1102053376,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              4832,
+              9407,
+              2808
+            ],
+            "velocity_bits": [
+              1118961664,
+              1106771968,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              9082,
+              6528,
+              3358
+            ],
+            "velocity_bits": [
+              1099956224,
+              1115947008,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 4294967295,
+        "intensity": 0,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "c394a0d5012610264c2334f5a91c856cf254d77cbd317096ab94901d94026c14",
+        "rng_after_sha256": "a8d13d5329fe6f5cde7788716216150718972334a855d0f7ff6fbe041a825e2e",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4681,
+              14859,
+              3408
+            ],
+            "velocity_bits": [
+              1118830592,
+              3263692800,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6511,
+              7121,
+              3408
+            ],
+            "velocity_bits": [
+              1115160576,
+              1112276992,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 4294967295,
+        "intensity": 1,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "c394a0d5012610264c2334f5a91c856cf254d77cbd317096ab94901d94026c14",
+        "rng_after_sha256": "20f24efe020aaa0f24bb85c0dc29e62f672d911581aa925c09b756fcaea796ae",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4401,
+              14999,
+              3408
+            ],
+            "velocity_bits": [
+              1118830592,
+              3263692800,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6791,
+              7261,
+              3408
+            ],
+            "velocity_bits": [
+              1115160576,
+              1112276992,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7655,
+              9567,
+              2858
+            ],
+            "velocity_bits": [
+              1110704128,
+              1093664768,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              11484,
+              8458,
+              3208
+            ],
+            "velocity_bits": [
+              3244294144,
+              1108606976,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5569,
+              10580,
+              3058
+            ],
+            "velocity_bits": [
+              1119223808,
+              3231711232,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6492,
+              10576,
+              2858
+            ],
+            "velocity_bits": [
+              1116995584,
+              3225419776,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 4294967295,
+        "intensity": 2,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "c394a0d5012610264c2334f5a91c856cf254d77cbd317096ab94901d94026c14",
+        "rng_after_sha256": "cf4c4ec1abb8d3695ad328fcd78e52c55c71f42d71315a655b3b3fe2606c9ef3",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              4261,
+              14999,
+              3408
+            ],
+            "velocity_bits": [
+              1118830592,
+              3263692800,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6931,
+              7681,
+              3408
+            ],
+            "velocity_bits": [
+              1115160576,
+              1112276992,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7375,
+              9287,
+              2858
+            ],
+            "velocity_bits": [
+              1110704128,
+              1093664768,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              11764,
+              8598,
+              3208
+            ],
+            "velocity_bits": [
+              3244294144,
+              1108606976,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5849,
+              10160,
+              3058
+            ],
+            "velocity_bits": [
+              1119223808,
+              3231711232,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              7052,
+              10716,
+              2858
+            ],
+            "velocity_bits": [
+              1116995584,
+              3225419776,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              3995,
+              9664,
+              3708
+            ],
+            "velocity_bits": [
+              1118175232,
+              1098907648,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              4800,
+              13282,
+              3208
+            ],
+            "velocity_bits": [
+              1120010240,
+              3258449920,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5962,
+              5894,
+              3358
+            ],
+            "velocity_bits": [
+              1115422720,
+              1118044160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              13912,
+              6188,
+              3408
+            ],
+            "velocity_bits": [
+              3259236352,
+              1116209152,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 4294967295,
+        "intensity": 3,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "c394a0d5012610264c2334f5a91c856cf254d77cbd317096ab94901d94026c14",
+        "rng_after_sha256": "1d7b67ea4d36bf59ec3e7e3b4fff78b14b08f786e533783b8ae9a3b8dbd63f06",
+        "pieces": [
+          {
+            "type": "METLARGE",
+            "location": [
+              3841,
+              15839,
+              3408
+            ],
+            "velocity_bits": [
+              1118830592,
+              3263692800,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6651,
+              7821,
+              3408
+            ],
+            "velocity_bits": [
+              1115160576,
+              1112276992,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              7515,
+              9287,
+              2858
+            ],
+            "velocity_bits": [
+              1110704128,
+              1093664768,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              11624,
+              9158,
+              3208
+            ],
+            "velocity_bits": [
+              3244294144,
+              1108606976,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              5849,
+              10580,
+              3058
+            ],
+            "velocity_bits": [
+              1119223808,
+              3231711232,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              6492,
+              11416,
+              2858
+            ],
+            "velocity_bits": [
+              1116995584,
+              3225419776,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              4555,
+              10364,
+              3708
+            ],
+            "velocity_bits": [
+              1118175232,
+              1098907648,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5500,
+              13282,
+              3208
+            ],
+            "velocity_bits": [
+              1120010240,
+              3258449920,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5542,
+              5614,
+              3358
+            ],
+            "velocity_bits": [
+              1115422720,
+              1118044160,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              14332,
+              6188,
+              3408
+            ],
+            "velocity_bits": [
+              3259236352,
+              1116209152,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              14070,
+              5548,
+              3608
+            ],
+            "velocity_bits": [
+              3257139200,
+              1115684864,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              11036,
+              5104,
+              3458
+            ],
+            "velocity_bits": [
+              3250585600,
+              1118437376,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              7918,
+              4736,
+              3508
+            ],
+            "velocity_bits": [
+              1109655552,
+              1119223808,
+              3259498496
+            ]
+          },
+          {
+            "type": "METSMALL",
+            "location": [
+              5540,
+              10925,
+              2958
+            ],
+            "velocity_bits": [
+              1116864512,
+              3247439872,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              10283,
+              5919,
+              2908
+            ],
+            "velocity_bits": [
+              1092616192,
+              1117650944,
+              3259498496
+            ]
+          },
+          {
+            "type": "METLARGE",
+            "location": [
+              13083,
+              7993,
+              3008
+            ],
+            "velocity_bits": [
+              3258974208,
+              1114636288,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "intensity": 0,
+        "cell": [
+          -2,
+          -1
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": []
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        "rng_after_sha256": "74c70dc92485c14f58bbca51e5651bc4602b5b5deaceef7bc40a1ada60a79b17",
+        "pieces": [
+          {
+            "type": "METSMALL",
+            "location": [
+              1535,
+              -2267,
+              3658
+            ],
+            "velocity_bits": [
+              3252682752,
+              1106771968,
+              3259498496
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "seed": 31,
+        "intensity": 0,
+        "cell": [
+          40,
+          40
+        ],
+        "waypoint": 7,
+        "ground": 208,
+        "changes": [
+          {
+            "index": 0,
+            "value": 1341715502
+          }
+        ]
+      },
+      "expected": {
+        "result": 1,
+        "rng_before_sha256": "40935e3fd9d85397a69327e3ef4e34614ebf5f8f119bed3f9ca5b67c6210bb13",
+        "rng_after_sha256": "56fe1bf7b2030873505ebbebf842a2b34e3125204142e588800ae478e227f32f",
+        "pieces": []
+      }
+    }
+  ]
+}

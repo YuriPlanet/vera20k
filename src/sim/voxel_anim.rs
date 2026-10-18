@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::sim::bounce::{BounceOutcome, BounceState, BounceTerrain};
 use crate::sim::intern::InternedId;
-use crate::sim::rng::SimRng;
+use crate::sim::rng::{SimRng, abs_before_modulo};
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 
 /// One live `VoxelAnimClass` instance.
@@ -148,35 +148,6 @@ const INCLUSIVE_RANGE_BIAS: NativeF64Bits = NativeF64Bits::from_bits(0x3ff0_0000
 /// the double `1.4`. It is NOT read from the type.
 const DEBRIS_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_0000);
 
-/// One raw `Random__Next()` draw taken through native's `CDQ/XOR/SUB` absolute
-/// value and then `CDQ/IDIV`.
-///
-/// Typed selectors469D7A..469D81/702320..702339 and constructor axes
-/// 74957B..749621/42259B..4225F4 take the absolute value BEFORE division.
-/// INT_MIN retains its negative two's-complement value. This intentionally
-/// differs from [`SimRng::next_raw_abs_modulo`]'s remainder-first contract.
-///
-/// VERA-internal, gamemd equivalent UNCHECKED: a zero divisor returns 0 where
-/// native's `IDIV` raises a divide error. It needs `MaxXYVel` under 0.5, or a
-/// `MaxZVel` below `MinZVel - 1`. Neither occurs in stock, and the two facts are
-/// independent of each other: the lowest `MaxXYVel` in the ten `[VoxelAnims]`
-/// sections is 8.0 (`GASTANK`, `SONICTURRET`, `4TNKTURRET` — the rest run
-/// 10.0..100.0), so the smallest XY divisor is `ftol(2 * 8.0)` = 16; and no
-/// section has `MaxZVel < MinZVel` at all — `METEOR01`/`METEOR02` sit at
-/// `MaxZVel == MinZVel == -100.0`, which the `+ 1.0` bias turns into a Z divisor
-/// of 1. The death-debris path is narrower still: all 36 stock `DebrisTypes=`
-/// lines name `[TIRE]`, at `MaxXYVel=10.0`.
-///
-/// Native's zero-divisor and INT_MIN/-1 divide faults remain outside this
-/// numeric domain; compatibility recovery returns zero instead of emulating
-/// an x86 exception. Selected TIRE divisors are 20, 5, 1 and typed maximum 4 gives 5.
-pub(crate) fn raw_abs_modulo(draw: u32, divisor: i32) -> i32 {
-    if divisor == 0 {
-        return 0;
-    }
-    (draw as i32).wrapping_abs().wrapping_rem(divisor)
-}
-
 /// `VoxelAnimClass::Constructor @ 0x007493B0`, the ordinary (non-`IsMeteor`)
 /// arm at `0x007494F0`..`0x00749663` — the one a death's `DebrisTypes=` takes.
 ///
@@ -225,7 +196,7 @@ pub fn spawn_debris_piece(
     let bias = X87Chop53::load_f64(INCLUSIVE_RANGE_BIAS)?;
 
     let velocity_y = X87Chop53::store_f32(X87Chop53::sub(
-        X87Chop53::load_i32(raw_abs_modulo(y_draw, xy_divisor)),
+        X87Chop53::load_i32(abs_before_modulo(y_draw, xy_divisor)),
         X87Chop53::load_f64(voxel_anim_type.max_xy_vel)?,
     ))?;
     let z_divisor = X87Chop53::ftol_i64(X87Chop53::add(
@@ -236,11 +207,11 @@ pub fn spawn_debris_piece(
         bias,
     ))? as i32;
     let velocity_z = X87Chop53::store_f32(X87Chop53::add(
-        X87Chop53::load_i32(raw_abs_modulo(z_draw, z_divisor)),
+        X87Chop53::load_i32(abs_before_modulo(z_draw, z_divisor)),
         X87Chop53::load_f64(voxel_anim_type.min_z_vel)?,
     ))?;
     let velocity_x = X87Chop53::store_f32(X87Chop53::sub(
-        X87Chop53::load_i32(raw_abs_modulo(x_draw, xy_divisor)),
+        X87Chop53::load_i32(abs_before_modulo(x_draw, xy_divisor)),
         X87Chop53::load_f64(voxel_anim_type.max_xy_vel)?,
     ))?;
     let angular_divisor = X87Chop53::ftol_i64(X87Chop53::add(
@@ -251,7 +222,7 @@ pub fn spawn_debris_piece(
         bias,
     ))? as i32;
     let rotation_angle_per_tick = X87Chop53::store_f64(X87Chop53::add(
-        X87Chop53::load_i32(raw_abs_modulo(angular_draw, angular_divisor)),
+        X87Chop53::load_i32(abs_before_modulo(angular_draw, angular_divisor)),
         X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
     ))?;
 
@@ -505,7 +476,7 @@ pub(crate) fn throw_typed_debris(
             // entry faults there. Every stock `DebrisMaximums=` line is 4 or 6,
             // so only a modded rules file reaches the floor.
             let divisor = maximum.saturating_add(1).max(1);
-            let mut count = raw_abs_modulo(host.rng().next_u32(), divisor);
+            let mut count = abs_before_modulo(host.rng().next_u32(), divisor);
             if count >= budget {
                 count = budget;
             }

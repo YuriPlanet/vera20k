@@ -366,11 +366,12 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
 const FLIGHT_CENTER: i32 = 100;
 
 /// The 25x25 block of supplied cells `anim_bouncer_flight.py`'s `machine`
-/// builds around cell (100, 100), resolving to the dummy cell elsewhere.
-fn flight_sim(terrain_name: &str) -> Simulation {
+/// builds around its supplied center (the ordinary corpus uses100,100),
+/// resolving to the dummy cell elsewhere.
+fn flight_sim(terrain_name: &str, center: i32) -> Simulation {
     const RADIUS: i32 = 12;
     let level = |x: i32, y: i32| {
-        let ring = (x - FLIGHT_CENTER).abs().max((y - FLIGHT_CENTER).abs());
+        let ring = (x - center).abs().max((y - center).abs());
         match terrain_name {
             "flat0" => 0,
             "flat2" => 2,
@@ -379,13 +380,13 @@ fn flight_sim(terrain_name: &str) -> Simulation {
             other => panic!("unknown terrain {other}"),
         }
     };
-    let size = (FLIGHT_CENTER + RADIUS + 1) as u16;
+    let size = (center + RADIUS + 1) as u16;
     let mut cells: Vec<_> = (0..size)
         .flat_map(|y| (0..size).map(move |x| terrain_cell(x, y)))
         .collect();
     let mut allocated = Vec::new();
-    for y in FLIGHT_CENTER - RADIUS..=FLIGHT_CENTER + RADIUS {
-        for x in FLIGHT_CENTER - RADIUS..=FLIGHT_CENTER + RADIUS {
+    for y in center - RADIUS..=center + RADIUS {
+        for x in center - RADIUS..=center + RADIUS {
             let cell = &mut cells[y as usize * usize::from(size) + x as usize];
             cell.level = level(x, y);
             allocated.push((x as u16, y as u16));
@@ -453,7 +454,7 @@ fn a_debris_chunk_flight_matches_original_update() {
     let mut quaternion_rows = 0;
     for row in rows {
         let input = &row["input"];
-        let sim = flight_sim(input["terrain"].as_str().unwrap());
+        let sim = flight_sim(input["terrain"].as_str().unwrap(), FLIGHT_CENTER);
         let terrain = ResolvedBounceTerrain {
             sim: &sim,
             rules: None,
@@ -512,7 +513,7 @@ fn a_spinning_piece_tumbles_like_the_original() {
         "tools/spatial_oracle/bounce_tumble.json",
     ))
     .unwrap();
-    let sim = flight_sim("flat0");
+    let sim = flight_sim("flat0", FLIGHT_CENTER);
     let terrain = ResolvedBounceTerrain {
         sim: &sim,
         rules: None,
@@ -553,3 +554,6 @@ fn a_spinning_piece_tumbles_like_the_original() {
         "the rows cover the bounce arm's spin reversal"
     );
 }
+
+#[path = "meteor_numeric_tests.rs"]
+mod meteor_tests;
