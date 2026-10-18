@@ -9,6 +9,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellListInsertion;
 use crate::sim::vision::{assert_native_cell_history, discovery_corpus, native_map_cell_fixture};
 use crate::sim::world::TechnoDiscoveryHistory;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -290,7 +291,7 @@ fn native_trigger_conceal_circle_and_immediate_two_pass_sweep_match_original() {
         assert!(draws.is_empty(), "{}", input["name"]);
         assert_eq!(rng_hashes(&sim), row["rng_after"], "{}", input["name"]);
         let restored: vision::FogState =
-            bincode::deserialize(&bincode::serialize(&sim.fog).unwrap()).unwrap();
+            save_codec::deserialize(&save_codec::serialize(&sim.fog).unwrap()).unwrap();
         for state in expected.values() {
             assert_native_cell_history(
                 &restored,
@@ -425,8 +426,8 @@ fn native_trigger_reveal_cell_put_then_discovery_matches_original_owner_historie
             sim.resolved_terrain.as_ref().unwrap(),
             false,
         );
-        let restored: TechnoDiscoveryHistory = bincode::deserialize(
-            &bincode::serialize(&sim.substrate.entities.get(id).unwrap().discovery).unwrap(),
+        let restored: TechnoDiscoveryHistory = save_codec::deserialize(
+            &save_codec::serialize(&sim.substrate.entities.get(id).unwrap().discovery).unwrap(),
         )
         .unwrap();
         assert_eq!(restored, sim.substrate.entities.get(id).unwrap().discovery);
@@ -537,7 +538,7 @@ fn native_trigger_reveal_canonical_dummy_and_passed_viewer_match_original() {
             );
         }
         let restored: crate::sim::vision::FogState =
-            bincode::deserialize(&bincode::serialize(&sim.fog).unwrap()).unwrap();
+            save_codec::deserialize(&save_codec::serialize(&sim.fog).unwrap()).unwrap();
         assert_native_cell_history(
             &restored,
             player,
@@ -1161,7 +1162,7 @@ fn scripted_edge_updates() -> Vec<Value> {
     for round in 0..6u32 {
         if round == 3 {
             script.sim.fog =
-                bincode::deserialize(&bincode::serialize(&script.sim.fog).unwrap()).unwrap();
+                save_codec::deserialize(&save_codec::serialize(&script.sim.fog).unwrap()).unwrap();
         }
         script.write(round);
         script.sim.session.binary_frame = 120 * (round + 1);

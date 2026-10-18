@@ -15,6 +15,7 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::snapshot::GameSnapshot;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn entry_cases() -> Vec<Value> {
@@ -512,7 +513,7 @@ fn both_family_latches_survive_serde_snapshot_and_change_current_hash() {
                     .and_then(|r| r.retained())
                     .unwrap();
                 let restored: DriveLocomotionRuntime =
-                    bincode::deserialize(&bincode::serialize(state).unwrap()).unwrap();
+                    save_codec::deserialize(&save_codec::serialize(state).unwrap()).unwrap();
                 assert_eq!(&restored, state);
             }
             LocomotorKind::Ship => {
@@ -523,7 +524,7 @@ fn both_family_latches_survive_serde_snapshot_and_change_current_hash() {
                     .and_then(|r| r.retained())
                     .unwrap();
                 let restored: ShipLocomotionRuntime =
-                    bincode::deserialize(&bincode::serialize(state).unwrap()).unwrap();
+                    save_codec::deserialize(&save_codec::serialize(state).unwrap()).unwrap();
                 assert_eq!(&restored, state);
             }
             _ => unreachable!(),

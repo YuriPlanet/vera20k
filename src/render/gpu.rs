@@ -4,10 +4,9 @@
 //! It holds all the wgpu state needed for rendering. Other render modules
 //! (sprite.rs, terrain.rs, etc.) borrow device/queue from here.
 //!
-//! ## Why pollster::block_on?
+//! ## Why block_on?
 //! wgpu's initialization is async (request_adapter, request_device), but winit's
-//! ApplicationHandler::resumed() is sync. pollster::block_on bridges this gap.
-//! This is the standard pattern for desktop wgpu apps.
+//! ApplicationHandler::resumed() is sync. [`block_on`] bridges this gap.
 //!
 //! ## Why Arc<Window>?
 //! wgpu::Surface requires the window to live as long as the surface ('static lifetime).
@@ -16,7 +15,8 @@
 //! ## Dependency rules
 //! - gpu.rs is part of render/ — see render/mod.rs for dependency rules.
 
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::task::{Context as TaskContext, Poll, Wake, Waker};
 
 use anyhow::{Context, Result, bail};
 use winit::window::Window;
@@ -79,13 +79,13 @@ pub struct GpuContext {
 impl GpuContext {
     /// Initialize wgpu with the given window.
     ///
-    /// This blocks on async wgpu calls using pollster. Safe to call from
+    /// This blocks on async wgpu calls using [`block_on`]. Safe to call from
     /// winit's sync ApplicationHandler::resumed().
     pub fn new(window: Arc<Window>) -> Result<Self> {
-        pollster::block_on(Self::new_async(window))
+        block_on(Self::new_async(window))
     }
 
-    /// Async initialization — called by new() via pollster::block_on().
+    /// Async initialization — called by new() via block_on().
     async fn new_async(window: Arc<Window>) -> Result<Self> {
         // wgpu 27's standard override selects a backend for reproducible
         // shroud GPU comparisons while retaining primary backends by default.
@@ -266,9 +266,78 @@ impl GpuContext {
     }
 }
 
+/// Run `future` to completion on the calling thread.
+///
+/// Wakes are recorded in a flag behind a condvar rather than the thread's park
+/// token, which code inside `poll` could consume.
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    struct Signal {
+        woken: Mutex<bool>,
+        condvar: Condvar,
+    }
+
+    impl Wake for Signal {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            *self.woken.lock().unwrap_or_else(PoisonError::into_inner) = true;
+            self.condvar.notify_one();
+        }
+    }
+
+    let signal = Arc::new(Signal {
+        woken: Mutex::new(false),
+        condvar: Condvar::new(),
+    });
+    let waker = Waker::from(Arc::clone(&signal));
+    let mut context = TaskContext::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
+            return output;
+        }
+        let mut woken = signal.woken.lock().unwrap_or_else(PoisonError::into_inner);
+        while !*woken {
+            woken = signal
+                .condvar
+                .wait(woken)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        *woken = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::GpuAdapterObservation;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::task::Poll;
+
+    use super::{GpuAdapterObservation, block_on};
+
+    #[test]
+    fn block_on_sleeps_until_another_thread_wakes_the_future() {
+        let ready = Arc::new(AtomicBool::new(false));
+        let mut spawned = false;
+        let output = block_on(std::future::poll_fn(|context| {
+            if ready.load(Ordering::Acquire) {
+                return Poll::Ready(7);
+            }
+            if !spawned {
+                spawned = true;
+                let (ready, waker) = (Arc::clone(&ready), context.waker().clone());
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    ready.store(true, Ordering::Release);
+                    waker.wake();
+                });
+            }
+            Poll::Pending
+        }));
+        assert_eq!(output, 7);
+    }
 
     #[test]
     fn adapter_observation_preserves_every_adapter_info_field() {

@@ -4,7 +4,8 @@
 //! See `tools/README.md` for resolving and launching it with `<path-or-asset-name>`.
 //!
 //! If the argument is a filesystem path it's loaded directly; otherwise it's
-//! looked up via AssetManager (MOVIES*.MIX + movmd03.mix).
+//! looked up via AssetManager (MOVIES*.MIX + movmd03.mix). A `.bik` file
+//! dropped on the window is loaded from disk.
 
 mod bik_player_audio;
 mod bik_player_playback;
@@ -36,7 +37,7 @@ pub struct PickerEntry {
 }
 
 fn main() -> Result<(), eframe::Error> {
-    env_logger::init();
+    let _ = vera20k::util::logging::init_stderr_logger("error");
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([960.0, 720.0]),
         ..Default::default()
@@ -44,7 +45,13 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "vera20k bik-player",
         native_options,
-        Box::new(|cc| Ok(Box::new(BikPlayerApp::new(cc)))),
+        Box::new(|cc| {
+            let mut app = BikPlayerApp::new(cc);
+            if let Some(source) = std::env::args_os().nth(1) {
+                app.load_argument(std::path::Path::new(&source));
+            }
+            Ok(Box::new(app))
+        }),
     )
 }
 
@@ -78,15 +85,15 @@ impl BikPlayerApp {
             .unwrap_or_default();
         let status = match (&asset_manager, available_entries.len()) {
             (None, _) => {
-                "No AssetManager (config.toml missing?). Use Open .bik… to load from disk."
+                "No AssetManager (config.toml missing?). Drop a .bik file here to load it."
                     .to_string()
             }
             (Some(_), 0) => {
-                "No .bik entries found in loaded archives. Use Open .bik… to load from disk."
+                "No .bik entries found in loaded archives. Drop a .bik file here to load it."
                     .to_string()
             }
             (Some(_), n) => format!(
-                "{} .bik entries across loaded archives. Pick one or Open .bik… from disk.",
+                "{} .bik entries across loaded archives. Pick one or drop a .bik file here.",
                 n
             ),
         };
@@ -104,6 +111,19 @@ impl BikPlayerApp {
             available_entries,
             playback: bik_player_playback::Playback::default(),
             texture: None,
+        }
+    }
+
+    /// Load the command-line source: a file on disk, else an asset name.
+    fn load_argument(&mut self, source: &std::path::Path) {
+        if source.is_file() {
+            self.load_path(source);
+            return;
+        }
+        let name = source.to_string_lossy();
+        match self.asset_manager.as_ref().and_then(|mgr| mgr.get(&name)) {
+            Some(bytes) => self.load_bytes(Arc::<[u8]>::from(bytes), name.into_owned()),
+            None => self.status = format!("not a file or a loaded asset: {name}"),
         }
     }
 
@@ -246,6 +266,16 @@ fn discover_bik_entries(mgr: &AssetManager) -> Vec<PickerEntry> {
 
 impl eframe::App for BikPlayerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let dropped = ctx.input(|input| {
+            input
+                .raw
+                .dropped_files
+                .iter()
+                .find_map(|file| file.path.clone())
+        });
+        if let Some(path) = dropped {
+            self.load_path(&path);
+        }
         bik_player_ui::draw_top_panel(self, ctx);
         bik_player_ui::draw_timeline(self, ctx);
 

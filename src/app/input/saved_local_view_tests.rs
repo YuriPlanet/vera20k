@@ -12,6 +12,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::snapshot::saved_local_view::SavedLocalView;
 use crate::sim::world::Simulation;
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+use crate::util::save_codec;
 
 fn fixture() -> (Simulation, RuleSet, MatchInputState) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -65,7 +66,7 @@ fn serialized_capture_with(
     rules: &RuleSet,
 ) -> SavedLocalView {
     let saved = input.capture_saved_local_view(sim, rules, sidebar).unwrap();
-    bincode::deserialize(&bincode::serialize(&saved).unwrap()).unwrap()
+    save_codec::deserialize(&save_codec::serialize(&saved).unwrap()).unwrap()
 }
 
 fn commit(prepared: PreparedSavedLocalView, input: &mut MatchInputState) {
@@ -145,7 +146,7 @@ fn pending_selection_survives_load_until_the_existing_queue_owner_drains_it() {
             additive: false,
         },
     ));
-    let queued_before = bincode::serialize(&sim.pending_command_snapshot()).unwrap();
+    let queued_before = save_codec::serialize(&sim.pending_command_snapshot()).unwrap();
     let saved = serialized_capture(&input, &sim, &rules);
     assert_eq!(saved.selection_order(), [2, 1]);
     assert!(saved.selection_order_pending());
@@ -155,7 +156,7 @@ fn pending_selection_survives_load_until_the_existing_queue_owner_drains_it() {
     assert_eq!(restored.selection_order, [2, 1]);
     assert!(restored.selection_order_pending);
     assert_eq!(
-        bincode::serialize(&sim.pending_command_snapshot()).unwrap(),
+        save_codec::serialize(&sim.pending_command_snapshot()).unwrap(),
         queued_before
     );
     assert!(!sim.entities().get(2).unwrap().selection.is_selected());

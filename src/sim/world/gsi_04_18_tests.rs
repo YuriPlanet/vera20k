@@ -10,6 +10,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
+use crate::util::save_codec;
 
 fn spy_sat_rules() -> RuleSet {
     let ini = IniFile::from_str(
@@ -1107,8 +1108,8 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
             );
             assert_eq!(sim.fog.is_cell_visible(viewer, 12, 12), building);
         }
-        let bytes = bincode::serialize(&sim.fog).unwrap();
-        sim.fog = bincode::deserialize(&bytes).unwrap();
+        let bytes = save_codec::serialize(&sim.fog).unwrap();
+        sim.fog = save_codec::deserialize(&bytes).unwrap();
         sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
         sim.reconcile_active_vision_structures(&rules);
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);

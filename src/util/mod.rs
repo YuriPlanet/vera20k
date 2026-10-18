@@ -37,6 +37,7 @@ pub mod sha256;
 pub mod single_instance;
 pub mod version;
 pub mod rect;
+pub mod save_codec;
 // pub mod color;
 
 pub mod native_file_time;

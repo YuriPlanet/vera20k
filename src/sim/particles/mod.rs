@@ -721,9 +721,9 @@ mod tests {
         });
         store.insert(system);
 
-        let bytes = bincode::serialize(&store).expect("serialize particle systems");
+        let bytes = crate::util::save_codec::serialize(&store).expect("serialize particle systems");
         let restored: ParticleSystemStore =
-            bincode::deserialize(&bytes).expect("deserialize particle systems");
+            crate::util::save_codec::deserialize(&bytes).expect("deserialize particle systems");
         let restored = restored.get(23).expect("system survives roundtrip");
 
         assert_eq!(restored.coords, IVec3::new(-17, 29, 43));

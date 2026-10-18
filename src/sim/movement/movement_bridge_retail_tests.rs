@@ -545,10 +545,7 @@ fn drive_across_high_bridge_with_order(
     };
     // The move-issue path reports every refusal reason through `log::warn!`; without
     // a logger a rejected order is indistinguishable from a height defect.
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     let mut scenario = match headless_scenario::load(&retail, map_file, SEED) {
         Ok(scenario) => scenario,
@@ -1264,10 +1261,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
         eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
         return;
     };
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     let mut scenario = match headless_scenario::load(&retail, map_file, SEED) {
         Ok(scenario) => scenario,
@@ -1942,10 +1936,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
         return;
     };
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     let map_file = "BayOPigs.mmx";
     let mut scenario = match headless_scenario::load(&retail, map_file, SEED) {
@@ -2463,10 +2454,7 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
         eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
         return;
     };
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     let map_file = "Deadman.mmx";
     let mut scenario = match headless_scenario::load(&retail, map_file, SEED) {
@@ -2638,10 +2626,7 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
         eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
         return;
     };
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     /// The terminal sinks of the wood low-bridge damage table.
     const DESTROYED_LOW_OVERLAYS: [u8; 2] = [0x64, 0x65];
@@ -3261,10 +3246,7 @@ fn record_until(
 /// which is itself the answer for that locomotor on that fixture.
 fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun> {
     let retail = retail_dir()?;
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     let mut scenario = match headless_scenario::load(&retail, map_file, SEED) {
         Ok(scenario) => scenario,
@@ -3717,10 +3699,7 @@ fn deck_and_ground_under_one_high_bridge_cell_are_separate_occupancy_planes() {
         eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
         return;
     };
-    let _ = env_logger::builder()
-        .is_test(false)
-        .filter_level(log::LevelFilter::Warn)
-        .try_init();
+    let _ = crate::util::logging::init_stderr_logger("warn");
 
     let mut scenario =
         headless_scenario::load(&retail, "Hills.mmx", SEED).expect("Hills.mmx loads");

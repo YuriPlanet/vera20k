@@ -4,6 +4,7 @@ use super::*;
 use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
+use crate::util::save_codec;
 use serde_json::json;
 
 #[test]
@@ -78,8 +79,8 @@ fn deploy_voice_suppression_roundtrips_independently_of_the_audio_latch() {
     let mut entity = GameEntity::test_default(1, "YAREFN", "YuriCountry", 6, 7);
     assert!(!entity.deploy_voice_suppressed());
     entity.suppress_deploy_voice.suppress();
-    let bytes = bincode::serialize(&entity).unwrap();
-    let mut loaded: GameEntity = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&entity).unwrap();
+    let mut loaded: GameEntity = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(
         loaded.deploy_voice_suppressed(),
         native["loaded_voice_reset"]["suppression"]

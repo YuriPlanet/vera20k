@@ -662,9 +662,10 @@ mod tests {
         ];
 
         for fixture in fixtures {
-            let bytes = bincode::serialize(&fixture).expect("serialize Mission leaf");
+            let bytes =
+                crate::util::save_codec::serialize(&fixture).expect("serialize Mission leaf");
             let restored: MissionLeafState =
-                bincode::deserialize(&bytes).expect("deserialize Mission leaf");
+                crate::util::save_codec::deserialize(&bytes).expect("deserialize Mission leaf");
             assert_eq!(restored, fixture);
         }
     }

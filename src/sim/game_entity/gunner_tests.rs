@@ -5,6 +5,7 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::world_fire::fireat_rearm_frames;
 use crate::sim::timer::CdTimer;
+use crate::util::save_codec;
 use serde_json::Value;
 
 fn corpus() -> &'static Value {
@@ -142,8 +143,8 @@ fn charge_turret_ai_and_restored_owner_match_original_arithmetic() {
         ));
         let before_timer = entity.rearm_timer.timer();
         let before_delay = entity.turret_selection.charge_turret_delay;
-        let encoded = bincode::serialize(&entity).unwrap();
-        let mut restored: GameEntity = bincode::deserialize(&encoded).unwrap();
+        let encoded = save_codec::serialize(&entity).unwrap();
+        let mut restored: GameEntity = save_codec::deserialize(&encoded).unwrap();
         for entity in [&mut entity, &mut restored] {
             entity.update_charge_turret(int(input, "frame"), &object);
             assert_selection(entity, &row["after"], context);

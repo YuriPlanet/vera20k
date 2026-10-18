@@ -10,6 +10,7 @@ use crate::sim::combat::Health;
 use crate::sim::occupancy::CellListInsertion;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 
 pub(super) fn basic_infantry_rules() -> RuleSet {
     let ini = IniFile::from_str(
@@ -1263,9 +1264,9 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     assert_eq!(credits_for_owner(&sim, "Americans"), credits + 1000);
     assert_eq!(sim.houses[&americans].stats.built(), 0);
 
-    let bytes =
-        bincode::serialize(&sim.production.factories).expect("serialize the fresh active factory");
-    sim.production.factories = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.production.factories)
+        .expect("serialize the fresh active factory");
+    sim.production.factories = save_codec::deserialize(&bytes).unwrap();
     // Publishing alone does not invent another PLACE for an unfinished successor.
     assert!(!super::dispatch_production_changes_for_tests(
         &mut sim, &rules, None

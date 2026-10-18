@@ -15,6 +15,7 @@ use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 use winit::keyboard::{Key, KeyLocation, ModifiersState};
 
@@ -255,7 +256,7 @@ fn saved_local_view_commit_resets_cheer_admission_instead_of_restoring_it() {
     let saved = source
         .capture_saved_local_view(&sim, &rules, &SidebarGadgetState::new())
         .unwrap();
-    let saved = bincode::deserialize(&bincode::serialize(&saved).unwrap()).unwrap();
+    let saved = save_codec::deserialize(&save_codec::serialize(&saved).unwrap()).unwrap();
     let mut outgoing = MatchInputState::new(Default::default());
     outgoing.last_cheer_frame = 123_456;
     let prepared = PreparedSavedLocalView::new(saved, &sim, &rules).unwrap();

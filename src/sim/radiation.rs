@@ -953,8 +953,9 @@ mod tests {
         for frame in 6..=130 {
             rad.tick_decay(frame, &rules, None, &mut Vec::new());
         }
-        let bytes = bincode::serialize(&rad).expect("serialize");
-        let restored: RadiationState = bincode::deserialize(&bytes).expect("deserialize");
+        let bytes = crate::util::save_codec::serialize(&rad).expect("serialize");
+        let restored: RadiationState =
+            crate::util::save_codec::deserialize(&bytes).expect("deserialize");
         let a: Vec<_> = rad.iter_cells().map(|(c, v)| (*c, v.to_bits())).collect();
         let b: Vec<_> = restored
             .iter_cells()

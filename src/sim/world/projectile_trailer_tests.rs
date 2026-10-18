@@ -13,6 +13,7 @@ use crate::sim::projectile::{
     TargetExpiryPolicy,
 };
 use crate::sim::rng::SimRng;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn native() -> &'static Value {
@@ -445,8 +446,8 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
             sim.substrate.logic.snapshot()
         );
         assert_eq!(
-            bincode::serialize(&first.substrate.display).unwrap(),
-            bincode::serialize(&sim.substrate.display).unwrap()
+            save_codec::serialize(&first.substrate.display).unwrap(),
+            save_codec::serialize(&sim.substrate.display).unwrap()
         );
         assert_eq!(
             anim_state(&first, first.anim(bubble).unwrap()),
@@ -605,9 +606,9 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
         return;
     };
     let type_id = sim.interner.get("Cannon").unwrap();
-    let encoded = bincode::serialize(&sim.projectiles).unwrap();
+    let encoded = save_codec::serialize(&sim.projectiles).unwrap();
     let mechanical: crate::sim::projectile::ProjectileStore =
-        bincode::deserialize(&encoded).unwrap();
+        save_codec::deserialize(&encoded).unwrap();
     // in_logic_vector is an existing serde-skipped derived flag rebuilt by
     // the world. Compare persisted state, not that deliberately absent flag.
     assert_eq!(
@@ -615,7 +616,7 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
         sim.projectiles.scalable_members()
     );
     assert_eq!(mechanical.scaled_spawn_delay(type_id), 4);
-    assert_eq!(bincode::serialize(&mechanical).unwrap(), encoded);
+    assert_eq!(save_codec::serialize(&mechanical).unwrap(), encoded);
     let mut loaded = restored(&sim);
     assert!(
         loaded.projectiles.scalable_members().is_empty(),

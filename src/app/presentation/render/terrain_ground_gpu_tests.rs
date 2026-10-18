@@ -10,6 +10,7 @@ use crate::render::batch::InstanceBufferPool;
 use crate::render::tactical_draw_plan::{BlitPolicy, ObjectDraw, SpriteEncoding, TacticalLayer};
 use crate::render::terrain_draw::{TerrainDrawRenderer, TerrainPiece};
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, extent, sprite};
+use crate::util::save_codec;
 use wgpu::util::DeviceExt;
 
 #[test]
@@ -68,7 +69,7 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
     }
     // Save/restore must not replace retained history with freshly sorted keys.
     let display: DisplayLayers =
-        bincode::deserialize(&bincode::serialize(&display).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&display).unwrap()).unwrap();
     let order = NativeDisplayOrder::new(display.members(DisplayLayer::GROUND));
     let gpu = Gpu::new();
     let size = [4, 2];

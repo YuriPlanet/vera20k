@@ -7,6 +7,7 @@ use crate::map::map_file::MapFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn corpus() -> &'static Value {
@@ -714,8 +715,8 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     assert_eq!(retained.pending, integer(&native_tag["pending"]) != 0);
     assert!(sim.trigger_runtime.logic_tags.contains(&tag));
     sim.validate_restored_trigger_runtime().unwrap();
-    let bytes = bincode::serialize(&sim.trigger_runtime).unwrap();
-    let mut restored: TriggerRuntime = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.trigger_runtime).unwrap();
+    let mut restored: TriggerRuntime = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(restored, sim.trigger_runtime);
     restored.action_trace = std::mem::take(&mut sim.trigger_runtime.action_trace);
     restored.dispatch_trace = std::mem::take(&mut sim.trigger_runtime.dispatch_trace);

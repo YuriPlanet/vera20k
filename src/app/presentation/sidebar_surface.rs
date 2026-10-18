@@ -269,6 +269,7 @@ impl SidebarSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::gpu::block_on;
     use std::time::Duration;
     use wgpu::util::DeviceExt;
 
@@ -283,11 +284,10 @@ mod tests {
 
     fn gpu() -> Gpu {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let adapter =
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-                .expect("explicit sidebar surface GPU test requires adapter");
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+            .expect("explicit sidebar surface GPU test requires adapter");
         let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+            block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         Gpu { device, queue }
     }
 

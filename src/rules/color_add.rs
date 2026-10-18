@@ -386,7 +386,10 @@ mod tests {
         );
         let processed = RulesLayerStack::new(root).process().unwrap();
         let saved: crate::rules::native_processing::ProcessedRulesLayers =
-            bincode::deserialize(&bincode::serialize(&processed).unwrap()).unwrap();
+            crate::util::save_codec::deserialize(
+                &crate::util::save_codec::serialize(&processed).unwrap(),
+            )
+            .unwrap();
         let (_, trace) = saved.into_ini_and_native_type_construction_trace();
         let registry = trace.into_registry_state_discarding_events();
         let continued = RulesLayerStack::new(IniFile::from_str("[AudioVisual]\nberserkcolor=99\n"))

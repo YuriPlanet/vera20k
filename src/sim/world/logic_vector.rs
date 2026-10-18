@@ -191,8 +191,8 @@ mod tests {
         v.try_push(9).unwrap();
         v.try_push(4).unwrap();
         v.try_push(6).unwrap();
-        let bytes = bincode::serialize(&v).expect("serialize");
-        let back: LogicVector = bincode::deserialize(&bytes).expect("deserialize");
+        let bytes = crate::util::save_codec::serialize(&v).expect("serialize");
+        let back: LogicVector = crate::util::save_codec::deserialize(&bytes).expect("deserialize");
         assert_eq!(back.snapshot(), vec![9, 4, 6]);
     }
 

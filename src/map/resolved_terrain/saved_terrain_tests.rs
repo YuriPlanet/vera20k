@@ -31,8 +31,8 @@ fn saved_terrain_roundtrip_retains_materialized_values_without_constructor_effec
     grid.cell_mut(1, 1).unwrap().level = 7;
     let saved = grid.capture_saved_template().unwrap();
     let value = serde_json::to_value(&saved).unwrap();
-    let encoded = bincode::serialize(&saved).unwrap();
-    let decoded: SavedTerrainTemplate = bincode::deserialize(&encoded).unwrap();
+    let encoded = save_codec::serialize(&saved).unwrap();
+    let decoded: SavedTerrainTemplate = save_codec::deserialize(&encoded).unwrap();
     let dummy = SharedCellDummy::fresh();
     let restored = decoded.restore_values(dummy.clone()).unwrap();
     assert_eq!(restored.cells(), grid.cells());

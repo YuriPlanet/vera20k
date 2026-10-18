@@ -265,9 +265,10 @@ mod tests {
         ];
 
         for fixture in fixtures {
-            let bytes = bincode::serialize(&fixture).expect("serialize raw readiness");
+            let bytes =
+                crate::util::save_codec::serialize(&fixture).expect("serialize raw readiness");
             let restored: LocomotorReadyState =
-                bincode::deserialize(&bytes).expect("deserialize raw readiness");
+                crate::util::save_codec::deserialize(&bytes).expect("deserialize raw readiness");
             assert_eq!(restored, fixture);
 
             let mut before = DefaultHasher::new();

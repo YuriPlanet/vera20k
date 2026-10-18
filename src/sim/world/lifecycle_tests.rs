@@ -30,6 +30,7 @@ use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
 use crate::sim::wave::{Wave, WaveRecordedCell};
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF64Bits;
+use crate::util::save_codec;
 use glam::IVec3;
 
 use super::techno_ai::ObjectAiCtx;
@@ -278,8 +279,8 @@ fn deferred_queue_indexes_and_saved_continuation_handle_twenty_thousand_identiti
     queue.queue_trigger(47);
     queue.queue_overlay(20_001).unwrap();
     queue.assert_consistent_for_test();
-    let bytes = bincode::serialize(&queue).unwrap();
-    let mut restored: DeferredDeleteQueue = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&queue).unwrap();
+    let mut restored: DeferredDeleteQueue = save_codec::deserialize(&bytes).unwrap();
     restored.assert_consistent_for_test();
     assert_eq!(queue, restored);
 
@@ -299,8 +300,8 @@ fn deferred_queue_indexes_and_saved_continuation_handle_twenty_thousand_identiti
     restored.assert_consistent_for_test();
     assert_eq!(queue, restored);
     assert_eq!(
-        bincode::serialize(&queue).unwrap(),
-        bincode::serialize(&restored).unwrap()
+        save_codec::serialize(&queue).unwrap(),
+        save_codec::serialize(&restored).unwrap()
     );
     let hash = |queue: &DeferredDeleteQueue| {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -8289,8 +8290,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // ZoneGrid encoding includes native retained base bytes, not hierarchy
     // history, so this compares exact saved authority without normalizing a
     // live graph merely to make its hash agree with ordinary load.
-    let expected_authority = bincode::serialize(&sim).unwrap();
-    let expected_base = bincode::serialize(sim.zone_grid.as_ref().unwrap()).unwrap();
+    let expected_authority = save_codec::serialize(&sim).unwrap();
+    let expected_base = save_codec::serialize(sim.zone_grid.as_ref().unwrap()).unwrap();
     let bytes = GameSnapshot::save(&sim, 0, 0, "collapsed-dcliff", 0);
     let mut restored = GameSnapshot::load(&bytes)
         .expect("collapsed cliff snapshot")
@@ -8305,9 +8306,12 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             .unwrap()
             .is_native_load_pending()
     );
-    assert_eq!(bincode::serialize(&restored).unwrap(), expected_authority);
     assert_eq!(
-        bincode::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
+        save_codec::serialize(&restored).unwrap(),
+        expected_authority
+    );
+    assert_eq!(
+        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
         expected_base
     );
     restored.rebuild_caches_after_load(pristine_terrain, Default::default(), &rules);
@@ -8322,9 +8326,12 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             .unwrap()
             .is_native_load_pending()
     );
-    assert_eq!(bincode::serialize(&restored).unwrap(), expected_authority);
     assert_eq!(
-        bincode::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
+        save_codec::serialize(&restored).unwrap(),
+        expected_authority
+    );
+    assert_eq!(
+        save_codec::serialize(restored.zone_grid.as_ref().unwrap()).unwrap(),
         expected_base
     );
     // Native LoadContent67E8CD ->581F50 clears the incremental hierarchy

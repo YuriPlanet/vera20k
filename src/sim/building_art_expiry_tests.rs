@@ -12,6 +12,7 @@ use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId};
 use crate::sim::rng::SimRng;
 use crate::sim::stage::StageClass;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn corpus() -> &'static Value {
@@ -475,8 +476,8 @@ fn snapshot_restores_completed_retraction_and_independent_building_marker() {
             .find(|r| r["input"]["name"] == name)
             .unwrap();
         let (sim, rules, id, expired) = scene(&golden, row);
-        let bytes = bincode::serialize(&sim).unwrap();
-        let mut restored: Simulation = bincode::deserialize(&bytes).unwrap();
+        let bytes = save_codec::serialize(&sim).unwrap();
+        let mut restored: Simulation = save_codec::deserialize(&bytes).unwrap();
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
             restored.anim(expired).unwrap().completed(),

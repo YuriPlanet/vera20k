@@ -42,9 +42,6 @@ fixed = { version = "1", features = ["serde"] }
 # --- Serialization ---
 serde = { workspace = true }
 serde_json = { workspace = true }
-bincode = { workspace = true }
-# toml for config.toml parsing (game settings, asset paths).
-toml = "0.8"
 
 # --- Binary parsing ---
 # RA2's binary asset formats (.mix, .shp, .vxl, .pal, .tmp, .hva) are parsed by
@@ -58,7 +55,6 @@ anyhow = { workspace = true }
 
 # --- Logging ---
 log = { workspace = true }
-env_logger = { workspace = true }
 
 # --- Parallel simulation work ---
 # The persistent worker pool behind `sim::parallel::map`; its threads keep their
@@ -66,10 +62,8 @@ env_logger = { workspace = true }
 rayon = "1.11"
 
 # --- Crypto (for MIX archive header decryption) ---
-# RA2 .mix files encrypt their file index with Blowfish. The key is RSA-encrypted.
-# We use well-known RustCrypto/num crates — NOT any RA2-specific packages.
-# Blowfish block cipher — decrypts the file index in RA2 .mix archives.
-blowfish = "0.9"
+# RA2 .mix files encrypt their file index with Blowfish (`assets::blowfish`).
+# The key is RSA-encrypted.
 # Big integer arithmetic — RSA modular exponentiation to extract the Blowfish key.
 # Simpler than the full `rsa` crate since RA2 uses raw/textbook RSA (no PKCS padding).
 num-bigint = "0.4"

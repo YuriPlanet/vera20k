@@ -341,8 +341,8 @@ mod tests {
         assert_eq!(cells.len(), 0);
         assert_eq!(format!("{cells:?}"), "{}");
         assert_eq!(
-            bincode::serialize(&cells).unwrap(),
-            bincode::serialize(&BTreeMap::<(u16, u16), u32>::new()).unwrap()
+            crate::util::save_codec::serialize(&cells).unwrap(),
+            crate::util::save_codec::serialize(&BTreeMap::<(u16, u16), u32>::new()).unwrap()
         );
     }
 
@@ -364,9 +364,9 @@ mod tests {
                     map
                 });
         let sorted: BTreeMap<(u16, u16), u64> = entries.into_iter().collect();
-        let bytes = bincode::serialize(&cells).unwrap();
-        assert_eq!(bytes, bincode::serialize(&sorted).unwrap());
-        let restored: CellMap<u64> = bincode::deserialize(&bytes).unwrap();
+        let bytes = crate::util::save_codec::serialize(&cells).unwrap();
+        assert_eq!(bytes, crate::util::save_codec::serialize(&sorted).unwrap());
+        let restored: CellMap<u64> = crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored, cells);
     }
 }

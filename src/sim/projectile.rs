@@ -3107,8 +3107,8 @@ mod tests {
         let mut store = ProjectileStore::new();
         store.spawn(1, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
 
-        let bytes = bincode::serialize(&store).unwrap();
-        let restored: ProjectileStore = bincode::deserialize(&bytes).unwrap();
+        let bytes = crate::util::save_codec::serialize(&store).unwrap();
+        let restored: ProjectileStore = crate::util::save_codec::deserialize(&bytes).unwrap();
 
         assert_eq!(restored, store);
     }

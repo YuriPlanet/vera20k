@@ -421,8 +421,9 @@ mod tests {
             BeginOutcome::Installed
         );
 
-        let bytes = bincode::serialize(&state).expect("serialize locomotor");
-        let loaded: LocomotorState = bincode::deserialize(&bytes).expect("load locomotor");
+        let bytes = crate::util::save_codec::serialize(&state).expect("serialize locomotor");
+        let loaded: LocomotorState =
+            crate::util::save_codec::deserialize(&bytes).expect("load locomotor");
 
         assert_eq!(
             *loaded.runtime_payload(),

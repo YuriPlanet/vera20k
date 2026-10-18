@@ -4,6 +4,7 @@ use crate::rules::native_processing::{
     NativeRulesRegistryState, ProcessedRulesLayers, RulesLayerStack,
     process_native_rules_cold_start,
 };
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn native() -> &'static Value {
@@ -50,8 +51,8 @@ fn av_ambient_inputs_follow_native_reads_cold_handoffs_save_and_type_reset() {
             .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
             .unwrap();
         assert_eq!(state(&processed), row["after"], "{}", row["input"]["name"]);
-        let saved = bincode::serialize(&processed).unwrap();
-        let restored: ProcessedRulesLayers = bincode::deserialize(&saved).unwrap();
+        let saved = save_codec::serialize(&processed).unwrap();
+        let restored: ProcessedRulesLayers = save_codec::deserialize(&saved).unwrap();
         assert_eq!(state(&restored), row["after"]);
         let (_, trace) = restored.into_ini_and_native_type_construction_trace();
         // Rust persistence/reset property; no native arithmetic is generated here.

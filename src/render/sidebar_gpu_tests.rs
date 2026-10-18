@@ -6,6 +6,7 @@ use super::{
     frame_readback::PendingBgra8Readback,
     radar::surface::RadarSurface,
 };
+use crate::render::gpu::block_on;
 use bytemuck::Zeroable;
 use std::{mem::size_of, time::Duration};
 use wgpu::util::DeviceExt;
@@ -29,12 +30,11 @@ fn extent(s: [u32; 2]) -> wgpu::Extent3d {
 impl Gpu {
     fn new() -> Self {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let adapter =
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-                .expect("explicit sidebar GPU test requires adapter");
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+            .expect("explicit sidebar GPU test requires adapter");
         eprintln!("Sidebar GPU adapter: {:?}", adapter.get_info());
         let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+            block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         Self { device, queue }
     }
     fn texture(

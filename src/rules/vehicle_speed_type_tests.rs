@@ -5,6 +5,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
+use crate::util::save_codec;
 
 #[test]
 fn vehicle_speed_type_uses_crusher_default_and_explicit_override() {
@@ -36,8 +37,8 @@ fn vehicle_speed_type_keeps_resolved_default_across_crusher_changes() {
         IniFile::from_str("[CAR]\nCrusher=yes\n[TANK]\nCrusher=no\n"),
     );
     let processed = layers.process().unwrap();
-    let saved = bincode::serialize(&processed).unwrap();
-    let restored: ProcessedRulesLayers = bincode::deserialize(&saved).unwrap();
+    let saved = save_codec::serialize(&processed).unwrap();
+    let restored: ProcessedRulesLayers = save_codec::deserialize(&saved).unwrap();
     let rules = RuleSet::from_processed_rules(&restored).unwrap();
     assert_eq!(rules.object("CAR").unwrap().speed_type, SpeedType::Wheel);
     assert!(rules.object("CAR").unwrap().crusher);

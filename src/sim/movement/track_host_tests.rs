@@ -1,5 +1,6 @@
 use super::*;
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
+use crate::util::save_codec;
 
 use crate::util::fixed_math::SimFixed;
 
@@ -2353,7 +2354,7 @@ fn foot_idle_set_latch_refuses_queue_and_speed_setters_without_effects() {
         .navigation
         .push_nav_queue_for_test(crate::sim::components::NavTargetRef::cell(20, 20));
     actor.foot_speed.set_speed_fraction(SimFixed::lit("0.625"));
-    let before = bincode::serialize(actor).unwrap();
+    let before = save_codec::serialize(actor).unwrap();
     let hash = sim.state_hash();
     let rng = sim.rng_state();
     assert_eq!(
@@ -2366,7 +2367,7 @@ fn foot_idle_set_latch_refuses_queue_and_speed_setters_without_effects() {
         row["returned_al"].as_u64().unwrap() as u8
     );
     assert_eq!(
-        bincode::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
+        save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
         before
     );
     assert_eq!(sim.state_hash(), hash);

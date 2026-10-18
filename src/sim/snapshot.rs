@@ -1,9 +1,10 @@
 //! Simulation snapshot serialization for mid-match save/load.
 //!
 //! Serializes the full `Simulation` state into a compact binary blob via
-//! bincode. Caches and event queues are `#[serde(skip)]`'d on `Simulation`
-//! and must be rebuilt through the validated cache and map-authority restore
-//! sequence before the simulation is exposed again.
+//! `util::save_codec`, which writes bincode 1's layout (the version notes
+//! below call it bincode). Caches and event queues are `#[serde(skip)]`'d on
+//! `Simulation` and must be rebuilt through the validated cache and
+//! map-authority restore sequence before the simulation is exposed again.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends only on sim/world (Simulation).
@@ -23,6 +24,7 @@ use scenario_resources::{SavedScenarioResources, SavedScenarioResourcesRef};
 
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 
 /// Bump this when the snapshot binary format changes in a breaking way.
 // Bumped 13 -> 14 for the serialized occupancy entry-order fields used to rebuild
@@ -1294,7 +1296,7 @@ pub struct GameSnapshot {
 
 /// Lightweight header extracted from a save file without deserializing the
 /// full `Simulation`. Fields are laid out in the same order as `GameSnapshot`
-/// so bincode can decode them as a prefix.
+/// so the save codec can decode them as a prefix.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameSnapshotHeader {
     pub product_magic: [u8; 8],
@@ -1350,7 +1352,7 @@ pub enum SnapshotError {
         simulation_map_name: String,
     },
     #[error("deserialization failed: {0}")]
-    DeserializeFailed(#[from] bincode::Error),
+    DeserializeFailed(#[from] save_codec::Error),
 }
 
 /// Structural failures found before a deserialized simulation is admitted.
@@ -1610,7 +1612,7 @@ impl GameSnapshot {
             local_view,
             scenario_resources,
         };
-        bincode::serialize(&snapshot).expect("snapshot serialization should not fail")
+        save_codec::serialize(&snapshot).expect("snapshot serialization should not fail")
     }
 
     /// Serialize a headless save with metadata owned by the active session.
@@ -1718,7 +1720,7 @@ impl GameSnapshot {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn load_unchecked(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let _ = Self::read_header(bytes)?;
-        Ok(bincode::deserialize(bytes)?)
+        Ok(save_codec::deserialize(bytes)?)
     }
 
     /// Compatibility alias for existing unit fixtures that intentionally use
@@ -1789,7 +1791,7 @@ impl GameSnapshot {
     }
 
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
-        let snapshot: GameSnapshot = bincode::deserialize(bytes)?;
+        let snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
         if snapshot.tick != snapshot.sim.session.tick {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,
@@ -1816,7 +1818,7 @@ impl GameSnapshot {
                 found: preamble.version,
             });
         }
-        Ok(bincode::deserialize(bytes)?)
+        Ok(save_codec::deserialize(bytes)?)
     }
 
     /// SaveInfo681840/559ED0 reads metadata even when its internal version is
@@ -1824,13 +1826,13 @@ impl GameSnapshot {
     /// full load still requires the strict current-version header above.
     pub fn read_metadata(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         Self::read_preamble(bytes)?;
-        Ok(bincode::deserialize(bytes)?)
+        Ok(save_codec::deserialize(bytes)?)
     }
 
     /// Product and public-envelope admission shared by strict loading and the
     /// browser's readable-but-incompatible rows.
     fn read_preamble(bytes: &[u8]) -> Result<GameSnapshotPreamble, SnapshotError> {
-        let preamble: GameSnapshotPreamble = bincode::deserialize(bytes)?;
+        let preamble: GameSnapshotPreamble = save_codec::deserialize(bytes)?;
         if preamble.product_magic != SNAPSHOT_PRODUCT_MAGIC {
             return Err(SnapshotError::ProductMismatch {
                 found: preamble.product_magic,
@@ -3960,8 +3962,8 @@ mod tests {
             (2, 0, 0, 0x21)
         );
         assert_eq!(restore_output.native_tiberium_stats, Default::default());
-        let saved_authority = bincode::serialize(&sim).unwrap();
-        let loaded_authority = bincode::serialize(&restored).unwrap();
+        let saved_authority = save_codec::serialize(&sim).unwrap();
+        let loaded_authority = save_codec::serialize(&restored).unwrap();
         assert!(
             saved_authority == loaded_authority,
             "overlay authority differs at byte {:?}; lengths {} vs {}",
@@ -4101,7 +4103,7 @@ mod tests {
             retained_neighbor_counts: Vec<u8>,
         }
 
-        let malformed_bytes = bincode::serialize(&OverlayGridWire {
+        let malformed_bytes = save_codec::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default()],
@@ -4109,7 +4111,7 @@ mod tests {
         })
         .expect("malformed overlay wire fixture");
         let malformed: OverlayGrid =
-            bincode::deserialize(&malformed_bytes).expect("wire-compatible OverlayGrid");
+            save_codec::deserialize(&malformed_bytes).expect("wire-compatible OverlayGrid");
         let ini = IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [OverlayTypes]\n",
@@ -4143,7 +4145,7 @@ mod tests {
             retained_neighbor_counts: Vec<u8>,
         }
 
-        let malformed_bytes = bincode::serialize(&OverlayGridWire {
+        let malformed_bytes = save_codec::serialize(&OverlayGridWire {
             width: 2,
             height: 1,
             cells: vec![OverlayCell::default(); 2],
@@ -4151,7 +4153,7 @@ mod tests {
         })
         .expect("malformed retained wall-neighbor wire fixture");
         let malformed: OverlayGrid =
-            bincode::deserialize(&malformed_bytes).expect("wire-compatible OverlayGrid");
+            save_codec::deserialize(&malformed_bytes).expect("wire-compatible OverlayGrid");
         let ini = IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [OverlayTypes]\n",
@@ -4300,7 +4302,7 @@ mod tests {
 
     #[test]
     fn free_radar_rejects_v138_before_decoding_the_changed_session() {
-        let bytes = bincode::serialize(&GameSnapshotHeader {
+        let bytes = save_codec::serialize(&GameSnapshotHeader {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
             version: 138,
@@ -4323,7 +4325,7 @@ mod tests {
 
     #[test]
     fn gsi_04_07_v38_header_is_rejected_before_wall_owner_decode() {
-        let bytes = bincode::serialize(&GameSnapshotHeader {
+        let bytes = save_codec::serialize(&GameSnapshotHeader {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
             version: 38,
@@ -4347,7 +4349,7 @@ mod tests {
 
     #[test]
     fn current_header_with_missing_body_reports_deserialization_failure() {
-        let bytes = bincode::serialize(&GameSnapshotHeader {
+        let bytes = save_codec::serialize(&GameSnapshotHeader {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
             version: SNAPSHOT_VERSION,
@@ -4388,7 +4390,7 @@ mod tests {
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
             version: SNAPSHOT_VERSION,
         };
-        let preamble_only = bincode::serialize(&foreign_preamble).expect("foreign preamble");
+        let preamble_only = save_codec::serialize(&foreign_preamble).expect("foreign preamble");
 
         assert!(matches!(
             GameSnapshot::load(&preamble_only),
@@ -4403,7 +4405,7 @@ mod tests {
             envelope_version: SNAPSHOT_ENVELOPE_VERSION + 1,
             version: SNAPSHOT_VERSION,
         };
-        let preamble_only = bincode::serialize(&wrong_public).expect("public-version preamble");
+        let preamble_only = save_codec::serialize(&wrong_public).expect("public-version preamble");
         assert!(matches!(
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::EnvelopeVersionMismatch {
@@ -4417,7 +4419,8 @@ mod tests {
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
             version: SNAPSHOT_VERSION - 1,
         };
-        let preamble_only = bincode::serialize(&wrong_internal).expect("schema-version preamble");
+        let preamble_only =
+            save_codec::serialize(&wrong_internal).expect("schema-version preamble");
         assert!(matches!(
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::VersionMismatch {
@@ -4931,7 +4934,7 @@ mod tests {
                 envelope_version: SNAPSHOT_ENVELOPE_VERSION,
                 version,
             };
-            let bytes = bincode::serialize(&preamble).expect("previous layout header");
+            let bytes = save_codec::serialize(&preamble).expect("previous layout header");
             assert!(matches!(
                 GameSnapshot::load(&bytes),
                 Err(SnapshotError::VersionMismatch { expected: SNAPSHOT_VERSION, found }) if found == version
@@ -7851,7 +7854,8 @@ mod tests {
 
         let mut inconsistent = GameSnapshot::load_unchecked(&bytes).expect("current snapshot");
         inconsistent.tick = inconsistent.tick.wrapping_add(1);
-        let inconsistent_bytes = bincode::serialize(&inconsistent).expect("corrupt tick metadata");
+        let inconsistent_bytes =
+            save_codec::serialize(&inconsistent).expect("corrupt tick metadata");
         assert!(matches!(
             GameSnapshot::load_validated(&inconsistent_bytes, 0x11, 0x22, "MAP01.MAP"),
             Err(SnapshotError::TickMetadataMismatch { .. })
@@ -7859,7 +7863,8 @@ mod tests {
 
         inconsistent.tick = inconsistent.sim.session.tick;
         inconsistent.sim.session.map_name = "OTHER.MAP".to_string();
-        let inconsistent_bytes = bincode::serialize(&inconsistent).expect("corrupt map metadata");
+        let inconsistent_bytes =
+            save_codec::serialize(&inconsistent).expect("corrupt map metadata");
         assert!(matches!(
             GameSnapshot::load_validated(&inconsistent_bytes, 0x11, 0x22, "MAP01.MAP"),
             Err(SnapshotError::MapNameMetadataMismatch { .. })
@@ -8840,8 +8845,8 @@ mod tests {
             expected_ground_z,
             "restored raw 0x100 clear removes +416 while retaining the 104-lepton ground kernel"
         );
-        let saved_authority = bincode::serialize(&live).unwrap();
-        let loaded_authority = bincode::serialize(&restored).unwrap();
+        let saved_authority = save_codec::serialize(&live).unwrap();
+        let loaded_authority = save_codec::serialize(&restored).unwrap();
         assert!(
             saved_authority == loaded_authority,
             "real Cell authority differs at byte {:?}; lengths {} vs {}",
@@ -10035,8 +10040,9 @@ mod tests {
             target_rx: 100,
             target_ry: 200,
         };
-        let bytes = bincode::serialize(&cmd).expect("serialize should succeed");
-        let restored: Command = bincode::deserialize(&bytes).expect("deserialize should succeed");
+        let bytes = save_codec::serialize(&cmd).expect("serialize should succeed");
+        let restored: Command =
+            save_codec::deserialize(&bytes).expect("deserialize should succeed");
         assert!(matches!(
             restored,
             Command::ForceAttackCell {

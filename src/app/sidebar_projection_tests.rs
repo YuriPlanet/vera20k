@@ -19,6 +19,7 @@ use crate::ui::sidebar::{
     SidebarAction, SidebarChromeLayoutSpec, SidebarTab, SidebarView, build_sidebar_view_with_spec,
     hit_test_item,
 };
+use crate::util::save_codec;
 
 impl SidebarProjectionState {
     /// Strip/projection fixtures below supply their admitted identities;
@@ -335,8 +336,8 @@ fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
         ["ORCA"]
     );
     let saved = projection.saved_order().unwrap();
-    let bytes = bincode::serialize(&saved).unwrap();
-    let saved: crate::sim::snapshot::SavedSidebarOrder = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&saved).unwrap();
+    let saved: crate::sim::snapshot::SavedSidebarOrder = save_codec::deserialize(&bytes).unwrap();
     let restored =
         super::sidebar_projection::prepare_saved_order(Some(saved.clone()), &sim, &rules).unwrap();
     let mut loaded = SidebarProjectionState::default();

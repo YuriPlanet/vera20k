@@ -12,6 +12,7 @@ use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::rng::SimRng;
 use crate::sim::team_script_vm::reinforcements_tests::reinforcement_world;
 use crate::sim::world::ObjectAiCtx;
+use crate::util::save_codec;
 use serde_json::Value;
 
 fn number(value: &Value) -> i32 {
@@ -458,7 +459,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
         for &id in &ids {
             let actor = sim.entities().get(id).unwrap();
             let restored: crate::sim::game_entity::GameEntity =
-                bincode::deserialize(&bincode::serialize(actor).unwrap()).unwrap();
+                save_codec::deserialize(&save_codec::serialize(actor).unwrap()).unwrap();
             assert_eq!(
                 restored.ammo().unwrap().current(),
                 actor.ammo().unwrap().current()

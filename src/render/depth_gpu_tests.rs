@@ -20,6 +20,7 @@ use wgpu::util::DeviceExt;
 use super::batch::{CameraUniform, SpriteInstance};
 use super::draw_state::DrawState;
 use super::frame_readback::PendingBgra8Readback;
+use super::gpu::block_on;
 use super::native_z::{Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG, ZGradient};
 
 const SIDE: u32 = 8;
@@ -111,13 +112,13 @@ impl Gpu {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
         });
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: None,
             ..Default::default()
         }))
         .expect("explicit GPU regression test requires a wgpu adapter");
         eprintln!("Depth shader test adapter: {:?}", adapter.get_info());
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("Depth shader regression device"),
             ..Default::default()
         }))

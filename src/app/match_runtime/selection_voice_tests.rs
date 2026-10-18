@@ -13,6 +13,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 
 #[test]
 fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
@@ -47,7 +48,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             entity.suppress_deploy_voice.suppress();
         }
         let archive_before = entity.archive_target();
-        let mission_before = bincode::serialize(&entity.mission).unwrap();
+        let mission_before = save_codec::serialize(&entity.mission).unwrap();
         let main_before = sim.rng_views().main.native_state_hex();
         let scenario_before = sim.scenario_rng.native_state_hex();
         let mapgen_before = sim.mapgen_rng.native_state_hex();
@@ -82,7 +83,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             "{context}: Archive retained"
         );
         assert_eq!(
-            bincode::serialize(&entity.mission).unwrap(),
+            save_codec::serialize(&entity.mission).unwrap(),
             mission_before,
             "{context}: timers"
         );

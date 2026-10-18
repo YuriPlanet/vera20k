@@ -13,6 +13,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 
 /// `[Sides]` listing country `Country{n}` as side `n`, the one at
 /// `civilian_side` named `Civilian` (absent past the list, as when no house
@@ -882,12 +883,12 @@ fn reveal_entire_map_reveals_once_and_only_to_the_current_house() {
     assert!(!sim.houses[&houses[0]].map_is_clear);
     assert!(sim.fog.whole_map_revealed_for_owner(houses[0]));
     assert!(sim.fog.is_cell_revealed(houses[0], 7, 7));
-    let plane = bincode::serialize(&sim.fog.by_owner[&houses[0]]).unwrap();
+    let plane = save_codec::serialize(&sim.fog.by_owner[&houses[0]]).unwrap();
 
     sim.reveal_entire_map(Some(houses[0]), context);
     assert!(sim.houses[&houses[0]].map_is_clear);
     assert_eq!(
-        bincode::serialize(&sim.fog.by_owner[&houses[0]]).unwrap(),
+        save_codec::serialize(&sim.fog.by_owner[&houses[0]]).unwrap(),
         plane
     );
 

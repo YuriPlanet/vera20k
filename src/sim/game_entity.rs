@@ -2012,8 +2012,8 @@ mod tests {
                 row["offset_words"].as_i64().unwrap() as i32,
                 "native control {row}"
             );
-            let saved = bincode::serialize(&entity).unwrap();
-            let restored: GameEntity = bincode::deserialize(&saved).unwrap();
+            let saved = crate::util::save_codec::serialize(&entity).unwrap();
+            let restored: GameEntity = crate::util::save_codec::deserialize(&saved).unwrap();
             assert_eq!(
                 restored.native_cloak_displacement,
                 entity.native_cloak_displacement

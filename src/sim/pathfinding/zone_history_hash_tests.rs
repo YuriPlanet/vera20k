@@ -1,6 +1,7 @@
 use super::*;
 use crate::map::resolved_terrain::test_flat_cell;
 use crate::sim::pathfinding::zone_incremental::repair_zone_hierarchy_around_cell;
+use crate::util::save_codec;
 use std::hash::Hasher;
 
 // Supplied branch-test bounds, as in zone_map_tests::repair_test_bounds. They
@@ -137,35 +138,36 @@ fn ordinary_load_retains_saved_base_rows_and_heights_instead_of_recomputing_them
     base.levels[5 * 16 + 5] = 3;
     base.raw_zone_ids_by_row[0][0] = 17;
     base.raw_zone_ids_by_row[12][0] = 0xffff;
-    let bytes = bincode::serialize(&live).unwrap();
-    let mut restored: ZoneGrid = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&live).unwrap();
+    let mut restored: ZoneGrid = save_codec::deserialize(&bytes).unwrap();
     assert!(restored.is_native_load_pending());
     assert!(restored.navigation_history_hash.get().is_none());
-    assert_eq!(bincode::serialize(&restored).unwrap(), bytes);
+    assert_eq!(save_codec::serialize(&restored).unwrap(), bytes);
     let path = PathGrid::from_resolved_terrain(&terrain);
     restored
         .finish_native_load(&path, &terrain, &[], None)
         .unwrap();
     assert!(!restored.is_native_load_pending());
-    assert_eq!(bincode::serialize(&restored).unwrap(), bytes);
+    assert_eq!(save_codec::serialize(&restored).unwrap(), bytes);
     assert_eq!(restored.base_topology.levels[5 * 16 + 5], 3);
     assert_eq!(restored.base_topology.raw_zone_ids_by_row[0][0], 17);
     assert_eq!(restored.base_topology.raw_zone_ids_by_row[12][0], 0xffff);
-    assert_ne!(bytes, bincode::serialize(&fixture().1).unwrap());
+    assert_ne!(bytes, save_codec::serialize(&fixture().1).unwrap());
 }
 
 #[test]
 fn malformed_saved_navigation_planes_and_rows_are_rejected_before_publication() {
     let (_, mut live) = fixture();
     live.base_topology_mut().levels.pop();
-    let bytes = bincode::serialize(&live).unwrap();
-    assert!(bincode::deserialize::<ZoneGrid>(&bytes).is_err());
+    let bytes = save_codec::serialize(&live).unwrap();
+    assert!(save_codec::deserialize::<ZoneGrid>(&bytes).is_err());
     let (_, mut live) = fixture();
     live.base_topology_mut().raw_zone_ids_by_row[12].pop();
-    let bytes = bincode::serialize(&live).unwrap();
-    assert!(bincode::deserialize::<ZoneGrid>(&bytes).is_err());
+    let bytes = save_codec::serialize(&live).unwrap();
+    assert!(save_codec::deserialize::<ZoneGrid>(&bytes).is_err());
     let (_, live) = fixture();
-    let mut restored: ZoneGrid = bincode::deserialize(&bincode::serialize(&live).unwrap()).unwrap();
+    let mut restored: ZoneGrid =
+        save_codec::deserialize(&save_codec::serialize(&live).unwrap()).unwrap();
     let small = ResolvedTerrainGrid::from_cells(1, 1, vec![test_flat_cell(0, 0)]);
     assert!(
         restored

@@ -1,6 +1,7 @@
 //! Steam3e81a617: Execute6DF588, TeamType6F1F70, Talk70F120.
 use super::*;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::util::save_codec;
 
 #[test]
 fn talk_time_matches_original_unsigned_default_and_ftol_controls() {
@@ -233,7 +234,7 @@ fn talk_time_survives_registry_snapshot_handoff_and_type_reset() {
     let (_, trace) = first.into_ini_and_native_type_construction_trace();
     let state = trace.into_registry_state_discarding_events();
     let loaded: NativeRulesRegistryState =
-        bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
     let next = RulesLayerStack::new(IniFile::from_str("[General]\nTalkBubbleTime=\n"))
         .process_with_fixed_art_and_registry_state(&IniFile::empty(), loaded.destructive_reset())
         .unwrap();

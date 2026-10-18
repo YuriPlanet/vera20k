@@ -6,6 +6,7 @@ use super::{
     batch::{BatchRenderer, CameraUniform, SpriteInstance},
     terrain_draw::{DestinationEditCommand, TerrainDrawRenderer, TerrainPiece},
 };
+use crate::render::gpu::block_on;
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use std::time::Duration;
 use wgpu::util::DeviceExt;
@@ -181,14 +182,14 @@ impl Gpu {
             backends: wgpu::Backends::PRIMARY.with_env(),
             ..Default::default()
         });
-        let adapter = pollster::block_on(instance.request_adapter(&Default::default()))
+        let adapter = block_on(instance.request_adapter(&Default::default()))
             .expect("explicit GPU check needs an adapter");
         eprintln!("Terrain production owner GPU: {:?}", adapter.get_info());
         assert!(
             adapter.features().contains(features),
             "required explicit GPU probe features unavailable"
         );
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             required_features: features,
             ..Default::default()
         }))

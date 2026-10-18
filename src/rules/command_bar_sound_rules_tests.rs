@@ -13,6 +13,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::sound_ini::SoundRegistry;
+use crate::util::save_codec;
 
 const SOUND_CATALOG: &str = "\
 [SoundList]
@@ -235,8 +236,8 @@ fn command_bar_sound_history_survives_saved_rules_and_normal_restore_rebinding()
             .read_name("GUIOpenSound", 0x80),
         Some("Unknown")
     );
-    let bytes = bincode::serialize(saved).unwrap();
-    let saved: ProcessedRulesLayers = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(saved).unwrap();
+    let saved: ProcessedRulesLayers = save_codec::deserialize(&bytes).unwrap();
     // SavedScenarioResources carries this same existing processed authority;
     // the app's load route projects it against the current process catalog.
     let restored = owner.project_saved_scenario_rules(&saved).unwrap();

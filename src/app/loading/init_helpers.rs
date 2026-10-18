@@ -900,8 +900,10 @@ mod tests {
         // the AnimStore and authoritative LogicVector registration order.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
-        let bytes = bincode::serialize(&sim).expect("serialize terrain AnimClass state");
-        let mut restored: Simulation = bincode::deserialize(&bytes).expect("deserialize state");
+        let bytes =
+            crate::util::save_codec::serialize(&sim).expect("serialize terrain AnimClass state");
+        let mut restored: Simulation =
+            crate::util::save_codec::deserialize(&bytes).expect("deserialize state");
         restored.rebuild_logic_membership();
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);

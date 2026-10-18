@@ -331,8 +331,9 @@ mod tests {
             dispatch_timer: MissionDispatchTimer::from_raw(-17, -29),
         });
 
-        let bytes = bincode::serialize(&state).expect("serialize Mission state");
-        let restored: MissionCom = bincode::deserialize(&bytes).expect("deserialize Mission state");
+        let bytes = crate::util::save_codec::serialize(&state).expect("serialize Mission state");
+        let restored: MissionCom =
+            crate::util::save_codec::deserialize(&bytes).expect("deserialize Mission state");
 
         assert_eq!(restored, state);
     }

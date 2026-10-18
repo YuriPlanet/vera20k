@@ -1969,7 +1969,8 @@ mod tests {
         aircraft
             .navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(1, 2)));
-        let before = bincode::serialize(&aircraft).expect("serialize blocked Aircraft");
+        let before =
+            crate::util::save_codec::serialize(&aircraft).expect("serialize blocked Aircraft");
         let mut sim = sim_with(aircraft);
         let mut effects = RecordingConcreteMissionEffects::available();
 
@@ -1984,8 +1985,8 @@ mod tests {
         )
         .unwrap();
 
-        let after =
-            bincode::serialize(sim.substrate.entities.get(1).unwrap()).expect("serialize result");
+        let after = crate::util::save_codec::serialize(sim.substrate.entities.get(1).unwrap())
+            .expect("serialize result");
         assert_eq!(after, before);
         assert!(effects.events.is_empty());
     }

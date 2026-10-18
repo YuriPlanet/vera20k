@@ -10,6 +10,7 @@ use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
+use crate::util::save_codec;
 
 const CENTERS: [(u16, u16); 3] = [(17, 24), (31, 24), (24, 17)];
 const DOG_CELL: (u16, u16) = (24, 24);
@@ -207,11 +208,11 @@ fn overlapping_stock_fields_preserve_serialized_bits_hash_and_decay() {
     };
     let rules = fixture.rules;
     let (scene, _) = create_overlap(&rules, 3);
-    let bytes = bincode::serialize(&scene.radiation).unwrap();
+    let bytes = save_codec::serialize(&scene.radiation).unwrap();
     let mut reference = Simulation::with_seed(0);
     reference.radiation = scene.radiation.clone();
     let mut restored = Simulation::with_seed(0);
-    restored.radiation = bincode::deserialize(&bytes).unwrap();
+    restored.radiation = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(restored.state_hash(), reference.state_hash());
     let before_decay = reference.radiation.cell_level(DOG_CELL).to_bits();
     let initial_hash = reference.state_hash();
@@ -227,8 +228,8 @@ fn overlapping_stock_fields_preserve_serialized_bits_hash_and_decay() {
             );
         }
         assert_eq!(
-            bincode::serialize(&restored.radiation).unwrap(),
-            bincode::serialize(&reference.radiation).unwrap(),
+            save_codec::serialize(&restored.radiation).unwrap(),
+            save_codec::serialize(&reference.radiation).unwrap(),
             "retained cell bits/site timers after frame{frame}"
         );
         assert_eq!(

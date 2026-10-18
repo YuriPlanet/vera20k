@@ -7,15 +7,6 @@ use eframe::egui;
 pub fn draw_top_panel(app: &mut BikPlayerApp, ctx: &egui::Context) {
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
         ui.horizontal(|ui| {
-            if ui.button("Open .bik…").clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Bink video", &["bik", "BIK"])
-                    .pick_file()
-            {
-                app.load_path(&path);
-            }
-            ui.separator();
-
             // Dropdown of every physical .bik entry in every loaded MIX archive.
             if !app.available_entries.is_empty() {
                 let current = if app.source_name.is_empty() {

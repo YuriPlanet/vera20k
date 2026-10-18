@@ -43,6 +43,7 @@ use crate::sim::power_system::PowerState;
 use crate::sim::projectile::ProjectileDetonationReason;
 use crate::sim::rng::{MainRng, SimRng};
 use crate::sim::vision::FogState;
+use crate::util::save_codec;
 
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
@@ -4277,7 +4278,7 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
     let house_order = [victim_house, source_house];
     let threat_persistence = |houses: &BTreeMap<InternedId, HouseState>| {
         let victim = &houses[&victim_house];
-        let snapshot = bincode::serialize(&(victim.grudge_scores.clone(), victim.enemy_house))
+        let snapshot = save_codec::serialize(&(victim.grudge_scores.clone(), victim.enemy_house))
             .expect("threat state serializes");
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(&victim.grudge_scores.len(), &mut hasher);

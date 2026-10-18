@@ -1,6 +1,7 @@
 //! Ordered native processing and constructor-oracle regression tests.
 
 use super::*;
+use crate::util::save_codec;
 
 /// Rules+580 is a signed retained ReadInt/current-default, not stock300.
 #[test]
@@ -58,7 +59,7 @@ fn maximum_cheer_rate_preserves_native_defaults_layers_and_rules_lifetime() {
         .into_ini_and_native_type_construction_trace();
     let state = trace.into_registry_state_discarding_events();
     let mut retained: NativeRulesRegistryState =
-        bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
     for reset in [false, true] {
         if reset {
             retained = retained.destructive_reset();
@@ -160,7 +161,7 @@ fn survivor_divisors_follow_native_defaults_and_retained_rules_passes() {
     let (_, trace) = processed.into_ini_and_native_type_construction_trace();
     let state = trace.into_registry_state_discarding_events();
     let mut retained: NativeRulesRegistryState =
-        bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
     for reset in [false, true] {
         if reset {
             retained = retained.destructive_reset();
@@ -287,7 +288,7 @@ fn target_coord_offset_retains_only_reached_building_rules_passes() {
     );
     let (_, trace) = processed.into_ini_and_native_type_construction_trace();
     let state = trace.into_registry_state_discarding_events();
-    let restored = bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+    let restored = save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
     let tail = RulesLayerStack::new(IniFile::from_str(
         "[BuildingTypes]\n0=HUT\n[HUT]\nStrength=123\n",
     ));
@@ -3072,13 +3073,13 @@ fn waypoint_cue_drop_zone_rules_keep_native_defaults_layers_and_saved_state() {
     .process()
     .unwrap();
     let (_, trace) = first.into_ini_and_native_type_construction_trace();
-    let saved = bincode::serialize(&trace.into_registry_state_discarding_events()).unwrap();
-    let retained: NativeRulesRegistryState = bincode::deserialize(&saved).unwrap();
+    let saved = save_codec::serialize(&trace.into_registry_state_discarding_events()).unwrap();
+    let retained: NativeRulesRegistryState = save_codec::deserialize(&saved).unwrap();
     let next_layers = RulesLayerStack::new(IniFile::from_str("[General]\nName=Same sources\n"));
     let continued = next_layers
         .process_with_fixed_art_and_registry_state(
             &IniFile::empty(),
-            bincode::deserialize(&saved).unwrap(),
+            save_codec::deserialize(&saved).unwrap(),
         )
         .unwrap();
     let continued = publish(&continued);

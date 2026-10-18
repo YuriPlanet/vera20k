@@ -711,7 +711,7 @@ impl serde::Serialize for EntityStore {
     /// form the former `BTreeMap` storage wrote.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        // bincode needs the length up front, which a filtering iterator
+        // The save codec needs the length up front, which a filtering iterator
         // cannot give `collect_map`.
         let mut map = serializer.serialize_map(Some(self.len()))?;
         for (id, entity) in self.stored() {
@@ -1097,9 +1097,9 @@ mod tests {
             .into_iter()
             .map(|id| (id, Box::new(store.get(id).unwrap().clone())))
             .collect();
-        let saved = bincode::serialize(&store).unwrap();
-        assert_eq!(saved, bincode::serialize(&map).unwrap());
-        let restored: EntityStore = bincode::deserialize(&saved).unwrap();
+        let saved = crate::util::save_codec::serialize(&store).unwrap();
+        assert_eq!(saved, crate::util::save_codec::serialize(&map).unwrap());
+        let restored: EntityStore = crate::util::save_codec::deserialize(&saved).unwrap();
         assert_eq!(restored.keys_sorted(), [2, 4, 7]);
         assert_eq!(restored.techno_registry, [2, 4, 7]);
         for id in [2, 4, 7] {
@@ -1111,7 +1111,10 @@ mod tests {
             [4, 2],
             "tracked entities come back in enter order"
         );
-        assert_eq!(bincode::serialize(&restored).unwrap(), saved);
+        assert_eq!(
+            crate::util::save_codec::serialize(&restored).unwrap(),
+            saved
+        );
     }
 
     #[test]
@@ -1143,8 +1146,10 @@ mod tests {
         store.remove(2);
         assert_eq!(store.building_registry_at(0), Some(7));
         assert_eq!(store.building_registry_at(1), None);
-        let restored: EntityStore =
-            bincode::deserialize(&bincode::serialize(&store).unwrap()).unwrap();
+        let restored: EntityStore = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&store).unwrap(),
+        )
+        .unwrap();
         assert_eq!(restored.building_registry, store.building_registry);
         assert_eq!(store.clone().building_registry, store.building_registry);
     }
