@@ -2055,6 +2055,30 @@ impl Simulation {
         self.substrate.anims.set_attached_bullet(id, bullet)
     }
 
+    /// Original43B5E0: caller supplies the target's GetCoords and the name;
+    /// construct delay0/loop1/flags600, then SetBullet424C90, SetHouse424CA0
+    /// and hidden+19D. PointerExpired425150 owns the eventual bullet detach.
+    pub(crate) fn spawn_bullet_warning(
+        &mut self,
+        rules: &RuleSet,
+        name: &str,
+        world: AnimWorldCoord,
+        bullet: u64,
+        house: InternedId,
+    ) -> Option<AnimId> {
+        let type_name = self.interner.intern(name);
+        let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            draw_flags: 0x600,
+            ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+        };
+        let id = self.spawn_anim_at_world(rules, descriptor, world).ok()?;
+        self.set_anim_attached_bullet(id, Some(bullet));
+        self.set_anim_owner_house(id, house);
+        self.set_anim_hidden(id, true);
+        Some(id)
+    }
+
     /// `0x0043B4C0`, the test `AnimClass::AI` runs every frame for an anim
     /// whose type sets `PsiWarning=` (`AnimTypeClass+0x373`,
     /// `0x00423B29..0x00423B5C`) and stores negated as the hidden byte

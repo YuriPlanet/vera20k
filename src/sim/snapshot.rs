@@ -1115,7 +1115,8 @@ use crate::sim::world::Simulation;
 // 405 -> 406: preserve live Action71/72 ambient Rules inputs across saves.
 // 406 -> 407: FogState no longer saves a copy of the House ally graph; the
 // saved Simulation::house_alliances is the only one.
-const SNAPSHOT_VERSION: u32 = 407;
+// 407 -> 408: retained Super one-time and provider-loss/hold flags.
+const SNAPSHOT_VERSION: u32 = 408;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4816,7 +4817,8 @@ mod tests {
         // 404 -> 405: retain AudioVisual ChronoBeamColor in processed rules.
         // 405 -> 406: live ambient Rules writes from Action71/72.
         // 406 -> 407: the fog's copy of the ally graph is gone.
-        assert_eq!(super::SNAPSHOT_VERSION, 407);
+        // 407 -> 408: retained Super one-time and provider-loss/hold flags.
+        assert_eq!(super::SNAPSHOT_VERSION, 408);
     }
 
     #[test]

@@ -23,10 +23,9 @@
 //! - A `PostClick=` type whose `PreDependent=` is unset or past the list
 //!   (constructor -1) reads outside the Supers vector natively; VERA pairs
 //!   nothing. Dormant in retail.
-//! - Dormant in retail data: ClickFire's charge-drain arm
-//!   (`0x006CBB8E..0x006CBCA0`; no retail type sets `UseChargeDrain=`) and
-//!   its one-time arm (`0x006CBB3B..0x006CBB8A`; VERA grants no one-time
-//!   Super).
+//! - ClickFire's charge-drain arm remains unported; no retail type sets
+//!   `UseChargeDrain=`. One-time consumption uses the same retained instance
+//!   owner as ordinary charging.
 
 #[cfg(test)]
 #[path = "fire_tests.rs"]
@@ -152,7 +151,9 @@ fn click_fire(
         frame_effects,
     );
     // `0x006CBBDE..0x006CBC34`: a type that is neither pairs no anim.
-    if !sw.manual_control && !sw.pre_click && !sw.post_click {
+    let one_time = super_instance(sim, owner, sw_type_id).is_some_and(|instance| instance.one_time);
+    //6CBB1B returns before placement-Anim retirement/recharge for one-time.
+    if !one_time && !sw.manual_control && !sw.pre_click && !sw.post_click {
         sim.release_super_anim(owner, sw_type_id);
     }
     let frame = sim.session.binary_frame;

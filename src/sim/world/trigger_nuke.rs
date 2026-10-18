@@ -8,6 +8,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::{CellCoordinate, cell_center};
 use crate::sim::combat::{FiredBullet, RAD_NO_ATTACKER, admit_fired_bullet};
 use crate::sim::components::DriveCoord;
+use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::query_ground_height;
 use crate::sim::projectile::{ProjectileCoord, ProjectilePayload, ProjectileTarget};
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
@@ -29,6 +30,21 @@ impl Simulation {
         let Some(cell) = self.session.waypoint_cell(waypoint) else {
             return false;
         };
+        self.launch_nuke_payload_at_cell(rules, cell, Some(50), None)
+    }
+
+    /// Shared descending NukePayload construction for Execute95 6E3410 and
+    /// one-time Super Launch6CDA88..6CDCB3. The former overrides speed50;
+    /// the latter uses Weapon.Speed and constructs a House-owned PSIWARN
+    /// attached to the new bullet before Fire. Both use null bullet owner,
+    /// Bright=false, structural bridge100, height20000 and scale-100.
+    pub(crate) fn launch_nuke_payload_at_cell(
+        &mut self,
+        rules: &RuleSet,
+        cell: (i16, i16),
+        speed_override: Option<i32>,
+        warning_house: Option<InternedId>,
+    ) -> bool {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
         };
@@ -83,6 +99,33 @@ impl Simulation {
         .with_installed_weapon(Some(self.interner.intern(&weapon.id)));
         let stable_id = self.allocate_stable_id();
         let native_id = self.next_native_runtime_id();
+        if let Some(owner) = warning_house {
+            //43B5E0 uses the target Cell's GetCoords, not this producer's
+            //raised bridge coordinate. The House belongs to the warning;
+            //the bullet keeps its original null source/firer House.
+            let coord = match target {
+                ProjectileTarget::Cell { rx, ry } => crate::sim::projectile::cell_ground_coord(
+                    self.resolved_terrain.as_ref(),
+                    rx,
+                    ry,
+                ),
+                ProjectileTarget::DummyCell => crate::sim::projectile::dummy_cell_ground_coord(
+                    &self.effective_shared_cell_dummy(),
+                ),
+                _ => unreachable!("direct nuke target is a Cell"),
+            };
+            self.spawn_bullet_warning(
+                rules,
+                crate::rules::effect_asset_catalog::PSI_WARNING_ANIM,
+                crate::sim::anim_class::AnimWorldCoord {
+                    x: coord.x,
+                    y: coord.y,
+                    z: coord.z,
+                },
+                stable_id,
+                owner,
+            );
+        }
         let origin = ProjectileCoord::new(location.x, location.y, location.z.wrapping_add(20000));
         // Double7EDA88 is -100. The shared table/pitch kernel also serves
         // the silo and NukeMaker, whose callers pass different scales.
@@ -95,7 +138,7 @@ impl Simulation {
             RAD_NO_ATTACKER,
             target,
             payload,
-            50,
+            speed_override.unwrap_or(weapon.speed),
             origin,
             velocity,
         ) {

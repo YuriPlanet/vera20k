@@ -15,18 +15,18 @@ pub mod cell_grid;
 pub mod chrono_screen;
 mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
+pub mod airstrike_tint;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
 mod charge_native_tests;
 #[cfg(any(test, feature = "test-support"))]
-pub mod chronosphere_tests;
-#[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
+#[cfg(any(test, feature = "test-support"))]
+pub mod chronosphere_tests;
 mod fire;
 pub mod force_shield;
 pub mod genetic_converter;
-pub mod airstrike_tint;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
@@ -200,6 +200,14 @@ pub struct SuperWeaponInstance {
     pub is_ready: bool,
     /// Whether charging is paused due to low power.
     pub is_suspended: bool,
+    /// Super+6E: Grant6CB57D stores its one-time argument. ClickFire6CBB18
+    /// consumes it after Launch; Deactivate deliberately leaves it retained.
+    #[serde(default)]
+    one_time: bool,
+    /// Super+60: constructor6CAFC7 sets it; Execute34 6DE9BB clears it.
+    /// Both House50AF5B and Suspend6CB4EA gate provider loss/power on it.
+    #[serde(default = "default_can_lose")]
+    can_lose: bool,
     /// Native frame when charging began. -1 = timer stopped.
     pub charge_start_tick: i32,
     /// Total charge duration in native frames (may be adjusted on suspend/resume).
@@ -254,6 +262,10 @@ fn inherited_recharge_time() -> i32 {
     -1
 }
 
+fn default_can_lose() -> bool {
+    true
+}
+
 impl SuperWeaponInstance {
     #[inline]
     fn charge_timer(&self) -> CdTimer {
@@ -306,6 +318,14 @@ impl SuperWeaponInstance {
         }
     }
 
+    pub(crate) fn hash_grant_flags(&self, hasher: &mut impl std::hash::Hasher) {
+        if self.one_time || !self.can_lose {
+            std::hash::Hash::hash(b"super-grant-flags-v1", hasher);
+            std::hash::Hash::hash(&self.one_time, hasher);
+            std::hash::Hash::hash(&self.can_lose, hasher);
+        }
+    }
+
     /// SuperClass constructor6CAF90: its charge timer starts at currentFrame
     /// with duration0; flags6C..70 begin false. The House constructs all types
     /// before its own attack-timer draw. See campaign_start --houses receipts.
@@ -317,6 +337,8 @@ impl SuperWeaponInstance {
             is_active: false,
             is_ready: false,
             is_suspended: false,
+            one_time: false,
+            can_lose: true,
             charge_start_tick: frame,
             charge_duration: 0,
             custom_recharge_time: inherited_recharge_time(),
@@ -377,17 +399,24 @@ impl SuperWeaponInstance {
         self.placement_anim
     }
 
-    /// Ordinary, non-one-time Grant6CB560. The existing House pass owns timer
-    /// list admission and placement-Anim release; the instance owns timer/flags.
-    /// Whole original frame0/1 low-power controls are retained by the trigger
-    /// charge-percentage corpus. A low-power grant pauses all of the recharge.
-    fn grant(&mut self, sw: &SuperWeaponType, current_frame: u32, on_hold: bool) -> bool {
+    /// Retained-state part of Grant6CB560, coordinated by `grant_super` below.
+    /// This Boolean is Rust admission, not native AL's timer-restart receipt.
+    /// One-time grants retain an old hold and immediately charge via6CC080;
+    /// ordinary grants only clear/pause a hold when the +60 gate permits it.
+    fn apply_grant_state(
+        &mut self,
+        sw: &SuperWeaponType,
+        current_frame: u32,
+        one_time: bool,
+        on_hold: bool,
+    ) -> bool {
         if self.is_active {
             return false;
         }
         self.is_active = true;
+        self.one_time = one_time;
         let frame = current_frame as i32;
-        if self.is_suspended {
+        if !one_time && self.is_suspended && self.can_lose {
             let mut timer = self.charge_timer();
             if sw.manual_control {
                 timer.pause(frame);
@@ -395,25 +424,44 @@ impl SuperWeaponInstance {
                 timer.resume(frame);
             }
             self.store_charge_timer(timer);
+            self.is_suspended = false;
         }
-        self.is_suspended = false;
         if sw.manual_control {
             let mut timer = CdTimer::started(frame, self.recharge_time(sw));
             timer.pause(frame);
             self.store_charge_timer(timer);
-        } else if !self.is_ready {
+        } else if !self.is_ready && (!self.is_suspended || sw.pre_click) {
             self.store_charge_timer(CdTimer::started(frame, self.recharge_time(sw)));
             if sw.use_charge_drain {
                 self.charge_drain_state = 0;
             }
         }
-        if on_hold {
+        if on_hold && !one_time && !self.is_suspended && self.can_lose {
             let mut timer = self.charge_timer();
             timer.pause(frame);
             self.store_charge_timer(timer);
             self.is_suspended = true;
         }
+        if one_time {
+            self.set_charged(sw, current_frame);
+        }
         true
+    }
+
+    /// Silent SetCharged6CC080 as reached from Grant6CB791.
+    /// Its fild(i32)/ftol identity subtracts exactly the recharge from itself,
+    /// so the new countdown is zero even for signed extreme overrides.
+    /// The announcement argument is zero for Execute33; no EVA is queued.
+    fn set_charged(&mut self, sw: &SuperWeaponType, current_frame: u32) {
+        if !self.is_active {
+            return;
+        }
+        self.is_ready = true;
+        self.store_charge_timer(CdTimer::started(current_frame as i32, 0));
+        self.ready_tick = current_frame as i32;
+        if sw.use_charge_drain {
+            self.charge_drain_state = 1;
+        }
     }
 
     /// SetPercentage6CC1E0, called by Execute1296E430D. The actual f32 0.01
@@ -454,13 +502,13 @@ impl SuperWeaponInstance {
     }
 
     /// `SuperClass::Suspend @ 0x006CB4D0` for a granted Super that is not
-    /// one-time (VERA grants none) and can hold (`+0x71`, set by the
+    /// one-time and can hold (`+0x60`, set by the
     /// constructor): holding, or anything for a `ManualControl=` type, stops
     /// a running recharge keeping the time left; releasing restarts a stopped
     /// one. A charged Super holds too, and ClickFire refuses a stopped timer.
     /// Returns whether the hold changed.
     pub(crate) fn suspend(&mut self, on: bool, manual_control: bool, current_frame: u32) -> bool {
-        if !self.is_active || on == self.is_suspended {
+        if !self.is_active || self.one_time || !self.can_lose || on == self.is_suspended {
             return false;
         }
         let mut timer = self.charge_timer();
@@ -482,7 +530,8 @@ impl SuperWeaponInstance {
     }
 
     /// ClickFire after its Launch (`0x006CBA72..0x006CBB8A`), whatever the
-    /// launch did, for a Super that is not one-time (VERA grants none):
+    /// launch did: a one-time instance clears its one-time/granted/ready
+    /// flags and leaves its timer/hold intact (6CBB18..6CBB60). Otherwise,
     /// readiness ends unless the type is `PostClick=`; a `ManualControl=`
     /// type's timer starts with the recharge time and is paused at once,
     /// keeping all of it; any other type but `PreClick=`/`PostClick=`
@@ -493,6 +542,13 @@ impl SuperWeaponInstance {
         let frame = current_frame as i32;
         if !sw.post_click {
             self.is_ready = false;
+        }
+        if self.one_time {
+            self.one_time = false;
+            if self.is_active {
+                self.deactivate();
+            }
+            return;
         }
         if sw.manual_control {
             let mut timer = CdTimer::started(frame, self.recharge_time(sw));
@@ -1093,6 +1149,10 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 .expect("selected retained Super");
             if !instance.is_active {
                 false
+            } else if !defeated && (!instance.can_lose || instance.one_time) {
+                //50AF5B..50AF78 bypasses shell/provider/power checks, but a
+                //defeated House still reaches the ordinary Deactivate owner.
+                false
             } else if defeated || !allowed || !provided.contains(&type_id) {
                 instance.deactivate();
                 true
@@ -1126,14 +1186,12 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
     if house.is_defeated {
         return;
     }
-    let passive = house.multiplay_passive;
     //50B2C7..50B305 uses the power ratio even for an unpowered Super type.
     let low_power = sim
         .power_states
         .get(&owner)
         .is_some_and(|state| state.is_low_power);
     let (provided, _) = provider_supers(sim, rules, owner);
-    let mut timer_place = next_timer_place(sim);
     for type_id in house_super_order(sim, rules, owner) {
         if !provided.contains(&type_id) {
             continue;
@@ -1144,25 +1202,74 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         if !sim.session.game_options.super_weapons && sw.disableable_from_shell {
             continue;
         }
-        let granted = {
-            let instance = sim
-                .super_weapons
-                .get_mut(&owner)
-                .and_then(|weapons| weapons.get_mut(&type_id))
-                .expect("selected retained Super");
-            if !instance.grant(sw, sim.session.binary_frame, low_power) {
-                false
-            } else {
-                instance.timer_place = (sw.show_timer && !passive).then(|| {
-                    let place = timer_place;
-                    timer_place += 1;
-                    place
-                });
-                true
-            }
-        };
-        if granted && !sw.manual_control {
-            sim.release_super_anim(owner, type_id);
-        }
+        grant_super(sim, rules, owner, type_id, false, low_power);
     }
+}
+
+/// Full Grant6CB560 owner: retained instance flags/timers, timer-list admission
+/// and placement-Anim release. House and trigger producers share this path.
+/// Original AL reports timer restart; both native callers ignore it. The
+/// private state helper instead reports admission to coordinate these effects.
+fn grant_super(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    type_id: InternedId,
+    one_time: bool,
+    on_hold: bool,
+) -> bool {
+    let Some(house) = sim.houses.get(&owner) else {
+        return false;
+    };
+    let passive = house.multiplay_passive;
+    let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+        return false;
+    };
+    let place = next_timer_place(sim);
+    let Some(instance) = sim
+        .super_weapons
+        .get_mut(&owner)
+        .and_then(|weapons| weapons.get_mut(&type_id))
+    else {
+        return false;
+    };
+    if !instance.apply_grant_state(sw, sim.session.binary_frame, one_time, on_hold) {
+        return false;
+    }
+    instance.timer_place = (sw.show_timer && !passive).then_some(place);
+    if !sw.manual_control {
+        sim.release_super_anim(owner, type_id);
+    }
+    true
+}
+
+/// Execute33/34 at6DE925/6DE98E: use the incoming House's retained Super.
+/// The repeat action clears +60 even if Grant rejected an already-active
+/// instance; it does not convert that instance's existing one-time flag.
+/// Native local Sidebar Add/Recalc is projected by the existing active views,
+/// not by StatusChanged (whose distinct hold/revoke consumer clears selection).
+pub(crate) fn trigger_grant_super(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    type_id: InternedId,
+    one_time: bool,
+) -> bool {
+    if !sim
+        .super_weapons
+        .get(&owner)
+        .is_some_and(|weapons| weapons.contains_key(&type_id))
+    {
+        return false;
+    }
+    grant_super(sim, rules, owner, type_id, one_time, false);
+    if !one_time {
+        sim.super_weapons
+            .get_mut(&owner)
+            .unwrap()
+            .get_mut(&type_id)
+            .unwrap()
+            .can_lose = false;
+    }
+    true
 }

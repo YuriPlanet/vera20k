@@ -192,6 +192,10 @@ pub(crate) const ROCKET_TRAIL_ANIM: &str = "V3TRAIL";
 /// `0x0081AF8C` (`0x00467EB1`); no rules key names it.
 pub(crate) const NUKE_BALL_ANIM: &str = "NUKEBALL";
 
+/// Nuclear warning literal81907C: one-time Launch6CDB86 ->43B5E0 and
+/// Building Mission_Missile44C9DC. Both construct an ordinary AnimClass.
+pub(crate) const PSI_WARNING_ANIM: &str = "PSIWARN";
+
 /// ParasiteClass::UpdateSquidGrapple6298CC looks up this executable literal
 /// (83665C), independently of weapon AnimList and other authored roots.
 pub(crate) const SQUID_GRAPPLE_ANIM: &str = "SQDG";
@@ -362,6 +366,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // The nuke's buildup (`sim::superweapon::nuke`): without this root the
     // falling missile waited on no anim and struck one frame after landing.
     insert(NUKE_BALL_ANIM);
+    insert(PSI_WARNING_ANIM);
     insert(SQUID_GRAPPLE_ANIM);
     roots.into_iter().collect()
 }

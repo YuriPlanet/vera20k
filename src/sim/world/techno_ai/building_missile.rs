@@ -40,7 +40,7 @@ use crate::util::native_x87::NativeF64Bits;
 
 /// `PSIWARN`, the warning anim's type (`0x0081907C`, found by name at
 /// `0x0044C9FA`).
-const WARNING_ANIM: &str = "PSIWARN";
+const WARNING_ANIM: &str = crate::rules::effect_asset_catalog::PSI_WARNING_ANIM;
 /// The missile's Construct speed, pushed as an immediate (`0x0044CAC8`).
 const MISSILE_SPEED: i32 = 0xFF;
 /// `[0x007E44A8]` = 10.0, the missile's launch velocity scale.

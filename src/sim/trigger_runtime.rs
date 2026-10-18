@@ -3969,8 +3969,9 @@ impl Simulation {
                 };
                 self.set_object_type_tech_level(action.inline_type_name(), value, rules);
             }
-            ACTION_SET_SUPER_CHARGE_PERCENTAGE | 132..=134 => {
-                // Execute1296E42D0,1326E4320,1336E4360 and1346E43A0 select
+            33 | 34 | ACTION_SET_SUPER_CHARGE_PERCENTAGE | 132..=134 => {
+                // Execute33/34 (6DE925/6DE98E),1296E42D0,1326E4320,
+                //1336E4360 and1346E43A0 select
                 // the incoming House's Super-array ordinal (+90). Only129
                 // has grant/percentage gates.132 writes +48 as the override;
                 //133 clears it without restarting the current countdown;
@@ -4004,6 +4005,15 @@ impl Simulation {
                     return false;
                 };
                 match action.kind {
+                    33 | 34 => {
+                        return crate::sim::superweapon::trigger_grant_super(
+                            self,
+                            rules,
+                            owner,
+                            type_id,
+                            action.kind == 33,
+                        );
+                    }
                     132 => instance.set_recharge_time(action.auxiliary_value()),
                     133 => instance.reset_recharge_time(),
                     134 => crate::sim::superweapon::reset_super(self, rules, owner, name),
@@ -4213,6 +4223,10 @@ mod native_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_superweapon_state_tests.rs"]
 mod superweapon_state_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_superweapon_grant_tests.rs"]
+mod superweapon_grant_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_defense_target_tests.rs"]
