@@ -3906,6 +3906,19 @@ impl Simulation {
                 };
                 return self.trigger_reduce_tiberium_at_waypoint(waypoint, rules, registry);
             }
+            87 => {
+                // Steam3e81a617..08600, Execute6DDBD5..6DDBF3.
+                // This is the retained ice flag; never run the ore grower.
+                let Some(value) = value else {
+                    return false;
+                };
+                self.session.set_ice_growth(value);
+            }
+            97 => {
+                // Execute6DD8EE..6DD910: SETE of current Scenario+34A5;
+                // no Rules, actor, House, waypoint or numeric-value gate.
+                self.session.toggle_train_crate();
+            }
             86 => {
                 let Some(value) = value else {
                     return false;
@@ -4759,3 +4772,7 @@ mod meteor_action_tests {
 #[cfg(test)]
 #[path = "trigger_runtime_talk_tests.rs"]
 mod talk_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_cargo_tests.rs"]
+mod cargo_tests;

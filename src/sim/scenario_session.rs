@@ -511,6 +511,11 @@ pub struct ScenarioDescriptor {
     pub free_radar: bool,
     /// Map `[Basic] IgnoreGlobalAITriggers`, native Scenario+34B4.
     pub ignore_global_ai_triggers: bool,
+    /// Map Basic.TrainCrate / TruckCrate, reset false by683842/68388D.
+    pub train_crate: bool,
+    pub truck_crate: bool,
+    /// Map Basic.IceGrowthEnabled; None uses SetDefaults683856's true.
+    pub ice_growth_enabled: Option<bool>,
     /// Native `ScenarioClass` flags bit `0x40` (`[SpecialFlags] TiberiumGrows`,
     /// bit layout from the writer `0x006B8B30`). Every skirmish/multiplayer
     /// start forces it on (`OR 0xC0` at `0x005E74CD` on the ordinary skirmish
@@ -625,6 +630,15 @@ pub struct ScenarioSession {
     /// Persistent native Scenario+34B4 (`[Basic] IgnoreGlobalAITriggers`).
     #[serde(default)]
     ignore_global_ai_triggers: bool,
+    /// Scenario+34A5/34B1. Unit73838A reads these after passenger/crew escape.
+    #[serde(default)]
+    train_crate: bool,
+    #[serde(default)]
+    truck_crate: bool,
+    /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
+    /// Basic's bool reader normalizes only when it actually reads a value.
+    /// Retain the byte even though no ice-growth simulation leaf is ported.
+    ice_growth: u8,
     /// Persisted native `ScenarioClass` flags bit `0x40` (`TiberiumGrows`);
     /// see the descriptor field of the same name.
     #[serde(default)]
@@ -870,6 +884,16 @@ impl ScenarioSession {
         if s.ignore_global_ai_triggers {
             b"scenario-ignore-global-ai-triggers-v1".hash(hasher);
         }
+        if s.train_crate {
+            b"scenario-train-crate-v1".hash(hasher);
+        }
+        if s.truck_crate {
+            b"scenario-truck-crate-v1".hash(hasher);
+        }
+        if s.ice_growth != 1 {
+            b"scenario-ice-growth-v1".hash(hasher);
+            s.ice_growth.hash(hasher);
+        }
         // Same legacy-preserving shape for the `0x40`/`0x80` tiberium bits.
         if s.tiberium_grows_flag {
             b"scenario-tiberium-grows-v1".hash(hasher);
@@ -971,6 +995,29 @@ impl ScenarioSession {
         self.ignore_global_ai_triggers
     }
 
+    pub const fn train_crate(&self) -> bool {
+        self.train_crate
+    }
+
+    pub const fn truck_crate(&self) -> bool {
+        self.truck_crate
+    }
+
+    /// Retained native Scenario+34A8; not a claim of an active ice grower.
+    pub const fn ice_growth_enabled(&self) -> bool {
+        self.ice_growth != 0
+    }
+
+    /// Execute97@6DD8EE and its shared6E3B20 entry: ignore all operands.
+    pub(crate) fn toggle_train_crate(&mut self) {
+        self.train_crate = !self.train_crate;
+    }
+
+    /// Execute87@6DDBD5 and6E0290: no clamp or truth normalization.
+    pub(crate) fn set_ice_growth(&mut self, value: i32) {
+        self.ice_growth = value as u8;
+    }
+
     pub fn from_descriptor(desc: &ScenarioDescriptor) -> Self {
         Self {
             seed: u64::from(desc.seed),
@@ -985,6 +1032,9 @@ impl ScenarioSession {
             no_damage: desc.no_damage,
             free_radar: desc.free_radar,
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
+            train_crate: desc.train_crate,
+            truck_crate: desc.truck_crate,
+            ice_growth: u8::from(desc.ice_growth_enabled.unwrap_or(true)),
             tiberium_grows_flag: desc.tiberium_grows_flag,
             tiberium_spreads_flag: desc.tiberium_spreads_flag,
             computer_slot_has_team: false,

@@ -1995,6 +1995,9 @@ impl MapLoadInitial {
             no_damage: false,
             free_radar: map_data.basic.free_radar.unwrap_or(false),
             ignore_global_ai_triggers: map_data.basic.ignore_global_ai_triggers.unwrap_or(false),
+            train_crate: map_data.basic.train_crate.unwrap_or(false),
+            truck_crate: map_data.basic.truck_crate.unwrap_or(false),
+            ice_growth_enabled: map_data.basic.ice_growth_enabled,
             // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
             // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
             tiberium_grows_flag: true,
@@ -2732,6 +2735,9 @@ pub(crate) fn load_map_from_initial(
         no_damage: !game_mode_nonzero && map_data.special_flags.inert.unwrap_or(false),
         free_radar: map_data.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map_data.basic.ignore_global_ai_triggers.unwrap_or(false),
+        train_crate: map_data.basic.train_crate.unwrap_or(false),
+        truck_crate: map_data.basic.truck_crate.unwrap_or(false),
+        ice_growth_enabled: map_data.basic.ice_growth_enabled,
         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
         tiberium_grows_flag: game_mode_nonzero

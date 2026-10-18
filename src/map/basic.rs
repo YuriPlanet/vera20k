@@ -38,6 +38,12 @@ pub struct BasicSection {
     pub new_ini_format: Option<i32>,
     /// Whether tiberium/ore growth is enabled for this map (TiberiumGrowthEnabled=).
     pub tiberium_growth_enabled: Option<bool>,
+    /// Scenario+34A8, current-default ReadBool68A5A7..68A5C5; fresh true.
+    pub ice_growth_enabled: Option<bool>,
+    /// Scenario+34A5, current-default ReadBool68A235..68A24D; fresh false.
+    pub train_crate: Option<bool>,
+    /// Scenario+34B1, current-default ReadBool68A217..68A22F; fresh false.
+    pub truck_crate: Option<bool>,
     /// Native Scenario+34A4 (`0068A5E3..0068A61A`). Missing/invalid keys
     /// preserve the caller's prior value; a fresh scenario resets it to false.
     pub free_radar: Option<bool>,
@@ -156,6 +162,9 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
             .is_present("NewINIFormat")
             .then(|| section.read_int("NewINIFormat", 0)),
         tiberium_growth_enabled: section.read_bool_value("TiberiumGrowthEnabled"),
+        ice_growth_enabled: section.read_bool_value("IceGrowthEnabled"),
+        train_crate: section.read_bool_value("TrainCrate"),
+        truck_crate: section.read_bool_value("TruckCrate"),
         free_radar: section.read_bool_value("FreeRadar"),
         fill_silos: section.read_bool_value("FillSilos"),
         // ReadBool with the current Scenario+0x34B4 as default (`0x0068A284`).
