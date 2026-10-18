@@ -1336,6 +1336,48 @@ fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
     );
 }
 
+/// A drain link breaks at the killing hit (the Techno death arm,
+/// `0x0070206A..0x00702102`, here through Destroy's Detach_All broadcast): a
+/// Floating Disc-like `Crashable=` Jumpjet shot down while draining falls as
+/// a wreck with no link and no DrainAnim.
+#[test]
+fn a_shot_down_drainer_drops_its_link_and_ray_at_the_kill() {
+    let (mut sim, mut rules, victim, shooter) = jumpjet_fixture(false);
+    rules.combat_damage.drain_animation_type = Some("BOOM".to_string());
+    crate::sim::credit_income::link_for_test(&mut sim, 1, victim);
+    crate::sim::credit_income::attach_drain_anim(&mut sim, 1, &rules);
+    let ray = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .drain
+        .anim()
+        .expect("ray");
+    shoot_down(&mut sim, &rules, shooter);
+
+    let wreck = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(wreck.crash.is_crashing());
+    assert_eq!(wreck.drain.target(), None);
+    assert_eq!(wreck.drain.anim(), None);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .drain
+            .draining_me(),
+        None
+    );
+    assert!(sim.anim(ray).is_none_or(|anim| {
+        !anim.in_logic_vector && sim.substrate.pending_delete.contains_object(&ray)
+    }));
+}
+
 /// A hovering Nighthawk-like Jumpjet shot down through the production
 /// receiver: `UnitClass::ReceiveDamage` kills its riders with the shooter's
 /// credit above 0xD0 leptons and crashes it instead of its UnInit, and the

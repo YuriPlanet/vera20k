@@ -2034,6 +2034,7 @@ fn commit_fire_bookkeeping(
         // drainer leaves its team without idling (`0x0070FE19..0x0070FE32`).
         if crate::sim::credit_income::install_drain_link(world, drainer_id, victim_id) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
+            crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
             world.leave_team(drainer_id, true, Some(rules), effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {

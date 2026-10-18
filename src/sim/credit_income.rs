@@ -71,6 +71,11 @@ pub(crate) struct Drain {
     /// reciprocal of `target`. The victim's `AI_Update` reads it for the money
     /// transfer. Hashed (v135) and persisted.
     draining_me: Option<u64>,
+    /// `TechnoClass+0x1D4 DrainAnim`: the drainer's `DrainAnimationType=`
+    /// anim ([`attach_drain_anim`]), un-initialized by every native break of
+    /// the link. Persisted (v422); not hashed, since the anim and its owner
+    /// are hashed with the anims.
+    anim: Option<crate::sim::anim_class::AnimId>,
 }
 
 impl Drain {
@@ -82,6 +87,20 @@ impl Drain {
     /// The object draining this one.
     pub(crate) fn draining_me(&self) -> Option<u64> {
         self.draining_me
+    }
+
+    /// The drainer's DrainAnim.
+    pub(crate) fn anim(&self) -> Option<crate::sim::anim_class::AnimId> {
+        self.anim
+    }
+
+    /// The anim's own expiry clears the matching `+0x1D4`: its owner
+    /// callback (`0x00710427..0x0071042F`) and PointerExpired
+    /// (`0x00707930..0x00707938`).
+    pub(crate) fn expire_anim(&mut self, anim: crate::sim::anim_class::AnimId) {
+        if self.anim == Some(anim) {
+            self.anim = None;
+        }
     }
 }
 
@@ -253,8 +272,9 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
 /// (`DrainTarget`), flag the victim house's power recalc (`+0x5778`), free any
 /// mind-controlled captives, create the `DrainAnim` and drop the drainer from
 /// its team. This owner installs the pointers and dirties House power; the
-/// captives and team belong to the caller. The reached House assessment
-/// suppresses the drained output. DrainAnim remains a separate residual.
+/// caller then frees the captives, attaches the anim ([`attach_drain_anim`])
+/// and drops the team, in that order. The reached House assessment
+/// suppresses the drained output.
 ///
 /// Returns whether the link was made.
 pub(crate) fn install_drain_link(sim: &mut Simulation, drainer_id: u64, victim_id: u64) -> bool {
@@ -293,11 +313,75 @@ pub(crate) fn install_drain_link(sim: &mut Simulation, drainer_id: u64, victim_i
     true
 }
 
+/// A fixture's drain link pair, without Install_Drain_Link's cell gate.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn link_for_test(sim: &mut Simulation, drainer_id: u64, victim_id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(drainer_id)
+        .unwrap()
+        .drain
+        .target = Some(victim_id);
+    sim.substrate
+        .entities
+        .get_mut(victim_id)
+        .unwrap()
+        .drain
+        .draining_me = Some(drainer_id);
+}
+
+/// Install_Drain_Link's anim (`0x0070FDC2..0x0070FE14`): an AnimClass of
+/// `[CombatDamage] DrainAnimationType=` at the drainer's GetCoords (vt+0x48),
+/// no delay, one loop, flags `0x600`, no Z adjust, forward, which
+/// SetOwnerObject (`0x00424B50`) then attaches to the drainer; kept in its
+/// `+0x1D4`. No type, or a refused construction, keeps nothing.
+pub(crate) fn attach_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: &RuleSet) {
+    let Some(anim_name) = rules.combat_damage.drain_animation_type.as_deref() else {
+        return;
+    };
+    let Some(coord) = sim.anim_owner_coords(drainer_id) else {
+        return;
+    };
+    let type_id = sim.interner.intern(anim_name);
+    let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+    let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+        delay: 0,
+        loop_count: 1,
+        draw_flags: 0x600,
+        z_adjust: 0,
+        reverse: false,
+        owner: Some(drainer_id),
+        ..crate::sim::components::AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, z)
+    };
+    match sim.spawn_anim_at_world(rules, descriptor, coord) {
+        Ok(anim_id) => {
+            if let Some(drainer) = sim.substrate.entities.get_mut(drainer_id) {
+                drainer.drain.anim = Some(anim_id);
+            }
+        }
+        Err(error) => log::debug!("drain anim [{anim_name}] did not construct: {error}"),
+    }
+}
+
+/// The `+0x1D4` DrainAnim un-init (vt+0xF8) that opens every native break
+/// of a drain link, for `drainer_id`.
+fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleSet>) {
+    if let Some(anim) = sim
+        .substrate
+        .entities
+        .get_mut(drainer_id)
+        .and_then(|drainer| drainer.drain.anim.take())
+    {
+        sim.destroy_anim_with_context(anim, rules);
+    }
+}
+
 /// `0x0070FE50` (DB label `BuildingClass__ExitTransport`, misnomer): remove
 /// the `DrainAnim`, clear the victim's `DrainingMe`, flag its house's power
 /// recalc, clear the drainer's `DrainTarget`. Also the inline copy in
 /// `TechnoClass::AI_Update @ 0x006FA1DF..0x006FA21E`.
-pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64) {
+pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleSet>) {
+    remove_drain_anim(sim, drainer_id, rules);
     let Some(victim_id) = sim
         .substrate
         .entities
@@ -319,9 +403,17 @@ pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64) {
 }
 
 /// `TechnoClass::PointerExpired @ 0x0070785F..0x0070792A` and the death arm
-/// of `TechnoClass::ReceiveDamage @ 0x0070206A..0x00702102`: an expiring
-/// object drops both halves of any drain link it is part of.
-pub(crate) fn clear_drain_links_on_expiry(sim: &mut Simulation, expired_id: u64) {
+/// of `TechnoClass::ReceiveDamage @ 0x0070206A..0x00702102`: an expiring or
+/// dying object drops both halves of any drain link it is part of, the
+/// drainer's DrainAnim first on each side. The killing hit reaches it through
+/// its Destroy's Detach_All broadcast (`0x005F5280`, the receiver's
+/// `object_destroy_callback`), in the same ReceiveDamage and before any draw
+/// the death arm makes, so a falling wreck no longer drains or shows its ray.
+pub(crate) fn clear_drain_links_on_expiry(
+    sim: &mut Simulation,
+    expired_id: u64,
+    rules: Option<&RuleSet>,
+) {
     let Some((drain_target, draining_me)) = sim
         .substrate
         .entities
@@ -330,6 +422,9 @@ pub(crate) fn clear_drain_links_on_expiry(sim: &mut Simulation, expired_id: u64)
     else {
         return;
     };
+    if drain_target.is_some() {
+        remove_drain_anim(sim, expired_id, rules);
+    }
     if let Some(victim_id) = drain_target
         && let Some(victim) = sim.substrate.entities.get_mut(victim_id)
         && victim.drain.draining_me == Some(expired_id)
@@ -339,10 +434,16 @@ pub(crate) fn clear_drain_links_on_expiry(sim: &mut Simulation, expired_id: u64)
         sim.invalidate_house_power(owner, false); //7020AA /70789F
     }
     if let Some(drainer_id) = draining_me
-        && let Some(drainer) = sim.substrate.entities.get_mut(drainer_id)
-        && drainer.drain.target == Some(expired_id)
+        && sim
+            .substrate
+            .entities
+            .get(drainer_id)
+            .is_some_and(|drainer| drainer.drain.target == Some(expired_id))
     {
-        drainer.drain.target = None;
+        remove_drain_anim(sim, drainer_id, rules);
+        if let Some(drainer) = sim.substrate.entities.get_mut(drainer_id) {
+            drainer.drain.target = None;
+        }
         let owner = sim
             .substrate
             .entities
@@ -424,34 +525,46 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             sim.interner.resolve(victim_owner),
         )
     {
-        stop_drain(sim, stable_id);
+        stop_drain(sim, stable_id, Some(rules));
     }
 }
 
-/// `UnitClass::AI @ 0x007361A9..0x007361E9`: with `DrainTarget` set, on frames
-/// where `g_CurrentFrameCounter % 16 == 2` (signed, `0x007361B8..0x007361C7`)
-/// re-look-up the building in the unit's own cell and stop the drain when it
-/// is no longer the target. (The second arm at `0x007361E9` only tidies a
-/// `DrainAnim` left behind by a cleared target; there is no anim here.)
-pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64) {
-    let Some((target, rx, ry)) = sim.substrate.entities.get(stable_id).and_then(|entity| {
-        entity
-            .drain
-            .target
-            .map(|target| (target, entity.position.rx(), entity.position.ry()))
+/// `UnitClass::AI @ 0x007361A9..0x00736204`, two arms in native order:
+///
+/// 1. With `DrainTarget` set, on frames where `g_CurrentFrameCounter % 16 == 2`
+///    (signed, `0x007361B8..0x007361C7`), re-look-up the building in the
+///    unit's own cell and stop the drain when it is no longer the target.
+/// 2. `0x007361E9..0x00736204`: a `DrainAnim` (`+0x1D4`) left with no
+///    `DrainTarget` is removed through Stop_Drain.
+pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: Option<&RuleSet>) {
+    let Some((target, anim, rx, ry)) = sim.substrate.entities.get(stable_id).map(|entity| {
+        (
+            entity.drain.target,
+            entity.drain.anim,
+            entity.position.rx(),
+            entity.position.ry(),
+        )
     }) else {
         return;
     };
-    if (sim.session.binary_frame as i32).wrapping_rem(16) != 2 {
-        return;
-    }
-    if sim
-        .substrate
-        .occupancy
-        .first_building_on_layer(rx, ry, MovementLayer::Ground)
-        != Some(target)
+    if let Some(target) = target
+        && (sim.session.binary_frame as i32).wrapping_rem(16) == 2
+        && sim
+            .substrate
+            .occupancy
+            .first_building_on_layer(rx, ry, MovementLayer::Ground)
+            != Some(target)
     {
-        stop_drain(sim, stable_id);
+        stop_drain(sim, stable_id, rules);
+    }
+    if anim.is_some()
+        && sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.drain.target.is_none())
+    {
+        stop_drain(sim, stable_id, rules);
     }
 }
 
@@ -475,8 +588,15 @@ mod tests {
     }
 
     fn rules_with_refinery_foundation(foundation: &str) -> RuleSet {
-        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
+        // Retail `[DISKRAY]` art (ARTMD.INI), five frames bound.
+        let art_text = format!(
+            "[CAOILD]\nFoundation=2x2\n[CAOILDP]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n\
+             [NAREFN]\nFoundation={foundation}\n\
+             [DISKRAY]\nLoopCount=-1\nRate=200\nLoopStart=0\nLoopEnd=4\n"
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
             "[General]\nDrainMoneyFrameDelay=30\nDrainMoneyAmount=30\n\n\
+             [CombatDamage]\nDrainAnimationType=DISKRAY\n\n\
              [InfantryTypes]\n[AircraftTypes]\n\
              [VehicleTypes]\n0=DISK\n\
              [BuildingTypes]\n0=CAOILD\n1=CAOILDP\n2=GAPOWR\n3=NAREFN\n\n\
@@ -495,8 +615,35 @@ mod tests {
              DrainWeapon=yes\nOmniFire=yes\n\n\
              [DiskWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\n\
              [AntiB]\nVerses=0%,0%,0%,0%,0%,0%,100%,100%,100%,100%,100%\n",
-        ), &IniFile::from_str(&format!("[CAOILD]\nFoundation=2x2\n[CAOILDP]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n[NAREFN]\nFoundation={foundation}\n")))
-        .expect("credit-income test rules parse")
+        ), &IniFile::from_str(&art_text))
+        .expect("credit-income test rules parse");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(&art_text));
+        art.bind_anim_frame_count_for_test("DISKRAY", 5);
+        rules.replace_art_registry_for_test(art);
+        rules
+    }
+
+    /// The anim's un-init ran: out of the logic vector, awaiting deletion
+    /// (or already deleted by a later tick).
+    fn anim_uninited(sim: &Simulation, id: crate::sim::anim_class::AnimId) -> bool {
+        sim.anim(id).is_none_or(|anim| {
+            !anim.in_logic_vector && sim.substrate.pending_delete.contains_object(&id)
+        })
+    }
+
+    /// The disc's live DrainAnim: DISKRAY, owned by the disc.
+    fn assert_drain_anim(sim: &Simulation, disk: u64) -> crate::sim::anim_class::AnimId {
+        let id = sim
+            .entities()
+            .get(disk)
+            .unwrap()
+            .drain
+            .anim
+            .expect("drain anim");
+        let anim = sim.anim(id).expect("live drain anim");
+        assert_eq!(sim.interner.resolve(anim.type_id), "DISKRAY");
+        assert_eq!(anim.owner_entity, Some(disk));
+        id
     }
 
     fn cmd(sim: &Simulation, owner: &str, tick: u64, payload: Command) -> CommandEnvelope {
@@ -597,7 +744,7 @@ mod tests {
             "still on the ground list"
         );
         sim.session.binary_frame = 2;
-        drain_unit_ai_step(&mut sim, disc);
+        drain_unit_ai_step(&mut sim, disc, Some(&rules));
         assert_eq!(
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery)
@@ -607,14 +754,14 @@ mod tests {
             crate::sim::world::UninitContext::with_rules(&rules)
         ));
         sim.session.binary_frame = 17;
-        drain_unit_ai_step(&mut sim, disc);
+        drain_unit_ai_step(&mut sim, disc, Some(&rules));
         assert_eq!(
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery),
             "not a recheck frame"
         );
         sim.session.binary_frame = 18;
-        drain_unit_ai_step(&mut sim, disc);
+        drain_unit_ai_step(&mut sim, disc, Some(&rules));
         assert_eq!(sim.entities().get(disc).unwrap().drain.target(), None);
         assert_eq!(
             sim.entities().get(refinery).unwrap().drain.draining_me(),
@@ -989,6 +1136,8 @@ mod tests {
                 .draining_me,
             Some(disk)
         );
+        // Install_Drain_Link's AnimClass (`0x0070FDC2..0x0070FE14`).
+        let anim = assert_drain_anim(&sim, disk);
 
         // The Attack handler's only no-target exit runs the idle-mode selector
         // (`techno_ai::mission_handlers::foot_enter_idle_mode_queue`): no
@@ -1002,6 +1151,8 @@ mod tests {
             "the no-target Attack exit commits Guard"
         );
         assert_eq!(disc.drain.target, Some(refinery));
+        assert_eq!(disc.drain.anim, Some(anim), "the ray loops while linked");
+        assert!(!anim_uninited(&sim, anim));
         assert!(
             credits(&sim, americans) < 5_000,
             "the link keeps draining after the mission drops"
@@ -1032,12 +1183,16 @@ mod tests {
 
         move_disc(&mut sim, disk, 20, 21);
         assert!(install_drain_link(&mut sim, disk, plant));
+        attach_drain_anim(&mut sim, disk, &rules);
+        let anim = assert_drain_anim(&sim, disk);
         run_ticks(&mut sim, &rules, 40);
         assert_eq!(
             sim.substrate.entities.get(disk).unwrap().drain.target,
             Some(plant)
         );
+        assert!(!anim_uninited(&sim, anim), "the ray loops while linked");
 
+        // Stop_Drain (`0x0070FE50`) un-inits the ray first.
         move_disc(&mut sim, disk, 30, 21);
         run_ticks(&mut sim, &rules, 17);
         assert_eq!(sim.substrate.entities.get(disk).unwrap().drain.target, None);
@@ -1045,15 +1200,41 @@ mod tests {
             sim.substrate.entities.get(plant).unwrap().drain.draining_me,
             None
         );
+        assert_eq!(sim.entities().get(disk).unwrap().drain.anim, None);
+        assert!(anim_uninited(&sim, anim));
 
-        // Pointer expiry drops both halves.
+        // `0x007361E9`: a ray left without a DrainTarget goes on the next
+        // UnitClass::AI, whatever the frame.
+        attach_drain_anim(&mut sim, disk, &rules);
+        let stray = assert_drain_anim(&sim, disk);
+        sim.session.binary_frame = 5;
+        drain_unit_ai_step(&mut sim, disk, Some(&rules));
+        assert_eq!(sim.entities().get(disk).unwrap().drain.anim, None);
+        assert!(anim_uninited(&sim, stray));
+
+        // The victim's expiry drops both halves and the drainer's ray.
         move_disc(&mut sim, disk, 20, 21);
         assert!(install_drain_link(&mut sim, disk, plant));
+        attach_drain_anim(&mut sim, disk, &rules);
+        let anim = assert_drain_anim(&sim, disk);
+        sim.uninit_with_rules(plant, &rules);
+        assert_eq!(sim.entities().get(disk).unwrap().drain.target, None);
+        assert_eq!(sim.entities().get(disk).unwrap().drain.anim, None);
+        assert!(anim_uninited(&sim, anim));
+
+        // So does the drainer's.
+        let plant = sim
+            .spawn_object("GAPOWR", "Americans", 20, 20, 0, &rules)
+            .expect("power plant spawns");
+        assert!(install_drain_link(&mut sim, disk, plant));
+        attach_drain_anim(&mut sim, disk, &rules);
+        let anim = assert_drain_anim(&sim, disk);
         sim.uninit_with_rules(disk, &rules);
         assert_eq!(
             sim.substrate.entities.get(plant).unwrap().drain.draining_me,
             None
         );
+        assert!(anim_uninited(&sim, anim));
     }
 
     #[test]

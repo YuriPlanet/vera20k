@@ -1138,8 +1138,9 @@ use crate::sim::world::Simulation;
 // ground/deck bytes remain the occupation record.
 // 419 -> 420: retain Infantry+6D8 Psycho independently of Techno Berserk.
 // 420 -> 421: process Rules state retains General.TalkBubbleTime.
-// 421 -> 422: Scenario retains TrainCrate, TruckCrate and the raw ice-growth byte.
-const SNAPSHOT_VERSION: u32 = 422;
+// 421 -> 422: the drain link retains the drainer's DrainAnim (Techno+0x1D4).
+// 422 -> 423: Scenario retains TrainCrate, TruckCrate and the raw ice-growth byte.
+const SNAPSHOT_VERSION: u32 = 423;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4860,8 +4861,9 @@ mod tests {
         // 418 -> 419: the Drive/Ship occupation footprints are gone.
         // 419 -> 420: Infantry Psycho latch independent of Techno Berserk.
         // 420 -> 421: process Rules retain TalkBubbleTime.
-        // 421 -> 422: Scenario cargo flags and the ice-growth byte.
-        assert_eq!(super::SNAPSHOT_VERSION, 422);
+        // 421 -> 422: the drain link retains the drainer's DrainAnim.
+        // 422 -> 423: Scenario cargo flags and the ice-growth byte.
+        assert_eq!(super::SNAPSHOT_VERSION, 423);
     }
 
     #[test]

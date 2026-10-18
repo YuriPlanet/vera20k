@@ -4763,7 +4763,7 @@ impl Simulation {
         // `TechnoClass::PointerExpired @ 0x0070785F..0x0070792A` (and the
         // death arm of `ReceiveDamage @ 0x0070206A`): both halves of a drain
         // link drop when either object expires.
-        crate::sim::credit_income::clear_drain_links_on_expiry(self, expired_id);
+        crate::sim::credit_income::clear_drain_links_on_expiry(self, expired_id, context.rules);
         self.broadcast_pointer_expired(expired_id, PointerExpiryControl::Uninit, context);
     }
 

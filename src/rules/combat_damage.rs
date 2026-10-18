@@ -56,6 +56,11 @@ pub struct CombatDamageDefaults {
     /// Global `DeathWeapon=` used only when a dying type has neither an
     /// explicit death weapon nor a live current-weapon fallback.
     pub death_weapon: Option<String>,
+    /// `DrainAnimationType=` (`RulesClass+0x31C`): the AnimType a drain link
+    /// attaches to its drainer (`TechnoClass::Install_Drain_Link @
+    /// 0x0070FD70`). Read right after `DeathWeapon=`; the constructor leaves
+    /// it null. Retail: `DISKRAY`.
+    pub drain_animation_type: Option<String>,
     /// `FallingDamageMultiplier=` (`RulesClass+0xF64`, ReadDouble at
     /// `0x0066C9CB` stored as a float; constructor 1.0): scales the damage a
     /// Unit dropped by a Magnetron deals where it lands
@@ -114,6 +119,9 @@ impl CombatDamageDefaults {
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: section.read_name("DeathWeapon", 0x80).map(str::to_string),
+            drain_animation_type: section
+                .read_type_name("DrainAnimationType", 0x80)
+                .map(str::to_string),
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
             ivan_warhead: section.read_name("IvanWarhead", 0x80).map(str::to_string),
@@ -164,6 +172,7 @@ impl Default for CombatDamageDefaults {
             incoming: 0,
             open_topped_warp_distance: 5,
             death_weapon: None,
+            drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,
             ivan_warhead: None,
