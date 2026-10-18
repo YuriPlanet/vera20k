@@ -152,9 +152,9 @@ impl Simulation {
     /// store to `+0x2B8` or `+0x5A8`. Clearing there would leave a unit parked
     /// after a Stop where retail resumes its archived move on the next Restore.
     ///
-    /// HarvestCell uses the shared pre-queue prefix and Foot clears, but its
-    /// legacy mission path still bypasses the Suspended clears here. EjectBunker
-    /// and dormant aircraft passenger Unload also bypass the prefix. These
+    /// HarvestCell also uses this funnel, retaining its unload-latch reset
+    /// after radio Break. EjectBunker and dormant aircraft passenger Unload
+    /// still bypass the prefix. These
     /// pre-existing command routes can Restore a cancelled archive; their
     /// complete DTO/mission migration is separate from ordinary Unit depot
     /// servicing.
@@ -174,6 +174,11 @@ impl Simulation {
     ) {
         let queued =
             self.begin_megamission_retask(id, mission, target, destination, rules, frame_effects);
+        // Retain the existing miner adapter after radio Break, before Queue.
+        // Both ordinary and planned Harvest use this same event prefix.
+        if mission == MissionType::Harvest {
+            crate::sim::miner::clear_unload_latch(self, id);
+        }
         self.queue_order_mission(id, queued);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.suspended_attack_target.clear();

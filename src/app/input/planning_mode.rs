@@ -156,6 +156,7 @@ pub(crate) enum PlanningRefusal {
     Guard,
     Stop,
     Scatter,
+    Deploy,
     Capacity,
 }
 
@@ -165,6 +166,7 @@ impl PlanningRefusal {
             Self::Guard => "MSG:PlanningModeNoGuardArea",
             Self::Stop => "MSG:PlanningModeNoStop",
             Self::Scatter => "MSG:PlanningModeNoScatter",
+            Self::Deploy => "MSG:PlanningModeNoDeploy",
             Self::Capacity => "MSG:PlannerMaximum",
         }
     }
@@ -264,9 +266,14 @@ fn queue_orders_in_sim(
         if matches!(
             order.payload,
             crate::sim::command::Command::TogglePrimaryFactory { .. }
+                | crate::sim::command::Command::SetRally { .. }
+                | crate::sim::command::Command::SellBuilding { .. }
+                | crate::sim::command::Command::UndeployBuilding { .. }
         ) {
-            // Selection4AE750 reaches Building443410's direct Event17.
-            // It is not a planning MegaMission or a plan-node append.
+            // Selection4AE750 -> Building443410/4436F0 sends direct
+            // PRIMARY17 / ARCHIVE1E / SELL16. These do not use
+            // Player_Send_Command6FFBE0. The deploy key is separately
+            // refused as DEPLOY9; a mobile self-click is Unload16.
             sim.queue_command(order);
             added = true;
             continue;
@@ -519,6 +526,134 @@ mod tests {
                 .is_ok_and(|added| !added)
             );
             assert!(sim.pending_command_snapshot().is_empty());
+        }
+    }
+
+    #[test]
+    fn planning_keeps_c4_capture_enter_and_harvest_orders() {
+        let (mut sim, local) = populated_sim();
+        let commands = [
+            (
+                17,
+                Command::PlantC4 {
+                    attacker_id: 42,
+                    target_building_id: 43,
+                },
+            ),
+            (
+                8,
+                Command::CaptureBuilding {
+                    engineer_id: 42,
+                    target_building_id: 43,
+                },
+            ),
+            (
+                7,
+                Command::EnterTransport {
+                    passenger_id: 42,
+                    transport_id: 43,
+                },
+            ),
+            (
+                7,
+                Command::EnterBunker {
+                    unit_id: 42,
+                    bunker_id: 43,
+                },
+            ),
+            (
+                7,
+                Command::RepairAtDepot {
+                    entity_id: 42,
+                    depot_id: 43,
+                },
+            ),
+            (
+                7,
+                Command::MinerReturn {
+                    entity_id: 42,
+                    target_refinery_id: Some(43),
+                },
+            ),
+            (
+                10,
+                Command::HarvestCell {
+                    entity_id: 42,
+                    target_rx: 5,
+                    target_ry: 6,
+                },
+            ),
+        ];
+        for (mission, payload) in commands {
+            assert!(
+                queue_orders_in_sim(
+                    &mut sim,
+                    local,
+                    &[42],
+                    vec![CommandEnvelope::new(local, 0, payload.clone())]
+                )
+                .is_ok_and(|added| added),
+                "lost {payload:?}"
+            );
+            let queued = sim.take_due_commands();
+            assert_eq!(queued.len(), 1);
+            let Command::PlanningRecord { record } = &queued[0].payload else {
+                panic!("ordinary order escaped planning");
+            };
+            assert_eq!(record.payload()[5], mission);
+            assert_eq!(record.payload()[22], 1);
+        }
+    }
+
+    #[test]
+    fn planning_preserves_direct_building_events_and_encodes_mobile_self_clicks() {
+        let (mut sim, local) = populated_sim();
+        for payload in [
+            Command::SetRally {
+                producer_ids: vec![42],
+                rx: 5,
+                ry: 6,
+            },
+            Command::SellBuilding { entity_id: 42 },
+            Command::UndeployBuilding { entity_id: 42 },
+        ] {
+            let envelope = CommandEnvelope::new(local, 0, payload);
+            assert!(queue_orders_in_sim(&mut sim, local, &[42], vec![envelope.clone()]).unwrap());
+            assert_eq!(sim.take_due_commands(), vec![envelope]);
+        }
+        for payload in [
+            Command::DeployMcv { entity_id: 42 },
+            Command::ToggleInfantryDeploy { entity_id: 42 },
+            Command::UnloadPassengers { transport_id: 42 },
+        ] {
+            assert!(
+                queue_orders_in_sim(
+                    &mut sim,
+                    local,
+                    &[42],
+                    vec![CommandEnvelope::new(local, 0, payload)]
+                )
+                .unwrap()
+            );
+            let queued = sim.take_due_commands();
+            assert_eq!(queued.len(), 1);
+            let Command::PlanningRecord { record } = &queued[0].payload else {
+                panic!("mobile self-click escaped Planning Mode");
+            };
+            let decoded = crate::sim::command::MegaMissionRecord::decode(&{
+                let mut ordinary = record.clone();
+                ordinary.payload_mut()[22] = 0;
+                ordinary
+            })
+            .unwrap();
+            assert!(matches!(
+                decoded.order,
+                crate::sim::command::MegaMissionOrder::Mission {
+                    mission: crate::sim::mission::MissionType::Unload,
+                    target: crate::sim::command::MegaMissionTarget::Null,
+                    destination: crate::sim::command::MegaMissionTarget::Null,
+                }
+            ));
         }
     }
 

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Twelve original Event4C6860 constructors and Plan publish637DD0 wrappers.",
+  "assumptions": [
+    "Numeric House3, UID101/202 and Cell(5,6) tokens are supplied inputs. Original record padding begins A5; the ignored NULL auxiliary value is0. KeyboardFixture initializes its ordinary registry with its standard allocator transport."
+  ],
+  "substitutions": [
+    "Stops on entry to6521C0 before queue admission. No click, object identity resolution, node append/commit, actor AI or gameplay execution is certified. The constructor and planning-copy/flag instructions execute unchanged."
+  ],
+  "entry_points": {
+    "constructor": "0x004C6860",
+    "plan_publish": "0x00637DD0",
+    "enqueue_boundary": "0x006521C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.planning_mission_events",
+  "payload_sha256": "950d5200f8eb93cc8664013d358a67d6acd46fb1bf126ef4c076aa2d6364d2d1"
+}

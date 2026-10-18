@@ -389,6 +389,16 @@ pub enum MegaMissionOrder {
     AreaGuard {
         post: MegaMissionTarget,
     },
+    /// FootClicked4D76F6..4D77A8 and4D7E8E send Enter/Capture/Eaten,
+    /// Sabotage and Harvest with a NULL target and a destination token.
+    /// Player_Send_Command6FFC23..6FFCA9 preserves them in Planning Mode.
+    /// Building443509 also sends Unload with self as Target; mobile
+    /// self-click4D75E1 sends Unload with both tokens NULL.
+    Mission {
+        mission: crate::sim::mission::MissionType,
+        target: MegaMissionTarget,
+        destination: MegaMissionTarget,
+    },
 }
 
 /// A TargetClass token used by an ordinary Move or Area Guard order.
@@ -470,6 +480,11 @@ impl MegaMissionRecord {
             MegaMissionOrder::AreaGuard { post } => {
                 (AREA_GUARD_ACTION, post, MegaMissionTarget::Null)
             }
+            MegaMissionOrder::Mission {
+                mission,
+                target,
+                destination,
+            } => (mission as u8, target, destination),
         };
         let (target_value, target_kind) = target.token()?;
         let (destination_value, destination_kind) = destination.token()?;
@@ -491,7 +506,7 @@ impl MegaMissionRecord {
         Ok(())
     }
 
-    /// Decode represented ordinary Move, Attack, AttackMove and AreaGuard
+    /// Decode represented ordinary movement, combat and special mission
     /// forms. Planning flags are dispatched by the PlanMgr owner.
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         if record.opcode() != MEGAMISSION_OPCODE || record.house_id() < 0 {
@@ -544,6 +559,11 @@ impl MegaMissionRecord {
             (AREA_GUARD_ACTION, post, MegaMissionTarget::Null) => {
                 MegaMissionOrder::AreaGuard { post }
             }
+            (mission @ (7..=10 | 16 | 17 | 25), target, destination) => MegaMissionOrder::Mission {
+                mission: crate::sim::mission::MissionType::from_id(mission)?,
+                target,
+                destination,
+            },
             _ => return None,
         };
         Some(Self {
@@ -773,6 +793,16 @@ pub enum Command {
     TogglePrimaryFactory { entity_id: u64 },
     /// Event2D: execute House50C8C0. Input rate admission is local, not replayed.
     Cheer,
+    /// Decoded special MEGAMISSION. The shared Event4C72xx
+    /// receiver owns admission and class setters; input capability checks
+    /// have already run. Also used by committed Planning Mode records.
+    /// Appended to preserve existing serialized command variant indices.
+    MegaMission {
+        entity_id: u64,
+        mission: crate::sim::mission::MissionType,
+        target: Option<crate::sim::combat::TargetKind>,
+        destination: Option<crate::sim::combat::TargetKind>,
+    },
 }
 
 impl Command {
@@ -785,6 +815,7 @@ impl Command {
             | Self::MoveToObject { entity_id, .. }
             | Self::AttackMove { entity_id, .. }
             | Self::Guard { entity_id, .. }
+            | Self::MegaMission { entity_id, .. }
             | Self::MinerReturn { entity_id, .. }
             | Self::RepairAtDepot { entity_id, .. }
             | Self::HarvestCell { entity_id, .. }
@@ -829,6 +860,65 @@ mod tests {
         NULL_TARGET_KIND, SELL_WALL_AT_CELL_OPCODE, SellWallAtCellRecord,
     };
 
+    fn native_record(value: &serde_json::Value) -> CommandRecord {
+        let hex = value.as_str().unwrap();
+        assert!(hex.is_ascii());
+        assert_eq!(hex.len(), COMMAND_RECORD_LEN * 2);
+        let bytes: Vec<_> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        CommandRecord::decode_exact(&bytes).unwrap()
+    }
+
+    #[test]
+    fn destination_missions_preserve_native_constructor_and_planning_fields() {
+        let controls =
+            crate::test_fixture::json("tools/spatial_oracle/planning_mission_events.json");
+        for row in controls.as_array().unwrap() {
+            let original = native_record(&row["constructed"]);
+            let planned = native_record(&row["planned"]);
+            assert_eq!(original.payload()[22], 0);
+            assert_eq!(planned.payload()[22], 1);
+            assert!(MegaMissionRecord::decode(&planned).is_none());
+            let decoded = MegaMissionRecord::decode(&original).expect("native client mission");
+            assert_eq!(
+                (decoded.house_id, decoded.source_id, decoded.frame),
+                (3, 101, 55)
+            );
+            let mission = row["mission"].as_u64().unwrap() as u8;
+            if matches!(mission, 7..=10 | 16 | 17 | 25) {
+                let destination = match row["destination"][1].as_u64().unwrap() {
+                    0 => MegaMissionTarget::Null,
+                    11 => MegaMissionTarget::Cell { x: 5, y: 6 },
+                    0x34 => MegaMissionTarget::Object { id: 202 },
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    decoded.order,
+                    MegaMissionOrder::Mission {
+                        mission: crate::sim::mission::MissionType::from_id(mission).unwrap(),
+                        target: if row["target"][1].as_u64().unwrap() == 0 {
+                            MegaMissionTarget::Null
+                        } else {
+                            MegaMissionTarget::Object {
+                                id: row["target"][0].as_i64().unwrap() as i32,
+                            }
+                        },
+                        destination,
+                    }
+                );
+            }
+            let mut written = original.clone();
+            decoded.write_into(&mut written).unwrap();
+            assert_eq!(&written.as_bytes()[..24], &original.as_bytes()[..24]);
+            // A NULL auxiliary token ignores its numeric value. The existing
+            // codec retains a source-template UID there (Connect63684F);
+            // this original control supplies0. Compare kind/flag/tail too.
+            assert_eq!(&written.as_bytes()[28..], &original.as_bytes()[28..]);
+        }
+    }
+
     #[test]
     fn area_guard_native_constructor_matches_ordinary_bytes_and_null_issuer() {
         // Executed original EventClass constructor 4C6860. The before/after
@@ -839,16 +929,7 @@ mod tests {
         ))
         .unwrap();
         let rows = corpus["constructor_rows"].as_array().unwrap();
-        let record = |value: &serde_json::Value| {
-            let hex = value.as_str().unwrap();
-            assert!(hex.is_ascii());
-            assert_eq!(hex.len(), COMMAND_RECORD_LEN * 2);
-            let bytes: Vec<_> = (0..hex.len())
-                .step_by(2)
-                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
-                .collect();
-            CommandRecord::decode_exact(&bytes).unwrap()
-        };
+        let record = native_record;
         let mut seen = std::collections::BTreeSet::new();
         let mut ordinary = 0;
         let mut negative = 0;
