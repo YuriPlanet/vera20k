@@ -846,21 +846,14 @@ impl FogState {
             .is_some_and(|source| source.latched)
     }
 
-    /// An inactive source cache belongs to this owner until an explicit
-    /// native reveal event updates it. A frame must never relatch it.
-    pub(crate) fn source_cache_is_inactive(&self, id: u64, owner: InternedId) -> bool {
-        let mut found = false;
-        for (_, source) in self
-            .sight_admissions
-            .range(source_keys(id))
-            .filter(|(_, source)| source.owner == owner)
-        {
-            found = true;
-            if source.latched {
-                return false;
-            }
-        }
-        found
+    /// Source `id`'s admissions into `into`, which the fog pass reuses.
+    pub(crate) fn read_source_admissions(&self, id: u64, into: &mut SourceAdmissions) {
+        into.0.clear();
+        into.0.extend(
+            self.sight_admissions
+                .range(source_keys(id))
+                .map(|(&(_, viewer), source)| (viewer, source.owner, source.latched)),
+        );
     }
 
     /// Destructor cleanup of cached254/260 and alternate derived indexes.
@@ -2035,26 +2028,29 @@ pub(crate) fn entity_sight_geometry(
     }
 }
 
-/// Whether source `id`'s retained admissions are exactly one per viewer of
-/// `viewers` (in key order), each revealed for `owner`. Then its footprints
-/// stand until a reveal event moves them.
-pub(crate) fn retained_sight_covers(
-    fog: &FogState,
-    id: u64,
-    owner: InternedId,
-    viewers: &[InternedId],
-) -> bool {
-    let mut retained = fog
-        .sight_admissions
-        .range(source_keys(id))
-        .filter(|(_, source)| source.latched);
-    viewers.iter().all(|&viewer| {
-        retained
-            .next()
-            .is_some_and(|(&(_, retained_viewer), admission)| {
-                retained_viewer == viewer && admission.owner == owner
-            })
-    }) && retained.next().is_none()
+/// One source's admissions as the fog pass reads them, in viewer order:
+/// (viewer, owner revealed for, latched) ([`FogState::read_source_admissions`]).
+#[derive(Debug, Default)]
+pub(crate) struct SourceAdmissions(Vec<(InternedId, InternedId, bool)>);
+
+impl SourceAdmissions {
+    /// An inactive source cache belongs to this owner until an explicit
+    /// native reveal event updates it. A frame must never relatch it.
+    pub(crate) fn cache_is_inactive(&self, owner: InternedId) -> bool {
+        let mut owned = self.0.iter().filter(|&&(_, by, _)| by == owner).peekable();
+        owned.peek().is_some() && owned.all(|&(_, _, latched)| !latched)
+    }
+
+    /// Whether the retained admissions are exactly one per viewer of
+    /// `viewers` (in key order), each revealed for `owner`. Then the source's
+    /// footprints stand until a reveal event moves them.
+    pub(crate) fn retained_cover(&self, owner: InternedId, viewers: &[InternedId]) -> bool {
+        self.0
+            .iter()
+            .filter(|&&(_, _, latched)| latched)
+            .map(|&(viewer, by, _)| (viewer, by))
+            .eq(viewers.iter().map(|&viewer| (viewer, owner)))
+    }
 }
 
 /// Every admission key of one source, by its stable id.

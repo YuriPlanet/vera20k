@@ -269,6 +269,149 @@ impl OwnerVisibility {
             .map_or(VisibilityCell::Dummy, VisibilityCell::Real)
     }
 
+    /// Original6D8700..6D8ADA: center lookup/gates, eight signed WORD
+    /// neighbor lookups and sign-extended7F4194 table byte. Missing neighbors
+    /// read the canonical Dummy's retained flags and stamp its coordinate.
+    fn map_cell_edge_frame(
+        &self,
+        cell: (u16, u16),
+        fog_channel: bool,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> i8 {
+        let interior = self.interior_index(cell, native_cells);
+        let center = match interior {
+            Some(index) => VisibilityCell::Real(index),
+            None => self.visibility_cell(cell, native_cells),
+        };
+        let (ground, cache) = self.map_cell_parts(center);
+        let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
+        let fallback = if any { -1 } else { -2 };
+        if !eligible {
+            return fallback;
+        }
+        let width = self.width as isize;
+        let mut mask = 0u8;
+        for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
+            // An interior cell's neighbours are the cells beside it in the grid.
+            let key = match interior {
+                Some(index) => VisibilityCell::Real(
+                    index.wrapping_add_signed(isize::from(dy) * width + isize::from(dx)),
+                ),
+                None => self.visibility_cell(
+                    (
+                        (cell.0 as i16).wrapping_add(dx) as u16,
+                        (cell.1 as i16).wrapping_add(dy) as u16,
+                    ),
+                    native_cells,
+                ),
+            };
+            let (ground, cache) = self.map_cell_parts(key);
+            let set = if fog_channel {
+                cache.initialized
+            } else {
+                ground & GROUND_VISIBLE != 0
+            };
+            if !set {
+                mask |= bit;
+            }
+        }
+        SHROUD_EDGE_LUT[usize::from(mask)] as i8
+    }
+
+    /// Original MapCell4A9CA0 on this plane; see [`FogState::reveal_map_cell`].
+    fn reveal_map_cell(
+        &mut self,
+        cell: (u16, u16),
+        final_pass: bool,
+        native_cells: Option<&NativeCellQuery<'_>>,
+        projection: MapRevealProjection,
+    ) -> Option<MapCellNotification> {
+        //4A9CA9 is distinct from each6D8713 center lookup below.
+        let key = self.visibility_cell(cell, native_cells);
+        let before = self.edge_inputs(key);
+        if projection == MapRevealProjection::Fire {
+            // Cell4876F0 ORs12C with18 and conditionally140 with20.
+            // It neither initializes cache140 bits1/2 nor writes120/121.
+            let (state, ground, _) = self.map_cell_parts_mut(key);
+            state.fire_unshroud();
+            *ground |= GROUND_VISIBLE | GROUND_OPEN;
+            if let VisibilityCell::Real(index) = key {
+                self.set_transient_visible(index);
+                self.publish_knowledge(index);
+            }
+            self.note_edge_inputs(key, before);
+            return None;
+        }
+        let (ground, old) = self.map_cell_parts(key);
+        let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
+        let (state, ground, cache) = self.map_cell_parts_mut(key);
+        cache.initialized = true;
+        if final_pass {
+            state.leave();
+        } else {
+            state.reveal();
+        }
+        if projection != MapRevealProjection::Source {
+            state.transient_visible = matches!(key, VisibilityCell::Real(_));
+        }
+        let open = state.open;
+        if open {
+            *ground |= GROUND_VISIBLE | GROUND_OPEN;
+        } else {
+            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+        }
+        if let VisibilityCell::Real(index) = key {
+            if projection != MapRevealProjection::Source {
+                self.tracked.transient.push(index as u32);
+            }
+            if !open {
+                self.tracked.cleared.push(index as u32);
+            }
+            self.publish_knowledge(index);
+        }
+        let ground = self.map_cell_edge_frame(cell, false, native_cells);
+        let (_, flags, cache) = self.map_cell_parts_mut(key);
+        cache.frames[0] = ground;
+        if ground == -1 {
+            *flags |= GROUND_OPEN;
+        }
+        self.note_edge_inputs(key, before);
+        let fog = self.map_cell_edge_frame(cell, true, native_cells);
+        let (_, _, cache) = self.map_cell_parts_mut(key);
+        cache.frames[1] = fog;
+        if fog == -1 {
+            cache.fog_open = true;
+        }
+        if !fresh && old.frames == [ground, fog] {
+            return None;
+        }
+        let cell = match (key, native_cells) {
+            (VisibilityCell::Dummy, Some(cells)) => {
+                let coord = cells.coord(NativeCellIdentity::Dummy);
+                (coord.0 as u16, coord.1 as u16)
+            }
+            _ => cell,
+        };
+        Some(MapCellNotification { cell, fresh })
+    }
+
+    /// Store `frame` as `cell`'s ground frame (`Cell+0x120`), `0x00567DA0`'s
+    /// store (`0x00567F34`). Native looks the cell up before its 6D8700 call
+    /// (`0x00567EE6..0x00567F15`); VERA computes the frame first and looks the
+    /// cell up here. Residual: both reach the same cell, but for an off-map
+    /// border cell with an off-map neighbour the shared Dummy is left on the
+    /// border cell rather than on that neighbour, which only a Dummy read
+    /// before the next missing lookup could see.
+    fn store_ground_frame(
+        &mut self,
+        cell: (u16, u16),
+        frame: i8,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        let key = self.visibility_cell(cell, native_cells);
+        self.map_cell_parts_mut(key).2.frames[0] = frame;
+    }
+
     fn map_cell_parts(&self, key: VisibilityCell) -> (u8, MapCellEdgeCache) {
         match key {
             VisibilityCell::Real(index) => {
@@ -452,24 +595,37 @@ impl FogState {
     /// Full A reconstruction per Fog view generation uses current knowledge
     /// and neighbours, replacing native dirty138/6DA7D0. The stored frame
     /// remains authoritative for later Cell change/notification decisions.
-    pub(crate) fn refresh_sight_border_cell(
+    fn refresh_sight_border_cell(
         &mut self,
         viewer: InternedId,
         cell: (u16, u16),
         native_cells: Option<&NativeCellQuery<'_>>,
-    ) -> bool {
+    ) {
         let frame = self.map_cell_edge_frame(viewer, cell, false, native_cells);
-        let vis = self
-            .by_owner
+        self.by_owner
             .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
-        let key = vis.visibility_cell(cell, native_cells);
-        let (_, _, cache) = vis.map_cell_parts_mut(key);
-        if cache.frames[0] == frame {
-            return false;
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
+            .store_ground_frame(cell, frame, native_cells);
+    }
+
+    /// [`Self::refresh_sight_border_cell`] for each of `cells` in turn, the
+    /// plane looked up once.
+    pub(crate) fn refresh_sight_border_cells(
+        &mut self,
+        viewer: InternedId,
+        cells: &[(u16, u16)],
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        let Some((&first, rest)) = cells.split_first() else {
+            return;
+        };
+        // Without a plane the first frame reads -2; the store makes one.
+        self.refresh_sight_border_cell(viewer, first, native_cells);
+        let vis = self.by_owner.get_mut(&viewer).expect("stored above");
+        for &cell in rest {
+            let frame = vis.map_cell_edge_frame(cell, false, native_cells);
+            vis.store_ground_frame(cell, frame, native_cells);
         }
-        cache.frames[0] = frame;
-        true
     }
 
     /// Original Display4A9890, via Map653810/Execute16. Unlike4A9CA0 it
@@ -554,84 +710,36 @@ impl FogState {
         native_cells: Option<&NativeCellQuery<'_>>,
         projection: MapRevealProjection,
     ) -> Option<MapCellNotification> {
+        self.by_owner
+            .entry(viewer)
+            .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
+            .reveal_map_cell(cell, final_pass, native_cells, projection)
+    }
+
+    /// [`Self::reveal_map_cell`] with `projection` [`MapRevealProjection::Source`]
+    /// for each of `cells` in turn, for a viewer whose notifications no
+    /// receiver hears: the plane is looked up once for the whole walk.
+    pub(crate) fn reveal_source_map_cells(
+        &mut self,
+        viewer: InternedId,
+        cells: &[(u16, u16)],
+        final_pass: bool,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        if cells.is_empty() {
+            return;
+        }
         let vis = self
             .by_owner
             .entry(viewer)
             .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
-        //4A9CA9 is distinct from each6D8713 center lookup below.
-        let key = vis.visibility_cell(cell, native_cells);
-        let before = vis.edge_inputs(key);
-        if projection == MapRevealProjection::Fire {
-            // Cell4876F0 ORs12C with18 and conditionally140 with20.
-            // It neither initializes cache140 bits1/2 nor writes120/121.
-            let (state, ground, _) = vis.map_cell_parts_mut(key);
-            state.fire_unshroud();
-            *ground |= GROUND_VISIBLE | GROUND_OPEN;
-            if let VisibilityCell::Real(index) = key {
-                vis.set_transient_visible(index);
-                vis.publish_knowledge(index);
-            }
-            vis.note_edge_inputs(key, before);
-            return None;
+        for &cell in cells {
+            vis.reveal_map_cell(cell, final_pass, native_cells, MapRevealProjection::Source);
         }
-        let (ground, old) = vis.map_cell_parts(key);
-        let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
-        let (state, ground, cache) = vis.map_cell_parts_mut(key);
-        cache.initialized = true;
-        if final_pass {
-            state.leave();
-        } else {
-            state.reveal();
-        }
-        if projection != MapRevealProjection::Source {
-            state.transient_visible = matches!(key, VisibilityCell::Real(_));
-        }
-        let open = state.open;
-        if open {
-            *ground |= GROUND_VISIBLE | GROUND_OPEN;
-        } else {
-            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
-        }
-        if let VisibilityCell::Real(index) = key {
-            if projection != MapRevealProjection::Source {
-                vis.tracked.transient.push(index as u32);
-            }
-            if !open {
-                vis.tracked.cleared.push(index as u32);
-            }
-            vis.publish_knowledge(index);
-        }
-        let ground = self.map_cell_edge_frame(viewer, cell, false, native_cells);
-        let vis = self.by_owner.get_mut(&viewer).unwrap();
-        let (_, flags, cache) = vis.map_cell_parts_mut(key);
-        cache.frames[0] = ground;
-        if ground == -1 {
-            *flags |= GROUND_OPEN;
-        }
-        vis.note_edge_inputs(key, before);
-        let fog = self.map_cell_edge_frame(viewer, cell, true, native_cells);
-        let vis = self.by_owner.get_mut(&viewer).unwrap();
-        let (_, _, cache) = vis.map_cell_parts_mut(key);
-        cache.frames[1] = fog;
-        if fog == -1 {
-            cache.fog_open = true;
-        }
-        if !fresh && old.frames == [ground, fog] {
-            return None;
-        }
-        let cell = match (key, native_cells) {
-            (VisibilityCell::Dummy, Some(cells)) => {
-                let coord = cells.coord(NativeCellIdentity::Dummy);
-                (coord.0 as u16, coord.1 as u16)
-            }
-            _ => cell,
-        };
-        Some(MapCellNotification { cell, fresh })
     }
 
-    /// Original6D8700..6D8ADA: center lookup/gates, eight signed WORD
-    /// neighbor lookups and sign-extended7F4194 table byte. Missing neighbors
-    /// read the canonical Dummy's retained flags and stamp its coordinate.
+    /// [`OwnerVisibility::map_cell_edge_frame`] on `viewer`'s plane; -2
+    /// without one.
     pub(crate) fn map_cell_edge_frame(
         &self,
         viewer: InternedId,
@@ -639,47 +747,9 @@ impl FogState {
         fog_channel: bool,
         native_cells: Option<&NativeCellQuery<'_>>,
     ) -> i8 {
-        let Some(vis) = self.by_owner.get(&viewer) else {
-            return -2;
-        };
-        let interior = vis.interior_index(cell, native_cells);
-        let center = match interior {
-            Some(index) => VisibilityCell::Real(index),
-            None => vis.visibility_cell(cell, native_cells),
-        };
-        let (ground, cache) = vis.map_cell_parts(center);
-        let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
-        let fallback = if any { -1 } else { -2 };
-        if !eligible {
-            return fallback;
-        }
-        let width = vis.width as isize;
-        let mut mask = 0u8;
-        for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
-            // An interior cell's neighbours are the cells beside it in the grid.
-            let key = match interior {
-                Some(index) => VisibilityCell::Real(
-                    index.wrapping_add_signed(isize::from(dy) * width + isize::from(dx)),
-                ),
-                None => vis.visibility_cell(
-                    (
-                        (cell.0 as i16).wrapping_add(dx) as u16,
-                        (cell.1 as i16).wrapping_add(dy) as u16,
-                    ),
-                    native_cells,
-                ),
-            };
-            let (ground, cache) = vis.map_cell_parts(key);
-            let set = if fog_channel {
-                cache.initialized
-            } else {
-                ground & GROUND_VISIBLE != 0
-            };
-            if !set {
-                mask |= bit;
-            }
-        }
-        SHROUD_EDGE_LUT[usize::from(mask)] as i8
+        self.by_owner.get(&viewer).map_or(-2, |vis| {
+            vis.map_cell_edge_frame(cell, fog_channel, native_cells)
+        })
     }
 
     /// `DisplayClass::RevealCell @ 0x004AA050` (DisplayClass vtable `+0x9C`)

@@ -179,6 +179,48 @@ pub fn mark_war_factory_spawn_contact(
     }
 }
 
+impl Simulation {
+    /// Whether `id` is a Building (vt+0x2C == 6) whose type has
+    /// `WeaponsFactory=` (BuildingType `+0x16BD`): the war factory test on a
+    /// radio contact. The Unit setter's WeaponsFactory arm,
+    /// Queue_Navigation_List's idle tail (`0x004DA15A..0x004DA1A6`), Unit
+    /// Per_Cell_Process's factory clearance, CloakingTick's destination
+    /// exclusion, `UnitClass::Is_Ready_To_Commence`'s contact read
+    /// (`0x0074433C`) and [`Self::unit_in_contact_war_factory`] ask it.
+    pub(crate) fn is_weapons_factory(&self, id: u64, rules: &RuleSet) -> bool {
+        self.substrate.entities.get(id).is_some_and(|building| {
+            building.category() == crate::map::entities::EntityCategory::Structure
+                && self
+                    .object_type(building.type_ref(), rules)
+                    .is_some_and(|object| object.weapons_factory)
+        })
+    }
+
+    /// A Unit whose radio contact slot 0 (`0x0065AD30(0)`: the slot itself,
+    /// not the first filled one) is a war factory
+    /// ([`Self::is_weapons_factory`]) that is also the first ground building
+    /// in the Unit's own cell (`0x0047C520`): one still leaving the factory
+    /// that linked it ([`mark_war_factory_spawn_contact`]). Native inlines
+    /// the test in `UnitClass::ReceiveDamage` (`0x00737CB6..0x00737D2E`),
+    /// `TemporalClass::CanWarpTarget` (`0x0071AE50`), the Chrono Warp
+    /// (`SuperClass::Launch 0x006CC7BC..0x006CC858`) and the locomotor imbue
+    /// (`0x0046953E..0x004695E6`).
+    pub(crate) fn unit_in_contact_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(unit) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        unit.category() == crate::map::entities::EntityCategory::Unit
+            && unit.radio_contacts.slot(0).is_some_and(|contact| {
+                self.is_weapons_factory(contact, rules)
+                    && self.substrate.occupancy.first_building_on_layer(
+                        unit.position.rx(),
+                        unit.position.ry(),
+                        MovementLayer::Ground,
+                    ) == Some(contact)
+            })
+    }
+}
+
 /// The naval arm's Cell (`0x00444175..0x004443DC`) for a product of
 /// `speed_type`: [`find_naval_unit_delivery_cell`] from the producer.
 pub(super) fn naval_exit_cell(

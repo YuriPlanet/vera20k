@@ -204,8 +204,12 @@ def _reported_profile(target: Path, source: Path) -> str | None:
     return None
 
 
-def register_locked(root: Path, store: Path, target: Path, artifacts=()):
-    """Record even failed/check/unlabelled/custom-target invocations under owner lock."""
+def register_locked(root: Path, store: Path, target: Path, artifacts=()) -> list[Path]:
+    """Record even failed/check/unlabelled/custom-target invocations under owner lock.
+
+    Returns this checkout's other registered caches that still exist, so the
+    caller can report a split cache.
+    """
     from tools.cargo_run import build_store
     target.mkdir(parents=True, exist_ok=True)
     _plain(target)
@@ -224,6 +228,9 @@ def register_locked(root: Path, store: Path, target: Path, artifacts=()):
     data['roots'][str(target)] = {'checkout': str(root), 'last_use_unix': time.time(),
                                 'profiles': sorted(profiles)}
     _write(path, data)
+    return [Path(other) for other, entry in data['roots'].items()
+            if other != str(target) and isinstance(entry, dict)
+            and entry.get('checkout') == str(root) and Path(other).is_dir()]
 
 
 def _owned_root(checkout: str, target: Path, store: Path, stores: dict) -> Path | None:
@@ -252,7 +259,7 @@ def _owned_root(checkout: str, target: Path, store: Path, stores: dict) -> Path 
 
 
 def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None):
-    from tools.cargo_run import HOST_PROFILES, preserved_manifest, build_store
+    from tools.cargo_run import HOST_PROFILES, preserved_manifest, build_store, owned_target
     roots, binaries, watched, stores = set(), set(), {}, {}
     registry = store / 'cache-roots.json'
     if registry.exists():
@@ -332,8 +339,7 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
                     binaries.add(binary)
     # The current default root is safe to discover without a prior label.
     _, namespace = build_store(root)
-    default = Path(os.environ.get('CARGO_TARGET_DIR', str(root / 'target'))).resolve()
-    if path := _owned_root(str(root), default / 'owned-worktrees' / namespace, store, stores):
+    if path := _owned_root(str(root), owned_target(root, namespace), store, stores):
         roots.add(path)
     if profiles is not None:
         profiles.update(cache / profile for cache in roots for profile in HOST_PROFILES)

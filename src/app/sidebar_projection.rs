@@ -33,6 +33,9 @@ pub(crate) struct SidebarProjectionState {
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
+    /// A saved strip replacement must bind its buttons before its first
+    /// refreshed view. Cleared by that reconciliation or a fresh seed/reset.
+    pending_tab_initialization: bool,
     /// Pending local House4F92E2 handoff. Rendering refreshes comparison and
     /// drawing inputs every frame, but does not manufacture a House +1FC pass.
     pending_cameo_recheck: Option<InternedId>,
@@ -76,6 +79,7 @@ impl SidebarProjectionState {
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
         if view.is_none() {
             self.cameos = None;
+            self.pending_tab_initialization = false;
             self.pending_cameo_recheck = None;
             self.pending_cameo_additions.clear();
             self.factory_links.clear();
@@ -90,6 +94,7 @@ impl SidebarProjectionState {
     /// different pre-placed base never reads as freshly inserted cameos.
     pub(crate) fn reset_cameo_seed(&mut self) {
         self.cameos = None;
+        self.pending_tab_initialization = false;
         self.pending_cameo_recheck = None;
         self.pending_cameo_additions.clear();
         self.factory_links.clear();
@@ -129,13 +134,17 @@ impl SidebarProjectionState {
         } else {
             seed_additions
         };
-        let reconciled = self
+        let mut reconciled = self
             .cameos
             .as_mut()
             .expect("cameos initialized")
             .1
             .reconcile(current, visible_rows, recalculate_builds, additions);
         self.pending_cameo_additions.clear();
+        if !initialized || self.pending_tab_initialization {
+            reconciled = reconciled.with_initialized_tabs(self.cameo_strips());
+            self.pending_tab_initialization = false;
+        }
         if initialized {
             reconciled
         } else {
@@ -177,6 +186,7 @@ impl SidebarProjectionState {
     }
 
     pub(crate) fn restore_order(&mut self, saved: Option<PreparedSidebarOrder>) {
+        self.pending_tab_initialization = saved.is_some();
         match saved {
             Some(saved) => {
                 self.cameos = Some((saved.owner, saved.strips));

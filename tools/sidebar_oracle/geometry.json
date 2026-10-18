@@ -898,5 +898,49 @@
         -2
       ]
     }
+  ],
+  "tab_initialization": [
+    {
+      "disabled_after": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "disabled_before": [
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "disabled_after": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "disabled_before": [
+        false,
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "disabled_after": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "disabled_before": [
+        true,
+        true,
+        true,
+        true
+      ]
+    }
   ]
 }

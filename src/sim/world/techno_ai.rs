@@ -369,7 +369,12 @@ impl Simulation {
             }
             return outcome;
         }
-        if self.production.terrain_objects.contains_key(&id) {
+        // One stable id allocator numbers every store, so an entity is no
+        // terrain object: its hashed lookup spares the commonest turn the
+        // terrain map's.
+        if !self.substrate.entities.contains(id)
+            && self.production.terrain_objects.contains_key(&id)
+        {
             // TerrainClass::AI @ 0x0071C730 calls ObjectClass::AI first
             // (`0x0071C738`).
             self.object_ai_sounds(id, rules, ctx.effects);

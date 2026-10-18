@@ -4302,6 +4302,15 @@ impl RuleSet {
                 object.project_infantry_pips(pips);
             }
         }
+        for (name, flags) in processed.infantry_infiltration_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.project_infantry_infiltration(flags);
+            }
+        }
         rules.anim_type_art_read_states = processed
             .anim_type_art_read_states()
             .map(|(name, read)| (name.to_owned(), read))

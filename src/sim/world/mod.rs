@@ -2493,7 +2493,7 @@ impl Simulation {
                             // (`0x00737CB6..0x00737D2E`) before it touches
                             // the shared damage.
                             let post_object_damage =
-                                if self.unit_inside_war_factory(target_id, rules) {
+                                if self.unit_in_contact_war_factory(target_id, rules) {
                                     None
                                 } else {
                                     crate::sim::combat::wave_post_object_damage(
@@ -5731,13 +5731,9 @@ impl Simulation {
             return;
         }
         let in_factory_contact = self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.radio_contacts.iter_live().any(|other| {
-                self.substrate
-                    .entities
-                    .get(other)
-                    .and_then(|b| self.object_type(b.type_ref(), rules))
-                    .is_some_and(|obj| obj.weapons_factory)
-            })
+            e.radio_contacts
+                .iter_live()
+                .any(|other| self.is_weapons_factory(other, rules))
         });
         if in_factory_contact {
             return;

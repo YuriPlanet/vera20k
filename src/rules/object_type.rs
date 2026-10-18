@@ -159,6 +159,33 @@ impl InfantryPips {
     }
 }
 
+/// InfantryType constructor clears EBE/EC2/EC3/EC4. ReadINI reads these
+/// current-default flags, then 52466E..52469A forces Infiltrate for any role.
+/// Retain the postprocessed byte across reached rules passes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InfantryInfiltration {
+    infiltrate: bool,
+    c4: bool,
+    engineer: bool,
+    agent: bool,
+}
+
+impl InfantryInfiltration {
+    pub(crate) fn apply_pass(&mut self, section: &IniSection) {
+        // InfantryTypeClass::ReadINI 5244A9/524545/524579/5245AD,
+        // then 52466E..52469A (retail gamemd.exe, Steam3e81a617..08600).
+        self.infiltrate = section.read_bool("Infiltrate", self.infiltrate);
+        self.c4 = section.read_bool("C4", self.c4);
+        self.engineer = section.read_bool("Engineer", self.engineer);
+        self.agent = section.read_bool("Agent", self.agent);
+        self.infiltrate |= self.c4 || self.engineer || self.agent;
+    }
+}
+
+#[cfg(test)]
+#[path = "infantry_infiltration_tests.rs"]
+mod infiltration_tests;
+
 /// What type of objects this building can produce (Factory= in rules.ini).
 ///
 /// RA2 uses this key to determine which production queue a building serves:
@@ -1288,7 +1315,9 @@ pub struct ObjectType {
     /// only): the bomb cursor (`0x0051EB24..0x0051EB7E`), its only reader.
     pub ivan: bool,
     /// `Infiltrate=` (`InfantryTypeClass+0xEBE`, ReadBool `0x005244A9`,
-    /// constructor clear `0x0052378F`, infantry only): an unarmed infiltrator
+    /// constructor clear `0x0052378F`, infantry only). ReadINI's postpass
+    /// (`0x0052466E..0x0052469A`) also sets it for C4/Engineer/Agent, even
+    /// after explicit Infiltrate=no. An unarmed infiltrator
     /// still scans for a target (`0x0051E296..0x0051E2BC`), and a team on
     /// action 15 sends it in (`0x006EB71A..0x006EB759`).
     pub infiltrate: bool,
@@ -2069,6 +2098,13 @@ impl ObjectType {
         self.infantry_pips = pips;
     }
 
+    pub(crate) fn project_infantry_infiltration(&mut self, flags: InfantryInfiltration) {
+        self.infiltrate = flags.infiltrate;
+        self.c4 = flags.c4;
+        self.engineer = flags.engineer;
+        self.agent = flags.agent;
+    }
+
     /// TechnoType GetPipMax716290, virtual+74. Signed configuration capacity;
     /// callers own allocation/fill bounds. Uses the live bound base weapon0,
     /// not a capture manager's retained admission capacity or elite weapon.
@@ -2477,6 +2513,10 @@ impl ObjectType {
     /// The `id` is the section name, and `category` comes from which
     /// type registry listed this object.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        let mut infiltration = InfantryInfiltration::default();
+        if category == ObjectCategory::Infantry {
+            infiltration.apply_pass(section);
+        }
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
         // reached layer values with the live byte as the next pass's default.
@@ -3060,7 +3100,8 @@ impl ObjectType {
             } else {
                 0
             },
-            weapons_factory: section.read_bool("WeaponsFactory", false),
+            // `BuildingTypeClass::ReadINI` alone reads it (`0x00460A79`).
+            weapons_factory: building_bool(section, category, "WeaponsFactory"),
             armory,
             gdi_barracks,
             nod_barracks,
@@ -3072,11 +3113,14 @@ impl ObjectType {
                 .map(|[x, y, z]| (x, y, z)),
 
             // Cursor / interaction capability flags
-            engineer: section.read_bool("Engineer", false),
+            engineer: if category == ObjectCategory::Infantry {
+                infiltration.engineer
+            } else {
+                section.read_bool("Engineer", false)
+            },
             ivan: category == ObjectCategory::Infantry && section.read_bool("Ivan", false),
-            infiltrate: category == ObjectCategory::Infantry
-                && section.read_bool("Infiltrate", false),
-            agent: category == ObjectCategory::Infantry && section.read_bool("Agent", false),
+            infiltrate: infiltration.infiltrate,
+            agent: infiltration.agent,
             deployer: section.read_bool("Deployer", false),
             capturable: section.read_bool("Capturable", false),
             spyable: category == ObjectCategory::Building && section.read_bool("Spyable", false),
@@ -3203,7 +3247,11 @@ impl ObjectType {
             attack_friendlies: section.read_bool("AttackFriendlies", false),
             attack_cursor_on_friendlies: section.read_bool("AttackCursorOnFriendlies", false),
             sabotage_cursor: section.read_bool("SabotageCursor", false),
-            c4: section.read_bool("C4", false),
+            c4: if category == ObjectCategory::Infantry {
+                infiltration.c4
+            } else {
+                section.read_bool("C4", false)
+            },
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
             invisible: section.read_bool("Invisible", false),

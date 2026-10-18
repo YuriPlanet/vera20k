@@ -124,7 +124,12 @@ same checkout waits instead of relinking a running test. A runner configured for
 host target in Cargo configuration takes precedence; the tests then run under the lock.
 
 Each worktree has a separate cache under
-`<CARGO_TARGET_DIR or checkout/target>/owned-worktrees/<checkout-path-hash>`.
+`<cache root>/owned-worktrees/<checkout-path-hash>`, where the cache root is
+`CARGO_TARGET_DIR` when set and otherwise the `target/` of the repository's primary
+checkout (the parent of the common Git directory), never the worktree's own `target/`.
+A checkout therefore has one cache whichever session builds it, as long as every
+session either leaves the variable unset or points it at that same directory; the
+runner notes on stderr when the registry holds another cache for the checkout.
 The first build compiles dependencies into this namespace, costing time and disk;
 subsequent builds reuse it. Existing shared caches are neither deleted nor trusted.
 `--target-dir`, `--manifest-path`, `--config` and `--message-format` are reserved

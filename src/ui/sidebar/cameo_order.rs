@@ -189,15 +189,18 @@ pub(crate) struct CameoStrips {
 
 /// The tab-state consequences of one reconcile pass.
 ///
-/// Native flips a tab button and moves ActiveTab only on these transitions:
+/// Native first disables all four buttons in Sidebar Init6A5411..6A5486
+/// (calls Gadget Disable4E1460). AddCameo/Recalculate then update them:
 /// `AddCameo` 6A6300 enables the added strip's button and, when no strip held
 /// any entry before the insertion, switches ActiveTab to the first populated
 /// strip; `Recalculate` 6AA600 disables the button of the strip it just
 /// emptied and then switches ActiveTab to the first populated strip when that
-/// is not already the active one. Nothing re-derives the buttons or the active
-/// tab from the current strip contents.
+/// is not already the active one. Ordinary refreshes never re-derive the
+/// buttons or active tab from strip contents; loading retained strips binds
+/// their buttons once before those event-driven updates resume.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct CameoTransitions {
+    initialized_tab_disabled: Option<[bool; 4]>,
     build_entered: [bool; 4],
     emptied: [bool; 4],
     super_entered: [bool; 4],
@@ -218,7 +221,8 @@ impl CameoTransitions {
         } else if self.build_entered[index] {
             Some(false)
         } else {
-            None
+            self.initialized_tab_disabled
+                .map(|disabled| disabled[index])
         }
     }
 
@@ -246,10 +250,20 @@ impl CameoReconcile {
         self.transitions
     }
 
-    /// The scenario's first projection is not an insertion for the
-    /// construction-options line, but its tab transitions still happen.
+    /// The scenario's first projection is silent for the construction-options
+    /// line, but its button and active-tab transitions still happen.
     pub(crate) fn without_build_insertion(mut self) -> Self {
         self.build_inserted = false;
+        self
+    }
+
+    /// Bind buttons once when fresh or saved strips replace their owner.
+    /// Fresh empty strips reproduce Init6A5411 followed by AddCameo. Saved
+    /// strips keep their identities/order: they must not be inserted again
+    /// just to repair the outgoing match's gadget bits.
+    pub(crate) fn with_initialized_tabs(mut self, strips: &CameoStrips) -> Self {
+        self.transitions.initialized_tab_disabled =
+            Some(std::array::from_fn(|index| strips.strips[index].is_empty()));
         self
     }
 }
@@ -601,6 +615,7 @@ impl CameoStrips {
         CameoReconcile {
             build_inserted,
             transitions: CameoTransitions {
+                initialized_tab_disabled: None,
                 build_entered,
                 emptied,
                 super_entered,
